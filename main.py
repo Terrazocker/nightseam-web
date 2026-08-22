@@ -1,0 +1,261 @@
+"""AstroPilot entry point.
+
+Starts the local web server and opens the UI in the default browser.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import logging
+import os
+import socket
+import sys
+import threading
+import time
+import webbrowser
+from pathlib import Path
+
+from app import paths
+from app.database import Database
+from app.server import create_app
+
+
+def setup_logging(console: bool):
+    from logging.handlers import RotatingFileHandler
+    handlers = [RotatingFileHandler(paths.logs_dir() / "astropilot.log",
+                                    maxBytes=1_000_000, backupCount=2,
+                                    encoding="utf-8")]
+    if console and sys.stdout is not None:
+        handlers.append(logging.StreamHandler(sys.stdout))
+    logging.basicConfig(level=logging.INFO,
+                        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+                        handlers=handlers)
+    return logging.getLogger("astropilot")
+
+
+def ensure_stdio():
+    """Windowed (--noconsole) Windows builds have sys.stdout/stderr = None,
+    which crashes any logging code that touches them."""
+    if sys.stdout is None:
+        sys.stdout = open(os.devnull, "w", encoding="utf-8")
+    if sys.stderr is None:
+        sys.stderr = open(os.devnull, "w", encoding="utf-8")
+
+
+# ------------------------------------------------------------------ instance handoff
+
+def _instance_file() -> Path:
+    return paths.data_dir() / "instance.json"
+
+
+def existing_instance_url() -> str | None:
+    """URL of a live AstroPilot instance (recorded in data/instance.json),
+    or None. Stale entries are removed."""
+    f = _instance_file()
+    try:
+        info = json.loads(f.read_text())
+        port = int(info["port"])
+        probe = f"http://127.0.0.1:{port}/api/state"
+        import urllib.request
+        urllib.request.urlopen(probe, timeout=2.0)
+        return f"http://127.0.0.1:{port}"
+    except Exception:
+        try:
+            f.unlink(missing_ok=True)
+        except OSError:
+            pass
+        return None
+
+
+def write_instance_file(port: int) -> None:
+    try:
+        _instance_file().write_text(
+            json.dumps({"port": port, "pid": os.getpid()}))
+    except OSError:
+        pass
+
+
+def clear_instance_file() -> None:
+    try:
+        _instance_file().unlink(missing_ok=True)
+    except OSError:
+        pass
+
+
+def free_port(preferred: int, host: str) -> int:
+    def usable(p):
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            try:
+                s.bind((host, p))
+                return True
+            except OSError:
+                return False
+
+    if usable(preferred):
+        return preferred
+    with socket.socket() as s:
+        s.bind((host, 0))
+        return s.getsockname()[1]
+
+
+class NoSignalServer(__import__("uvicorn").Server):
+    """uvicorn Server that does not touch signal handlers (we run in a thread)."""
+
+    def install_signal_handlers(self) -> None:  # noqa: D102
+        pass
+
+
+def run_native_window(url: str) -> bool:
+    """Open a real desktop window via pywebview (Edge WebView2).
+    Blocks until the window is closed. Returns False if unavailable."""
+    log = logging.getLogger("astropilot")
+    try:
+        import webview  # pywebview
+    except Exception as exc:  # noqa: BLE001
+        log.info("pywebview not available (%s) - using browser fallback", exc)
+        return False
+    try:
+        webview.create_window("AstroPilot", url, width=1440, height=920,
+                              min_size=(1000, 640), background_color="#0b0e14")
+        webview.start()          # blocks until the window is closed
+        return True
+    except Exception as exc:  # noqa: BLE001
+        log.warning("native window failed (%s) - falling back to app window", exc)
+        return False
+
+
+def launch_app_window(url: str) -> bool:
+    """Fallback: Edge/Chrome launched in --app mode (own window, no tabs/URL bar)."""
+    import os
+    import subprocess
+
+    pf = os.environ.get("ProgramFiles", r"C:\Program Files")
+    pf86 = os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)")
+    lad = os.environ.get("LocalAppData", "")
+    candidates = [
+        rf"{pf}\Microsoft\Edge\Application\msedge.exe",
+        rf"{pf86}\Microsoft\Edge\Application\msedge.exe",
+        rf"{pf}\Google\Chrome\Application\chrome.exe",
+        rf"{pf86}\Google\Chrome\Application\chrome.exe",
+    ]
+    if lad:
+        candidates += [rf"{lad}\Microsoft\Edge\Application\msedge.exe",
+                       rf"{lad}\Google\Chrome\Application\chrome.exe"]
+    for exe in candidates:
+        if exe and os.path.exists(exe):
+            try:
+                subprocess.Popen([exe, f"--app={url}", "--window-size=1440,920"],
+                                 stdout=subprocess.DEVNULL,
+                                 stderr=subprocess.DEVNULL)
+                logging.getLogger("astropilot").info("opened app window via %s",
+                                                     os.path.basename(exe))
+                return True
+            except OSError:
+                continue
+    return False
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description="AstroPilot - DSO planning tool")
+    ap.add_argument("--port", type=int, default=8407)
+    ap.add_argument("--host", default="127.0.0.1")
+    ap.add_argument("--browser", action="store_true",
+                    help="open in a regular browser tab instead of an app window")
+    ap.add_argument("--no-browser", action="store_true",
+                    help="do not open any window (headless)")
+    ap.add_argument("--console", action="store_true",
+                    help="also log to console")
+    ap.add_argument("--idle-exit-hours", type=float, default=12.0,
+                    help="exit after this many hours without requests (0 = never)")
+    args = ap.parse_args()
+
+    ensure_stdio()
+    log = setup_logging(args.console)
+
+    # hand off to an already-running instance instead of shadowing it
+    if not args.no_browser:
+        old_url = existing_instance_url()
+        if old_url:
+            log.info("AstroPilot already running at %s - handing off.", old_url)
+            if args.browser:
+                webbrowser.open(old_url)
+            else:
+                if not run_native_window(old_url):
+                    if not launch_app_window(old_url):
+                        webbrowser.open(old_url)
+            return 0
+
+    db = Database(paths.data_dir() / "astropilot.db")
+    app = create_app(db)
+
+    port = free_port(args.port, args.host)
+    url = f"http://{args.host}:{port}/"
+
+    import uvicorn
+    config = uvicorn.Config(app, host=args.host, port=port,
+                            log_level="warning", access_log=False,
+                            lifespan="off", ws="none",
+                            log_config=None)
+    server = NoSignalServer(config)
+
+    thread = threading.Thread(target=server.run, daemon=True)
+    thread.start()
+
+    t0 = time.time()
+    while time.time() - t0 < 15:
+        try:
+            with socket.create_connection((args.host, port), timeout=0.5):
+                break
+        except OSError:
+            time.sleep(0.15)
+    else:
+        log.error("Server failed to start on %s", url)
+        return 1
+
+    log.info("AstroPilot running at %s", url)
+    write_instance_file(port)
+
+    idle_secs = args.idle_exit_hours * 3600.0
+    ui_mode = "none" if args.no_browser else "browser" if args.browser else "window"
+
+    try:
+        if ui_mode == "window":
+            if run_native_window(url):
+                pass                               # window closed -> shut down
+            elif launch_app_window(url):
+                wait_for_exit(server, idle_secs)
+            else:
+                threading.Timer(0.6, lambda: webbrowser.open(url)).start()
+                wait_for_exit(server, idle_secs)
+        elif ui_mode == "browser":
+            threading.Timer(0.6, lambda: webbrowser.open(url)).start()
+            wait_for_exit(server, idle_secs)
+        else:
+            wait_for_exit(server, idle_secs)
+    finally:
+        server.should_exit = True
+        thread.join(timeout=6)
+        clear_instance_file()
+    return 0
+
+
+def wait_for_exit(server, idle_secs: float) -> None:
+    try:
+        while server.should_exit is False:
+            time.sleep(1.0)
+            if idle_secs > 0 and time.time() - _last_request_ts() > idle_secs:
+                logging.getLogger("astropilot").info("Idle timeout reached.")
+                break
+    except KeyboardInterrupt:
+        pass
+
+
+def _last_request_ts() -> float:
+    from app import server as srv
+    return srv._state["last_request"]
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

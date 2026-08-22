@@ -1,0 +1,425 @@
+/* Sky view: polar whole-dome chart */
+
+import { $, clamp, esc, TYPE_COLOR, TYPE_LABEL } from "./util.js";
+import { S } from "./state.js";
+import { statusOf, desigLine, activeProfile, shortName } from "./derive.js";
+import { openDetail } from "./detail.js";
+import { passesFilters } from "./targets.js";
+import { CONSTELLATIONS, FIELD_STARS } from "./skydata.js";
+
+let SKY_HOVER = null;
+let SKY_POINTS = [];
+let SKY_ZOOM = 1;
+let SKY_FX = null;    // focus point (base coords) under the viewport centre
+let SKY_FY = null;
+let _drag = null;
+let _suppressClick = false;
+
+export function resetSkyView() {
+  SKY_ZOOM = 1; SKY_FX = null; SKY_FY = null;
+  renderSky();
+}
+
+function applyView(ctx, dpr, W, H) {
+  const fx = SKY_FX == null ? W / 2 : SKY_FX;
+  const fy = SKY_FY == null ? H / 2 : SKY_FY;
+  ctx.setTransform(dpr * SKY_ZOOM, 0, 0, dpr * SKY_ZOOM,
+                   dpr * (W / 2 - fx * SKY_ZOOM),
+                   dpr * (H / 2 - fy * SKY_ZOOM));
+}
+
+/* css px (relative to canvas) -> base chart coords */
+function screenToBase(sx, sy, W, H) {
+  const fx = SKY_FX == null ? W / 2 : SKY_FX;
+  const fy = SKY_FY == null ? H / 2 : SKY_FY;
+  return [fx + (sx - W / 2) / SKY_ZOOM, fy + (sy - H / 2) / SKY_ZOOM];
+}
+
+function clampFocus(W, H) {
+  const Rlim = Math.min(W, H) / 2;
+  if (SKY_FX != null) SKY_FX = Math.max(W/2 - Rlim, Math.min(W/2 + Rlim, SKY_FX));
+  if (SKY_FY != null) SKY_FY = Math.max(H/2 - Rlim, Math.min(H/2 + Rlim, SKY_FY));
+}
+
+export function bindSky() {
+  const cv = $("#skyCanvas");
+
+  cv.addEventListener("mousemove", skyHover);
+  cv.addEventListener("mouseleave", () => {
+    SKY_HOVER = null; $("#skyTip").classList.add("hidden"); renderSky();
+  });
+
+  // pan / zoom / click (distinguished by drag distance)
+  cv.addEventListener("pointerdown", e => {
+    if (e.button !== 0) return;
+    const rect = cv.getBoundingClientRect();
+    cv.setPointerCapture(e.pointerId);
+    _drag = { sx: e.clientX, sy: e.clientY,
+              fx: SKY_FX == null ? rect.width/2 : SKY_FX,
+              fy: SKY_FY == null ? rect.height/2 : SKY_FY,
+              moved: false };
+  });
+  cv.addEventListener("pointermove", e => {
+    if (_drag && (e.buttons & 1)) {
+      if (SKY_ZOOM <= 1) return;
+      const rect = cv.getBoundingClientRect();
+      const dx = e.clientX - _drag.sx, dy = e.clientY - _drag.sy;
+      if (!(_drag.moved) && Math.hypot(dx, dy) > 4) {
+        _drag.moved = true;
+        $("#skyTip").classList.add("hidden");
+        SKY_HOVER = null;
+      }
+      if (_drag.moved) {
+        SKY_FX = _drag.fx - dx / SKY_ZOOM;
+        SKY_FY = _drag.fy - dy / SKY_ZOOM;
+        clampFocus(rect.width, rect.height);
+        renderSky();
+      }
+      return;
+    }
+    skyHover(e);
+  });
+  window.addEventListener("pointerup", () => {
+    if (_drag && _drag.moved) { _suppressClick = true; setTimeout(() => { _suppressClick = false; }, 0); }
+    _drag = null;
+  });
+  cv.addEventListener("click", () => {
+    if (_suppressClick) return;
+    if (SKY_HOVER) openDetail(SKY_HOVER.id);
+  });
+  cv.addEventListener("wheel", e => {
+    e.preventDefault();
+    const rect = cv.getBoundingClientRect();
+    const lx = e.clientX - rect.left, ly = e.clientY - rect.top;
+    const [bx, by] = screenToBase(lx, ly, rect.width, rect.height);
+    const factor = e.deltaY < 0 ? 1.25 : 0.8;
+    SKY_ZOOM = clamp(SKY_ZOOM * factor, 1, 10);
+    if (SKY_ZOOM > 1) {
+      // keep the point under the cursor fixed while zooming
+      SKY_FX = bx - (lx - rect.width/2) / SKY_ZOOM;
+      SKY_FY = by - (ly - rect.height/2) / SKY_ZOOM;
+      clampFocus(rect.width, rect.height);
+    } else { SKY_FX = null; SKY_FY = null; }
+    renderSky();
+  }, { passive: false });
+  $("#skyZoomReset").addEventListener("click", resetSkyView);
+
+  $("#showLabels").addEventListener("change", renderSky);
+  $("#showMoon").addEventListener("change", renderSky);
+  $("#showAll").addEventListener("change", renderSky);
+  $("#showCons").addEventListener("change", renderSky);
+  $("#skyMag").addEventListener("input", e => {
+    $("#skyMagVal").textContent = (+e.target.value).toFixed(1);
+    SKY_HOVER = null; renderSky();
+  });
+
+  // object-type color legend
+  const lg = $("#typeLegend");
+  if (lg) {
+    lg.innerHTML = Object.keys(TYPE_COLOR).map(t =>
+      `<span class="lgchip" style="--c:${TYPE_COLOR[t]}"><i></i>${TYPE_LABEL[t] || t}</span>`
+    ).join("") +
+    `<span class="lgchip" style="--c:#ffd700"><i></i>&#9733; session target</span>`;
+  }
+}
+
+// compass convention: azimuth clockwise, North top, East right
+function azToXY(cx, cy, R, azDeg, altDeg) {
+  const r = R * (1 - altDeg/90);
+  const a = azDeg * Math.PI/180;
+  return [cx + r*Math.sin(a), cy - r*Math.cos(a)];
+}
+
+function skyGeom(cv) {
+  const W = cv.clientWidth, H = cv.clientHeight;
+  return {W, H, cx: W/2, cy: H/2, R: Math.min(W,H)/2 - 26};
+}
+
+/* ---------------- faded constellation backdrop ---------------- */
+
+function activeSite() {
+  if (!S.cfg || !S.cfg.sites) return null;
+  return S.cfg.sites.find(s => s.id === S.cfg.active_site_id) || S.cfg.sites[0] || null;
+}
+
+function jdFromDate(d) { return d.getTime() / 86400000 + 2440587.5; }
+function gmstDeg(jd) {
+  let g = 280.46061837 + 360.98564736629 * (jd - 2451545);
+  g %= 360;
+  return g;
+}
+
+/* no refraction / precession needed - this is a decorative backdrop */
+function altAzFast(raH, decD, latD, lonD, jd) {
+  const d2r = Math.PI / 180;
+  const Hh = ((gmstDeg(jd) + lonD - raH * 15) % 360) * d2r;
+  const dd = decD * d2r, pp = latD * d2r;
+  const sinAlt = Math.sin(dd) * Math.sin(pp)
+               + Math.cos(dd) * Math.cos(pp) * Math.cos(Hh);
+  const az = Math.atan2(
+    -Math.cos(dd) * Math.sin(Hh),
+    Math.sin(dd) * Math.cos(pp) - Math.cos(dd) * Math.sin(pp) * Math.cos(Hh));
+  return [Math.asin(Math.max(-1, Math.min(1, sinAlt))) / d2r, az / d2r];
+}
+
+function drawSkyBackdrop(ctx, cx, cy, R) {
+  const site = activeSite();
+  if (!site || !S.night) return;
+  const tl = S.night.timeline;
+  const tIso = tl.times_iso[Math.min(S.tIdx, tl.n - 1)];
+  const jd = jdFromDate(new Date(tIso + "Z"));
+
+  // keep everything inside the horizon circle
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(cx, cy, R, 0, 7);
+  ctx.clip();
+
+  const proj = (raH, decD) => {
+    const [a, z] = altAzFast(raH, decD, site.lat, site.lon, jd);
+    return { a, z };
+  };
+
+  // faint field stars
+  ctx.fillStyle = "rgba(165,175,200,.32)";
+  for (const st of FIELD_STARS) {
+    const { a, z } = proj(st[0], st[1]);
+    if (a <= 0.5) continue;
+    const [x, y] = azToXY(cx, cy, R, z, a);
+    ctx.beginPath();
+    ctx.arc(x, y, 1.05 * st[2], 0, 7);
+    ctx.fill();
+  }
+
+  // constellation stick figures
+  ctx.strokeStyle = "rgba(150,160,185,.30)";
+  ctx.lineWidth = 1;
+  for (const con of CONSTELLATIONS) {
+    if (!con.g.length) continue;
+    const pts = con.s.map(([ra, de]) => proj(ra, de));
+    ctx.beginPath();
+    for (const [i0, i1] of con.g) {
+      if (pts[i0].a <= 0 || pts[i1].a <= 0) continue;
+      const [x0, y0] = azToXY(cx, cy, R, pts[i0].z, pts[i0].a);
+      const [x1, y1] = azToXY(cx, cy, R, pts[i1].z, pts[i1].a);
+      ctx.moveTo(x0, y0);
+      ctx.lineTo(x1, y1);
+    }
+    ctx.stroke();
+  }
+  ctx.fillStyle = "rgba(185,194,220,.50)";
+  for (const con of CONSTELLATIONS) {
+    for (const [ra, de] of con.s) {
+      const { a, z } = proj(ra, de);
+      if (a <= 0) continue;
+      const [x, y] = azToXY(cx, cy, R, z, a);
+      ctx.beginPath(); ctx.arc(x, y, 1.4, 0, 7); ctx.fill();
+    }
+  }
+
+  // names
+  ctx.fillStyle = "rgba(139,147,168,.62)";
+  ctx.font = "10px Segoe UI";
+  ctx.textAlign = "center";
+  for (const con of CONSTELLATIONS) {
+    if (!con.t.length) continue;
+    const { a, z } = proj(con.t[0], con.t[1]);
+    if (a <= 5) continue;
+    const [x, y] = azToXY(cx, cy, R, z, a);
+    ctx.fillText(con.n, x, y);
+  }
+  ctx.textAlign = "left";
+  ctx.restore();
+}
+
+export function renderSky() {
+  const cv = $("#skyCanvas");
+  if (!cv || !cv.clientWidth || !S.night) return;
+  const dpr = window.devicePixelRatio || 1;
+  const {W,H} = skyGeom(cv);
+  // integer geometry -> crisp strokes and text on any display scaling
+  const cx = Math.round(W/2), cy = Math.round(H/2);
+  const R = Math.round(Math.min(W,H)/2 - 26);
+  cv.width=W*dpr; cv.height=H*dpr;
+  const ctx=cv.getContext("2d");
+  ctx.setTransform(1,0,0,1,0,0);
+  ctx.clearRect(0,0,cv.width,cv.height);
+  applyView(ctx, dpr, W, H);
+  clampFocus(W, H);
+  ctx.textBaseline = "alphabetic";
+
+  // faded constellation backdrop (toggleable)
+  if (($("#showCons")||{}).checked !== false) drawSkyBackdrop(ctx, cx, cy, R);
+
+  // obstacle silhouette (filled region + boundary stroke only)
+  const prof = activeProfile();
+  if (prof && prof.length === 720) {
+    const elevAt = az => {
+      const raw = prof[Math.floor(((az%360)+360)%360/0.5)] ?? -99;
+      return raw > 0.25 ? raw : 0;    // ignore stray/noise bins
+    };
+
+    ctx.beginPath();
+    for (let az=0; az<=360; az+=1) {
+      const [x,y] = azToXY(cx,cy,R,az,clamp(elevAt(az),-2,89));
+      az===0 ? ctx.moveTo(x,y) : ctx.lineTo(x,y);
+    }
+    ctx.lineTo(...azToXY(cx,cy,R,360,0));
+    for (let az=360; az>=0; az-=2) ctx.lineTo(...azToXY(cx,cy,R,az,0));
+    ctx.closePath();
+    ctx.fillStyle="rgba(255,93,93,.18)";
+    ctx.fill();
+
+    ctx.beginPath();
+    for (let az=0; az<=360; az+=1) {
+      const [x,y] = azToXY(cx,cy,R,az,clamp(elevAt(az),-2,89));
+      az===0 ? ctx.moveTo(x,y) : ctx.lineTo(x,y);
+    }
+    ctx.strokeStyle="rgba(255,93,93,.75)"; ctx.lineWidth=1.4;
+    ctx.stroke();
+  }
+
+  // grid rings (10-degree steps)
+  ctx.lineWidth=1;
+  ctx.font="10px Consolas, monospace";
+  for (let alt=10; alt<=80; alt+=10) {
+    const ry = cy-R*(1-alt/90);
+    ctx.strokeStyle="#232c41";
+    ctx.beginPath(); ctx.arc(cx,cy,R*(1-alt/90),0,7); ctx.stroke();
+    ctx.fillStyle="#4d5870";
+    ctx.fillText(alt+"\u00B0", cx+3, ry-3);
+  }
+  ctx.fillStyle="#4d5870";
+  ctx.fillText("0\u00B0", cx+3, cy+11);
+
+  // cardinal labels
+  const CARD=[["N",0],["E",90],["S",180],["W",270]];
+  for (const [lab,az] of CARD) {
+    const a=az*Math.PI/180;
+    const x=cx+(R+12)*Math.sin(a), y=cy-(R+12)*Math.cos(a);
+    ctx.fillStyle="#aab3c8"; ctx.font="bold 13px Segoe UI";
+    ctx.textAlign="center"; ctx.textBaseline="middle";
+    ctx.fillText(lab,x,y);
+  }
+  ctx.textAlign="left"; ctx.textBaseline="alphabetic";
+
+  // objects (dots) + collected label candidates, decluttered afterwards
+  const labels = $("#showLabels").checked;
+  const magLimit = +(($("#skyMag")||{}).value ?? 14);
+  const favs = new Set(S.cfg.favorites || []);
+  const pts=[];
+  const labelCands=[];
+  for (const o of S.night.objects) {
+    const m=S.meta[o.id]; if(!m) continue;
+    const isHover=SKY_HOVER&&SKY_HOVER.id===o.id;
+    // keep the sky view in sync with the Targets tab filters
+    const showAll = ($("#showAll")||{}).checked !== false;
+    if (!isHover && !showAll && !passesFilters(m, o)) continue;
+    if (m.vmag != null && m.vmag > magLimit) continue;
+    const alt=o.alt[S.tIdx], az=o.az[S.tIdx];
+    if (alt<-3) continue;
+    const [x,y]=azToXY(cx,cy,R,az,alt);
+    const blocked=alt<=o.ceil[S.tIdx];
+    const col=isHover?"#ffffff":(blocked?"#ff5d5d66":(TYPE_COLOR[m.otype]||"#aaa"));
+    ctx.fillStyle=col;
+    ctx.globalAlpha = alt>0?1:.35;
+    const dotR=isHover?4.5:m.vmag&&m.vmag<6?3.4:2.4;
+    ctx.beginPath(); ctx.arc(x,y,dotR,0,7); ctx.fill();
+    ctx.globalAlpha=1;
+    if (favs.has(o.id) && alt>-3) {
+      // yellow ring marks session targets
+      ctx.strokeStyle="rgba(0,0,0,.55)"; ctx.lineWidth=3.2;
+      ctx.beginPath(); ctx.arc(x,y,dotR+3.4,0,7); ctx.stroke();
+      ctx.strokeStyle="#ffd700"; ctx.lineWidth=1.8;
+      ctx.beginPath(); ctx.arc(x,y,dotR+3.4,0,7); ctx.stroke();
+    }
+    pts.push({x,y,id:o.id});
+    if (labels && alt>0 && shortName(m)) {
+      labelCands.push({ x, y, alt,
+        text: shortName(m), isHover: !!isHover,
+        prio: m.vmag != null ? m.vmag : 12 });
+    }
+  }
+
+  // place names greedily so they never stack on top of each other
+  if (labels && labelCands.length) {
+    ctx.font = "bold 11px Segoe UI";
+    const placed = [];
+    labelCands.sort((a,b) =>
+      (b.isHover - a.isHover) || (a.prio - b.prio));
+    for (const c of labelCands) {
+      if (!c.isHover && c.alt <= 0) continue;
+      const tx = Math.round(c.x) + 5, ty = Math.round(c.y) - 5;
+      const w = ctx.measureText(c.text).width + 8, h = 14;
+      let ok = true;
+      for (const p of placed) {
+        if (Math.abs(tx + w/2 - p.x) < (w + p.w)/2 &&
+            Math.abs(ty - p.y) < h) { ok = false; break; }
+      }
+      if (!ok && !c.isHover) continue;
+      placed.push({ x: tx + w/2, y: ty, w });
+      // dark halo under bright text for contrast on the busy backdrop
+      ctx.save();
+      ctx.shadowColor = "rgba(0,0,0,.9)";
+      ctx.shadowBlur = 4;
+      ctx.fillStyle = c.isHover ? "#ffffff" : "#e9edf6";
+      ctx.fillText(c.text, tx, ty);
+      ctx.restore();
+    }
+  }
+
+  if ($("#showMoon").checked) drawSunMoon(ctx,cx,cy,R);
+
+  SKY_POINTS=pts;
+}
+
+function moonAzAtIndex(i){
+  return S.night.moon_az[i]!=null ? S.night.moon_az[i] : 0;
+}
+function sunAzAtIndex(i){
+  return (S.night.sun_az && S.night.sun_az[i])!=null ? S.night.sun_az[i] : 0;
+}
+
+function drawSunMoon(ctx,cx,cy,R){
+  const sa=S.night.sun_alt[S.tIdx];
+  const ma=S.night.moon_alt[S.tIdx];
+  if(sa>-6){
+    const [x,y]=azToXY(cx,cy,R,sunAzAtIndex(S.tIdx),sa);
+    ctx.fillStyle="#ffd166";
+    ctx.beginPath();ctx.arc(x,y,7,0,7);ctx.fill();
+    ctx.strokeStyle="#ffd16688";ctx.lineWidth=1;
+    ctx.beginPath();ctx.arc(x,y,11,0,7);ctx.stroke();
+    ctx.fillStyle="#8a763a";ctx.font="10px Segoe UI";ctx.textAlign="center";
+    ctx.fillText("Sun",x,y+22);ctx.textAlign="left";
+  }
+  if(ma>-6){
+    const [x,y]=azToXY(cx,cy,R,moonAzAtIndex(S.tIdx),ma);
+    ctx.fillStyle="#e8ecf5";
+    ctx.beginPath();ctx.arc(x,y,6.5,0,7);ctx.fill();
+    ctx.fillStyle="#555e73";ctx.font="10px Segoe UI";ctx.textAlign="center";
+    ctx.fillText(Math.round(S.night.moon_illum*100)+"%",x,y+19);ctx.textAlign="left";
+  }
+}
+
+function skyHover(ev){
+  const cv=$("#skyCanvas");
+  const rect=cv.getBoundingClientRect();
+  const mx=ev.clientX-rect.left, my=ev.clientY-rect.top;
+  const [bx,by]=screenToBase(mx,my,rect.width,rect.height);
+  let best=null,bd=196;
+  for(const p of SKY_POINTS){
+    const dx=p.x-bx,dy=p.y-by,d=dx*dx+dy*dy;
+    if(d<bd){bd=d;best=p;}
+  }
+  if(best!==SKY_HOVER){SKY_HOVER=best;renderSky();}
+  if(best){
+    const o=S.night.objects.find(x=>x.id===best.id);
+    const m=S.meta[best.id];
+    const tip=$("#skyTip");
+    tip.innerHTML=`<b>${esc(m.primary_name)}</b> <span style="color:#8b93a8">${esc(desigLine(m))}</span><br>`+
+      `alt ${o.alt[S.tIdx].toFixed(1)}\u00B0 &middot; az ${o.az[S.tIdx].toFixed(0)}\u00B0<br>${statusOf(o,S.tIdx).text}`;
+    tip.classList.remove("hidden");
+    tip.style.left=(rect.left+p.x+14)+"px";
+    tip.style.top=(rect.top+p.y+10)+"px";
+  } else $("#skyTip").classList.add("hidden");
+}
