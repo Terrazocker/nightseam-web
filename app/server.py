@@ -52,6 +52,7 @@ class SettingsIn(BaseModel):
     favorites: Optional[list] = None
     wizard_done: Optional[bool] = None
     image_dir: Optional[str] = None
+    edge_space: Optional[int] = None
 
 
 class RigIn(BaseModel):
@@ -467,6 +468,7 @@ def create_app(db: Database) -> FastAPI:
             "wizard_done": bool(db.setting("wizard_done", False)),
             "profile_len": PROFILE_BINS,
             "image_dir": db.image_dir(),
+            "edge_space": db.setting("edge_space", 200),
         }
 
     @app.post("/api/settings")
@@ -499,6 +501,9 @@ def create_app(db: Database) -> FastAPI:
             db.set_setting("wizard_done", bool(body.wizard_done))
         if body.image_dir is not None:
             db.set_setting("image_dir", body.image_dir.strip() or "")
+        if body.edge_space is not None:
+            db.set_setting("edge_space",
+                           max(0, min(1000, int(body.edge_space))))
         return {"ok": True}
 
     # ---------------- sites ----------------

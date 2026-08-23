@@ -1,6 +1,6 @@
 /* Setup dialog: observing locations, imaging rigs, backup/transfer */
 
-import { $, esc, api, toast, fmtFovPair, watchCaps } from "./util.js";
+import { $, esc, api, toast, fmtFovPair, watchCaps, applyEdgeSpace } from "./util.js";
 import { S } from "./state.js";
 import { loadNight } from "./night.js";
 import { renderTargets } from "./targets.js";
@@ -228,6 +228,7 @@ export function applyCfgToUI() {
   $("#fltOiii").checked = !!F.narrowband_oiii;
   $("#sizeUnit").value = S.cfg.size_unit || "arcmin";
   if ($("#libUnit")) $("#libUnit").value = S.cfg.size_unit || "arcmin";
+  applyEdgeSpace(S.cfg.edge_space ?? 200);
   refreshRigUI();
 }
 

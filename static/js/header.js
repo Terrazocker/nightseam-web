@@ -1,6 +1,6 @@
 /* top bar: site/date/prefs/scrubber bindings + night summary line */
 
-import { $, fmtHM, esc, api, phaseName } from "./util.js";
+import { $, fmtHM, esc, api, phaseName, applyEdgeSpace } from "./util.js";
 import { S } from "./state.js";
 import { moonUpDownText } from "./derive.js";
 import { scheduleLoadNight } from "./night.js";
@@ -10,14 +10,27 @@ export function bindHeader() {
   $("#siteSelect").addEventListener("change", () => scheduleLoadNight(300));
   $("#dateInput").addEventListener("change", () => scheduleLoadNight(300));
   $("#btnSites").addEventListener("click", openSites);
-  $("#btnPrefs").addEventListener("click", e => {
+
+  // hamburger options menu
+  $("#btnMenu").addEventListener("click", e => {
     e.stopPropagation();
-    $("#prefsPanel").classList.toggle("hidden");
+    $("#menuPanel").classList.toggle("hidden");
   });
   document.addEventListener("mousedown", e => {
-    if (!e.target.closest(".popwrap")) $("#prefsPanel").classList.add("hidden");
+    if (!e.target.closest(".menuwrap")) $("#menuPanel").classList.add("hidden");
   });
-  $("#prefsPanel").addEventListener("mousedown", e => e.stopPropagation());
+  $("#menuPanel").addEventListener("mousedown", e => e.stopPropagation());
+  let _esT = null;
+  $("#edgeSpace").addEventListener("input", e => {
+    const v = +e.target.value;
+    applyEdgeSpace(v);
+    clearTimeout(_esT);
+    _esT = setTimeout(() => api("/api/settings", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" }, silent: true,
+      body: JSON.stringify({ edge_space: v })
+    }).catch(() => {}), 400);
+  });
 
   const slider = $("#timeSlider");
   let raf = null;

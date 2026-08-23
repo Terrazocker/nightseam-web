@@ -38,9 +38,9 @@ def main() -> int:
 
     # reverse check for well-known interactive controls (sample)
     important = ["timeSlider", "timeLabel", "siteSelect", "dateInput",
-                 "btnSites", "btnPrefs", "prefsPanel", "minUsefulAlt",
-                 "muaVal", "moonAware", "fltBb", "fltHa", "fltOiii",
-                 "sizeUnit", "rigSelect", "nightInfo", "busy"]
+                 "btnSites", "minUsefulAlt", "muaVal", "moonAware", "fltBb",
+                 "fltHa", "fltOiii", "sizeUnit", "rigSelect", "nightInfo",
+                 "busy", "btnMenu", "menuPanel", "edgeSpace"]
     gone = [i for i in important if i not in html_ids]
     if gone:
         print("important ids missing:", gone)

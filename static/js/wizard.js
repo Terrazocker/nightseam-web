@@ -59,8 +59,11 @@ const STEPS = [
       import .fit / .fits files they are <b>copied</b> into an archive folder
       on this computer &mdash; your originals never move.</p>
       <form id="wizForm" class="formrow" style="flex-direction:column;align-items:stretch">
-        <input id="wizArcDir" spellcheck="false"
-               value="${esc(S.cfg.image_dir || "")}">
+        <div style="display:flex;gap:8px">
+          <input id="wizArcDir" spellcheck="false" style="flex:1"
+                 value="${esc(S.cfg.image_dir || "")}">
+          <button type="button" id="wizArcBrowse" class="ghost">Browse...</button>
+        </div>
       </form>
       <p class="hint">Leave the default if you are unsure &mdash; you can change
       the folder anytime under the <b>Import Exposures</b> tab.</p>`,
@@ -115,6 +118,16 @@ function bind() {
         $("#wizLat").value = pos.coords.latitude.toFixed(4);
         $("#wizLon").value = pos.coords.longitude.toFixed(4);
       }, () => {}, {});
+    }
+    if (e.target.id === "wizArcBrowse") {
+      const bridge = window.pywebview && window.pywebview.api;
+      if (!bridge || !bridge.pick_archive_dir) {
+        alert("Folder dialog is only available in the native window - type the path instead.");
+        return;
+      }
+      bridge.pick_archive_dir($("#wizArcDir").value.trim()).then(dir => {
+        if (dir) $("#wizArcDir").value = dir;
+      });
     }
   });
 }

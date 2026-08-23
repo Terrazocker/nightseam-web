@@ -24,36 +24,11 @@
     <label>Night of
       <input type="date" id="dateInput">
     </label>
-    <div class="popwrap">
-      <button id="btnPrefs" class="ghost">Preferences &#9662;</button>      <div id="prefsPanel" class="popover hidden">
-        <h4>Preferences</h4>
-        <label class="inline">Min useful altitude <span id="muaVal" class="mono">25&deg;</span></label>
-        <input type="range" id="minUsefulAlt" min="5" max="70" step="1" value="25" style="width:100%">
-        <div style="margin-top:10px">
-          <label class="inline"><input type="checkbox" id="moonAware"> Moon-aware target scoring</label>
-          <p class="hint">Ranks targets down while the Moon is up.</p>
-        </div>
-        <h4>My equipment filters</h4>
-        <div style="display:flex;flex-direction:column;gap:6px">
-          <label class="inline"><input type="checkbox" id="fltBb"> Broadband / UV-IR (L)</label>
-          <label class="inline"><input type="checkbox" id="fltHa"> Narrowband H&#945;</label>
-          <label class="inline"><input type="checkbox" id="fltOiii"> Narrowband OIII/SII</label>
-        </div>
-        <h4>Object size units</h4>
-        <select id="sizeUnit" style="width:100%">
-          <option value="arcmin">Arcminutes (&prime;)</option>
-          <option value="arcsec">Arcseconds (&Prime;)</option>
-          <option value="deg">Degrees (&deg;)</option>
-        </select>
-
-        <h4>Imaging rig (framing)</h4>
-        <select id="rigSelect" style="width:100%">
-          <option value="">none &mdash; no frame coverage shown</option>
-        </select>
-        <p class="hint">Manage rigs in the Setup dialog &mdash; focal length + sensor size
-        give the field of view, used for the Frame&nbsp;% column.</p>
-      </div>
-    </div>
+    <label class="minalt" title="Minimum useful altitude for planning">
+      Min alt
+      <input type="range" id="minUsefulAlt" min="5" max="70" step="1" value="25">
+      <span id="muaVal" class="mono">25&deg;</span>
+    </label>
 
     <div class="scrub">
       <span class="inline">&#9201;</span>
@@ -81,6 +56,49 @@
       </svg>
       <span id="btnModeTxt">Image Catalog</span>
     </button>
+    <div class="popwrap menuwrap">
+      <button id="btnMenu" class="ghost menubtn" title="Options">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+          <path d="M4 6h16M4 12h16M4 18h16"/>
+        </svg>
+      </button>
+      <div id="menuPanel" class="popover menu-panel hidden">
+        <div class="menu-section">
+          <h4>Layout</h4>
+          <label class="inline">Free space per side <span id="edgeSpaceVal" class="mono">200px</span></label>
+          <input type="range" id="edgeSpace" min="0" max="800" step="10" value="200" style="width:100%">
+          <p class="hint">Lower fills big screens, raise centers content on
+          ultrawide monitors.</p>
+        </div>
+        <div class="menu-section">
+          <h4>Target scoring</h4>
+          <label class="inline"><input type="checkbox" id="moonAware"> Moon-aware ranking</label>
+          <p class="hint">Ranks targets down while the Moon is up.</p>
+        </div>
+        <div class="menu-section">
+          <h4>Equipment filters</h4>
+          <div class="chkrow">
+            <label class="inline"><input type="checkbox" id="fltBb"> Broadband (L)</label>
+            <label class="inline"><input type="checkbox" id="fltHa"> H&#945;</label>
+            <label class="inline"><input type="checkbox" id="fltOiii"> OIII/SII</label>
+          </div>
+        </div>
+        <div class="menu-section">
+          <h4>Object size units</h4>
+          <select id="sizeUnit" style="width:100%">
+            <option value="arcmin">Arcminutes (&prime;)</option>
+            <option value="arcsec">Arcseconds (&Prime;)</option>
+            <option value="deg">Degrees (&deg;)</option>
+          </select>
+        </div>
+        <div class="menu-section">
+          <h4>Imaging rig (framing)</h4>
+          <select id="rigSelect" style="width:100%">
+            <option value="">none &mdash; no frame coverage shown</option>
+          </select>
+        </div>
+      </div>
+    </div>
   </div>
 </header>
 

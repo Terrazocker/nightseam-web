@@ -120,6 +120,15 @@ export function setBusy(on, label) {
   if (txt) txt.textContent = label || "";
 }
 
+/* free space left/right of the tab content (px per side) */
+export function applyEdgeSpace(px) {
+  document.documentElement.style.setProperty("--edge-space", px + "px");
+  const s = $("#edgeSpace");
+  if (s) s.value = px;
+  const v = $("#edgeSpaceVal");
+  if (v) v.textContent = px + "px";
+}
+
 /* show a warning while Caps Lock is active inside a form container */
 export function watchCaps(container, warnEl) {
   if (!container || !warnEl) return;
