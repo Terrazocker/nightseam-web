@@ -7,7 +7,12 @@ export async function api(path, opts) {
   const r = await fetch(path, opts);
   if (!r.ok) {
     let msg = r.statusText;
-    try { const j = await r.json(); if (j.detail) msg = j.detail; } catch (e) {}
+    try {
+      const j = await r.json();
+      if (j.detail) {
+        msg = typeof j.detail === "string" ? j.detail : JSON.stringify(j.detail);
+      }
+    } catch (e) {}
     const err = new Error(msg);
     err.status = r.status;
     if (!(opts && opts.silent)) toast(`Request failed: ${msg}`);
@@ -107,9 +112,12 @@ export function toast(msg, type = "err", timeout = 7000) {
   return box;
 }
 
-export function setBusy(on) {
+export function setBusy(on, label) {
   const el = $("#busy");
-  if (el) el.classList.toggle("hidden", !on);
+  if (!el) return;
+  el.classList.toggle("hidden", !on);
+  const txt = el.querySelector(".busy-txt");
+  if (txt) txt.textContent = label || "";
 }
 
 /* show a warning while Caps Lock is active inside a form container */

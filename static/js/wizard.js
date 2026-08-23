@@ -1,6 +1,6 @@
 /* first-run wizard: welcome -> location -> panorama */
 
-import { $, api, watchCaps } from "./util.js";
+import { $, api, watchCaps, esc } from "./util.js";
 import { S } from "./state.js";
 import { applyCfgToUI } from "./setup.js";
 import { loadNight } from "./night.js";
@@ -19,7 +19,7 @@ const STEPS = [
         <li>altitude charts showing exactly where trees block your view</li>
         <li>framing previews for your camera + telescope</li>
       </ul>
-      <p style="margin-top:10px" class="hint">Three quick steps and you are ready.</p>`,
+      <p style="margin-top:10px" class="hint">A few quick steps and you are ready.</p>`,
   },
   {
     title: "Where do you observe?",
@@ -49,6 +49,26 @@ const STEPS = [
       S.cfg = await api("/api/state");
       applyCfgToUI();     // site select in the header must know the new site
       await loadNight();  // first real night computation for this location
+      return true;
+    },
+  },
+  {
+    title: "Where should your captures live?",
+    body: () => `
+      <p>AstroPilot can catalog the images you have already taken. When you
+      import .fit / .fits files they are <b>copied</b> into an archive folder
+      on this computer &mdash; your originals never move.</p>
+      <form id="wizForm" class="formrow" style="flex-direction:column;align-items:stretch">
+        <input id="wizArcDir" spellcheck="false"
+               value="${esc(S.cfg.image_dir || "")}">
+      </form>
+      <p class="hint">Leave the default if you are unsure &mdash; you can change
+      the folder anytime under the <b>Import Exposures</b> tab.</p>`,
+    validate: async () => {
+      const v = $("#wizArcDir").value.trim();
+      await api("/api/settings", { method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({ image_dir: v })});
       return true;
     },
   },

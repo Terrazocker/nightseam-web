@@ -12,4 +12,6 @@ export const S = {
   currentId: null,
   minAlt: 25,
   panos: [],          // full panorama records incl profile
+  catmode: false,     // Image Archive mode active
+  library: null,      // /api/library
 };

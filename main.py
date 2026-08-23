@@ -107,6 +107,26 @@ class NoSignalServer(__import__("uvicorn").Server):
         pass
 
 
+class JsApi:
+    """Native helpers exposed to the UI as window.pywebview.api (pywebview
+    window only; browser fallback has no bridge)."""
+
+    def pick_archive_dir(self, current: str = "") -> str | None:
+        """Open a native folder-picker dialog for the image archive path."""
+        import webview
+        win = webview.windows[0]
+        start = current if current and os.path.isdir(current) \
+            else str(Path.home())
+        try:
+            picked = win.create_file_dialog(webview.FOLDER_DIALOG,
+                                            directory=start)
+        except Exception:  # noqa: BLE001
+            return None
+        if picked:
+            return str(picked[0])
+        return None
+
+
 def run_native_window(url: str) -> bool:
     """Open a real desktop window via pywebview (Edge WebView2).
     Blocks until the window is closed. Returns False if unavailable."""
@@ -118,7 +138,8 @@ def run_native_window(url: str) -> bool:
         return False
     try:
         webview.create_window("AstroPilot", url, width=1440, height=920,
-                              min_size=(1000, 640), background_color="#0b0e14")
+                              min_size=(1000, 640), background_color="#0b0e14",
+                              js_api=JsApi())
         webview.start()          # blocks until the window is closed
         return True
     except Exception as exc:  # noqa: BLE001

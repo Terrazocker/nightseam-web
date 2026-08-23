@@ -10,9 +10,10 @@ Wikipedia example images.
 - Run from source: `python main.py` (default port 8407; `--console` for logs,
   `--no-browser` for headless, `--port N`). Data is created under `data/`
   (gitignored) in the repo root.
-- Tests: `python -m pytest tests/` - 28 tests, run in <1 s, pure functions
-  only (no DB, no HTTP). `httpx` is in requirements-dev but there are no API
-  tests yet.
+- Tests: `python -m pytest tests/` - 50 tests, run in <1 s, pure functions
+  only (no HTTP). `httpx` is in requirements-dev but there are no API tests
+  yet. A broken Windows temp-dir ACL means pytest runs use a repo-local
+  `.pytest-tmp` base (see `pytest.ini`).
 - No Python linter/formatter configured. The JS "lint" is three scripts that
   must pass after touching `static/`:
   - `python scripts/check_js_imports.py` - broken relative ES-module imports (hard failures)

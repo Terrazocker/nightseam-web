@@ -37,3 +37,10 @@ def logs_dir() -> Path:
     d = app_base_dir() / "logs"
     d.mkdir(parents=True, exist_ok=True)
     return d
+
+
+def default_archive_dir() -> Path:
+    """Default folder for ingested image files: Documents (or home)."""
+    home = Path.home()
+    docs = home / "Documents"
+    return (docs if docs.is_dir() else home) / "AstroPilot Images"

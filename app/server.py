@@ -22,8 +22,9 @@ from .astro import altaz, julian_day, moon_illumination, moon_ra_dec, sun_ra_dec
 from .planning import night_window
 from .database import Database, new_id
 from .paths import data_dir, static_dir
+from .version import app_version
 
-APP_VERSION = "1.0.0"
+APP_VERSION = app_version()
 PROFILE_BINS = 720          # 0.5-degree azimuth bins
 BIN_DEG = 360.0 / PROFILE_BINS
 NO_BLOCK = -90.0
@@ -50,6 +51,7 @@ class SettingsIn(BaseModel):
     active_rig_id: Optional[int] = None
     favorites: Optional[list] = None
     wizard_done: Optional[bool] = None
+    image_dir: Optional[str] = None
 
 
 class RigIn(BaseModel):
@@ -248,6 +250,128 @@ def longest_run(flags: list[bool]):
     return best
 
 
+# ---------------------------------------------------------------- image archive
+
+def _ingest_one(db: Database, catalog: list[dict], archive: Path,
+                name: str, data: bytes) -> dict:
+    """Parse one uploaded .fit/.fits, resolve its object, copy it into the
+    archive and record it. Returns a per-file result dict."""
+    from . import fits as fitsio
+    from . import imglib
+    if not name.lower().endswith((".fit", ".fits")):
+        return {"file": name, "ok": False,
+                "error": "not a .fit/.fits file"}
+    try:
+        hdr = fitsio.read_fits_header(data)
+    except Exception as exc:  # noqa: BLE001
+        return {"file": name, "ok": False,
+                "error": f"header parse failed: {exc}"}
+    if not hdr:
+        return {"file": name, "ok": False,
+                "error": "not a FITS file (SIMPLE keyword missing)"}
+
+    stem = Path(name).stem
+    hint = str(hdr.get("OBJECT") or "").strip() or stem
+    ra_h = fitsio.parse_ra_hours(hdr.get("OBJCTRA") or hdr.get("RA"))
+    dec_d = fitsio.parse_dec_deg(hdr.get("OBJCTDEC") or hdr.get("DEC"))
+    row = imglib.resolve_object(catalog, hint, ra_h, dec_d)
+
+    if row:
+        object_id = row["id"]
+        object_name = str(row.get("primary_name") or hint)[:120]
+        ra_h, dec_d = row["ra_hours"], row["dec_deg"]
+    else:
+        object_id = None
+        object_name = (str(hdr.get("OBJECT") or "").strip() or stem)[:120]
+
+    exposure = None
+    for k in ("EXPTIME", "EXPOSURE", "EXPTIM", "ELAPTIME"):
+        v = hdr.get(k)
+        if isinstance(v, (int, float)) and v >= 0:
+            exposure = float(v)
+            break
+    date_obs = fitsio.parse_date_obs(hdr.get("DATE-OBS") or hdr.get("DATE"))
+    filt = str(hdr.get("FILTER") or "").strip() or None
+    tel = str(hdr.get("TELESCOP") or hdr.get("INSTRUME") or "").strip() or None
+
+    stored = _store_archive(archive, name, object_name, data)
+    if stored is None:
+        return {"file": name, "ok": False,
+                "error": f"cannot write to archive folder {archive}"}
+
+    db.add_image({
+        "file": stored, "orig_name": name, "object_id": object_id,
+        "object_name": object_name, "ra_hours": ra_h, "dec_deg": dec_d,
+        "exposure": exposure, "date_obs": date_obs, "filter": filt,
+        "telescope": tel,
+        "ingested_at": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S"),
+    })
+    return {
+        "file": name, "ok": True,
+        "object": {"id": object_id, "name": object_name,
+                   "designation": imglib.designation_of(
+                       row, {"object_name": object_name})},
+        "exposure": exposure, "date_obs": date_obs, "filter": filt,
+        "telescope": tel, "stored": stored,
+    }
+
+
+def _store_archive(archive: Path, name: str, object_name: str,
+                   data: bytes) -> str | None:
+    """Copy bytes into <archive>/<object>/lights/<name>, uniquifying
+    collisions. Returns the stored path relative to the archive, or None."""
+    slug = _obj_slug(object_name)
+    suffix = Path(name).suffix or ".fit"
+    stem = (Path(name).stem or "image")[:80]
+    try:
+        sub = archive / slug / "lights"
+        sub.mkdir(parents=True, exist_ok=True)
+        target = sub / f"{stem}{suffix}"
+        n = 2
+        while target.exists():
+            target = sub / f"{stem}_{n}{suffix}"
+            n += 1
+        target.write_bytes(data)
+    except OSError:
+        return None
+    return str(target.relative_to(archive))
+
+
+def _obj_slug(object_name: str) -> str:
+    return re.sub(r"[^A-Za-z0-9 _-]+", "", object_name).strip() or "misc"
+
+
+def _rename_archive_folder(archive: Path, old_name: str, new_name: str) -> None:
+    """Move <archive>/<old slug> to <archive>/<new slug>, merging if the new
+    folder already exists. Failures are silent - the DB rename still works."""
+    old = archive / _obj_slug(old_name)
+    new = archive / _obj_slug(new_name)
+    if old == new or not old.is_dir():
+        return
+    try:
+        if new.exists():
+            for f in old.rglob("*"):
+                if f.is_file():
+                    rel = f.relative_to(old)
+                    dest = new / rel
+                    dest.parent.mkdir(parents=True, exist_ok=True)
+                    f.replace(dest)
+            for d in sorted([p for p in old.rglob("*") if p.is_dir()],
+                            key=lambda p: len(p.parts), reverse=True):
+                d.rmdir()
+            old.rmdir()
+        else:
+            old.rename(new)
+    except OSError:
+        pass
+
+
+class LibraryEditIn(BaseModel):
+    name: str                       # current object_name of an unresolved group
+    new_name: Optional[str] = None
+    otype: Optional[str] = None
+
+
 # ------------------------------------------------------------------ image prefetch
 
 _prefetch_started = False
@@ -342,6 +466,7 @@ def create_app(db: Database) -> FastAPI:
             "favorites": db.setting("favorites", []),
             "wizard_done": bool(db.setting("wizard_done", False)),
             "profile_len": PROFILE_BINS,
+            "image_dir": db.image_dir(),
         }
 
     @app.post("/api/settings")
@@ -372,6 +497,8 @@ def create_app(db: Database) -> FastAPI:
             db.set_setting("favorites", [str(x) for x in body.favorites])
         if body.wizard_done is not None:
             db.set_setting("wizard_done", bool(body.wizard_done))
+        if body.image_dir is not None:
+            db.set_setting("image_dir", body.image_dir.strip() or "")
         return {"ok": True}
 
     # ---------------- sites ----------------
@@ -725,6 +852,58 @@ def create_app(db: Database) -> FastAPI:
             raise HTTPException(400, "Only custom targets can be deleted")
         db.delete_custom(cid)
         return {"ok": True}
+
+    # ---------------- image archive ----------------
+
+    @app.post("/api/images/ingest")
+    async def api_ingest_images(files: list[UploadFile] = File(...)):
+        from . import fits as fitsio
+        archive = Path(db.image_dir())
+        try:
+            archive.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            raise HTTPException(
+                500, f"Cannot create archive folder {archive}: {exc}")
+        catalog = db.all_objects()
+        results = []
+        for f in files:
+            name = Path(f.filename or "image.fit").name
+            results.append(_ingest_one(db, catalog, archive, name,
+                                       await f.read()))
+        return {"results": results}
+
+    @app.get("/api/library")
+    def api_library():
+        from . import imglib
+        imgs = db.images()
+        objs = imglib.group_library(imgs, db.all_objects())
+        return {
+            "image_dir": db.image_dir(),
+            "total_images": len(imgs),
+            "total_exposure": round(
+                sum(float(i.get("exposure") or 0.0) for i in imgs), 1),
+            "objects": objs,
+        }
+
+    @app.post("/api/library/edit")
+    def api_library_edit(body: LibraryEditIn):
+        """Rename/retype an unresolved library object (object_id IS NULL)."""
+        name = body.name.strip()
+        if not name:
+            raise HTTPException(400, "name required")
+        new_name = (body.new_name or "").strip() or name
+        otype = body.otype or None
+        if otype is not None and otype not in (
+                "galaxy", "globular", "open_cluster", "nebula", "planetary",
+                "supernova_remnant", "star_cloud", "asterism"):
+            raise HTTPException(400, f"unknown type: {otype}")
+        rows = [i for i in db.images()
+                if not i["object_id"] and i["object_name"] == name]
+        if not rows:
+            raise HTTPException(404, "Object not found in library")
+        _rename_archive_folder(Path(db.image_dir()), name, new_name)
+        db.rename_images(name, new_name, otype, _obj_slug(new_name))
+        return {"ok": True, "name": new_name, "otype": otype}
 
     @app.get("/api/shutdown")
     @app.post("/api/shutdown")

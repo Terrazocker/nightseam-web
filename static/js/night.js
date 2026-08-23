@@ -16,17 +16,16 @@ export function scheduleLoadNight(delay = 300) {
 export function loadNight() { scheduleLoadNight(0); }
 
 async function doLoadNight() {
+  const sel = $("#siteSelect");
+  if (!sel || !sel.options.length) return;     // no observing site yet
   if (_nightCtl) _nightCtl.abort();
   _nightCtl = new AbortController();
   const ctl = _nightCtl;
   setBusy(true);
   try {
     const date = $("#dateInput").value || new Date().toLocaleDateString("sv");
-    const q = new URLSearchParams({
-      date,
-      tz_offset_min: tzOff(),
-      site: $("#siteSelect").value || ""
-    });
+    const q = new URLSearchParams({ date, tz_offset_min: tzOff() });
+    if (sel.value) q.set("site", sel.value);   // empty string would 422
     const N = await api("/api/night?" + q, { signal: ctl.signal, silent: true });
     if (ctl !== _nightCtl) return;              // superseded meanwhile
 

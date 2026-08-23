@@ -7,6 +7,7 @@ import { renderTargets } from "./targets.js";
 
 export async function openSites() {
   $("#sitesModal").classList.remove("hidden");
+  showMtab("sites");
   renderSitesTable(await api("/api/sites"));
   renderRigsTable();
   renderCustomList();
@@ -15,10 +16,22 @@ export function closeSites() {
   $("#sitesModal").classList.add("hidden");
 }
 
+function showMtab(name) {
+  for (const b of document.querySelectorAll("#sitesModal .modal-tabs .tab")) {
+    b.classList.toggle("active", b.dataset.mtab === name);
+  }
+  for (const p of document.querySelectorAll("#sitesModal .mtabpane")) {
+    p.classList.toggle("hidden", p.id !== "mtab-" + name);
+  }
+}
+
 export function bindSetup() {
   $("#sitesClose").addEventListener("click", closeSites);
   $("#sitesModal").addEventListener("mousedown", e => {
     if (e.target.id === "sitesModal") closeSites();
+  });
+  document.querySelectorAll("#sitesModal .modal-tabs .tab").forEach(b => {
+    b.addEventListener("click", () => showMtab(b.dataset.mtab));
   });
 
   // locations
@@ -82,6 +95,7 @@ export function bindSetup() {
       headers:{"Content-Type":"application/json"},
       body: JSON.stringify({ size_unit: e.target.value })});
     renderTargets();
+    if ($("#libUnit")) $("#libUnit").value = e.target.value;
     document.dispatchEvent(new CustomEvent("detail:changed"));
   });
   $("#rigSelect").addEventListener("change", async e => {
@@ -213,6 +227,7 @@ export function applyCfgToUI() {
   $("#fltHa").checked = !!F.narrowband_ha;
   $("#fltOiii").checked = !!F.narrowband_oiii;
   $("#sizeUnit").value = S.cfg.size_unit || "arcmin";
+  if ($("#libUnit")) $("#libUnit").value = S.cfg.size_unit || "arcmin";
   refreshRigUI();
 }
 

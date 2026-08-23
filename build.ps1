@@ -14,6 +14,12 @@ $py = ".\.venv-build\Scripts\python.exe"
 Get-Process AstroPilot -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
 Start-Sleep -Milliseconds 500
 
+# bake the current git version into the frozen app (app/_version_baked.py is gitignored)
+$ver = (& git describe --tags --always 2>$null).Trim().TrimStart("v")
+if (-not $ver) { $ver = "dev" }
+Set-Content -Encoding utf8 "app\_version_baked.py" "BAKED_VERSION = '$ver'"
+Write-Host "Baking version '$ver' into the build"
+
 & $py -m PyInstaller --clean --noconfirm --onefile --noconsole `
     --name AstroPilot `
     --icon "assets\app.ico" `

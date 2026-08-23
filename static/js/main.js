@@ -12,18 +12,25 @@ import { bindSetup, applyCfgToUI } from "./setup.js";
 import { bindDetail, drawAltChart } from "./detail.js";
 import { bindSky, renderSky } from "./skyview.js";
 import { Pano } from "./pano.js";
+import { bindArchive, applyArchiveUI, loadLibrary } from "./archive.js";
+import { bindSkyMap, renderSkyMap } from "./skymap.js";
 
 /* ---------------- tabs ---------------- */
 function bindTabs() {
-  for (const b of $$("#tabs .tab")) {
-    b.addEventListener("click", () => {
-      $$("#tabs .tab").forEach(x => x.classList.remove("active"));
-      b.classList.add("active");
-      $$(".tabpane").forEach(p => p.classList.remove("active"));
-      $(`#tab-${b.dataset.tab}`).classList.add("active");
-      if (b.dataset.tab === "sky") renderSky();
-      if (b.dataset.tab === "horizon") Pano.onShow();
-    });
+  for (const nav of [$("#tabs"), $("#tabs-cat")]) {
+    for (const b of nav.querySelectorAll(".tab")) {
+      b.addEventListener("click", () => {
+        for (const n of [$("#tabs"), $("#tabs-cat")])
+          n.querySelectorAll(".tab").forEach(x => x.classList.remove("active"));
+        b.classList.add("active");
+        $$(".tabpane").forEach(p => p.classList.remove("active"));
+        $(`#tab-${b.dataset.tab}`).classList.add("active");
+        if (b.dataset.tab === "sky") renderSky();
+        if (b.dataset.tab === "horizon") Pano.onShow();
+        if (b.dataset.tab === "library") loadLibrary();
+        if (b.dataset.tab === "skymap") renderSkyMap();
+      });
+    }
   }
 }
 
@@ -45,6 +52,8 @@ async function loadState() {
   S.meta = {};
   for (const o of S.catalog) S.meta[o.id] = o;
   S.panos = await api("/api/panoramas");
+  const vt = $("#versionTag");
+  if (vt) vt.textContent = "AstroPilot v" + (S.cfg.version || "1.0.0");
 
   applyCfgToUI();
 
@@ -82,6 +91,7 @@ async function init() {
     clearTimeout(_rsT);
     _rsT = setTimeout(() => {
       if ($("#tab-sky").classList.contains("active")) renderSky();
+      if ($("#tab-skymap").classList.contains("active")) renderSkyMap();
       if ($("#tab-horizon").classList.contains("active") && window.Pano &&
           window.Pano.img) window.Pano.render && window.Pano.render();
       if (DETAIL_OPEN()) drawAltChart();
@@ -95,10 +105,13 @@ async function init() {
   bindSetup();
   bindDetail();
   bindSky();
+  bindArchive();
+  bindSkyMap();
 
   await loadState();
   await loadNight();
   Pano.init();
+  applyArchiveUI();
 }
 
 function DETAIL_OPEN() {

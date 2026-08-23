@@ -69,6 +69,21 @@ CREATE TABLE IF NOT EXISTS settings (
     key TEXT PRIMARY KEY,
     value TEXT
 );
+CREATE TABLE IF NOT EXISTS images (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    file TEXT NOT NULL,
+    orig_name TEXT NOT NULL,
+    object_id TEXT,
+    object_name TEXT NOT NULL,
+    otype TEXT,
+    ra_hours REAL,
+    dec_deg REAL,
+    exposure REAL,
+    date_obs TEXT,
+    filter TEXT,
+    telescope TEXT,
+    ingested_at TEXT NOT NULL
+);
 """
 
 
@@ -81,6 +96,10 @@ class Database:
         self.conn.executescript(SCHEMA)
         try:  # migration for databases created before fov existed
             self.conn.execute("ALTER TABLE panoramas ADD COLUMN fov REAL NOT NULL DEFAULT 360")
+        except sqlite3.OperationalError:
+            pass
+        try:  # migration: user-defined type for ingested images
+            self.conn.execute("ALTER TABLE images ADD COLUMN otype TEXT")
         except sqlite3.OperationalError:
             pass
         self.conn.commit()
@@ -283,6 +302,52 @@ class Database:
                 "INSERT INTO settings(key,value) VALUES(?,?) "
                 "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
                 (key, json.dumps(value)))
+            self.conn.commit()
+
+    def image_dir(self) -> str:
+        """User-chosen image archive folder, or the default when unset."""
+        from .paths import default_archive_dir
+        v = self.setting("image_dir")
+        if not v:
+            return str(default_archive_dir())
+        return str(v)
+
+    # ---------------- ingested images ----------------
+
+    def add_image(self, rec: dict) -> int:
+        with self.lock:
+            c = self.conn.execute(
+                "INSERT INTO images(file,orig_name,object_id,object_name,"
+                "ra_hours,dec_deg,exposure,date_obs,filter,telescope,ingested_at)"
+                " VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+                (rec["file"], rec["orig_name"], rec.get("object_id"),
+                 rec["object_name"], rec.get("ra_hours"), rec.get("dec_deg"),
+                 rec.get("exposure"), rec.get("date_obs"), rec.get("filter"),
+                 rec.get("telescope"), rec["ingested_at"]))
+            self.conn.commit()
+            return c.lastrowid
+
+    def images(self) -> list[dict]:
+        return [dict(r) for r in self.conn.execute(
+            "SELECT * FROM images ORDER BY id")]
+
+    def rename_images(self, old_name: str, new_name: str, otype: str | None,
+                      new_folder: str):
+        """Rename an unresolved object group (name, type and stored paths)."""
+        with self.lock:
+            cur = self.conn.cursor()
+            cur.execute(
+                "UPDATE images SET object_name=?, otype=? "
+                "WHERE object_id IS NULL AND object_name=?",
+                (new_name, otype, old_name))
+            for r in cur.execute(
+                    "SELECT id, file FROM images "
+                    "WHERE object_id IS NULL AND object_name=?",
+                    (new_name,)).fetchall():
+                parts = r["file"].split("/", 1)
+                if len(parts) == 2 and parts[0] != new_folder:
+                    cur.execute("UPDATE images SET file=? WHERE id=?",
+                                (f"{new_folder}/{parts[1]}", r["id"]))
             self.conn.commit()
 
     def all_settings(self) -> dict:

@@ -59,9 +59,9 @@ export function renderNightInfo() {
   const lvlName = {astronomical:"astronomical", nautical:"nautical",
                    civil:"civil"}[N.twilight_level];
   $("#nightInfo").innerHTML =
-    `Sunset <b>${fmtHM(N.sunset)}</b> &middot; Sunrise <b>${fmtHM(N.sunrise)}</b><br>` +
+    `Sunset <b>${fmtHM(N.sunset)}</b> &middot; Sunrise <b>${fmtHM(N.sunrise)}</b> &middot; ` +
     `${lvlName ? lvlName[0].toUpperCase()+lvlName.slice(1) : "Dark"} night ` +
-    `<b>${fmtHM(N.dusk)}&ndash;${fmtHM(N.dawn)}</b> (${durStrLocal(N)})<br>` +
+    `<b>${fmtHM(N.dusk)}&ndash;${fmtHM(N.dawn)}</b> (${durStrLocal(N)}) &middot; ` +
     `Moon <b>${Math.round(N.moon_illum*100)}%</b> (${phaseName(N.moon_illum)})` +
     ` &middot; ${esc(moonUpDownText())}`;
   updateTimeLabel();

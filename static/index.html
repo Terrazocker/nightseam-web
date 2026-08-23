@@ -8,24 +8,24 @@
 </head>
 <body>
 <header id="topbar">
-  <div class="brand">
-    <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
-      <path d="M3 20 L17 4 L21 8 L7 22 Z"/><circle cx="19.5" cy="5" r="1.2"/><path d="M12 13l3 3"/>
+  <div class="brand" id="brand" title="Switch mode">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M12 2.81 L13.59 9.85 L20.63 11.44 L13.59 13.03 L12 20.06 L10.41 13.03 L3.38 11.44 L10.41 9.85 Z" fill="#ffd166" stroke="#d6a03c" stroke-width="0.5" stroke-linejoin="round"/>
+      <path d="M18.38 4.12 L18.93 6.38 L21.19 6.94 L18.93 7.49 L18.38 9.75 L17.82 7.49 L15.56 6.94 L17.82 6.38 Z" fill="#e9eefa"/>
     </svg>
     <span>Astro<em>Pilot</em></span>
   </div>
 
-  <div class="controls">
-    <span id="busy" class="hidden" title="computing..."></span>
+  <div id="plannerControls" class="controls">
     <label>Site
       <select id="siteSelect"></select>
     </label>
-    <button id="btnSites" class="ghost" title="Locations &amp; equipment">&#9881; Setup</button>
+    <button id="btnSites" class="ghost" title="Locations &amp; equipment">Setup</button>
     <label>Night of
       <input type="date" id="dateInput">
     </label>
     <div class="popwrap">
-      <button id="btnPrefs" class="ghost">&#9881; Preferences &#9662;</button>      <div id="prefsPanel" class="popover hidden">
+      <button id="btnPrefs" class="ghost">Preferences &#9662;</button>      <div id="prefsPanel" class="popover hidden">
         <h4>Preferences</h4>
         <label class="inline">Min useful altitude <span id="muaVal" class="mono">25&deg;</span></label>
         <input type="range" id="minUsefulAlt" min="5" max="70" step="1" value="25" style="width:100%">
@@ -63,7 +63,25 @@
     </div>
   </div>
 
-  <div id="nightInfo" class="nightinfo"></div>
+  <span id="busy" class="hidden" title="working..."><span class="busy-dot"></span><span class="busy-txt"></span></span>
+  <div class="topbar-right">
+    <div id="nightInfo" class="nightinfo"></div>
+    <span id="archiveInfo" class="archinfo mono hidden" title="Image archive folder"></span>
+    <button id="btnMode" class="ghost modebtn" title="Switch to the image catalog">
+      <svg class="ic ic-tel" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M4 13 L13 7 L17 11 L8 17 Z"/>
+        <path d="M17 11 L20 8"/>
+        <path d="M10.5 12.5 L7 20"/>
+        <path d="M10.5 12.5 L14 20"/>
+        <circle cx="18.5" cy="15" r="1" fill="currentColor" stroke="none"/>
+      </svg>
+      <svg class="ic ic-night hidden" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M20 12.8 A9 9 0 1 1 11.2 3 A7 7 0 0 0 20 12.8 Z" fill="currentColor" stroke="none"/>
+        <circle cx="5.5" cy="6.5" r="1" fill="currentColor" stroke="none"/>
+      </svg>
+      <span id="btnModeTxt">Image Catalog</span>
+    </button>
+  </div>
 </header>
 
 <nav id="tabs">
@@ -71,6 +89,12 @@
   <button data-tab="targets" class="tab">Targets</button>
   <button data-tab="sky" class="tab">Sky View</button>
   <button data-tab="horizon" class="tab">Horizon &amp; Obstacles</button>
+</nav>
+
+<nav id="tabs-cat">
+  <button data-tab="import" class="tab active">Import Exposures</button>
+  <button data-tab="library" class="tab">Library</button>
+  <button data-tab="skymap" class="tab">Sky Map</button>
 </nav>
 
 <main>
@@ -116,8 +140,9 @@
     <div class="tablewrap">
       <table id="targetTable">
         <thead><tr>
-          <th></th><th>Object</th><th>Type</th><th class="col-opt">Flt</th><th>Mag</th><th>Size</th>
-          <th class="col-opt">Frame</th><th class="col-opt">Con</th><th>Max alt</th><th>Night %</th><th>Clear window (best)</th><th>Status now</th>
+          <th></th><th>Object</th><th>Type</th><th>Mag</th><th>Size</th>
+          <th class="col-opt">Frame</th><th>Max alt</th><th>Night %</th>
+          <th>Clear window (best)</th><th>Status now</th>
         </tr></thead>
         <tbody id="targetRows"></tbody>
       </table>
@@ -212,6 +237,86 @@
       </div>
     </div>
   </section>
+
+  <!-- ================= IMPORT EXPOSURES ================= -->
+  <section id="tab-import" class="tabpane">
+    <div class="arch-layout">
+      <aside class="archpanel">
+        <h3>Image archive</h3>
+        <p class="hint">Copies of your original .fit/.fits files are stored here
+        (in a <span class="mono">lights</span> sub-folder per object). Originals
+        are never moved or modified.</p>
+        <div class="archrow">
+          <input type="text" id="arcDir" spellcheck="false" placeholder="C:\path\to\images">
+          <button id="btnArcBrowse" class="ghost" title="Browse for folder (native window)">Browse...</button>
+          <button id="btnArcSave">Save</button>
+        </div>
+        <p id="arcDirHint" class="hint"></p>
+
+        <h3>Import exposures</h3>
+        <p class="hint">Pick the light frames from your camera. The object is
+        identified from the FITS header (OBJECT, coordinates) and the file name.</p>
+        <div id="dropZone">
+          <input type="file" id="fitFiles" accept=".fit,.fits" multiple hidden>
+          <button id="btnIngest" class="primary">Import images...</button>
+          <p class="hint">or drop .fit / .fits files here</p>
+        </div>
+        <div id="archiveStats" class="archstats"></div>
+      </aside>
+      <div class="ingest-results">
+        <div class="ingest-toolbar">
+          <h3 style="margin:4px 0">Import results</h3>
+          <label class="inline"><input type="checkbox" id="chkErrOnly"> errors only</label>
+          <button id="btnClearResults" class="ghost">Clear</button>
+          <span id="ingestSummary" class="hint"></span>
+        </div>
+        <div id="ingestResults"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= LIBRARY ================= -->
+  <section id="tab-library" class="tabpane">
+    <div id="libToolbar" class="skytoolbar">
+      <label class="inline">Object size
+        <select id="libUnit">
+          <option value="arcmin">Arcminutes (&prime;)</option>
+          <option value="arcsec">Arcseconds (&Prime;)</option>
+          <option value="deg">Degrees (&deg;)</option>
+        </select>
+      </label>
+      <select id="libSort">
+        <option value="name">Sort: name</option>
+        <option value="integ">Sort: integration time</option>
+        <option value="sessions">Sort: sessions</option>
+      </select>
+      <span id="libSummary" class="hint"></span>
+    </div>
+    <div class="tablewrap">
+      <table id="libraryTable">
+        <thead><tr>
+          <th style="width:30px"></th><th>Object</th><th>Type</th><th>Size</th>
+          <th>Images</th><th>Integration</th><th>Sessions</th><th style="width:64px"></th>
+        </tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <p id="libEmpty" class="hint hidden">No images ingested yet &mdash; switch to the
+    Import Exposures tab and add your first .fit files.</p>
+  </section>
+
+  <!-- ================= SKY MAP ================= -->
+  <section id="tab-skymap" class="tabpane">
+    <div class="skytoolbar">
+      <label class="inline"><input type="checkbox" id="smLabels" checked> names</label>
+      <label class="inline"><input type="checkbox" id="smSize" checked> dot = integration time</label>
+      <label class="inline"><input type="checkbox" id="smCons" checked> constellations</label>
+      <span class="hint">static RA / Dec chart of everything in your library</span>
+    </div>
+    <div id="skyWrap"><canvas id="skymapCanvas"></canvas>
+      <div id="skymapTip" class="tooltip hidden"></div>
+    </div>
+  </section>
 </main>
 
 <!-- ============ object detail modal ============ -->
@@ -247,76 +352,123 @@
 <!-- ============ sites & equipment modal ============ -->
 <div id="sitesModal" class="modal hidden">
   <div class="modal-box">
-    <header><h2>Locations &amp; equipment</h2>
+    <header><h2>Setup</h2>
       <button class="close" id="sitesClose">&times;</button></header>
-    <table id="siteTable" class="std">
-      <thead><tr><th>Name</th><th>Lat</th><th>Lon</th><th>Elev m</th><th></th></tr></thead>
-      <tbody></tbody>
-    </table>
-    <h4>Add location</h4>
-    <form id="siteForm" class="formrow">
-      <input name="name" placeholder="Name" required maxlength="40">
-      <input name="lat" type="number" step="0.0001" min="-89.9" max="89.9" placeholder="Latitude" required>
-      <input name="lon" type="number" step="0.0001" min="-180" max="180" placeholder="Longitude" required>
-      <input name="elev" type="number" step="1" min="-100" max="6000" placeholder="Elev m" value="0">
-      <button type="submit">Add</button>
-      <button type="button" id="btnGeoLocate" class="ghost">Use my location</button>
-    </form>
-    <p id="siteCapsWarn" class="hint hidden" style="color:var(--warn)">&#9888; Caps Lock is ON</p>
-
-    <h3 style="margin-top:20px">Imaging rigs</h3>
-    <p class="hint">Telescope + camera combinations for the Frame&nbsp;% estimates.
-    The field of view is calculated from focal length and sensor size.</p>
-    <table id="rigTable" class="std">
-      <thead><tr><th>Name</th><th>Focal mm</th><th>Sensor mm</th><th>FOV</th><th></th></tr></thead>
-      <tbody></tbody>
-    </table>
-    <h4>Add rig</h4>
-    <form id="rigForm" class="formrow">
-      <input name="name" placeholder="Rig name" required maxlength="40" style="width:140px">
-      <input name="focal_mm" type="number" step="0.1" min="1" max="30000" placeholder="Focal mm" required style="width:95px">
-      <input name="sensor_w" type="number" step="0.01" min="0.5" max="300" placeholder="Sensor W mm" required style="width:105px">
-      <input name="sensor_h" type="number" step="0.01" min="0.5" max="300" placeholder="Sensor H mm" required style="width:105px">
-      <button type="submit">Add</button>
-    </form>
-    <p id="rigFovPreview" class="hint mono"></p>
-
-    <h3 style="margin-top:20px">My targets</h3>
-    <p class="hint">Add objects that are not in the built-in catalog. RA as decimal hours
-    (e.g. 5.575) or "5h 34m"; Dec as decimal degrees or "+22 01".</p>
-    <form id="customForm" class="formrow">
-      <input name="name" placeholder="Name" required maxlength="60" style="width:130px">
-      <input name="ra" placeholder="RA h [m s]" required style="width:95px">
-      <input name="dec" placeholder="Dec deg" required style="width:90px">
-      <select name="otype">
-        <option value="galaxy">Galaxy</option><option value="nebula">Nebula</option>
-        <option value="planetary">Planetary</option><option value="open_cluster">Open cl.</option>
-        <option value="globular">Globular</option><option value="asterism">Other</option>
-      </select>
-      <input name="vmag" type="number" step="0.1" min="-2" max="18" placeholder="mag" style="width:70px">
-      <button type="submit">Add</button>
-    </form>
-    <div id="customList" class="hint"></div>
-
-    <h4>Bulk import targets</h4>
-    <p class="hint">One per line: <span class="mono">Name, RA hours, Dec degrees[, mag[, size']]</span></p>
-    <textarea id="bulkTargets" rows="4" style="width:100%" placeholder="My comet, 5.34, +22.0, 9&#10;Sh2-999, 20.5, 44.2"></textarea>
-    <div class="rowbtns"><button id="btnBulkAdd">Parse &amp; add lines</button></div>
-
-    <h3 style="margin-top:20px">Backup &amp; transfer</h3>
-    <div class="rowbtns">
-      <a id="btnExport" class="btnlink" href="/api/export" download>Export setup (.zip)</a>
-      <button id="btnImport">Import setup...</button>
-      <input type="file" id="importFile" accept=".zip" hidden>
-      <button id="btnWizardReplay" class="ghost">&#9432; Replay introduction</button>
+    <div class="modal-tabs">
+      <button data-mtab="sites" class="tab active">Sites</button>
+      <button data-mtab="rigs" class="tab">Rigs</button>
+      <button data-mtab="targets" class="tab">Targets</button>
+      <button data-mtab="backup" class="tab">Backup</button>
     </div>
-    <p class="hint">Exports locations, rigs, panorama masks and all preferences.
-    Importing replaces the current setup (the catalog itself stays untouched).
-    A rolling database backup is kept as data\astropilot.db.backup.</p>
+
+    <div id="mtab-sites" class="mtabpane">
+      <p class="hint">Observing locations drive every altitude calculation.
+      The active site is used for all planning.</p>
+      <table id="siteTable" class="std">
+        <thead><tr><th>Name</th><th>Lat</th><th>Lon</th><th>Elev m</th><th></th></tr></thead>
+        <tbody></tbody>
+      </table>
+      <h4>Add location</h4>
+      <form id="siteForm" class="formrow">
+        <input name="name" placeholder="Name" required maxlength="40">
+        <input name="lat" type="number" step="0.0001" min="-89.9" max="89.9" placeholder="Latitude" required>
+        <input name="lon" type="number" step="0.0001" min="-180" max="180" placeholder="Longitude" required>
+        <input name="elev" type="number" step="1" min="-100" max="6000" placeholder="Elev m" value="0">
+        <button type="submit">Add</button>
+        <button type="button" id="btnGeoLocate" class="ghost">Use my location</button>
+      </form>
+      <p id="siteCapsWarn" class="hint hidden" style="color:var(--warn)">&#9888; Caps Lock is ON</p>
+    </div>
+
+    <div id="mtab-rigs" class="mtabpane hidden">
+      <p class="hint">Telescope + camera combinations for the Frame&nbsp;% estimates.
+      The field of view is calculated from focal length and sensor size.</p>
+      <table id="rigTable" class="std">
+        <thead><tr><th>Name</th><th>Focal mm</th><th>Sensor mm</th><th>FOV</th><th></th></tr></thead>
+        <tbody></tbody>
+      </table>
+      <h4>Add rig</h4>
+      <form id="rigForm" class="formrow">
+        <input name="name" placeholder="Rig name" required maxlength="40" style="width:140px">
+        <input name="focal_mm" type="number" step="0.1" min="1" max="30000" placeholder="Focal mm" required style="width:95px">
+        <input name="sensor_w" type="number" step="0.01" min="0.5" max="300" placeholder="Sensor W mm" required style="width:105px">
+        <input name="sensor_h" type="number" step="0.01" min="0.5" max="300" placeholder="Sensor H mm" required style="width:105px">
+        <button type="submit">Add</button>
+      </form>
+      <p id="rigFovPreview" class="hint mono"></p>
+    </div>
+
+    <div id="mtab-targets" class="mtabpane hidden">
+      <p class="hint">Add objects that are not in the built-in catalog. RA as
+      decimal hours (e.g. 5.575) or "5h 34m"; Dec as decimal degrees or "+22 01".</p>
+      <form id="customForm" class="formrow">
+        <input name="name" placeholder="Name" required maxlength="60" style="width:130px">
+        <input name="ra" placeholder="RA h [m s]" required style="width:95px">
+        <input name="dec" placeholder="Dec deg" required style="width:90px">
+        <select name="otype">
+          <option value="galaxy">Galaxy</option><option value="nebula">Nebula</option>
+          <option value="planetary">Planetary</option><option value="open_cluster">Open cl.</option>
+          <option value="globular">Globular</option><option value="asterism">Other</option>
+        </select>
+        <input name="vmag" type="number" step="0.1" min="-2" max="18" placeholder="mag" style="width:70px">
+        <button type="submit">Add</button>
+      </form>
+      <div id="customList" class="hint"></div>
+
+      <h4>Bulk import targets</h4>
+      <p class="hint">One per line: <span class="mono">Name, RA hours, Dec degrees[, mag[, size']]</span></p>
+      <textarea id="bulkTargets" rows="4" style="width:100%" placeholder="My comet, 5.34, +22.0, 9&#10;Sh2-999, 20.5, 44.2"></textarea>
+      <div class="rowbtns"><button id="btnBulkAdd">Parse &amp; add lines</button></div>
+    </div>
+
+    <div id="mtab-backup" class="mtabpane hidden">
+      <p class="hint">Exports locations, rigs, panorama masks and all preferences.
+      Importing replaces the current setup (the catalog itself stays untouched).
+      A rolling database backup is kept as data\astropilot.db.backup.</p>
+      <div class="rowbtns">
+        <a id="btnExport" class="btnlink" href="/api/export" download>Export setup (.zip)</a>
+        <button id="btnImport">Import setup...</button>
+        <input type="file" id="importFile" accept=".zip" hidden>
+        <button id="btnWizardReplay" class="ghost">Replay introduction</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ library object edit modal ============ -->
+<div id="libEditModal" class="modal hidden">
+  <div class="modal-box">
+    <header><h2>Edit library object</h2>
+      <button class="close" id="libEditClose">&times;</button></header>
+    <p class="hint">Rename the object and pick its type. The archive folder
+    (and the saved files in it) are renamed to match.</p>
+    <div class="formrow" style="flex-direction:column;align-items:stretch;gap:10px">
+      <label class="inline">Name
+        <input type="text" id="libEditName" maxlength="80" style="flex:1">
+      </label>
+      <label class="inline">Type
+        <select id="libEditType" style="flex:1">
+          <option value="">Unknown</option>
+          <option value="galaxy">Galaxy</option>
+          <option value="globular">Globular cluster</option>
+          <option value="open_cluster">Open cluster</option>
+          <option value="nebula">Nebula</option>
+          <option value="planetary">Planetary nebula</option>
+          <option value="supernova_remnant">Supernova remnant</option>
+          <option value="star_cloud">Star cloud</option>
+          <option value="asterism">Asterism</option>
+        </select>
+      </label>
+    </div>
+    <div class="rowbtns" style="justify-content:flex-end">
+      <button id="libEditCancel" class="ghost">Cancel</button>
+      <button id="libEditSave" class="primary">Save</button>
+    </div>
   </div>
 </div>
 
 <div id="toasts"></div>
+<div id="versionTag"></div>
 
 <!-- ============ first-run wizard ============ -->
 <div id="wizardModal" class="modal hidden">
