@@ -74,7 +74,7 @@ export function synthesizeAdvancedTracks(N) {
     for (const jd of jds) {
       const [a, z] = altazPrecessed(pr, pd, jd, site.lat, site.lon);
       alts.push(Math.round(a * 10) / 10);
-      azs.push(Math.round(z));
+      azs.push(Math.round(z * 10) / 10);       // parity with server rounding
       ceils.push(Math.round(ceil(z) * 10) / 10);
     }
     o.alt = alts; o.az = azs; o.ceil = ceils;

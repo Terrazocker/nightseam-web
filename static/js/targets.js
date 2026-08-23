@@ -109,7 +109,8 @@ export function renderTargets(fromPager = false) {
     sortObjects(rows);
     S.filteredIds = rows.map(r => r.m.id);
     S.lastRows = rows;
-    _page = 0;
+    // NB: the page is NOT reset here - scrub re-renders must keep it.
+    // resetPage() runs in the filter/sort handlers instead.
   }
   $("#resultCount").textContent =
     `${rows.length.toLocaleString()} of ${S.catalog.length.toLocaleString()} objects` +

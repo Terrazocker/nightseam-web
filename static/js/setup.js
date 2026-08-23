@@ -174,7 +174,7 @@ export function bindSetup() {
 }
 
 async function refreshCatalogMeta() {
-  S.catalog = await api("/api/catalog");
+  S.catalog = await api("/api/catalog" + (S.cfg.adv_mode ? "?adv=1" : ""));
   S.meta = {};
   for (const o of S.catalog) S.meta[o.id] = o;
 }

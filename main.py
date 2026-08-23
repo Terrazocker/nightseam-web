@@ -114,10 +114,10 @@ class JsApi:
     def pick_archive_dir(self, current: str = "") -> str | None:
         """Open a native folder-picker dialog for the image archive path."""
         import webview
-        win = webview.windows[0]
-        start = current if current and os.path.isdir(current) \
-            else str(Path.home())
         try:
+            win = webview.windows[0]
+            start = current if current and os.path.isdir(current) \
+                else str(Path.home())
             picked = win.create_file_dialog(webview.FOLDER_DIALOG,
                                             directory=start)
         except Exception:  # noqa: BLE001
