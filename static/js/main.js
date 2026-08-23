@@ -48,7 +48,7 @@ function renderAll() {
 async function loadState() {
   S.cfg = await api("/api/state");
   S.minAlt = S.cfg.min_useful_alt ?? 25;
-  S.catalog = await api("/api/catalog");
+  S.catalog = await api("/api/catalog" + (S.cfg.adv_mode ? "?adv=1" : ""));
   S.meta = {};
   for (const o of S.catalog) S.meta[o.id] = o;
   S.panos = await api("/api/panoramas");

@@ -14,4 +14,5 @@ export const S = {
   panos: [],          // full panorama records incl profile
   catmode: false,     // Image Archive mode active
   library: null,      // /api/library
+  disabledTypes: new Set(),   // object types greyed out on the sky charts
 };

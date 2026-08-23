@@ -62,6 +62,7 @@ export function renderSkyMap() {
   const pts = [];
   for (const o of objs) {
     if (o.ra_hours == null || o.dec_deg == null) continue;
+    if (S.disabledTypes.has(o.otype)) continue;      // legend off
     const mins = o.total_exposure / 60;
     const r = sizeByInteg ? 3 + 9 * Math.sqrt(mins / maxMin) : 4.5;
     const col = TYPE_COLOR[o.otype] || "#ffd166";
@@ -190,8 +191,12 @@ function onMove(ev) {
       `<b>${fmtDurShort(o.total_exposure)}</b> \u00B7 ${sess}` +
       (o.ra_hours != null ? `<br>RA ${o.ra_hours.toFixed(2)}h \u00B7 Dec ${o.dec_deg.toFixed(2)}\u00B0` : "");
     tip.classList.remove("hidden");
-    tip.style.left = (rect.left + best.x + 14) + "px";
-    tip.style.top = (rect.top + best.y + 10) + "px";
+    // place next to the cursor, flipped when it would leave the window
+    tip.style.left = (ev.clientX + 16) + "px";
+    tip.style.top = (ev.clientY + 14) + "px";
+    const r = tip.getBoundingClientRect();
+    if (r.right > window.innerWidth - 6) tip.style.left = (ev.clientX - r.width - 12) + "px";
+    if (r.bottom > window.innerHeight - 6) tip.style.top = (ev.clientY - r.height - 10) + "px";
   } else tip.classList.add("hidden");
 }
 
@@ -210,11 +215,20 @@ export function bindSkyMap() {
     $(`#${id}`).addEventListener("change", renderSkyMap);
   }
 
-  // object-type color legend
+  // object-type color legend (click a chip to grey that type out)
   const lg = $("#smLegend");
   if (lg) {
     lg.innerHTML = Object.keys(TYPE_COLOR).map(t =>
-      `<div class="lgchip" style="--c:${TYPE_COLOR[t]}"><i></i>${TYPE_LABEL[t] || t}</div>`
+      `<div class="lgchip${S.disabledTypes.has(t) ? " off" : ""}" data-type="${t}" style="--c:${TYPE_COLOR[t]}"><i></i>${TYPE_LABEL[t] || t}</div>`
     ).join("");
+    lg.addEventListener("click", e => {
+      const chip = e.target.closest("[data-type]");
+      if (!chip) return;
+      const t = chip.dataset.type;
+      S.disabledTypes.has(t) ? S.disabledTypes.delete(t) : S.disabledTypes.add(t);
+      chip.classList.toggle("off", S.disabledTypes.has(t));
+      SM_HOVER = null;
+      renderSkyMap();
+    });
   }
 }

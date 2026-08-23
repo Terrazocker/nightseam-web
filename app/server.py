@@ -53,6 +53,7 @@ class SettingsIn(BaseModel):
     wizard_done: Optional[bool] = None
     image_dir: Optional[str] = None
     edge_space: Optional[int] = None
+    adv_mode: Optional[bool] = None
 
 
 class RigIn(BaseModel):
@@ -151,7 +152,8 @@ def ceil_lookup(profile: list[float]):
 
 def compute_night(db: Database, lat: float, lon: float, elev_m: int,
                   date_local: str, tz_off_min: int,
-                  profile: list[float]) -> dict:
+                  profile: list[float],
+                  advanced: bool = False) -> dict:
     y, m, d = map(int, date_local.split("-")[:3])
     win = night_window(y, m, d, tz_off_min, lat, lon)
     dusk, dawn = win["dusk"], win["dawn"]
@@ -185,9 +187,18 @@ def compute_night(db: Database, lat: float, lon: float, elev_m: int,
 
     ceil_fn = ceil_lookup(profile)
 
-    objs = db.all_objects()
+    objs = db.all_objects(advanced=advanced)
     out_objects = []
     for o in objs:
+        if advanced and o.get("_adv"):
+            # metadata only - the client synthesizes the tracks locally to
+            # keep the payload small for ~12k objects
+            out_objects.append({
+                "id": o["id"], "adv": True,
+                "ra_hours": o["ra_hours"], "dec_deg": o["dec_deg"],
+                "vmag": o.get("vmag"), "otype": o.get("otype"),
+            })
+            continue
         ra = o["ra_hours"] * 15.0
         dec = o["dec_deg"]
         alts, azs, ceils = [], [], []
@@ -469,6 +480,7 @@ def create_app(db: Database) -> FastAPI:
             "profile_len": PROFILE_BINS,
             "image_dir": db.image_dir(),
             "edge_space": db.setting("edge_space", 200),
+            "adv_mode": bool(db.setting("adv_mode", False)),
         }
 
     @app.post("/api/settings")
@@ -504,6 +516,8 @@ def create_app(db: Database) -> FastAPI:
         if body.edge_space is not None:
             db.set_setting("edge_space",
                            max(0, min(1000, int(body.edge_space))))
+        if body.adv_mode is not None:
+            db.set_setting("adv_mode", bool(body.adv_mode))
         return {"ok": True}
 
     # ---------------- sites ----------------
@@ -555,12 +569,13 @@ def create_app(db: Database) -> FastAPI:
     # ---------------- catalog + night ----------------
 
     @app.get("/api/catalog")
-    def api_catalog():
-        return db.all_objects()
+    def api_catalog(adv: bool = False):
+        return [{k: v for k, v in o.items() if k != "_adv"}
+                for o in db.all_objects(advanced=adv)]
 
     @app.get("/api/night")
     def api_night(date: str, tz_offset_min: int, site: Optional[int] = None,
-                  pano: Optional[str] = None):
+                  pano: Optional[str] = None, adv: bool = False):
         site_row = None
         if site is not None:
             site_row = next((s for s in db.sites() if s["id"] == site), None)
@@ -580,7 +595,7 @@ def create_app(db: Database) -> FastAPI:
         try:
             result = compute_night(db, site_row["lat"], site_row["lon"],
                                    site_row["elev"], date, tz_offset_min,
-                                   profile)
+                                   profile, advanced=adv)
         except Exception as exc:  # noqa: BLE001
             raise HTTPException(500, f"Computation failed: {exc}") from exc
         return JSONResponse(result)
@@ -869,7 +884,7 @@ def create_app(db: Database) -> FastAPI:
         except OSError as exc:
             raise HTTPException(
                 500, f"Cannot create archive folder {archive}: {exc}")
-        catalog = db.all_objects()
+        catalog = db.all_objects(advanced=True)
         results = []
         for f in files:
             name = Path(f.filename or "image.fit").name
@@ -881,7 +896,7 @@ def create_app(db: Database) -> FastAPI:
     def api_library():
         from . import imglib
         imgs = db.images()
-        objs = imglib.group_library(imgs, db.all_objects())
+        objs = imglib.group_library(imgs, db.all_objects(advanced=True))
         return {
             "image_dir": db.image_dir(),
             "total_images": len(imgs),

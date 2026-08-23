@@ -42,6 +42,49 @@ function nightIndexRange() {
   return [i0, Math.max(i0, i1)];
 }
 
+/* ---------------- advanced catalog: synthesize tracks client-side -------- */
+
+import { julianDay, precessJ2000ToDate, altazPrecessed } from "./astro.js";
+
+const NO_BLOCK = -90.0;
+const BINS = 720;
+
+function ceilLookup(profile) {
+  if (!profile || profile.length !== BINS) return () => NO_BLOCK;
+  return az => {
+    let i = Math.floor(((az % 360) + 360) % 360 / 0.5);
+    if (i >= BINS) i = BINS - 1;
+    const v = profile[i];
+    return v == null ? NO_BLOCK : v;
+  };
+}
+
+/* The server ships advanced-mode objects as metadata only; compute their
+   alt/az/ceil tracks here (precession once per object at the grid midpoint,
+   then per-sample alt/az) so all views work unchanged. */
+export function synthesizeAdvancedTracks(N) {
+  const site = N.site;
+  const jds = N.timeline.times_iso.map(iso => julianDay(parseUTC(iso)));
+  const refJd = jds[Math.floor(jds.length / 2)];
+  const ceil = ceilLookup(activeProfile());
+  for (const o of N.objects) {
+    if (!o.adv) continue;
+    const [pr, pd] = precessJ2000ToDate(o.ra_hours * 15, o.dec_deg, refJd);
+    const alts = [], azs = [], ceils = [];
+    for (const jd of jds) {
+      const [a, z] = altazPrecessed(pr, pd, jd, site.lat, site.lon);
+      alts.push(Math.round(a * 10) / 10);
+      azs.push(Math.round(z));
+      ceils.push(Math.round(ceil(z) * 10) / 10);
+    }
+    o.alt = alts; o.az = azs; o.ceil = ceils;
+    let maxi = 0;
+    for (let i = 1; i < alts.length; i++) if (alts[i] > alts[maxi]) maxi = i;
+    o.max_alt = alts[maxi];
+    o.max_i = maxi;
+  }
+}
+
 export function recomputeNightDerived() {
   const N = S.night;
   if (!N) return;

@@ -24,6 +24,7 @@ Write-Host "Baking version '$ver' into the build"
     --name AstroPilot `
     --icon "assets\app.ico" `
     --add-data "static;static" `
+    --add-data "app\data;app\data" `
     --collect-all uvicorn `
     --collect-all webview `
     --hidden-import python_multipart `

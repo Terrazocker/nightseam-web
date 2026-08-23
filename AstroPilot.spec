@@ -1,7 +1,7 @@
 # -*- mode: python ; coding: utf-8 -*-
 from PyInstaller.utils.hooks import collect_all
 
-datas = [('static', 'static')]
+datas = [('static', 'static'), ('app/data', 'app/data')]
 binaries = []
 hiddenimports = ['python_multipart']
 tmp_ret = collect_all('uvicorn')

@@ -113,13 +113,22 @@ export function bindSky() {
     SKY_HOVER = null; renderSky();
   });
 
-  // object-type color legend
+  // object-type color legend (click a chip to grey that type out)
   const lg = $("#typeLegend");
   if (lg) {
     lg.innerHTML = Object.keys(TYPE_COLOR).map(t =>
-      `<span class="lgchip" style="--c:${TYPE_COLOR[t]}"><i></i>${TYPE_LABEL[t] || t}</span>`
+      `<span class="lgchip${S.disabledTypes.has(t) ? " off" : ""}" data-type="${t}" style="--c:${TYPE_COLOR[t]}"><i></i>${TYPE_LABEL[t] || t}</span>`
     ).join("") +
     `<span class="lgchip" style="--c:#ffd700"><i></i>&#9733; session target</span>`;
+    lg.addEventListener("click", e => {
+      const chip = e.target.closest("[data-type]");
+      if (!chip) return;
+      const t = chip.dataset.type;
+      S.disabledTypes.has(t) ? S.disabledTypes.delete(t) : S.disabledTypes.add(t);
+      chip.classList.toggle("off", S.disabledTypes.has(t));
+      SKY_HOVER = null;
+      renderSky();
+    });
   }
 }
 
@@ -306,6 +315,8 @@ export function renderSky() {
   // objects (dots) + collected label candidates, decluttered afterwards
   const labels = $("#showLabels").checked;
   const magLimit = +(($("#skyMag")||{}).value ?? 14);
+  const bigCatalog = S.night.objects.length > 3000;   // advanced mode
+  const labelMagMax = bigCatalog ? 8.5 : 99;          // label bright ones only
   const favs = new Set(S.cfg.favorites || []);
   const pts=[];
   const labelCands=[];
@@ -315,7 +326,10 @@ export function renderSky() {
     // keep the sky view in sync with the Targets tab filters
     const showAll = ($("#showAll")||{}).checked !== false;
     if (!isHover && !showAll && !passesFilters(m, o)) continue;
+    if (!isHover && S.disabledTypes.has(m.otype)) continue;  // legend off
     if (m.vmag != null && m.vmag > magLimit) continue;
+    // objects with no measured magnitude only appear at the show-all end
+    if (m.vmag == null && magLimit < +($("#skyMag")||{}).max) continue;
     const alt=o.alt[S.tIdx], az=o.az[S.tIdx];
     if (alt<-3) continue;
     const [x,y]=azToXY(cx,cy,R,az,alt);
@@ -334,7 +348,7 @@ export function renderSky() {
       ctx.beginPath(); ctx.arc(x,y,dotR+3.4,0,7); ctx.stroke();
     }
     pts.push({x,y,id:o.id});
-    if (labels && alt>0 && shortName(m)) {
+    if (labels && alt>0 && shortName(m) && (m.vmag ?? 99) <= labelMagMax) {
       labelCands.push({ x, y, alt,
         text: shortName(m), isHover: !!isHover,
         prio: m.vmag != null ? m.vmag : 12 });
@@ -419,7 +433,11 @@ function skyHover(ev){
     tip.innerHTML=`<b>${esc(m.primary_name)}</b> <span style="color:#8b93a8">${esc(desigLine(m))}</span><br>`+
       `alt ${o.alt[S.tIdx].toFixed(1)}\u00B0 &middot; az ${o.az[S.tIdx].toFixed(0)}\u00B0<br>${statusOf(o,S.tIdx).text}`;
     tip.classList.remove("hidden");
-    tip.style.left=(rect.left+p.x+14)+"px";
-    tip.style.top=(rect.top+p.y+10)+"px";
+    // place next to the cursor, flipped when it would leave the window
+    tip.style.left=(ev.clientX+16)+"px";
+    tip.style.top=(ev.clientY+14)+"px";
+    const r=tip.getBoundingClientRect();
+    if(r.right>window.innerWidth-6) tip.style.left=(ev.clientX-r.width-12)+"px";
+    if(r.bottom>window.innerHeight-6) tip.style.top=(ev.clientY-r.height-10)+"px";
   } else $("#skyTip").classList.add("hidden");
 }

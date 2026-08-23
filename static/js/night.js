@@ -2,7 +2,8 @@
 
 import { $, api, setBusy, tzOff, toast } from "./util.js";
 import { S } from "./state.js";
-import { recomputeNightDerived, timeIndexFor } from "./derive.js";
+import { recomputeNightDerived, timeIndexFor,
+         synthesizeAdvancedTracks } from "./derive.js";
 
 let _nightCtl = null;
 let _nightTimer = null;
@@ -26,9 +27,11 @@ async function doLoadNight() {
     const date = $("#dateInput").value || new Date().toLocaleDateString("sv");
     const q = new URLSearchParams({ date, tz_offset_min: tzOff() });
     if (sel.value) q.set("site", sel.value);   // empty string would 422
+    if (S.cfg && S.cfg.adv_mode) q.set("adv", "1");
     const N = await api("/api/night?" + q, { signal: ctl.signal, silent: true });
     if (ctl !== _nightCtl) return;              // superseded meanwhile
 
+    if (N.objects.some(o => o.adv)) synthesizeAdvancedTracks(N);
     S.night = N;
     const n = N.timeline.n;
     const nowIdx = timeIndexFor(new Date());

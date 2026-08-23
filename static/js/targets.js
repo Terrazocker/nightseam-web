@@ -1,22 +1,35 @@
-/* Targets tab: filters, sorting, table rendering */
+/* Targets tab: filters, sorting, paginated table rendering */
 
 import { $, esc, api, fmtSize, TYPE_LABEL, TYPE_COLOR, constName } from "./util.js";
 import { S, IMG_VER } from "./state.js";
 import { statusOf, windowText, desigLine,
          objScore, filterAdvice, frameCoverage, coverageCell } from "./derive.js";
 
+const PAGE_SIZE = 250;
+let _page = 0;
+
+function resetPage() { _page = 0; }
+
 export function bindFilters() {
   let deb;
   $("#fSearch").addEventListener("input", () => {
-    clearTimeout(deb); deb = setTimeout(renderTargets, 120);
+    clearTimeout(deb); deb = setTimeout(() => { resetPage(); renderTargets(); }, 120);
   });
-  $("#fType").addEventListener("change", renderTargets);
+  $("#fType").addEventListener("change", () => { resetPage(); renderTargets(); });
   $("#fMag").addEventListener("input", e => {
     $("#magVal").textContent = (+e.target.value).toFixed(1);
-    renderTargets();
+    resetPage(); renderTargets();
   });
-  $("#fUnblocked").addEventListener("change", renderTargets);
-  $("#fFav").addEventListener("change", renderTargets);
+  $("#fUnblocked").addEventListener("change", () => { resetPage(); renderTargets(); });
+  $("#fFav").addEventListener("change", () => { resetPage(); renderTargets(); });
+  $("#fSort").addEventListener("change", () => { resetPage(); renderTargets(); });
+  $("#pagerPrev").addEventListener("click", () => {
+    if (_page > 0) { _page--; renderTargets(true); }
+  });
+  $("#pagerNext").addEventListener("click", () => {
+    const n = Math.ceil((S.lastRows ? S.lastRows.length : 0) / PAGE_SIZE);
+    if (_page < n - 1) { _page++; renderTargets(true); }
+  });
   $("#targetRows").addEventListener("click", e => {
     const star = e.target.closest("[data-fav]");
     if (star) {
@@ -80,25 +93,37 @@ function thumbHTML(id) {
     onerror="this.onerror=null;this.src='data:image/gif;base64,R0lGODlhAQABAIAAAP///wAAACH5BAEAAAAALAAAAAABAAEAAAICRAEAOw=='">`;
 }
 
-export function renderTargets() {
+export function renderTargets(fromPager = false) {
   if (!S.night) return;
-  const rows = [];
-  for (const o of S.night.objects) {
-    const m = S.meta[o.id];
-    if (!m) continue;
-    if (!passesFilters(m, o)) continue;
-    rows.push({o, m});
+  let rows;
+  if (fromPager && S.lastRows) {
+    rows = S.lastRows;
+  } else {
+    rows = [];
+    for (const o of S.night.objects) {
+      const m = S.meta[o.id];
+      if (!m) continue;
+      if (!passesFilters(m, o)) continue;
+      rows.push({o, m});
+    }
+    sortObjects(rows);
+    S.filteredIds = rows.map(r => r.m.id);
+    S.lastRows = rows;
+    _page = 0;
   }
-  sortObjects(rows);
-  S.filteredIds = rows.map(r => r.m.id);
-  S.lastRows = rows;
-  $("#resultCount").textContent = `${rows.length} objects`;
+  $("#resultCount").textContent =
+    `${rows.length.toLocaleString()} of ${S.catalog.length.toLocaleString()} objects` +
+    (rows.length < S.catalog.length ? " \u00B7 filtered" : "");
+
+  const pages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
+  if (_page >= pages) _page = pages - 1;
+  const pageRows = rows.slice(_page * PAGE_SIZE, (_page + 1) * PAGE_SIZE);
 
   const stClass = {vis:"st-vis", blk:"st-blk", low:"st-low", hor:"st-hor"};
   const unit = (S.cfg && S.cfg.size_unit) || "arcmin";
   const favs = new Set(S.cfg.favorites || []);
 
-  $("#targetRows").innerHTML = rows.map(({o,m}) => {
+  $("#targetRows").innerHTML = pageRows.map(({o,m}) => {
     const st = statusOf(o, S.tIdx);
     const adv = filterAdvice(m);
     const cov = frameCoverage(m);
@@ -116,4 +141,11 @@ export function renderTargets() {
       <td><span class="statuspill ${stClass[st.code]}">${st.text}</span></td>
     </tr>`;
   }).join("");
+
+  const pager = $("#targetPager");
+  pager.classList.toggle("hidden", pages <= 1);
+  $("#pagerInfo").textContent =
+    `Page ${_page + 1} / ${pages} \u00B7 ${pageRows.length} shown`;
+  $("#pagerPrev").disabled = _page === 0;
+  $("#pagerNext").disabled = _page >= pages - 1;
 }

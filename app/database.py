@@ -84,13 +84,28 @@ CREATE TABLE IF NOT EXISTS images (
     telescope TEXT,
     ingested_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS advanced_objects (
+    id TEXT PRIMARY KEY,
+    primary_name TEXT,
+    messier TEXT, ngcic TEXT, other TEXT,
+    otype TEXT,
+    ra_hours REAL, dec_deg REAL,
+    vmag REAL, size_am TEXT,
+    constellation TEXT,
+    distance TEXT,
+    wiki TEXT,
+    blurb TEXT,
+    search TEXT
+);
 """
 
 
 class Database:
     def __init__(self, db_path: Path):
         self.path = db_path
-        self.lock = threading.Lock()
+        # reentrant: read methods wrap their queries too, so the shared
+        # sqlite connection is never used from two threads at once
+        self.lock = threading.RLock()
         self.conn = sqlite3.connect(str(db_path), check_same_thread=False)
         self.conn.row_factory = sqlite3.Row
         self.conn.executescript(SCHEMA)
@@ -104,6 +119,7 @@ class Database:
             pass
         self.conn.commit()
         self.seed_catalog()
+        self.seed_advanced_catalog()
         self.make_backup()
 
     def make_backup(self) -> None:
@@ -117,11 +133,11 @@ class Database:
     # ---------------- catalog ----------------
 
     def seed_catalog(self):
-        cur = self.conn.execute("SELECT COUNT(*) FROM objects")
-        if cur.fetchone()[0] >= len(catalog_data.rows()):
-            return
-        rows = catalog_data.rows()
         with self.lock:
+            cur = self.conn.execute("SELECT COUNT(*) FROM objects")
+            if cur.fetchone()[0] >= len(catalog_data.rows()):
+                return
+            rows = catalog_data.rows()
             self.conn.executemany(
                 """INSERT OR IGNORE INTO objects VALUES
                    (:id,:primary_name,:messier,:ngcic,:other,:otype,:ra_hours,:dec_deg,
@@ -130,23 +146,76 @@ class Database:
             )
             self.conn.commit()
 
-    def all_objects(self) -> list[dict]:
-        builtin = [dict(r) for r in self.conn.execute(
-            "SELECT * FROM objects ORDER BY messier IS NULL, "
-            "CAST(SUBSTR(messier,2) AS INTEGER), id")]
-        custom = [dict(r) for r in self.conn.execute(
-            "SELECT * FROM custom_objects ORDER BY primary_name")]
-        return custom + builtin
+    def all_objects(self, advanced: bool = False) -> list[dict]:
+        with self.lock:
+            builtin = [dict(r) for r in self.conn.execute(
+                "SELECT * FROM objects ORDER BY messier IS NULL, "
+                "CAST(SUBSTR(messier,2) AS INTEGER), id")]
+            custom = [dict(r) for r in self.conn.execute(
+                "SELECT * FROM custom_objects ORDER BY primary_name")]
+            out = custom + builtin
+            if advanced:
+                adv = [dict(r) for r in self.conn.execute(
+                    "SELECT * FROM advanced_objects ORDER BY id")]
+                for r in adv:
+                    r["_adv"] = True
+                out.extend(adv)
+        return out
+
+    def advanced_count(self) -> int:
+        with self.lock:
+            r = self.conn.execute(
+                "SELECT COUNT(*) FROM advanced_objects").fetchone()
+            return r[0]
+
+    def seed_advanced_catalog(self):
+        """Bulk-load the bundled OpenNGC-derived catalog (app/data/openned.csv)
+        into advanced_objects. Insert-only; safe to run on every start."""
+        import csv as csvmod
+        from .paths import resource_dir
+        csv_path = resource_dir() / "app" / "data" / "openned.csv"
+        if not csv_path.exists():
+            return
+        expected = _csv_adv_count(csv_path)
+        if self.advanced_count() >= expected:
+            return
+        cols = ("id", "primary_name", "messier", "ngcic", "other", "otype",
+                "ra_hours", "dec_deg", "vmag", "size_am", "constellation",
+                "distance", "wiki", "blurb", "search")
+        rows = []
+        with open(csv_path, encoding="utf-8") as f:
+            for line in f:
+                if line.startswith("#"):
+                    continue
+                vals = line.rstrip("\n").split(";")
+                if len(vals) != len(cols):
+                    continue
+                d = dict(zip(cols, vals))
+                d["ra_hours"] = float(d["ra_hours"]) if d["ra_hours"] else None
+                d["dec_deg"] = float(d["dec_deg"]) if d["dec_deg"] else None
+                d["vmag"] = float(d["vmag"]) if d["vmag"] else None
+                rows.append(tuple(d[c] for c in cols))
+        with self.lock:
+            self.conn.executemany(
+                "INSERT OR IGNORE INTO advanced_objects VALUES "
+                f"({','.join('?' * len(cols))})", rows)
+            self.conn.commit()
 
     def get_object(self, oid: str) -> dict | None:
-        r = self.conn.execute("SELECT * FROM objects WHERE id=?", (oid,)).fetchone()
-        if r:
-            return dict(r)
-        r = self.conn.execute("SELECT * FROM custom_objects WHERE id=?",
-                              (oid,)).fetchone()
-        if not r:
-            return None
-        d = dict(r)
+        with self.lock:
+            r = self.conn.execute("SELECT * FROM objects WHERE id=?",
+                                  (oid,)).fetchone()
+            if r:
+                return dict(r)
+            r = self.conn.execute("SELECT * FROM custom_objects WHERE id=?",
+                                  (oid,)).fetchone()
+            if not r:
+                r = self.conn.execute(
+                    "SELECT * FROM advanced_objects WHERE id=?",
+                    (oid,)).fetchone()
+            if not r:
+                return None
+            d = dict(r)
         # normalize to the shape the rest of the app expects
         for k in ("messier", "ngcic", "other"):
             d.setdefault(k, "")
@@ -180,14 +249,17 @@ class Database:
             self.conn.commit()
 
     def is_custom(self, cid: str) -> bool:
-        r = self.conn.execute(
-            "SELECT 1 FROM custom_objects WHERE id=?", (cid,)).fetchone()
-        return r is not None
+        with self.lock:
+            r = self.conn.execute(
+                "SELECT 1 FROM custom_objects WHERE id=?", (cid,)).fetchone()
+            return r is not None
 
     # ---------------- sites ----------------
 
     def sites(self) -> list[dict]:
-        return [dict(r) for r in self.conn.execute("SELECT * FROM sites ORDER BY id")]
+        with self.lock:
+            return [dict(r) for r in self.conn.execute(
+                "SELECT * FROM sites ORDER BY id")]
 
     def add_site(self, name: str, lat: float, lon: float, elev: int) -> int:
         with self.lock:
@@ -212,7 +284,9 @@ class Database:
     # ---------------- rigs ----------------
 
     def rigs(self) -> list[dict]:
-        return [dict(r) for r in self.conn.execute("SELECT * FROM rigs ORDER BY id")]
+        with self.lock:
+            return [dict(r) for r in self.conn.execute(
+                "SELECT * FROM rigs ORDER BY id")]
 
     def add_rig(self, name: str, focal_mm: float, sensor_w: float,
                 sensor_h: float, fov_w: float, fov_h: float) -> int:
@@ -234,13 +308,15 @@ class Database:
     # ---------------- panoramas ----------------
 
     def panoramas(self) -> list[dict]:
-        out = []
-        for r in self.conn.execute("SELECT * FROM panoramas ORDER BY rowid DESC"):
-            d = dict(r)
-            d["strokes"] = json.loads(d["strokes"])
-            d["profile"] = json.loads(d["profile"])
-            out.append(d)
-        return out
+        with self.lock:
+            out = []
+            for r in self.conn.execute(
+                    "SELECT * FROM panoramas ORDER BY rowid DESC"):
+                d = dict(r)
+                d["strokes"] = json.loads(d["strokes"])
+                d["profile"] = json.loads(d["profile"])
+                out.append(d)
+            return out
 
     def active_panorama(self) -> dict | None:
         for p in self.panoramas():
@@ -288,13 +364,16 @@ class Database:
     # ---------------- settings ----------------
 
     def setting(self, key: str, default=None):
-        r = self.conn.execute("SELECT value FROM settings WHERE key=?", (key,)).fetchone()
-        if not r:
-            return default
-        try:
-            return json.loads(r["value"])
-        except Exception:
-            return default
+        with self.lock:
+            r = self.conn.execute(
+                "SELECT value FROM settings WHERE key=?",
+                (key,)).fetchone()
+            if not r:
+                return default
+            try:
+                return json.loads(r["value"])
+            except Exception:
+                return default
 
     def set_setting(self, key: str, value):
         with self.lock:
@@ -328,8 +407,9 @@ class Database:
             return c.lastrowid
 
     def images(self) -> list[dict]:
-        return [dict(r) for r in self.conn.execute(
-            "SELECT * FROM images ORDER BY id")]
+        with self.lock:
+            return [dict(r) for r in self.conn.execute(
+                "SELECT * FROM images ORDER BY id")]
 
     def rename_images(self, old_name: str, new_name: str, otype: str | None,
                       new_folder: str):
@@ -351,13 +431,14 @@ class Database:
             self.conn.commit()
 
     def all_settings(self) -> dict:
-        out = {}
-        for r in self.conn.execute("SELECT key,value FROM settings"):
-            try:
-                out[r["key"]] = json.loads(r["value"])
-            except Exception:
-                pass
-        return out
+        with self.lock:
+            out = {}
+            for r in self.conn.execute("SELECT key,value FROM settings"):
+                try:
+                    out[r["key"]] = json.loads(r["value"])
+                except Exception:
+                    pass
+            return out
 
     def import_bundle(self, settings: dict, sites: list, rigs: list,
                       panoramas: list) -> None:
@@ -394,6 +475,16 @@ class Database:
                     "INSERT INTO settings(key,value) VALUES(?,?)",
                     (k, json.dumps(v)))
             self.conn.commit()
+
+
+def _csv_adv_count(csv_path: Path) -> int:
+    n = 0
+    with open(csv_path, encoding="utf-8") as f:
+        for line in f:
+            if line.startswith("#") or not line.strip():
+                continue
+            n += 1
+    return n
 
 
 def new_id() -> str:

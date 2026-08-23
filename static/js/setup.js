@@ -121,6 +121,18 @@ export function bindSetup() {
     });
   }
 
+  // advanced catalog mode
+  $("#advMode").addEventListener("change", async e => {
+    await api("/api/settings", { method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({ adv_mode: e.target.checked })});
+    toast(e.target.checked
+      ? "Advanced mode enabled - loading the full catalog..."
+      : "Advanced mode disabled - loading the standard catalog...",
+      "info", 4000);
+    setTimeout(() => location.reload(), 700);
+  });
+
   // backup / transfer
   $("#btnImport").addEventListener("click", () => $("#importFile").click());
   $("#importFile").addEventListener("change", async e => {
@@ -158,27 +170,6 @@ export function bindSetup() {
       toast("Target added to your catalog.", "info", 3500);
       await refreshCatalogMeta(); renderCustomList(); renderTargets();
     } catch (err) { /* api() already toasted */ }
-  });
-  $("#btnBulkAdd").addEventListener("click", async () => {
-    const lines = $("#bulkTargets").value.split(/\r?\n/).map(l => l.trim())
-                    .filter(l => l && !l.startsWith("#"));
-    if (!lines.length) return;
-    let ok = 0, bad = 0;
-    for (const line of lines) {
-      const p = line.split(/[,;\t]/).map(x => x.trim());
-      try {
-        await api("/api/catalog/custom", { method:"POST",
-          headers:{"Content-Type":"application/json"},
-          body: JSON.stringify({ name:p[0], ra:p[1], dec:p[2],
-            vmag: p[3] ? parseFloat(p[3]) : null,
-            size_am: p[4] ? p[4] : "" })});
-        ok++;
-      } catch (err) { bad++; }
-    }
-    $("#bulkTargets").value = "";
-    await refreshCatalogMeta(); renderCustomList(); renderTargets();
-    toast(`Bulk import: ${ok} added${bad ? ", " + bad + " skipped" : ""}.`,
-          bad ? "err" : "info", 6000);
   });
 }
 
@@ -229,6 +220,17 @@ export function applyCfgToUI() {
   $("#sizeUnit").value = S.cfg.size_unit || "arcmin";
   if ($("#libUnit")) $("#libUnit").value = S.cfg.size_unit || "arcmin";
   applyEdgeSpace(S.cfg.edge_space ?? 200);
+  if ($("#advMode")) $("#advMode").checked = !!S.cfg.adv_mode;
+  $("#fMag").max = S.cfg.adv_mode ? 20 : 16;
+  if (+$("#fMag").value > +$("#fMag").max) {
+    $("#fMag").value = $("#fMag").max;
+    $("#magVal").textContent = (+$("#fMag").max).toFixed(1);
+  }
+  $("#skyMag").max = S.cfg.adv_mode ? 20 : 14;
+  if (+$("#skyMag").value > +$("#skyMag").max) {
+    $("#skyMag").value = $("#skyMag").max;
+    $("#skyMagVal").textContent = (+$("#skyMag").max).toFixed(1);
+  }
   refreshRigUI();
 }
 

@@ -8,6 +8,9 @@ dist/
 app/_version_baked.py
 *.spec.bak
 data/*.db
+data/*.db.backup
 data/panos/*
 !data/panos/.gitkeep
+data/imgcache/
+data/instance.json
 logs/

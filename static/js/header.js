@@ -7,7 +7,15 @@ import { scheduleLoadNight } from "./night.js";
 import { openSites } from "./setup.js";
 
 export function bindHeader() {
-  $("#siteSelect").addEventListener("change", () => scheduleLoadNight(300));
+  $("#siteSelect").addEventListener("change", async e => {
+    const id = +e.target.value;
+    S.cfg.active_site_id = id;         // keep client state + server in sync
+    S.activeSiteId = id;
+    api("/api/settings", { method: "POST",
+      headers: { "Content-Type": "application/json" }, silent: true,
+      body: JSON.stringify({ active_site_id: id })}).catch(() => {});
+    scheduleLoadNight(300);
+  });
   $("#dateInput").addEventListener("change", () => scheduleLoadNight(300));
   $("#btnSites").addEventListener("click", openSites);
 

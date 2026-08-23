@@ -29,6 +29,7 @@ export async function openDetail(id) {
 
   const q = new URLSearchParams({date: $("#dateInput").value,
     tz_offset_min: tzOffLocal(), minalt: S.minAlt});
+  if (S.activeSiteId != null) q.set("site", S.activeSiteId);
   DETAIL = await api(`/api/object/${id}?` + q);
   renderDetailMeta(m, DETAIL);
   drawAltChart();

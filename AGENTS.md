@@ -11,7 +11,7 @@ ingest + library), switched via the top-right button or the brand name.
 - Run from source: `python main.py` (default port 8407; `--console` for logs,
   `--no-browser` for headless, `--port N`). Data is created under `data/`
   (gitignored) in the repo root.
-- Tests: `python -m pytest tests/` - 50 tests, run in <1 s, pure functions
+- Tests: `python -m pytest tests/` - 54 tests, run in ~1 s, pure functions
   only (no HTTP). `httpx` is in requirements-dev but there are no API tests
   yet. A broken Windows temp-dir ACL means pytest runs use a repo-local
   `.pytest-tmp` base (see `pytest.ini`).
@@ -23,7 +23,8 @@ ingest + library), switched via the top-right button or the brand name.
 - Build exe: `powershell -ExecutionPolicy Bypass -File build.ps1` ->
   `dist\AstroPilot.exe` (isolated `.venv-build`; kills running AstroPilot
   processes first). PyInstaller is only needed for building. The build bakes
-  the current `git describe` version into a gitignored `app/_version_baked.py`.
+  the current `git describe` version into a gitignored `app/_version_baked.py`
+  and bundles `app/data` (the advanced catalog CSV) via `--add-data`.
 
 ## Versioning
 
@@ -31,7 +32,7 @@ ingest + library), switched via the top-right button or the brand name.
   (leading `v` stripped); frozen exes use the baked value. Displayed in the
   bottom-right corner.
 - Commits are named `AstroPilot X.Y.Z` and tagged `vX.Y.Z` (e.g. `AstroPilot
-  0.1.5` / `v0.1.5`). Tag BEFORE rebuilding if you want the exe to show it.
+  0.1.7` / `v0.1.7`). Tag BEFORE rebuilding if you want the exe to show it.
 
 ## Architecture
 
@@ -45,12 +46,16 @@ ingest + library), switched via the top-right button or the brand name.
   the same 6-min/4-min time grids, sun/moon tracks, and `ceil_lookup()`.
 - `app/astro.py` - pure-Python astronomy engine (J2000 precession, sidereal
   time, Saemundsson refraction, Meeus sun/moon series). Golden-value tests
-  live in `tests/test_astro.py`.
+  live in `tests/test_astro.py`. Its JS mirror `static/js/astro.js` is used
+  to synthesize tracks for advanced-mode objects in the browser.
 - `app/planning.py` - night-window/twilight search, the single source of truth
   for both /api/night and /api/object/{oid}. Never reimplement twilight logic
   elsewhere.
 - `app/database.py` - SQLite, schema created on init, catalog seeded from
   `catalog_data.py`. `new_id()` generates custom-object ids (`u_*`).
+  `advanced_objects` table is bulk-seeded from `app/data/openned.csv`
+  (OpenNGC-derived, CC BY-SA 4.0; regenerate via
+  `scripts/build_adv_catalog.py`).
 - `app/fits.py` - hand-written FITS header parser (no astropy) + RA/Dec/date
   parsers + designation-token extraction for object matching.
 - `app/imglib.py` - catalog resolution, library grouping, session math.
@@ -65,6 +70,20 @@ ingest + library), switched via the top-right button or the brand name.
   `js/derive.js` computes visibility/score client-side so changing min-altitude
   never refetches. `js/archive.js` (catalog mode) and `js/skymap.js` (static
   RA/Dec chart) implement the Image Catalog side.
+
+## Advanced mode (12,000+ objects)
+
+- Toggled in the hamburger menu (`adv_mode` setting); changing it reloads the
+  page. Standard mode stays the curated 197 objects and is unchanged.
+- `/api/night?adv=1` ships advanced objects as METADATA ONLY (id/ra/dec/mag/
+  type, no tracks) - the payload stays ~1.5 MB. `synthesizeAdvancedTracks()`
+  in `derive.js` computes alt/az/ceil tracks in the browser using
+  `static/js/astro.js` (precession once per object at the grid midpoint).
+- Never add track arrays for the full advanced catalog to the night payload;
+  that is what the client-side synthesis exists for.
+- Advanced rows carry a `_adv` marker from `db.all_objects(advanced=True)`;
+  `api_catalog` strips it. Image-ingest resolution and the library use the
+  FULL catalog (advanced included) regardless of mode.
 
 ## Data & gotchas
 

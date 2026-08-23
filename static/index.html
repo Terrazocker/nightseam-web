@@ -71,6 +71,12 @@
           ultrawide monitors.</p>
         </div>
         <div class="menu-section">
+          <h4>Catalog</h4>
+          <label class="inline"><input type="checkbox" id="advMode"> Advanced mode</label>
+          <p class="hint">Adds the complete NGC/IC catalog (~12,000 objects to
+          magnitude 20). Changing this reloads the app.</p>
+        </div>
+        <div class="menu-section">
           <h4>Target scoring</h4>
           <label class="inline"><input type="checkbox" id="moonAware"> Moon-aware ranking</label>
           <p class="hint">Ranks targets down while the Moon is up.</p>
@@ -164,6 +170,11 @@
         </tr></thead>
         <tbody id="targetRows"></tbody>
       </table>
+    </div>
+    <div id="targetPager" class="pager hidden">
+      <button id="pagerPrev" class="ghost">&#8592; Prev</button>
+      <span id="pagerInfo" class="mono"></span>
+      <button id="pagerNext" class="ghost">Next &#8594;</button>
     </div>
   </section>
 
@@ -451,11 +462,6 @@
         <button type="submit">Add</button>
       </form>
       <div id="customList" class="hint"></div>
-
-      <h4>Bulk import targets</h4>
-      <p class="hint">One per line: <span class="mono">Name, RA hours, Dec degrees[, mag[, size']]</span></p>
-      <textarea id="bulkTargets" rows="4" style="width:100%" placeholder="My comet, 5.34, +22.0, 9&#10;Sh2-999, 20.5, 44.2"></textarea>
-      <div class="rowbtns"><button id="btnBulkAdd">Parse &amp; add lines</button></div>
     </div>
 
     <div id="mtab-backup" class="mtabpane hidden">
