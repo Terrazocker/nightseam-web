@@ -18,8 +18,15 @@ function xy(raH, decD, W, H) {
 export function renderSkyMap() {
   const cv = $("#skymapCanvas");
   if (!cv || !cv.clientWidth) return;
+  // fit the 2:1 chart into the viewport: never taller than the window
+  // minus top bar / tabs / padding, never wider than its container
+  const availH = window.innerHeight - 120;
+  const availW = cv.parentElement.clientWidth;
+  const H = Math.max(240, Math.min(availH, Math.floor(availW / 2)));
+  cv.style.width = (H * 2) + "px";
+  cv.style.height = H + "px";
   const dpr = window.devicePixelRatio || 1;
-  const W = cv.clientWidth, H = cv.clientHeight;
+  const W = H * 2;
   cv.width = W * dpr; cv.height = H * dpr;
   const ctx = cv.getContext("2d");
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -201,5 +208,13 @@ export function bindSkyMap() {
   });
   for (const id of ["smLabels", "smSize", "smCons"]) {
     $(`#${id}`).addEventListener("change", renderSkyMap);
+  }
+
+  // object-type color legend
+  const lg = $("#smLegend");
+  if (lg) {
+    lg.innerHTML = Object.keys(TYPE_COLOR).map(t =>
+      `<div class="lgchip" style="--c:${TYPE_COLOR[t]}"><i></i>${TYPE_LABEL[t] || t}</div>`
+    ).join("");
   }
 }

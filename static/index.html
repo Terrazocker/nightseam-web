@@ -169,20 +169,29 @@
 
   <!-- ================= SKY VIEW ================= -->
   <section id="tab-sky" class="tabpane">
-    <div class="skytoolbar">
-      <label class="inline"><input type="checkbox" id="showAll" checked> show all (ignore Targets filters)</label>
-      <label class="inline"><input type="checkbox" id="showCons" checked> constellations</label>
-      <label class="inline"><input type="checkbox" id="showLabels" checked> names</label>
-      <label class="inline"><input type="checkbox" id="showMoon" checked> moon &amp; sun</label>
-      <label class="inline">Mag &le; <span id="skyMagVal">10.0</span>
-        <input type="range" id="skyMag" min="0" max="14" step="0.5" value="10" style="width:160px">
-      </label>
-      <button id="skyZoomReset" class="ghost" title="reset zoom and pan">&#8982; reset view</button>
-      <span class="hint">scroll = zoom &middot; drag = pan</span>
-    </div>
-    <div id="typeLegend" style="margin:2px 0 10px"></div>
-    <div id="skyWrap"><canvas id="skyCanvas"></canvas>
-      <div id="skyTip" class="tooltip hidden"></div>
+    <div class="chart-layout">
+      <div id="skyWrap"><canvas id="skyCanvas"></canvas>
+        <div id="skyTip" class="tooltip hidden"></div>
+      </div>
+      <aside class="chart-side">
+        <div class="menu-section">
+          <h4>Chart</h4>
+          <div class="chkrow side-chk">
+            <label class="inline"><input type="checkbox" id="showAll" checked> show all</label>
+            <label class="inline"><input type="checkbox" id="showCons" checked> constellations</label>
+            <label class="inline"><input type="checkbox" id="showLabels" checked> names</label>
+            <label class="inline"><input type="checkbox" id="showMoon" checked> moon &amp; sun</label>
+            <label class="inline">Mag &le; <span id="skyMagVal">10.0</span></label>
+            <input type="range" id="skyMag" min="0" max="14" step="0.5" value="10" style="width:140px">
+            <button id="skyZoomReset" class="ghost">reset view</button>
+            <span class="hint">scroll = zoom &middot; drag = pan</span>
+          </div>
+        </div>
+        <div class="menu-section">
+          <h4>Legend</h4>
+          <div id="typeLegend"></div>
+        </div>
+      </aside>
     </div>
   </section>
 
@@ -325,14 +334,24 @@
 
   <!-- ================= SKY MAP ================= -->
   <section id="tab-skymap" class="tabpane">
-    <div class="skytoolbar">
-      <label class="inline"><input type="checkbox" id="smLabels" checked> names</label>
-      <label class="inline"><input type="checkbox" id="smSize" checked> dot = integration time</label>
-      <label class="inline"><input type="checkbox" id="smCons" checked> constellations</label>
-      <span class="hint">static RA / Dec chart of everything in your library</span>
-    </div>
-    <div id="skyWrap"><canvas id="skymapCanvas"></canvas>
-      <div id="skymapTip" class="tooltip hidden"></div>
+    <div class="chart-layout">
+      <div id="skyWrap"><canvas id="skymapCanvas"></canvas>
+        <div id="skymapTip" class="tooltip hidden"></div>
+      </div>
+      <aside class="chart-side">
+        <div class="menu-section">
+          <h4>Chart</h4>
+          <div class="chkrow side-chk">
+            <label class="inline"><input type="checkbox" id="smLabels" checked> names</label>
+            <label class="inline"><input type="checkbox" id="smSize" checked> dot = integration</label>
+            <label class="inline"><input type="checkbox" id="smCons" checked> constellations</label>
+          </div>
+        </div>
+        <div class="menu-section">
+          <h4>Legend</h4>
+          <div id="smLegend"></div>
+        </div>
+      </aside>
     </div>
   </section>
 </main>

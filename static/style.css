@@ -12,6 +12,7 @@
   --warn: #ffb454;
   --bad: #ff5d5d;
   --gold: #ffd166;
+  --check: #6b95c9;
 }
 
 * { box-sizing: border-box; }
@@ -82,6 +83,34 @@ select, input, button {
   border-radius: 6px; padding: 5px 9px; font: inherit;
 }
 input[type=date] { color-scheme: dark; }
+/* custom checkboxes: rounded, empty when off, soft fill when on */
+input[type=checkbox] {
+  appearance: none; -webkit-appearance: none;
+  width: 15px; height: 15px; min-width: 15px; min-height: 15px;
+  padding: 0; margin: 0; flex: none;
+  border: 1.5px solid var(--border);
+  border-radius: 4px;
+  background: transparent;
+  cursor: pointer;
+  display: inline-block;
+  vertical-align: middle;
+  position: relative;
+  transition: border-color .12s, background .12s;
+}
+input[type=checkbox]:hover { border-color: var(--dim); }
+input[type=checkbox]:checked {
+  background: var(--check);
+  border-color: var(--check);
+}
+input[type=checkbox]:checked::after {
+  content: "";
+  position: absolute; left: 4px; top: 1px;
+  width: 4px; height: 8px;
+  border: solid #0d1117;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+input[type=checkbox]:focus-visible { outline: 1.5px solid var(--accent); outline-offset: 1px; }
 /* full-bleed sliders: no inset gap at either end */
 input[type=range] { -webkit-appearance: none; appearance: none;
   background: transparent; margin: 0; height: 18px; }
@@ -126,6 +155,9 @@ button.danger { color: var(--bad); }
   .tabpane { padding: 10px 10px 34px; }
   #topbar { gap: 8px; }
   .nightinfo { max-width: 34vw; }
+  .chart-layout { flex-direction: column; }
+  .chart-side { width: 100%; }
+  .side-chk { flex-direction: row; flex-wrap: wrap; align-items: center; }
 }
 @media (max-width: 700px) {
   .modal-box.wide { width: 98vw; padding: 0 10px 12px; }
@@ -200,7 +232,13 @@ table { border-collapse: collapse; width: 100%; }
 
 /* ---------- sky view ---------- */
 .skytoolbar { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; }
-#skyWrap { position: relative; width: min(92vh, 100%); aspect-ratio: 1; margin: 0 auto; }
+.chart-layout { display: flex; gap: 16px; align-items: flex-start; }
+.chart-side { width: 200px; flex: none; display: flex; flex-direction: column;
+  gap: 6px; padding-top: 2px; }
+.side-chk { flex-direction: column; gap: 8px; align-items: flex-start; }
+.chart-side .hint { margin-top: 4px; }
+#skyWrap { position: relative; }
+#tab-sky #skyWrap { width: min(calc(100vh - 150px), 100%); aspect-ratio: 1; margin: 0 auto; }
 #skyCanvas { width: 100%; height: 100%; border-radius: 50%; background: radial-gradient(circle at 50% 42%, #131a2b 0%, #090c13 75%); border: 1px solid var(--border); }
 .tooltip {
   position: fixed; z-index: 50; pointer-events: none;
@@ -286,10 +324,10 @@ tr.lib-sess td { background: var(--bg2) !important; cursor: default;
 .sess-meta { color: var(--dim); margin-left: auto; white-space: nowrap; }
 
 /* ---------- static sky map ---------- */
-#tab-skymap #skyWrap { aspect-ratio: auto; margin: 0; width: 100%; }
-#skymapCanvas { width: 100%; height: auto; aspect-ratio: 2 / 1;
-  max-height: calc(100vh - 210px); border-radius: 12px;
-  background: #0a0d15; border: 1px solid var(--border); display: block; }
+#tab-skymap { padding-top: 8px; }
+#tab-skymap #skyWrap { flex: 1; min-width: 0; }
+#skymapCanvas { display: block; margin: 0 auto; border-radius: 12px;
+  background: #0a0d15; border: 1px solid var(--border); }
 #skyWrap { position: relative; width: 100%; }
 #skymapTip { position: fixed; z-index: 50; pointer-events: none;
   background: #05070cf0; border: 1px solid var(--border); border-radius: 8px;
