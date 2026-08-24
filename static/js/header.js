@@ -72,6 +72,19 @@ export function bindHeader() {
       body: JSON.stringify({ moon_aware: e.target.checked })});
     document.dispatchEvent(new CustomEvent("prefs:changed"));
   });
+  let _bortleT = null;
+  $("#bortle").addEventListener("input", e => {
+    const v = +e.target.value;
+    $("#bortleVal").textContent = v;
+    S.cfg.bortle = v;
+    document.dispatchEvent(new CustomEvent("prefs:changed"));
+    clearTimeout(_bortleT);
+    _bortleT = setTimeout(() => api("/api/settings", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" }, silent: true,
+      body: JSON.stringify({ bortle: v })
+    }).catch(() => {}), 400);
+  });
 }
 
 export function renderNightInfo() {

@@ -4,6 +4,7 @@ import { $, api, clamp, parseUTC, esc, fmtHM, toast,
          TYPE_LABEL, constName, fmtSize } from "./util.js";
 import { S, IMG_VER } from "./state.js";
 import { filterAdvice, frameCoverage, moonAt, moonBandX } from "./derive.js";
+import { renderTargets } from "./targets.js";
 
 let DETAIL = null;      // cached detail payload
 let DETAIL_HOVER = null;// hovered sample index for crosshair
@@ -50,6 +51,54 @@ export async function openDetail(id) {
   }
   renderDetailMeta(m, DETAIL);
   drawAltChart();
+  renderJournal(id);
+}
+
+/* ---------------- session journal ---------------- */
+
+export async function renderJournal(oid) {
+  const box = $("#jList");
+  if (!box) return;
+  const id = oid || S.currentId;
+  let rows = [];
+  try {
+    rows = await api(`/api/object/${id}/observed`);
+  } catch (err) { return; }
+  S.observedIds = new Set((S.cfg.observed || []).map(x => x.object_id));
+  if (!rows.length) {
+    box.innerHTML = '<span>Nothing logged yet for this object.</span>';
+    return;
+  }
+  box.innerHTML = rows.map(r => `
+    <div class="jentry">
+      <b>${esc(r.date_obs || "no date")}</b>
+      <span>${esc(r.notes || "")}</span>
+      <button class="ghost jdel" data-jdel="${r.id}" title="remove entry">\u00D7</button>
+    </div>`).join("");
+  box.querySelectorAll(".jdel").forEach(b =>
+    b.addEventListener("click", async () => {
+      await api(`/api/object/${id}/observed/${b.dataset.jdel}`,
+                { method: "DELETE", silent: true }).catch(() => {});
+      S.cfg = await api("/api/state");
+      renderJournal(id);
+      renderTargets();
+    }));
+}
+
+function bindJournal() {
+  $("#jAdd").addEventListener("click", async () => {
+    const id = S.currentId;
+    if (!id) return;
+    await api(`/api/object/${id}/observed`, { method: "POST",
+      headers: { "Content-Type": "application/json" }, silent: true,
+      body: JSON.stringify({
+        date_obs: $("#jDate").value || new Date().toISOString().slice(0, 10),
+        notes: $("#jNotes").value.trim() })}).catch(() => {});
+    $("#jNotes").value = "";
+    S.cfg = await api("/api/state");
+    renderJournal(id);
+    renderTargets();
+  });
 }
 
 function tzOffLocal() { return new Date().getTimezoneOffset(); }
@@ -112,6 +161,7 @@ export function bindDetail() {
   });
   $("#chkMoon").addEventListener("change", drawAltChart);
   window.addEventListener("resize", () => { if (DETAIL) drawAltChart(); });
+  bindJournal();
 
   document.addEventListener("keydown", e => {
     if (e.key === "Escape") {

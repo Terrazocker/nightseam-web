@@ -24,12 +24,32 @@ def obj_slug(object_name: str) -> str:
     return re.sub(r"[^A-Za-z0-9 _-]+", "", object_name).strip() or "misc"
 
 
-def _archive_target(archive: Path, name: str, object_name: str) -> Path:
-    """Unique destination path <archive>/<slug>/lights/<stem>[._n]<suffix>."""
+FRAME_TYPES = {          # normalized IMAGETYP -> archive subfolder
+    "light": "lights", "bias": "bias", "dark": "darks", "flat": "flats",
+}
+
+
+def classify_frame(imagetyp: str | None) -> str:
+    """Normalize a FITS IMAGETYP value into 'light'/'bias'/'dark'/'flat'."""
+    t = str(imagetyp or "").strip().lower()
+    if t in ("light", "l", "science", ""):
+        return "light"
+    if t in ("bias", "zero"):
+        return "bias"
+    if t in ("dark",):
+        return "dark"
+    if t in ("flat", "flatfield", "skyflat"):
+        return "flat"
+    return "light"          # unknown types default to lights
+
+
+def _archive_target(archive: Path, name: str, object_name: str,
+                    frame: str) -> Path:
+    """Unique destination <archive>/<slug>/<frames>/<stem>[._n]<suffix>."""
     slug = obj_slug(object_name)
     suffix = Path(name).suffix or ".fit"
     stem = (Path(name).stem or "image")[:80]
-    sub = archive / slug / "lights"
+    sub = archive / slug / FRAME_TYPES.get(frame, "lights")
     sub.mkdir(parents=True, exist_ok=True)
     target = sub / f"{stem}{suffix}"
     n = 2
@@ -86,9 +106,10 @@ async def ingest_one(db: Database, catalog: list[dict], archive: Path,
     date_obs = fitsio.parse_date_obs(hdr.get("DATE-OBS") or hdr.get("DATE"))
     filt = str(hdr.get("FILTER") or "").strip() or None
     tel = str(hdr.get("TELESCOP") or hdr.get("INSTRUME") or "").strip() or None
+    frame = classify_frame(hdr.get("IMAGETYP"))
 
     try:
-        target = _archive_target(archive, name, object_name)
+        target = _archive_target(archive, name, object_name, frame)
     except OSError:
         return {"file": name, "ok": False,
                 "error": f"cannot write to archive folder {archive}"}
@@ -103,7 +124,7 @@ async def ingest_one(db: Database, catalog: list[dict], archive: Path,
         "file": stored, "orig_name": name, "object_id": object_id,
         "object_name": object_name, "ra_hours": ra_h, "dec_deg": dec_d,
         "exposure": exposure, "date_obs": date_obs, "filter": filt,
-        "telescope": tel,
+        "telescope": tel, "imagetyp": frame,
         "ingested_at": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%S"),
     })
     return {
@@ -112,7 +133,7 @@ async def ingest_one(db: Database, catalog: list[dict], archive: Path,
                    "designation": imglib.designation_of(
                        row, {"object_name": object_name})},
         "exposure": exposure, "date_obs": date_obs, "filter": filt,
-        "telescope": tel, "stored": stored,
+        "telescope": tel, "imagetyp": frame, "stored": stored,
     }
 
 

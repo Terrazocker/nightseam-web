@@ -12,8 +12,10 @@ ingest + library), switched via the top-right button or the brand name.
   `--no-browser` for headless, `--port N`). Also `--browser` (tab instead of
   app window) and `--idle-exit-hours 0` (never exit on idle - the default is
   12 h, which kills a server an agent left running). Data is created under
-  `data/` (gitignored) in the repo root.
-- Tests: `python -m pytest tests/` - 73 tests, run in ~7 s (pure-function
+  `data/` (gitignored) in the repo root. Stale AstroPilot/python processes
+  keep grabbing port 8407 - check `Get-NetTCPConnection -LocalPort 8407`
+  and kill them before booting your own instance.
+- Tests: `python -m pytest tests/` - 88 tests, run in ~12 s (pure-function
   tests are fast; `tests/test_api.py` spins up real `create_app()` instances
   via fastapi TestClient/httpx). Single test:
   `python -m pytest tests/test_astro.py -k name`. API tests use
@@ -69,9 +71,13 @@ ingest + library), switched via the top-right button or the brand name.
   `advanced_objects` table is bulk-seeded from `app/data/openned.csv`
   (OpenNGC-derived, CC BY-SA 4.0; regenerate via
   `scripts/build_adv_catalog.py`).
-- `app/fits.py` - hand-written FITS header parser (no astropy) + RA/Dec/date
-  parsers + designation-token extraction for object matching.
-- `app/imglib.py` - catalog resolution, library grouping, session math.
+- `app/fits.py` - hand-written FITS parser (no astropy): header keywords,
+  RA/Dec/date parsers, designation-token extraction for object matching, and
+  `preview_png_file()` - a strided, pure-stdlib grayscale PNG thumbnail of
+  the image data (served at `/api/images/{id}/preview`). BITPIX 8 is
+  unsigned, 16/32-bit signed, -32/-64 floats.
+- `app/imglib.py` - catalog resolution, library grouping (per-frame-type and
+  per-filter integration rollups), session math.
 - `app/paths.py` - source vs PyInstaller-frozen path resolution; when frozen,
   writable `data/`/`logs/` sit next to the exe, `static/` comes from
   `_MEIPASS`.
@@ -115,22 +121,56 @@ ingest + library), switched via the top-right button or the brand name.
   balcony out of frame); unpainted columns block fully (90 deg); outside the
   FOV follows the mode. The band ceiling ships as `ceil_top` per object from
   /api/night and /api/object only when the active pano has a `profile_top`.
-- Archive layout is `<image_dir>/<Object>/lights/<file>.fit` (originals are
-  copied, never moved). Older files at the folder root still work.
-  Ingest streams header-first with a 1 GiB cap (`app/ingest.py`).
+- Archive layout is `<image_dir>/<Object>/<lights|darks|flats|bias>/<file>.fit`
+  (originals are copied, never moved). The sub-folder comes from the FITS
+  IMAGETYP header at ingest (`app/ingest.py classify_frame()`); unknown
+  types land in `lights`. Older files at the folder root still work.
+  Ingest streams header-first with a 1 GiB cap (`app/ingest.py`). Library
+  groups carry per-type and per-filter rollups (`imglib.group_library`);
+  frame thumbnails are pure-Python PNGs (`fits.preview_png_file`, served at
+  `/api/images/{id}/preview`).
+- Session journal: `POST/GET/DELETE /api/object/{oid}/observed` stores
+  observed marks with date + notes (observations table); the targets table
+  has a checkmark toggle and an "observed" hide-filter; the detail modal has
+  the journal form.
 - `/api/object/{oid}/image?thumb=1` is the cache-only thumbnail variant used
-  by the targets table (never hits the network, so a 250-row page is
-  instant even offline); the detail view uses the full Wikipedia/DSS chain.
+  by the targets table, tonight view and detail placeholder (never hits the
+  network, so a 250-row page is instant even offline); the detail view's
+  background image upgrade uses the full Wikipedia/DSS chain (8 s abort).
+  NEVER point a list/repeated view at the full-chain endpoint - a handful of
+  pending full-chain requests starve the browser's 6-connections-per-host
+  limit and wedge unrelated local API calls (the "wizard stuck busy" bug).
 - `/api/library/edit` renames/retypes only unresolved objects (`object_id IS
   NULL`); it moves the archive folder on disk and rewrites stored paths.
-- Export/import ZIP covers settings, sites, rigs, panoramas, custom targets
-  and the images library (rows + files, restored into the configured image
-  dir); the import confirm dialog reflects that.
+- Export/import ZIP covers settings, sites, rigs, panoramas, custom targets,
+  the images library (rows + files, restored into the configured image dir)
+  and the session journal; the import confirm dialog reflects that.
+- Numeric inputs accept comma OR dot decimals everywhere (German locale):
+  `num()` in `util.js` parses both; typable numerics are text+`inputmode`.
+  `api()` in util.js adds a 30 s timeout unless the caller passes its own
+  abort signal (the night loader does).
+- The first-run wizard (`js/wizard.js`) is hardened: replay pre-fills and
+  EDITS the active site (PUT, never duplicates), typed values survive
+  Back/Next, forms never submit/reload, Skip is hidden only on the
+  mandatory site step without a site, and a 20 s guard unsticks a hung
+  validate. Errors show inline - never assert a wizard "works" by happy-path
+  alone.
 - Sessions: frames of one object whose `date_obs` are < 12 h apart form one
   session (midnight runs count once); undated frames form one trailing
   session.
 - `edge_space` setting (px per side) controls tab content width
   (`100vw - 2*edge`); exposed as a slider in the top-right hamburger menu.
+- `bortle` setting (1-9, hamburger menu) shifts the default min-altitude
+  (`17 + 2*bortle`, only when no explicit min alt is stored) and scales the
+  moon-aware scoring penalty. Moon-aware scoring uses the angular separation
+  between target and Moon plus a per-type sensitivity (nebulae/SNR suffer
+  most, clusters least) - see `MOON_TYPE_FACTOR` and `sepDeg()` in
+  `derive.js`.
+- Keyboard shortcuts: ArrowLeft/Right scrub the night (Shift = 10 min), `n`
+  cycles the tabs (skipped while typing or with a modal open).
+- `/api/library/export?format=csv|json` downloads the library.
+- The targets filter bar has a constellation select (`fConst`) and an
+  "observed" hide-filter.
 - A background `img-prefetch` thread starts on every app start and hits the
   network; the server itself is otherwise local-only.
 - Custom targets are deleted via a `u_` id-prefix check - ids without it are

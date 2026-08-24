@@ -186,8 +186,21 @@ export function renderLibrary() {
 
 function sessionRowsHTML(o) {
   const sess = o.sessions || [];
-  if (!sess.length) return '<p class="hint">No sessions.</p>';
-  return sess.map(s => {
+  const typeL = { light: "Lights", dark: "Darks", flat: "Flats", bias: "Bias" };
+  const typeSummary = (o.types && Object.keys(o.types).length)
+    ? Object.entries(o.types).map(([t, v]) =>
+        `<span class="chip" title="${typeL[t] || t}">${esc(t)} ${v.n}\u00D7${fmtDur(v.exposure)}</span>`).join("")
+    : "";
+  const filterSummary = (o.filters && Object.keys(o.filters).length)
+    ? Object.entries(o.filters).map(([fl, v]) =>
+        `<span class="chip" title="filter">${esc(fl)} ${v.n}\u00D7${fmtDur(v.exposure)}</span>`).join("")
+    : "";
+  const imgs = (o.images || []).map(im => `
+    <span class="frame" title="${esc(im.orig_name)} \u00B7 ${esc(im.imagetyp || "light")}${im.filter ? " \u00B7 " + esc(im.filter) : ""}${im.exposure != null ? " \u00B7 " + fmtDur(im.exposure) : ""}">
+      <img loading="lazy" src="/api/images/${im.id}/preview" onerror="this.style.visibility='hidden'">
+      <small>${esc(im.filter || "\u2014")}</small>
+    </span>`).join("");
+  const sessRows = sess.length ? sess.map(s => {
     const per = s.n_images ? s.exposure / s.n_images : 0;
     const when = s.undated
       ? "<span class='hint'>no date recorded</span>"
@@ -196,7 +209,10 @@ function sessionRowsHTML(o) {
       <span class="sess-when">${when}</span>
       <span class="sess-meta">${s.n_images} \u00D7 ${fmtDur(per)} = ${fmtDur(s.exposure)}</span>
     </div>`;
-  }).join("");
+  }).join("") : '<p class="hint">No sessions.</p>';
+  const summary = typeSummary || filterSummary
+    ? `<div class="lib-rollup">${typeSummary}${filterSummary}</div>` : "";
+  return `<div class="lib-frames">${summary}${imgs || '<span class="hint">no images</span>'}</div>${sessRows}`;
 }
 
 function toggleSessions(name) {
@@ -324,6 +340,10 @@ export function bindArchive() {
     renderLibrary();
   });
   $("#libSort").addEventListener("change", renderLibrary);
+  $("#btnLibExport").addEventListener("click", () => {
+    const fmt = $("#libExportFmt").value;
+    window.location = `/api/library/export?format=${fmt}`;
+  });
   $("#libraryTable tbody").addEventListener("click", e => {
     const tog = e.target.closest(".sess-toggle");
     if (tog) { toggleSessions(tog.dataset.toggle); return; }

@@ -8,6 +8,7 @@ import sqlite3
 import threading
 import time
 import uuid
+from datetime import datetime, UTC
 from pathlib import Path
 
 from . import catalog_data
@@ -84,7 +85,15 @@ CREATE TABLE IF NOT EXISTS images (
     date_obs TEXT,
     filter TEXT,
     telescope TEXT,
+    imagetyp TEXT,
     ingested_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS observations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    object_id TEXT NOT NULL,
+    date_obs TEXT,
+    notes TEXT DEFAULT '',
+    created_at TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS advanced_objects (
     id TEXT PRIMARY KEY,
@@ -122,6 +131,10 @@ class Database:
             pass
         try:  # migration: user-defined type for ingested images
             self.conn.execute("ALTER TABLE images ADD COLUMN otype TEXT")
+        except sqlite3.OperationalError:
+            pass
+        try:  # migration: frame classification (light/bias/dark/flat)
+            self.conn.execute("ALTER TABLE images ADD COLUMN imagetyp TEXT")
         except sqlite3.OperationalError:
             pass
         try:  # migration: inverse painting mode ('obstacle' | 'sky')
@@ -423,12 +436,13 @@ class Database:
         with self.lock:
             c = self.conn.execute(
                 "INSERT INTO images(file,orig_name,object_id,object_name,"
-                "ra_hours,dec_deg,exposure,date_obs,filter,telescope,ingested_at)"
-                " VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+                "ra_hours,dec_deg,exposure,date_obs,filter,telescope,imagetyp,"
+                "ingested_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
                 (rec["file"], rec["orig_name"], rec.get("object_id"),
                  rec["object_name"], rec.get("ra_hours"), rec.get("dec_deg"),
                  rec.get("exposure"), rec.get("date_obs"), rec.get("filter"),
-                 rec.get("telescope"), rec["ingested_at"]))
+                 rec.get("telescope"), rec.get("imagetyp"),
+                 rec["ingested_at"]))
             self.conn.commit()
             return c.lastrowid
 
@@ -456,6 +470,35 @@ class Database:
                                 (f"{new_folder}/{parts[1]}", r["id"]))
             self.conn.commit()
 
+    # ---------------- observations (journal) ----------------
+
+    def add_observation(self, object_id: str, date_obs: str | None,
+                        notes: str | None) -> int:
+        with self.lock:
+            c = self.conn.execute(
+                "INSERT INTO observations(object_id,date_obs,notes,created_at) "
+                "VALUES(?,?,?,?)",
+                (object_id, date_obs or None, notes or "",
+                 datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%S")))
+            self.conn.commit()
+            return c.lastrowid
+
+    def observations(self) -> list[dict]:
+        with self.lock:
+            return [dict(r) for r in self.conn.execute(
+                "SELECT * FROM observations ORDER BY id")]
+
+    def observations_for(self, object_id: str) -> list[dict]:
+        with self.lock:
+            return [dict(r) for r in self.conn.execute(
+                "SELECT * FROM observations WHERE object_id=? ORDER BY id",
+                (object_id,))]
+
+    def delete_observation(self, obs_id: int) -> None:
+        with self.lock:
+            self.conn.execute("DELETE FROM observations WHERE id=?", (obs_id,))
+            self.conn.commit()
+
     def all_settings(self) -> dict:
         with self.lock:
             out = {}
@@ -468,10 +511,12 @@ class Database:
 
     def import_bundle(self, settings: dict, sites: list, rigs: list,
                       panoramas: list, customs: list | None = None,
-                      images: list | None = None) -> None:
+                      images: list | None = None,
+                      observations: list | None = None) -> None:
         """Replace all user data with an imported bundle (catalog untouched)."""
         customs = customs or []
         images = images or []
+        observations = observations or []
         with self.lock:
             cur = self.conn.cursor()
             cur.execute("DELETE FROM sites")
@@ -480,6 +525,7 @@ class Database:
             cur.execute("DELETE FROM settings")
             cur.execute("DELETE FROM custom_objects")
             cur.execute("DELETE FROM images")
+            cur.execute("DELETE FROM observations")
             for s in sites:
                 cur.execute(
                     "INSERT INTO sites(id,name,lat,lon,elev) VALUES(?,?,?,?,?)",
@@ -522,14 +568,21 @@ class Database:
                 cur.execute(
                     "INSERT OR REPLACE INTO images"
                     "(id,file,orig_name,object_id,object_name,otype,ra_hours,"
-                    "dec_deg,exposure,date_obs,filter,telescope,ingested_at)"
-                    " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    "dec_deg,exposure,date_obs,filter,telescope,imagetyp,"
+                    "ingested_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                     (im.get("id"), im.get("file"), im.get("orig_name", ""),
                      im.get("object_id"), im.get("object_name", ""),
                      im.get("otype"), im.get("ra_hours"), im.get("dec_deg"),
                      im.get("exposure"), im.get("date_obs"),
                      im.get("filter"), im.get("telescope"),
-                     im.get("ingested_at", "")))
+                     im.get("imagetyp"), im.get("ingested_at", "")))
+            for ob in observations:
+                cur.execute(
+                    "INSERT OR REPLACE INTO observations"
+                    "(id,object_id,date_obs,notes,created_at) "
+                    "VALUES(?,?,?,?,?)",
+                    (ob.get("id"), ob.get("object_id"), ob.get("date_obs"),
+                     ob.get("notes") or "", ob.get("created_at", "")))
             for k, v in settings.items():
                 cur.execute(
                     "INSERT INTO settings(key,value) VALUES(?,?)",

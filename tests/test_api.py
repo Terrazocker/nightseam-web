@@ -301,6 +301,135 @@ def test_ingest_size_cap(client, monkeypatch):
     assert client.get("/api/library").json()["total_images"] == 0
 
 
+def dark_fits() -> bytes:
+    return make_fits([
+        ("SIMPLE", "T"),
+        ("OBJECT", "'M 42'"),
+        ("EXPTIME", "0.0"),
+        ("IMAGETYP", "'DARK'"),
+        ("NAXIS", "2"),
+    ])
+
+
+def m42_light_fits() -> bytes:
+    return make_fits([
+        ("SIMPLE", "T"),
+        ("BITPIX", "16"),
+        ("OBJECT", "'M 42'"),
+        ("EXPTIME", "300.0"),
+        ("IMAGETYP", "'LIGHT'"),
+        ("FILTER", "'L'"),
+        ("NAXIS", "2"),
+        ("NAXIS1", "4"),
+        ("NAXIS2", "4"),
+    ]) + b"\x00\x10" * 16
+
+
+def test_ingest_classification_and_rollups(client):
+    """IMAGETYP lands in the right subfolder and per-type/filter rollups."""
+    r = client.post("/api/images/ingest", files=[
+        ("files", ("m42.fit", m42_light_fits(), "application/octet-stream")),
+        ("files", ("dark.fit", dark_fits(), "application/octet-stream")),
+    ])
+    assert r.status_code == 200
+    res = r.json()["results"]
+    assert res[0]["ok"] and res[0]["imagetyp"] == "light"
+    assert "lights" in res[0]["stored"]
+    assert res[1]["ok"] and res[1]["imagetyp"] == "dark"
+    assert "darks" in res[1]["stored"]
+    assert (tmp_archive(client) / res[1]["stored"]).exists()
+
+    lib = client.get("/api/library").json()
+    g = lib["objects"][0]
+    assert g["types"]["light"]["n"] == 1
+    assert g["types"]["dark"]["n"] == 1
+    assert g["filters"]["L"]["n"] == 1
+    assert g["filters"]["L"]["exposure"] == 300.0
+    # preview of the light frame renders a PNG
+    img_id = g["images"][0]["id"]
+    assert client.get(f"/api/images/{img_id}/preview").content.startswith(b"\x89PNG")
+
+
+def tmp_archive(client) -> Path:
+    import json as _json
+    from pathlib import Path as _Path
+    st = client.get("/api/state").json()
+    return _Path(st["image_dir"])
+
+
+def test_preview_endpoint(client):
+    client.post("/api/images/ingest",
+                files=[("files", ("m31.fit", m31_fits(),
+                                  "application/octet-stream"))])
+    lib = client.get("/api/library").json()
+    img_id = lib["objects"][0]["images"][0]["id"]
+    r = client.get(f"/api/images/{img_id}/preview")
+    assert r.status_code == 404            # m31_fits has no image data
+    client.post("/api/images/ingest",
+                files=[("files", ("m42.fit", m42_light_fits(),
+                                  "application/octet-stream"))])
+    lib = client.get("/api/library").json()
+    m42 = next(o for o in lib["objects"] if o["object_id"] == "m42")
+    img_id = m42["images"][0]["id"]
+    r = client.get(f"/api/images/{img_id}/preview")
+    assert r.status_code == 200
+    assert r.content.startswith(b"\x89PNG")
+    r = client.get("/api/images/999999/preview")
+    assert r.status_code == 404
+
+
+# ------------------------------------------------------------------ observations
+
+def test_observations(client):
+    r = client.post("/api/object/m31/observed",
+                    json={"date_obs": "2026-08-24", "notes": "great night"})
+    assert r.status_code == 200
+    rows = client.get("/api/object/m31/observed").json()
+    assert len(rows) == 1 and rows[0]["notes"] == "great night"
+    st = client.get("/api/state").json()
+    assert st["observed"][0]["object_id"] == "m31"
+    rid = rows[0]["id"]
+    assert client.delete(f"/api/object/m31/observed/{rid}").status_code == 200
+    assert client.get("/api/object/m31/observed").json() == []
+    assert client.post("/api/object/nope/observed",
+                       json={"notes": "x"}).status_code == 404
+
+
+# ------------------------------------------------------------------ bortle
+
+def test_bortle_setting_and_min_alt_default(client):
+    client.post("/api/settings", json={"bortle": 8})
+    st = client.get("/api/state").json()
+    assert st["bortle"] == 8
+    assert st["min_useful_alt"] == 17 + 16     # default follows bortle
+    client.post("/api/settings", json={"bortle": 1})
+    assert client.get("/api/state").json()["min_useful_alt"] == 19.0
+    # an explicit min alt wins over the bortle default
+    client.post("/api/settings", json={"min_useful_alt": 30.0})
+    assert client.get("/api/state").json()["min_useful_alt"] == 30.0
+    # out-of-range values are clamped
+    client.post("/api/settings", json={"bortle": 42})
+    assert client.get("/api/state").json()["bortle"] == 9
+
+
+# ------------------------------------------------------------------ library export
+
+def test_library_export(client):
+    client.post("/api/images/ingest",
+                files=[("files", ("m31.fit", m31_fits(),
+                                  "application/octet-stream"))])
+    r = client.get("/api/library/export?format=csv")
+    assert r.status_code == 200
+    assert "text/csv" in r.headers["content-type"]
+    assert b"m31" in r.content.lower() or b"m 31" in r.content
+    r = client.get("/api/library/export?format=json")
+    assert r.status_code == 200
+    j = r.json()
+    assert j["total_images"] == 1
+    assert j["objects"][0]["images"][0]["imagetyp"] == "light"
+    assert client.get("/api/library/export?format=xlsx").status_code == 400
+
+
 # ------------------------------------------------------------------ panoramas
 
 def test_paint_mode_roundtrip(client, tmp_path):
@@ -399,6 +528,8 @@ def test_export_import_roundtrip(client, tmp_path):
                 files=[("files", ("m31.fit", m31_fits(),
                                   "application/octet-stream"))])
     client.post("/api/settings", json={"min_useful_alt": 33.0})
+    client.post("/api/object/m31/observed",
+                json={"date_obs": "2026-08-24", "notes": "roundtrip note"})
 
     z = client.get("/api/export")
     assert z.status_code == 200
@@ -419,6 +550,7 @@ def test_export_import_roundtrip(client, tmp_path):
         st = c2.get("/api/state").json()
         assert st["min_useful_alt"] == 33.0
         assert st["sites"][0]["name"] == "Export Site"
+        assert st["observed"][0]["notes"] == "roundtrip note"
         lib = c2.get("/api/library").json()
         assert lib["total_images"] == 1
         assert lib["objects"][0]["name"]

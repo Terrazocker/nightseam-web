@@ -222,6 +222,10 @@ export function applyCfgToUI() {
   if ($("#libUnit")) $("#libUnit").value = S.cfg.size_unit || "arcmin";
   applyEdgeSpace(S.cfg.edge_space ?? 200);
   if ($("#advMode")) $("#advMode").checked = !!S.cfg.adv_mode;
+  if ($("#bortle")) {
+    $("#bortle").value = S.cfg.bortle ?? 4;
+    $("#bortleVal").textContent = S.cfg.bortle ?? 4;
+  }
   $("#fMag").max = S.cfg.adv_mode ? 20 : 16;
   if (+$("#fMag").value > +$("#fMag").max) {
     $("#fMag").value = $("#fMag").max;

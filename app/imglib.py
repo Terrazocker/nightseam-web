@@ -182,12 +182,22 @@ def group_library(images: list[dict], catalog: list[dict]) -> list[dict]:
             "dec_deg": None,
             "n_images": 0,
             "total_exposure": 0.0,
+            "types": {},              # frame type -> {n, exposure}
+            "filters": {},            # filter name -> {n, exposure}
             "first": None,
             "last": None,
             "images": [],
         })
         g["n_images"] += 1
         g["total_exposure"] += float(im.get("exposure") or 0.0)
+        fr = im.get("imagetyp") or "light"
+        t = g["types"].setdefault(fr, {"n": 0, "exposure": 0.0})
+        t["n"] += 1
+        t["exposure"] += float(im.get("exposure") or 0.0)
+        fl = im.get("filter") or "?"
+        f = g["filters"].setdefault(fl, {"n": 0, "exposure": 0.0})
+        f["n"] += 1
+        f["exposure"] += float(im.get("exposure") or 0.0)
         g["images"].append(im)
 
     objects = []
@@ -211,12 +221,15 @@ def group_library(images: list[dict], catalog: list[dict]) -> list[dict]:
             g["ra_hours"] = first.get("ra_hours") or row_coord(g, "ra")
             g["dec_deg"] = first.get("dec_deg") or row_coord(g, "dec")
         g["total_exposure"] = round(g["total_exposure"], 1)
+        for t in g["types"].values():
+            t["exposure"] = round(t["exposure"], 1)
+        for f in g["filters"].values():
+            f["exposure"] = round(f["exposure"], 1)
         dates = [i.get("date_obs") for i in g["images"] if i.get("date_obs")]
         if dates:
             g["first"], g["last"] = min(dates), max(dates)
         g["sessions"] = compute_sessions(g["images"])
         g["n_sessions"] = len(g["sessions"])
-        del g["images"]
         objects.append(g)
 
     objects.sort(key=lambda g: (g["name"] or "").lower())

@@ -111,12 +111,15 @@ export function recomputeNightDerived() {
   const nightN = Math.max(1, i1 - i0 + 1);
   const minAlt = S.minAlt;
   const illum = N.moon_illum || 0;
+  const bortle = (S.cfg && S.cfg.bortle) || 4;
 
   for (const o of N.objects) {
     o.vis = o.alt.map((a, i) =>
       a >= minAlt && a > o.ceil[i] && a < (o.ceil_top ? o.ceil_top[i] : 90.5));
     o.above = o.alt.map(a => a > 0);
     let visIn = 0, blocked = 0, sClassic = 0, sMoon = 0;
+    const m = S.meta[o.id];
+    const typeF = moonSensitivity(m && m.otype);
     for (let i = 0; i < o.vis.length; i++) {
       const v = o.vis[i], up = o.above[i];
       if (i >= i0 && i <= i1 && v) visIn++;
@@ -126,8 +129,13 @@ export function recomputeNightDerived() {
         sClassic += w;
         const ma = N.moon_alt[i];
         if (ma > 0) {
-          const mfac = illum * Math.max(0, Math.min(1, ma / 45));
-          w *= Math.max(0.08, 1 - 0.92 * mfac);
+          // moonlight penalty: target's angular distance from the Moon and
+          // how much this object TYPE suffers under moonlight (faint
+          // nebulae far worse than point-like clusters), plus skyglow.
+          const sep = sepDeg(o.alt[i], o.az[i], ma, N.moon_az[i]);
+          const moonGlow = illum * (1 - Math.min(1, sep / 180));
+          const bortleF = 0.4 + 0.15 * bortle;   // darker skies hurt far less
+          w *= Math.max(0.05, 1 - 0.95 * moonGlow * typeF * bortleF);
         }
         sMoon += w;
       }
@@ -139,6 +147,26 @@ export function recomputeNightDerived() {
     o.score = Math.round(sClassic * 10) / 100;
     o.score_moon = Math.round(sMoon * 10) / 100;
   }
+}
+
+/* how badly an object type suffers under moonlight: faint extended nebulae
+   wash out, while star clusters and bright galaxies keep their cores */
+const MOON_TYPE_FACTOR = {
+  nebula: 1.6, supernova_remnant: 1.6, planetary: 1.3,
+  star_cloud: 1.1, galaxy: 0.8, open_cluster: 0.55, globular: 0.5,
+  asterism: 0.55,
+};
+function moonSensitivity(otype) {
+  return MOON_TYPE_FACTOR[otype] || 1.0;
+}
+
+/* great-circle separation between two (alt, az) points in degrees */
+function sepDeg(alt1, az1, alt2, az2) {
+  const p1 = alt1 * Math.PI / 180, p2 = alt2 * Math.PI / 180;
+  const dra = (az1 - az2) * Math.PI / 180;
+  return Math.acos(Math.max(-1, Math.min(1,
+      Math.sin(p1) * Math.sin(p2) + Math.cos(p1) * Math.cos(p2) * Math.cos(dra))))
+      * 180 / Math.PI;
 }
 
 export function moonAt(dateObj) {

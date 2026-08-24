@@ -7,7 +7,7 @@ import { scheduleLoadNight, loadNight } from "./night.js";
 import { recomputeNightDerived } from "./derive.js";
 import { bindHeader, renderNightInfo, updateTimeLabel } from "./header.js";
 import { bindTonight, renderTonight } from "./tonight.js";
-import { bindFilters, renderTargets } from "./targets.js";
+import { bindFilters, renderTargets, populateConstFilter } from "./targets.js";
 import { bindSetup, applyCfgToUI } from "./setup.js";
 import { bindDetail, drawAltChart } from "./detail.js";
 import { bindSky, renderSky } from "./skyview.js";
@@ -56,12 +56,14 @@ async function loadState() {
   if (vt) vt.textContent = "AstroPilot v" + (S.cfg.version || "1.0.0");
 
   applyCfgToUI();
+  S.observedIds = new Set((S.cfg.observed || []).map(x => x.object_id));
 
   // first-run: guided setup instead of a bare locations dialog
   if (!S.cfg.sites.length && !S.cfg.wizard_done) {
     const w = await import("./wizard.js");
     w.openWizard();
   }
+  populateConstFilter();
 }
 
 /* ---------------- boot ---------------- */
@@ -108,6 +110,30 @@ async function init() {
   bindArchive();
   bindSkyMap();
 
+  // keyboard shortcuts: arrows scrub the night, n cycles the tabs.
+  // Modals and text entry keep their own keys.
+  document.addEventListener("keydown", e => {
+    const tag = (e.target.tagName || "").toLowerCase();
+    if (tag === "input" || tag === "textarea" || tag === "select") return;
+    if (document.querySelector(".modal:not(.hidden)")) return;  // modals own keys
+    if (S.night) {
+      if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+        const slider = $("#timeSlider");
+        if (!slider) return;
+        e.preventDefault();
+        const step = e.shiftKey ? 10 : 1;
+        S.tIdx = Math.max(0, Math.min(+slider.max,
+          S.tIdx + (e.key === "ArrowRight" ? step : -step)));
+        slider.value = S.tIdx;
+        updateTimeLabel();
+        document.dispatchEvent(new CustomEvent("time:changed"));
+      } else if (e.key === "n" || e.key === "N") {
+        e.preventDefault();
+        nextTab();
+      }
+    }
+  });
+
   await loadState();
   await loadNight();
   Pano.init();
@@ -116,6 +142,16 @@ async function init() {
 
 function DETAIL_OPEN() {
   return !$("#detailModal").classList.contains("hidden");
+}
+
+/* cycle to the next tab of the active mode */
+function nextTab() {
+  const nav = document.querySelector(S.catmode ? "#tabs-cat" : "#tabs");
+  if (!nav) return;
+  const tabs = [...nav.querySelectorAll(".tab")];
+  const cur = nav.querySelector(".tab.active");
+  const idx = Math.max(0, tabs.indexOf(cur));
+  tabs[(idx + 1) % tabs.length].click();
 }
 
 init().catch(err => {

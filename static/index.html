@@ -79,7 +79,13 @@
         <div class="menu-section">
           <h4>Target scoring</h4>
           <label class="inline"><input type="checkbox" id="moonAware"> Moon-aware ranking</label>
-          <p class="hint">Ranks targets down while the Moon is up.</p>
+          <p class="hint">Ranks targets down while the Moon is up; objects far
+          from the Moon and clusters survive moonlight best.</p>
+          <label class="inline">Bortle sky class <span id="bortleVal" class="mono">4</span>
+            <input type="range" id="bortle" min="1" max="9" step="1" value="4" style="width:100%">
+          </label>
+          <p class="hint">1 = pristine dark sky, 9 = city centre. Darker skies
+          lower the default minimum altitude and weaken moonlight penalties.</p>
         </div>
         <div class="menu-section">
           <h4>Equipment filters</h4>
@@ -151,6 +157,10 @@
       </label>
       <label class="inline"><input type="checkbox" id="fUnblocked" checked> clear window only</label>
       <label class="inline"><input type="checkbox" id="fFav"> &#9733; session</label>
+      <label class="inline"><input type="checkbox" id="fObserved" title="hide targets you already logged as observed"> observed</label>
+      <select id="fConst" title="constellation filter">
+        <option value="">All constellations</option>
+      </select>
       <select id="fSort">
         <option value="score">Sort: imaging quality</option>
         <option value="pct">Sort: observable night %</option>
@@ -335,6 +345,11 @@
         <option value="integ">Sort: integration time</option>
         <option value="sessions">Sort: sessions</option>
       </select>
+      <select id="libExportFmt" style="width:64px">
+        <option value="csv">CSV</option>
+        <option value="json">JSON</option>
+      </select>
+      <button id="btnLibExport" class="ghost" title="Download the library">Export</button>
       <span id="libSummary" class="hint"></span>
     </div>
     <div class="tablewrap">
@@ -387,6 +402,13 @@
         <img id="dImage" alt="">
         <table class="kv" id="dMeta"></table>
         <p id="dBlurb"></p>
+        <h4 style="margin:14px 0 6px">Session journal</h4>
+        <div class="journal-form">
+          <input id="jDate" type="date" title="date observed">
+          <input id="jNotes" placeholder="notes (seeing, sky, result...)" maxlength="200">
+          <button id="jAdd" class="ghost">Log</button>
+        </div>
+        <div id="jList" class="hint"></div>
       </div>
       <div class="detail-chart">
         <canvas id="altChart"></canvas>

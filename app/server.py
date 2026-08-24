@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import math
 import re
@@ -50,6 +51,7 @@ class SettingsIn(BaseModel):
     image_dir: Optional[str] = None
     edge_space: Optional[int] = None
     adv_mode: Optional[bool] = None
+    bortle: Optional[int] = None
 
 
 class RigIn(BaseModel):
@@ -87,6 +89,11 @@ class LibraryEditIn(BaseModel):
     name: str                       # current object_name of an unresolved group
     new_name: Optional[str] = None
     otype: Optional[str] = None
+
+
+class ObservationIn(BaseModel):
+    date_obs: Optional[str] = None
+    notes: Optional[str] = None
 
 
 # ------------------------------------------------------------------ coord parsing
@@ -215,6 +222,10 @@ def create_app(db: Database, *, prefetch: bool = True) -> FastAPI:
     @app.get("/api/state")
     def api_state():
         panos = db.panoramas()
+        bortle = db.setting("bortle", 4)
+        mua = db.setting("min_useful_alt")
+        if mua is None:
+            mua = 17.0 + 2.0 * bortle      # darker skies -> lower default
         return {
             "version": APP_VERSION,
             "sites": db.sites(),
@@ -224,7 +235,7 @@ def create_app(db: Database, *, prefetch: bool = True) -> FastAPI:
                            "alt_top": p["alt_top"], "fov": p.get("fov", 360.0),
                            "paint_mode": p.get("paint_mode") or "obstacle"} for p in panos],
             "active_pano_id": db.setting("active_pano_id"),
-            "min_useful_alt": db.setting("min_useful_alt", 25.0),
+            "min_useful_alt": mua,
             "moon_aware": bool(db.setting("moon_aware", False)),
             "filters": db.setting("filters", {"broadband": True,
                                               "narrowband_ha": False,
@@ -238,6 +249,8 @@ def create_app(db: Database, *, prefetch: bool = True) -> FastAPI:
             "image_dir": db.image_dir(),
             "edge_space": db.setting("edge_space", 200),
             "adv_mode": bool(db.setting("adv_mode", False)),
+            "bortle": db.setting("bortle", 4),
+            "observed": db.observations(),
         }
 
     @app.post("/api/settings")
@@ -275,6 +288,8 @@ def create_app(db: Database, *, prefetch: bool = True) -> FastAPI:
                            max(0, min(1000, int(body.edge_space))))
         if body.adv_mode is not None:
             db.set_setting("adv_mode", bool(body.adv_mode))
+        if body.bortle is not None:
+            db.set_setting("bortle", max(1, min(9, int(body.bortle))))
         return {"ok": True}
 
     # ---------------- sites ----------------
@@ -598,6 +613,84 @@ def create_app(db: Database, *, prefetch: bool = True) -> FastAPI:
         rename_archive_folder(Path(db.image_dir()), name, new_name)
         db.rename_images(name, new_name, otype, obj_slug(new_name))
         return {"ok": True, "name": new_name, "otype": otype}
+
+    @app.get("/api/library/export")
+    def api_library_export(format: str = "json"):
+        from . import imglib
+        imgs = db.images()
+        if format == "csv":
+            import csv as csvmod
+            import io
+            buf = io.StringIO()
+            w = csvmod.writer(buf)
+            w.writerow(["id", "file", "orig_name", "object_id", "object_name",
+                        "otype", "ra_hours", "dec_deg", "exposure", "date_obs",
+                        "filter", "telescope", "imagetyp", "ingested_at"])
+            for i in imgs:
+                w.writerow([i.get("id"), i.get("file"), i.get("orig_name"),
+                            i.get("object_id"), i.get("object_name"),
+                            i.get("otype"), i.get("ra_hours"),
+                            i.get("dec_deg"), i.get("exposure"),
+                            i.get("date_obs"), i.get("filter"),
+                            i.get("telescope"), i.get("imagetyp"),
+                            i.get("ingested_at")])
+            return Response(
+                content=buf.getvalue().encode("utf-8-sig"),
+                media_type="text/csv",
+                headers={"Content-Disposition":
+                         'attachment; filename="astropilot-library.csv"'})
+        if format == "json":
+            objs = imglib.group_library(imgs, db.all_objects(advanced=True))
+            return Response(
+                content=json.dumps({
+                    "image_dir": db.image_dir(),
+                    "total_images": len(imgs),
+                    "total_exposure": round(sum(
+                        float(i.get("exposure") or 0.0) for i in imgs), 1),
+                    "objects": objs,
+                }, indent=1).encode("utf-8"),
+                media_type="application/json",
+                headers={"Content-Disposition":
+                         'attachment; filename="astropilot-library.json"'})
+        raise HTTPException(400, "format must be csv or json")
+
+    @app.get("/api/images/{img_id}/preview")
+    def api_image_preview(img_id: int):
+        from . import fits as fitsio
+        row = next((i for i in db.images() if i["id"] == img_id), None)
+        if row is None:
+            raise HTTPException(404, "image not found")
+        p = Path(db.image_dir()) / row["file"]
+        if not p.is_file():
+            raise HTTPException(404, "file missing on disk")
+        try:
+            with open(p, "rb") as f:
+                png = fitsio.preview_png_file(f)
+        except OSError:
+            raise HTTPException(500, "cannot read archive file")
+        if png is None:
+            raise HTTPException(404, "not an image HDU")
+        return Response(content=png, media_type="image/png",
+                        headers={"Cache-Control":
+                                 "public, max-age=604800, immutable"})
+
+    # ---------------- observations (session journal) ----------------
+
+    @app.post("/api/object/{oid}/observed")
+    def api_add_observation(oid: str, body: ObservationIn):
+        if db.get_object(oid) is None:
+            raise HTTPException(404, "Object not found")
+        db.add_observation(oid, body.date_obs, body.notes)
+        return {"ok": True}
+
+    @app.get("/api/object/{oid}/observed")
+    def api_observations(oid: str):
+        return db.observations_for(oid)
+
+    @app.delete("/api/object/{oid}/observed/{obs_id}")
+    def api_delete_observation(oid: str, obs_id: int):
+        db.delete_observation(obs_id)
+        return {"ok": True}
 
     @app.get("/api/shutdown")
     @app.post("/api/shutdown")
