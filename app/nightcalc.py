@@ -42,6 +42,7 @@ def ceil_lookup(profile: list[float]):
 def compute_night(db: Database, lat: float, lon: float, elev_m: int,
                   date_local: str, tz_off_min: int,
                   profile: list[float],
+                  profile_top: list[float] | None = None,
                   advanced: bool = False) -> dict:
     y, m, d = map(int, date_local.split("-")[:3])
     win = night_window(y, m, d, tz_off_min, lat, lon)
@@ -75,6 +76,9 @@ def compute_night(db: Database, lat: float, lon: float, elev_m: int,
     illum = round(moon_illumination(midnight_jd), 2)
 
     ceil_fn = ceil_lookup(profile)
+    # sky-mode bands carry an upper ceiling: everything above the painted
+    # sky is blocked too (e.g. a balcony out of frame). Empty -> open above.
+    top_fn = ceil_lookup(profile_top) if profile_top else (lambda az: 90.0)
 
     objs = db.all_objects(advanced=advanced)
     out_objects = []
@@ -91,11 +95,14 @@ def compute_night(db: Database, lat: float, lon: float, elev_m: int,
         ra = o["ra_hours"] * 15.0
         dec = o["dec_deg"]
         alts, azs, ceils = [], [], []
+        ceils_top = [] if profile_top else None
         for i, jd in enumerate(jds):
             a, z = altaz(ra, dec, jd, lat, lon)
             alts.append(a)
             azs.append(z)
             ceils.append(ceil_fn(z))
+            if ceils_top is not None:
+                ceils_top.append(round(top_fn(z), 1))
 
         max_i = max(range(len(alts)), key=lambda i: alts[i])
         # visibility flags / best windows / scores are derived CLIENT-side so
@@ -109,6 +116,8 @@ def compute_night(db: Database, lat: float, lon: float, elev_m: int,
             "max_alt": round(alts[max_i], 1),
             "max_i": max_i,
         }
+        if ceils_top is not None:
+            rec["ceil_top"] = ceils_top
         out_objects.append(rec)
 
     timeline = {
@@ -139,7 +148,8 @@ def compute_night(db: Database, lat: float, lon: float, elev_m: int,
 
 def object_detail(db: Database, oid: str, date_local: str, tz_off_min: int,
                   lat: float, lon: float, profile: list[float],
-                  min_alt: float) -> dict | None:
+                  min_alt: float,
+                  profile_top: list[float] | None = None) -> dict | None:
     """Per-object 4-min-grid track + meta. Returns None for unknown ids."""
     obj = db.get_object(oid)
     if obj is None:
@@ -160,9 +170,11 @@ def object_detail(db: Database, oid: str, date_local: str, tz_off_min: int,
         t += step
 
     ceil_fn = ceil_lookup(profile)
+    top_fn = ceil_lookup(profile_top) if profile_top else (lambda az: 90.0)
     ra = obj["ra_hours"] * 15.0
     dec = obj["dec_deg"]
     alts, azs, ceils, vis = [], [], [], []
+    ceils_top = [] if profile_top else None
     for tt in times:
         jd = julian_day(tt)
         a, z = altaz(ra, dec, jd, lat, lon)
@@ -170,7 +182,10 @@ def object_detail(db: Database, oid: str, date_local: str, tz_off_min: int,
         azs.append(round(z, 1))
         c = ceil_fn(z)
         ceils.append(round(c, 2))
-        vis.append(a >= min_alt and a > c)
+        if ceils_top is not None:
+            ceils_top.append(round(top_fn(z), 1))
+        vis.append(a >= min_alt and a > c and
+                   (ceils_top is None or a < ceils_top[-1]))
 
     max_i = max(range(len(alts)), key=lambda i: alts[i])
     best = longest_run(vis)
@@ -182,7 +197,7 @@ def object_detail(db: Database, oid: str, date_local: str, tz_off_min: int,
     meta["ra_hms"] = format_ra(obj["ra_hours"])
     meta["dec_dms"] = format_dec(obj["dec_deg"])
 
-    return {
+    out = {
         "meta": meta,
         "twilight_level": win["level"],
         "dusk": _iso(dusk), "dawn": _iso(dawn),
@@ -192,6 +207,9 @@ def object_detail(db: Database, oid: str, date_local: str, tz_off_min: int,
         "best": list(best) if best else None,
         "min_useful_alt": min_alt,
     }
+    if ceils_top is not None:
+        out["ceil_top"] = ceils_top
+    return out
 
 
 def longest_run(flags: list[bool]):

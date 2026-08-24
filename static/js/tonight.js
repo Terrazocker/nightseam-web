@@ -16,7 +16,7 @@ export function bindTonight() {
 function cardHTML({o, m}) {
   const st = statusOf(o, S.tIdx);
   return `<div class="pick ${st.code==="blk"?"blocked":st.code==="low"||st.code==="hor"?"low":""}" data-id="${m.id}">
-    <img class="pick-thumb" loading="lazy" src="/api/object/${m.id}/image?v=${IMG_VER}"
+    <img class="pick-thumb" loading="lazy" src="/api/object/${m.id}/image?thumb=1&v=${IMG_VER}"
       onerror="this.onerror=null;this.style.visibility='hidden'">
     <div class="pick-body">
       <div class="nm">${esc(m.primary_name)}</div>

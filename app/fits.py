@@ -97,10 +97,10 @@ def _parse_value(raw: str):
 # ---------------------------------------------------------------- parsers
 
 def parse_ra_hours(value) -> float | None:
-    """Decimal hours, or sexagesimal 'HH MM SS.s' / '05 34 31.9' -> hours."""
+    """Decimal hours (dot or comma), or sexagesimal 'HH MM SS.s' -> hours."""
     if value is None:
         return None
-    s = str(value).strip()
+    s = str(value).strip().replace(",", ".")
     try:
         return float(s)
     except ValueError:
@@ -122,10 +122,10 @@ def parse_ra_hours(value) -> float | None:
 
 
 def parse_dec_deg(value) -> float | None:
-    """Decimal degrees, or sexagesimal '+DD MM SS' / '+22 01 00' -> degrees."""
+    """Decimal degrees (dot or comma), or sexagesimal '+DD MM SS' -> degrees."""
     if value is None:
         return None
-    s = str(value).strip()
+    s = str(value).strip().replace(",", ".")
     try:
         return float(s)
     except ValueError:

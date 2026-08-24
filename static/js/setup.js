@@ -1,6 +1,6 @@
 /* Setup dialog: observing locations, imaging rigs, backup/transfer */
 
-import { $, esc, api, toast, fmtFovPair, watchCaps, applyEdgeSpace } from "./util.js";
+import { $, esc, api, toast, fmtFovPair, watchCaps, applyEdgeSpace, num } from "./util.js";
 import { S } from "./state.js";
 import { loadNight } from "./night.js";
 import { renderTargets } from "./targets.js";
@@ -41,8 +41,9 @@ export function bindSetup() {
     try {
       await api("/api/sites", { method:"POST",
         headers:{"Content-Type":"application/json"},
-        body: JSON.stringify({ name:f.name.value, lat:+f.lat.value,
-                               lon:+f.lon.value, elev:+f.elev.value })});
+        body: JSON.stringify({ name:f.name.value, lat:num(f.lat.value),
+                               lon:num(f.lon.value),
+                               elev:Math.round(num(f.elev.value) || 0) })});
       f.reset();
       await refreshCfgOnly();
       renderSitesTable(await api("/api/sites"));
@@ -68,9 +69,9 @@ export function bindSetup() {
       await api("/api/rigs", { method:"POST",
         headers:{"Content-Type":"application/json"},
         body: JSON.stringify({ name:rigForm.name.value,
-                               focal_mm:+rigForm.focal_mm.value,
-                               sensor_w:+rigForm.sensor_w.value,
-                               sensor_h:+rigForm.sensor_h.value })});
+                               focal_mm:num(rigForm.focal_mm.value),
+                               sensor_w:num(rigForm.sensor_w.value),
+                               sensor_h:num(rigForm.sensor_h.value) })});
       rigForm.reset(); $("#rigFovPreview").textContent="";
       S.cfg = await api("/api/state");
       applyCfgToUI(); renderRigsTable();
@@ -78,9 +79,9 @@ export function bindSetup() {
   });
   for (const n of ["focal_mm","sensor_w","sensor_h"]) {
     rigForm.querySelector(`[name=${n}]`).addEventListener("input", () => {
-      const fl = parseFloat(rigForm.focal_mm.value),
-            sw = parseFloat(rigForm.sensor_w.value),
-            sh = parseFloat(rigForm.sensor_h.value);
+      const fl = num(rigForm.focal_mm.value),
+            sw = num(rigForm.sensor_w.value),
+            sh = num(rigForm.sensor_h.value);
       if (!(fl > 0 && sw > 0 && sh > 0)) { $("#rigFovPreview").textContent=""; return; }
       const w = 2*Math.atan(sw/2/fl)*180/Math.PI*60;
       const h = 2*Math.atan(sh/2/fl)*180/Math.PI*60;
@@ -165,7 +166,7 @@ export function bindSetup() {
       const res = await api("/api/catalog/custom", { method:"POST",
         headers:{"Content-Type":"application/json"},
         body: JSON.stringify({ name:f.name.value, ra:f.ra.value, dec:f.dec.value,
-          otype:f.otype.value, vmag:f.vmag.value ? +f.vmag.value : null })});
+          otype:f.otype.value, vmag:f.vmag.value.trim() !== "" ? num(f.vmag.value) : null })});
       f.reset();
       toast("Target added to your catalog.", "info", 3500);
       await refreshCatalogMeta(); renderCustomList(); renderTargets();

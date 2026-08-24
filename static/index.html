@@ -233,7 +233,7 @@
             <input type="range" id="fovAz" min="45" max="360" step="5" value="360">
           </label>
           <p class="hint">FOV &lt; 360&deg; for partial panoramas. Azimuths outside the
-          image are treated as <b>completely unblocked</b>.</p>
+          image are unblocked in obstacle mode, fully blocked in sky mode.</p>
 
           <h4>Crop (sides only)</h4>
           <div class="rowbtns">
@@ -245,7 +245,16 @@
           bands to remove from the left and/or right edge &mdash; e.g. trim a 370&deg;
           pano back to 360&deg;. Cropping resets paint mask and profile.</p>
 
-          <h4>Obstacle mask</h4>
+          <h4>Mask</h4>
+          <div class="rowbtns">
+            <button id="modeObstacle" class="tool active">Paint obstacles</button>
+            <button id="modeSky" class="tool">Paint visible sky</button>
+          </div>
+          <p class="hint">Obstacle mode: paint over everything that blocks the sky.
+          Sky mode: paint the open sky band instead &mdash; everything not
+          painted, below AND above the band, is treated as blocked (e.g. a
+          balcony out of frame). Red line: obstruction below; dashed red line:
+          obstruction above.</p>
           <div class="rowbtns">
             <button id="toolBrush" class="tool active">Brush</button>
             <button id="toolErase" class="tool">Eraser</button>
@@ -258,8 +267,6 @@
             <button id="btnCalN" class="ghost" title="Click a landmark and enter its compass bearing to calibrate azimuths">&#9210; Calibrate N...</button>
             <span id="calNHint" class="hint hidden">click the known point on the image...</span>
           </div>
-          <p class="hint">Paint over everything that blocks the sky. The red line is the resulting
-          obstruction height per azimuth.</p>
           <div class="rowbtns">
             <button id="btnSaveProfile">Save obstruction profile</button>
             <button id="btnSetActive" class="ghost">Use for planning</button>
@@ -419,9 +426,9 @@
       <h4>Add location</h4>
       <form id="siteForm" class="formrow">
         <input name="name" placeholder="Name" required maxlength="40">
-        <input name="lat" type="number" step="0.0001" min="-89.9" max="89.9" placeholder="Latitude" required>
-        <input name="lon" type="number" step="0.0001" min="-180" max="180" placeholder="Longitude" required>
-        <input name="elev" type="number" step="1" min="-100" max="6000" placeholder="Elev m" value="0">
+        <input name="lat" inputmode="decimal" autocomplete="off" spellcheck="false" placeholder="Latitude" required>
+        <input name="lon" inputmode="decimal" autocomplete="off" spellcheck="false" placeholder="Longitude" required>
+        <input name="elev" inputmode="decimal" autocomplete="off" spellcheck="false" placeholder="Elev m" value="0">
         <button type="submit">Add</button>
         <button type="button" id="btnGeoLocate" class="ghost">Use my location</button>
       </form>
@@ -438,9 +445,9 @@
       <h4>Add rig</h4>
       <form id="rigForm" class="formrow">
         <input name="name" placeholder="Rig name" required maxlength="40" style="width:140px">
-        <input name="focal_mm" type="number" step="0.1" min="1" max="30000" placeholder="Focal mm" required style="width:95px">
-        <input name="sensor_w" type="number" step="0.01" min="0.5" max="300" placeholder="Sensor W mm" required style="width:105px">
-        <input name="sensor_h" type="number" step="0.01" min="0.5" max="300" placeholder="Sensor H mm" required style="width:105px">
+        <input name="focal_mm" inputmode="decimal" autocomplete="off" spellcheck="false" placeholder="Focal mm" required style="width:95px">
+        <input name="sensor_w" inputmode="decimal" autocomplete="off" spellcheck="false" placeholder="Sensor W mm" required style="width:105px">
+        <input name="sensor_h" inputmode="decimal" autocomplete="off" spellcheck="false" placeholder="Sensor H mm" required style="width:105px">
         <button type="submit">Add</button>
       </form>
       <p id="rigFovPreview" class="hint mono"></p>
@@ -458,7 +465,7 @@
           <option value="planetary">Planetary</option><option value="open_cluster">Open cl.</option>
           <option value="globular">Globular</option><option value="asterism">Other</option>
         </select>
-        <input name="vmag" type="number" step="0.1" min="-2" max="18" placeholder="mag" style="width:70px">
+        <input name="vmag" inputmode="decimal" autocomplete="off" spellcheck="false" placeholder="mag" style="width:70px">
         <button type="submit">Add</button>
       </form>
       <div id="customList" class="hint"></div>
@@ -518,6 +525,7 @@
   <div class="modal-box">
     <header><h2 id="wizTitle">Welcome to AstroPilot</h2></header>
     <div id="wizBody"></div>
+    <p id="wizErr" class="hint" style="color:var(--warn);margin:8px 0 0"></p>
     <div class="rowbtns" style="margin-top:14px">
       <button id="wizBack" class="ghost hidden">&larr; Back</button>
       <span style="flex:1"></span>

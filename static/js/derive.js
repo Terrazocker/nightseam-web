@@ -44,7 +44,8 @@ function nightIndexRange() {
 
 /* ---------------- advanced catalog: synthesize tracks client-side -------- */
 
-import { julianDay, precessJ2000ToDate, altazPrecessed } from "./astro.js";
+import { julianDay, precessJ2000ToDate, altazFrame,
+         altazFrameApply } from "./astro.js";
 
 const NO_BLOCK = -90.0;
 const BINS = 720;
@@ -59,29 +60,47 @@ function ceilLookup(profile) {
   };
 }
 
+/* sky-mode bands carry an upper ceiling (blocked above the painted sky);
+   90.5 = no upper limit (altitude can never exceed 90) */
+function topLookup(profileTop) {
+  if (!profileTop || profileTop.length !== BINS) return () => 90.5;
+  return ceilLookup(profileTop);
+}
+
 /* The server ships advanced-mode objects as metadata only; compute their
    alt/az/ceil tracks here (precession once per object at the grid midpoint,
-   then per-sample alt/az) so all views work unchanged. */
-export function synthesizeAdvancedTracks(N) {
+   sidereal time once per sample) so all views work unchanged. Yields to the
+   event loop periodically so the ~12k-object pass never freezes the UI. */
+export async function synthesizeAdvancedTracks(N) {
   const site = N.site;
   const jds = N.timeline.times_iso.map(iso => julianDay(parseUTC(iso)));
   const refJd = jds[Math.floor(jds.length / 2)];
+  const frame = altazFrame(site.lat, site.lon, jds);
   const ceil = ceilLookup(activeProfile());
-  for (const o of N.objects) {
+  const hasTop = !!activeTopProfile();
+  const ceilTop = topLookup(activeTopProfile());
+  const n = frame.length;
+  const objs = N.objects;
+  for (let k = 0; k < objs.length; k++) {
+    const o = objs[k];
     if (!o.adv) continue;
     const [pr, pd] = precessJ2000ToDate(o.ra_hours * 15, o.dec_deg, refJd);
-    const alts = [], azs = [], ceils = [];
-    for (const jd of jds) {
-      const [a, z] = altazPrecessed(pr, pd, jd, site.lat, site.lon);
-      alts.push(Math.round(a * 10) / 10);
-      azs.push(Math.round(z * 10) / 10);       // parity with server rounding
-      ceils.push(Math.round(ceil(z) * 10) / 10);
+    const alts = new Array(n), azs = new Array(n), ceils = new Array(n);
+    const ceilsTop = hasTop ? new Array(n) : null;
+    for (let i = 0; i < n; i++) {
+      const [a, z] = altazFrameApply(frame, pr, pd, i);
+      alts[i] = Math.round(a * 10) / 10;
+      azs[i] = Math.round(z * 10) / 10;       // parity with server rounding
+      ceils[i] = Math.round(ceil(z) * 10) / 10;
+      if (ceilsTop) ceilsTop[i] = Math.round(ceilTop(z) * 10) / 10;
     }
     o.alt = alts; o.az = azs; o.ceil = ceils;
+    if (ceilsTop) o.ceil_top = ceilsTop;
     let maxi = 0;
-    for (let i = 1; i < alts.length; i++) if (alts[i] > alts[maxi]) maxi = i;
+    for (let i = 1; i < n; i++) if (alts[i] > alts[maxi]) maxi = i;
     o.max_alt = alts[maxi];
     o.max_i = maxi;
+    if ((k & 255) === 255) await new Promise(r => setTimeout(r, 0));
   }
 }
 
@@ -94,7 +113,8 @@ export function recomputeNightDerived() {
   const illum = N.moon_illum || 0;
 
   for (const o of N.objects) {
-    o.vis = o.alt.map((a, i) => a >= minAlt && a > o.ceil[i]);
+    o.vis = o.alt.map((a, i) =>
+      a >= minAlt && a > o.ceil[i] && a < (o.ceil_top ? o.ceil_top[i] : 90.5));
     o.above = o.alt.map(a => a > 0);
     let visIn = 0, blocked = 0, sClassic = 0, sMoon = 0;
     for (let i = 0; i < o.vis.length; i++) {
@@ -189,7 +209,14 @@ function activeProfile() {
               S.panos.find(p => p.id === (S.cfg && S.cfg.active_pano_id));
   return act && act.profile && act.profile.length ? act.profile : null;
 }
-export { activeProfile };
+export { activeProfile, activeTopProfile };
+
+function activeTopProfile() {
+  const act = S.panos.find(p => p.active) ||
+              S.panos.find(p => p.id === (S.cfg && S.cfg.active_pano_id));
+  return act && act.profile_top && act.profile_top.length
+      ? act.profile_top : null;
+}
 
 /* ---------------- scoring & filters ---------------- */
 

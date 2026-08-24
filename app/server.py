@@ -78,7 +78,9 @@ class PanoramaUpdate(BaseModel):
     fov: Optional[float] = None
     strokes: Optional[list] = None
     profile: Optional[list] = None
+    profile_top: Optional[list] = None
     active: Optional[bool] = None
+    paint_mode: Optional[str] = None
 
 
 class LibraryEditIn(BaseModel):
@@ -90,8 +92,8 @@ class LibraryEditIn(BaseModel):
 # ------------------------------------------------------------------ coord parsing
 
 def parse_ra_hours(text) -> Optional[float]:
-    """Decimal hours, or 'HH MM[.m][ SS]' with h/m/s or colon separators."""
-    s = str(text).strip().lower().replace("h", " ").replace("m", " ").replace("s", " ")
+    """Decimal hours (dot or comma), or 'HH MM[.m][ SS]' with h/m/s or colons."""
+    s = str(text).strip().lower().replace(",", ".").replace("h", " ").replace("m", " ").replace("s", " ")
     parts = [p for p in re.split(r"[\s:]+", s) if p]
     try:
         vals = [float(p) for p in parts]
@@ -107,7 +109,7 @@ def parse_ra_hours(text) -> Optional[float]:
 
 
 def parse_dec_deg(text) -> Optional[float]:
-    s = str(text).strip().replace("\u00b0", " ").replace("d", " ")
+    s = str(text).strip().replace(",", ".").replace("\u00b0", " ").replace("d", " ")
     sign = -1.0 if s.startswith("-") else 1.0
     s = s.lstrip("+-").replace("'", " ").replace('"', " ")
     parts = [p for p in re.split(r"[\s:]+", s) if p]
@@ -198,7 +200,15 @@ def create_app(db: Database, *, prefetch: bool = True) -> FastAPI:
     @app.middleware("http")
     async def touch(request, call_next):
         _state["last_request"] = time.time()
-        return await call_next(request)
+        resp = await call_next(request)
+        # the UI ships as plain files served from the exe/source bundle; a
+        # stale cached index.html next to fresh ES modules breaks the app
+        # (missing DOM ids). Never cache the UI shell or its assets.
+        if request.url.path in ("/", "/index.html", "/style.css",
+                                "/favicon.ico") or \
+                request.url.path.startswith("/js/"):
+            resp.headers["Cache-Control"] = "no-store"
+        return resp
 
     # ---------------- state / settings ----------------
 
@@ -211,7 +221,8 @@ def create_app(db: Database, *, prefetch: bool = True) -> FastAPI:
             "active_site_id": db.setting("active_site_id"),
             "panoramas": [{"id": p["id"], "name": p["name"], "active": bool(p["active"]),
                            "az_offset": p["az_offset"], "alt_bottom": p["alt_bottom"],
-                           "alt_top": p["alt_top"], "fov": p.get("fov", 360.0)} for p in panos],
+                           "alt_top": p["alt_top"], "fov": p.get("fov", 360.0),
+                           "paint_mode": p.get("paint_mode") or "obstacle"} for p in panos],
             "active_pano_id": db.setting("active_pano_id"),
             "min_useful_alt": db.setting("min_useful_alt", 25.0),
             "moon_aware": bool(db.setting("moon_aware", False)),
@@ -337,11 +348,13 @@ def create_app(db: Database, *, prefetch: bool = True) -> FastAPI:
         else:
             pano_row = db.active_panorama()
         profile = pano_row["profile"] if pano_row else []
+        profile_top = pano_row.get("profile_top") or [] if pano_row else []
 
         try:
             result = compute_night(db, site_row["lat"], site_row["lon"],
                                    site_row["elev"], date, tz_offset_min,
-                                   profile, advanced=adv)
+                                   profile, profile_top=profile_top,
+                                   advanced=adv)
         except Exception as exc:  # noqa: BLE001
             raise HTTPException(500, f"Computation failed: {exc}") from exc
         return JSONResponse(result)
@@ -362,23 +375,28 @@ def create_app(db: Database, *, prefetch: bool = True) -> FastAPI:
 
         pano_row = db.get_panorama(pano) if pano else db.active_panorama()
         profile = pano_row["profile"] if pano_row else []
+        profile_top = pano_row.get("profile_top") or [] if pano_row else []
         minalt_eff = float(minalt if minalt is not None
                            else db.setting("min_useful_alt", 25.0))
 
         result = object_detail(db, oid, date, tz_offset_min,
                                site_row["lat"], site_row["lon"],
-                               profile, minalt_eff)
+                               profile, minalt_eff,
+                               profile_top=profile_top)
         if result is None:
             raise HTTPException(404, "Object not found")
         return JSONResponse(result)
 
     @app.get("/api/object/{oid}/image")
-    def api_object_image(oid: str):
-        from .images import fetch_image
+    def api_object_image(oid: str, thumb: bool = False):
+        from .images import fetch_image, fetch_image_cached
         obj = db.get_object(oid)
         if obj is None:
             raise HTTPException(404)
-        data, ctype = fetch_image(obj)
+        # thumbnails (targets table) only use the on-disk cache so a page of
+        # 250 rows never triggers a Wikipedia/DSS lookup each; the detail
+        # view (thumb=0) still runs the full fetch chain.
+        data, ctype = fetch_image_cached(obj) if thumb else fetch_image(obj)
         if data is not None:
             return Response(content=data, media_type=ctype,
                             headers={"Cache-Control":
@@ -461,6 +479,9 @@ def create_app(db: Database, *, prefetch: bool = True) -> FastAPI:
         row = db.get_panorama(pid)
         if row is None:
             raise HTTPException(404)
+        if body.paint_mode is not None and \
+                body.paint_mode not in ("obstacle", "sky"):
+            raise HTTPException(400, "paint_mode must be 'obstacle' or 'sky'")
         fields = {k: v for k, v in body.model_dump().items() if v is not None}
         if fields:
             db.update_panorama(pid, **fields)

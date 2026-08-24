@@ -91,7 +91,9 @@ ingest + library), switched via the top-right button or the brand name.
 - `/api/night?adv=1` ships advanced objects as METADATA ONLY (id/ra/dec/mag/
   type, no tracks) - the payload stays ~1.5 MB. `synthesizeAdvancedTracks()`
   in `derive.js` computes alt/az/ceil tracks in the browser using
-  `static/js/astro.js` (precession once per object at the grid midpoint).
+  `static/js/astro.js` (precession once per object at the grid midpoint,
+  sidereal time once per SAMPLE via `altazFrame`; the pass yields to the
+  event loop every 256 objects so the 12k-object load never freezes the UI).
 - Never add track arrays for the full advanced catalog to the night payload;
   that is what the client-side synthesis exists for.
 - Advanced rows carry a `_adv` marker from `db.all_objects(advanced=True)`;
@@ -105,10 +107,20 @@ ingest + library), switched via the top-right button or the brand name.
   `SCHEMA`; never drop or re-shape existing columns (see the comment in
   `app/database.py`).
 - Panorama obstruction profiles are exactly 720 bins (0.5 deg per azimuth);
-  `NO_BLOCK = -90.0`. An empty/short profile means nothing blocks.
+  `NO_BLOCK = -90.0`. An empty/short profile means nothing blocks. Panoramas
+  carry a `paint_mode` ('obstacle' default | 'sky'): sky mode inverts the
+  mask - the profile is the BOTTOM edge of the painted visible sky band and
+  `profile_top` (a second 720-bin array, empty in obstacle mode) is its TOP
+  edge, so everything below AND above the painted band is blocked (e.g. a
+  balcony out of frame); unpainted columns block fully (90 deg); outside the
+  FOV follows the mode. The band ceiling ships as `ceil_top` per object from
+  /api/night and /api/object only when the active pano has a `profile_top`.
 - Archive layout is `<image_dir>/<Object>/lights/<file>.fit` (originals are
   copied, never moved). Older files at the folder root still work.
   Ingest streams header-first with a 1 GiB cap (`app/ingest.py`).
+- `/api/object/{oid}/image?thumb=1` is the cache-only thumbnail variant used
+  by the targets table (never hits the network, so a 250-row page is
+  instant even offline); the detail view uses the full Wikipedia/DSS chain.
 - `/api/library/edit` renames/retypes only unresolved objects (`object_id IS
   NULL`); it moves the archive folder on disk and rewrites stored paths.
 - Export/import ZIP covers settings, sites, rigs, panoramas, custom targets

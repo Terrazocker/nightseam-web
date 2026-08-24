@@ -1,6 +1,6 @@
 /* object detail modal + altitude-vs-time chart */
 
-import { $, api, clamp, parseUTC, esc, fmtHM,
+import { $, api, clamp, parseUTC, esc, fmtHM, toast,
          TYPE_LABEL, constName, fmtSize } from "./util.js";
 import { S, IMG_VER } from "./state.js";
 import { filterAdvice, frameCoverage, moonAt, moonBandX } from "./derive.js";
@@ -24,13 +24,30 @@ export async function openDetail(id) {
   $("#dNames").innerHTML = chips.join(" ");
 
   $("#dBlurb").textContent = m.blurb || "";
+  // instant: cached image or placeholder - never block the modal on the
+  // Wikipedia/DSS network chain; the real image upgrades in the background
+  // (capped at 8 s so a slow chain can never hog a browser connection and
+  // starve other requests)
   const img = $("#dImage");
-  img.src = `/api/object/${id}/image?v=${IMG_VER}`;
+  img.src = `/api/object/${id}/image?thumb=1&v=${IMG_VER}`;
+  const upCtl = new AbortController();
+  const upTimer = setTimeout(() => upCtl.abort(), 8000);
+  fetch(`/api/object/${id}/image?v=${Date.now()}`, { signal: upCtl.signal })
+    .then(r => (r.ok ? r.blob() : null))
+    .then(b => { if (b && S.currentId === id) img.src = URL.createObjectURL(b); })
+    .catch(() => {})
+    .finally(() => clearTimeout(upTimer));
 
   const q = new URLSearchParams({date: $("#dateInput").value,
     tz_offset_min: tzOffLocal(), minalt: S.minAlt});
   if (S.activeSiteId != null) q.set("site", S.activeSiteId);
-  DETAIL = await api(`/api/object/${id}?` + q);
+  try {
+    DETAIL = await api(`/api/object/${id}?` + q);
+  } catch (err) {
+    toast("Object details failed: " + err.message);
+    console.error(err);
+    return;
+  }
   renderDetailMeta(m, DETAIL);
   drawAltChart();
 }
@@ -212,6 +229,42 @@ export function drawAltChart() {
   }
   ctx.stroke(); ctx.setLineDash([]);
 
+  // sky-mode upper ceiling: blocked above the painted band. Values >= 88
+  // mean "no upper ceiling" (painted to the frame top) - skip those.
+  if (d.ceil_top) {
+    // fill each contiguous band segment between its top line and Y(88)
+    ctx.fillStyle = "rgba(255,93,93,0.10)";
+    let segStart = null;
+    for (let i = 0; i <= nT; i++) {
+      const v = i < nT ? d.ceil_top[i] : 90;
+      if (i < nT && v < 88 && segStart === null) segStart = i;
+      if (segStart !== null && (i === nT || v >= 88)) {
+        ctx.beginPath();
+        ctx.moveTo(X(segStart), Y(Math.min(88, Math.max(0, d.ceil_top[segStart]))));
+        for (let j = segStart; j < i; j++) {
+          ctx.lineTo(X(j), Y(Math.min(88, Math.max(0, d.ceil_top[j]))));
+        }
+        ctx.lineTo(X(i - 1), Y(88));
+        ctx.lineTo(X(segStart), Y(88));
+        ctx.closePath();
+        ctx.fill();
+        segStart = null;
+      }
+    }
+    ctx.setLineDash([6,4]);
+    ctx.strokeStyle = "rgba(255,93,93,.55)"; ctx.lineWidth = 1;
+    ctx.beginPath();
+    pen = false;
+    for (let i=0;i<nT;i++){
+      const v = d.ceil_top[i];
+      if (v >= 88) { pen = false; continue; }
+      const y = Y(clamp(v, -10, 88)), x = X(i);
+      pen ? ctx.lineTo(x,y) : ctx.moveTo(x,y);
+      pen = true;
+    }
+    ctx.stroke(); ctx.setLineDash([]);
+  }
+
   // min useful altitude
   ctx.strokeStyle = "rgba(255,180,84,.55)";
   ctx.setLineDash([2,5]);
@@ -239,6 +292,7 @@ export function drawAltChart() {
     const a=d.alt[i];
     if (a<=0) return "#4a5468";
     if (a<=d.ceil[i]) return C.bad;
+    if (d.ceil_top && a >= d.ceil_top[i]) return C.bad;
     if (a<d.min_useful_alt) return C.warn;
     return C.good;
   };

@@ -2,7 +2,7 @@
 
 /* ================= panorama import / calibration / masking ================= */
 
-import { $, clamp, esc, api, toast } from "./util.js";
+import { $, clamp, esc, api, toast, num } from "./util.js";
 import { S } from "./state.js";
 import { loadNight } from "./night.js";
 
@@ -27,6 +27,13 @@ window.Pano = Pano;
 Pano.init = function () {
   $("#btnUploadPano").addEventListener("click", () => $("#panoFile").click());
   $("#panoFile").addEventListener("change", e => { uploadFile(e.target.files[0]); e.target.value=""; });
+  // the mode buttons only exist in current index.html; a stale cached page
+  // without them must not kill init (import would then fail silently)
+  const mb = $("#modeObstacle"), ms = $("#modeSky");
+  if (mb && ms) {
+    mb.addEventListener("click", () => setPaintMode("obstacle"));
+    ms.addEventListener("click", () => setPaintMode("sky"));
+  }
   $("#toolBrush").addEventListener("click", () => setTool("b"));
   $("#toolErase").addEventListener("click", () => setTool("e"));
   $("#toolCrop").addEventListener("click", () => setTool("crop"));
@@ -110,6 +117,30 @@ Pano.init = function () {
   if (S.panos.length) select(S.panos.find(p=>p.active) || S.panos[0]);
 };
 
+/* ---------------- paint mode (obstacle | sky) ---------------- */
+
+function paintMode() {
+  return (Pano.cur && Pano.cur.paint_mode === "sky") ? "sky" : "obstacle";
+}
+
+function updateModeButtons() {
+  const m = paintMode();
+  const b = $("#modeObstacle"), s = $("#modeSky");
+  if (b) b.classList.toggle("active", m === "obstacle");
+  if (s) s.classList.toggle("active", m === "sky");
+}
+
+function setPaintMode(m) {
+  if (!Pano.cur || paintMode() === m) return;
+  Pano.cur.paint_mode = m;
+  Pano.cur.profile = [];
+  Pano.cur.profile_top = [];
+  invalidateMask();
+  updateModeButtons();
+  recomputeProfile();
+  scheduleSave(0);
+}
+
 /* ---------------- undo ---------------- */
 
 function pushUndo() {
@@ -122,6 +153,7 @@ function undoPaint() {
   if (!Pano.cur || !Pano.undo.length) return;
   Pano.cur.strokes = JSON.parse(Pano.undo.pop());
   Pano.cur.profile = [];
+  Pano.cur.profile_top = [];
   invalidateMask();
   render();
   scheduleSave();
@@ -139,7 +171,7 @@ function calibrateAt(e) {
     "Compass bearing of this point, in degrees (N=0, E=90, S=180, W=270):",
     clickedAz.toFixed(1));
   if (bearing != null) {
-    const b = parseFloat(bearing);
+    const b = num(bearing);
     if (!isNaN(b)) {
       const newOff = (((b - frac * fov) % 360) + 360) % 360;
       $("#azOffset").value = newOff.toFixed(1);
@@ -191,8 +223,11 @@ async function uploadFile(file) {
     const res = await api("/api/panorama", { method: "POST", body: fd });
     await refreshPanos();
     const rec = S.panos.find(p => p.id === res.id);
-    if (rec) select(rec);
-  } catch (err) { alert(err.message); }
+    if (rec) await select(rec);
+  } catch (err) {
+    console.error("pano import failed:", err);
+    alert(err.message);
+  }
 }
 
 function renderList() {
@@ -212,6 +247,7 @@ function renderList() {
 async function select(rec) {
   Pano.cur = rec;
   Pano.crop = null;
+  updateModeButtons();
   $("#calibBox").classList.remove("hidden");
   $("#azOffset").value = rec.az_offset ?? 0;
   $("#altBottom").value = rec.alt_bottom ?? 0;
@@ -333,6 +369,7 @@ function clearMask() {
   if (!Pano.cur) return;
   Pano.cur.strokes = [];
   Pano.cur.profile = [];
+  Pano.cur.profile_top = [];
   invalidateMask();
   render();
   scheduleSave();
@@ -364,7 +401,7 @@ function buildMask(W, H) {
   const cv = document.createElement("canvas");
   cv.width = W; cv.height = H;
   const ctx = cv.getContext("2d");
-  ctx.fillStyle = "#ff5d5d";
+  ctx.fillStyle = paintMode() === "sky" ? "#4fd97a" : "#ff5d5d";
   const wraps = (+$("#fovAz").value || 360) >= 359.5;
   for (const s of Pano.cur.strokes) {
     ctx.globalCompositeOperation = s.m === "e" ? "destination-out" : "source-over";
@@ -489,39 +526,90 @@ function drawCalibGrid(ctx, W, H) {
   }
 }
 
-function drawProfileLine(ctx, W, H) {
-  const prof = Pano.cur.profile;
-  if (!prof || prof.length !== NBIN) return;
-  const ab = +$("#altBottom").value, at = +$("#altTop").value;
-  const azOff = +$("#azOffset").value || 0;
-  const fov = +$("#fovAz").value || 360;
-  ctx.strokeStyle = "#ff5d5d";
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  let pen = false;
+/* contiguous visible segments of one profile (seam jumps lift the pen).
+   skipAbove hides bins at or above a ceiling value - used for the top edge
+   of sky-mode bands, where no-ceiling columns carry the 90.5 sentinel. */
+function profileSegments(prof, W, H, ab, at, azOff, fov, skipAbove = 90.5) {
+  const segments = [];
+  let seg = null;
   let prevX = null;
   for (let i = 0; i < NBIN; i++) {
     const e = prof[i];
     // bin i covers azimuth azOff + i*0.5deg -> its pixel position depends
     // on the current calibration; outside the FOV there is nothing to draw
     const rel = (((i * 0.5 - azOff) % 360) + 360) % 360;
-    if (rel > fov || e <= ab - 5) { pen = false; prevX = null; continue; }
+    if (rel > fov || e <= ab - 5 || e >= skipAbove) {
+      seg = null; prevX = null; continue;
+    }
     const x = rel / fov * W;
     // azimuth seam: consecutive bins can jump from the right edge back to
     // the left edge - lift the pen instead of drawing across the image
-    if (pen && prevX != null && x < prevX - W * 0.5) pen = false;
+    if (seg && prevX != null && x < prevX - W * 0.5) seg = null;
     const y = H * (1 - (clamp(e, ab, at) - ab) / (at - ab));
-    pen ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
-    pen = true;
+    if (!seg) { seg = []; segments.push(seg); }
+    seg.push([x, y]);
     prevX = x;
   }
+  return segments;
+}
+
+function strokeSegments(ctx, segments) {
+  ctx.beginPath();
+  for (const s of segments) {
+    s.forEach(([x, y], k) => k ? ctx.lineTo(x, y) : ctx.moveTo(x, y));
+  }
   ctx.stroke();
+}
+
+function drawProfileLine(ctx, W, H) {
+  const prof = Pano.cur.profile;
+  if (!prof || prof.length !== NBIN) return;
+  const ab = +$("#altBottom").value, at = +$("#altTop").value;
+  const azOff = +$("#azOffset").value || 0;
+  const fov = +$("#fovAz").value || 360;
+  const segs = profileSegments(prof, W, H, ab, at, azOff, fov);
+  const topSegs = Pano.cur.profile_top &&
+                  Pano.cur.profile_top.length === NBIN
+      ? profileSegments(Pano.cur.profile_top, W, H, ab, at, azOff, fov, 88)
+      : null;
+
+  // blocked regions: below the obstruction line (and in sky mode also
+  // above the painted band's top edge)
+  ctx.fillStyle = "rgba(255,93,93,.14)";
+  for (const s of segs) {
+    ctx.beginPath();
+    ctx.moveTo(s[0][0], H);
+    s.forEach(([x, y]) => ctx.lineTo(x, y));
+    ctx.lineTo(s[s.length - 1][0], H);
+    ctx.closePath();
+    ctx.fill();
+  }
+  if (topSegs) {
+    for (const s of topSegs) {
+      ctx.beginPath();
+      ctx.moveTo(s[0][0], 0);
+      s.forEach(([x, y]) => ctx.lineTo(x, y));
+      ctx.lineTo(s[s.length - 1][0], 0);
+      ctx.closePath();
+      ctx.fill();
+    }
+  }
+
+  ctx.strokeStyle = "#ff5d5d";
+  ctx.lineWidth = 2;
+  strokeSegments(ctx, segs);
+  if (topSegs) {
+    ctx.setLineDash([6, 4]);
+    strokeSegments(ctx, topSegs);
+    ctx.setLineDash([]);
+  }
 }
 
 /* ---------------- obstruction profile from mask ---------------- */
 
 function recomputeProfile() {
   if (!Pano.cur) return;
+  const sky = paintMode() === "sky";
   const W2 = NBIN, H2 = 180;
   const cv = document.createElement("canvas");
   cv.width = W2; cv.height = H2;
@@ -537,18 +625,56 @@ function recomputeProfile() {
   const azOff = +$("#azOffset").value;
   const fov = +$("#fovAz").value || 360;
   const prof = [];
+  const profTop = [];
   for (let i = 0; i < NBIN; i++) {
     // azimuth of this bin; only within [azOff, azOff+fov] is the image valid
     const rel = (((i * 0.5 - azOff) % 360) + 360) % 360;
-    if (rel > fov) { prof.push(-99); continue; }
-    const x = Math.min(W2 - 1, Math.floor(rel / fov * W2));
-    let top = -1;
-    for (let y = 0; y < H2; y++) {
-      if (data[(y * W2 + x) * 4 + 3] > 40) { top = y; break; }
+    if (rel > fov) {
+      // outside the image: unblocked in obstacle mode, blocked in sky mode
+      prof.push(sky ? 90 : -99);
+      profTop.push(sky ? 90 : 90);
+      continue;
     }
-    prof.push(top < 0 ? -99 : +(at - (top / H2) * (at - ab)).toFixed(1));
+    const x = Math.min(W2 - 1, Math.floor(rel / fov * W2));
+    if (sky) {
+      // painted band = the visible sky. profile = bottom edge of the band
+      // (blocked below), profile_top = top edge (blocked above - e.g. a
+      // balcony out of frame). Unpainted column -> fully blocked.
+      let topY = -1, botY = -1;
+      for (let y = 0; y < H2; y++) {
+        if (data[(y * W2 + x) * 4 + 3] > 40) { topY = y; break; }
+      }
+      for (let y = H2 - 1; y >= 0; y--) {
+        if (data[(y * W2 + x) * 4 + 3] > 40) { botY = y; break; }
+      }
+      if (topY < 0) {
+        prof.push(90);
+        profTop.push(90);
+      } else {
+        const eBottom = at - (botY / H2) * (at - ab);
+        const eTop = at - (topY / H2) * (at - ab);
+        prof.push(+(eBottom).toFixed(1));
+        // open above when the band reaches (near) the top of the frame:
+        // brush strokes rarely touch the very edge, so a band within ~4
+        // degrees of the calibration top counts as "painted to the top"
+        // and leaves the sky above open. A band that stops well below the
+        // top means the strip above it is unpainted -> blocked -> its top
+        // edge becomes the ceiling (e.g. a balcony).
+        profTop.push(eTop >= at - 4
+                     ? 90.5
+                     : +(eTop).toFixed(1));
+      }
+    } else {
+      // top edge of the painted obstacle
+      let top = -1;
+      for (let y = 0; y < H2; y++) {
+        if (data[(y * W2 + x) * 4 + 3] > 40) { top = y; break; }
+      }
+      prof.push(top < 0 ? -99 : +(at - (top / H2) * (at - ab)).toFixed(1));
+    }
   }
   Pano.cur.profile = prof;
+  Pano.cur.profile_top = sky ? profTop : [];
   invalidateMask();
   render();
 }
@@ -569,6 +695,8 @@ function scheduleSave(delay = 900) {
         fov: +$("#fovAz").value,
         strokes: Pano.cur.strokes,
         profile: Pano.cur.profile,
+        profile_top: Pano.cur.profile_top || [],
+        paint_mode: paintMode(),
       })}).catch(() => {});
     S.panos = await api("/api/panoramas");
     const upd = S.panos.find(p => p.id === Pano.cur.id);

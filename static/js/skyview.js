@@ -2,7 +2,8 @@
 
 import { $, clamp, esc, TYPE_COLOR, TYPE_LABEL } from "./util.js";
 import { S } from "./state.js";
-import { statusOf, desigLine, activeProfile, shortName } from "./derive.js";
+import { statusOf, desigLine, activeProfile, activeTopProfile,
+         shortName } from "./derive.js";
 import { openDetail } from "./detail.js";
 import { passesFilters } from "./targets.js";
 import { CONSTELLATIONS, FIELD_STARS } from "./skydata.js";
@@ -286,6 +287,32 @@ export function renderSky() {
     }
     ctx.strokeStyle="rgba(255,93,93,.75)"; ctx.lineWidth=1.4;
     ctx.stroke();
+  }
+
+  // sky-mode upper ceiling: blocked above the painted sky band too.
+  // Columns without a real ceiling (fully blocked -> 90, painted-to-top ->
+  // 90.5) are covered by the bottom silhouette already, so only band
+  // columns draw a dashed top line. (A filled region would end in radial
+  // edges from the band to the zenith - draw the boundary only.)
+  const profTop = activeTopProfile();
+  if (profTop && profTop.length === 720) {
+    const topVal = az => {
+      const raw = profTop[Math.floor(((az % 360) + 360) % 360 / 0.5)] ?? 90;
+      return raw > 0.25 && raw < 88 ? Math.min(89, raw) : NaN;
+    };
+    ctx.setLineDash([5, 4]);
+    ctx.beginPath();
+    let pen = false;
+    for (let az = 0; az <= 360; az += 1) {
+      const v = topVal(az);
+      if (!(v >= 0)) { pen = false; continue; }
+      const [x, y] = azToXY(cx, cy, R, az, clamp(v, -2, 89));
+      pen ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+      pen = true;
+    }
+    ctx.strokeStyle = "rgba(255,93,93,.75)"; ctx.lineWidth = 1.4;
+    ctx.stroke();
+    ctx.setLineDash([]);
   }
 
   // grid rings (10-degree steps)

@@ -62,6 +62,7 @@ def test_header_without_end_still_parses():
 def test_parse_ra_hours():
     assert fits.parse_ra_hours("00 42 44.3") == 42 / 60 + 44.3 / 3600
     assert fits.parse_ra_hours("5.575") == 5.575
+    assert fits.parse_ra_hours("5,575") == 5.575   # comma decimal (locale)
     assert fits.parse_ra_hours("05:34:31.9") == 5 + 34 / 60 + 31.9 / 3600
     assert fits.parse_ra_hours(None) is None
     assert fits.parse_ra_hours("not a ra") is None
@@ -70,6 +71,7 @@ def test_parse_ra_hours():
 def test_parse_dec_deg():
     assert fits.parse_dec_deg("+41 16 09") == 41 + 16 / 60 + 9 / 3600
     assert fits.parse_dec_deg("-27.958") == -27.958
+    assert fits.parse_dec_deg("-27,958") == -27.958   # comma decimal (locale)
     assert fits.parse_dec_deg("+22 01") == 22 + 1 / 60
     assert fits.parse_dec_deg(None) is None
 

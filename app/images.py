@@ -197,6 +197,29 @@ def _parse_size(size_str: str | None):
 _fetch_lock = __import__("threading").Lock()
 
 
+def fetch_image_cached(obj: dict):
+    """Cache-only lookup for table thumbnails - never touches the network.
+
+    Returns (bytes|None, content_type|None); None means the caller should
+    render a placeholder immediately. This keeps a 250-row targets table
+    instant instead of queueing a Wikipedia/DSS lookup per row behind the
+    prefetch thread's lock."""
+    CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    slug = _slug(obj["id"], obj.get("wiki") or "", obj.get("messier") or "")
+    cache_path = CACHE_DIR / f"{slug}.bin"
+    meta_path = CACHE_DIR / f"{slug}.json"
+    try:
+        meta = json.loads(meta_path.read_text())
+    except Exception:
+        return None, None
+    if meta.get("none") or meta.get("v") != CACHE_VERSION:
+        return None, None
+    try:
+        return cache_path.read_bytes(), meta["ctype"]
+    except Exception:
+        return None, None
+
+
 def fetch_image(obj: dict, ignore_negative: bool = False):
     """Return (bytes|None, content_type|None). Cached under data/imgcache.
 
@@ -292,7 +315,7 @@ def fetch_image(obj: dict, ignore_negative: bool = False):
                 if not url:
                     continue
                 try:
-                    blob, ctype = _download(url, timeout=30.0)
+                    blob, ctype = _download(url, timeout=12.0)
                     if blob and len(blob) > 500 and "image" in (ctype or ""):
                         break
                     blob = ctype = None

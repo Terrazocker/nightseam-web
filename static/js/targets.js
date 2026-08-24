@@ -89,7 +89,7 @@ function sortObjects(list) {
 }
 
 function thumbHTML(id) {
-  return `<img class="thumb" loading="lazy" src="/api/object/${id}/image?v=${IMG_VER}"
+  return `<img class="thumb" loading="lazy" src="/api/object/${id}/image?thumb=1&v=${IMG_VER}"
     onerror="this.onerror=null;this.src='data:image/gif;base64,R0lGODlhAQABAIAAAP///wAAACH5BAEAAAAALAAAAAABAAEAAAICRAEAOw=='">`;
 }
 

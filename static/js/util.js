@@ -4,7 +4,27 @@ export const $  = s => document.querySelector(s);
 export const $$ = s => Array.from(document.querySelectorAll(s));
 
 export async function api(path, opts) {
-  const r = await fetch(path, opts);
+  const o = opts || {};
+  // a hung local request must not wedge the UI forever; the night loader
+  // passes its own abort signal and is exempt
+  let timeoutCtl = null, timer = null;
+  if (!o.signal) {
+    timeoutCtl = new AbortController();
+    timer = setTimeout(() => timeoutCtl.abort(), 30000);
+  }
+  let r;
+  try {
+    r = await fetch(path, { ...o, signal: timeoutCtl ? timeoutCtl.signal : o.signal });
+  } catch (e) {
+    if (timeoutCtl && timeoutCtl.signal.aborted) {
+      const err = new Error("Request timed out");
+      err.status = 0;
+      throw err;
+    }
+    throw e;
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
   if (!r.ok) {
     let msg = r.statusText;
     try {
@@ -15,7 +35,7 @@ export async function api(path, opts) {
     } catch (e) {}
     const err = new Error(msg);
     err.status = r.status;
-    if (!(opts && opts.silent)) toast(`Request failed: ${msg}`);
+    if (!o.silent) toast(`Request failed: ${msg}`);
     throw err;
   }
   return r.json();
@@ -25,6 +45,14 @@ export const parseUTC = iso => new Date(iso + "Z");
 export const fmtHM = iso => iso ? parseUTC(iso).toLocaleTimeString([], {hour:"2-digit", minute:"2-digit"}) : "--:--";
 export const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 export const clamp = (v,a,b)=>Math.max(a,Math.min(b,v));
+
+/* parse a decimal number with a comma or dot separator (German locale).
+   Returns NaN for empty/invalid input. */
+export const num = v => {
+  if (v == null || v === "") return NaN;
+  const n = Number(String(v).trim().replace(",", "."));
+  return n;
+};
 export const tzOff = () => new Date().getTimezoneOffset();
 
 export function durStr(aIso, bIso) {

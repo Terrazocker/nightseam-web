@@ -63,7 +63,9 @@ CREATE TABLE IF NOT EXISTS panoramas (
     alt_top REAL NOT NULL DEFAULT 60,
     strokes TEXT NOT NULL DEFAULT '[]',
     profile TEXT NOT NULL DEFAULT '[]',
-    active INTEGER NOT NULL DEFAULT 1
+    profile_top TEXT NOT NULL DEFAULT '[]',
+    active INTEGER NOT NULL DEFAULT 1,
+    paint_mode TEXT NOT NULL DEFAULT 'obstacle'
 );
 CREATE TABLE IF NOT EXISTS settings (
     key TEXT PRIMARY KEY,
@@ -120,6 +122,18 @@ class Database:
             pass
         try:  # migration: user-defined type for ingested images
             self.conn.execute("ALTER TABLE images ADD COLUMN otype TEXT")
+        except sqlite3.OperationalError:
+            pass
+        try:  # migration: inverse painting mode ('obstacle' | 'sky')
+            self.conn.execute(
+                "ALTER TABLE panoramas ADD COLUMN paint_mode "
+                "TEXT NOT NULL DEFAULT 'obstacle'")
+        except sqlite3.OperationalError:
+            pass
+        try:  # migration: upper ceiling for sky-mode bands (blocked above)
+            self.conn.execute(
+                "ALTER TABLE panoramas ADD COLUMN profile_top "
+                "TEXT NOT NULL DEFAULT '[]'")
         except sqlite3.OperationalError:
             pass
         self.conn.commit()
@@ -325,6 +339,7 @@ class Database:
                 d = dict(r)
                 d["strokes"] = json.loads(d["strokes"])
                 d["profile"] = json.loads(d["profile"])
+                d["profile_top"] = json.loads(d["profile_top"])
                 out.append(d)
             return out
 
@@ -344,12 +359,13 @@ class Database:
 
     def update_panorama(self, pid: str, **fields):
         allowed = {"name", "file", "az_offset", "alt_bottom", "alt_top",
-                   "strokes", "profile", "active", "fov"}
+                   "strokes", "profile", "profile_top", "active", "fov",
+                   "paint_mode"}
         sets, vals = [], []
         for k, v in fields.items():
             if k not in allowed:
                 continue
-            if k in ("strokes", "profile"):
+            if k in ("strokes", "profile", "profile_top"):
                 v = json.dumps(v)
             if k == "active":
                 v = 1 if v else 0
@@ -479,12 +495,15 @@ class Database:
             for p in panoramas:
                 cur.execute(
                     "INSERT INTO panoramas(id,name,file,az_offset,alt_bottom,"
-                    "alt_top,strokes,profile,active,fov) VALUES(?,?,?,?,?,?,?,?,?,?)",
+                    "alt_top,strokes,profile,profile_top,active,fov,paint_mode) "
+                    "VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
                     (p.get("id"), p.get("name"), p.get("file"),
                      p.get("az_offset", 0), p.get("alt_bottom", 0),
                      p.get("alt_top", 45), json.dumps(p.get("strokes", [])),
                      json.dumps(p.get("profile", [])),
-                     1 if p.get("active") else 0, p.get("fov", 360)))
+                     json.dumps(p.get("profile_top", [])),
+                     1 if p.get("active") else 0, p.get("fov", 360),
+                     p.get("paint_mode", "obstacle")))
             for c in customs:
                 cur.execute(
                     "INSERT OR REPLACE INTO custom_objects"

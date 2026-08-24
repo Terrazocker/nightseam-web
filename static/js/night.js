@@ -31,7 +31,7 @@ async function doLoadNight() {
     const N = await api("/api/night?" + q, { signal: ctl.signal, silent: true });
     if (ctl !== _nightCtl) return;              // superseded meanwhile
 
-    if (N.objects.some(o => o.adv)) synthesizeAdvancedTracks(N);
+    if (N.objects.some(o => o.adv)) await synthesizeAdvancedTracks(N);
     S.night = N;
     const n = N.timeline.n;
     const nowIdx = timeIndexFor(new Date());

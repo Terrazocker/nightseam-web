@@ -221,6 +221,20 @@ def test_custom_target_rejects_bad_ra(client):
     assert r.status_code == 400
 
 
+def test_custom_target_comma_decimals(client):
+    """RA/Dec with comma decimals must parse (German locale)."""
+    r = client.post("/api/catalog/custom", json={
+        "name": "Comma Neb", "ra": "5,5", "dec": "+22,5", "vmag": 9.5})
+    assert r.status_code == 200
+    cid = r.json()["id"]
+    mine = next(o for o in client.get("/api/catalog").json()
+                if o["id"] == cid)
+    assert 5.49 < mine["ra_hours"] < 5.51
+    assert 22.49 < mine["dec_deg"] < 22.51
+    assert mine["vmag"] == 9.5
+    assert client.delete(f"/api/catalog/custom/{cid}").status_code == 200
+
+
 # ------------------------------------------------------------------ ingest / library
 
 def test_ingest_fits(client, tmp_path):
@@ -285,6 +299,92 @@ def test_ingest_size_cap(client, monkeypatch):
     assert res["ok"] is False
     assert "too large" in res["error"]
     assert client.get("/api/library").json()["total_images"] == 0
+
+
+# ------------------------------------------------------------------ panoramas
+
+def test_paint_mode_roundtrip(client, tmp_path):
+    # upload a fake pano image (server only checks the extension)
+    r = client.post("/api/panorama",
+                    files={"file": ("pano.jpg", b"fake jpeg", "image/jpeg")})
+    assert r.status_code == 200
+    pid = r.json()["id"]
+    try:
+        assert client.get("/api/panoramas").json()[0]["paint_mode"] == "obstacle"
+        # invalid mode rejected
+        assert client.put(f"/api/panorama/{pid}",
+                          json={"paint_mode": "diagonal"}).status_code == 400
+        r = client.put(f"/api/panorama/{pid}", json={
+            "paint_mode": "sky",
+            "strokes": [{"m": "b", "x": 0.5, "y": 0.3, "r": 0.02}],
+            "profile": [90.0] * 720,
+            "profile_top": [90.0] * 720})
+        assert r.status_code == 200
+        row = client.get("/api/panoramas").json()[0]
+        assert row["paint_mode"] == "sky"
+        assert len(row["profile_top"]) == 720
+        assert client.get("/api/state").json()["panoramas"][0]["paint_mode"] == "sky"
+
+        # export -> import preserves the mode and both profiles
+        data = client.get("/api/export").content
+        db2 = Database(tmp_path / "other.db")
+        with TestClient(create_app(db2, prefetch=False)) as c2:
+            c2.post("/api/import", files={
+                "file": ("b.zip", data, "application/zip")})
+            row = c2.get("/api/panoramas").json()[0]
+            assert row["paint_mode"] == "sky"
+            assert len(row["profile_top"]) == 720
+    finally:
+        client.delete(f"/api/panorama/{pid}")
+
+
+def test_night_ceil_top_band(client):
+    """A sky-mode panorama with a top ceiling ships ceil_top tracks."""
+    r = client.post("/api/panorama",
+                    files={"file": ("band.jpg", b"fake jpeg", "image/jpeg")})
+    pid = r.json()["id"]
+    try:
+        # band open 20..45 deg over az 0..180, fully blocked elsewhere
+        profile, profile_top = [], []
+        for i in range(720):
+            az = i * 0.5
+            if az <= 180:
+                profile.append(20.0)
+                profile_top.append(45.0)
+            else:
+                profile.append(90.0)
+                profile_top.append(90.0)
+        assert client.put(f"/api/panorama/{pid}", json={
+            "paint_mode": "sky", "strokes": [],
+            "profile": profile, "profile_top": profile_top}).status_code == 200
+        # make it the active panorama
+        assert client.post("/api/settings",
+                           json={"active_pano_id": pid}).status_code == 200
+        add_site(client)
+        night = client.get("/api/night",
+                           params={"date": _DATE, "tz_offset_min": _TZ}).json()
+        for o in night["objects"][:5]:
+            assert len(o["ceil_top"]) == len(o["alt"])
+            # az 0..180 band: ceiling must be 45 there; blocked side is 90
+        m31 = next(o for o in night["objects"] if o["id"] == "m31")
+        assert 0.0 <= max(m31["ceil_top"]) <= 90.0
+
+        d = client.get("/api/object/m31",
+                       params={"date": _DATE, "tz_offset_min": _TZ}).json()
+        assert len(d["ceil_top"]) == len(d["alt"])
+        assert len(d["vis"]) == len(d["alt"])
+        # an object at 60 deg over the open band must be blocked (above 45)
+        assert any(v is False for v in d["vis"])  # upper ceiling restricts
+    finally:
+        client.delete(f"/api/panorama/{pid}")
+
+
+def test_night_no_ceil_top_without_band(client):
+    """Without a sky-mode top ceiling the payload has no ceil_top at all."""
+    add_site(client)
+    night = client.get("/api/night",
+                       params={"date": _DATE, "tz_offset_min": _TZ}).json()
+    assert all("ceil_top" not in o for o in night["objects"])
 
 
 # ------------------------------------------------------------------ export / import
