@@ -138,7 +138,7 @@ export function bindSetup() {
   $("#importFile").addEventListener("change", async e => {
     const f = e.target.files[0];
     if (!f) return;
-    if (!confirm("Importing replaces all locations, rigs, panorama masks and preferences. Continue?")) {
+    if (!confirm("Importing replaces all locations, rigs, panorama masks, custom targets, image library and preferences. Continue?")) {
       e.target.value = ""; return;
     }
     const fd = new FormData();
@@ -146,7 +146,7 @@ export function bindSetup() {
     try {
       const res = await api("/api/import", { method:"POST", body:fd });
       toast(`Imported ${res.sites} locations, ${res.rigs} rigs, ` +
-            `${res.panoramas} panoramas. Reloading...`, "info", 8000);
+            `${res.panoramas} panoramas, ${res.images} library images. Reloading...`, "info", 8000);
       setTimeout(() => location.reload(), 900);
     } catch (err) { /* api() already toasted */ }
     e.target.value = "";

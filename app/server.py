@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-import json
 import logging
 import math
 import re
 import threading
 import time
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
@@ -17,17 +16,14 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import astro
-from .astro import altaz, julian_day, moon_illumination, moon_ra_dec, sun_ra_dec
-from .planning import night_window
+from .backup import apply_import_zip, build_export_zip
 from .database import Database, new_id
+from .ingest import ingest_one, obj_slug, rename_archive_folder
+from .nightcalc import PROFILE_BINS, compute_night, object_detail
 from .paths import data_dir, static_dir
 from .version import app_version
 
 APP_VERSION = app_version()
-PROFILE_BINS = 720          # 0.5-degree azimuth bins
-BIN_DEG = 360.0 / PROFILE_BINS
-NO_BLOCK = -90.0
 
 _state = {"last_request": time.time()}
 
@@ -74,6 +70,23 @@ class CustomIn(BaseModel):
     blurb: Optional[str] = ""
 
 
+class PanoramaUpdate(BaseModel):
+    name: Optional[str] = None
+    az_offset: Optional[float] = None
+    alt_bottom: Optional[float] = None
+    alt_top: Optional[float] = None
+    fov: Optional[float] = None
+    strokes: Optional[list] = None
+    profile: Optional[list] = None
+    active: Optional[bool] = None
+
+
+class LibraryEditIn(BaseModel):
+    name: str                       # current object_name of an unresolved group
+    new_name: Optional[str] = None
+    otype: Optional[str] = None
+
+
 # ------------------------------------------------------------------ coord parsing
 
 def parse_ra_hours(text) -> Optional[float]:
@@ -112,276 +125,9 @@ def parse_dec_deg(text) -> Optional[float]:
     return sign * v
 
 
-class PanoramaUpdate(BaseModel):
-    name: Optional[str] = None
-    az_offset: Optional[float] = None
-    alt_bottom: Optional[float] = None
-    alt_top: Optional[float] = None
-    fov: Optional[float] = None
-    strokes: Optional[list] = None
-    profile: Optional[list] = None
-    active: Optional[bool] = None
-
-
-# ------------------------------------------------------------------ helpers
-
-def _iso(dt_utc: datetime) -> str:
-    return dt_utc.strftime("%Y-%m-%dT%H:%M:%S")
-
-
 def fov_arcmin(focal_mm: float, sensor_mm: float) -> float:
     """Field of view in arcminutes for a given focal length and sensor dimension."""
     return round(2 * math.degrees(math.atan(sensor_mm / 2 / focal_mm)) * 60, 1)
-
-
-def ceil_lookup(profile: list[float]):
-    """Return a function az_deg -> obstacle top elevation."""
-    if not profile or len(profile) != PROFILE_BINS:
-        return lambda az: NO_BLOCK
-    prof = profile  # local ref
-
-    def lookup(az_deg: float) -> float:
-        i = int((az_deg % 360.0) / BIN_DEG)
-        if i >= PROFILE_BINS:
-            i = PROFILE_BINS - 1
-        v = prof[i]
-        return NO_BLOCK if v is None else v
-
-    return lookup
-
-
-def compute_night(db: Database, lat: float, lon: float, elev_m: int,
-                  date_local: str, tz_off_min: int,
-                  profile: list[float],
-                  advanced: bool = False) -> dict:
-    y, m, d = map(int, date_local.split("-")[:3])
-    win = night_window(y, m, d, tz_off_min, lat, lon)
-    dusk, dawn = win["dusk"], win["dawn"]
-    t_start, t_end = win["t_start"], win["t_end"]
-
-    win_start = max(dusk - timedelta(hours=1), t_start)
-    win_end = min(dawn + timedelta(hours=1), t_end)
-    step = timedelta(minutes=6)
-    times: list[datetime] = []
-    t = win_start
-    while t <= win_end:
-        times.append(t)
-        t += step
-
-    jds = [julian_day(x) for x in times]
-
-    # sun & moon tracks on the same grid
-    sun_track, sun_az_track, moon_track, moon_az_track = [], [], [], []
-    for i, jd in enumerate(jds):
-        ra_s, dec_s = sun_ra_dec(jd)
-        s_alt, s_az = altaz(ra_s, dec_s, jd, lat, lon)
-        sun_track.append(round(s_alt, 1))
-        sun_az_track.append(round(s_az, 1))
-        ra_m, dec_m = moon_ra_dec(jd)
-        m_alt, m_az = altaz(ra_m, dec_m, jd, lat, lon)
-        moon_track.append(round(m_alt, 1))
-        moon_az_track.append(round(m_az, 1))
-
-    midnight_jd = jds[len(jds) // 2]
-    illum = round(moon_illumination(midnight_jd), 2)
-
-    ceil_fn = ceil_lookup(profile)
-
-    objs = db.all_objects(advanced=advanced)
-    out_objects = []
-    for o in objs:
-        if advanced and o.get("_adv"):
-            # metadata only - the client synthesizes the tracks locally to
-            # keep the payload small for ~12k objects
-            out_objects.append({
-                "id": o["id"], "adv": True,
-                "ra_hours": o["ra_hours"], "dec_deg": o["dec_deg"],
-                "vmag": o.get("vmag"), "otype": o.get("otype"),
-            })
-            continue
-        ra = o["ra_hours"] * 15.0
-        dec = o["dec_deg"]
-        alts, azs, ceils = [], [], []
-        for i, jd in enumerate(jds):
-            a, z = altaz(ra, dec, jd, lat, lon)
-            alts.append(a)
-            azs.append(z)
-            ceils.append(ceil_fn(z))
-
-        max_i = max(range(len(alts)), key=lambda i: alts[i])
-        # visibility flags / best windows / scores are derived CLIENT-side so
-        # that changing the min-altitude preference is instant (no refetch)
-
-        rec = {
-            "id": o["id"],
-            "alt": [round(a, 1) for a in alts],
-            "az": [round(z, 1) for z in azs],
-            "ceil": [round(c, 1) for c in ceils],
-            "max_alt": round(alts[max_i], 1),
-            "max_i": max_i,
-        }
-        out_objects.append(rec)
-
-    timeline = {
-        "t0": _iso(times[0]),
-        "step_min": 6,
-        "n": len(times),
-        "times_iso": [_iso(x) for x in times],
-    }
-
-    return {
-        "site": {"lat": lat, "lon": lon, "elev": elev_m},
-        "date_local": date_local,
-        "tz_offset_min": tz_off_min,
-        "twilight_level": win["level"],
-        "sunset": _iso(win["sunset"]) if win["sunset"] else None,
-        "sunrise": _iso(win["sunrise"]) if win["sunrise"] else None,
-        "dusk": _iso(dusk) if dusk else None,
-        "dawn": _iso(dawn) if dawn else None,
-        "moon_illum": illum,
-        "timeline": timeline,
-        "sun_alt": sun_track,
-        "sun_az": sun_az_track,
-        "moon_alt": moon_track,
-        "moon_az": moon_az_track,
-        "objects": out_objects,
-    }
-
-
-def longest_run(flags: list[bool]):
-    best = None
-    start = None
-    for i, f in enumerate(list(flags) + [False]):
-        if f and start is None:
-            start = i
-        elif not f and start is not None:
-            span = i - start
-            if best is None or span > (best[1] - best[0]):
-                best = (start, i)
-            start = None
-    return best
-
-
-# ---------------------------------------------------------------- image archive
-
-def _ingest_one(db: Database, catalog: list[dict], archive: Path,
-                name: str, data: bytes) -> dict:
-    """Parse one uploaded .fit/.fits, resolve its object, copy it into the
-    archive and record it. Returns a per-file result dict."""
-    from . import fits as fitsio
-    from . import imglib
-    if not name.lower().endswith((".fit", ".fits")):
-        return {"file": name, "ok": False,
-                "error": "not a .fit/.fits file"}
-    try:
-        hdr = fitsio.read_fits_header(data)
-    except Exception as exc:  # noqa: BLE001
-        return {"file": name, "ok": False,
-                "error": f"header parse failed: {exc}"}
-    if not hdr:
-        return {"file": name, "ok": False,
-                "error": "not a FITS file (SIMPLE keyword missing)"}
-
-    stem = Path(name).stem
-    hint = str(hdr.get("OBJECT") or "").strip() or stem
-    ra_h = fitsio.parse_ra_hours(hdr.get("OBJCTRA") or hdr.get("RA"))
-    dec_d = fitsio.parse_dec_deg(hdr.get("OBJCTDEC") or hdr.get("DEC"))
-    row = imglib.resolve_object(catalog, hint, ra_h, dec_d)
-
-    if row:
-        object_id = row["id"]
-        object_name = str(row.get("primary_name") or hint)[:120]
-        ra_h, dec_d = row["ra_hours"], row["dec_deg"]
-    else:
-        object_id = None
-        object_name = (str(hdr.get("OBJECT") or "").strip() or stem)[:120]
-
-    exposure = None
-    for k in ("EXPTIME", "EXPOSURE", "EXPTIM", "ELAPTIME"):
-        v = hdr.get(k)
-        if isinstance(v, (int, float)) and v >= 0:
-            exposure = float(v)
-            break
-    date_obs = fitsio.parse_date_obs(hdr.get("DATE-OBS") or hdr.get("DATE"))
-    filt = str(hdr.get("FILTER") or "").strip() or None
-    tel = str(hdr.get("TELESCOP") or hdr.get("INSTRUME") or "").strip() or None
-
-    stored = _store_archive(archive, name, object_name, data)
-    if stored is None:
-        return {"file": name, "ok": False,
-                "error": f"cannot write to archive folder {archive}"}
-
-    db.add_image({
-        "file": stored, "orig_name": name, "object_id": object_id,
-        "object_name": object_name, "ra_hours": ra_h, "dec_deg": dec_d,
-        "exposure": exposure, "date_obs": date_obs, "filter": filt,
-        "telescope": tel,
-        "ingested_at": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S"),
-    })
-    return {
-        "file": name, "ok": True,
-        "object": {"id": object_id, "name": object_name,
-                   "designation": imglib.designation_of(
-                       row, {"object_name": object_name})},
-        "exposure": exposure, "date_obs": date_obs, "filter": filt,
-        "telescope": tel, "stored": stored,
-    }
-
-
-def _store_archive(archive: Path, name: str, object_name: str,
-                   data: bytes) -> str | None:
-    """Copy bytes into <archive>/<object>/lights/<name>, uniquifying
-    collisions. Returns the stored path relative to the archive, or None."""
-    slug = _obj_slug(object_name)
-    suffix = Path(name).suffix or ".fit"
-    stem = (Path(name).stem or "image")[:80]
-    try:
-        sub = archive / slug / "lights"
-        sub.mkdir(parents=True, exist_ok=True)
-        target = sub / f"{stem}{suffix}"
-        n = 2
-        while target.exists():
-            target = sub / f"{stem}_{n}{suffix}"
-            n += 1
-        target.write_bytes(data)
-    except OSError:
-        return None
-    return str(target.relative_to(archive))
-
-
-def _obj_slug(object_name: str) -> str:
-    return re.sub(r"[^A-Za-z0-9 _-]+", "", object_name).strip() or "misc"
-
-
-def _rename_archive_folder(archive: Path, old_name: str, new_name: str) -> None:
-    """Move <archive>/<old slug> to <archive>/<new slug>, merging if the new
-    folder already exists. Failures are silent - the DB rename still works."""
-    old = archive / _obj_slug(old_name)
-    new = archive / _obj_slug(new_name)
-    if old == new or not old.is_dir():
-        return
-    try:
-        if new.exists():
-            for f in old.rglob("*"):
-                if f.is_file():
-                    rel = f.relative_to(old)
-                    dest = new / rel
-                    dest.parent.mkdir(parents=True, exist_ok=True)
-                    f.replace(dest)
-            for d in sorted([p for p in old.rglob("*") if p.is_dir()],
-                            key=lambda p: len(p.parts), reverse=True):
-                d.rmdir()
-            old.rmdir()
-        else:
-            old.rename(new)
-    except OSError:
-        pass
-
-
-class LibraryEditIn(BaseModel):
-    name: str                       # current object_name of an unresolved group
-    new_name: Optional[str] = None
-    otype: Optional[str] = None
 
 
 # ------------------------------------------------------------------ image prefetch
@@ -445,7 +191,7 @@ def start_image_prefetch(db: Database) -> None:
 
 # ------------------------------------------------------------------ factory
 
-def create_app(db: Database) -> FastAPI:
+def create_app(db: Database, *, prefetch: bool = True) -> FastAPI:
     app = FastAPI(title="AstroPilot", version=APP_VERSION, docs_url=None,
                   redoc_url=None, openapi_url=None)
 
@@ -604,10 +350,6 @@ def create_app(db: Database) -> FastAPI:
     def api_object_detail(oid: str, date: str, tz_offset_min: int,
                           site: Optional[int] = None, pano: Optional[str] = None,
                           minalt: Optional[float] = None):
-        obj = db.get_object(oid)
-        if obj is None:
-            raise HTTPException(404, "Object not found")
-
         site_row = None
         all_sites = db.sites()
         if site is not None:
@@ -620,56 +362,15 @@ def create_app(db: Database) -> FastAPI:
 
         pano_row = db.get_panorama(pano) if pano else db.active_panorama()
         profile = pano_row["profile"] if pano_row else []
-        minalt_eff = float(minalt if minalt is not None else db.setting("min_useful_alt", 25.0))
+        minalt_eff = float(minalt if minalt is not None
+                           else db.setting("min_useful_alt", 25.0))
 
-        lat, lon = site_row["lat"], site_row["lon"]
-        y, m, d = map(int, date.split("-")[:3])
-        win = night_window(y, m, d, tz_offset_min, lat, lon)
-        dusk, dawn = win["dusk"], win["dawn"]
-        t_start, t_end = win["t_start"], win["t_end"]
-
-        w0 = max(dusk - timedelta(minutes=75), t_start)
-        w1 = min(dawn + timedelta(minutes=45), t_end)
-        step = timedelta(minutes=4)
-        times = []
-        t = w0
-        while t <= w1:
-            times.append(t)
-            t += step
-
-        ceil_fn = ceil_lookup(profile)
-        ra = obj["ra_hours"] * 15.0
-        dec = obj["dec_deg"]
-        alts, azs, ceils, vis = [], [], [], []
-        for tt in times:
-            jd = julian_day(tt)
-            a, z = altaz(ra, dec, jd, lat, lon)
-            alts.append(round(a, 2))
-            azs.append(round(z, 1))
-            c = ceil_fn(z)
-            ceils.append(round(c, 2))
-            vis.append(a >= minalt_eff and a > c)
-
-        max_i = max(range(len(alts)), key=lambda i: alts[i])
-        best = longest_run(vis)
-
-        meta = {k: obj[k] for k in
-                ("id", "primary_name", "messier", "ngcic", "other", "otype",
-                 "ra_hours", "dec_deg", "vmag", "size_am", "constellation",
-                 "distance", "wiki", "blurb")}
-        meta["ra_hms"] = format_ra(obj["ra_hours"])
-        meta["dec_dms"] = format_dec(obj["dec_deg"])
-
-        return {
-            "meta": meta,
-        "twilight_level": win["level"],
-            "dusk": _iso(dusk), "dawn": _iso(dawn),
-            "times_iso": [_iso(x) for x in times],
-            "alt": alts, "az": azs, "ceil": ceils, "vis": vis,
-            "max_alt": alts[max_i], "max_time": _iso(times[max_i]),
-            "best": list(best) if best else None,
-            "min_useful_alt": minalt_eff,
-        }
+        result = object_detail(db, oid, date, tz_offset_min,
+                               site_row["lat"], site_row["lon"],
+                               profile, minalt_eff)
+        if result is None:
+            raise HTTPException(404, "Object not found")
+        return JSONResponse(result)
 
     @app.get("/api/object/{oid}/image")
     def api_object_image(oid: str):
@@ -781,64 +482,21 @@ def create_app(db: Database) -> FastAPI:
 
     @app.get("/api/export")
     def api_export():
-        import io
-        import zipfile
-        buf = io.BytesIO()
-        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
-            setup = {
-                "app": "AstroPilot",
-                "version": APP_VERSION,
-                "exported_at": datetime.utcnow().isoformat(),
-                "settings": db.all_settings(),
-                "sites": db.sites(),
-                "rigs": db.rigs(),
-                "panoramas": db.panoramas(),
-            }
-            z.writestr("setup.json", json.dumps(setup, indent=1))
-            for p in setup["panoramas"]:
-                f = data_dir() / "panos" / p["file"]
-                if f.exists():
-                    z.write(f, f"panos/{p['file']}")
         stamp = datetime.now().strftime("%Y%m%d-%H%M")
         return Response(
-            content=buf.getvalue(),
+            content=build_export_zip(db),
             media_type="application/zip",
             headers={"Content-Disposition":
                      f'attachment; filename="astropilot-setup-{stamp}.zip"'})
 
     @app.post("/api/import")
     async def api_import(file: UploadFile = File(...)):
-        import io
-        import zipfile
         blob = await file.read()
         try:
-            zf = zipfile.ZipFile(io.BytesIO(blob))
-            setup = json.loads(zf.read("setup.json").decode("utf-8"))
-        except Exception as exc:  # noqa: BLE001
-            raise HTTPException(400, f"Not a valid AstroPilot export: {exc}") from None
-        if setup.get("app") != "AstroPilot":
-            raise HTTPException(400, "This zip is not an AstroPilot setup export")
-
-        sites = setup.get("sites", [])
-        rigs = setup.get("rigs", [])
-        panos = setup.get("panoramas", [])
-        settings = setup.get("settings", {})
-
-        restored_files = 0
-        for p in panos:
-            name = p.get("file")
-            if not name:
-                continue
-            try:
-                data = zf.read(f"panos/{name}")
-            except KeyError:
-                continue
-            (data_dir() / "panos" / name).write_bytes(data)
-            restored_files += 1
-
-        db.import_bundle(settings, sites, rigs, panos)
-        return {"ok": True, "sites": len(sites), "rigs": len(rigs),
-                "panoramas": len(panos), "pano_images": restored_files}
+            summary = apply_import_zip(db, blob)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from None
+        return summary
 
     # ---------------- custom targets ----------------
 
@@ -877,7 +535,6 @@ def create_app(db: Database) -> FastAPI:
 
     @app.post("/api/images/ingest")
     async def api_ingest_images(files: list[UploadFile] = File(...)):
-        from . import fits as fitsio
         archive = Path(db.image_dir())
         try:
             archive.mkdir(parents=True, exist_ok=True)
@@ -885,11 +542,7 @@ def create_app(db: Database) -> FastAPI:
             raise HTTPException(
                 500, f"Cannot create archive folder {archive}: {exc}")
         catalog = db.all_objects(advanced=True)
-        results = []
-        for f in files:
-            name = Path(f.filename or "image.fit").name
-            results.append(_ingest_one(db, catalog, archive, name,
-                                       await f.read()))
+        results = [await ingest_one(db, catalog, archive, f) for f in files]
         return {"results": results}
 
     @app.get("/api/library")
@@ -921,8 +574,8 @@ def create_app(db: Database) -> FastAPI:
                 if not i["object_id"] and i["object_name"] == name]
         if not rows:
             raise HTTPException(404, "Object not found in library")
-        _rename_archive_folder(Path(db.image_dir()), name, new_name)
-        db.rename_images(name, new_name, otype, _obj_slug(new_name))
+        rename_archive_folder(Path(db.image_dir()), name, new_name)
+        db.rename_images(name, new_name, otype, obj_slug(new_name))
         return {"ok": True, "name": new_name, "otype": otype}
 
     @app.get("/api/shutdown")
@@ -941,7 +594,8 @@ def create_app(db: Database) -> FastAPI:
 
     app.mount("/", StaticFiles(directory=str(sd)), name="static")
 
-    start_image_prefetch(db)
+    if prefetch:
+        start_image_prefetch(db)
 
     return app
 
@@ -980,22 +634,3 @@ def placeholder_svg(obj: dict) -> bytes:
 <text x='200' y='294' text-anchor='middle' font-family='Segoe UI, sans-serif' font-size='13'
  fill='#8b93a8'>image unavailable offline</text></svg>"""
     return svg.encode("utf-8")
-
-
-def format_ra(ra_hours: float) -> str:
-    h = ra_hours % 24.0
-    hh = int(h)
-    mm_f = (h - hh) * 60
-    mm = int(mm_f)
-    ss = (mm_f - mm) * 60
-    return f"{hh:02d}h {mm:02d}m {ss:04.1f}s"
-
-
-def format_dec(dec_deg: float) -> str:
-    sign = "-" if dec_deg < 0 else "+"
-    a = abs(dec_deg)
-    dd = int(a)
-    mm_f = (a - dd) * 60
-    mm = int(mm_f)
-    ss = (mm_f - mm) * 60
-    return f"{sign}{dd:02d}deg {mm:02d}' {ss:04.1f}\""

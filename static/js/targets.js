@@ -113,7 +113,7 @@ export function renderTargets(fromPager = false) {
     // resetPage() runs in the filter/sort handlers instead.
   }
   $("#resultCount").textContent =
-    `${rows.length.toLocaleString()} of ${S.catalog.length.toLocaleString()} objects` +
+    `${rows.length} of ${S.catalog.length} objects` +
     (rows.length < S.catalog.length ? " \u00B7 filtered" : "");
 
   const pages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));

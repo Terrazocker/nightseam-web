@@ -11,7 +11,7 @@ Accuracy is far better than needed for horizon/obstruction planning.
 from __future__ import annotations
 
 import math
-from datetime import datetime, timedelta
+from datetime import datetime
 
 D2R = math.pi / 180.0
 R2D = 180.0 / math.pi
@@ -233,34 +233,3 @@ def moon_illumination(jd: float) -> float:
     psi = math.acos(max(-1.0, min(1.0, cos_elong)))
     k = (1.0 - math.cos(psi)) / 2.0
     return max(0.0, min(1.0, k))
-
-
-# ---------------------------------------------------------------- search helpers
-
-def find_crossing(func, t_start: datetime, t_end: datetime, level: float,
-                  rising: bool, step_min: int = 10) -> datetime | None:
-    """Find UTC datetime where func(t) crosses `level` (altitudes, degrees).
-    rising=True finds an upward crossing. Returns None if no crossing."""
-    prev_t = t_start
-    prev_v = func(t_start) - level
-    step = timedelta(minutes=step_min)
-    t = t_start + step
-    while t <= t_end:
-        v = func(t) - level
-        if prev_v < 0 <= v and rising:
-            return _bisect(func, prev_t, t, level)
-        if prev_v >= 0 > v and not rising:
-            return _bisect(func, prev_t, t, level)
-        prev_t, prev_v = t, v
-        t += step
-    return None
-
-
-def _bisect(func, lo: datetime, hi: datetime, level: float) -> datetime:
-    for _ in range(30):
-        mid = lo + (hi - lo) / 2
-        if (func(mid) - level) * (func(lo) - level) <= 0:
-            hi = mid
-        else:
-            lo = mid
-    return lo + (hi - lo) / 2

@@ -109,6 +109,11 @@ class Database:
         self.conn = sqlite3.connect(str(db_path), check_same_thread=False)
         self.conn.row_factory = sqlite3.Row
         self.conn.executescript(SCHEMA)
+        # NOTE: databases outlive the code (users carry them between
+        # versions), so schema evolution MUST be additive: new tables go
+        # into SCHEMA (CREATE TABLE IF NOT EXISTS), new columns use the
+        # try/ALTER/except pattern below. Never drop or re-shape existing
+        # columns - old user DBs will break. Seed tables are insert-only.
         try:  # migration for databases created before fov existed
             self.conn.execute("ALTER TABLE panoramas ADD COLUMN fov REAL NOT NULL DEFAULT 360")
         except sqlite3.OperationalError:
@@ -247,6 +252,11 @@ class Database:
         with self.lock:
             self.conn.execute("DELETE FROM custom_objects WHERE id=?", (cid,))
             self.conn.commit()
+
+    def customs(self) -> list[dict]:
+        with self.lock:
+            return [dict(r) for r in self.conn.execute(
+                "SELECT * FROM custom_objects ORDER BY primary_name")]
 
     def is_custom(self, cid: str) -> bool:
         with self.lock:
@@ -441,14 +451,19 @@ class Database:
             return out
 
     def import_bundle(self, settings: dict, sites: list, rigs: list,
-                      panoramas: list) -> None:
+                      panoramas: list, customs: list | None = None,
+                      images: list | None = None) -> None:
         """Replace all user data with an imported bundle (catalog untouched)."""
+        customs = customs or []
+        images = images or []
         with self.lock:
             cur = self.conn.cursor()
             cur.execute("DELETE FROM sites")
             cur.execute("DELETE FROM rigs")
             cur.execute("DELETE FROM panoramas")
             cur.execute("DELETE FROM settings")
+            cur.execute("DELETE FROM custom_objects")
+            cur.execute("DELETE FROM images")
             for s in sites:
                 cur.execute(
                     "INSERT INTO sites(id,name,lat,lon,elev) VALUES(?,?,?,?,?)",
@@ -470,6 +485,32 @@ class Database:
                      p.get("alt_top", 45), json.dumps(p.get("strokes", [])),
                      json.dumps(p.get("profile", [])),
                      1 if p.get("active") else 0, p.get("fov", 360)))
+            for c in customs:
+                cur.execute(
+                    "INSERT OR REPLACE INTO custom_objects"
+                    "(id,primary_name,otype,ra_hours,dec_deg,vmag,size_am,"
+                    "constellation,blurb,search) VALUES(?,?,?,?,?,?,?,?,?,?)",
+                    (c.get("id"), c.get("primary_name"),
+                     c.get("otype", "galaxy"), c.get("ra_hours"),
+                     c.get("dec_deg"), c.get("vmag"),
+                     c.get("size_am") or "", c.get("constellation") or "",
+                     c.get("blurb") or "",
+                     " | ".join(filter(None, [
+                         str(c.get("primary_name", "")).lower(),
+                         str(c.get("otype", "")).lower(), "custom",
+                         str(c.get("id", ""))]))))
+            for im in images:
+                cur.execute(
+                    "INSERT OR REPLACE INTO images"
+                    "(id,file,orig_name,object_id,object_name,otype,ra_hours,"
+                    "dec_deg,exposure,date_obs,filter,telescope,ingested_at)"
+                    " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    (im.get("id"), im.get("file"), im.get("orig_name", ""),
+                     im.get("object_id"), im.get("object_name", ""),
+                     im.get("otype"), im.get("ra_hours"), im.get("dec_deg"),
+                     im.get("exposure"), im.get("date_obs"),
+                     im.get("filter"), im.get("telescope"),
+                     im.get("ingested_at", "")))
             for k, v in settings.items():
                 cur.execute(
                     "INSERT INTO settings(key,value) VALUES(?,?)",

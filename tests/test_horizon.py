@@ -1,6 +1,6 @@
 """Tests for horizon-profile helpers and derived-window logic."""
 
-from app.server import ceil_lookup, longest_run, NO_BLOCK
+from app.nightcalc import ceil_lookup, longest_run, NO_BLOCK
 
 
 def test_ceil_lookup_maps_azimuth_bins():

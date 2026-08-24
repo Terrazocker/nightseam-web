@@ -9,22 +9,30 @@ ingest + library), switched via the top-right button or the brand name.
 ## Commands
 
 - Run from source: `python main.py` (default port 8407; `--console` for logs,
-  `--no-browser` for headless, `--port N`). Data is created under `data/`
-  (gitignored) in the repo root.
-- Tests: `python -m pytest tests/` - 54 tests, run in ~1 s, pure functions
-  only (no HTTP). `httpx` is in requirements-dev but there are no API tests
-  yet. A broken Windows temp-dir ACL means pytest runs use a repo-local
-  `.pytest-tmp` base (see `pytest.ini`).
+  `--no-browser` for headless, `--port N`). Also `--browser` (tab instead of
+  app window) and `--idle-exit-hours 0` (never exit on idle - the default is
+  12 h, which kills a server an agent left running). Data is created under
+  `data/` (gitignored) in the repo root.
+- Tests: `python -m pytest tests/` - 73 tests, run in ~7 s (pure-function
+  tests are fast; `tests/test_api.py` spins up real `create_app()` instances
+  via fastapi TestClient/httpx). Single test:
+  `python -m pytest tests/test_astro.py -k name`. API tests use
+  `create_app(db, prefetch=False)` so no image-cache thread hits the network;
+  the archive is pointed at a tmp dir per test. A broken Windows temp-dir ACL
+  means pytest runs use a repo-local `.pytest-tmp` base (see `pytest.ini`).
 - No Python linter/formatter configured. The JS "lint" is three scripts that
-  must pass after touching `static/`:
-  - `python scripts/check_js_imports.py` - broken relative ES-module imports (hard failures)
+  must pass after touching `static/`; `python scripts/check_js.py` runs all
+  three and exits non-zero on hard failures (recommended one-command check):
+  - `python scripts/check_js_imports.py` - broken relative ES-module imports and named imports missing from the target's exports (hard failures)
   - `python scripts/check_dom_ids.py` - `$('#id')` references missing from `index.html` (its "important" id list must be updated when controls are removed)
   - `python scripts/check_js_defs.py` - heuristic; exit code is always 0, review candidates manually
 - Build exe: `powershell -ExecutionPolicy Bypass -File build.ps1` ->
   `dist\AstroPilot.exe` (isolated `.venv-build`; kills running AstroPilot
   processes first). PyInstaller is only needed for building. The build bakes
   the current `git describe` version into a gitignored `app/_version_baked.py`
-  and bundles `app/data` (the advanced catalog CSV) via `--add-data`.
+  and bundles `app/data` (the advanced catalog CSV) via `--add-data`. The
+  committed `AstroPilot.spec` is a PyInstaller artifact, not the source of
+  truth - build.ps1 drives everything via CLI flags.
 
 ## Versioning
 
@@ -42,8 +50,13 @@ ingest + library), switched via the top-right button or the brand name.
   passed to the pywebview window (`window.pywebview.api`) exposing a native
   folder picker - browser mode has no bridge.
 - `app/server.py` - `create_app(db)` FastAPI factory with all `/api/*` routes
-  (docs endpoints disabled). `compute_night()` and `api_object_detail()` share
-  the same 6-min/4-min time grids, sun/moon tracks, and `ceil_lookup()`.
+  (docs endpoints disabled; `prefetch=False` skips the image-cache thread,
+  used by tests). Computation and helpers live in separate modules:
+  `app/nightcalc.py` (`compute_night()`, `object_detail()`, `ceil_lookup()`,
+  `longest_run()` - the 6-min/4-min time grids, sun/moon tracks and
+  rounding rules), `app/ingest.py` (streaming FITS ingest with a 1 GiB cap),
+  `app/backup.py` (export/import ZIP: settings, sites, rigs, panoramas,
+  custom targets, and the images library incl. files).
 - `app/astro.py` - pure-Python astronomy engine (J2000 precession, sidereal
   time, Saemundsson refraction, Meeus sun/moon series). Golden-value tests
   live in `tests/test_astro.py`. Its JS mirror `static/js/astro.js` is used
@@ -87,12 +100,20 @@ ingest + library), switched via the top-right button or the brand name.
 
 ## Data & gotchas
 
+- User databases outlive the code - schema changes MUST be additive: new
+  columns go in as try/ALTER/except in `Database.__init__`, new tables into
+  `SCHEMA`; never drop or re-shape existing columns (see the comment in
+  `app/database.py`).
 - Panorama obstruction profiles are exactly 720 bins (0.5 deg per azimuth);
   `NO_BLOCK = -90.0`. An empty/short profile means nothing blocks.
 - Archive layout is `<image_dir>/<Object>/lights/<file>.fit` (originals are
   copied, never moved). Older files at the folder root still work.
+  Ingest streams header-first with a 1 GiB cap (`app/ingest.py`).
 - `/api/library/edit` renames/retypes only unresolved objects (`object_id IS
   NULL`); it moves the archive folder on disk and rewrites stored paths.
+- Export/import ZIP covers settings, sites, rigs, panoramas, custom targets
+  and the images library (rows + files, restored into the configured image
+  dir); the import confirm dialog reflects that.
 - Sessions: frames of one object whose `date_obs` are < 12 h apart form one
   session (midnight runs count once); undated frames form one trailing
   session.
