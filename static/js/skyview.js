@@ -280,26 +280,50 @@ export function renderSky() {
     ctx.fillStyle="rgba(255,93,93,.18)";
     ctx.fill();
 
-    ctx.beginPath();
-    for (let az=0; az<=360; az+=1) {
-      const [x,y] = azToXY(cx,cy,R,az,clamp(elevAt(az),-2,89));
-      az===0 ? ctx.moveTo(x,y) : ctx.lineTo(x,y);
+    // solid boundary line: obstacle mode only. In sky mode the fully
+    // blocked columns sit at 89 deg and would draw a spurious inner
+    // circle with radial connectors (a "triangle") instead of a clean edge.
+    if (!activeTopProfile()) {
+      ctx.beginPath();
+      for (let az=0; az<=360; az+=1) {
+        const [x,y] = azToXY(cx,cy,R,az,clamp(elevAt(az),-2,89));
+        az===0 ? ctx.moveTo(x,y) : ctx.lineTo(x,y);
+      }
+      ctx.strokeStyle="rgba(255,93,93,.75)"; ctx.lineWidth=1.4;
+      ctx.stroke();
     }
-    ctx.strokeStyle="rgba(255,93,93,.75)"; ctx.lineWidth=1.4;
-    ctx.stroke();
   }
 
   // sky-mode upper ceiling: blocked above the painted sky band too.
   // Columns without a real ceiling (fully blocked -> 90, painted-to-top ->
   // 90.5) are covered by the bottom silhouette already, so only band
-  // columns draw a dashed top line. (A filled region would end in radial
-  // edges from the band to the zenith - draw the boundary only.)
+  // columns draw the blocked-above region: one polygon per contiguous run,
+  // closing through the zenith (no per-column wedges -> no radial lines).
   const profTop = activeTopProfile();
   if (profTop && profTop.length === 720) {
     const topVal = az => {
       const raw = profTop[Math.floor(((az % 360) + 360) % 360 / 0.5)] ?? 90;
       return raw > 0.25 && raw < 88 ? Math.min(89, raw) : NaN;
     };
+
+    ctx.fillStyle = "rgba(255,93,93,.18)";
+    let run = false;
+    for (let az = 0; az <= 360; az += 1) {
+      const v = topVal(az);
+      if (v >= 0) {
+        const [x, y] = azToXY(cx, cy, R, az, clamp(v, -2, 89));
+        if (!run) { ctx.beginPath(); ctx.moveTo(x, y); run = true; }
+        else ctx.lineTo(x, y);
+      } else if (run) {
+        ctx.lineTo(cx, cy);
+        ctx.closePath();
+        ctx.fill();
+        run = false;
+      }
+    }
+    if (run) { ctx.lineTo(cx, cy); ctx.closePath(); ctx.fill(); }
+
+    // top edge line over band columns only
     ctx.setLineDash([5, 4]);
     ctx.beginPath();
     let pen = false;

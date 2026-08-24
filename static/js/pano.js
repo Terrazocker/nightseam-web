@@ -595,9 +595,14 @@ function drawProfileLine(ctx, W, H) {
     }
   }
 
-  ctx.strokeStyle = "#ff5d5d";
-  ctx.lineWidth = 2;
-  strokeSegments(ctx, segs);
+  // solid obstruction line: obstacle mode only. In sky mode the fully
+  // blocked columns sit at 90 deg (top of the image) and would draw a
+  // spurious line along the edge with radial connectors.
+  if (paintMode() === "obstacle") {
+    ctx.strokeStyle = "#ff5d5d";
+    ctx.lineWidth = 2;
+    strokeSegments(ctx, segs);
+  }
   if (topSegs) {
     ctx.setLineDash([6, 4]);
     strokeSegments(ctx, topSegs);
