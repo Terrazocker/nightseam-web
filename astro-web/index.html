@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AstroPilot Web — night-planning in your browser</title>
+<meta name="description" content="AstroPilot Web: tonight's best deep-sky targets, live polar sky map and per-object altitude charts — computed entirely in your browser. Catalog: Messier + OpenNGC (12,116 objects).">
+<link rel="icon" type="image/png" href="app.png">
+<link rel="stylesheet" href="style.css?v=2">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <img class="brand-ico" src="app.png" alt="AstroPilot" width="34" height="34">
+    <div>
+      <h1>AstroPilot <em>Web</em></h1>
+      <p class="tagline">night-planning, computed in your browser</p>
+    </div>
+  </div>
+  <div class="sitebox" id="sitebox">
+    <div class="top-prefs">
+      <label>Min alt <input id="tb-minalt" type="text" inputmode="decimal" placeholder="auto" value=""></label>
+      <span class="site-note" id="tb-note"></span>
+    </div>
+    <label>Lat <input id="in-lat" type="text" inputmode="decimal" value="52.52"></label>
+    <label>Lon <input id="in-lon" type="text" inputmode="decimal" value="13.40"></label>
+    <button id="btn-locate" title="Use my location">use my location</button>
+    <span class="site-note" id="site-note"></span>
+  </div>
+</header>
+
+<nav class="tabs" id="tabs">
+  <a href="#tonight" data-v="tonight">Tonight</a>
+  <a href="#sky" data-v="sky">Sky map</a>
+  <a href="#catalog" data-v="catalog">Catalog</a>
+  <a href="#horizon" data-v="horizon">Horizon</a>
+</nav>
+
+<main id="view">
+  <div class="splash" id="splash">
+    <div class="splash-inner">
+      <div class="spinner"></div>
+      <p id="splash-text">loading catalog…</p>
+    </div>
+  </div>
+</main>
+
+<footer class="foot">
+  <p>AstroPilot Web — browser port of AstroPilot. Catalog: Messier + OpenNGC (12,116 objects). Runs 100% client-side — no server involved. <span class="foot-ver">v0.1.0</span></p>
+</footer>
+
+<div class="modal-wrap" id="modal" hidden></div>
+<div class="tooltip" id="tooltip" hidden></div>
+
+<script type="module" src="app.js?v=15"></script>
+</body>
+</html>
