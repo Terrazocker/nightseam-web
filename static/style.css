@@ -293,6 +293,18 @@ table { border-collapse: collapse; width: 100%; }
 #dropZone.over { border-color: var(--gold); background: rgba(255,209,102,.05); }
 #dropZone .hint { margin: 8px 0 0; }
 .ingest-results { min-height: 120px; }
+.ingest-count { font-size: 15px; font-weight: 650; padding: 8px 2px 4px;
+  color: var(--gold, #ffd166); }
+.imp-item { border: 1px solid var(--border); border-radius: 8px;
+  padding: 8px 10px; margin: 8px 0; background: var(--panel); }
+.imp-item .imp-head { display: flex; gap: 10px; align-items: baseline;
+  flex-wrap: wrap; }
+.imp-item .imp-head .hint { margin-left: auto; font-size: 12px; }
+.imp-path { font-size: 11px; color: #8b93a8; margin: 3px 0 6px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.imp-btns { display: flex; gap: 6px; flex-wrap: wrap; }
+.imp-btns button { padding: 2px 8px; font-size: 12px; }
+.imp-open { margin-left: auto; }
 .ingest-item { display: flex; gap: 10px; align-items: baseline;
   padding: 7px 10px; border: 1px solid var(--border); border-radius: 8px;
   margin: 6px 0; background: var(--panel); font-size: 13px; }
@@ -413,8 +425,6 @@ table.std td, table.std th { padding: 6px 8px; border-bottom: 1px solid #1a2030;
 .starbtn.on { color: var(--warn); }
 .obsbtn.on { color: var(--good); }
 .obsbtn { font-size: 13px; }
-.framebox canvas { background: radial-gradient(circle at 50% 45%, #131a2b, #090c13);
-  display: block; }
 .lgchip { font-size: 10.5px; color: #aeb6c9; display: inline-flex;
   align-items: center; gap: 5px; margin: 0 10px 4px 0; cursor: pointer;
   user-select: none; transition: opacity .15s; }

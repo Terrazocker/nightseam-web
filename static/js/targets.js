@@ -1,6 +1,6 @@
 /* Targets tab: filters, sorting, paginated table rendering */
 
-import { $, esc, api, fmtSize, TYPE_LABEL, TYPE_COLOR, constName } from "./util.js";
+import { $, esc, api, fmtSize, todayLocal, TYPE_LABEL, TYPE_COLOR, constName } from "./util.js";
 import { S, IMG_VER } from "./state.js";
 import { statusOf, windowText, desigLine,
          objScore, filterAdvice, frameCoverage, coverageCell } from "./derive.js";
@@ -65,7 +65,7 @@ export function bindFilters() {
               api(`/api/object/${id}/observed/${r.id}`, { method: "DELETE", silent: true }))))
         : api(`/api/object/${id}/observed`, { method: "POST", silent: true,
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ date_obs: new Date().toISOString().slice(0, 10) }) });
+            body: JSON.stringify({ date_obs: todayLocal() }) });
       p.then(async () => {
         S.cfg = await api("/api/state");
         S.observedIds = new Set((S.cfg.observed || []).map(x => x.object_id));

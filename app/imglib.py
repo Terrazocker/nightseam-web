@@ -137,6 +137,16 @@ def compute_sessions(images: list[dict]) -> list[dict]:
         ep = date_epoch(im.get("date_obs"))
         (dated if ep is not None else undated).append((ep, im))
 
+    def _rollup(s: dict, im: dict):
+        fr = im.get("imagetyp") or "light"
+        t = s["types"].setdefault(fr, {"n": 0, "exposure": 0.0})
+        t["n"] += 1
+        t["exposure"] += float(im.get("exposure") or 0.0)
+        fl = im.get("filter") or "?"
+        f = s["filters"].setdefault(fl, {"n": 0, "exposure": 0.0})
+        f["n"] += 1
+        f["exposure"] += float(im.get("exposure") or 0.0)
+
     sessions: list[dict] = []
     for ep, im in sorted(dated, key=lambda x: x[0]):
         if sessions and sessions[-1]["_end"] is not None and \
@@ -147,23 +157,57 @@ def compute_sessions(images: list[dict]) -> list[dict]:
             s["_end"] = ep
             if im.get("date_obs"):
                 s["end"] = im["date_obs"]
+            _rollup(s, im)
         else:
-            sessions.append({
+            s = {
                 "start": im.get("date_obs"),
                 "end": im.get("date_obs"),
                 "n_images": 1,
                 "exposure": float(im.get("exposure") or 0.0),
                 "_end": ep,
-            })
+                "types": {},
+                "filters": {},
+            }
+            _rollup(s, im)
+            sessions.append(s)
     if undated:
-        sessions.append({
+        s = {
             "start": None, "end": None, "n_images": len(undated),
             "exposure": sum(float(im.get("exposure") or 0.0) for _, im in undated),
             "undated": True,
-        })
+            "types": {},
+            "filters": {},
+        }
+        for _, im in undated:
+            _rollup(s, im)
+        sessions.append(s)
     for s in sessions:
         s.pop("_end", None)
+        s["types"] = {k: {"n": v["n"], "exposure": round(v["exposure"], 1)}
+                      for k, v in s["types"].items()}
+        s["filters"] = {k: {"n": v["n"], "exposure": round(v["exposure"], 1)}
+                        for k, v in s["filters"].items()}
     return sessions
+
+
+def session_for_image(images: list[dict], new_im: dict) -> dict | None:
+    """The session (as in compute_sessions) that a new frame belongs to when
+    appended to `images`, or None when it opens a new one. Used by ingest to
+    pick the on-disk session folder, so the folder layout and the session
+    grouping never disagree. Undated frames join the undated session."""
+    ses = compute_sessions(list(images) + [new_im])
+    ep = date_epoch(new_im.get("date_obs"))
+    if ep is None:
+        return next((s for s in ses if s.get("undated")), None)
+    best, bd = None, None
+    for s in ses:
+        end = date_epoch(s.get("end"))
+        if end is None:
+            continue
+        d = abs(ep - end)
+        if best is None or d < bd:
+            best, bd = s, d
+    return best
 
 
 def group_library(images: list[dict], catalog: list[dict]) -> list[dict]:

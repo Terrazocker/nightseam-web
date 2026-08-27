@@ -1,6 +1,6 @@
 /* top bar: site/date/prefs/scrubber bindings + night summary line */
 
-import { $, fmtHM, esc, api, phaseName, applyEdgeSpace } from "./util.js";
+import { $, fmtHM, fmtT, esc, api, phaseName, applyEdgeSpace } from "./util.js";
 import { S } from "./state.js";
 import { moonUpDownText } from "./derive.js";
 import { scheduleLoadNight } from "./night.js";
@@ -112,5 +112,5 @@ export function updateTimeLabel() {
   if (!el) return;
   if (!S.night) { el.textContent = ""; return; }
   const d = new Date(S.night.timeline.times_iso[S.tIdx] + "Z");
-  el.textContent = d.toLocaleTimeString([], {hour:"2-digit", minute:"2-digit"});
+  el.textContent = fmtT(d);
 }

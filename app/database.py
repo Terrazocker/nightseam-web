@@ -95,6 +95,20 @@ CREATE TABLE IF NOT EXISTS observations (
     notes TEXT DEFAULT '',
     created_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS import_batches (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    created_at TEXT NOT NULL,
+    object_id TEXT,
+    object_name TEXT NOT NULL,
+    slug TEXT NOT NULL,
+    session TEXT NOT NULL,
+    frame TEXT NOT NULL,
+    n_files INTEGER NOT NULL,
+    total_exposure REAL NOT NULL DEFAULT 0,
+    first_obs TEXT,
+    image_dir TEXT NOT NULL,
+    run_id TEXT
+);
 CREATE TABLE IF NOT EXISTS advanced_objects (
     id TEXT PRIMARY KEY,
     primary_name TEXT,
@@ -147,6 +161,10 @@ class Database:
             self.conn.execute(
                 "ALTER TABLE panoramas ADD COLUMN profile_top "
                 "TEXT NOT NULL DEFAULT '[]'")
+        except sqlite3.OperationalError:
+            pass
+        try:  # migration: import-run marker for merging chunked uploads
+            self.conn.execute("ALTER TABLE import_batches ADD COLUMN run_id TEXT")
         except sqlite3.OperationalError:
             pass
         self.conn.commit()
@@ -451,6 +469,12 @@ class Database:
             return [dict(r) for r in self.conn.execute(
                 "SELECT * FROM images ORDER BY id")]
 
+    def image(self, img_id: int) -> dict | None:
+        with self.lock:
+            r = self.conn.execute(
+                "SELECT * FROM images WHERE id=?", (img_id,)).fetchone()
+            return dict(r) if r else None
+
     def rename_images(self, old_name: str, new_name: str, otype: str | None,
                       new_folder: str):
         """Rename an unresolved object group (name, type and stored paths)."""
@@ -498,6 +522,46 @@ class Database:
         with self.lock:
             self.conn.execute("DELETE FROM observations WHERE id=?", (obs_id,))
             self.conn.commit()
+
+    # ---------------- import history (batches) ----------------
+
+    def add_import_batch(self, rec: dict) -> int:
+        with self.lock:
+            c = self.conn.execute(
+                "INSERT INTO import_batches(created_at,object_id,object_name,"
+                "slug,session,frame,n_files,total_exposure,first_obs,image_dir,run_id) "
+                "VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+                (rec["created_at"], rec.get("object_id"), rec["object_name"],
+                 rec["slug"], rec["session"], rec["frame"], rec["n_files"],
+                 round(float(rec.get("total_exposure") or 0.0), 1),
+                 rec.get("first_obs"), rec["image_dir"], rec.get("run_id")))
+            self.conn.commit()
+            return c.lastrowid
+
+    def merge_import_batch(self, run_id: str, rec: dict) -> int:
+        """Record a batch, merging into the row of the same import run
+        (one upload action split into chunks = one history entry)."""
+        with self.lock:
+            row = self.conn.execute(
+                "SELECT id, n_files, total_exposure, first_obs FROM import_batches "
+                "WHERE run_id=? AND slug=? AND session=? AND frame=?",
+                (run_id, rec["slug"], rec["session"], rec["frame"])).fetchone()
+            if row:
+                self.conn.execute(
+                    "UPDATE import_batches SET n_files=?, total_exposure=?, "
+                    "first_obs=? WHERE id=?",
+                    (row["n_files"] + rec["n_files"],
+                     round(row["total_exposure"] + rec["total_exposure"], 1),
+                     row["first_obs"] or rec.get("first_obs"), row["id"]))
+                self.conn.commit()
+                return row["id"]
+            return self.add_import_batch({**rec, "run_id": run_id})
+
+    def import_batches(self, limit: int = 60) -> list[dict]:
+        with self.lock:
+            return [dict(r) for r in self.conn.execute(
+                "SELECT * FROM import_batches ORDER BY id DESC LIMIT ?",
+                (max(1, limit),))]
 
     def all_settings(self) -> dict:
         with self.lock:

@@ -1,7 +1,7 @@
 /* pure derivations computed from raw night tracks + current preferences */
 
 import { S } from "./state.js";
-import { parseUTC, clamp, esc, fmtHM } from "./util.js";
+import { parseUTC, clamp, fmtHM } from "./util.js";
 
 export function longestRunJS(flags) {
   let best = null, start = null;

@@ -1,6 +1,6 @@
 /* Image Archive mode: mode switching, FITS import, library table */
 
-import { $, $$, esc, api, toast, setBusy, fmtSize, TYPE_LABEL } from "./util.js";
+import { $, $$, esc, api, toast, setBusy, fmtSize, fmtDT, TYPE_LABEL } from "./util.js";
 import { S } from "./state.js";
 import { renderSkyMap } from "./skymap.js";
 
@@ -22,7 +22,6 @@ export function setMode(cat) {
     .classList.add("active");
   $(`#tab-${def}`).classList.add("active");
   if (cat) loadLibrary();
-  document.dispatchEvent(new CustomEvent("mode:changed"));
 }
 
 export function toggleMode() {
@@ -37,19 +36,23 @@ export function applyArchiveUI() {
   if (inp) inp.value = dir;
   $("#archiveInfo").textContent = dir;
   $("#archiveInfo").title = "Image archive: " + dir;
+  $("#archiveInfo").classList.toggle("hidden", !dir);
 }
 
 /* ---------------- import pane ---------------- */
 
 const BATCH = 8;
 
-async function ingestFiles(files) {
+async function ingestFiles(files, frame, session) {
   const list = Array.from(files || []).filter(
     f => /\.(fit|fits)$/i.test(f.name));
   if (!list.length) {
     toast("No .fit or .fits files selected.", "err", 4000);
     return;
   }
+  // one run id per import action: the server merges the per-chunk history
+  // rows, so a whole session stays ONE entry in "Recent imports"
+  const runId = crypto.randomUUID();
   const results = [];
   setBusy(true, `Importing 0/${list.length}`);
   try {
@@ -57,6 +60,9 @@ async function ingestFiles(files) {
       const chunk = list.slice(i, i + BATCH);
       const fd = new FormData();
       for (const f of chunk) fd.append("files", f);
+      if (frame) fd.append("frame", frame);
+      if (session) fd.append("session", session);
+      fd.append("run_id", runId);
       let res;
       try {
         res = await api("/api/images/ingest", { method: "POST", body: fd });
@@ -70,9 +76,6 @@ async function ingestFiles(files) {
         `Importing ${Math.min(i + chunk.length, list.length)}/${list.length}`);
     }
     renderIngestResults(results);
-    $("#ingestSummary").textContent =
-      `${results.filter(r => r.ok).length} imported, ` +
-      `${results.length - results.filter(r => r.ok).length} failed.`;
     S.library = null;                       // stale until refetched
     loadLibrary();
   } finally {
@@ -84,30 +87,73 @@ function renderIngestResults(results) {
   const box = $("#ingestResults");
   if (!box) return;
   _ingestCache = results;
-  const errOnly = $("#chkErrOnly").checked;
-  const shown = errOnly ? results.filter(r => !r.ok) : results;
-  if (!shown.length) {
-    box.innerHTML = `<p class="hint">${
-      errOnly ? "No failed imports." : "Nothing imported yet."}</p>`;
+  if (!results.length) {
+    box.innerHTML = `<p class="hint">Nothing imported yet.</p>`;
     return;
   }
-  box.innerHTML = shown.map(r => {
-    const o = r.object || {};
-    const meta = r.ok
-      ? `${esc(o.name || "?")}${o.designation ? " (" + esc(o.designation) + ")" : ""}`
-      : `<span class="bad">${esc(r.error || "failed")}</span>`;
-    const exp = r.exposure != null ? ` \u00B7 ${fmtDur(r.exposure)}` : "";
-    const dt = r.date_obs ? ` \u00B7 ${esc(r.date_obs.replace("T", " "))}` : "";
-    const flt = r.filter ? ` \u00B7 ${esc(r.filter)}` : "";
-    return `<div class="ingest-item ${r.ok ? "ok" : "err"}">
-      <span class="ic">${r.ok ? "\u2713" : "\u2717"}</span>
-      <span class="nm" title="${esc(r.file)}">${esc(r.file)}${exp}${flt}${dt}</span>
-      <span class="obj">${meta}</span>
+  const ok = results.filter(r => r.ok).length;
+  const fails = results.filter(r => !r.ok);
+  box.innerHTML =
+    `<div class="ingest-count">${ok}/${results.length} imported` +
+    (fails.length ? ` &middot; ${fails.length} failed` : "") + `</div>` +
+    (fails.length
+      ? fails.map(r => {
+          const o = r.object || {};
+          return `<div class="ingest-item err">
+            <span class="ic">\u2717</span>
+            <span class="nm" title="${esc(r.file)}">${esc(r.file)}</span>
+            <span class="obj"><span class="bad">${esc(r.error || "failed")}</span></span>
+          </div>`;
+        }).join("")
+      : '<p class="hint">All files imported successfully.</p>');
+}
+
+let _ingestCache = [];
+
+/* ---------------- recent imports (per-session history) ---------------- */
+
+let _impSession = null;     // pending {slug, session} for the calibration picker
+
+function renderImports(list) {
+  const box = $("#importHistory");
+  if (!box) return;
+  if (!list || !list.length) {
+    box.innerHTML = '<p class="hint">Nothing imported yet.</p>';
+    return;
+  }
+  box.innerHTML = list.map(b => {
+    const dur = b.total_exposure > 0 ? ` \u00B7 ${fmtDur(b.total_exposure)}` : "";
+    const loc = `${esc(b.slug)}/${esc(b.session)}/${esc(b.frame)}s`;
+    return `<div class="imp-item">
+      <div class="imp-head">
+        <b>${esc(b.object_name || b.slug)}</b>
+        <span class="hint">${esc(b.session)} \u00B7 ${esc(b.frame)} \u00D7 ${b.n_files}${dur}</span>
+      </div>
+      <div class="imp-path mono" title="archive folder">${loc}</div>
+      <div class="imp-btns">
+        <button class="ghost" data-imp="dark">+ darks</button>
+        <button class="ghost" data-imp="flat">+ flats</button>
+        <button class="ghost" data-imp="bias">+ bias</button>
+        <button class="ghost imp-open" data-open="${esc(b.slug)}/${esc(b.session)}" title="open this session's folder in the file explorer">&#128194;</button>
+      </div>
     </div>`;
   }).join("");
 }
 
-let _ingestCache = [];
+async function loadImports() {
+  try {
+    const list = await api("/api/library/imports", { silent: true });
+    renderImports(list);
+  } catch (err) { /* non-fatal */ }
+}
+
+function openFolder(rel) {
+  api("/api/library/open_folder", {
+    method: "POST", silent: true,
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ rel })
+  }).then(() => {}).catch(() => toast("Cannot open folder - is the archive path still valid?", "err", 5000));
+}
 
 /* ---------------- library pane ---------------- */
 
@@ -120,6 +166,7 @@ export async function loadLibrary() {
     applyArchiveUI();
     renderLibrary();
     renderArchiveStats();
+    loadImports();
     if (($("#tabs-cat .tab.active") || {}).dataset &&
         $("#tabs-cat .tab.active").dataset.tab === "skymap") renderSkyMap();
   } catch (err) { /* api() already toasted */ }
@@ -174,7 +221,8 @@ export function renderLibrary() {
       <td class="mono">${o.n_images}</td>
       <td class="mono">${fmtDur(o.total_exposure)}</td>
       <td class="mono">${o.n_sessions}</td>
-      <td>${editable ? `<button class="ghost lib-edit" data-edit="${key}" title="rename / set type">Edit</button>` : ""}</td>
+      <td>${editable ? `<button class="ghost lib-edit" data-edit="${key}" title="rename / set type">Edit</button>` : ""}
+        <button class="ghost lib-open" data-openobj="${key}" title="open the object's folder in the file explorer">&#128194;</button></td>
     </tr>`;
   }).join("");
   const tot = fmtDur(L.total_exposure);
@@ -187,32 +235,24 @@ export function renderLibrary() {
 function sessionRowsHTML(o) {
   const sess = o.sessions || [];
   const typeL = { light: "Lights", dark: "Darks", flat: "Flats", bias: "Bias" };
-  const typeSummary = (o.types && Object.keys(o.types).length)
-    ? Object.entries(o.types).map(([t, v]) =>
-        `<span class="chip" title="${typeL[t] || t}">${esc(t)} ${v.n}\u00D7${fmtDur(v.exposure)}</span>`).join("")
-    : "";
-  const filterSummary = (o.filters && Object.keys(o.filters).length)
-    ? Object.entries(o.filters).map(([fl, v]) =>
-        `<span class="chip" title="filter">${esc(fl)} ${v.n}\u00D7${fmtDur(v.exposure)}</span>`).join("")
-    : "";
-  const imgs = (o.images || []).map(im => `
-    <span class="frame" title="${esc(im.orig_name)} \u00B7 ${esc(im.imagetyp || "light")}${im.filter ? " \u00B7 " + esc(im.filter) : ""}${im.exposure != null ? " \u00B7 " + fmtDur(im.exposure) : ""}">
-      <img loading="lazy" src="/api/images/${im.id}/preview" onerror="this.style.visibility='hidden'">
-      <small>${esc(im.filter || "\u2014")}</small>
-    </span>`).join("");
   const sessRows = sess.length ? sess.map(s => {
     const per = s.n_images ? s.exposure / s.n_images : 0;
     const when = s.undated
       ? "<span class='hint'>no date recorded</span>"
-      : `${esc(s.start.replace("T", " "))} \u2013 ${esc(s.end.replace("T", " "))}`;
+      : `${fmtDT(s.start)} \u2013 ${fmtDT(s.end)}`;
+    const chips = (map, key) => (map && Object.keys(map).length)
+      ? Object.entries(map).map(([k, v]) =>
+          `<span class="chip" title="${key === "types" ? (typeL[k] || k) : "filter"}">${esc(k)} ${v.n}\u00D7${fmtDur(v.exposure)}</span>`).join("")
+      : "";
+    const sTypes = chips(s.types, "types");
+    const sFilters = chips(s.filters, "filters");
     return `<div class="sess">
-      <span class="sess-when">${when}</span>
-      <span class="sess-meta">${s.n_images} \u00D7 ${fmtDur(per)} = ${fmtDur(s.exposure)}</span>
+      <div class="sess-when">${when}</div>
+      <div class="sess-meta">${s.n_images} \u00D7 ${fmtDur(per)} = ${fmtDur(s.exposure)}</div>
+      ${(sTypes || sFilters) ? `<div class="lib-rollup">${sTypes}${sFilters}</div>` : ""}
     </div>`;
   }).join("") : '<p class="hint">No sessions.</p>';
-  const summary = typeSummary || filterSummary
-    ? `<div class="lib-rollup">${typeSummary}${filterSummary}</div>` : "";
-  return `<div class="lib-frames">${summary}${imgs || '<span class="hint">no images</span>'}</div>${sessRows}`;
+  return `<div class="lib-frames">${sessRows}</div>`;
 }
 
 function toggleSessions(name) {
@@ -298,6 +338,19 @@ export function bindArchive() {
       toast("Archive folder saved.", "info", 3000);
     } catch (err) { /* api() already toasted */ }
   });
+  $("#btnArcReindex").addEventListener("click", async () => {
+    setBusy(true, "Scanning archive folder...");
+    try {
+      // a big archive needs more than the default 30 s request timeout
+      const res = await api("/api/library/reindex",
+        { method: "POST", signal: new AbortController().signal });
+      toast(`Reindex: ${res.added} added, ${res.skipped} already known, ${res.failed} failed.`,
+            "info", 6000);
+      S.library = null;
+      await loadLibrary();
+    } catch (err) { /* api() already toasted */ }
+    finally { setBusy(false); }
+  });
   if ($("#arcDir")) {
     $("#arcDir").addEventListener("keydown", e => {
       if (e.key === "Enter") $("#btnArcSave").click();
@@ -310,6 +363,7 @@ export function bindArchive() {
     ingestFiles(e.target.files);
     e.target.value = "";
   });
+  let calFrame = "dark";   // set by the per-session +darks/+flats/+bias buttons
   const dz = $("#dropZone");
   if (dz) {
     dz.addEventListener("dragover", e => {
@@ -323,11 +377,9 @@ export function bindArchive() {
       ingestFiles(e.dataTransfer.files);
     });
   }
-  $("#chkErrOnly").addEventListener("change", () => renderIngestResults(_ingestCache));
   $("#btnClearResults").addEventListener("click", () => {
     _ingestCache = [];
     $("#ingestResults").innerHTML = '<p class="hint">Nothing imported yet.</p>';
-    $("#ingestSummary").textContent = "";
   });
 
   // library controls
@@ -349,6 +401,34 @@ export function bindArchive() {
     if (tog) { toggleSessions(tog.dataset.toggle); return; }
     const ed = e.target.closest(".lib-edit");
     if (ed) { openEdit(ed.dataset.edit); return; }
+    const op = e.target.closest(".lib-open");
+    if (op) {
+      const o = (S.library.objects || []).find(x => x.name === op.dataset.openobj);
+      const slug = o && o.images && o.images[0]
+        ? o.images[0].file.split(/[\\/]/)[0] : op.dataset.openobj;
+      openFolder(slug);
+    }
+  });
+  const impBox = $("#importHistory");
+  if (impBox) {
+    impBox.addEventListener("click", e => {
+      const open = e.target.closest(".imp-open");
+      if (open) { openFolder(open.dataset.open); return; }
+      const imp = e.target.closest("[data-imp]");
+      if (imp) {
+        const item = imp.closest(".imp-item");
+        const loc = item.querySelector(".imp-path").textContent.split("/");
+        _impSession = { slug: loc[0], session: loc[1] };
+        calFrame = imp.dataset.imp;   // per-session buttons force the frame too
+        $("#fitFilesCal").click();
+      }
+    });
+  }
+  $("#fitFilesCal").addEventListener("change", e => {
+    const t = _impSession;
+    ingestFiles(e.target.files, calFrame,
+                t ? t.session : null);   // bare folder name; slug is server-side
+    e.target.value = "";
   });
 
   // library edit modal

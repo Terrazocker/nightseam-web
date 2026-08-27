@@ -9,7 +9,6 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 
-from . import astro
 from .astro import altaz, julian_day, moon_illumination, moon_ra_dec, sun_ra_dec
 from .database import Database
 from .planning import night_window

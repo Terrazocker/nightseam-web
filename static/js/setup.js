@@ -1,8 +1,10 @@
 /* Setup dialog: observing locations, imaging rigs, backup/transfer */
 
-import { $, esc, api, toast, fmtFovPair, watchCaps, applyEdgeSpace, num } from "./util.js";
+import { $, esc, api, toast, fmtFovPair, watchCaps, applyEdgeSpace, num,
+         setDisplayZone, todayLocal } from "./util.js";
 import { S } from "./state.js";
-import { loadNight } from "./night.js";
+import { loadNight, scheduleLoadNight } from "./night.js";
+import { updateTimeLabel } from "./header.js";
 import { renderTargets } from "./targets.js";
 
 export async function openSites() {
@@ -124,6 +126,7 @@ export function bindSetup() {
 
   // advanced catalog mode
   $("#advMode").addEventListener("change", async e => {
+    $("#tzSection").classList.toggle("hidden", !e.target.checked);
     await api("/api/settings", { method:"POST",
       headers:{"Content-Type":"application/json"},
       body: JSON.stringify({ adv_mode: e.target.checked })});
@@ -132,6 +135,23 @@ export function bindSetup() {
       : "Advanced mode disabled - loading the standard catalog...",
       "info", 4000);
     setTimeout(() => location.reload(), 700);
+  });
+
+  // timezone (advanced mode only): IANA zone for display + offset-at-date
+  $("#tzSelect").addEventListener("change", async e => {
+    const v = e.target.value;
+    try {
+      await api("/api/settings", { method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({ timezone: v })});
+    } catch (err) { return; }
+    S.cfg.timezone = v;
+    setDisplayZone(v);
+    $("#dateInput").value = todayLocal();
+    updateTimeLabel();
+    scheduleLoadNight(0);
+    toast(v ? `Timezone set to ${v}.` : "Timezone set to machine local.",
+          "info", 3500);
   });
 
   // backup / transfer
@@ -222,6 +242,11 @@ export function applyCfgToUI() {
   if ($("#libUnit")) $("#libUnit").value = S.cfg.size_unit || "arcmin";
   applyEdgeSpace(S.cfg.edge_space ?? 200);
   if ($("#advMode")) $("#advMode").checked = !!S.cfg.adv_mode;
+  if ($("#tzSection")) {
+    $("#tzSection").classList.toggle("hidden", !S.cfg.adv_mode);
+  }
+  if ($("#tzSelect")) $("#tzSelect").value = S.cfg.timezone || "";
+  setDisplayZone(S.cfg.timezone || "");
   if ($("#bortle")) {
     $("#bortle").value = S.cfg.bortle ?? 4;
     $("#bortleVal").textContent = S.cfg.bortle ?? 4;

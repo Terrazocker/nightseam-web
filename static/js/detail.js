@@ -1,6 +1,7 @@
 /* object detail modal + altitude-vs-time chart */
 
-import { $, api, clamp, parseUTC, esc, fmtHM, toast,
+import { $, api, clamp, parseUTC, esc, fmtHM, fmtT, toast, todayLocal, tzOffAt,
+         zoneHour,
          TYPE_LABEL, constName, fmtSize } from "./util.js";
 import { S, IMG_VER } from "./state.js";
 import { filterAdvice, frameCoverage, moonAt, moonBandX } from "./derive.js";
@@ -40,7 +41,7 @@ export async function openDetail(id) {
     .finally(() => clearTimeout(upTimer));
 
   const q = new URLSearchParams({date: $("#dateInput").value,
-    tz_offset_min: tzOffLocal(), minalt: S.minAlt});
+    tz_offset_min: tzOffAt($("#dateInput").value), minalt: S.minAlt});
   if (S.activeSiteId != null) q.set("site", S.activeSiteId);
   try {
     DETAIL = await api(`/api/object/${id}?` + q);
@@ -92,7 +93,7 @@ function bindJournal() {
     await api(`/api/object/${id}/observed`, { method: "POST",
       headers: { "Content-Type": "application/json" }, silent: true,
       body: JSON.stringify({
-        date_obs: $("#jDate").value || new Date().toISOString().slice(0, 10),
+        date_obs: $("#jDate").value || todayLocal(),
         notes: $("#jNotes").value.trim() })}).catch(() => {});
     $("#jNotes").value = "";
     S.cfg = await api("/api/state");
@@ -101,11 +102,7 @@ function bindJournal() {
   });
 }
 
-function tzOffLocal() { return new Date().getTimezoneOffset(); }
-
 function renderDetailMeta(m, d) {
-  const i = clamp(timeIdxNow(), 0, d.alt.length-1);
-  void i;
   const nObj = S.night ? S.night.objects.find(x => x.id === m.id) : null;
   const adv = filterAdvice(m);
   const cov = frameCoverage(m);
@@ -137,10 +134,6 @@ function activeRigName() {
   const rig = S.cfg && S.cfg.rigs &&
               S.cfg.rigs.find(r => r.id === S.cfg.active_rig_id);
   return rig ? rig.name : "";
-}
-function timeIdxNow() {
-  return Math.round((Date.now() - parseUTC(S.night.timeline.times_iso[0]).getTime())
-      / (S.night.timeline.step_min * 60000));
 }
 function durStr(aIso, bIso) {
   const mins = Math.max(0, Math.round((parseUTC(bIso) - parseUTC(aIso)) / 60000));
@@ -244,14 +237,14 @@ export function drawAltChart() {
   let prevHour = -1;
   for (let i=0;i<nT;i++){
     const dt = parseUTC(d.times_iso[i]);
-    const h = dt.getHours();
+    const h = zoneHour(dt);
     if (h !== prevHour) {
       prevHour = h;
       const x = X(i);
       ctx.strokeStyle = C.grid;
       ctx.beginPath(); ctx.moveTo(x, MT); ctx.lineTo(x, MT+ph); ctx.stroke();
       ctx.fillStyle = "#6b748c";
-      const lab = dt.toLocaleTimeString([], {hour:"2-digit", minute:"2-digit"});
+      const lab = fmtT(dt);
       ctx.fillText(lab, x-14, H-10);
     }
   }
@@ -304,7 +297,7 @@ export function drawAltChart() {
     ctx.setLineDash([6,4]);
     ctx.strokeStyle = "rgba(255,93,93,.55)"; ctx.lineWidth = 1;
     ctx.beginPath();
-    pen = false;
+    let pen = false;
     for (let i=0;i<nT;i++){
       const v = d.ceil_top[i];
       if (v >= 88) { pen = false; continue; }
@@ -386,7 +379,7 @@ export function drawAltChart() {
     const a=d.alt[i], z=d.az[i];
     const st = a<=0?"below horizon": a<=d.ceil[i]?`BLOCKED (ceiling ${d.ceil[i].toFixed(0)}\u00B0)`:
                a<d.min_useful_alt?"below your minimum":"clear";
-    tip.innerHTML = `<b>${parseUTC(d.times_iso[i]).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"})}</b><br>` +
+    tip.innerHTML = `<b>${fmtT(parseUTC(d.times_iso[i]))}</b><br>` +
       `alt ${a.toFixed(1)}\u00B0 &middot; az ${z.toFixed(0)}\u00B0<br>${st}`;
     tip.classList.remove("hidden");
     tip.style.left = (ev.clientX+14)+"px";

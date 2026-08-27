@@ -107,6 +107,7 @@ export function bindSky() {
 
   $("#showLabels").addEventListener("change", renderSky);
   $("#showMoon").addEventListener("change", renderSky);
+  $("#showMinAlt").addEventListener("change", renderSky);
   $("#showAll").addEventListener("change", renderSky);
   $("#showCons").addEventListener("change", renderSky);
   $("#skyMag").addEventListener("input", e => {
@@ -337,6 +338,31 @@ export function renderSky() {
     ctx.strokeStyle = "rgba(255,93,93,.75)"; ctx.lineWidth = 1.4;
     ctx.stroke();
     ctx.setLineDash([]);
+  }
+
+  // min-altitude band: the area below the min-useful-alt slider is treated
+  // as blocked (no visible windows), so shade it from the horizon up to the
+  // slider's ring. Toggleable with #showMinAlt.
+  if (($("#showMinAlt") || {}).checked !== false && S.minAlt > 0) {
+    const r1 = R * (1 - Math.min(89, S.minAlt) / 90);
+    ctx.beginPath();
+    ctx.arc(cx, cy, R, 0, Math.PI * 2);
+    ctx.moveTo(cx + r1, cy);        // lift the pen: no radial seam at east
+    ctx.arc(cx, cy, r1, Math.PI * 2, 0, true);
+    ctx.closePath();
+    ctx.fillStyle = "rgba(120,140,180,.10)";
+    ctx.fill();
+    ctx.setLineDash([6, 4]);
+    ctx.beginPath();
+    ctx.arc(cx, cy, r1, 0, 7);
+    ctx.strokeStyle = "rgba(150,165,200,.55)";
+    ctx.lineWidth = 1.2;
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = "rgba(150,165,200,.85)";
+    ctx.font = "10px Consolas, monospace";
+    ctx.textAlign = "left";
+    ctx.fillText(Math.round(S.minAlt) + "\u00B0 min alt", cx + 6, cy - r1 - 4);
   }
 
   // grid rings (10-degree steps)

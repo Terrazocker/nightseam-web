@@ -8,7 +8,7 @@ import math
 import re
 import threading
 import time
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Optional
 
@@ -19,7 +19,7 @@ from pydantic import BaseModel
 
 from .backup import apply_import_zip, build_export_zip
 from .database import Database, new_id
-from .ingest import ingest_one, obj_slug, rename_archive_folder
+from .ingest import ingest_one, obj_slug, reindex_library, rename_archive_folder
 from .nightcalc import PROFILE_BINS, compute_night, object_detail
 from .paths import data_dir, static_dir
 from .version import app_version
@@ -52,6 +52,7 @@ class SettingsIn(BaseModel):
     edge_space: Optional[int] = None
     adv_mode: Optional[bool] = None
     bortle: Optional[int] = None
+    timezone: Optional[str] = None
 
 
 class RigIn(BaseModel):
@@ -94,6 +95,10 @@ class LibraryEditIn(BaseModel):
 class ObservationIn(BaseModel):
     date_obs: Optional[str] = None
     notes: Optional[str] = None
+
+
+class FolderOpenIn(BaseModel):
+    rel: str                      # relative path inside the archive folder
 
 
 # ------------------------------------------------------------------ coord parsing
@@ -250,6 +255,7 @@ def create_app(db: Database, *, prefetch: bool = True) -> FastAPI:
             "edge_space": db.setting("edge_space", 200),
             "adv_mode": bool(db.setting("adv_mode", False)),
             "bortle": db.setting("bortle", 4),
+            "timezone": db.setting("timezone") or "",
             "observed": db.observations(),
         }
 
@@ -290,6 +296,8 @@ def create_app(db: Database, *, prefetch: bool = True) -> FastAPI:
             db.set_setting("adv_mode", bool(body.adv_mode))
         if body.bortle is not None:
             db.set_setting("bortle", max(1, min(9, int(body.bortle))))
+        if body.timezone is not None:
+            db.set_setting("timezone", body.timezone.strip()[:64])
         return {"ok": True}
 
     # ---------------- sites ----------------
@@ -316,10 +324,6 @@ def create_app(db: Database, *, prefetch: bool = True) -> FastAPI:
         return {"ok": True}
 
     # ---------------- rigs ----------------
-
-    @app.get("/api/rigs")
-    def api_rigs():
-        return db.rigs()
 
     @app.post("/api/rigs")
     def api_add_rig(body: RigIn):
@@ -569,8 +573,19 @@ def create_app(db: Database, *, prefetch: bool = True) -> FastAPI:
 
     # ---------------- image archive ----------------
 
+    @app.post("/api/library/reindex")
+    def api_library_reindex():
+        """Scan the archive folder and record files not yet in the DB."""
+        return reindex_library(db, Path(db.image_dir()))
+
+    _SESSION_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 _-]{0,39}$")
+    _RUN_ID_RE = re.compile(r"^[A-Za-z0-9-]{8,64}$")
+
     @app.post("/api/images/ingest")
-    async def api_ingest_images(files: list[UploadFile] = File(...)):
+    async def api_ingest_images(files: list[UploadFile] = File(...),
+                                frame: str = Form(""),
+                                session: str = Form(""),
+                                run_id: str = Form("")):
         archive = Path(db.image_dir())
         try:
             archive.mkdir(parents=True, exist_ok=True)
@@ -578,8 +593,60 @@ def create_app(db: Database, *, prefetch: bool = True) -> FastAPI:
             raise HTTPException(
                 500, f"Cannot create archive folder {archive}: {exc}")
         catalog = db.all_objects(advanced=True)
-        results = [await ingest_one(db, catalog, archive, f) for f in files]
+        sess = session.strip()
+        if not _SESSION_NAME_RE.match(sess):
+            sess = None                  # not a sane folder name -> auto session
+        results = [await ingest_one(db, catalog, archive, f, frame, sess)
+                   for f in files]
+
+        # record one history entry per (object, session, frame) group
+        now = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%S")
+        groups: dict[tuple, dict] = {}
+        for r in results:
+            if not r.get("ok"):
+                continue
+            parts = str(r.get("stored") or "").replace("\\", "/").split("/")
+            if len(parts) < 3:
+                continue
+            key = (parts[0], parts[1], r.get("imagetyp") or "light")
+            g = groups.setdefault(key, {
+                "created_at": now, "slug": parts[0], "session": parts[1],
+                "frame": key[2],
+                "object_id": (r.get("object") or {}).get("id"),
+                "object_name": (r.get("object") or {}).get("name") or parts[0],
+                "n_files": 0, "total_exposure": 0.0, "first_obs": None})
+            g["n_files"] += 1
+            g["total_exposure"] += float(r.get("exposure") or 0.0)
+            if r.get("date_obs") and (g["first_obs"] is None
+                                      or r["date_obs"] < g["first_obs"]):
+                g["first_obs"] = r["date_obs"]
+        for g in groups.values():
+            rec = {**g, "image_dir": str(archive)}
+            run = run_id.strip()
+            if run and _RUN_ID_RE.match(run):
+                db.merge_import_batch(run, rec)
+            else:
+                db.add_import_batch(rec)
         return {"results": results}
+
+    @app.get("/api/library/imports")
+    def api_library_imports():
+        return db.import_batches()
+
+    @app.post("/api/library/open_folder")
+    def api_library_open_folder(body: FolderOpenIn):
+        rel = body.rel.strip().replace("\\", "/").strip("/")
+        if not rel or ".." in rel.split("/") or rel.split("/")[0] == "":
+            raise HTTPException(400, "bad folder path")
+        folder = Path(db.image_dir()) / rel
+        if not folder.is_dir():
+            raise HTTPException(404, "folder not found on disk")
+        import os
+        try:
+            os.startfile(folder)         # Windows file explorer
+        except OSError as exc:
+            raise HTTPException(500, f"cannot open folder: {exc}")
+        return {"ok": True}
 
     @app.get("/api/library")
     def api_library():
@@ -657,7 +724,7 @@ def create_app(db: Database, *, prefetch: bool = True) -> FastAPI:
     @app.get("/api/images/{img_id}/preview")
     def api_image_preview(img_id: int):
         from . import fits as fitsio
-        row = next((i for i in db.images() if i["id"] == img_id), None)
+        row = db.image(img_id)
         if row is None:
             raise HTTPException(404, "image not found")
         p = Path(db.image_dir()) / row["file"]

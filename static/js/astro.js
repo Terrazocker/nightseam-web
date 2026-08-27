@@ -60,21 +60,6 @@ function refractionDeg(altDeg) {
   return r;
 }
 
-/* alt/az from already-precessed RA/Dec (degrees) */
-export function altazPrecessed(raDeg, decDeg, jd, latDeg, lonDeg) {
-  let ha = (gmstDeg(jd) + lonDeg - raDeg) % 360;
-  if (ha > 180) ha -= 360;
-  const h = ha * D2R, d = decDeg * D2R, p = latDeg * D2R;
-  const sinAlt = Math.sin(d) * Math.sin(p) + Math.cos(d) * Math.cos(p) * Math.cos(h);
-  let alt = Math.asin(Math.max(-1, Math.min(1, sinAlt)));
-  const east = -Math.cos(d) * Math.sin(h);
-  const north = Math.sin(d) * Math.cos(p) - Math.cos(d) * Math.sin(p) * Math.cos(h);
-  let az = Math.atan2(east, north) * R2D % 360;
-  if (az < 0) az += 360;
-  alt = alt * R2D + refractionDeg(alt * R2D);
-  return [alt, az];
-}
-
 /* Batch fast path for the ~12k advanced-object synth: the sidereal time and
    site terms only depend on the time sample, so they are computed once per
    sample instead of once per object per sample. */
@@ -102,10 +87,4 @@ export function altazFrameApply(frame, raDeg, decDeg, i) {
   if (az < 0) az += 360;
   alt = alt * R2D + refractionDeg(alt * R2D);
   return [alt, az];
-}
-
-/* full pipeline for a J2000 object at a given JD (mirrors astro.altaz) */
-export function altaz(raDeg, decDeg, jd, latDeg, lonDeg) {
-  const [pr, pd] = precessJ2000ToDate(raDeg, decDeg, jd);
-  return altazPrecessed(pr, pd, jd, latDeg, lonDeg);
 }

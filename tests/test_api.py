@@ -97,6 +97,15 @@ def test_settings_roundtrip(client):
                              "narrowband_oiii": False}
 
 
+def test_timezone_setting_roundtrip(client):
+    r = client.post("/api/settings", json={"timezone": "America/Santiago"})
+    assert r.status_code == 200
+    assert client.get("/api/state").json()["timezone"] == "America/Santiago"
+    r = client.post("/api/settings", json={"timezone": ""})
+    assert r.status_code == 200
+    assert client.get("/api/state").json()["timezone"] == ""
+
+
 def test_settings_rejects_bad_size_unit(client):
     r = client.post("/api/settings", json={"size_unit": "parsecs"})
     assert r.status_code == 400
@@ -165,6 +174,23 @@ def test_night_advanced_metadata_only(client, db):
     assert all("alt" in o and "az" in o for o in plain)
     assert all(o.get("adv") is True for o in adv_objs)
     assert all("alt" not in o and "az" not in o for o in adv_objs)
+
+
+def test_night_tz_offset_shifts_local_window(client):
+    """The tz offset converts the local date to UTC: at a polar site with no
+    twilight (midnight sun) the 20:00/04:00 local fallback window must move
+    with the offset - the offset-at-date the client sends fixes DST drift."""
+    sid = add_site(client, name="Tromso", lat=69.6, lon=18.9)
+    p = {"date": "2026-06-21", "site": sid}
+    r1 = client.get("/api/night", params={**p, "tz_offset_min": 120}).json()
+    r2 = client.get("/api/night", params={**p, "tz_offset_min": 0}).json()
+    assert r1["twilight_level"] == "fallback"
+    assert r1["tz_offset_min"] == 120
+    from datetime import datetime
+    d1 = datetime.fromisoformat(r1["dusk"])
+    d2 = datetime.fromisoformat(r2["dusk"])
+    assert abs((d1 - d2).total_seconds()) == 120 * 60
+    assert d1.hour == 18 and d2.hour == 20
 
 
 def test_object_detail(client):
@@ -273,7 +299,7 @@ def test_ingest_unresolved_and_library_edit(client, tmp_path):
     lib = client.get("/api/library").json()
     assert lib["objects"][0]["name"] == "Renamed 42"
     assert lib["objects"][0]["otype"] == "nebula"
-    assert (tmp_path / "archive" / "Renamed 42" / "lights" / "t42.fit").is_file()
+    assert any((tmp_path / "archive" / "Renamed 42").rglob("lights/t42.fit"))
 
 
 def test_ingest_rejects_bad_files(client):
@@ -348,6 +374,225 @@ def test_ingest_classification_and_rollups(client):
     # preview of the light frame renders a PNG
     img_id = g["images"][0]["id"]
     assert client.get(f"/api/images/{img_id}/preview").content.startswith(b"\x89PNG")
+
+
+def m31_at(date_obs: str) -> bytes:
+    return make_fits([
+        ("SIMPLE", "T"),
+        ("OBJECT", "'M 31                     ' / Andromeda"),
+        ("EXPTIME", "300.0"),
+        ("DATE-OBS", f"'{date_obs}'"),
+        ("FILTER", "'L'"),
+        ("NAXIS", "2"),
+        ("RA", "0.712"),
+        ("DEC", "41.269"),
+    ])
+
+
+def m31_frame(date_obs: str, imagetyp: str, exposure: float = 60.0) -> bytes:
+    return make_fits([
+        ("SIMPLE", "T"),
+        ("OBJECT", "'M 31                     ' / Andromeda"),
+        ("EXPTIME", str(exposure)),
+        ("DATE-OBS", f"'{date_obs}'"),
+        ("IMAGETYP", f"'{imagetyp}'"),
+        ("NAXIS", "2"),
+        ("RA", "0.712"),
+        ("DEC", "41.269"),
+    ])
+
+
+def test_import_batches_recorded(client):
+    """One history entry per (object, session, frame) group, newest first."""
+    files = [
+        ("f1.fit", m31_at("2026-08-22T20:00:00"), "application/octet-stream"),
+        ("f2.fit", m31_at("2026-08-22T21:00:00"), "application/octet-stream"),
+        ("d1.fit", m31_frame("2026-08-23T13:00:00", "DARK"),
+         "application/octet-stream"),
+    ]
+    r = client.post("/api/images/ingest",
+                    files=[("files", x) for x in files])
+    assert r.status_code == 200
+    batches = client.get("/api/library/imports").json()
+    assert len(batches) == 2
+    assert batches[0]["frame"] == "dark" and batches[1]["frame"] == "light"
+    assert batches[1]["n_files"] == 2
+    assert batches[1]["total_exposure"] == 600.0
+    assert batches[1]["slug"] == "Andromeda Galaxy"
+    assert batches[1]["session"] == "2026-08-22_2000"
+    assert batches[1]["object_id"] == "m31"
+    assert batches[1]["image_dir"] == str(tmp_archive(client))
+
+
+def test_ingest_session_override(client):
+    """session=... forces the archive sub-folder for calibration uploads."""
+    r = client.post("/api/images/ingest",
+                    files=[("files", ("d1.fit", m31_frame(
+                        "2026-08-25T10:00:00", "DARK"),
+                        "application/octet-stream"))],
+                    data={"frame": "dark", "session": "2026-08-22_2000"})
+    assert r.status_code == 200
+    res = r.json()["results"][0]
+    assert res["ok"] and res["imagetyp"] == "dark"
+    parts = res["stored"].replace("\\", "/").split("/")
+    assert parts[1] == "2026-08-22_2000" and parts[2] == "darks"
+    assert (tmp_archive(client) / res["stored"]).is_file()
+    b = client.get("/api/library/imports").json()[0]
+    assert b["session"] == "2026-08-22_2000"
+
+    # a bogus session name falls back to the automatic session
+    r2 = client.post("/api/images/ingest",
+                     files=[("files", ("d2.fit", m31_frame(
+                         "2026-08-25T10:00:00", "DARK"),
+                         "application/octet-stream"))],
+                     data={"session": "../escape"})
+    res2 = r2.json()["results"][0]
+    assert res2["ok"]
+    assert ".." not in res2["stored"].replace("\\", "/").split("/")[1]
+
+
+def test_open_folder(client, monkeypatch):
+    opened = []
+    monkeypatch.setattr("os.startfile", lambda p: opened.append(str(p)))
+    base = tmp_archive(client)
+    (base / "M 42" / "2026-08-22_2000").mkdir(parents=True)
+    r = client.post("/api/library/open_folder",
+                    json={"rel": "M 42/2026-08-22_2000"})
+    assert r.status_code == 200
+    assert opened and "M 42" in opened[0]
+    assert client.post("/api/library/open_folder",
+                       json={"rel": "../escape"}).status_code == 400
+    assert client.post("/api/library/open_folder",
+                       json={"rel": "M 42/nope"}).status_code == 404
+
+
+def test_ingest_session_folders(client):
+    """Frames from different nights land in different session sub-folders;
+    frames within 12 h share one session folder."""
+    files = [
+        ("f1.fit", m31_at("2026-08-22T20:00:00"), "application/octet-stream"),
+        ("f2.fit", m31_at("2026-08-23T13:00:00"), "application/octet-stream"),
+        ("f3.fit", m31_at("2026-08-22T21:30:00"), "application/octet-stream"),
+    ]
+    r = client.post("/api/images/ingest",
+                    files=[("files", x) for x in files])
+    assert r.status_code == 200
+    parts = [x["stored"].replace("\\", "/").split("/")
+             for x in r.json()["results"]]
+    assert all(len(p) == 4 and p[0] == "Andromeda Galaxy" and p[-2] == "lights"
+               for p in parts)
+    s1, s2, s3 = (p[1] for p in parts)
+    assert s1 == s3 and s1 != s2 and s2.endswith("_1300")
+    lib = client.get("/api/library").json()
+    g = lib["objects"][0]
+    assert g["n_sessions"] == 2
+
+
+def test_library_session_rollups(client):
+    """Sessions carry their own per-type/filter rollups (undated here)."""
+    client.post("/api/images/ingest", files=[
+        ("files", ("m42.fit", m42_light_fits(), "application/octet-stream")),
+        ("files", ("dark.fit", dark_fits(), "application/octet-stream")),
+    ])
+    lib = client.get("/api/library").json()
+    s = lib["objects"][0]["sessions"][0]
+    assert s["undated"] is True
+    assert s["types"]["light"]["n"] == 1
+    assert s["types"]["dark"]["n"] == 1
+    assert s["filters"]["L"]["n"] == 1
+
+
+def test_ingest_creates_sibling_folders(client):
+    """The first ingest also creates the darks/flats/bias folders beside lights."""
+    r = client.post("/api/images/ingest",
+                    files=[("files", ("m42.fit", m42_light_fits(),
+                                      "application/octet-stream"))])
+    assert r.status_code == 200
+    stored = r.json()["results"][0]["stored"]
+    base = tmp_archive(client) / "/".join(
+        stored.replace("\\", "/").split("/")[:2])
+    for t in ("lights", "darks", "flats", "bias"):
+        assert (base / t).is_dir(), f"missing {base / t}"
+
+
+def test_ingest_frame_override(client):
+    """frame=dark forces the darks folder; a bogus value falls back to IMAGETYP."""
+    r = client.post("/api/images/ingest",
+                    files=[("files", ("m42.fit", m42_light_fits(),
+                                      "application/octet-stream"))],
+                    data={"frame": "dark"})
+    assert r.status_code == 200
+    res = r.json()["results"][0]
+    assert res["ok"] and res["imagetyp"] == "dark"
+    assert res["stored"].replace("\\", "/").split("/")[-2] == "darks"
+    assert (tmp_archive(client) / res["stored"]).is_file()
+
+    r2 = client.post("/api/images/ingest",
+                     files=[("files", ("m42b.fit", m42_light_fits(),
+                                       "application/octet-stream"))],
+                     data={"frame": "bogus"})
+    res2 = r2.json()["results"][0]
+    assert res2["ok"] and res2["imagetyp"] == "light"
+    assert "lights" in res2["stored"]
+
+
+def test_reindex_adds_disk_files(client):
+    """Files placed into the archive on disk (manual copies, restored
+    backups) are picked up by the reindex endpoint; the sub-folder forces
+    the frame type and a second run skips everything."""
+    base = tmp_archive(client)
+    (base / "M 42" / "lights").mkdir(parents=True)
+    (base / "M 42" / "darks").mkdir(parents=True)
+    (base / "M 42" / "lights" / "m42a.fit").write_bytes(m42_light_fits())
+    # header says LIGHT, but the darks folder wins for reindex
+    (base / "M 42" / "darks" / "d1.fit").write_bytes(m42_light_fits())
+
+    r = client.post("/api/library/reindex")
+    assert r.status_code == 200
+    res = r.json()
+    assert res["found"] == 2 and res["added"] == 2
+    lib = client.get("/api/library").json()
+    assert lib["total_images"] == 2
+    imgs = [i for g in lib["objects"] for i in g["images"]]
+    by_typ = {i["imagetyp"]: i for i in imgs}
+    assert by_typ["light"]["file"].replace("\\", "/") == "M 42/lights/m42a.fit"
+    assert by_typ["dark"]["file"].replace("\\", "/") == "M 42/darks/d1.fit"
+    assert by_typ["light"]["object_id"] == "m42"
+
+    r2 = client.post("/api/library/reindex").json()
+    assert r2["found"] == 2 and r2["added"] == 0 and r2["skipped"] == 2
+
+
+def test_reindex_empty_archive(client):
+    r = client.post("/api/library/reindex")
+    assert r.status_code == 200
+    assert r.json() == {"found": 0, "added": 0, "skipped": 0, "failed": 0}
+
+
+def test_ingest_run_id_merges_batches(client):
+    """Chunked uploads of one import action (same run_id) merge into a
+    single history entry; a different run stays separate."""
+    f1 = [("files", ("f1.fit", m31_at("2026-08-22T20:00:00"),
+                     "application/octet-stream")),
+          ("files", ("f2.fit", m31_at("2026-08-22T21:00:00"),
+                     "application/octet-stream"))]
+    f2 = [("files", ("f3.fit", m31_at("2026-08-22T22:00:00"),
+                     "application/octet-stream"))]
+    r1 = client.post("/api/images/ingest", files=f1,
+                     data={"run_id": "run-aaaa-0001"})
+    r2 = client.post("/api/images/ingest", files=f2,
+                     data={"run_id": "run-aaaa-0001"})
+    assert r1.status_code == 200 and r2.status_code == 200
+    batches = client.get("/api/library/imports").json()
+    assert len(batches) == 1
+    assert batches[0]["n_files"] == 3
+    assert batches[0]["total_exposure"] == 900.0
+
+    client.post("/api/images/ingest", files=f1,
+                data={"run_id": "run-bbbb-0002"})
+    batches = client.get("/api/library/imports").json()
+    assert len(batches) == 2
+    assert batches[0]["n_files"] == 2
 
 
 def tmp_archive(client) -> Path:

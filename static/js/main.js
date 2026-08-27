@@ -1,9 +1,9 @@
 /* orchestrator: boot sequence, tabs, cross-view events */
 
-import { $, $$ } from "./util.js";
+import { $, $$, todayLocal } from "./util.js";
 import { S } from "./state.js";
 import { api } from "./util.js";
-import { scheduleLoadNight, loadNight } from "./night.js";
+import { loadNight } from "./night.js";
 import { recomputeNightDerived } from "./derive.js";
 import { bindHeader, renderNightInfo, updateTimeLabel } from "./header.js";
 import { bindTonight, renderTonight } from "./tonight.js";
@@ -57,6 +57,7 @@ async function loadState() {
 
   applyCfgToUI();
   S.observedIds = new Set((S.cfg.observed || []).map(x => x.object_id));
+  $("#dateInput").value = todayLocal();   // zone-aware local date
 
   // first-run: guided setup instead of a bare locations dialog
   if (!S.cfg.sites.length && !S.cfg.wizard_done) {

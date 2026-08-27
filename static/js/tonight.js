@@ -1,6 +1,6 @@
 /* Tonight tab: summary cards + ranked pick lists */
 
-import { $, esc, parseUTC, fmtHM, api, tzOff, TYPE_LABEL } from "./util.js";
+import { $, esc, parseUTC, fmtHM, fmtT, TYPE_LABEL } from "./util.js";
 import { S, IMG_VER } from "./state.js";
 import { statusOf, objScore, windowText, desigLine,
          curTimeISO } from "./derive.js";
@@ -60,8 +60,7 @@ export function renderTonight() {
 
   const now = objs.filter(x => statusOf(x.o, S.tIdx).code === "vis")
                   .sort((a,b) => objScore(b.o) - objScore(a.o)).slice(0,8);
-  $("#nowHeading").textContent = "Best targets at " +
-     parseUTC(curTimeISO()).toLocaleTimeString([], {hour:"2-digit", minute:"2-digit"});
+  $("#nowHeading").textContent = "Best targets at " + fmtT(parseUTC(curTimeISO()));
   $("#topPicks").innerHTML = now.length ? now.map(cardHTML).join("") :
      '<p class="hint">Nothing observable at the selected moment &mdash; scrub the time slider.</p>';
 

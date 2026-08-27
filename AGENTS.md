@@ -12,22 +12,40 @@ ingest + library), switched via the top-right button or the brand name.
   `--no-browser` for headless, `--port N`). Also `--browser` (tab instead of
   app window) and `--idle-exit-hours 0` (never exit on idle - the default is
   12 h, which kills a server an agent left running). Data is created under
-  `data/` (gitignored) in the repo root. Stale AstroPilot/python processes
-  keep grabbing port 8407 - check `Get-NetTCPConnection -LocalPort 8407`
-  and kill them before booting your own instance.
-- Tests: `python -m pytest tests/` - 88 tests, run in ~12 s (pure-function
+  `data/` (gitignored) in the repo root. Port-8407 traps:
+  - A stale `dist\AstroPilot.exe` (frozen OLD code) can silently hold the
+    port; `python main.py` then hands off to it via `data/instance.json`
+    instead of starting. Before probing: kill AstroPilot.exe/python/chrome,
+    delete `data/instance.json`, then verify the listener's process NAME is
+    python.exe (`Get-NetTCPConnection -LocalPort 8407` -> OwningProcess ->
+    `Get-CimInstance Win32_Process`), not the exe.
+  - If 8407 is briefly taken at boot, `free_port()` silently picks a RANDOM
+    port (written to instance.json) - the app runs, just not on 8407.
+- Tests: `python -m pytest tests/` - 100 tests, run in ~20 s (pure-function
   tests are fast; `tests/test_api.py` spins up real `create_app()` instances
   via fastapi TestClient/httpx). Single test:
   `python -m pytest tests/test_astro.py -k name`. API tests use
   `create_app(db, prefetch=False)` so no image-cache thread hits the network;
   the archive is pointed at a tmp dir per test. A broken Windows temp-dir ACL
   means pytest runs use a repo-local `.pytest-tmp` base (see `pytest.ini`).
+- PowerShell quirk: heredocs / inline `python -c` with quotes break - write
+  probe scripts to files (`C:\Users\<user>\AppData\Local\Temp\opencode\`) and
+  run them.
+- Live UI verification uses CDP (headless Chrome on port 9222, profile
+  `chrome-prof2`/`chrome-prof3` in the temp dir): Chrome now needs
+  `--remote-allow-origins=*` (else websocket 403); pass
+  `Network.setCacheDisabled` + a `?v=` query or the page serves stale files;
+  `S` (state.js) is NOT global - probe the DOM/API, not `S.*`; patch
+  `window.alert` instead of accepting dialogs; kill chrome between runs
+  (instances accumulate on 9222).
 - No Python linter/formatter configured. The JS "lint" is three scripts that
   must pass after touching `static/`; `python scripts/check_js.py` runs all
   three and exits non-zero on hard failures (recommended one-command check):
   - `python scripts/check_js_imports.py` - broken relative ES-module imports and named imports missing from the target's exports (hard failures)
   - `python scripts/check_dom_ids.py` - `$('#id')` references missing from `index.html` (its "important" id list must be updated when controls are removed)
   - `python scripts/check_js_defs.py` - heuristic; exit code is always 0, review candidates manually
+  Also `python C:\Users\<user>\AppData\Local\Temp\opencode\check_esm.py`
+  checks the ES-module graph (same job as check_js_imports, keep in sync).
 - Build exe: `powershell -ExecutionPolicy Bypass -File build.ps1` ->
   `dist\AstroPilot.exe` (isolated `.venv-build`; kills running AstroPilot
   processes first). PyInstaller is only needed for building. The build bakes
@@ -74,7 +92,8 @@ ingest + library), switched via the top-right button or the brand name.
 - `app/fits.py` - hand-written FITS parser (no astropy): header keywords,
   RA/Dec/date parsers, designation-token extraction for object matching, and
   `preview_png_file()` - a strided, pure-stdlib grayscale PNG thumbnail of
-  the image data (served at `/api/images/{id}/preview`). BITPIX 8 is
+  the image data (currently used only by tests; the UI dropped frame
+  thumbnails). BITPIX 8 is
   unsigned, 16/32-bit signed, -32/-64 floats.
 - `app/imglib.py` - catalog resolution, library grouping (per-frame-type and
   per-filter integration rollups), session math.
@@ -121,14 +140,45 @@ ingest + library), switched via the top-right button or the brand name.
   balcony out of frame); unpainted columns block fully (90 deg); outside the
   FOV follows the mode. The band ceiling ships as `ceil_top` per object from
   /api/night and /api/object only when the active pano has a `profile_top`.
-- Archive layout is `<image_dir>/<Object>/<lights|darks|flats|bias>/<file>.fit`
-  (originals are copied, never moved). The sub-folder comes from the FITS
+- Archive layout is
+  `<image_dir>/<Object>/<session>/<lights|darks|flats|bias>/<file>.fit`
+  (originals are copied, never moved). The `<session>` folder is the
+  capture night (`YYYY-MM-DD_HHMM` start time, or `undated`) - frames
+  whose DATE-OBS are < 12 h apart share one folder (midnight runs count
+  once), so different nights get different folders with their own four frame
+  sub-folders (created on first ingest). Session-folder digits are the UTC
+  wall-clock of the session start; the UI renders session times in the
+  effective zone, so a session starting 23:14 UTC shows `01:14` (+2) in the
+  library while its folder reads `2026-08-22_2314` - that is expected. The
+  sub-folder comes from the FITS
   IMAGETYP header at ingest (`app/ingest.py classify_frame()`); unknown
-  types land in `lights`. Older files at the folder root still work.
+  types land in `lights`. The ingest endpoint takes an optional `frame` form
+  field that forces the target type (used by the per-session +darks/+flats/
+  +bias buttons in the "Recent imports" list).
+  Older files at the object-folder root still work.
+  `POST /api/library/reindex` (button in the import pane) scans the archive
+  on disk and records .fit/.fits files not yet in the DB (dedup on the
+  normalized relative path; frame type from the sub-folder when present,
+  else IMAGETYP; object from header + folder-name fallback) - for manual
+  copies and restored backups.
+- Import history: `import_batches` table; `/api/images/ingest` records one
+  batch per (object, session, frame) group (`GET /api/library/imports`,
+  newest first). The client uploads in chunks of 8 and sends a `run_id`
+  (UUID) per import action; `db.merge_import_batch()` merges chunk rows on
+  (run_id, slug, session, frame), so one upload of a whole session stays ONE
+  history item. The ingest endpoint also takes a `session` form field
+  (sanitized with `_SESSION_NAME_RE`) that forces the archive sub-folder -
+  used by the per-import +darks/+flats/+bias buttons in the "Recent
+  imports" list. The `session` value must be the BARE folder name
+  (`2026-08-22_2000`), NOT `slug/session` - a slash fails the regex and the
+  upload silently falls back to the automatic session.
+  `POST /api/library/open_folder` ({rel}) opens a folder
+  inside the archive in the OS file explorer (`os.startfile`, Windows).
   Ingest streams header-first with a 1 GiB cap (`app/ingest.py`). Library
   groups carry per-type and per-filter rollups (`imglib.group_library`);
-  frame thumbnails are pure-Python PNGs (`fits.preview_png_file`, served at
-  `/api/images/{id}/preview`).
+  the FITS preview PNG machinery (`fits.preview_png_file`,
+  `/api/images/{id}/preview`) is currently only exercised by tests - the
+  library UI no longer shows frame thumbnails.
 - Session journal: `POST/GET/DELETE /api/object/{oid}/observed` stores
   observed marks with date + notes (observations table); the targets table
   has a checkmark toggle and an "observed" hide-filter; the detail modal has
@@ -168,6 +218,15 @@ ingest + library), switched via the top-right button or the brand name.
   `derive.js`.
 - Keyboard shortcuts: ArrowLeft/Right scrub the night (Shift = 10 min), `n`
   cycles the tabs (skipped while typing or with a modal open).
+- Timezones: all server payload times are UTC; the client sends
+  `tz_offset_min` computed AT the selected date (`tzOffAt()` in util.js -
+  DST-aware, so planning a winter night in summer is not shifted), and
+  renders via `fmtT()`/`zoneHour()` which apply the effective zone per
+  instant. The effective zone is the `timezone` setting (IANA name, stored
+  empty = machine local; hidden in the hamburger menu unless advanced mode
+  is on) or the machine zone. Journal entries default to the local date in
+  the effective zone (never `toISOString()` - that is UTC and off by a day
+  near midnight).
 - `/api/library/export?format=csv|json` downloads the library.
 - The targets filter bar has a constellation select (`fConst`) and an
   "observed" hide-filter.

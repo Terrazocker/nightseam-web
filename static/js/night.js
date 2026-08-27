@@ -1,9 +1,8 @@
 /* night payload loading: debounced, abortable */
 
-import { $, api, setBusy, tzOff, toast } from "./util.js";
+import { $, api, setBusy, todayLocal, tzOffAt, toast } from "./util.js";
 import { S } from "./state.js";
-import { recomputeNightDerived, timeIndexFor,
-         synthesizeAdvancedTracks } from "./derive.js";
+import { timeIndexFor, synthesizeAdvancedTracks } from "./derive.js";
 
 let _nightCtl = null;
 let _nightTimer = null;
@@ -24,8 +23,8 @@ async function doLoadNight() {
   const ctl = _nightCtl;
   setBusy(true);
   try {
-    const date = $("#dateInput").value || new Date().toLocaleDateString("sv");
-    const q = new URLSearchParams({ date, tz_offset_min: tzOff() });
+    const date = $("#dateInput").value || todayLocal();
+    const q = new URLSearchParams({ date, tz_offset_min: tzOffAt(date) });
     if (sel.value) q.set("site", sel.value);   // empty string would 422
     if (S.cfg && S.cfg.adv_mode) q.set("adv", "1");
     const N = await api("/api/night?" + q, { signal: ctl.signal, silent: true });

@@ -42,9 +42,64 @@ export async function api(path, opts) {
 }
 
 export const parseUTC = iso => new Date(iso + "Z");
-export const fmtHM = iso => iso ? parseUTC(iso).toLocaleTimeString([], {hour:"2-digit", minute:"2-digit"}) : "--:--";
+export const fmtHM = iso => iso ? fmtT(parseUTC(iso)) : "--:--";
 export const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 export const clamp = (v,a,b)=>Math.max(a,Math.min(b,v));
+
+/* ---------------- timezone handling ----------------
+   All server payload times are UTC; rendering applies the effective zone.
+   The effective zone is the user's `timezone` setting (IANA name) or the
+   machine zone - both applied per instant, so DST at the *selected date* is
+   always correct (planning a December night in August no longer uses the
+   August offset). */
+const MACHINE_ZONE = (() => {
+  try { return Intl.DateTimeFormat().resolvedOptions().timeZone || ""; }
+  catch { return ""; }
+})();
+let _zone = "";
+export function setDisplayZone(z) {
+  _zone = "";
+  if (z) {
+    try { new Intl.DateTimeFormat("en-US", { timeZone: z }); _zone = z; }
+    catch { /* invalid zone -> machine local */ }
+  }
+}
+export function effZone() { return _zone || MACHINE_ZONE; }
+function tzOpts() { const z = effZone(); return z ? { timeZone: z } : {}; }
+export const fmtT = d => d ? d.toLocaleTimeString([], {hour:"2-digit", minute:"2-digit", ...tzOpts()}) : "--:--";
+export const zoneHour = d => {
+  const z = effZone();
+  if (!z || !d) return d ? d.getHours() : 0;
+  const parts = new Intl.DateTimeFormat("en-US",
+    { timeZone: z, hour: "2-digit", hourCycle: "h23" }).formatToParts(d);
+  return parseInt((parts.find(p => p.type === "hour") || {}).value || "0", 10);
+};
+export const todayLocal = () => new Date().toLocaleDateString("sv", tzOpts());
+export const fmtDT = iso => iso ? parseUTC(iso).toLocaleString("sv",
+  {year:"numeric", month:"2-digit", day:"2-digit", hour:"2-digit", minute:"2-digit", ...tzOpts()}) : "\u2014";
+
+/* UTC offset (minutes west) in effect at local noon of YYYY-MM-DD */
+export function tzOffAt(dateStr) {
+  const [y, m, d] = (dateStr || "").split("-").map(Number);
+  if (!y || !m || !d) return new Date().getTimezoneOffset();
+  const z = effZone();
+  if (!z) return new Date(y, m - 1, d, 12).getTimezoneOffset();
+  let ms = Date.UTC(y, m - 1, d, 12);
+  for (let i = 0; i < 3; i++) {
+    ms = Date.UTC(y, m - 1, d, 12) - zoneOffsetMin(z, ms) * 60000;
+  }
+  return zoneOffsetMin(z, ms);
+}
+function zoneOffsetMin(z, ms) {
+  const parts = new Intl.DateTimeFormat("en-US",
+    { timeZone: z, hour12: false, timeZoneName: "shortOffset" })
+    .formatToParts(new Date(ms));
+  const tz = (parts.find(p => p.type === "timeZoneName") || {}).value || "";
+  const m = tz.match(/([+-])(\d{1,2})(?::?(\d{2}))?/);
+  if (!m) return 0;
+  return (m[1] === "-" ? 1 : -1) *
+    (parseInt(m[2], 10) * 60 + parseInt(m[3] || "0", 10));
+}
 
 /* parse a decimal number with a comma or dot separator (German locale).
    Returns NaN for empty/invalid input. */
@@ -53,13 +108,6 @@ export const num = v => {
   const n = Number(String(v).trim().replace(",", "."));
   return n;
 };
-export const tzOff = () => new Date().getTimezoneOffset();
-
-export function durStr(aIso, bIso) {
-  if (!aIso || !bIso) return "";
-  let m = Math.max(0, Math.round((parseUTC(bIso) - parseUTC(aIso)) / 60000));
-  return `${Math.floor(m/60)}h ${String(m%60).padStart(2,"0")}m`;
-}
 
 export const TYPE_LABEL = {
   galaxy:"Galaxy", globular:"Globular", open_cluster:"Open cluster",
