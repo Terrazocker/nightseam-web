@@ -18,14 +18,17 @@ Start-Sleep -Milliseconds 500
 # The bake uses `--dirty` so a build from uncommitted work can never silently claim a
 # clean tag (AGENTS.md: "Tag BEFORE rebuilding"). Warn loudly when the tree is dirty
 # or HEAD is not exactly a tag - the baked version stays truthful either way.
-$dirtyCount = (& git status --porcelain 2>$null | Measure-Object).Count
+# NOTE: run git through `cmd /c ... 2>nul` so its stderr can never trip
+# $ErrorActionPreference = "Stop" (a PS 5.1 native-stderr kill).
+$dirtyCount = ((& cmd /c "git status --porcelain 2>nul") | Measure-Object).Count
 if ($dirtyCount -gt 0) {
     Write-Host "WARNING: working tree is dirty ($dirtyCount changed file(s)) - baked version will end in '-dirty'." -ForegroundColor Yellow
 }
-if (-not (& git describe --tags --exact-match HEAD 2>$null)) {
+& cmd /c "git describe --tags --exact-match HEAD >nul 2>nul"
+if ($LASTEXITCODE -ne 0) {
     Write-Host "WARNING: HEAD is not exactly a git tag - baked version will carry a commit suffix (and/or '-dirty')." -ForegroundColor Yellow
 }
-$ver = (& git describe --tags --always --dirty 2>$null).Trim().TrimStart("v")
+$ver = ((& cmd /c "git describe --tags --always --dirty 2>nul") | Select-Object -First 1).Trim().TrimStart("v")
 if (-not $ver) { $ver = "dev" }
 Set-Content -Encoding utf8 "app\_version_baked.py" "BAKED_VERSION = '$ver'"
 Write-Host "Baking version '$ver' into the build"
