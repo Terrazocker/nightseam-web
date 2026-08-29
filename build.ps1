@@ -14,8 +14,18 @@ $py = ".\.venv-build\Scripts\python.exe"
 Get-Process AstroPilot -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
 Start-Sleep -Milliseconds 500
 
-# bake the current git version into the frozen app (app/_version_baked.py is gitignored)
-$ver = (& git describe --tags --always 2>$null).Trim().TrimStart("v")
+# Bake the current git version into the frozen app (app/_version_baked.py is gitignored).
+# The bake uses `--dirty` so a build from uncommitted work can never silently claim a
+# clean tag (AGENTS.md: "Tag BEFORE rebuilding"). Warn loudly when the tree is dirty
+# or HEAD is not exactly a tag - the baked version stays truthful either way.
+$dirtyCount = (& git status --porcelain 2>$null | Measure-Object).Count
+if ($dirtyCount -gt 0) {
+    Write-Host "WARNING: working tree is dirty ($dirtyCount changed file(s)) - baked version will end in '-dirty'." -ForegroundColor Yellow
+}
+if (-not (& git describe --tags --exact-match HEAD 2>$null)) {
+    Write-Host "WARNING: HEAD is not exactly a git tag - baked version will carry a commit suffix (and/or '-dirty')." -ForegroundColor Yellow
+}
+$ver = (& git describe --tags --always --dirty 2>$null).Trim().TrimStart("v")
 if (-not $ver) { $ver = "dev" }
 Set-Content -Encoding utf8 "app\_version_baked.py" "BAKED_VERSION = '$ver'"
 Write-Host "Baking version '$ver' into the build"

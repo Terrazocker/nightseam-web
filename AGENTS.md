@@ -52,7 +52,12 @@ ingest + library), switched via the top-right button or the brand name.
   the current `git describe` version into a gitignored `app/_version_baked.py`
   and bundles `app/data` (the advanced catalog CSV) via `--add-data`. The
   committed `AstroPilot.spec` is a PyInstaller artifact, not the source of
-  truth - build.ps1 drives everything via CLI flags.
+  truth - build.ps1 drives everything via CLI flags. The bake uses
+  `git describe --tags --always --dirty` and warns when the tree is dirty or
+  HEAD is not exactly a tag, so a build from uncommitted work is labelled
+  `<version>-dirty` instead of silently claiming a clean tag. The build never
+  touches `dist\data` - the frozen app's user data (db, imgcache) next to the
+  exe survives rebuilds.
 
 ## Versioning
 
