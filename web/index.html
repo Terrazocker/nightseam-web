@@ -10,8 +10,8 @@
 (function(){try{var t=localStorage.getItem('apweb_theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 </script>
 <link rel="icon" type="image/png" href="app.png">
-<link rel="stylesheet" href="style.css?v=4">
-<link rel="stylesheet" href="themes.css?v=1">
+<link rel="stylesheet" href="style.css?v=5">
+<link rel="stylesheet" href="themes.css?v=2">
 </head>
 <body>
 
@@ -46,6 +46,24 @@
 
   <div class="topbar-right">
     <div id="nightInfo" class="nightinfo"></div>
+    <div class="popwrap weatherwrap">
+      <button id="btnWeather" class="ghost weatherbtn" title="Weather for the active site — click to load">
+        <span id="wxChip">☁️ Weather — click to load</span>
+      </button>
+      <div id="weatherPanel" class="popover weather-panel hidden">
+        <div class="menu-section">
+          <h4>Weather · <span id="wxSite">active site</span></h4>
+          <div id="wxBody">
+            <p class="hint">Weather is loaded only when you click the chip above — nothing is fetched until then (except when auto-load is on).</p>
+          </div>
+        </div>
+        <div class="menu-section">
+          <h4>Options</h4>
+          <label class="inline"><input type="checkbox" id="wxAuto"> Always load on startup</label>
+          <p class="hint">When on, the app fetches weather for the active site every time it opens, so the chip is already filled.</p>
+        </div>
+      </div>
+    </div>
     <div class="popwrap menuwrap">
       <button id="btnMenu" class="ghost menubtn" title="Options">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
@@ -186,6 +204,6 @@
 <div class="modal-wrap" id="modal" hidden></div>
 <div class="tooltip" id="tooltip" hidden></div>
 
-<script type="module" src="app.js?v=17"></script>
+<script type="module" src="app.js?v=18"></script>
 </body>
 </html>

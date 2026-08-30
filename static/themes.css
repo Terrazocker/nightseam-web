@@ -585,7 +585,8 @@ html[data-theme="dome"] input[type=range]::-moz-range-thumb {
 }
 
 /* === MENU SHEET: centered glass overlay === */
-html[data-theme="dome"] .menuwrap .popover {
+html[data-theme="dome"] .menuwrap .popover,
+html[data-theme="dome"] .weatherwrap .popover {
   position: fixed;
   /* the topbar's backdrop-filter makes IT the containing block for
      fixed descendants, so % offsets are relative to the bar - use

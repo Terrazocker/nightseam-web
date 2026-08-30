@@ -11,6 +11,7 @@ import { bindFilters, renderTargets, populateConstFilter } from "./targets.js";
 import { bindSetup, applyCfgToUI } from "./setup.js";
 import { bindDetail, drawAltChart } from "./detail.js";
 import { bindSky, renderSky } from "./skyview.js";
+import { bindWeather, refreshWeatherForSite } from "./weather.js";
 import { Pano } from "./pano.js";
 import { bindArchive, applyArchiveUI, loadLibrary } from "./archive.js";
 import { bindSkyMap, renderSkyMap } from "./skymap.js";
@@ -116,6 +117,7 @@ async function init() {
   bindSky();
   bindArchive();
   bindSkyMap();
+  bindWeather();
 
   // keyboard shortcuts: arrows scrub the night, n cycles the tabs.
   // Modals and text entry keep their own keys.

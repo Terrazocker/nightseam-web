@@ -261,6 +261,109 @@ function reflectTheme() {
   if (row) row.querySelectorAll('.theme-btn').forEach((b) => b.classList.toggle('active', b.dataset.theme === t));
 }
 
+/* ---- weather: Open-Meteo, load-on-demand — nothing is fetched until the
+   user clicks the top-bar chip (or auto-load is switched on) ---- */
+const WX_STATE = { data: null, loading: false, error: false };
+const WMO_INFO = {
+  0: ['☀️', 'Clear sky'], 1: ['🌤️', 'Mainly clear'], 2: ['⛅', 'Partly cloudy'], 3: ['☁️', 'Overcast'],
+  45: ['🌫️', 'Fog'], 48: ['🌫️', 'Icy fog'],
+  51: ['🌦️', 'Light drizzle'], 53: ['🌦️', 'Drizzle'], 55: ['🌦️', 'Dense drizzle'],
+  56: ['🌧️', 'Freezing drizzle'], 57: ['🌧️', 'Freezing drizzle'],
+  61: ['🌧️', 'Light rain'], 63: ['🌧️', 'Rain'], 65: ['🌧️', 'Heavy rain'],
+  66: ['🌧️', 'Freezing rain'], 67: ['🌧️', 'Freezing rain'],
+  71: ['🌨️', 'Light snow'], 73: ['🌨️', 'Snow'], 75: ['🌨️', 'Heavy snow'], 77: ['🌨️', 'Snow grains'],
+  80: ['🌦️', 'Rain showers'], 81: ['🌦️', 'Rain showers'], 82: ['🌧️', 'Violent rain showers'],
+  85: ['🌨️', 'Snow showers'], 86: ['🌨️', 'Snow showers'],
+  95: ['⛈️', 'Thunderstorm'], 96: ['⛈️', 'Thunderstorm, hail'], 99: ['⛈️', 'Thunderstorm, hail'],
+};
+function wxInfo(code) { return WMO_INFO[code] || ['🌡️', 'Condition ' + code]; }
+
+async function loadWeather() {
+  const chip = $('#wxChip');
+  if (!chip) return;
+  WX_STATE.loading = true; WX_STATE.error = false;
+  wxRenderChip();
+  const { lat, lon } = S.site;
+  const url = 'https://api.open-meteo.com/v1/forecast?latitude=' + lat + '&longitude=' + lon +
+    '&current=temperature_2m,apparent_temperature,relative_humidity_2m,weather_code,cloud_cover,wind_speed_10m,wind_direction_10m,wind_gusts_10m,precipitation' +
+    '&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max' +
+    '&timezone=auto&forecast_days=4';
+  try {
+    const ac = new AbortController();
+    const to = setTimeout(() => ac.abort(), 15000);
+    const r = await fetch(url, { signal: ac.signal });
+    clearTimeout(to);
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    WX_STATE.data = await r.json();
+  } catch {
+    WX_STATE.error = true; WX_STATE.data = null;
+  } finally {
+    WX_STATE.loading = false;
+  }
+  wxRenderChip();
+  if (!$('#weatherPanel').classList.contains('hidden')) wxRenderPanel();
+}
+
+function wxChipText() {
+  if (WX_STATE.loading) return '⏳ loading weather…';
+  if (WX_STATE.error) return '⚠️ weather unavailable — click to retry';
+  if (!WX_STATE.data) return '☁️ Weather — click to load';
+  const c = WX_STATE.data.current;
+  const [icon] = wxInfo(c.weather_code);
+  return `${icon} ${Math.round(c.temperature_2m)}°C · ${Math.round(c.wind_speed_10m)} km/h`;
+}
+
+function wxRenderChip() {
+  const chip = $('#wxChip');
+  if (chip) chip.textContent = wxChipText();
+}
+
+/** Re-fetch weather when the active site changed, but only if the user has
+ *  already loaded it once (or auto-load is on) — never fetch unasked. */
+function refreshWeatherForSite() {
+  if (!$( '#wxChip')) return;
+  if (WX_STATE.data || WX_STATE.error || Hor.getPrefs().weatherAuto) loadWeather();
+}
+
+function wxRenderPanel() {
+  const body = $('#wxBody'), siteEl = $('#wxSite');
+  if (!body) return;
+  const siteName = (activeSite() && activeSite().name) || S.site.label || 'active site';
+  if (siteEl) siteEl.textContent = siteName;
+  if (WX_STATE.loading) { body.innerHTML = '<p class="hint">loading…</p>'; return; }
+  if (WX_STATE.error || !WX_STATE.data) {
+    body.innerHTML = '<p class="wx-err">⚠️ Could not load weather' + (WX_STATE.error ? ' — are you offline?' : '') + '</p>' +
+      '<p class="hint">Weather comes from Open-Meteo and is only fetched when you click the chip. Try again in a moment.</p>';
+    return;
+  }
+  const d = WX_STATE.data, c = d.current, daily = d.daily || {};
+  const [icon, label] = wxInfo(c.weather_code);
+  const days = (daily.time || []).map((t, i) => {
+    const dt = new Date(t + 'T12:00:00');
+    const [di] = wxInfo((daily.weather_code || [])[i] ?? 0);
+    const hi = daily.temperature_2m_max ? Math.round(daily.temperature_2m_max[i]) : '—';
+    const lo = daily.temperature_2m_min ? Math.round(daily.temperature_2m_min[i]) : '—';
+    const pc = daily.precipitation_probability_max ? daily.precipitation_probability_max[i] : null;
+    return `<div class="wx-day"><div class="wx-di">${di}</div><div>${dt.toLocaleDateString(undefined, { weekday: 'short' })}</div><div class="wx-t">${hi}°/${lo}°</div>${pc != null ? `<div class="wx-p">💧${pc}%</div>` : ''}</div>`;
+  }).join('');
+  body.innerHTML = `
+    <div class="wx-now">
+      <span class="wx-icon">${icon}</span>
+      <span class="wx-big">${Math.round(c.temperature_2m)}°C</span>
+      <span class="sub" style="flex:1">${label}<br>feels like ${Math.round(c.apparent_temperature)}°</span>
+    </div>
+    <div class="wx-grid">
+      <div><span>Wind</span><b>${Math.round(c.wind_speed_10m)} km/h</b></div>
+      <div><span>Gusts</span><b>${Math.round(c.wind_gusts_10m)} km/h</b></div>
+      <div><span>Humidity</span><b>${Math.round(c.relative_humidity_2m)}%</b></div>
+      <div><span>Clouds</span><b>${Math.round(c.cloud_cover)}%</b></div>
+      <div><span>Rain now</span><b>${c.precipitation ? c.precipitation.toFixed(1) + ' mm' : '0 mm'}</b></div>
+      <div><span>Updated</span><b>${(c.time || '').slice(11, 16) || '—'}</b></div>
+    </div>
+    ${days ? `<div class="wx-days">${days}</div>` : ''}
+    <p class="hint" style="margin-top:8px">Weather by <a href="https://open-meteo.com/" target="_blank" rel="noopener" style="color:var(--accent)">Open-Meteo</a>, for the active site.</p>`;
+}
+
 /** Toggle the observed mark for an object (quick ✓ in lists). */
 async function toggleSeen(oid) {
   if (OBSERVED.has(oid)) {
@@ -1659,7 +1762,7 @@ async function renderSettings() {
     const radio = li.querySelector('input[type=radio]');
     if (radio) radio.addEventListener('change', () => {
       const s = SITES.find((x) => x.id === li.dataset.id);
-      if (s) { applyActiveSite(s); closeModal(); refreshView(); }
+      if (s) { applyActiveSite(s); closeModal(); refreshView(); refreshWeatherForSite(); }
     });
   });
   modal.querySelectorAll('[data-editsite]').forEach((b) => b.addEventListener('click', () => openSiteForm(sites.find((s) => s.id === b.dataset.editsite))));
@@ -1781,6 +1884,7 @@ async function saveSiteForm() {
   SITES = await WS.getSites();
   if (!SITES.some((s) => s.id === S.site.id)) applyActiveSite(rec);
   else if (S.site.id === id) applyActiveSite(rec);
+  refreshWeatherForSite();
   renderSettings();
 }
 
@@ -2000,7 +2104,7 @@ async function boot() {
   const ts = $('#tb-site');
   if (ts) ts.addEventListener('change', (ev) => {
     const s = SITES.find((x) => x.id === ev.target.value);
-    if (s) { applyActiveSite(s); refreshView(); }
+    if (s) { applyActiveSite(s); refreshView(); refreshWeatherForSite(); }
   });
   $('#btn-settings').addEventListener('click', () => { renderSettings(); });
 
@@ -2078,6 +2182,37 @@ async function boot() {
   };
   renderNightInfo();
   setInterval(renderNightInfo, 60000);
+
+  // — weather chip (load-on-demand; auto-load toggle in the submenu) —
+  const wxBtn = $('#btnWeather'), wxPanel = $('#weatherPanel');
+  if (wxBtn && wxPanel) {
+    wxBtn.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      if (wxPanel.classList.contains('hidden')) {
+        wxPanel.classList.remove('hidden');
+        if (!WX_STATE.data && !WX_STATE.error && !WX_STATE.loading) loadWeather();
+        else wxRenderPanel();
+      } else {
+        wxPanel.classList.add('hidden');
+      }
+    });
+    document.addEventListener('click', (ev) => {
+      if (!(ev.target instanceof Element)) return;
+      if (!wxPanel.classList.contains('hidden') && !ev.target.closest('#weatherPanel') && !ev.target.closest('#btnWeather')) {
+        wxPanel.classList.add('hidden');
+      }
+    });
+    document.addEventListener('keydown', (ev) => { if (ev.key === 'Escape') wxPanel.classList.add('hidden'); });
+  }
+  const wxAuto = $('#wxAuto');
+  if (wxAuto) {
+    wxAuto.checked = !!Hor.getPrefs().weatherAuto;
+    wxAuto.addEventListener('change', (ev) => {
+      Hor.setPrefs({ weatherAuto: ev.target.checked });
+      if (ev.target.checked && !WX_STATE.data) loadWeather(); // first flip loads immediately too
+    });
+  }
+  if (Hor.getPrefs().weatherAuto) loadWeather(); // auto-load on startup
 
   // — hamburger menu (desktop parity) —
   const menuBtn = $('#btnMenu'), menuPanel = $('#menuPanel');

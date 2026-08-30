@@ -254,6 +254,45 @@ export function objScore(o) {
   return o.score || 0;
 }
 
+/* ---------------- Grade tiers (S/A/B/C/D, MMO colors) ----------------
+   Not "rarity" — every object is equally rare; this grades how visually
+   striking it is: brightness + size + fame + type, exactly the web
+   version's formula. S (yellow) > A (pink) > B (blue) > C (green) > D (grey).
+   `o` (night object, has .adv) is optional; without it fame falls back to
+   messier=15 / named=8. */
+const GRADE_TIERS = [
+  { label: 'S', min: 80, color: '#ffd166' },  // yellow
+  { label: 'A', min: 60, color: '#ff7eb6' },  // pink
+  { label: 'B', min: 40, color: '#7cc4ff' },  // blue
+  { label: 'C', min: 20, color: '#7bf1a8' },  // green
+  { label: 'D', min: 0,  color: '#67749c' },  // grey
+];
+const _flashCache = new Map();
+export function flashOf(m, o) {
+  if (!m) return 0;
+  let v = _flashCache.get(m.id);
+  if (v !== undefined) return v;
+  const magScore = m.vmag != null ? Math.max(0, Math.min(100, (12 - m.vmag) * 9)) : 0;
+  const sm = String(m.size_am || '').split(/[x\u00D7]/);
+  let sx = 0;
+  if (sm.length >= 2) sx = Math.max(parseFloat(sm[0]) || 0, parseFloat(sm[1]) || 0);
+  else sx = parseFloat(sm[0]) || 0;
+  const sizeScore = Math.min(40, (sx / 30) * 40);
+  const fame = m.messier ? 15 : (o && o.adv ? 0 : (m.ngcic ? 8 : 0));
+  const typeBoost = { nebula: 6, supernova_remnant: 6, planetary: 5, open_cluster: 4, globular: 3, star_cloud: 2, galaxy: 1, asterism: 0 }[m.otype] || 0;
+  v = Math.round(Math.min(100, magScore + sizeScore + fame + typeBoost));
+  _flashCache.set(m.id, v);
+  return v;
+}
+export function gradeOf(m, o) {
+  const f = flashOf(m, o);
+  return GRADE_TIERS.find(t => f >= t.min) || GRADE_TIERS[GRADE_TIERS.length - 1];
+}
+export function gradeTag(m, o) {
+  const g = gradeOf(m, o);
+  return `<span class="p-grade" style="color:${g.color}" title="Grade ${g.label} — how visually striking the object is (brightness + size + fame + type)">&#9670; ${g.label}</span>`;
+}
+
 export function filterAdvice(m) {
   const F = (S.cfg && S.cfg.filters) || {};
   const hasNB = !!(F.narrowband_ha || F.narrowband_oiii);

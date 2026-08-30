@@ -273,7 +273,8 @@ html[data-theme="dome"] #pano-profile {
 /* === MENU: centered glass sheet (viewport units — the topbar's
    backdrop-filter is a containing block, so % centering would resolve
    against the bar; 50vh/50vw + translate avoids that) === */
-html[data-theme="dome"] #menuPanel.menu-panel {
+html[data-theme="dome"] #menuPanel.menu-panel,
+html[data-theme="dome"] #weatherPanel.weather-panel {
   position: fixed;
   top: 50vh;
   left: 50vw;

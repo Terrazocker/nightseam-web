@@ -54,6 +54,7 @@ class SettingsIn(BaseModel):
     bortle: Optional[int] = None
     timezone: Optional[str] = None
     theme: Optional[str] = None
+    weather_auto: Optional[bool] = None
 
 
 class RigIn(BaseModel):
@@ -258,6 +259,7 @@ def create_app(db: Database, *, prefetch: bool = True) -> FastAPI:
             "bortle": db.setting("bortle", 4),
             "timezone": db.setting("timezone") or "",
             "theme": db.setting("theme", "") or "",
+            "weather_auto": bool(db.setting("weather_auto", False)),
             "observed": db.observations(),
         }
 
@@ -302,6 +304,8 @@ def create_app(db: Database, *, prefetch: bool = True) -> FastAPI:
             db.set_setting("timezone", body.timezone.strip()[:64])
         if body.theme is not None:
             db.set_setting("theme", body.theme.strip()[:32])
+        if body.weather_auto is not None:
+            db.set_setting("weather_auto", bool(body.weather_auto))
         return {"ok": True}
 
     # ---------------- sites ----------------

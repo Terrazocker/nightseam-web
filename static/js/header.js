@@ -5,6 +5,7 @@ import { S } from "./state.js";
 import { moonUpDownText } from "./derive.js";
 import { scheduleLoadNight } from "./night.js";
 import { openSites } from "./setup.js";
+import { refreshWeatherForSite } from "./weather.js";
 
 export function bindHeader() {
   $("#siteSelect").addEventListener("change", async e => {
@@ -15,6 +16,7 @@ export function bindHeader() {
       headers: { "Content-Type": "application/json" }, silent: true,
       body: JSON.stringify({ active_site_id: id })}).catch(() => {});
     scheduleLoadNight(300);
+    refreshWeatherForSite();
   });
   $("#dateInput").addEventListener("change", () => scheduleLoadNight(300));
   $("#btnSites").addEventListener("click", openSites);

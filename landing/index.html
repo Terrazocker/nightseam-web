@@ -12,26 +12,100 @@
 </head>
 <body>
 
-<main class="stage">
-  <section class="glass">
-    <img class="logo" src="app.png" alt="" width="76" height="76">
-    <p class="overline">AstroPilot <span>Web</span></p>
-    <h1>Tonight's sky,<br><span class="accent">planned.</span></h1>
-    <p class="tag">The best deep-sky targets of the night — computed in your browser.</p>
-    <p class="desc">A live polar sky map, altitude charts for every object, your own
-      observing sites and horizon panoramas. Everything runs locally in this tab:
-      no server, no account, works offline.</p>
-    <a class="cta" href="/astro">Open the planner</a>
-    <ul class="chips">
-      <li class="chip">Messier + OpenNGC · 12,116 objects</li>
-      <li class="chip">100% browser-side</li>
-      <li class="chip">no account, works offline</li>
-    </ul>
+<header class="site-header">
+  <div class="container navrow">
+    <a class="brand" href="/">
+      <img class="brand-ico" src="app.png" alt="" width="34" height="34">
+      <span class="brand-name">Astro<em>Pilot</em></span>
+    </a>
+    <nav class="nav">
+      <a href="#features">Features</a>
+      <a href="#stats">About</a>
+      <a href="#planner">Planner</a>
+      <a class="nav-cta" href="/astro">Launch the planner</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <!-- ============ HERO ============ -->
+  <section class="hero">
+    <div class="container hero-inner">
+      <p class="eyebrow">Deep-sky night planning &middot; computed in your browser</p>
+      <h1>Tonight&rsquo;s sky, <span class="accent">planned.</span></h1>
+      <p class="hero-sub">The best deep-sky targets of the night — ranked by real visibility,
+        graded <span class="graded">S&ndash;D</span> by visual impact, and plotted on a live polar sky map.
+        Your sites, rigs, horizons and observing journal, all in one place.</p>
+      <div class="hero-actions">
+        <a class="cta" href="/astro">Open the planner &rarr;</a>
+        <a class="cta secondary" href="#features">See what it does</a>
+      </div>
+      <p class="hero-note">runs entirely in this tab &middot; no server &middot; no account &middot; works offline</p>
+    </div>
+  </section>
+
+  <!-- ============ FEATURES ============ -->
+  <section class="section" id="features">
+    <div class="container">
+      <h2 class="section-title">A planner that knows the night sky</h2>
+      <p class="section-sub">Everything is computed locally in your browser — the catalog, the sky and your data never leave the page.</p>
+      <div class="feature-grid">
+        <div class="feature-card">
+          <h3>&#127769; Tonight&rsquo;s picks</h3>
+          <p>Ranked targets with clear-window times, moon-aware scoring and a Bortle-adjusted view of what the night can deliver.</p>
+        </div>
+        <div class="feature-card">
+          <h3>&#128506; Live polar sky map</h3>
+          <p>Zoom, pan and scrub the all-sky chart with the sun, moon and 12,000 objects — a rectangular window that shows you more.</p>
+        </div>
+        <div class="feature-card">
+          <h3>&#9670; S&ndash;D target grades</h3>
+          <p>Every object graded for visual impact — brightness, size, fame and type — so the showpieces are always easy to spot.</p>
+        </div>
+        <div class="feature-card">
+          <h3>&#128752; Horizon panoramas</h3>
+          <p>Import a 360&deg; panorama, paint the trees and houses, and see which targets your skyline actually lets you see.</p>
+        </div>
+        <div class="feature-card">
+          <h3>&#128213; Sites, rigs &amp; journal</h3>
+          <p>Your observing locations, equipment and session journal — per-site timezones, DST-aware, backed up as JSON.</p>
+        </div>
+        <div class="feature-card">
+          <h3>&#128187; 100% client-side</h3>
+          <p>The entire catalog (Messier + OpenNGC) ships with the page — works offline, nothing uploaded, no account.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ STATS ============ -->
+  <section class="section stats" id="stats">
+    <div class="container stat-row">
+      <div class="stat"><b>12,116</b><span>catalog objects</span></div>
+      <div class="stat"><b>197</b><span>curated showpieces</span></div>
+      <div class="stat"><b>0</b><span>servers involved</span></div>
+      <div class="stat"><b>100%</b><span>works offline</span></div>
+    </div>
+  </section>
+
+  <!-- ============ PLANNER CTA ============ -->
+  <section class="section" id="planner">
+    <div class="container cta-band">
+      <h2>Ready for tonight?</h2>
+      <p>Open the planner and see what your sky has in store — it runs entirely in this tab.</p>
+      <a class="cta" href="/astro">Launch the planner &rarr;</a>
+    </div>
   </section>
 </main>
 
-<footer>
-  <p>AstroPilot — also available as a standalone desktop app for Windows.</p>
+<footer class="site-footer">
+  <div class="container foot-inner">
+    <span>&copy; 2026 AstroPilot &mdash; deep-sky night planning</span>
+    <span class="foot-links">
+      <a href="/astro">Planner</a> &middot; <a href="#features">Features</a> &middot; <a href="#stats">About</a>
+      &middot; <span class="foot-desktop">also available as a Windows desktop app</span>
+    </span>
+  </div>
 </footer>
 
 </body>

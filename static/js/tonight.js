@@ -3,7 +3,7 @@
 import { $, esc, parseUTC, fmtHM, fmtT, TYPE_LABEL } from "./util.js";
 import { S, IMG_VER } from "./state.js";
 import { statusOf, objScore, windowText, desigLine,
-         curTimeISO } from "./derive.js";
+         curTimeISO, gradeTag } from "./derive.js";
 import { openDetail } from "./detail.js";
 
 export function bindTonight() {
@@ -19,7 +19,7 @@ function cardHTML({o, m}) {
     <img class="pick-thumb" loading="lazy" src="/api/object/${m.id}/image?thumb=1&v=${IMG_VER}"
       onerror="this.onerror=null;this.style.visibility='hidden'">
     <div class="pick-body">
-      <div class="nm">${esc(m.primary_name)}</div>
+      <div class="nm">${esc(m.primary_name)}${gradeTag(m, o)}</div>
       <div class="ds">${esc(desigLine(m))} &middot; ${TYPE_LABEL[m.otype]||""}</div>
       <div class="win">${st.text} &middot; alt ${o.alt[S.tIdx].toFixed(0)}&deg; &middot; ${o.obs_pct!=null?o.obs_pct+"% of night":"-"}</div>
       <div class="ds">${windowText(o) || ""}</div>
