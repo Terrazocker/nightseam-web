@@ -15,4 +15,5 @@ data/imgcache/
 data/instance.json
 theme-preview/
 .dsh-vision-toolkit/
+dist/release/
 logs/

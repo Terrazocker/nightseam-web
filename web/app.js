@@ -2097,6 +2097,8 @@ async function boot() {
   const ver = await WS.loadVersion();
   const fv = $('#foot-ver');
   if (fv) fv.textContent = ver ? `AstroPilot Web ${ver.version}` : 'dev build';
+  const av = $('#aboutVersion');
+  if (av) av.textContent = ver ? `${ver.version}` : 'dev build';
   splashText(`catalog ready · ${CAT.length.toLocaleString()} objects · site “${S.site.label}”`);
 
   // ---- site controls: the active site's coordinates are edited in

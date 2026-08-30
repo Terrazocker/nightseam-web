@@ -22,6 +22,7 @@
       <a href="#features">Features</a>
       <a href="#stats">About</a>
       <a href="#planner">Planner</a>
+      <a href="#download">Download</a>
       <a class="nav-cta" href="/astro">Launch the planner</a>
     </nav>
   </div>
@@ -96,17 +97,59 @@
       <a class="cta" href="/astro">Launch the planner &rarr;</a>
     </div>
   </section>
+
+  <!-- ============ DOWNLOAD ============ -->
+  <section class="section" id="download">
+    <div class="container download-wrap">
+      <div class="cta-band">
+        <h2>AstroPilot for Windows</h2>
+        <p>The desktop version of the planner — plus the full Image Catalog for ingesting and organizing your FITS captures. Runs fully offline; user data stays on your machine.</p>
+        <div class="hero-actions">
+          <a class="cta" id="dlLink" href="/downloads/AstroPilot.exe">&#11015; Download for Windows</a>
+        </div>
+        <p class="hero-note" id="dlMeta">loading version…</p>
+      </div>
+    </div>
+  </section>
 </main>
 
 <footer class="site-footer">
   <div class="container foot-inner">
     <span>&copy; 2026 AstroPilot &mdash; deep-sky night planning</span>
     <span class="foot-links">
-      <a href="/astro">Planner</a> &middot; <a href="#features">Features</a> &middot; <a href="#stats">About</a>
-      &middot; <span class="foot-desktop">also available as a Windows desktop app</span>
+      <a href="/astro">Planner</a> &middot; <a href="#features">Features</a> &middot; <a href="#download">Download</a>
+      &middot; <a href="privacy.html">Privacy</a> &middot; <a href="impressum.html">Imprint</a>
     </span>
   </div>
+  <div class="container foot-credits">
+    Catalog: Messier + <a href="https://github.com/astronexus/OpenNGC" target="_blank" rel="noopener">OpenNGC</a>
+    (<a href="https://creativecommons.org/licenses/by-sa/4.0/" target="_blank" rel="noopener">CC BY-SA 4.0</a>) &middot;
+    images: <a href="https://commons.wikimedia.org/" target="_blank" rel="noopener">Wikimedia Commons</a> &middot;
+    weather: <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a> &middot;
+    MIT licensed
+  </div>
 </footer>
+
+<script>
+/* fill the download link/version from /downloads/version.json (same origin) */
+(function () {
+  try {
+    fetch('/downloads/version.json', { cache: 'no-store' })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (j) {
+        if (!j || !j.url) return;
+        var link = document.getElementById('dlLink');
+        var meta = document.getElementById('dlMeta');
+        if (link) link.href = j.url;
+        if (meta) {
+          meta.textContent = 'v' + j.version + ' &middot; Windows 10/11 &middot; ~20 MB &middot; free, MIT licensed &mdash; your data never leaves your machine';
+          if (j.sha256) meta.textContent += ' &middot; SHA-256 ' + j.sha256.slice(0, 16) + '&hellip;';
+        }
+      })
+      .catch(function () { /* keep the static fallback link */ });
+  } catch (e) { /* static fallback stays */ }
+})();
+</script>
 
 </body>
 </html>

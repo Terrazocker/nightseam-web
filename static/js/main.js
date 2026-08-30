@@ -12,6 +12,7 @@ import { bindSetup, applyCfgToUI } from "./setup.js";
 import { bindDetail, drawAltChart } from "./detail.js";
 import { bindSky, renderSky } from "./skyview.js";
 import { bindWeather, refreshWeatherForSite } from "./weather.js";
+import { checkForUpdates } from "./updater.js";
 import { Pano } from "./pano.js";
 import { bindArchive, applyArchiveUI, loadLibrary } from "./archive.js";
 import { bindSkyMap, renderSkyMap } from "./skymap.js";
@@ -56,6 +57,8 @@ async function loadState() {
   S.panos = await api("/api/panoramas");
   const vt = $("#versionTag");
   if (vt) vt.textContent = "AstroPilot v" + (S.cfg.version || "1.0.0");
+  const av = $("#aboutVersion");
+  if (av) av.textContent = "v" + (S.cfg.version || "1.0.0");
 
   applySavedTheme(S.cfg.theme);   // syncs the menu when the head script missed
 
@@ -147,6 +150,7 @@ async function init() {
   await loadNight();
   Pano.init();
   applyArchiveUI();
+  checkForUpdates();   // silent version check against the website
 }
 
 function DETAIL_OPEN() {

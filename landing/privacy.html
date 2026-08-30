@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Privacy — AstroPilot</title>
+<link rel="icon" type="image/png" href="app.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="site-header">
+  <div class="container navrow">
+    <a class="brand" href="/">
+      <img class="brand-ico" src="app.png" alt="" width="34" height="34">
+      <span class="brand-name">Astro<em>Pilot</em></span>
+    </a>
+    <nav class="nav">
+      <a href="/">Home</a>
+      <a href="/astro">Planner</a>
+      <a href="impressum.html">Imprint</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <section class="section legal">
+    <div class="container legal-body">
+      <h1>Privacy Policy</h1>
+
+      <h2>The short version</h2>
+      <p>AstroPilot is designed to keep your data on your own device. Neither this
+      website nor the web planner stores anything about you on a server. There is
+      no account, no tracking, no analytics, no cookies beyond what your browser
+      needs to run the page.</p>
+
+      <h2>Web version (planner)</h2>
+      <ul>
+        <li><b>Local storage:</b> your observing sites, rigs, custom targets and
+        session journal are stored only in your browser's local data (IndexedDB /
+        localStorage) on your device. Nothing is uploaded.</li>
+        <li><b>Weather:</b> when you load the weather panel, your active site's
+        coordinates are sent to <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a>
+        to fetch a forecast. No other data is transmitted. Weather data
+        &copy; Open-Meteo.com.</li>
+        <li><b>Location:</b> the "use my location" button uses your browser's
+        geolocation API — it is only queried when you press the button, and the
+        coordinates are stored locally like any other site.</li>
+        <li><b>Object images:</b> example photos are either bundled with the
+        page or fetched from <a href="https://commons.wikimedia.org/" target="_blank" rel="noopener">Wikimedia Commons</a>
+        when you open an object's detail view.</li>
+      </ul>
+
+      <h2>Desktop application (Windows)</h2>
+      <ul>
+        <li><b>Local data:</b> everything (catalog history, panoramas, imported
+        FITS frames, journal) lives in a <code>data</code> folder next to the
+        application. Nothing is transmitted automatically.</li>
+        <li><b>Weather:</b> like the web version, loading weather sends your
+        active site's coordinates to Open-Meteo.</li>
+        <li><b>Object images:</b> example images are fetched from Wikipedia /
+        Wikimedia Commons on demand and cached locally; the app can be used
+        fully offline without them.</li>
+        <li><b>Update check:</b> once per start, the app compares its version
+        against a version file on this website. It transmits nothing but the
+        request itself (no personal data).</li>
+      </ul>
+
+      <h2>Hosting / infrastructure</h2>
+      <p>The site is served via a hosting provider and a CDN, which process
+      standard technical data (IP address, user agent, request log) to deliver
+      the pages. We do not use this data for profiling, and we do not combine
+      it with any other data sources.</p>
+
+      <h2>Your rights</h2>
+      <p>You are in control of the data on your device: delete the storage in
+      your browser, or delete the <code>data</code> folder next to the desktop
+      app, and all your data is gone. If you have questions, use the contact
+      details from the <a href="impressum.html">Imprint</a>.</p>
+
+      <p><a href="/">← Back to the start page</a></p>
+    </div>
+  </section>
+</main>
+
+<footer class="site-footer">
+  <div class="container foot-inner">
+    <span>&copy; 2026 AstroPilot</span>
+    <span class="foot-links">
+      <a href="/astro">Planner</a> &middot; <a href="privacy.html">Privacy</a> &middot; <a href="impressum.html">Imprint</a>
+    </span>
+  </div>
+</footer>
+
+</body>
+</html>

@@ -299,6 +299,12 @@ ingest + library), switched via the top-right button or the brand name.
   `--env <path>` pointing at ftp.env (never committed). Cloudflare serves
   the remote site and injects a script into delivered index.html —
   hash-verify only after stripping that block.
+- Public release artifacts live under `/downloads/` on the site
+  (`dist/release/` content — see `scripts/make_release.py`): the desktop
+  zip, `version.json` (read by the landing page) and `ap-version.js`
+  (JSONP — read by the desktop app's startup update checker, since a
+  localhost origin cannot fetch cross-origin JSON). Never upload the
+  developer's `dist\data` — `make_release.py` stages a clean package.
 - Sync from the dev mirror: robocopy `<workspace>\Astro-Web` -> `web/` (exclude
   `.git` and `ftp.env`), then commit here. `web/.gitignore` covers the dev
   mirror leftovers (`whale/`, `dev/`).

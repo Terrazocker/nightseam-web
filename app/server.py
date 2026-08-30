@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import math
+import os
 import re
 import threading
 import time
@@ -210,6 +211,26 @@ def start_image_prefetch(db: Database) -> None:
 def create_app(db: Database, *, prefetch: bool = True) -> FastAPI:
     app = FastAPI(title="AstroPilot", version=APP_VERSION, docs_url=None,
                   redoc_url=None, openapi_url=None)
+
+    # DNS-rebinding guard: the local API must only ever answer requests whose
+    # Host header names this machine (loopback). A malicious website could
+    # otherwise rebind a domain to 127.0.0.1 and have the visitor's browser
+    # issue requests against the local server - and with no CORS enabled the
+    # responses stay unreadable, which makes this the one real vector.
+    # Explicitly binding --host to something else + ASTROPILOT_ALLOW_HOST
+    # extends the allowed set for power users.
+    _ALLOWED_HOSTS = {"127.0.0.1", "localhost", "::1", "testserver"}
+    _extra_host = os.environ.get("ASTROPILOT_ALLOW_HOST", "").strip().lower()
+    if _extra_host:
+        _ALLOWED_HOSTS.add(_extra_host)
+
+    @app.middleware("http")
+    async def guard_host(request, call_next):
+        host = (request.headers.get("host") or "").strip()
+        hostname = host.rsplit(":", 1)[0].strip("[]").lower() if ":" in host else host.lower()
+        if hostname not in _ALLOWED_HOSTS:
+            return JSONResponse({"detail": "forbidden host"}, status_code=403)
+        return await call_next(request)
 
     @app.middleware("http")
     async def touch(request, call_next):

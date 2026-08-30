@@ -9,6 +9,18 @@ browser (or a native window). It ships with **no external runtime
 dependencies** on the target machine and works fully offline except for
 optional object example images (fetched from Wikipedia and cached locally).
 
+There is also a **web version** — the same night-planning core, running 100%
+in your browser with no server:
+
+- **Web app:** <https://pitop.net/astro/>
+- **Landing page / downloads:** <https://pitop.net/>
+
+## License
+
+MIT — see [LICENSE](LICENSE). Third-party data and service credits
+(OpenNGC CC BY-SA 4.0, Wikimedia images, Open-Meteo) are listed in
+[NOTICE](NOTICE).
+
 Two modes, switched with the top-right button:
 
 - **Night Planner** - plan what to shoot and when.
@@ -73,15 +85,20 @@ Two modes, switched with the top-right button:
 
 ### Packaged executable
 
-1. Double-click `dist\AstroPilot.exe`.
-2. Your browser (or the app window) opens `http://127.0.0.1:<port>`
+1. Download the latest release from <https://pitop.net/#download>.
+2. Double-click `AstroPilot.exe`.
+3. Your browser (or the app window) opens `http://127.0.0.1:<port>`
    automatically.
-3. First start: the wizard asks for your observing location (gear icon ->
+4. First start: the wizard asks for your observing location (gear icon ->
    Sites also works; "Use my location" fills it automatically).
-4. Horizon & Obstacles tab: import a panorama, calibrate, paint obstacles,
+5. Horizon & Obstacles tab: import a panorama, calibrate, paint obstacles,
    click "Use for planning".
-5. Switch to the Image Catalog for your captures: pick an archive folder,
+6. Switch to the Image Catalog for your captures: pick an archive folder,
    import your light frames.
+
+The app checks once per start whether a newer version is available on
+pitop.net and shows a toast if so; nothing is transmitted beyond the version
+request itself.
 
 All user data lives next to the exe in `data\` (SQLite DB + panorama images +
 image cache + import history). Quit via the shutdown endpoint
