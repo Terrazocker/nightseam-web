@@ -11,7 +11,6 @@
 import * as E from './astro.js?v=3';
 import * as Hor from './horizon.js?v=10';
 import * as WS from './webstore.js?v=1';
-import { meteorShower } from './meteor.js?v=1';
 import { initDragWindows } from './dragwin.js?v=1';
 
 const TYPE_COLORS = {
@@ -2306,9 +2305,9 @@ async function boot() {
 
   initDragWindows();
 
-  // easter egg: click the brand logo for a meteor shower
+  // click the brand logo to return to the main page (the site root)
   const brand = document.querySelector('.brand');
-  if (brand) brand.addEventListener('click', () => meteorShower());
+  if (brand) brand.addEventListener('click', () => { location.href = '/'; });
 
   window.addEventListener('hashchange', () => { route(); });
   // keyboard shortcuts: n = cycle tabs; on sky view ←/→ scrub the night (Shift = 10 min)
