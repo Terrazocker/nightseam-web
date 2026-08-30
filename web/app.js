@@ -520,7 +520,8 @@ function renderTonight(silent) {
   if (!silent) {
     splashText('computing tonight…');
     box.innerHTML = `<div class="splash"><div class="splash-inner"><div class="spinner"></div><p id="splash-text">computing tonight…</p></div></div>`;
-    busy(true, 'ranking targets…');
+    // no busy chip here — the ranking compute takes a few milliseconds and
+    // toggling the topbar chip shifts the layout for nothing.
   }
   // defer heavy math so the UI paints first
   setTimeout(() => {
@@ -673,7 +674,6 @@ function renderTonight(silent) {
       toggleSeen(b.dataset.seen);
     }));
     hideSplash();
-    busy(false);
   }, 30);
 }
 
