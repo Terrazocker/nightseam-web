@@ -17,6 +17,75 @@ export const BINS = 720;
 export const MASK_W = 720;
 export const MASK_H = 360; // 0.25 deg per row of altitude
 
+/* ----- compressed panorama-image cache (survives reload) -----
+   The full-resolution photo is memory-only (it can exceed localStorage
+   quota), but a downscaled JPEG copy is kept in IndexedDB so the painted
+   horizon doesn't vanish after a reload — the user never has to re-upload. */
+const PANOIMG_DB = 'apweb-panoimg';
+const PANOIMG_MAX_W = 1400;   // downscale width cap
+const PANOIMG_QUALITY = 0.78;
+
+function panoImgOpen() {
+  return new Promise((resolve, reject) => {
+    try {
+      const rq = indexedDB.open(PANOIMG_DB, 1);
+      rq.onupgradeneeded = () => { rq.result.createObjectStore('imgs'); };
+      rq.onsuccess = () => resolve(rq.result);
+      rq.onerror = () => reject(rq.error);
+    } catch (e) { reject(e); }
+  });
+}
+async function panoImgGet(id) {
+  try {
+    const dbh = await panoImgOpen();
+    return await new Promise((resolve, reject) => {
+      const t = dbh.transaction('imgs', 'readonly').objectStore('imgs').get(id);
+      t.onsuccess = () => resolve(t.result || null);
+      t.onerror = () => reject(t.error);
+    });
+  } catch { return null; }
+}
+async function panoImgSet(id, blob) {
+  try {
+    const dbh = await panoImgOpen();
+    await new Promise((resolve, reject) => {
+      const t = dbh.transaction('imgs', 'readwrite').objectStore('imgs').put(blob, id);
+      t.onsuccess = () => resolve();
+      t.onerror = () => reject(t.error);
+    });
+  } catch { /* storage unavailable — photo stays memory-only for the session */ }
+}
+async function panoImgDel(id) {
+  try {
+    const dbh = await panoImgOpen();
+    await new Promise((resolve, reject) => {
+      const t = dbh.transaction('imgs', 'readwrite').objectStore('imgs').delete(id);
+      t.onsuccess = () => resolve();
+      t.onerror = () => reject(t.error);
+    });
+  } catch { /* ignore */ }
+}
+
+/** Downscale a data-URL image to a compressed JPEG blob (in-browser). */
+function compressImage(dataUrl, maxW, quality) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const scale = img.width > maxW ? maxW / img.width : 1;
+        const w = Math.max(1, Math.round(img.width * scale));
+        const h = Math.max(1, Math.round(img.height * scale));
+        const cv = document.createElement('canvas');
+        cv.width = w; cv.height = h;
+        cv.getContext('2d').drawImage(img, 0, 0, w, h);
+        cv.toBlob((b) => resolve(b), 'image/jpeg', quality);
+      } catch { resolve(null); }
+    };
+    img.onerror = () => resolve(null);
+    img.src = dataUrl;
+  });
+}
+
 let db = load();
 
 function load() {
@@ -95,6 +164,7 @@ export function deletePano(id) {
   db.panos = db.panos.filter((p) => p.id !== id);
   if (db.activeId === id) db.activeId = db.panos.length ? db.panos[0].id : null;
   save();
+  panoImgDel(id); // drop the cached compressed photo too
 }
 
 export function updatePano(p) {
@@ -198,7 +268,7 @@ export function renderHorizon(box, onChanged) {
           <button class="btn" id="pano-blank">Blank sky</button>
         </div>
         <input type="file" id="pano-file" accept="image/*" class="vhidden">
-        <p class="sub" id="pano-note" style="margin-top:8px">The image stays in your browser — nothing is uploaded to any server. Photos are kept in memory only (re-upload after a reload); your painted profile is saved.</p>
+        <p class="sub" id="pano-note" style="margin-top:8px">Nothing is uploaded to any server. A compressed copy of the photo is saved in your browser's storage so it returns after a reload; your painted profile is always saved.</p>
       </div>
     </div>
     <div class="card" style="margin-top:14px">
@@ -220,7 +290,12 @@ export function renderHorizon(box, onChanged) {
     try {
       const name = ($('#pano-name').value.trim()) || 'horizon';
       const p = newPano(name);
-      if (imgDataUrl) { p.hasImage = true; p._img = imgDataUrl; }
+      if (imgDataUrl) {
+        p.hasImage = true; p._img = imgDataUrl;
+        // keep a compressed JPEG copy so the photo survives reloads
+        compressImage(imgDataUrl, PANOIMG_MAX_W, PANOIMG_QUALITY)
+          .then((blob) => { if (blob) panoImgSet(p.id, blob); });
+      }
       setActive(p.id); // show the new horizon in the editor immediately
       updatePano(p);
       renderHorizon(box, onChanged);
@@ -257,7 +332,23 @@ export function renderHorizon(box, onChanged) {
     });
   }
 
-  if (active) wireEditor(box, pano, onChanged);
+  if (active) {
+    const p = activePano();
+    if (p && p.hasImage && !p._img) {
+      // restore the compressed photo from IndexedDB (was saved on upload)
+      panoImgGet(p.id).then((blob) => {
+        if (blob) {
+          const rd = new FileReader();
+          rd.onload = () => { p._img = rd.result; wireEditor(box, p, onChanged); };
+          rd.readAsDataURL(blob);
+        } else {
+          wireEditor(box, p, onChanged); // no cached photo — blank canvas
+        }
+      }).catch(() => wireEditor(box, p, onChanged));
+    } else {
+      wireEditor(box, p, onChanged);
+    }
+  }
 }
 
 function hideSplash(box) {

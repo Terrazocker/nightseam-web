@@ -142,8 +142,8 @@
         var meta = document.getElementById('dlMeta');
         if (link) link.href = j.url;
         if (meta) {
-          meta.textContent = 'v' + j.version + ' &middot; Windows 10/11 &middot; ~20 MB &middot; free, MIT licensed &mdash; your data never leaves your machine';
-          if (j.sha256) meta.textContent += ' &middot; SHA-256 ' + j.sha256.slice(0, 16) + '&hellip;';
+          meta.innerHTML = 'v' + j.version + ' · Windows 10/11 · ~20 MB · free, MIT licensed — your data never leaves your machine' +
+            (j.sha256 ? ' · SHA-256 ' + j.sha256.slice(0, 16) + '…' : '');
         }
       })
       .catch(function () { /* keep the static fallback link */ });

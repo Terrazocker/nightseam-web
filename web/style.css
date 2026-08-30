@@ -181,6 +181,16 @@ body {
 /* ---------- content ---------- */
 main { max-width: 1500px; margin: 0 auto; padding: 20px 22px 40px; position: relative; }
 
+/* "Free space per side" (hamburger menu): EdgeInsets shrinks the content
+   width at ANY screen size — same as the desktop, where the edge slider
+   drives a whole-view width, not padding (which is invisible below the
+   max-width breakpoint). */
+main {
+  max-width: min(1500px, calc(100vw - 2 * var(--edge, 22px)));
+  padding-left: max(22px, var(--edge, 22px));
+  padding-right: max(22px, var(--edge, 22px));
+}
+
 .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
 .grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
 @media (max-width: 860px) { .grid2, .grid3 { grid-template-columns: 1fr; } }
@@ -382,7 +392,7 @@ td.pct { font-family: var(--mono); color: var(--green); white-space: nowrap; }
 .vhidden { position: fixed; left: -9999px; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
 
 /* ---------- settings / journal / observed (webstore parity) ---------- */
-main { padding-left: var(--edge, 22px); padding-right: var(--edge, 22px); }
+/* (edge-space is handled by the earlier `main` rule: width + padding) */
 .iconbtn {
   background: none; border: 1px solid var(--line); color: var(--muted); cursor: pointer;
   border-radius: 8px; width: 30px; height: 30px; font-size: 15px; line-height: 1;

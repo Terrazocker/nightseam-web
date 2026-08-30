@@ -30,7 +30,7 @@ EXE = DIST / "AstroPilot.exe"
 STAGE = DIST / "release"
 ZIP_NAME_PREFIX = "AstroPilot-"
 
-DOCS = ["LICENSE", "NOTICE", "README.md"]
+DOCS = ["LICENSE", "NOTICE"]
 
 
 def describe():
