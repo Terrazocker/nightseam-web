@@ -242,3 +242,32 @@ ingest + library), switched via the top-right button or the brand name.
 - Never commit `data/` contents (db, panos, imgcache) or `logs/`; only
   `data/panos/.gitkeep` is tracked. `app/_version_baked.py` and
   `.pytest-tmp/` are gitignored.
+
+## Web sub-version (web/)
+
+- `web/` is AstroPilot Web, a static in-browser planner: same Meeus engine
+  (JS mirror `web/astro.js`), same catalog, and Tier-1 user data (sites,
+  rigs, custom targets, session journal/observations) mirrored from the
+  SQLite tables into IndexedDB via `web/webstore.js`. It shares THIS repo's
+  version line: commits `AstroPilot X.Y.Z` and tags `vX.Y.Z` cover both the
+  desktop app and the web.
+- The web catalog is ALWAYS derived: `python web/build_web.py catalog` reads
+  `data/astropilot.db` (`objects` + `advanced_objects`, insertion order) and
+  rewrites `web/catalog.json` — byte-identical to the committed file,
+  verified by SHA. Never hand-edit catalog.json.
+- Release flow for the web: commit + tag, THEN
+  `python web/build_web.py version` (writes gitignored `web/version.json`
+  from `git describe`, same idea as `_version_baked.py` for the exe), THEN
+  deploy. The web footer reads version.json; without it it shows "dev build".
+- Deploy (Plesk FTPS, pitop.net): `web/ftps_deploy.py uploadtree web /` (and
+  `/astro` mirror, `whale/` -> `/whale/`). Credentials live OUTSIDE the repo:
+  pass `--env <path>` pointing at ftp.env (never committed). Cloudflare
+  serves the remote site and injects a script into delivered index.html —
+  hash-verify only after stripping that block.
+- Sync from the dev mirror: robocopy `<workspace>\Astro-Web` -> `web/` (exclude
+  `.git` and `ftp.env`), then commit here. `web/.gitignore` covers the dev
+  mirror leftovers (`whale/`, `dev/`).
+- Custom targets keep the `u_*` id rule; journal entries mirror the desktop
+  `observations` table (date + notes, multiple entries per object).
+  Visibility scoring/keyboard shortcuts/timezone handling match the desktop
+  semantics (per-site IANA timezone, DST-aware via Intl).
