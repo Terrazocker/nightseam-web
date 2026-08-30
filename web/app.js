@@ -104,23 +104,24 @@ function flashOf(o) {
   return v;
 }
 
-/* ---- Rarity tiers: MMO-style, better -> worse: yellow > pink > blue > green > grey ----
-   Computed from the flash desirability score (brightness + size + fame + type),
-   so every one of the ~12k objects gets a tier automatically. */
-const RARITY_TIERS = [
-  { label: 'Legendary', min: 80, color: '#ffd166' },  // yellow
-  { label: 'Epic',      min: 60, color: '#ff7eb6' },  // pink
-  { label: 'Rare',      min: 40, color: '#7cc4ff' },  // blue
-  { label: 'Uncommon',  min: 20, color: '#7bf1a8' },  // green
-  { label: 'Common',    min: 0,  color: '#67749c' },  // grey
+/* ---- Grade tiers: MMO item-grade style, better -> worse:
+   S (yellow) > A (pink) > B (blue) > C (green) > D (grey).
+   Not "rarity" — every object is equally rare; this grades how visually
+   striking it is (brightness + size + fame + type). */
+const GRADE_TIERS = [
+  { label: 'S', min: 80, color: '#ffd166' },  // yellow
+  { label: 'A', min: 60, color: '#ff7eb6' },  // pink
+  { label: 'B', min: 40, color: '#7cc4ff' },  // blue
+  { label: 'C', min: 20, color: '#7bf1a8' },  // green
+  { label: 'D', min: 0,  color: '#67749c' },  // grey
 ];
-function rarityOf(o) {
+function gradeOf(o) {
   const f = flashOf(o);
-  return RARITY_TIERS.find((t) => f >= t.min) || RARITY_TIERS[RARITY_TIERS.length - 1];
+  return GRADE_TIERS.find((t) => f >= t.min) || GRADE_TIERS[GRADE_TIERS.length - 1];
 }
-function rarityTag(o) {
-  const r = rarityOf(o);
-  return `<span class="p-rarity" style="color:${r.color}" title="Rarity ${r.label} — how visually striking the object is (computed from brightness, size, fame and type)">◆ ${r.label}</span>`;
+function gradeTag(o) {
+  const r = gradeOf(o);
+  return `<span class="p-grade" style="color:${r.color}" title="Grade ${r.label} — how visually striking the object is (computed from brightness, size, fame and type)">◆ ${r.label}</span>`;
 }
 
 function searchBlob(o) {
@@ -509,7 +510,7 @@ function renderTonight() {
       const fOwn = filterOwned(o);
       return `<li data-id="${esc(o.id)}">
         <span class="dot" style="background:${typeColor(o)}"></span>
-        <span>${r.flash >= 60 ? '<span class="p-flash">✨</span> ' : ''}<span class="p-name">${esc(o.primary_name)}</span>${tags ? `<span class="p-tags">${esc(tags)}</span>` : ''}${rarityTag(o)}${fOwn ? `<span class="f-own" title="filter owned">${esc(fOwn)}</span>` : ''}</span>
+        <span>${r.flash >= 60 ? '<span class="p-flash">✨</span> ' : ''}<span class="p-name">${esc(o.primary_name)}</span>${tags ? `<span class="p-tags">${esc(tags)}</span>` : ''}${gradeTag(o)}${fOwn ? `<span class="f-own" title="filter owned">${esc(fOwn)}</span>` : ''}</span>
         <span class="p-right"><button class="seen" data-seen="${esc(o.id)}" title="${seen ? 'observed — click to unmark' : 'not observed — click to mark'}" aria-label="observed toggle">${seen ? '✓' : '○'}</button>
           <b>${r.maxAlt.toFixed(0)}°</b>
           <span class="p-vis">${r.visN ? `${r.obsPct}% of night · ${fmtDur(r.visN * step * 1440)} visible` : 'not clear tonight'}</span>${win}</span>
@@ -938,11 +939,11 @@ let skyTimeHandler = null;
 
 /* ----------------------------- catalog ----------------------------- */
 
-const CHIP_LABELS = { all: 'All', legendary: 'Legendary', epicplus: 'Epic+', messier: 'Messier', bright: 'Bright <8', galaxies: 'Galaxies', nebulae: 'Nebulae', clusters: 'Clusters', custom: 'Custom' };
+const CHIP_LABELS = { all: 'All', gradeS: 'Grade S', gradeAPlus: 'Grade A+', messier: 'Messier', bright: 'Bright <8', galaxies: 'Galaxies', nebulae: 'Nebulae', clusters: 'Clusters', custom: 'Custom' };
 const CHIP_FILTERS = {
   all: () => true,
-  legendary: (o) => flashOf(o) >= 80,
-  epicplus: (o) => flashOf(o) >= 60,
+  gradeS: (o) => flashOf(o) >= 80,
+  gradeAPlus: (o) => flashOf(o) >= 60,
   messier: (o) => !!o.messier,
   bright: (o) => o.vmag != null && o.vmag < 8,
   galaxies: (o) => o.otype === 'galaxy',
@@ -968,7 +969,7 @@ function filteredCatalog() {
     else if (col === 'type') v = (TYPE_LABELS[a.otype] || a.otype).localeCompare(TYPE_LABELS[b.otype] || b.otype);
     else if (col === 'con') v = a.constellation.localeCompare(b.constellation);
     else if (col === 'size') v = parseFloat(String(a.size_am || '0').split('x')[0]) - parseFloat(String(b.size_am || '0').split('x')[0]);
-    else if (col === 'rarity') v = flashOf(b) - flashOf(a); // best rarity first (up) / worst first (down)
+    else if (col === 'grade') v = flashOf(b) - flashOf(a); // best grade first (up) / worst first (down)
     else if (col === 'pct') {
       const pa = (obsCache.get(obsKey(pctG, a.id)) || {}).pct ?? -1;
       const pb = (obsCache.get(obsKey(pctG, b.id)) || {}).pct ?? -1;
@@ -1007,18 +1008,18 @@ function renderCatalog() {
     </div>
     <div class="card" style="padding:8px 10px">
       <table class="cat">
-        <thead><tr><th class="seen-th" title="observed"></th>${th('name', 'Name')}${th('rarity', 'Rarity')}${th('mag', 'Mag', true)}${th('pct', '% visibility', true)}${th('type', 'Type')}${th('con', 'Con')}${th('size', 'Size', true)}${showFrame ? `<th class="frame" title="frame coverage with the active rig">Frame</th>` : ''}${th('ra', 'RA', true)}${th('dec', 'Dec', true)}</tr></thead>
+        <thead><tr><th class="seen-th" title="observed"></th>${th('name', 'Name')}${th('grade', 'Grade')}${th('mag', 'Mag', true)}${th('pct', '% visibility', true)}${th('type', 'Type')}${th('con', 'Con')}${th('size', 'Size', true)}${showFrame ? `<th class="frame" title="frame coverage with the active rig">Frame</th>` : ''}${th('ra', 'RA', true)}${th('dec', 'Dec', true)}</tr></thead>
         <tbody>
           ${slice.map((o) => {
             const tags = [o.messier, o.ngcic].filter(Boolean).join(' · ');
             const seen = OBSERVED.has(o.id);
             const fOwn = filterOwned(o);
             const fp = showFrame ? rigFramePct(o) : null;
-            const rr = rarityOf(o);
+            const rr = gradeOf(o);
             return `<tr data-id="${esc(o.id)}">
               <td class="seen-td"><button class="seen" data-seen="${esc(o.id)}" title="${seen ? 'observed — click to unmark' : 'not observed — click to mark'}" aria-label="observed toggle">${seen ? '✓' : '○'}</button></td>
               <td><span class="tname">${esc(o.primary_name)}</span> ${tags ? `<span class="tags">${esc(tags)}</span>` : ''}${fOwn ? `<span class="f-own" title="filter owned">${esc(fOwn)}</span>` : ''}</td>
-              <td class="rarity"><span class="rtag" style="color:${rr.color}" title="Rarity ${rr.label} — how visually striking the object is (brightness + size + fame + type)">${rr.label}</span></td>
+              <td class="grade"><span class="rtag" style="color:${rr.color}" title="Grade ${rr.label} — how visually striking the object is (brightness + size + fame + type)">${rr.label}</span></td>
               <td class="num">${o.vmag != null ? o.vmag.toFixed(1) : '—'}</td>
               <td class="num pct" data-objid="${escAttr(o.id)}">${cachedPctText(o.id)}</td>
               <td><span class="tag-dot" style="color:${typeColor(o)}">●</span> ${TYPE_LABELS[o.otype] || o.otype}</td>
@@ -1166,7 +1167,7 @@ function openDetail(id) {
         <div>
           <dl class="meta">
             <dt>Type</dt><dd><span style="color:${typeColor(o)}">●</span> ${TYPE_LABELS[o.otype] || o.otype}</dd>
-            <dt>Rarity</dt><dd><span style="color:${rarityOf(o).color}">◆ ${rarityOf(o).label}</span> <span class="tags">visual ${flashOf(o)}/100</span></dd>
+            <dt>Grade</dt><dd><span style="color:${gradeOf(o).color}">◆ ${gradeOf(o).label}</span> <span class="tags">visual ${flashOf(o)}/100</span></dd>
             <dt>Magnitude</dt><dd>${o.vmag != null ? o.vmag.toFixed(1) : '—'}</dd>
             <dt>Size</dt><dd>${esc(fmtSize(o)) || '—'}</dd>
             <dt>Constellation</dt><dd>${esc(o.constellation || '—')}</dd>
