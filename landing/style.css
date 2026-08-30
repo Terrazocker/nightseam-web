@@ -1,0 +1,215 @@
+/* =====================================================================
+   AstroPilot landing page — public site root (/).
+   Same design language as the desktop app's "Glass" theme:
+   CSS-only starfield (uniform 480px tiles, seam-free), floating
+   glass card, lavender (#8f7bff) / teal (#4fd9c1) accents.
+   Self-contained: system fonts, no JS, no external assets.
+   ===================================================================== */
+
+:root {
+  color-scheme: dark;
+  --bg: #070a15;
+  --panel: #0d1326;
+  --border-soft: #1e2848;
+  --text: #dfe7ff;
+  --dim: #93a3cc;
+  --faint: #67749c;
+  --accent: #8f7bff;
+  --accent2: #4fd9c1;
+  --accent-ink: #0a0d1a;
+  --font-ui: "Segoe UI", "Aptos", system-ui, sans-serif;
+  --font-mono: Consolas, "Cascadia Mono", monospace;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body { height: 100%; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-ui);
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+}
+
+/* === SKY: the whole starfield lives here, viewport-locked (no
+   document-relative gradient = no slicing seam). All star layers
+   share ONE tile size (480px) so star density is uniform. === */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    /* small 1px stars - 480px tiles */
+    radial-gradient(1px 1px at 12% 24%, rgba(255,255,255,0.14) 0%, transparent 100%),
+    radial-gradient(1px 1px at 34% 58%, rgba(255,255,255,0.10) 0%, transparent 100%),
+    radial-gradient(1px 1px at 56% 12%, rgba(255,255,255,0.16) 0%, transparent 100%),
+    radial-gradient(1px 1px at 74% 66%, rgba(255,255,255,0.12) 0%, transparent 100%),
+    radial-gradient(1px 1px at 90% 34%, rgba(255,255,255,0.15) 0%, transparent 100%),
+    radial-gradient(1px 1px at 26% 82%, rgba(255,255,255,0.11) 0%, transparent 100%),
+    /* 2px stars - 480px tiles */
+    radial-gradient(2px 2px at 8% 42%, rgba(255,255,255,0.20) 0%, rgba(255,255,255,0.07) 50%, transparent 100%),
+    radial-gradient(2px 2px at 42% 74%, rgba(255,255,255,0.23) 0%, rgba(255,255,255,0.08) 50%, transparent 100%),
+    radial-gradient(2px 2px at 68% 26%, rgba(255,255,255,0.20) 0%, rgba(255,255,255,0.07) 50%, transparent 100%),
+    radial-gradient(2px 2px at 88% 84%, rgba(255,255,255,0.22) 0%, rgba(255,255,255,0.08) 50%, transparent 100%),
+    /* 3px bright stars - 480px tiles */
+    radial-gradient(3px 3px at 16% 62%, rgba(255,255,255,0.32) 0%, rgba(255,255,255,0.10) 40%, transparent 100%),
+    radial-gradient(3px 3px at 82% 38%, rgba(255,255,255,0.37) 0%, rgba(255,255,255,0.12) 40%, transparent 100%),
+    radial-gradient(3px 3px at 48% 12%, rgba(255,255,255,0.33) 0%, rgba(255,255,255,0.10) 40%, transparent 100%),
+    /* aurora sweeps */
+    radial-gradient(ellipse 80% 60% at 30% 72%, rgba(79,217,193,0.10) 0%, transparent 70%),
+    radial-gradient(ellipse 70% 50% at 70% 28%, rgba(143,123,255,0.09) 0%, transparent 70%),
+    /* smooth bottom vignette */
+    linear-gradient(180deg, rgba(0,0,0,0) 55%, rgba(2,4,10,0.30) 100%),
+    /* viewport-locked vertical sky gradient (bottom-most layer) */
+    linear-gradient(180deg, #0b1020 0%, #070a15 55%, #04060c 100%);
+  background-size:
+    480px 480px, 480px 480px, 480px 480px, 480px 480px, 480px 480px, 480px 480px,
+    480px 480px, 480px 480px, 480px 480px, 480px 480px,
+    480px 480px, 480px 480px, 480px 480px,
+    100% 100%, 100% 100%, 100% 100%, 100% 100%;
+}
+
+/* === STAGE: center the glass card over the sky === */
+.stage {
+  position: relative;
+  z-index: 1;
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 48px 20px;
+}
+
+/* === GLASS CARD === */
+.glass {
+  max-width: 640px;
+  width: 100%;
+  text-align: center;
+  background: color-mix(in srgb, var(--panel) 74%, transparent);
+  backdrop-filter: blur(16px) saturate(140%);
+  -webkit-backdrop-filter: blur(16px) saturate(140%);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 24px;
+  padding: 52px 48px 44px;
+  box-shadow:
+    0 24px 64px rgba(0,0,0,0.5),
+    0 0 90px rgba(143,123,255,0.07),
+    inset 0 1px 0 rgba(255,255,255,0.06);
+}
+
+.logo {
+  display: block;
+  width: 76px;
+  height: 76px;
+  margin: 0 auto 18px;
+  border-radius: 18px;
+  box-shadow:
+    0 0 0 1px rgba(255,255,255,0.10),
+    0 10px 28px rgba(0,0,0,0.45),
+    0 0 40px rgba(143,123,255,0.15);
+}
+
+.overline {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.38em;
+  text-transform: uppercase;
+  color: var(--faint);
+  margin-bottom: 14px;
+}
+.overline span { color: var(--accent); }
+
+h1 {
+  font-size: 42px;
+  line-height: 1.12;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  margin-bottom: 14px;
+}
+h1 .accent {
+  color: var(--accent);
+  text-shadow: 0 0 32px rgba(143,123,255,0.35);
+}
+
+.tag {
+  font-size: 16px;
+  color: var(--dim);
+  margin-bottom: 14px;
+}
+
+.desc {
+  font-size: 14px;
+  line-height: 1.65;
+  color: var(--faint);
+  margin: 0 auto 30px;
+  max-width: 46ch;
+}
+
+/* === CTA === */
+.cta {
+  display: inline-block;
+  font: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--accent-ink);
+  text-decoration: none;
+  background: linear-gradient(135deg, #8f7bff 0%, #7a5cff 100%);
+  padding: 13px 34px;
+  border-radius: 999px;
+  box-shadow:
+    0 8px 28px rgba(143,123,255,0.35),
+    inset 0 1px 0 rgba(255,255,255,0.25);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.cta:hover {
+  transform: translateY(-1px);
+  box-shadow:
+    0 12px 36px rgba(143,123,255,0.45),
+    inset 0 1px 0 rgba(255,255,255,0.25);
+}
+.cta:active { transform: translateY(0); }
+.cta:focus-visible {
+  outline: 2px solid var(--accent2);
+  outline-offset: 3px;
+}
+
+/* === CHIPS === */
+.chips {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+  margin-top: 30px;
+}
+.chip {
+  font-size: 12px;
+  color: var(--dim);
+  background: rgba(15,21,40,0.55);
+  border: 1px solid var(--border-soft);
+  border-radius: 999px;
+  padding: 6px 14px;
+  font-family: var(--font-mono);
+}
+
+/* === FOOTER === */
+footer {
+  position: relative;
+  z-index: 1;
+  text-align: center;
+  color: var(--faint);
+  font-size: 12.5px;
+  padding: 6px 20px 30px;
+}
+
+/* === SMALL SCREENS === */
+@media (max-width: 560px) {
+  .glass { padding: 40px 22px 36px; border-radius: 18px; }
+  h1 { font-size: 31px; }
+  .logo { width: 62px; height: 62px; }
+  .stage { padding: 32px 14px; }
+}

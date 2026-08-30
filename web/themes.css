@@ -1,0 +1,345 @@
+/* =====================================================================
+   AstroPilot Web themes.
+   Same mechanism as the desktop app: <html data-theme="..."> switches
+   the whole design language. Lineup: "" default, `dome` GLASS —
+   CSS starfield, floating glass topbar, pill tab dock, centered
+   sheet menu, glass panels everywhere (the desktop app's chosen
+   direction, ported to the web's class names).
+   ===================================================================== */
+
+/* =====================================================================
+   THEME: dome — GLASS
+   ===================================================================== */
+
+html[data-theme="dome"] {
+  color-scheme: dark;
+  --bg: #070a16;
+  --bg2: #0c1020;
+  --panel: rgba(13, 19, 38, 0.82);
+  --line: #1e2848;
+  --txt: #dfe7ff;
+  --muted: #93a3cc;
+  --accent: #8f7bff;
+  --amber: #ffd166;
+  --green: #45d6a0;
+  --radius: 16px;
+  --mono: Consolas, "Cascadia Mono", monospace;
+}
+
+/* === BODY: solid base — the whole sky lives in body::before,
+   viewport-locked, all star layers share ONE 480px tile (seam-free) === */
+html[data-theme="dome"] body {
+  background: #070a15;
+  position: relative;
+}
+html[data-theme="dome"] body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    /* small 1px stars - 480px tiles */
+    radial-gradient(1px 1px at 12% 24%, rgba(255,255,255,0.14) 0%, transparent 100%),
+    radial-gradient(1px 1px at 34% 58%, rgba(255,255,255,0.10) 0%, transparent 100%),
+    radial-gradient(1px 1px at 56% 12%, rgba(255,255,255,0.16) 0%, transparent 100%),
+    radial-gradient(1px 1px at 74% 66%, rgba(255,255,255,0.12) 0%, transparent 100%),
+    radial-gradient(1px 1px at 90% 34%, rgba(255,255,255,0.15) 0%, transparent 100%),
+    radial-gradient(1px 1px at 26% 82%, rgba(255,255,255,0.11) 0%, transparent 100%),
+    /* 2px stars - 480px tiles */
+    radial-gradient(2px 2px at 8% 42%, rgba(255,255,255,0.20) 0%, rgba(255,255,255,0.07) 50%, transparent 100%),
+    radial-gradient(2px 2px at 42% 74%, rgba(255,255,255,0.23) 0%, rgba(255,255,255,0.08) 50%, transparent 100%),
+    radial-gradient(2px 2px at 68% 26%, rgba(255,255,255,0.20) 0%, rgba(255,255,255,0.07) 50%, transparent 100%),
+    radial-gradient(2px 2px at 88% 84%, rgba(255,255,255,0.22) 0%, rgba(255,255,255,0.08) 50%, transparent 100%),
+    /* 3px bright stars - 480px tiles */
+    radial-gradient(3px 3px at 16% 62%, rgba(255,255,255,0.32) 0%, rgba(255,255,255,0.10) 40%, transparent 100%),
+    radial-gradient(3px 3px at 82% 38%, rgba(255,255,255,0.37) 0%, rgba(255,255,255,0.12) 40%, transparent 100%),
+    radial-gradient(3px 3px at 48% 12%, rgba(255,255,255,0.33) 0%, rgba(255,255,255,0.10) 40%, transparent 100%),
+    /* aurora sweeps */
+    radial-gradient(ellipse 80% 60% at 30% 70%, rgba(79,217,193,0.10) 0%, transparent 70%),
+    radial-gradient(ellipse 70% 50% at 70% 30%, rgba(143,123,255,0.08) 0%, transparent 70%),
+    /* smooth bottom vignette */
+    linear-gradient(180deg, rgba(0,0,0,0) 55%, rgba(2,4,10,0.28) 100%),
+    /* viewport-locked vertical sky gradient (bottom-most layer) */
+    linear-gradient(180deg, #0b1020 0%, #070a15 55%, #04060c 100%);
+  background-size:
+    480px 480px, 480px 480px, 480px 480px, 480px 480px, 480px 480px, 480px 480px,
+    480px 480px, 480px 480px, 480px 480px, 480px 480px,
+    480px 480px, 480px 480px, 480px 480px,
+    100% 100%, 100% 100%, 100% 100%, 100% 100%;
+}
+
+/* in-flow chrome above the starfield; .modal / .tooltip / #busy-noise keep
+   their fixed base positions (modals must stay fixed!) */
+html[data-theme="dome"] .topbar,
+html[data-theme="dome"] .tabs,
+html[data-theme="dome"] main,
+html[data-theme="dome"] .foot {
+  position: relative;
+  z-index: 1;
+}
+
+/* === TOPBAR: floating glass bar (sticky = fixed look, sane scrolling) === */
+html[data-theme="dome"] .topbar {
+  position: sticky;
+  top: 10px;
+  z-index: 55;
+  margin: 6px 14px 0;
+  border-radius: 18px;
+  border: 1px solid rgba(255,255,255,0.08);
+  background: color-mix(in srgb, #0d1326 72%, transparent);
+  backdrop-filter: blur(14px) saturate(140%);
+  -webkit-backdrop-filter: blur(14px) saturate(140%);
+  box-shadow:
+    0 4px 24px rgba(0,0,0,0.4),
+    0 0 40px rgba(143,123,255,0.06),
+    inset 0 1px 0 rgba(255,255,255,0.06);
+  padding: 8px 18px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+html[data-theme="dome"] .tagline { color: #67749c; }
+html[data-theme="dome"] .brand-ico {
+  filter: drop-shadow(0 0 10px rgba(143,123,255,.7));
+}
+
+/* compact controls inside the glass bar */
+html[data-theme="dome"] .planner-controls { gap: 6px 10px; }
+html[data-theme="dome"] .planner-controls label { font-size: 11.5px; }
+html[data-theme="dome"] .planner-controls select,
+html[data-theme="dome"] .planner-controls input[type="date"] {
+  background: rgba(15,21,40,0.7);
+  max-width: 130px; padding: 5px 8px; font-size: 12px;
+}
+html[data-theme="dome"] .minalt input[type="range"] { width: 68px; }
+html[data-theme="dome"] .scrub input[type="range"] { width: 96px; }
+html[data-theme="dome"] .ghost {
+  background: rgba(15,21,40,0.7);
+  border-radius: 999px; padding: 6px 14px;
+}
+html[data-theme="dome"] .ghost:hover { border-color: rgba(143,123,255,.6); color: #c3b8ff; }
+html[data-theme="dome"] .nightinfo {
+  background: rgba(15,21,40,0.7);
+  border-color: rgba(255,255,255,0.08);
+  color: #93a3cc;
+}
+html[data-theme="dome"] #busy .busy-dot { background: #8f7bff; }
+
+/* === TABS: attached pill dock under the bar === */
+html[data-theme="dome"] .tabs {
+  position: sticky;
+  top: 74px;
+  z-index: 50;
+  width: fit-content;
+  margin: 8px auto 0;
+  padding: 4px;
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 999px;
+  background: color-mix(in srgb, #0d1326 72%, transparent);
+  backdrop-filter: blur(14px) saturate(140%);
+  -webkit-backdrop-filter: blur(14px) saturate(140%);
+  box-shadow: 0 4px 20px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.06);
+  gap: 2px;
+}
+html[data-theme="dome"] .tabs a {
+  border: none; border-radius: 999px;
+  font-size: 13px; padding: 7px 16px;
+  color: #93a3cc;
+}
+html[data-theme="dome"] .tabs a:hover { color: #dbe4ff; }
+html[data-theme="dome"] .tabs a.active {
+  color: #0a0d1a;
+  background: linear-gradient(135deg, #8f7bff, #7a5cff);
+  box-shadow: 0 2px 12px rgba(143,123,255,.45), inset 0 1px 0 rgba(255,255,255,.25);
+}
+
+/* === CARDS / PANELS: glass === */
+html[data-theme="dome"] .card {
+  background: color-mix(in srgb, #0d1326 66%, transparent);
+  border: 1px solid rgba(255,255,255,0.07);
+  border-radius: 18px;
+  backdrop-filter: blur(12px) saturate(130%);
+  -webkit-backdrop-filter: blur(12px) saturate(130%);
+  box-shadow: 0 8px 28px rgba(0,0,0,.28), inset 0 1px 0 rgba(255,255,255,.05);
+}
+html[data-theme="dome"] .card h3 { color: #7c8ab5; }
+
+/* pick rows */
+html[data-theme="dome"] .pick li {
+  background: rgba(15,21,40,0.55);
+  border: 1px solid rgba(255,255,255,0.06);
+  border-radius: 12px;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+html[data-theme="dome"] .pick li:hover { border-color: rgba(143,123,255,.55); }
+html[data-theme="dome"] .pick .p-tags { color: #67749c; }
+
+/* buttons */
+html[data-theme="dome"] .btn {
+  background: rgba(15,21,40,0.65);
+  border-radius: 12px;
+  border-color: rgba(255,255,255,0.08);
+}
+html[data-theme="dome"] .btn:hover { border-color: rgba(143,123,255,.6); color: #c3b8ff; }
+html[data-theme="dome"] .btn.primary {
+  background: linear-gradient(135deg, rgba(143,123,255,.9), rgba(122,92,255,.9));
+  border-color: transparent; color: #0a0d1a; font-weight: 600;
+}
+html[data-theme="dome"] .iconbtn { border-radius: 10px; }
+
+/* inputs … */
+html[data-theme="dome"] input:not([type="range"]):not([type="checkbox"]),
+html[data-theme="dome"] select,
+html[data-theme="dome"] textarea {
+  background: rgba(15,21,40,0.7);
+  border-color: rgba(255,255,255,0.09);
+  border-radius: 10px;
+}
+html[data-theme="dome"] input:focus,
+html[data-theme="dome"] select:focus,
+html[data-theme="dome"] textarea:focus {
+  outline: 1px solid rgba(143,123,255,.7);
+}
+/* round checkboxes (desktop Glass style) */
+html[data-theme="dome"] input[type="checkbox"] {
+  width: 16px; height: 16px; min-width: 16px; min-height: 16px;
+  padding: 0; margin: 0;
+  border-radius: 50%;
+  appearance: none; -webkit-appearance: none;
+  background: #0f1528; border: 1px solid #2a3660; cursor: pointer;
+  position: relative; vertical-align: middle;
+}
+html[data-theme="dome"] input[type="checkbox"]:checked {
+  background: #8f7bff; border-color: #8f7bff;
+}
+html[data-theme="dome"] input[type="checkbox"]:checked::after {
+  content: ""; position: absolute; left: 5px; top: 2.5px;
+  width: 4px; height: 8px;
+  border: solid #0a0d1a; border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+html[data-theme="dome"] input[type="checkbox"]:focus-visible { outline: 2px solid #4fd9c1; outline-offset: 2px; }
+
+/* range sliders */
+html[data-theme="dome"] input[type="range"] { accent-color: #8f7bff; }
+
+/* === CATALOG / tables === */
+html[data-theme="dome"] .cat-bar input[type="search"] {
+  background: rgba(15,21,40,0.7);
+  border-color: rgba(255,255,255,0.09);
+  border-radius: 999px; padding: 9px 16px;
+}
+html[data-theme="dome"] .chip {
+  background: rgba(15,21,40,0.6);
+  border-color: rgba(255,255,255,0.08);
+}
+html[data-theme="dome"] .chip.on {
+  color: #0a0d1a; font-weight: 600;
+  background: linear-gradient(135deg, #8f7bff, #7a5cff);
+  border-color: transparent;
+}
+html[data-theme="dome"] table.cat th { color: #7c8ab5; }
+html[data-theme="dome"] table.cat tbody tr:hover { background: rgba(143,123,255,.08); }
+html[data-theme="dome"] table.cat td { border-bottom-color: rgba(255,255,255,0.05); }
+html[data-theme="dome"] .pager .btn { flex: 0 0 auto; }
+
+/* === MODALS: glass sheet, stays position:fixed === */
+html[data-theme="dome"] .modal-wrap {
+  background: rgba(2,4,10,0.62);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+}
+html[data-theme="dome"] .modal {
+  background: color-mix(in srgb, #0d1326 82%, transparent);
+  border: 1px solid rgba(255,255,255,0.09);
+  border-radius: 20px;
+  backdrop-filter: blur(18px) saturate(140%);
+  -webkit-backdrop-filter: blur(18px) saturate(140%);
+  box-shadow: 0 24px 70px rgba(0,0,0,.55), 0 0 70px rgba(143,123,255,.07), inset 0 1px 0 rgba(255,255,255,.06);
+}
+html[data-theme="dome"] .modal .close { border-radius: 50%; }
+html[data-theme="dome"] .modal .close:hover { border-color: rgba(143,123,255,.6); color: #c3b8ff; }
+html[data-theme="dome"] canvas#graph,
+html[data-theme="dome"] canvas#sky,
+html[data-theme="dome"] #pano-canvas,
+html[data-theme="dome"] #pano-profile {
+  background: #060a14;
+  border-color: rgba(255,255,255,0.07);
+}
+
+/* === MENU: centered glass sheet (viewport units — the topbar's
+   backdrop-filter is a containing block, so % centering would resolve
+   against the bar; 50vh/50vw + translate avoids that) === */
+html[data-theme="dome"] #menuPanel.menu-panel {
+  position: fixed;
+  top: 50vh;
+  left: 50vw;
+  transform: translate(-50%, -50%);
+  width: min(430px, 92vw);
+  max-height: min(76vh, 620px);
+  background: color-mix(in srgb, #0d1326 85%, transparent);
+  border: 1px solid rgba(255,255,255,0.09);
+  border-radius: 22px;
+  backdrop-filter: blur(20px) saturate(150%);
+  -webkit-backdrop-filter: blur(20px) saturate(150%);
+  box-shadow: 0 24px 70px rgba(0,0,0,.55), 0 0 60px rgba(143,123,255,.08), inset 0 1px 0 rgba(255,255,255,.07);
+}
+html[data-theme="dome"] .menu-section { border-bottom-color: rgba(255,255,255,0.06); }
+html[data-theme="dome"] .menu-section h4 { color: #7c8ab5; }
+html[data-theme="dome"] .menu-section select {
+  background: rgba(15,21,40,0.7);
+  border-color: rgba(255,255,255,0.09);
+}
+html[data-theme="dome"] .theme-btn {
+  background: rgba(15,21,40,0.6);
+  border-color: rgba(255,255,255,0.09);
+}
+html[data-theme="dome"] .theme-btn.active {
+  border-color: rgba(143,123,255,.7); color: #c3b8ff;
+  box-shadow: 0 0 18px rgba(143,123,255,.25);
+}
+
+/* === SKY / detail / horizon === */
+html[data-theme="dome"] .sky-side input[type="datetime-local"] {
+  background: rgba(15,21,40,0.7);
+  border-color: rgba(255,255,255,0.09);
+}
+html[data-theme="dome"] .sky-side .card { border-radius: 18px; }
+html[data-theme="dome"] .win-note { color: #45d6a0; }
+html[data-theme="dome"] .journal { border-top-color: rgba(255,255,255,0.07); }
+html[data-theme="dome"] .j-list li { background: rgba(143,123,255,.06); border-color: rgba(255,255,255,0.07); }
+html[data-theme="dome"] .j-list li b { color: #b3a6ff; }
+html[data-theme="dome"] .set-form { border-color: rgba(255,255,255,0.07); }
+
+/* === FOOTER / version === */
+html[data-theme="dome"] .foot { border-top-color: rgba(255,255,255,0.06); }
+html[data-theme="dome"] .foot p { color: #67749c; }
+
+/* === scrollbar === */
+html[data-theme="dome"] ::-webkit-scrollbar { width: 10px; height: 10px; }
+html[data-theme="dome"] ::-webkit-scrollbar-thumb {
+  background: #1e2848; border-radius: 6px;
+  border: 2px solid #070a15;
+}
+html[data-theme="dome"] ::-webkit-scrollbar-track { background: transparent; }
+
+/* === compact glass bar on narrower windows === */
+@media (max-width: 1240px) {
+  html[data-theme="dome"] .planner-controls { gap: 4px 8px; }
+  html[data-theme="dome"] .planner-controls label { font-size: 10.5px; }
+  html[data-theme="dome"] .planner-controls select { max-width: 110px; }
+  html[data-theme="dome"] .planner-controls input[type="date"] { max-width: 120px; }
+  html[data-theme="dome"] .minalt input[type="range"] { width: 56px; }
+  html[data-theme="dome"] .scrub input[type="range"] { width: 84px; }
+  html[data-theme="dome"] .nightinfo { font-size: 11px; padding: 4px 10px; }
+}
+@media (max-width: 900px) {
+  html[data-theme="dome"] .topbar { top: 6px; margin: 4px 10px 0; padding: 8px 14px; }
+  html[data-theme="dome"] .tabs { top: 66px; }
+  html[data-theme="dome"] .tabs a { font-size: 12px; padding: 6px 12px; }
+  html[data-theme="dome"] .nightinfo { display: none; }
+  html[data-theme="dome"] .tagline { display: none; }
+}

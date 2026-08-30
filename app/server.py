@@ -53,6 +53,7 @@ class SettingsIn(BaseModel):
     adv_mode: Optional[bool] = None
     bortle: Optional[int] = None
     timezone: Optional[str] = None
+    theme: Optional[str] = None
 
 
 class RigIn(BaseModel):
@@ -256,6 +257,7 @@ def create_app(db: Database, *, prefetch: bool = True) -> FastAPI:
             "adv_mode": bool(db.setting("adv_mode", False)),
             "bortle": db.setting("bortle", 4),
             "timezone": db.setting("timezone") or "",
+            "theme": db.setting("theme", "") or "",
             "observed": db.observations(),
         }
 
@@ -298,6 +300,8 @@ def create_app(db: Database, *, prefetch: bool = True) -> FastAPI:
             db.set_setting("bortle", max(1, min(9, int(body.bortle))))
         if body.timezone is not None:
             db.set_setting("timezone", body.timezone.strip()[:64])
+        if body.theme is not None:
+            db.set_setting("theme", body.theme.strip()[:32])
         return {"ok": True}
 
     # ---------------- sites ----------------

@@ -1,0 +1,1092 @@
+/* =====================================================================
+   AstroPilot UI themes.
+   Each theme is a complete design LANGUAGE: it overrides the design
+   tokens from style.css (:root) AND restyles the components (buttons,
+   tabs, cards, tables, badges, inputs, modals...) so the whole app
+   changes shape, not just colour. Active theme = <html data-theme="...">.
+   All palettes are offline-safe: system font stacks only.
+
+   Lineup: "" default, `dome` GLASS (glassy starfield look - the chosen
+   direction). Earlier themes were removed; a saved `theme` setting
+   naming a removed theme falls back to the default look.
+   ===================================================================== */
+
+/* =====================================================================
+   THEME: dome - GLASS (the chosen direction)
+   Inside the observatory dome: a CSS-only starfield, floating glass
+   panels, centered pill navigation dock, sheet-style options menu.
+   =====================================================================
+
+/* =====================================================================
+   THEME: dome - OBSERVATORY GLASS
+   Inside the dome: translucent glass panels floating over a deep starfield.
+   Radical structural restyle: floating bar, pill tabs, glass sheets.
+   ===================================================================== */
+
+html[data-theme="dome"] {
+  color-scheme: dark;
+  --scheme: dark;
+  --bg: #070a16;
+  --bg2: #0c1020;
+  --panel: #0d1326;
+  --panel2: #111833;
+  --border: #1e2848;
+  --border-soft: #141c36;
+  --border2: #2a3660;
+  --text: #dfe7ff;
+  --dim: #93a3cc;
+  --faint: #67749c;
+  --accent: #8f7bff;
+  --accent2: #4fd9c1;
+  --accent-ink: #0a0d1a;
+  --good: #45d6a0;
+  --warn: #ffb454;
+  --bad: #ff6b7a;
+  --gold: #ffd166;
+  --check: #8f7bff;
+  --check-ink: #0a0d1a;
+  --hover: #161e38;
+  --thumb1: #2a2250;
+  --thumb2: #0e0c1f;
+  --sky1: #04060f;
+  --sky2: #0e162b;
+  --chart-bg: #060a14;
+  --chip-bg: #0f1528;
+  --chip-border: #1e2848;
+  --tooltip-bg: #080c18f2;
+  --scroll-thumb: #1e2848;
+  --star-off: #2a3355;
+  --track: #1a2240;
+  --toast-info: #0d1326;
+  --toast-err: #1a0f18;
+  --toast-err-text: #ffd9d9;
+  --backdrop: #000a;
+  --shadow-lg: #000a;
+  --shadow-md: #000b;
+  --shadow-xl: #000c;
+  --moon: #ffd166;
+  --legend-ceil: #93a3cc;
+  --font-ui: "Segoe UI", "Aptos", system-ui, sans-serif;
+  --font-mono: Consolas, "Cascadia Mono", monospace;
+  --r-sm: 8px;
+  --r-md: 10px;
+  --r-lg: 16px;
+  --r-xl: 18px;
+  --r-2xl: 24px;
+  --r-pill: 999px;
+}
+
+/* === BODY: solid base - the whole sky lives in body::before below,
+   which is viewport-locked: scroll and window size can never slice a
+   document-relative gradient and create a visible tonal seam === */
+html[data-theme="dome"] body {
+  background: #070a15;
+  position: relative;
+}
+html[data-theme="dome"] body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    /* small 1px stars - 480px tiles */
+    radial-gradient(1px 1px at 12% 24%, rgba(255,255,255,0.14) 0%, transparent 100%),
+    radial-gradient(1px 1px at 34% 58%, rgba(255,255,255,0.10) 0%, transparent 100%),
+    radial-gradient(1px 1px at 56% 12%, rgba(255,255,255,0.16) 0%, transparent 100%),
+    radial-gradient(1px 1px at 74% 66%, rgba(255,255,255,0.12) 0%, transparent 100%),
+    radial-gradient(1px 1px at 90% 34%, rgba(255,255,255,0.15) 0%, transparent 100%),
+    radial-gradient(1px 1px at 26% 82%, rgba(255,255,255,0.11) 0%, transparent 100%),
+    /* 2px stars - 480px tiles */
+    radial-gradient(2px 2px at 8% 42%, rgba(255,255,255,0.20) 0%, rgba(255,255,255,0.07) 50%, transparent 100%),
+    radial-gradient(2px 2px at 42% 74%, rgba(255,255,255,0.23) 0%, rgba(255,255,255,0.08) 50%, transparent 100%),
+    radial-gradient(2px 2px at 68% 26%, rgba(255,255,255,0.20) 0%, rgba(255,255,255,0.07) 50%, transparent 100%),
+    radial-gradient(2px 2px at 88% 84%, rgba(255,255,255,0.22) 0%, rgba(255,255,255,0.08) 50%, transparent 100%),
+    /* 3px bright stars - 480px tiles */
+    radial-gradient(3px 3px at 16% 62%, rgba(255,255,255,0.32) 0%, rgba(255,255,255,0.10) 40%, transparent 100%),
+    radial-gradient(3px 3px at 82% 38%, rgba(255,255,255,0.37) 0%, rgba(255,255,255,0.12) 40%, transparent 100%),
+    radial-gradient(3px 3px at 48% 12%, rgba(255,255,255,0.33) 0%, rgba(255,255,255,0.10) 40%, transparent 100%),
+    /* aurora sweeps */
+    radial-gradient(ellipse 80% 60% at 30% 70%, rgba(79,217,193,0.10) 0%, transparent 70%),
+    radial-gradient(ellipse 70% 50% at 70% 30%, rgba(143,123,255,0.08) 0%, transparent 70%),
+    /* smooth bottom vignette */
+    linear-gradient(180deg, rgba(0,0,0,0) 55%, rgba(2,4,10,0.28) 100%),
+    /* viewport-locked vertical sky gradient (bottom-most layer) -
+       smooth stops, no diagonal, no document-relative slicing */
+    linear-gradient(180deg, #0b1020 0%, #070a15 55%, #04060c 100%);
+  /* ALL star layers share ONE tile size (480px): mixed tile sizes
+     created per-band star-density differences that read as horizontal
+     seams. Uniform tiling = uniform density everywhere. */
+  background-size:
+    480px 480px, 480px 480px, 480px 480px, 480px 480px, 480px 480px, 480px 480px,
+    480px 480px, 480px 480px, 480px 480px, 480px 480px,
+    480px 480px, 480px 480px, 480px 480px,
+    100% 100%, 100% 100%, 100% 100%, 100% 100%;
+}
+
+/* Ensure in-flow chrome sits above the starfield.
+   .modal and #toasts keep their base position:fixed (z 40 / 300) -
+   they must NOT be turned relative or popups render in-flow at the
+   bottom of the document. */
+html[data-theme="dome"] header,
+html[data-theme="dome"] nav,
+html[data-theme="dome"] main {
+  position: relative;
+  z-index: 1;
+}
+
+/* === TOPBAR: floating glass bar === */
+html[data-theme="dome"] #topbar {
+  position: fixed;
+  top: 14px;
+  left: 14px;
+  right: 14px;
+  z-index: 55;
+  background: color-mix(in srgb, var(--panel) 72%, transparent);
+  backdrop-filter: blur(14px) saturate(140%);
+  -webkit-backdrop-filter: blur(14px) saturate(140%);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 18px;
+  padding: 8px 18px;
+  box-shadow:
+    0 4px 24px rgba(0,0,0,0.4),
+    0 0 40px rgba(143,123,255,0.06),
+    inset 0 1px 0 rgba(255,255,255,0.06);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+/* Brand glow */
+html[data-theme="dome"] .brand {
+  text-shadow: 0 0 12px rgba(143,123,255,0.4);
+}
+html[data-theme="dome"] .brand svg {
+  filter: drop-shadow(0 0 6px rgba(255,209,102,0.5));
+}
+
+/* Controls inside the glass bar */
+html[data-theme="dome"] .controls {
+  gap: 10px;
+}
+html[data-theme="dome"] .controls label {
+  font-size: 11.5px;
+  color: var(--dim);
+  letter-spacing: 0.02em;
+}
+/* Keep the glass bar on ONE row so the tab dock below never
+   overlaps it (the dock's offset is computed from a 54px bar). */
+html[data-theme="dome"] #topbar {
+  min-height: 54px;
+}
+html[data-theme="dome"] .controls {
+  gap: 8px;
+}
+html[data-theme="dome"] .controls label {
+  font-size: 11px;
+}
+html[data-theme="dome"] .minalt input[type=range] {
+  width: 84px;
+}
+html[data-theme="dome"] .scrub input[type=range] {
+  max-width: 150px;
+}
+html[data-theme="dome"] #topbar select,
+html[data-theme="dome"] #topbar input:not([type=range]):not([type=checkbox]) {
+  padding: 4px 8px;
+}
+html[data-theme="dome"] .topbar-right {
+  gap: 8px;
+}
+
+/* Topbar right side */
+html[data-theme="dome"] .topbar-right {
+  gap: 10px;
+}
+
+/* Mode button */
+html[data-theme="dome"] .modebtn {
+  border-radius: var(--r-pill);
+  background: transparent;
+  border: 1px solid rgba(255,255,255,0.1);
+  color: var(--gold);
+  transition: all 0.2s ease;
+}
+html[data-theme="dome"] .modebtn:hover {
+  background: color-mix(in srgb, var(--gold) 10%, transparent);
+  border-color: rgba(255,209,102,0.3);
+}
+html[data-theme="dome"] body.catmode .modebtn {
+  color: var(--accent);
+  border-color: rgba(143,123,255,0.3);
+}
+html[data-theme="dome"] body.catmode .modebtn:hover {
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
+/* Menu button */
+html[data-theme="dome"] .menubtn {
+  border-radius: var(--r-pill);
+  padding: 4px 8px;
+}
+
+/* Busy indicator: soft glowing orb */
+html[data-theme="dome"] #busy {
+  position: relative;
+}
+html[data-theme="dome"] .busy-dot {
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgba(143,123,255,0.3);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: dome-spin 1s linear infinite;
+  box-shadow: 0 0 12px rgba(143,123,255,0.4);
+}
+@keyframes dome-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* === TABS: floating pill dock, attached below the glass bar === */
+html[data-theme="dome"] #tabs,
+html[data-theme="dome"] #tabs-cat {
+  position: fixed;
+  top: 76px; /* bar bottom (14 + 54) + 8px gap - never overlaps the bar */
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 56;
+  background: color-mix(in srgb, var(--panel) 65%, transparent);
+  backdrop-filter: blur(12px) saturate(130%);
+  -webkit-backdrop-filter: blur(12px) saturate(130%);
+  border: 1px solid rgba(255,255,255,0.07);
+  border-radius: var(--r-pill);
+  padding: 6px;
+  gap: 4px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+}
+
+/* Neutralize base tab underline */
+html[data-theme="dome"] #tabs .tab,
+html[data-theme="dome"] #tabs-cat .tab {
+  border-bottom: none !important;
+}
+
+/* Tab pill chips */
+html[data-theme="dome"] .tab {
+  border-radius: var(--r-pill);
+  padding: 8px 18px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--dim);
+  background: transparent;
+  border: 1px solid transparent;
+  transition: all 0.2s ease;
+}
+html[data-theme="dome"] .tab:hover {
+  color: var(--text);
+  background: color-mix(in srgb, var(--text) 5%, transparent);
+}
+
+/* Active tab: filled accent gradient + glow */
+html[data-theme="dome"] .tab.active {
+  background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 80%, var(--accent2)));
+  color: white;
+  border-color: transparent;
+  box-shadow:
+    0 2px 12px rgba(143,123,255,0.3),
+    inset 0 1px 0 rgba(255,255,255,0.15);
+  text-shadow: 0 1px 2px rgba(0,0,0,0.3);
+}
+
+/* === MAIN CONTENT: offset for floating chrome === */
+html[data-theme="dome"] main {
+  margin-top: 164px; /* bar 68 + dock ~49 + telemetry chip ~20 + gaps */
+  padding: 20px 24px 60px;
+}
+/* catalog mode hides the planner row - content can start higher */
+html[data-theme="dome"] body.catmode main {
+  margin-top: 150px;
+}
+
+/* Tab pane generous padding */
+html[data-theme="dome"] .tabpane {
+  padding: 20px 24px 50px;
+  max-width: calc(100vw - 2 * var(--edge-space, 200px));
+  margin: 0 auto;
+}
+
+/* === CARDS: glass tiles === */
+html[data-theme="dome"] .card,
+html[data-theme="dome"] .pick {
+  background: color-mix(in srgb, var(--panel) 65%, transparent);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255,255,255,0.06);
+  border-radius: var(--r-lg);
+  box-shadow: 0 4px 16px rgba(0,0,0,0.2);
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+}
+html[data-theme="dome"] .card:hover,
+html[data-theme="dome"] .pick:hover {
+  transform: translateY(-2px);
+  box-shadow:
+    0 8px 24px rgba(0,0,0,0.3),
+    0 0 20px rgba(143,123,255,0.08);
+  border-color: rgba(143,123,255,0.2);
+}
+html[data-theme="dome"] .card .k {
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+}
+html[data-theme="dome"] .card .v {
+  font-size: 20px;
+  font-weight: 700;
+}
+html[data-theme="dome"] .pick-thumb {
+  border-radius: var(--r-md);
+}
+html[data-theme="dome"] .pick .nm {
+  font-weight: 700;
+}
+
+/* === CHART AREAS: glass panels === */
+html[data-theme="dome"] .chart-layout {
+  gap: 20px;
+}
+html[data-theme="dome"] .chart-side {
+  width: 220px;
+  background: color-mix(in srgb, var(--panel) 55%, transparent);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(255,255,255,0.05);
+  border-radius: var(--r-lg);
+  padding: 12px 14px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+}
+html[data-theme="dome"] .chart-side .menu-section {
+  border-bottom: 1px solid rgba(255,255,255,0.04);
+  padding: 10px 0;
+}
+html[data-theme="dome"] .chart-side .menu-section:last-child {
+  border-bottom: none;
+}
+html[data-theme="dome"] .chart-side .menu-section h4 {
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--dim);
+  margin-bottom: 8px;
+}
+/* Sky map: keep the eyepiece-circle, drop the glow box */
+html[data-theme="dome"] #skyCanvas {
+  border-radius: 50%;   /* restored circular eyepiece (base value) */
+  border: 1px solid rgba(255,255,255,0.06);
+  box-shadow: none;
+}
+
+/* === HORIZON / PANORAMA panels === */
+html[data-theme="dome"] #panoPanel,
+html[data-theme="dome"] .archpanel {
+  background: color-mix(in srgb, var(--panel) 60%, transparent);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(255,255,255,0.05);
+  border-radius: var(--r-lg);
+  padding: 14px 16px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+}
+html[data-theme="dome"] #panoPanel h3,
+html[data-theme="dome"] .archpanel h3 {
+  margin-top: 0;
+  letter-spacing: 0.04em;
+}
+html[data-theme="dome"] #panoStage {
+  border-radius: var(--r-lg);
+  border: 1px solid rgba(255,255,255,0.05);
+}
+
+/* Horizon layout */
+html[data-theme="dome"] .horiz-layout {
+  grid-template-columns: 340px 1fr;
+  gap: 20px;
+}
+
+/* Archive layout */
+html[data-theme="dome"] .arch-layout {
+  grid-template-columns: 340px 1fr;
+  gap: 20px;
+}
+
+/* === TABLES: glass containers === */
+html[data-theme="dome"] .tablewrap {
+  background: color-mix(in srgb, var(--panel) 50%, transparent);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(255,255,255,0.05);
+  border-radius: var(--r-lg);
+  overflow: auto;
+  max-height: calc(100vh - 260px);
+}
+html[data-theme="dome"] #tab-targets .tablewrap {
+  border: none;
+}
+html[data-theme="dome"] #targetTable th {
+  background: color-mix(in srgb, var(--bg) 80%, transparent);
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+}
+html[data-theme="dome"] #targetTable td {
+  border-bottom: 1px solid rgba(255,255,255,0.03);
+}
+html[data-theme="dome"] #targetTable tr:hover td {
+  background: color-mix(in srgb, var(--accent) 4%, transparent);
+}
+html[data-theme="dome"] #libraryTable th {
+  background: color-mix(in srgb, var(--panel2) 70%, transparent);
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+}
+html[data-theme="dome"] #libraryTable td {
+  border-bottom: 1px solid rgba(255,255,255,0.03);
+}
+html[data-theme="dome"] #libraryTable tr:hover td {
+  background: var(--hover);
+}
+
+/* === BADGES / PILLS === */
+html[data-theme="dome"] .typebadge,
+html[data-theme="dome"] .statuspill,
+html[data-theme="dome"] .fbadge {
+  border-radius: var(--r-pill);
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+}
+html[data-theme="dome"] .fbadge.ok {
+  background: color-mix(in srgb, var(--good) 15%, transparent);
+  color: var(--good);
+}
+html[data-theme="dome"] .fbadge.warn {
+  background: color-mix(in srgb, var(--warn) 15%, transparent);
+  color: var(--warn);
+}
+html[data-theme="dome"] .fbadge.bad {
+  background: color-mix(in srgb, var(--bad) 15%, transparent);
+  color: var(--bad);
+}
+
+/* === BUTTONS: gradient pills with glow === */
+html[data-theme="dome"] button,
+html[data-theme="dome"] .btnlink {
+  border-radius: var(--r-pill);
+  transition: all 0.2s ease;
+}
+html[data-theme="dome"] button:hover,
+html[data-theme="dome"] .btnlink:hover {
+  filter: none;
+  background: var(--hover);
+}
+html[data-theme="dome"] button:active,
+html[data-theme="dome"] .btnlink:active {
+  transform: scale(0.97);
+}
+html[data-theme="dome"] button.primary,
+html[data-theme="dome"] form button[type=submit] {
+  background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 80%, var(--accent2)));
+  color: white;
+  font-weight: 600;
+  border: none;
+  box-shadow: 0 0 18px color-mix(in srgb, var(--accent) 45%, transparent);
+}
+html[data-theme="dome"] button.primary:hover,
+html[data-theme="dome"] form button[type=submit]:hover {
+  box-shadow: 0 0 24px color-mix(in srgb, var(--accent) 60%, transparent);
+  transform: translateY(-1px);
+}
+html[data-theme="dome"] button.ghost,
+html[data-theme="dome"] button.danger {
+  background: transparent;
+  border: 1px solid rgba(255,255,255,0.1);
+}
+html[data-theme="dome"] button.danger {
+  color: var(--bad);
+  border-color: color-mix(in srgb, var(--bad) 30%, transparent);
+}
+html[data-theme="dome"] .tool {
+  border-radius: var(--r-pill);
+}
+
+/* === FORMS === */
+html[data-theme="dome"] input,
+html[data-theme="dome"] select,
+html[data-theme="dome"] textarea {
+  background: color-mix(in srgb, var(--bg2) 80%, transparent);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: var(--r-sm);
+  padding: 6px 10px;
+  transition: border-color 0.2s ease;
+}
+html[data-theme="dome"] input:focus,
+html[data-theme="dome"] select:focus,
+html[data-theme="dome"] textarea:focus {
+  border-color: var(--accent);
+  outline: none;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 20%, transparent);
+}
+
+/* === CHECKBOXES: circular glass === */
+html[data-theme="dome"] input[type=checkbox] {
+  width: 16px; height: 16px; min-width: 16px; min-height: 16px;
+  padding: 0;                /* the generic input rule adds padding - kills it here */
+  border-radius: 50%;        /* circles, not pills */
+  border: 1.5px solid rgba(255,255,255,0.18);
+  background: transparent;
+}
+html[data-theme="dome"] input[type=checkbox]:checked {
+  background: var(--check);
+  border-color: var(--check);
+}
+html[data-theme="dome"] input[type=checkbox]:checked::after {
+  left: 5px; top: 2.5px;    /* center the checkmark in the circle */
+  border-color: var(--check-ink);
+}
+html[data-theme="dome"] input[type=checkbox]:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* === RANGE SLIDERS === */
+html[data-theme="dome"] input[type=range]::-webkit-slider-runnable-track {
+  height: 6px;
+  border-radius: var(--r-pill);
+  background: linear-gradient(90deg, var(--track), color-mix(in srgb, var(--track) 80%, transparent));
+}
+html[data-theme="dome"] input[type=range]::-webkit-slider-thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 30% 30%, color-mix(in srgb, var(--accent) 90%, white), var(--accent));
+  border: 2px solid rgba(255,255,255,0.2);
+  margin-top: -6px;
+  box-shadow: 0 2px 8px rgba(143,123,255,0.3);
+}
+html[data-theme="dome"] input[type=range]::-moz-range-track {
+  height: 6px;
+  border-radius: var(--r-pill);
+  background: linear-gradient(90deg, var(--track), color-mix(in srgb, var(--track) 80%, transparent));
+}
+html[data-theme="dome"] input[type=range]::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 30% 30%, color-mix(in srgb, var(--accent) 90%, white), var(--accent));
+  border: 2px solid rgba(255,255,255,0.2);
+  box-shadow: 0 2px 8px rgba(143,123,255,0.3);
+}
+
+/* === MENU SHEET: centered glass overlay === */
+html[data-theme="dome"] .menuwrap .popover {
+  position: fixed;
+  /* the topbar's backdrop-filter makes IT the containing block for
+     fixed descendants, so % offsets are relative to the bar - use
+     VIEWPORT units to center against the window itself */
+  top: 50vh;
+  left: 50vw;
+  transform: translate(-50%, -50%);
+  width: min(560px, 92vw);
+  max-height: 78vh;
+  overflow-y: auto;
+  background: color-mix(in srgb, var(--panel) 85%, transparent);
+  backdrop-filter: blur(20px) saturate(150%);
+  -webkit-backdrop-filter: blur(20px) saturate(150%);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 24px;
+  padding: 20px 24px;
+  box-shadow:
+    0 24px 80px rgba(0,0,0,0.5),
+    0 0 60px rgba(143,123,255,0.08),
+    inset 0 1px 0 rgba(255,255,255,0.08);
+  z-index: 95;
+}
+
+/* Menu sections */
+html[data-theme="dome"] .menu-section {
+  padding: 12px 0;
+  border-bottom: 1px solid rgba(255,255,255,0.04);
+}
+html[data-theme="dome"] .menu-section:last-child {
+  border-bottom: none;
+}
+html[data-theme="dome"] .menu-section h4 {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--dim);
+  margin-bottom: 10px;
+  padding: 4px 10px;
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  border-radius: var(--r-pill);
+  display: inline-block;
+}
+
+/* Theme picker buttons */
+html[data-theme="dome"] .theme-row {
+  gap: 8px;
+}
+html[data-theme="dome"] .theme-btn {
+  border-radius: var(--r-pill);
+  padding: 8px 12px;
+  border: 1px solid rgba(255,255,255,0.06);
+  background: transparent;
+  transition: all 0.2s ease;
+}
+html[data-theme="dome"] .theme-btn:hover {
+  background: var(--hover);
+  border-color: rgba(255,255,255,0.1);
+}
+html[data-theme="dome"] .theme-btn.active {
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+html[data-theme="dome"] .theme-btn .sw {
+  border-radius: 50%;
+}
+
+/* === MODALS: glass boxes === */
+html[data-theme="dome"] .modal {
+  background: rgba(0,0,0,0.6);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+html[data-theme="dome"] .modal-box {
+  background: color-mix(in srgb, var(--bg2) 90%, transparent);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: var(--r-2xl);
+  box-shadow: 0 24px 80px rgba(0,0,0,0.5);
+}
+html[data-theme="dome"] .modal-box header {
+  background: color-mix(in srgb, var(--panel) 70%, transparent);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+  border-radius: var(--r-2xl) var(--r-2xl) 0 0;
+  padding: 16px 20px;
+  cursor: move;   /* popups are draggable by their header (dragwin.js) */
+  user-select: none;
+}
+/* grip hint on the sheet: the section label row is the drag handle */
+html[data-theme="dome"] #menuPanel .menu-section:first-child h4 {
+  cursor: move;
+  user-select: none;
+}
+html[data-theme="dome"] .modal-box h2 {
+  font-size: 18px;
+  font-weight: 600;
+}
+html[data-theme="dome"] .modal-box header .close {
+  border-radius: 50%;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  color: var(--dim);
+  font-size: 18px;
+  transition: all 0.2s ease;
+}
+html[data-theme="dome"] .modal-box header .close:hover {
+  background: color-mix(in srgb, var(--bad) 15%, transparent);
+  color: var(--bad);
+}
+
+/* Modal tabs: pill chips */
+html[data-theme="dome"] .modal-tabs {
+  border-bottom: 1px solid rgba(255,255,255,0.04);
+  gap: 4px;
+  padding: 10px 20px;
+}
+html[data-theme="dome"] .modal-tabs .tab {
+  border-radius: var(--r-pill);
+  padding: 6px 14px;
+  font-size: 12px;
+  border: 1px solid transparent;
+}
+html[data-theme="dome"] .modal-tabs .tab.active {
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* Detail grid */
+html[data-theme="dome"] .detail-grid {
+  gap: 24px;
+}
+html[data-theme="dome"] #dImage {
+  border-radius: var(--r-lg);
+  box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+}
+html[data-theme="dome"] .kv td:first-child {
+  color: var(--dim);
+}
+html[data-theme="dome"] #altChart {
+  border-radius: var(--r-lg);
+  border: 1px solid rgba(255,255,255,0.05);
+}
+
+/* === TOASTS: glass notifications === */
+html[data-theme="dome"] #toasts {
+  top: 20px;
+  right: 20px;
+}
+html[data-theme="dome"] .toast {
+  background: color-mix(in srgb, var(--panel) 85%, transparent);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: var(--r-lg);
+  box-shadow: 0 8px 30px rgba(0,0,0,0.3);
+  padding: 10px 14px;
+}
+html[data-theme="dome"] .toast.info {
+  border-color: rgba(143,123,255,0.3);
+}
+
+/* === VERSION TAG === */
+html[data-theme="dome"] #versionTag {
+  opacity: 0.6;
+  position: fixed;   /* restore bottom-right corner placement */
+  right: 14px;
+  bottom: 8px;
+  z-index: 2;
+}
+
+/* === SCROLLBAR === */
+html[data-theme="dome"] ::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+html[data-theme="dome"] ::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--scroll-thumb) 60%, transparent);
+  border-radius: var(--r-pill);
+}
+html[data-theme="dome"] ::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* === CHIP / BADGE GLOW === */
+html[data-theme="dome"] .chip {
+  border-radius: var(--r-pill);
+  background: color-mix(in srgb, var(--chip-bg) 60%, transparent);
+  border: 1px solid rgba(255,255,255,0.05);
+}
+
+/* === NIGHT INFO / ARCHIVE INFO === */
+html[data-theme="dome"] .nightinfo {
+  font-size: 12px;
+  color: var(--dim);
+}
+html[data-theme="dome"] .nightinfo b {
+  color: var(--text);
+}
+/* Telemetry sits as a CENTERED CHIP below the tab dock - out of the
+   bar's flex flow so the bar stays one row and nothing overlaps. */
+html[data-theme="dome"] #nightInfo {
+  position: fixed;
+  left: 50%;
+  transform: translateX(-50%);
+  top: 128px;
+  max-width: 78vw;
+  white-space: nowrap;
+  text-align: center;
+  z-index: 56;
+  font-size: 11.5px;
+}
+html[data-theme="dome"] .archinfo {
+  display: none;
+}
+
+/* === MIN ALT / SCRUB === */
+html[data-theme="dome"] .minalt {
+  gap: 8px;
+}
+html[data-theme="dome"] .minalt .mono {
+  color: var(--accent);
+  font-weight: 600;
+}
+html[data-theme="dome"] .scrub {
+  border-left: 1px solid rgba(255,255,255,0.06);
+  padding-left: 8px;
+}
+
+/* === DROP ZONE === */
+html[data-theme="dome"] #dropZone {
+  border: 2px dashed rgba(255,255,255,0.08);
+  border-radius: var(--r-lg);
+  padding: 24px 16px;
+  transition: all 0.2s ease;
+}
+html[data-theme="dome"] #dropZone.over {
+  border-color: var(--gold);
+  background: color-mix(in srgb, var(--gold) 5%, transparent);
+  box-shadow: 0 0 20px rgba(255,209,102,0.1);
+}
+
+/* === ARCH STATS === */
+html[data-theme="dome"] .archstats .stat {
+  background: color-mix(in srgb, var(--bg2) 60%, transparent);
+  border: 1px solid rgba(255,255,255,0.05);
+  border-radius: var(--r-md);
+}
+html[data-theme="dome"] .archstats .v {
+  color: var(--accent);
+}
+
+/* === IMP ITEM / INGEST ITEM === */
+html[data-theme="dome"] .imp-item,
+html[data-theme="dome"] .ingest-item {
+  background: color-mix(in srgb, var(--panel) 55%, transparent);
+  border: 1px solid rgba(255,255,255,0.04);
+  border-radius: var(--r-md);
+}
+
+/* === PANORAMA ITEMS === */
+html[data-theme="dome"] .pano-item {
+  border: 1px solid rgba(255,255,255,0.05);
+  border-radius: var(--r-md);
+}
+html[data-theme="dome"] .pano-item.active {
+  border-color: var(--good);
+  box-shadow: 0 0 12px color-mix(in srgb, var(--good) 20%, transparent);
+}
+
+/* === LOUPE === */
+html[data-theme="dome"] #loupeCv {
+  border-radius: 50%;
+  border: 2px solid var(--accent);
+  box-shadow: 0 4px 18px rgba(0,0,0,0.3);
+}
+
+/* === FILTER BAR === */
+html[data-theme="dome"] #filterBar {
+  gap: 12px;
+  margin: 12px 0 6px;
+}
+html[data-theme="dome"] #filterBar input[type=search] {
+  width: 260px;
+  border-radius: var(--r-pill);
+}
+
+/* === PAGER === */
+html[data-theme="dome"] .pager {
+  gap: 12px;
+  padding: 14px 0 2px;
+}
+html[data-theme="dome"] .pager .mono {
+  color: var(--dim);
+  font-size: 12px;
+  min-width: 190px;
+  text-align: center;
+}
+
+/* === JOURNAL === */
+html[data-theme="dome"] .journal-form {
+  gap: 8px;
+  margin-bottom: 10px;
+}
+html[data-theme="dome"] .jentry {
+  font-size: 12.5px;
+  color: var(--faint);
+}
+
+/* === LEGEND === */
+html[data-theme="dome"] .legend {
+  font-size: 12px;
+  color: var(--dim);
+  gap: 14px;
+}
+html[data-theme="dome"] .lg::before {
+  border-radius: 2px;
+}
+
+/* === LEGEND CHIPS === */
+html[data-theme="dome"] .lgchip {
+  border-radius: var(--r-pill);
+  padding: 2px 8px;
+}
+html[data-theme="dome"] .lgchip i {
+  border-radius: 50%;
+}
+
+/* === FRAME IMAGES === */
+html[data-theme="dome"] .frame img {
+  border-radius: var(--r-md);
+}
+
+/* === CAT MODE OVERRIDES === */
+html[data-theme="dome"] body.catmode .brand {
+  color: var(--gold);
+}
+html[data-theme="dome"] body.catmode .brand em {
+  color: var(--text);
+}
+
+/* === RESPONSIVE === */
+/* 901-1200px: compact the bar so it STAYS one row - the tab dock's
+   fixed offset (76px) assumes a single-row bar; a wrapped second row
+   would collide with the dock. */
+@media (max-width: 1200px) {
+  html[data-theme="dome"] .controls { gap: 4px; }
+  html[data-theme="dome"] .controls label { font-size: 10.5px; }
+  html[data-theme="dome"] #topbar select { max-width: 130px; }
+  html[data-theme="dome"] #topbar input[type=date] { max-width: 130px; }
+  html[data-theme="dome"] .minalt input[type=range] { width: 60px; }
+  html[data-theme="dome"] .scrub input[type=range] { max-width: 115px; }
+  html[data-theme="dome"] #topbar select,
+  html[data-theme="dome"] #topbar input:not([type=range]):not([type=checkbox]) {
+    padding: 3px 6px;
+    font-size: 11.5px;
+  }
+  html[data-theme="dome"] .topbar-right { gap: 6px; }
+  html[data-theme="dome"] .modebtn { padding: 3px 10px; font-size: 11.5px; }
+  /* trim decorative bits so the bar stays ONE row and never collides
+     with the fixed tab dock below it */
+  html[data-theme="dome"] .scrub .inline { display: none; }
+  html[data-theme="dome"] #btnModeTxt { display: none; }
+  html[data-theme="dome"] .scrub #timeLabel { font-size: 11px; }
+  /* even after trimming, ~1100px can wrap the bar to a 2nd row -
+     offset the dock + telemetry chip BELOW the worst-case bar so
+     nothing can collide */
+  html[data-theme="dome"] #tabs,
+  html[data-theme="dome"] #tabs-cat { top: 102px; }
+  html[data-theme="dome"] #nightInfo { top: 158px; }
+  html[data-theme="dome"] main { margin-top: 186px; }
+}
+@media (max-width: 900px) {
+  html[data-theme="dome"] #topbar {
+    top: 8px;
+    left: 8px;
+    right: 8px;
+    padding: 6px 12px;
+  }
+  html[data-theme="dome"] #tabs,
+  html[data-theme="dome"] #tabs-cat {
+    top: 96px; /* cushion for a possible second bar row on small windows */
+  }
+  html[data-theme="dome"] main {
+    margin-top: 162px;
+    padding: 16px 12px 40px;
+  }
+  html[data-theme="dome"] .tabpane {
+    padding: 16px 12px 40px;
+  }
+  html[data-theme="dome"] .horiz-layout,
+  html[data-theme="dome"] .arch-layout {
+    grid-template-columns: 1fr;
+  }
+  html[data-theme="dome"] .chart-layout {
+    flex-direction: column;
+  }
+  html[data-theme="dome"] .chart-side {
+    width: 100%;
+  }
+  html[data-theme="dome"] .nightinfo {
+    display: none;
+  }
+  html[data-theme="dome"] body {
+    font-size: 13px;
+  }
+}
+
+@media (max-width: 700px) {
+  html[data-theme="dome"] .modal-box.wide {
+    width: 98vw;
+    padding: 0 12px 16px;
+  }
+  html[data-theme="dome"] .detail-grid {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+/* ===================================================================
+   DESIGNER NOTES - Structural changes & rationale
+   ===================================================================
+   1. BODY: Added deep indigo night gradient + CSS-only starfield via
+      body::before with radial-gradients for 1-3px star dots and a
+      subtle aurora sweep. No external assets, pointer-events:none.
+   
+   2. #topbar: Changed from full-width bar to floating glass bar with
+      position:fixed, 14px inset margins, 18px radius, backdrop-filter
+      blur + translucency. Creates the "inside the dome" floating lens.
+   
+   3. #tabs / #tabs-cat: Changed from full-width strip to centered
+      floating pill dock with position:fixed, transform:translateX(-50%),
+      glass background, pill radius. Active tab gets accent gradient +
+      glow instead of underline.
+   
+   4. Content offset: main gets margin-top:150px to account for
+      floating bar (60px) + dock (46px) + gaps. Prevents content
+      hiding under chrome.
+   
+   5. Cards (.card, .pick): Changed to glass tiles with translucent
+      color-mix backgrounds, backdrop-filter blur(12px), hover lift
+      effect (-2px translateY) + accent glow border.
+   
+   6. Charts: #skyCanvas gets rounded corners + faint glow. .chart-side
+      becomes a glass panel column with separated sections via
+      translucent hairlines.
+   
+   7. Panels (#panoPanel, .archpanel): Same glass language as cards.
+      #panoStage gets rounded corners.
+   
+   8. Tables: .tablewrap becomes glass container with translucent
+      background, blur, rounded corners. Headers and rows use
+      subtle rgba borders.
+   
+   9. Menu: Changed from absolute-positioned dropdown to centered
+      fixed glass sheet with heavy backdrop blur, big shadow, 24px
+      radius. Menu-section headers become pill-labeled section markers.
+   
+  10. Modals: .modal-box gets 22px radius, glass header with blur +
+      translucent hairline. Modal tabs become pill chips.
+   
+  11. Buttons: All buttons get pill radius (999px). Primary buttons
+      get gradient fill + outer glow (box-shadow). Ghost/danger buttons
+      get translucent borders.
+   
+  12. Form controls: Inputs get translucent backgrounds, rounded
+      corners, accent focus glow. Checkboxes get rounded glass shape.
+      Range sliders get thicker tracks + radial-gradient thumbs with
+      accent glow.
+   
+  13. Toasts: Changed to glass notifications with blur + rounded
+      corners. Info toasts get accent border.
+   
+  14. Scrollbar: Thinner, translucent, pill-shaped to match glass
+      language.
+   
+  15. Palette: Deep indigo night sky (#070a16 bg), translucent panels,
+      violet accent (#8f7bff), teal accent2 (#4fd9c1), gold moon
+      (#ffd166). Fonts: Segoe UI/Aptos for UI, Consolas/Cascadia Mono
+      for numbers. Radii generously rounded (r-2xl 24px, r-pill 999px).
+   
+  16. Responsive: Floating chrome adapts to smaller screens, chart
+      layouts stack vertically, nightinfo hides on mobile.
+   
+  17. Never set display on #tabs-cat (only layout properties).
+      Never override .hidden class. All controls remain visible and
+      reachable.
+   
+  18. z-index map: topbar=55, tabs=56, menu sheet=95 (within allowed
+      range 55-95), modals=40, toasts=300, versionTag=5.
+   
+  19. Decorative pseudo-elements (stars, aurora) are pointer-events:none
+      and z-index:0, so they don't interfere with interaction.
+   
+  20. Depth achieved through layered box-shadows, backdrop-filter blur,
+      and translucent borders. Hover states include subtle transforms
+      and glow effects for tactile feedback.
+   =================================================================== */

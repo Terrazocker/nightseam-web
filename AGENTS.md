@@ -1,5 +1,12 @@
 # AGENTS.md
 
+> **Repository status — CANONICAL.** This is the living AstroPilot project:
+> all commits, tags, web releases and deploys happen here.
+> `<archive>\Object-Astro` is a DEPRECATED archive (frozen at v0.4.1) —
+> treat it as read-only and never commit, tag or deploy there. The web
+> sub-version (`web/`, AstroPilot Web v0.5.0) is fully integrated in this
+> repo with the same history and tags (`v0.4.2`, `v0.5.0`).
+
 AstroPilot: a desktop DSO-planning app that runs a local FastAPI server and
 serves a vanilla-JS UI. Pure-Python astronomy (Meeus algorithms) - no
 numpy/astropy, no JS build step, no npm. Works fully offline except optional
@@ -215,6 +222,30 @@ ingest + library), switched via the top-right button or the brand name.
   session.
 - `edge_space` setting (px per side) controls tab content width
   (`100vw - 2*edge`); exposed as a slider in the top-right hamburger menu.
+- Themes: `static/themes.css` holds all alternate looks as pure token
+  overrides of `style.css`'s `:root` variables (plus per-theme character
+  rules), switched via `<html data-theme="...">`. A picker lives in the
+  hamburger menu ("Appearance"); the choice persists as the `theme`
+  setting. An inline head script fetch of `/api/state` applies the saved
+  theme before first paint (one sync XHR, ~1 ms, local only). Themes:
+  "" default, `dome` Glass (the chosen direction: CSS starfield,
+  floating glass bar + attached pill tab dock + telemetry chip +
+  centered sheet menu, draggable popups via `js/dragwin.js`). Earlier
+  themes (obs/log/deep/atlas/etch/instruments/deck/cockpit/dispatch)
+  were removed; a
+  saved `theme` setting naming a removed theme falls back to the
+  default look. To add a theme, copy one block in
+  themes.css and add a `.theme-btn` in `index.html` - no JS changes
+  needed beyond the button's `data-theme` value.
+- Structural themes are pure CSS: one shared HTML skeleton, so layout
+  identity comes from position:fixed rails/docks/drawers, flex order and
+  transforms - never from moving IDs or touching JS. When writing such a
+  theme: never override the `.hidden` class, never set `display` on
+  `#tabs-cat` (app toggles it via `body.catmode`, same for
+  `#plannerControls`/`#tabs`/`#nightInfo`), keep every control visible
+  and clickable, offset `main`/`body` so pinned chrome never covers
+  content, stay below z-index 100 (toasts = 300, popover = 60,
+  modal = 40, #versionTag = 5).
 - `bortle` setting (1-9, hamburger menu) shifts the default min-altitude
   (`17 + 2*bortle`, only when no explicit min alt is stored) and scales the
   moon-aware scoring penalty. Moon-aware scoring uses the angular separation
@@ -259,10 +290,14 @@ ingest + library), switched via the top-right button or the brand name.
   `python web/build_web.py version` (writes gitignored `web/version.json`
   from `git describe`, same idea as `_version_baked.py` for the exe), THEN
   deploy. The web footer reads version.json; without it it shows "dev build".
-- Deploy (Plesk FTPS, pitop.net): `web/ftps_deploy.py uploadtree web /` (and
-  `/astro` mirror, `whale/` -> `/whale/`). Credentials live OUTSIDE the repo:
-  pass `--env <path>` pointing at ftp.env (never committed). Cloudflare
-  serves the remote site and injects a script into delivered index.html —
+- Deploy (Plesk FTPS, pitop.net): the app is served ONLY at `/astro`
+  (`web/ftps_deploy.py uploadtree web /astro`); the site root `/` is a
+  landing page from `landing/` (index.html + style.css + app.png,
+  `web/ftps_deploy.py uploadtree landing /`). Keep `/` free of app files —
+  stale ones are removed with `web/ftps_deploy.py remove <remote-path>`
+  (file or recursive dir). Credentials live OUTSIDE the repo: pass
+  `--env <path>` pointing at ftp.env (never committed). Cloudflare serves
+  the remote site and injects a script into delivered index.html —
   hash-verify only after stripping that block.
 - Sync from the dev mirror: robocopy `<workspace>\Astro-Web` -> `web/` (exclude
   `.git` and `ftp.env`), then commit here. `web/.gitignore` covers the dev

@@ -5,38 +5,169 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>AstroPilot Web — night-planning in your browser</title>
 <meta name="description" content="AstroPilot Web: tonight's best deep-sky targets, live polar sky map and per-object altitude charts — computed entirely in your browser. Catalog: Messier + OpenNGC (12,116 objects).">
+<script>
+/* apply the saved theme before first paint (synchronous, no server) */
+(function(){try{var t=localStorage.getItem('apweb_theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
+</script>
 <link rel="icon" type="image/png" href="app.png">
-<link rel="stylesheet" href="style.css?v=3">
+<link rel="stylesheet" href="style.css?v=4">
+<link rel="stylesheet" href="themes.css?v=1">
 </head>
 <body>
 
 <header class="topbar">
-  <div class="brand">
+  <div class="brand" title="AstroPilot Web">
     <img class="brand-ico" src="app.png" alt="AstroPilot" width="34" height="34">
     <div>
       <h1>AstroPilot <em>Web</em></h1>
       <p class="tagline">night-planning, computed in your browser</p>
     </div>
   </div>
-  <div class="sitebox" id="sitebox">
-    <div class="top-prefs">
-      <label>Min alt <input id="tb-minalt" type="text" inputmode="decimal" placeholder="auto" value=""></label>
-      <label>Site <select id="tb-site" title="observing site"></select></label>
-      <button id="btn-settings" class="iconbtn" title="Settings — sites, rigs, custom targets, backup" aria-label="Settings">⚙</button>
-      <span class="site-note" id="tb-note"></span>
+
+  <div class="planner-controls" id="plannerControls">
+    <label>Site <select id="tb-site"></select></label>
+    <button id="btn-settings" class="ghost" title="Locations &amp; equipment — sites, rigs, custom targets, backup">Setup</button>
+    <label class="nightof">Night of
+      <input type="date" id="tb-date">
+    </label>
+    <label class="minalt" title="Minimum useful altitude for planning">
+      Min alt
+      <input type="range" id="tb-minalt" min="5" max="70" step="1" value="25">
+      <span id="tb-minalt-val" class="mono">25&deg;</span>
+      <span id="tb-note" class="note"></span>
+    </label>
+    <div class="scrub" title="Scrub the sky through its night — syncs Sky View">
+      <input type="range" id="tb-scrub" min="0" max="1440" step="15" value="0">
+      <strong id="tb-scrub-time" class="mono"></strong>
     </div>
-    <label>Lat <input id="in-lat" type="text" inputmode="decimal" value="52.52"></label>
-    <label>Lon <input id="in-lon" type="text" inputmode="decimal" value="13.40"></label>
-    <button id="btn-locate" title="Use my location">use my location</button>
-    <span class="site-note" id="site-note"></span>
+  </div>
+
+  <span id="busy" class="hidden" title="working..."><span class="busy-dot"></span><span class="busy-txt"></span></span>
+
+  <div class="topbar-right">
+    <div id="nightInfo" class="nightinfo"></div>
+    <div class="popwrap menuwrap">
+      <button id="btnMenu" class="ghost menubtn" title="Options">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+          <path d="M4 6h16M4 12h16M4 18h16"/>
+        </svg>
+      </button>
+      <div id="menuPanel" class="popover menu-panel hidden">
+        <div class="menu-section">
+          <h4>Appearance</h4>
+          <div class="theme-row" id="themeRow">
+            <button class="theme-btn" data-theme="" id="themeDefault"><span class="sw" style="background:#4f9cff"></span>Default</button>
+            <button class="theme-btn" data-theme="dome" id="themeDome"><span class="sw" style="background:#8f7bff"></span>Glass</button>
+          </div>
+          <p class="hint">Pick the look; it applies instantly and is remembered.</p>
+        </div>
+        <div class="menu-section">
+          <h4>Layout</h4>
+          <label class="inline">Free space per side <span id="edgeSpaceVal" class="mono">14&nbsp;px</span></label>
+          <input type="range" id="edgeSpace" min="0" max="200" step="4" value="14" style="width:100%">
+          <p class="hint">Lower fills big screens, raise centers content on wide monitors.</p>
+        </div>
+        <div class="menu-section">
+          <h4>Catalog</h4>
+          <label class="inline"><input type="checkbox" id="advMode"> Advanced mode</label>
+          <p class="hint">Standard mode shows the curated 197-object list; advanced adds the full NGC/IC catalog (~12,000 objects to magnitude 20). Changing this reloads the app.</p>
+        </div>
+        <div class="menu-section hidden" id="tzSection">
+          <h4>Timezone</h4>
+          <select id="tzSelect" style="width:100%">
+            <option value="">Site / browser (auto)</option>
+            <option value="UTC">UTC</option>
+            <option value="Europe/London">London (Europe/London)</option>
+            <option value="Europe/Lisbon">Lisbon (Europe/Lisbon)</option>
+            <option value="Europe/Dublin">Dublin (Europe/Dublin)</option>
+            <option value="Europe/Paris">Paris (Europe/Paris)</option>
+            <option value="Europe/Berlin">Berlin (Europe/Berlin)</option>
+            <option value="Europe/Madrid">Madrid (Europe/Madrid)</option>
+            <option value="Europe/Rome">Rome (Europe/Rome)</option>
+            <option value="Europe/Amsterdam">Amsterdam (Europe/Amsterdam)</option>
+            <option value="Europe/Vienna">Vienna (Europe/Vienna)</option>
+            <option value="Europe/Zurich">Zurich (Europe/Zurich)</option>
+            <option value="Europe/Stockholm">Stockholm (Europe/Stockholm)</option>
+            <option value="Europe/Oslo">Oslo (Europe/Oslo)</option>
+            <option value="Europe/Helsinki">Helsinki (Europe/Helsinki)</option>
+            <option value="Europe/Warsaw">Warsaw (Europe/Warsaw)</option>
+            <option value="Europe/Prague">Prague (Europe/Prague)</option>
+            <option value="Europe/Athens">Athens (Europe/Athens)</option>
+            <option value="Europe/Istanbul">Istanbul (Europe/Istanbul)</option>
+            <option value="Europe/Kyiv">Kyiv (Europe/Kyiv)</option>
+            <option value="Europe/Moscow">Moscow (Europe/Moscow)</option>
+            <option value="America/St_Johns">Newfoundland (America/St_Johns)</option>
+            <option value="America/Halifax">Halifax (America/Halifax)</option>
+            <option value="America/New_York">New York (America/New_York)</option>
+            <option value="America/Toronto">Toronto (America/Toronto)</option>
+            <option value="America/Chicago">Chicago (America/Chicago)</option>
+            <option value="America/Mexico_City">Mexico City (America/Mexico_City)</option>
+            <option value="America/Denver">Denver (America/Denver)</option>
+            <option value="America/Vancouver">Vancouver (America/Vancouver)</option>
+            <option value="America/Los_Angeles">Los Angeles (America/Los_Angeles)</option>
+            <option value="America/Anchorage">Anchorage (America/Anchorage)</option>
+            <option value="America/Honolulu">Honolulu (America/Honolulu)</option>
+            <option value="America/Sao_Paulo">S&#227;o Paulo (America/Sao_Paulo)</option>
+            <option value="America/Argentina/Buenos_Aires">Buenos Aires (America/Argentina/Buenos_Aires)</option>
+            <option value="America/Santiago">Santiago (America/Santiago)</option>
+            <option value="America/Lima">Lima (America/Lima)</option>
+            <option value="America/Bogota">Bogot&#225; (America/Bogota)</option>
+            <option value="Asia/Dubai">Dubai (Asia/Dubai)</option>
+            <option value="Asia/Kolkata">Mumbai (Asia/Kolkata)</option>
+            <option value="Asia/Singapore">Singapore (Asia/Singapore)</option>
+            <option value="Asia/Hong_Kong">Hong Kong (Asia/Hong_Kong)</option>
+            <option value="Asia/Shanghai">Shanghai (Asia/Shanghai)</option>
+            <option value="Asia/Tokyo">Tokyo (Asia/Tokyo)</option>
+            <option value="Asia/Seoul">Seoul (Asia/Seoul)</option>
+            <option value="Australia/Perth">Perth (Australia/Perth)</option>
+            <option value="Australia/Sydney">Sydney (Australia/Sydney)</option>
+            <option value="Pacific/Auckland">Auckland (Pacific/Auckland)</option>
+          </select>
+          <p class="hint">Plan and display the night in this zone (only in advanced mode). Empty = the active site's zone, or this browser's zone. DST is applied per date.</p>
+        </div>
+        <div class="menu-section">
+          <h4>Target scoring</h4>
+          <label class="inline"><input type="checkbox" id="moonAware"> Moon-aware ranking</label>
+          <p class="hint">Ranks targets down while the Moon is up; objects far from the Moon and clusters survive moonlight best.</p>
+          <label class="inline">Bortle sky class <span id="bortleVal" class="mono">4</span>
+            <input type="range" id="bortle" min="1" max="9" step="1" value="4" style="width:100%">
+          </label>
+          <p class="hint">1 = pristine dark sky, 9 = city centre. Darker skies lower the default minimum altitude and weaken moonlight penalties.</p>
+          <label class="inline"><input type="checkbox" id="hideSeen"> Hide observed</label>
+        </div>
+        <div class="menu-section">
+          <h4>Equipment filters</h4>
+          <div class="chkrow">
+            <label class="inline"><input type="checkbox" id="fltBb"> Broadband (L)</label>
+            <label class="inline"><input type="checkbox" id="fltHa"> H&#945;</label>
+            <label class="inline"><input type="checkbox" id="fltOiii"> OIII/SII</label>
+          </div>
+          <p class="hint">Objects you own filters for are marked in the lists.</p>
+        </div>
+        <div class="menu-section">
+          <h4>Object size units</h4>
+          <select id="sizeUnit" style="width:100%">
+            <option value="arcmin">Arcminutes (&prime;)</option>
+            <option value="arcsec">Arcseconds (&Prime;)</option>
+            <option value="deg">Degrees (&deg;)</option>
+          </select>
+        </div>
+        <div class="menu-section">
+          <h4>Imaging rig (framing)</h4>
+          <select id="rigSelect" style="width:100%">
+            <option value="">None &mdash; no frame coverage shown</option>
+          </select>
+        </div>
+      </div>
+    </div>
   </div>
 </header>
 
 <nav class="tabs" id="tabs">
-  <a href="#tonight" data-v="tonight">Tonight</a>
-  <a href="#sky" data-v="sky">Sky map</a>
-  <a href="#catalog" data-v="catalog">Catalog</a>
-  <a href="#horizon" data-v="horizon">Horizon</a>
+  <a href="#tonight" data-v="tonight" class="active">Tonight</a>
+  <a href="#catalog" data-v="catalog">Targets</a>
+  <a href="#sky" data-v="sky">Sky View</a>
+  <a href="#horizon" data-v="horizon">Horizon &amp; Obstacles</a>
 </nav>
 
 <main id="view">
@@ -55,6 +186,6 @@
 <div class="modal-wrap" id="modal" hidden></div>
 <div class="tooltip" id="tooltip" hidden></div>
 
-<script type="module" src="app.js?v=16"></script>
+<script type="module" src="app.js?v=17"></script>
 </body>
 </html>

@@ -13,6 +13,7 @@ Usage:
   python ftps_deploy.py download <remote-name> <local-file> [--env PATH]
   python ftps_deploy.py uploadmany <local-dir> <remote-dir> [--env PATH]   # flat files
   python ftps_deploy.py uploadtree <local-dir> <remote-dir> [--env PATH]   # recursive
+  python ftps_deploy.py remove <remote-path> [--env PATH]                  # file or dir tree
 """
 import pathlib
 import sys
@@ -74,6 +75,28 @@ def mkd_tree(ftp, remote):
             pass  # already exists
 
 
+def remove_remote(ftp, path):
+    """Delete a remote file, or a directory and everything under it."""
+    try:
+        ftp.delete(path)
+        print(f"deleted {path}")
+        return
+    except Exception:
+        pass  # not a file - try as directory
+    try:
+        names = ftp.nlst(path)
+    except Exception as exc:
+        raise SystemExit(f"cannot remove {path}: {exc}")
+    for name in names:
+        child = name if name.startswith("/") else f"{path}/{name}"
+        remove_remote(ftp, child)
+    try:
+        ftp.rmd(path)
+        print(f"removed dir {path}")
+    except Exception as exc:
+        raise SystemExit(f"rmdir {path} failed: {exc}")
+
+
 def main():
     argv = sys.argv[1:]
     if not argv:
@@ -126,6 +149,8 @@ def main():
                     with open(item, "rb") as fh:
                         ftp.storbinary(f"STOR {remote}/{item.name}", fh)
                     print(f"uploaded {item.name} -> {remote}/{item.name}")
+        elif cmd == "remove":
+            remove_remote(ftp, argv[1])
         else:
             print(f"unknown command: {cmd}", file=sys.stderr)
             sys.exit(2)

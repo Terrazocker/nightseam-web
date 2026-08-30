@@ -13,4 +13,6 @@ data/panos/*
 !data/panos/.gitkeep
 data/imgcache/
 data/instance.json
+theme-preview/
+.dsh-vision-toolkit/
 logs/

@@ -5,7 +5,7 @@ import { S } from "./state.js";
 import { api } from "./util.js";
 import { loadNight } from "./night.js";
 import { recomputeNightDerived } from "./derive.js";
-import { bindHeader, renderNightInfo, updateTimeLabel } from "./header.js";
+import { bindHeader, renderNightInfo, updateTimeLabel, applySavedTheme } from "./header.js";
 import { bindTonight, renderTonight } from "./tonight.js";
 import { bindFilters, renderTargets, populateConstFilter } from "./targets.js";
 import { bindSetup, applyCfgToUI } from "./setup.js";
@@ -14,6 +14,7 @@ import { bindSky, renderSky } from "./skyview.js";
 import { Pano } from "./pano.js";
 import { bindArchive, applyArchiveUI, loadLibrary } from "./archive.js";
 import { bindSkyMap, renderSkyMap } from "./skymap.js";
+import { initDragWindows } from "./dragwin.js";
 
 /* ---------------- tabs ---------------- */
 function bindTabs() {
@@ -55,6 +56,8 @@ async function loadState() {
   const vt = $("#versionTag");
   if (vt) vt.textContent = "AstroPilot v" + (S.cfg.version || "1.0.0");
 
+  applySavedTheme(S.cfg.theme);   // syncs the menu when the head script missed
+
   applyCfgToUI();
   S.observedIds = new Set((S.cfg.observed || []).map(x => x.object_id));
   $("#dateInput").value = todayLocal();   // zone-aware local date
@@ -70,6 +73,9 @@ async function loadState() {
 /* ---------------- boot ---------------- */
 async function init() {
   $("#dateInput").value = new Date().toLocaleDateString("sv"); // YYYY-MM-DD local
+
+  // draggable popup windows (active in the Glass theme)
+  initDragWindows();
 
   // cross-view reactions
   document.addEventListener("night:loaded", () => {

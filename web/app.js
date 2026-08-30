@@ -12,6 +12,7 @@ import * as E from './astro.js?v=3';
 import * as Hor from './horizon.js?v=10';
 import * as WS from './webstore.js?v=1';
 import { meteorShower } from './meteor.js?v=1';
+import { initDragWindows } from './dragwin.js?v=1';
 
 const TYPE_COLORS = {
   galaxy: '#ffd166',
@@ -54,7 +55,9 @@ function activeSite() { return SITES.find((s) => s.id === S.site.id) || SITES[0]
 /** Apply a site record as the active one (state, timezone, top bar). */
 function applyActiveSite(site) {
   S.site = { lat: site.lat, lon: site.lon, label: site.name, id: site.id, tz: site.tz || null };
-  WS.setActiveTz(site.tz || null);
+  // global timezone override (hamburger menu, advanced mode) wins over the site's
+  const tzPref = Hor.getPrefs().tz;
+  WS.setActiveTz(tzPref || site.tz || null);
   Hor.setPrefs({ activeSiteId: site.id });
   const sel = $('#tb-site');
   if (sel) {
@@ -130,7 +133,7 @@ function computeObs(obj, jd0, jd1, step, minAlt, pano, lat, lon) {
 }
 function obsNightGrid() {
   const { lat, lon } = S.site;
-  const info = E.nightInfo(WS.effToday(), lat, lon);
+  const info = E.nightInfo(nightAnchor(), lat, lon);
   const startT = info.civilDusk || info.sunset || new Date(S.date.getFullYear(), S.date.getMonth(), S.date.getDate(), 20, 0);
   const endT = info.civilDawn || info.sunrise || new Date(S.date.getFullYear(), S.date.getMonth(), S.date.getDate() + 1, 5, 0);
   return {
@@ -148,6 +151,94 @@ function cachedPctText(oid) {
   const v = obsCache.get(obsKey(obsNightGrid(), oid));
   if (!v) return '…';
   return `${v.pct}%`;
+}
+
+/* ---- desktop-parity helpers: night anchor, catalog mode, units, rig, filters ---- */
+
+/** The date the "night of" is anchored to: the topbar date if set, else
+ *  the effective today at the active site. */
+function nightAnchor() {
+  if (S.date && S.date instanceof Date && !isNaN(S.date)) return S.date;
+  return WS.effToday();
+}
+
+/** Standard vs advanced catalog (desktop parity: curated 197 vs full 12k). */
+function advMode() { return !!Hor.getPrefs().advMode; }
+function activeCatalog() {
+  return advMode() ? CAT : CAT.filter((o) => !o._adv);
+}
+
+const SIZE_UNIT_MULT = { arcmin: 1, arcsec: 60, deg: 1 / 60 };
+/** Format an object's size string ("6x4" arcmin) in the chosen unit. */
+function fmtSize(o) {
+  const raw = o && o.size_am;
+  if (!raw) return '';
+  const unit = Hor.getPrefs().sizeUnit || 'arcmin';
+  const m = String(raw).toLowerCase().match(/([\d.]+)\s*x\s*([\d.]+)/);
+  if (!m) return raw;
+  const mult = SIZE_UNIT_MULT[unit] || 1;
+  const a = parseFloat(m[1]) * mult, b = parseFloat(m[2]) * mult;
+  const fmt = (x) => (x >= 100 ? x.toFixed(0) : x >= 10 ? x.toFixed(1) : x.toFixed(2));
+  return `${fmt(a)}×${fmt(b)}${unit === 'arcmin' ? '′' : unit === 'arcsec' ? '″' : '°'}`;
+}
+
+/** Largest dimension in arcminutes (for rig framing). */
+function sizeArcmin(o) {
+  const raw = o && o.size_am;
+  if (!raw) return null;
+  const m = String(raw).toLowerCase().match(/([\d.]+)\s*x\s*([\d.]+)/);
+  if (!m) return null;
+  return Math.max(parseFloat(m[1]), parseFloat(m[2]));
+}
+
+const RIGS = []; // rig records (filled at boot)
+function activeRig() {
+  const id = Hor.getPrefs().activeRigId;
+  return RIGS.find((r) => r.id === id) || null;
+}
+
+/** Frame coverage % for an object with the active rig (fov vs object size). */
+function rigFramePct(o) {
+  const rig = activeRig();
+  if (!rig || !(rig.fov_w > 0)) return null;
+  const size = sizeArcmin(o);
+  if (size == null || size <= 0) return null;
+  return Math.max(0, Math.min(100, Math.round(100 * (rig.fov_w * 60) / size)));
+}
+
+/** Which filter the object wants, if owned. */
+function filterOwned(o) {
+  const p = Hor.getPrefs();
+  const want = { nebula: 'OIII', supernova_remnant: 'Ha', star_cloud: 'L', planetary: 'OIII' }[o.otype];
+  if (!want) return null;
+  const own = want === 'L' ? p.fltBb : want === 'Ha' ? p.fltHa : p.fltOiii;
+  return own ? want : null;
+}
+
+/* ---- busy indicator (desktop parity) ---- */
+function busy(on, text) {
+  const el = $('#busy');
+  if (!el) return;
+  el.classList.toggle('hidden', !on);
+  const t = el.querySelector('.busy-txt');
+  if (t) t.textContent = text || '';
+}
+
+/* ---- theme (desktop parity) ---- */
+const THEME_KEY = 'apweb_theme';
+/** Commit a theme choice (user action): apply attribute + persist. */
+function applyTheme(t) {
+  if (t) document.documentElement.setAttribute('data-theme', t);
+  else document.documentElement.removeAttribute('data-theme');
+  try { if (t) localStorage.setItem(THEME_KEY, t); else localStorage.removeItem(THEME_KEY); } catch { /* ignore */ }
+  reflectTheme();
+}
+/** Sync the picker's active state only — never touches storage or the
+ *  attribute (boot must not undo the theme the head script applied). */
+function reflectTheme() {
+  const t = document.documentElement.getAttribute('data-theme') || '';
+  const row = $('#themeRow');
+  if (row) row.querySelectorAll('.theme-btn').forEach((b) => b.classList.toggle('active', b.dataset.theme === t));
 }
 
 /** Toggle the observed mark for an object (quick ✓ in lists). */
@@ -298,10 +389,11 @@ function renderTonight() {
   splashText('computing tonight…');
   const box = $('#view');
   box.innerHTML = `<div class="splash"><div class="splash-inner"><div class="spinner"></div><p id="splash-text">computing tonight…</p></div></div>`;
+  busy(true, 'ranking targets…');
   // defer heavy math so the UI paints first
   setTimeout(() => {
     const { lat, lon } = S.site;
-    const info = E.nightInfo(WS.effToday(), lat, lon);
+    const info = E.nightInfo(nightAnchor(), lat, lon);
     const jdNow = E.julianDay(new Date());
     const mo = E.moonPhase(jdNow);
 
@@ -330,7 +422,7 @@ function renderTonight() {
     }
 
     const hideSeen = !!Hor.getPrefs().hideSeen;
-    const candidates = CAT.filter((o) => o.vmag != null && (!o._adv || o.vmag <= 9) && o.vmag < 14
+    const candidates = activeCatalog().filter((o) => o.vmag != null && (!o._adv || o.vmag <= 9) && o.vmag < 14
       && (!hideSeen || !OBSERVED.has(o.id)));
     const rows = [];
     for (const o of candidates) {
@@ -395,9 +487,10 @@ function renderTonight() {
         ? `clear ${fmtClock(E.dateFromJD(r.bestStart))} – ${fmtClock(E.dateFromJD(r.bestStart + r.bestRun * step))}`
         : 'no clear window';
       const seen = OBSERVED.has(o.id);
+      const fOwn = filterOwned(o);
       return `<li data-id="${esc(o.id)}">
         <span class="dot" style="background:${typeColor(o)}"></span>
-        <span>${r.flash >= 60 ? '<span class="p-flash">✨</span> ' : ''}<span class="p-name">${esc(o.primary_name)}</span>${tags ? `<span class="p-tags">${esc(tags)}</span>` : ''}</span>
+        <span>${r.flash >= 60 ? '<span class="p-flash">✨</span> ' : ''}<span class="p-name">${esc(o.primary_name)}</span>${tags ? `<span class="p-tags">${esc(tags)}</span>` : ''}${fOwn ? `<span class="f-own" title="filter owned">${esc(fOwn)}</span>` : ''}</span>
         <span class="p-right"><button class="seen" data-seen="${esc(o.id)}" title="${seen ? 'observed — click to unmark' : 'not observed — click to mark'}" aria-label="observed toggle">${seen ? '✓' : '○'}</button>
           <b>${r.maxAlt.toFixed(0)}°</b>
           <span class="p-vis">${r.visN ? `${r.obsPct}% of night · ${fmtDur(r.visN * step * 1440)} visible` : 'not clear tonight'}</span>${win}</span>
@@ -438,13 +531,14 @@ function renderTonight() {
           <span class="p-right"><b>transit ${fmtClock(E.dateFromJD(r.transitJd))}</b>peaks ${r.maxAlt.toFixed(0)}°</span>
         </li>`).join('') : '<li style="cursor:default">everything already up or setting</li>'}</ul></div>
       </div>
-      <p class="cat-count" style="margin-top:10px;text-align:center">night of ${dateKey(WS.effToday())} · ${esc(S.site.label || `${S.site.lat.toFixed(2)}, ${S.site.lon.toFixed(2)}`)} · horizon: ${pano ? esc(pano.name) : 'none'} · flash-aware ranking · click any target for details</p>`;
+      <p class="cat-count" style="margin-top:10px;text-align:center">night of ${dateKey(nightAnchor())} · ${esc(S.site.label || `${S.site.lat.toFixed(2)}, ${S.site.lon.toFixed(2)}`)} · horizon: ${pano ? esc(pano.name) : 'none'} · flash-aware ranking · click any target for details</p>`;
     box.querySelectorAll('.pick li[data-id]').forEach((li) => li.addEventListener('click', () => openDetail(li.dataset.id)));
     box.querySelectorAll('button[data-seen]').forEach((b) => b.addEventListener('click', (ev) => {
       ev.stopPropagation();
       toggleSeen(b.dataset.seen);
     }));
     hideSplash();
+    busy(false);
   }, 30);
 }
 
@@ -493,9 +587,10 @@ function renderSky() {
   const ctx = cvs.getContext('2d');
   const tip = $('#tooltip');
 
+  const base = activeCatalog();
   const candidates = [
-    ...CAT.filter((o) => !o._adv),
-    ...CAT.filter((o) => o._adv && o.vmag != null && o.vmag <= 9.5)
+    ...base.filter((o) => !o._adv),
+    ...base.filter((o) => o._adv && o.vmag != null && o.vmag <= 9.5)
       .sort((a, b) => (a.vmag ?? 99) - (b.vmag ?? 99)).slice(0, 1400),
   ];
 
@@ -729,7 +824,7 @@ const CHIP_FILTERS = {
 function filteredCatalog() {
   const f = S.cat;
   const q = f.q.trim().toLowerCase();
-  let out = CAT.filter((o) => CHIP_FILTERS[f.chip](o));
+  let out = activeCatalog().filter((o) => CHIP_FILTERS[f.chip](o));
   if (f.con) out = out.filter((o) => o.constellation === f.con);
   if (f.hideSeen) out = out.filter((o) => !OBSERVED.has(o.id));
   if (q) out = out.filter((o) => searchBlob(o).includes(q));
@@ -761,6 +856,8 @@ function renderCatalog() {
   const pages = Math.max(1, Math.ceil(list.length / perPage));
   if (S.cat.page >= pages) S.cat.page = 0;
   const slice = list.slice(S.cat.page * perPage, (S.cat.page + 1) * perPage);
+  const rig = activeRig();
+  const showFrame = !!rig && rig.fov_w > 0;
 
   const th = (key, label, num = false) =>
     `<th class="${num ? 'num' : ''}" data-k="${key}">${label}${S.cat.sort === key ? (S.cat.up ? ' ▲' : ' ▼') : ''}</th>`;
@@ -774,24 +871,27 @@ function renderCatalog() {
         ${CONSTELLATIONS.map((c) => `<option value="${esc(c)}"${S.cat.con === c ? ' selected' : ''}>${esc(c)}</option>`).join('')}
       </select>
       <label class="chk" title="hide objects you have already observed"><input type="checkbox" id="cat-hide-seen"${S.cat.hideSeen ? ' checked' : ''}> hide seen</label>
-      <span class="cat-count">${list.length.toLocaleString()} of ${CAT.length.toLocaleString()} objects</span>
+      <span class="cat-count">${list.length.toLocaleString()} of ${CAT.length.toLocaleString()} objects${advMode() ? '' : ' (standard mode)'}</span>
       <span class="cat-count" id="pct-status" style="margin-left:12px"></span>
     </div>
     <div class="card" style="padding:8px 10px">
       <table class="cat">
-        <thead><tr><th class="seen-th" title="observed"></th>${th('name', 'Name')}${th('mag', 'Mag', true)}${th('pct', '% visibility', true)}${th('type', 'Type')}${th('con', 'Con')}${th('size', 'Size', true)}${th('ra', 'RA', true)}${th('dec', 'Dec', true)}</tr></thead>
+        <thead><tr><th class="seen-th" title="observed"></th>${th('name', 'Name')}${th('mag', 'Mag', true)}${th('pct', '% visibility', true)}${th('type', 'Type')}${th('con', 'Con')}${th('size', 'Size', true)}${showFrame ? `<th class="frame" title="frame coverage with the active rig">Frame</th>` : ''}${th('ra', 'RA', true)}${th('dec', 'Dec', true)}</tr></thead>
         <tbody>
           ${slice.map((o) => {
             const tags = [o.messier, o.ngcic].filter(Boolean).join(' · ');
             const seen = OBSERVED.has(o.id);
+            const fOwn = filterOwned(o);
+            const fp = showFrame ? rigFramePct(o) : null;
             return `<tr data-id="${esc(o.id)}">
               <td class="seen-td"><button class="seen" data-seen="${esc(o.id)}" title="${seen ? 'observed — click to unmark' : 'not observed — click to mark'}" aria-label="observed toggle">${seen ? '✓' : '○'}</button></td>
-              <td><span class="tname">${esc(o.primary_name)}</span> ${tags ? `<span class="tags">${esc(tags)}</span>` : ''}</td>
+              <td><span class="tname">${esc(o.primary_name)}</span> ${tags ? `<span class="tags">${esc(tags)}</span>` : ''}${fOwn ? `<span class="f-own" title="filter owned">${esc(fOwn)}</span>` : ''}</td>
               <td class="num">${o.vmag != null ? o.vmag.toFixed(1) : '—'}</td>
               <td class="num pct" data-objid="${escAttr(o.id)}">${cachedPctText(o.id)}</td>
               <td><span class="tag-dot" style="color:${typeColor(o)}">●</span> ${TYPE_LABELS[o.otype] || o.otype}</td>
               <td>${esc(o.constellation)}</td>
-              <td class="num">${esc(o.size_am || '')}</td>
+              <td class="num">${esc(fmtSize(o))}</td>
+              ${showFrame ? `<td class="frame">${fp == null ? '—' : fp >= 100 ? '<span class="fit">fits</span>' : fp + '%'}</td>` : ''}
               <td class="num">${E.formatRA(o.ra_hours)}</td>
               <td class="num">${E.formatDec(o.dec_deg)}</td>
             </tr>`;
@@ -837,6 +937,7 @@ function warmPct(list) {
   const status = document.querySelector('#pct-status');
   const total = missing.length;
   if (!total) return;
+  busy(true, 'computing visibility…');
   let i = 0;
   const tick = () => {
     const t0 = performance.now();
@@ -849,6 +950,7 @@ function warmPct(list) {
     if (i < missing.length) setTimeout(tick, 0);
     else {
       if (status) status.textContent = '';
+      busy(false);
       renderCatalog();
     }
   };
@@ -886,7 +988,7 @@ function openDetail(id) {
   const modal = $('#modal');
   const pano = Hor.activePano();
   const { lat, lon } = S.site;
-  const info = E.nightInfo(WS.effToday(), lat, lon);
+  const info = E.nightInfo(nightAnchor(), lat, lon);
   const jd = E.julianDay(new Date());
   const [altNow, azNow] = E.altaz(o.ra_hours * 15, o.dec_deg, jd, lat, lon);
   const localMidnight = new Date(S.date.getFullYear(), S.date.getMonth(), S.date.getDate(), 0, 30);
@@ -897,8 +999,10 @@ function openDetail(id) {
 
   modal.innerHTML = `
     <div class="modal" role="dialog">
-      <button class="close" id="m-close" title="close">✕</button>
-      <h2>${esc(o.primary_name)}</h2>
+      <div class="modal-head">
+        <h2>${esc(o.primary_name)}</h2>
+        <button class="close" id="m-close" title="close">✕</button>
+      </div>
       <span class="tags">${tags}</span>
       <div class="detail-grid">
         <div id="objimg-wrap">
@@ -909,7 +1013,7 @@ function openDetail(id) {
           <dl class="meta">
             <dt>Type</dt><dd><span style="color:${typeColor(o)}">●</span> ${TYPE_LABELS[o.otype] || o.otype}</dd>
             <dt>Magnitude</dt><dd>${o.vmag != null ? o.vmag.toFixed(1) : '—'}</dd>
-            <dt>Size</dt><dd>${esc(o.size_am || '—')} arcmin</dd>
+            <dt>Size</dt><dd>${esc(fmtSize(o)) || '—'}</dd>
             <dt>Constellation</dt><dd>${esc(o.constellation || '—')}</dd>
             <dt>Distance</dt><dd>${esc(o.distance || '—')}</dd>
             <dt>RA / Dec (J2000)</dt><dd>${E.formatRA(o.ra_hours)} · ${E.formatDec(o.dec_deg)}</dd>
@@ -1280,8 +1384,22 @@ async function renderSettings() {
 
   modal.innerHTML = `
     <div class="modal settings" role="dialog">
-      <button class="close" id="m-close" title="close">✕</button>
-      <h2>Settings</h2>
+      <div class="modal-head">
+        <h2>Settings</h2>
+        <button class="close" id="m-close" title="close">✕</button>
+      </div>
+      <div class="card">
+        <h3>Active site</h3>
+        <div class="set-form" style="margin-top:0">
+          <label>Latitude <input type="text" inputmode="decimal" id="sf-quick-lat"></label>
+          <label>Longitude <input type="text" inputmode="decimal" id="sf-quick-lon"></label>
+          <div class="btnrow">
+            <button class="btn primary" id="sf-quick-save">Update active site</button>
+            <button class="btn" id="sf-quick-locate">use my location</button>
+            <span class="sub" id="sf-quick-note" style="align-self:center"></span>
+          </div>
+        </div>
+      </div>
       <div class="card">
         <h3>Sites</h3>
         <ul class="pick" id="set-sites">${sites.length ? sites.map(siteRow).join('') : '<li style="cursor:default">no site yet — add one below</li>'}</ul>
@@ -1346,6 +1464,37 @@ async function renderSettings() {
 
   $('#m-close').addEventListener('click', closeModal);
   modal.addEventListener('click', (ev) => { if (ev.target === modal) closeModal(); });
+
+  // — quick active-site coordinates —
+  const qlat = $('#sf-quick-lat'), qlon = $('#sf-quick-lon'), qnote = $('#sf-quick-note');
+  if (qlat && qlon) {
+    qlat.value = S.site.lat.toFixed(4);
+    qlon.value = S.site.lon.toFixed(4);
+  }
+  const qApply = async (lat, lon) => {
+    if (!Number.isFinite(lat) || !Number.isFinite(lon) || lat < -90 || lat > 90 || lon < -180 || lon > 180) {
+      if (qnote) qnote.textContent = 'invalid coordinates';
+      return;
+    }
+    const rec = activeSite();
+    if (rec) {
+      rec.lat = lat; rec.lon = lon;
+      await WS.saveSiteRec(rec);
+      applyActiveSite(rec);
+    } else {
+      S.site = { ...S.site, lat, lon };
+    }
+    if (qnote) qnote.textContent = rec ? 'saved — ' + rec.name : 'saved';
+    refreshView();
+  };
+  const qsave = $('#sf-quick-save');
+  if (qsave) qsave.addEventListener('click', () => qApply(Hor.num(qlat.value), Hor.num(qlon.value)));
+  const qloc = $('#sf-quick-locate');
+  if (qloc) qloc.addEventListener('click', () => {
+    if (!navigator.geolocation) { if (qnote) qnote.textContent = 'geolocation unavailable'; return; }
+    navigator.geolocation.getCurrentPosition((pos) => qApply(pos.coords.latitude, pos.coords.longitude),
+      () => { if (qnote) qnote.textContent = 'location denied'; });
+  });
 
   // — sites —
   if ($('#set-sites')) $('#set-sites').querySelectorAll('li[data-id]').forEach((li) => {
@@ -1583,8 +1732,10 @@ function welcomeFlow() {
     const modal = $('#modal');
     modal.innerHTML = `
       <div class="modal welcome" role="dialog">
-        <h2>👋 Welcome to AstroPilot Web</h2>
-        <p class="sub">Where will you observe? You can add more sites any time via ⚙ Settings.</p>
+        <div class="modal-head">
+          <h2>👋 Welcome to AstroPilot Web</h2>
+        </div>
+        <p class="sub">Where will you observe? You can add more sites any time via Setup in the top bar.</p>
         <div class="set-form">
           <label>Site name <input type="text" id="w-name" value="My observing site"></label>
           <label>Latitude <input type="text" inputmode="decimal" id="w-lat" value="52.52"></label>
@@ -1686,52 +1837,8 @@ async function boot() {
   if (fv) fv.textContent = ver ? `AstroPilot Web ${ver.version}` : 'dev build';
   splashText(`catalog ready · ${CAT.length.toLocaleString()} objects · site “${S.site.label}”`);
 
-  // ---- site controls: quick-edit the active site's coordinates ----
-  const syncSiteInputs = () => {
-    $('#in-lat').value = S.site.lat;
-    $('#in-lon').value = S.site.lon;
-    $('#site-note').textContent = S.site.label || '';
-  };
-  syncSiteInputs();
-  const applySite = async () => {
-    const lat = Hor.num($('#in-lat').value);
-    const lon = Hor.num($('#in-lon').value);
-    if (Number.isFinite(lat) && Number.isFinite(lon) && lat >= -90 && lat <= 90 && lon >= -180 && lon <= 180) {
-      const rec = activeSite();
-      if (rec) {
-        rec.lat = lat; rec.lon = lon;
-        await WS.saveSiteRec(rec);
-        applyActiveSite(rec);
-      } else {
-        S.site = { ...S.site, lat, lon };
-      }
-      syncSiteInputs();
-      refreshView();
-    } else {
-      $('#in-lat').value = S.site.lat;
-      $('#in-lon').value = S.site.lon;
-      $('#site-note').textContent = S.site.label + ' (invalid input)';
-    }
-  };
-  $('#in-lat').addEventListener('change', applySite);
-  $('#in-lon').addEventListener('change', applySite);
-  $('#btn-locate').addEventListener('click', () => {
-    if (!navigator.geolocation) { $('#site-note').textContent = 'geolocation unavailable'; return; }
-    navigator.geolocation.getCurrentPosition(async (pos) => {
-      const rec = activeSite();
-      if (rec) {
-        rec.lat = pos.coords.latitude;
-        rec.lon = pos.coords.longitude;
-        await WS.saveSiteRec(rec);
-        applyActiveSite(rec);
-      } else {
-        S.site = { ...S.site, lat: pos.coords.latitude, lon: pos.coords.longitude };
-      }
-      syncSiteInputs();
-      refreshView();
-      $('#site-note').textContent = S.site.label + ' — location set';
-    }, () => { $('#site-note').textContent = 'location denied'; });
-  });
+  // ---- site controls: the active site's coordinates are edited in
+  // Setup → Active site (desktop parity); quick-edit handled there ----
   const ts = $('#tb-site');
   if (ts) ts.addEventListener('change', (ev) => {
     const s = SITES.find((x) => x.id === ev.target.value);
@@ -1739,19 +1846,170 @@ async function boot() {
   });
   $('#btn-settings').addEventListener('click', () => { renderSettings(); });
 
-  // top-bar planning prefs (min altitude, bortle, moon-aware) — shared with Horizon
+  // — topbar: min-alt slider (desktop parity) —
   const syncTopPrefs = () => {
     const p = Hor.getPrefs();
-    $('#tb-minalt').value = p.minAlt != null ? p.minAlt : '';
-    $('#tb-note').textContent = `eff. min ${Hor.effectiveMinAlt().toFixed(0)}°`;
+    const eff = Hor.effectiveMinAlt();
+    const mua = $('#tb-minalt'), muaV = $('#tb-minalt-val'), note = $('#tb-note');
+    if (mua) mua.value = String(eff);
+    if (muaV) muaV.textContent = eff + '°';
+    if (note) note.textContent = p.minAlt == null ? 'auto (bortle)' : 'explicit';
   };
   syncTopPrefs();
   const applyMinAlt = (ev) => {
     const v = Hor.num(ev.target.value);
-    Hor.setPrefs({ minAlt: Number.isFinite(v) && v >= 0 && v <= 89 ? v : null });
+    Hor.setPrefs({ minAlt: Number.isFinite(v) && v >= 5 && v <= 89 ? v : null });
     syncTopPrefs(); refreshView();
   };
+  $('#tb-minalt').addEventListener('input', applyMinAlt);
   $('#tb-minalt').addEventListener('change', applyMinAlt);
+
+  // — topbar: night of (date) —
+  const dateEl = $('#tb-date');
+  if (dateEl) {
+    const today = WS.effToday();
+    dateEl.value = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    dateEl.addEventListener('change', (ev) => {
+      const v = ev.target.value;
+      if (v) {
+        const [y, m, d] = v.split('-').map(Number);
+        S.date = new Date(y, m - 1, d, 12, 0, 0);
+      } else {
+        S.date = null;
+      }
+      refreshView();
+    });
+  }
+
+  // — topbar: night scrub (syncs Sky View time) —
+  const scrub = $('#tb-scrub'), scrubT = $('#tb-scrub-time');
+  if (scrub) {
+    const syncScrub = () => {
+      const wallNow = WS.utcToWall(S.skyTime);
+      const rangeStart = WS.wallToUtc(new Date(wallNow.getFullYear(), wallNow.getMonth(), wallNow.getDate(), 12, 0, 0));
+      const mins = Math.max(0, Math.min(1440, Math.round((S.skyTime.getTime() - rangeStart.getTime()) / 60000)));
+      scrub.value = String(mins);
+      if (scrubT) scrubT.textContent = fmtClock(S.skyTime);
+    };
+    syncScrub();
+    const onScrub = () => {
+      const wallNow = WS.utcToWall(S.skyTime);
+      const rangeStart = WS.wallToUtc(new Date(wallNow.getFullYear(), wallNow.getMonth(), wallNow.getDate(), 12, 0, 0));
+      S.skyTime = new Date(rangeStart.getTime() + Number(scrub.value) * 60000);
+      if (scrubT) scrubT.textContent = fmtClock(S.skyTime);
+      window.dispatchEvent(new CustomEvent('sky:time'));
+      if (S.view === 'sky') refreshView();
+    };
+    scrub.addEventListener('input', onScrub);
+    window.addEventListener('sky:time', syncScrub);
+  }
+
+  // — night info chip (dark window + moon) —
+  const renderNightInfo = () => {
+    const el = $('#nightInfo');
+    if (!el) return;
+    const info = E.nightInfo(nightAnchor(), S.site.lat, S.site.lon);
+    const mo = E.moonPhase(E.julianDay(new Date()));
+    let darkTxt = '—';
+    if (info.astroDusk && info.astroDawn) {
+      darkTxt = `${fmtClock(info.astroDusk)}–${fmtClock(info.astroDawn)}`;
+    } else if (info.civilDusk && info.civilDawn) {
+      darkTxt = `${fmtClock(info.civilDusk)}–${fmtClock(info.civilDawn)}`;
+    }
+    el.textContent = `moon ${(mo.illumination * 100).toFixed(0)}% · ${mo.name} · dark ${darkTxt}`;
+  };
+  renderNightInfo();
+  setInterval(renderNightInfo, 60000);
+
+  // — hamburger menu (desktop parity) —
+  const menuBtn = $('#btnMenu'), menuPanel = $('#menuPanel');
+  const closeMenu = () => { if (menuPanel) menuPanel.classList.add('hidden'); };
+  menuBtn.addEventListener('click', (ev) => {
+    ev.stopPropagation();
+    menuPanel.classList.toggle('hidden');
+  });
+  document.addEventListener('click', (ev) => {
+    if (!(ev.target instanceof Element)) return;
+    if (menuPanel && !menuPanel.classList.contains('hidden') && !ev.target.closest('#menuPanel') && !ev.target.closest('#btnMenu')) closeMenu();
+  });
+  document.addEventListener('keydown', (ev) => { if (ev.key === 'Escape') closeMenu(); });
+
+  const p = Hor.getPrefs();
+  const refreshMenuUI = () => {
+    const prefs = Hor.getPrefs();
+    const edge = $('#edgeSpace'), edgeV = $('#edgeSpaceVal');
+    if (edge) edge.value = String(Number.isFinite(prefs.edge) ? prefs.edge : 14);
+    if (edgeV) edgeV.innerHTML = `${Number.isFinite(prefs.edge) ? prefs.edge : 14}&nbsp;px`;
+    const adv = $('#advMode'); if (adv) adv.checked = !!prefs.advMode;
+    const tzSec = $('#tzSection'); if (tzSec) tzSec.classList.toggle('hidden', !prefs.advMode);
+    const tz = $('#tzSelect'); if (tz) tz.value = prefs.tz || '';
+    const moon = $('#moonAware'); if (moon) moon.checked = prefs.moonAware !== false;
+    const bortle = $('#bortle'), bortleV = $('#bortleVal');
+    if (bortle) bortle.value = String(prefs.bortle || 4);
+    if (bortleV) bortleV.textContent = String(prefs.bortle || 4);
+    const hs = $('#hideSeen'); if (hs) hs.checked = !!prefs.hideSeen;
+    const bb = $('#fltBb'); if (bb) bb.checked = !!prefs.fltBb;
+    const ha = $('#fltHa'); if (ha) ha.checked = !!prefs.fltHa;
+    const o3 = $('#fltOiii'); if (o3) o3.checked = !!prefs.fltOiii;
+    const su = $('#sizeUnit'); if (su) su.value = prefs.sizeUnit || 'arcmin';
+    const rs = $('#rigSelect'); if (rs) rs.value = prefs.activeRigId || '';
+  };
+  reflectTheme(); // sync picker from whatever the head script applied (never undo it)
+  $('#themeRow').addEventListener('click', (ev) => {
+    const btn = ev.target.closest('.theme-btn');
+    if (!btn) return;
+    applyTheme(btn.dataset.theme || null);
+    Hor.setPrefs({ theme: btn.dataset.theme || '' });
+    initDragWindows(); // re-bind after layout change
+  });
+  $('#edgeSpace').addEventListener('input', (ev) => {
+    const v = Hor.num(ev.target.value);
+    Hor.setPrefs({ edge: Number.isFinite(v) ? v : 14 });
+    applyEdge();
+    refreshMenuUI();
+  });
+  $('#advMode').addEventListener('change', (ev) => {
+    Hor.setPrefs({ advMode: ev.target.checked });
+    location.reload();
+  });
+  $('#tzSelect').addEventListener('change', (ev) => {
+    Hor.setPrefs({ tz: ev.target.value || '' });
+    const s = activeSite();
+    if (s) applyActiveSite(s);
+    refreshView();
+  });
+  $('#moonAware').addEventListener('change', (ev) => { Hor.setPrefs({ moonAware: ev.target.checked }); refreshView(); });
+  $('#bortle').addEventListener('input', (ev) => {
+    Hor.setPrefs({ bortle: Hor.num(ev.target.value) || 4 });
+    refreshMenuUI(); syncTopPrefs(); refreshView();
+  });
+  $('#hideSeen').addEventListener('change', (ev) => {
+    Hor.setPrefs({ hideSeen: ev.target.checked });
+    S.cat.hideSeen = ev.target.checked;
+    refreshView();
+  });
+  $('#fltBb').addEventListener('change', (ev) => { Hor.setPrefs({ fltBb: ev.target.checked }); refreshView(); });
+  $('#fltHa').addEventListener('change', (ev) => { Hor.setPrefs({ fltHa: ev.target.checked }); refreshView(); });
+  $('#fltOiii').addEventListener('change', (ev) => { Hor.setPrefs({ fltOiii: ev.target.checked }); refreshView(); });
+  $('#sizeUnit').addEventListener('change', (ev) => { Hor.setPrefs({ sizeUnit: ev.target.value }); refreshView(); });
+  $('#rigSelect').addEventListener('change', (ev) => {
+    Hor.setPrefs({ activeRigId: ev.target.value || '' });
+    refreshView();
+  });
+  refreshMenuUI();
+
+  // rigs for the framing selector
+  const rigs = await WS.getRigs();
+  RIGS.length = 0;
+  RIGS.push(...rigs);
+  const rsSel = $('#rigSelect');
+  if (rsSel) {
+    rsSel.innerHTML = '<option value="">None — no frame coverage shown</option>' +
+      rigs.map((r) => `<option value="${esc(r.id)}">${esc(r.name)}</option>`).join('');
+  }
+  refreshMenuUI(); // re-sync select values now that the rig options exist
+
+  initDragWindows();
 
   // easter egg: click the brand logo for a meteor shower
   const brand = document.querySelector('.brand');

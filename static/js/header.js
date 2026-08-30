@@ -85,6 +85,33 @@ export function bindHeader() {
       body: JSON.stringify({ bortle: v })
     }).catch(() => {}), 400);
   });
+
+  bindTheme();
+}
+
+/* ---------- appearance themes ---------- */
+
+export function applySavedTheme(name) {
+  name = name || "";
+  document.documentElement.setAttribute("data-theme", name);
+  for (const b of document.querySelectorAll("#themeRow .theme-btn"))
+    b.classList.toggle("active", (b.dataset.theme || "") === name);
+}
+
+function bindTheme() {
+  const row = $("#themeRow");
+  if (!row) return;
+  row.addEventListener("click", e => {
+    const b = e.target.closest(".theme-btn");
+    if (!b) return;
+    const name = b.dataset.theme || "";
+    applySavedTheme(name);
+    api("/api/settings", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" }, silent: true,
+      body: JSON.stringify({ theme: name })
+    }).catch(() => {});
+  });
 }
 
 export function renderNightInfo() {
