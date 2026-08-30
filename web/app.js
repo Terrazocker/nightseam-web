@@ -245,11 +245,14 @@ function busy(on, text) {
 
 /* ---- theme (desktop parity) ---- */
 const THEME_KEY = 'apweb_theme';
-/** Commit a theme choice (user action): apply attribute + persist. */
+/** Commit a theme choice (user action): apply attribute + persist.
+ *  Glass ('dome') is the default look; 'classic' is the flat blue one.
+ *  The key is always persisted (its ABSENCE means "use the default =
+ *  Glass" — the head script falls back to 'dome'). */
 function applyTheme(t) {
-  if (t) document.documentElement.setAttribute('data-theme', t);
-  else document.documentElement.removeAttribute('data-theme');
-  try { if (t) localStorage.setItem(THEME_KEY, t); else localStorage.removeItem(THEME_KEY); } catch { /* ignore */ }
+  const name = t === 'classic' || t === '' ? 'classic' : 'dome';
+  document.documentElement.setAttribute('data-theme', name);
+  try { localStorage.setItem(THEME_KEY, name); } catch { /* ignore */ }
   reflectTheme();
 }
 /** Sync the picker's active state only — never touches storage or the

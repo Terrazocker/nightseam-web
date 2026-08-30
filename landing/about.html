@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>About — AstroPilot</title>
+<meta name="description" content="About AstroPilot: a deep-sky night-planning app that runs 100% in your browser — plus a Windows desktop version with a FITS image catalog.">
+<link rel="icon" type="image/png" href="app.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="site-header">
+  <div class="container navrow">
+    <a class="brand" href="/">
+      <img class="brand-ico" src="app.png" alt="" width="34" height="34">
+      <span class="brand-name">Astro<em>Pilot</em></span>
+    </a>
+    <nav class="nav">
+      <a href="features.html">Features</a>
+      <a href="about.html">About</a>
+      <a href="download.html">Download</a>
+      <a class="nav-cta" href="/astro">Launch the planner</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <section class="hero hero-page">
+    <div class="container hero-inner">
+      <p class="eyebrow">About</p>
+      <h1>What is AstroPilot?</h1>
+      <p class="hero-sub">A deep-sky night-planning app. The web version runs entirely in your browser; the Windows desktop version adds the full Image Catalog for organizing your FITS captures.</p>
+    </div>
+  </section>
+
+  <section class="section stats">
+    <div class="container stat-row">
+      <div class="stat"><b>12,116</b><span>catalog objects</span></div>
+      <div class="stat"><b>197</b><span>curated showpieces</span></div>
+      <div class="stat"><b>0</b><span>servers involved</span></div>
+      <div class="stat"><b>100%</b><span>works offline</span></div>
+    </div>
+  </section>
+
+  <section class="section" style="padding-top:0">
+    <div class="container legal-body" style="max-width:820px">
+      <h2>Where do the numbers come from?</h2>
+      <p>All sky calculations are computed locally from standard published algorithms — no internet service involved:
+      sunrise/sunset/twilight from the Sun's geocentric position (Meeus, <em>Astronomical Algorithms</em>),
+      moon phase from the Moon-Sun elongation, object altitudes from J2000 catalog coordinates precessed to date
+      with sidereal time and refraction. Typical errors are well below 0.1&deg; for stars and deep-sky objects.</p>
+
+      <h2>Data, privacy &amp; credits</h2>
+      <ul>
+        <li><b>Catalog:</b> Messier + <a href="https://github.com/mattiaverga/OpenNGC" target="_blank" rel="noopener">OpenNGC</a>
+            (<a href="https://creativecommons.org/licenses/by-sa/4.0/" target="_blank" rel="noopener">CC BY-SA 4.0</a>).</li>
+        <li><b>Images:</b> <a href="https://commons.wikimedia.org/" target="_blank" rel="noopener">Wikimedia Commons</a>,
+            each image under its own license (per-file credits on the file pages).</li>
+        <li><b>Weather:</b> <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a>,
+            loaded on demand; weather data &copy; Open-Meteo.com.</li>
+        <li><b>Your data:</b> stays on your device — in the browser's local storage or in a <code>data</code>
+            folder next to the desktop app. Nothing is uploaded. See the <a href="privacy.html">privacy policy</a>.</li>
+        <li><b>License:</b> the software is <b>MIT licensed</b>; the OpenNGC-derived catalog data keeps its
+            CC BY-SA 4.0 license (see <a href="/downloads/NOTICE" target="_blank" rel="noopener">NOTICE</a>).</li>
+      </ul>
+    </div>
+  </section>
+</main>
+
+<footer class="site-footer">
+  <div class="container foot-inner">
+    <span>&copy; 2026 AstroPilot &mdash; deep-sky night planning</span>
+    <span class="foot-links">
+      <a href="/astro">Planner</a> &middot; <a href="features.html">Features</a> &middot; <a href="download.html">Download</a>
+      &middot; <a href="about.html">About</a> &middot; <a href="privacy.html">Privacy</a> &middot; <a href="impressum.html">Imprint</a>
+    </span>
+  </div>
+</footer>
+
+</body>
+</html>

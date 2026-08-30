@@ -6,8 +6,9 @@
 <title>AstroPilot Web — night-planning in your browser</title>
 <meta name="description" content="AstroPilot Web: tonight's best deep-sky targets, live polar sky map and per-object altitude charts — computed entirely in your browser. Catalog: Messier + OpenNGC (12,116 objects).">
 <script>
-/* apply the saved theme before first paint (synchronous, no server) */
-(function(){try{var t=localStorage.getItem('apweb_theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
+/* apply the saved theme before first paint (synchronous, no server).
+   Glass is the default look; "Classic" is the older flat blue look. */
+(function(){try{var t=localStorage.getItem('apweb_theme')||'dome';document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 </script>
 <link rel="icon" type="image/png" href="app.png">
 <link rel="stylesheet" href="style.css?v=5">
@@ -74,8 +75,8 @@
         <div class="menu-section">
           <h4>Appearance</h4>
           <div class="theme-row" id="themeRow">
-            <button class="theme-btn" data-theme="" id="themeDefault"><span class="sw" style="background:#4f9cff"></span>Default</button>
             <button class="theme-btn" data-theme="dome" id="themeDome"><span class="sw" style="background:#8f7bff"></span>Glass</button>
+            <button class="theme-btn" data-theme="classic" id="themeClassic"><span class="sw" style="background:#4f9cff"></span>Classic</button>
           </div>
           <p class="hint">Pick the look; it applies instantly and is remembered.</p>
         </div>
