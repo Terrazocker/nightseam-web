@@ -494,6 +494,7 @@ function renderHorizonView() {
 /* ----------------------------- tonight ----------------------------- */
 
 let tonightTimer = null;
+let tonightToken = 0;
 
 function fmtClock(dt) {
   if (!dt) return '—';
@@ -507,13 +508,20 @@ function fmtDur(min) {
   return `${Math.floor(m / 60)}h ${String(m % 60).padStart(2, '0')}m`;
 }
 
-function renderTonight() {
-  splashText('computing tonight…');
+function renderTonight(silent) {
+  // `silent` (pref changes, auto-refresh): keep the current cards on screen
+  // and swap in the new ones when the compute finishes — no blank-splash
+  // frame that makes the recommended targets vanish and reappear.
+  const token = ++tonightToken;
   const box = $('#view');
-  box.innerHTML = `<div class="splash"><div class="splash-inner"><div class="spinner"></div><p id="splash-text">computing tonight…</p></div></div>`;
-  busy(true, 'ranking targets…');
+  if (!silent) {
+    splashText('computing tonight…');
+    box.innerHTML = `<div class="splash"><div class="splash-inner"><div class="spinner"></div><p id="splash-text">computing tonight…</p></div></div>`;
+    busy(true, 'ranking targets…');
+  }
   // defer heavy math so the UI paints first
   setTimeout(() => {
+    if (token !== tonightToken) return; // superseded by a newer render
     const { lat, lon } = S.site;
     const info = E.nightInfo(nightAnchor(), lat, lon);
     const jdNow = E.julianDay(new Date());
@@ -619,7 +627,7 @@ function renderTonight() {
       </li>`;
     };
 
-    box.innerHTML = `
+    const html = `
       <div class="grid3">
         <div class="card">
           <h3>Dark time</h3>
@@ -654,6 +662,8 @@ function renderTonight() {
         </li>`).join('') : '<li style="cursor:default">everything already up or setting</li>'}</ul></div>
       </div>
       <p class="cat-count" style="margin-top:10px;text-align:center">night of ${dateKey(nightAnchor())} · ${esc(S.site.label || `${S.site.lat.toFixed(2)}, ${S.site.lon.toFixed(2)}`)} · horizon: ${pano ? esc(pano.name) : 'none'} · flash-aware ranking · click any target for details</p>`;
+    if (token !== tonightToken) return; // superseded while computing
+    box.innerHTML = html;
     box.querySelectorAll('.pick li[data-id]').forEach((li) => li.addEventListener('click', () => openDetail(li.dataset.id)));
     box.querySelectorAll('button[data-seen]').forEach((b) => b.addEventListener('click', (ev) => {
       ev.stopPropagation();
@@ -700,6 +710,29 @@ function skyRangeStart(t) {
   const w = WS.utcToWall(t);
   const dayOffset = w.getHours() < 12 ? -1 : 0;
   return WS.wallToUtc(new Date(w.getFullYear(), w.getMonth(), w.getDate() + dayOffset, 12, 0, 0));
+}
+
+/* Stable scrub anchor: SKY_ANCHOR is fixed at the first noon, and stays
+ * fixed while the time moves WITHIN its 24 h window — this is what stops
+ * the slider from jumping back when the time crosses noon mid-drag (a
+ * naive "re-anchor to the most recent noon" flips the window under the
+ * drag). Only when the time leaves the window (wall-clock picker, "Now",
+ * arrows, date change) does it re-anchor, in whole-day steps so a jump is
+ * always to an adjacent day, never mid-window. */
+let SKY_ANCHOR = null;
+function skyAnchor(t) {
+  if (SKY_ANCHOR && t >= SKY_ANCHOR && t.getTime() <= SKY_ANCHOR.getTime() + 24 * 3600000) {
+    return SKY_ANCHOR;
+  }
+  if (SKY_ANCHOR) {
+    let a = SKY_ANCHOR.getTime();
+    while (t.getTime() > a + 24 * 3600000) a += 24 * 3600000;
+    while (t.getTime() < a) a -= 24 * 3600000;
+    SKY_ANCHOR = new Date(a);
+    return SKY_ANCHOR;
+  }
+  SKY_ANCHOR = skyRangeStart(t);
+  return SKY_ANCHOR;
 }
 
 function dtoLocalInput(d) {
@@ -887,6 +920,7 @@ function renderSky() {
     });
 
     // catalog objects
+    const labelCands = [];
     for (const o of candidates) {
       const hit = plot(o.ra_hours * 15, o.dec_deg, (x, y, alt) => {
         const mag = o.vmag ?? 99;
@@ -896,12 +930,36 @@ function renderSky() {
         ctx.beginPath(); ctx.arc(x, y, rad, 0, Math.PI * 2); ctx.fill();
         ctx.globalAlpha = 1;
         if (!o._adv && o.vmag != null && o.vmag < 8.5) {
-          ctx.fillStyle = 'rgba(219, 233, 255, .8)';
-          ctx.font = '10.5px system-ui, sans-serif';
-          ctx.fillText(o.messier || o.primary_name, x + rad + 4, y + 3);
+          labelCands.push({ x, y, text: o.messier || o.primary_name, prio: o.vmag });
         }
       });
       if (hit) skyItems.push({ x: hit.x, y: hit.y, id: o.id, label: o.primary_name, o });
+    }
+
+    // names, greedily placed so they never sit on top of the dots (same
+    // approach as the desktop: label above-right of the dot, dark halo,
+    // brightest first, skipped when it would overlap an earlier label)
+    if (labelCands.length) {
+      ctx.font = 'bold 10.5px system-ui, sans-serif';
+      const placed = [];
+      labelCands.sort((a, b) => a.prio - b.prio);
+      for (const c of labelCands) {
+        const tx = Math.round(c.x) + 5, ty = Math.round(c.y) - 5;
+        const w = ctx.measureText(c.text).width + 8, h = 14;
+        let ok = true;
+        for (const p of placed) {
+          if (Math.abs(tx + w / 2 - p.x) < (w + p.w) / 2 &&
+              Math.abs(ty - p.y) < h) { ok = false; break; }
+        }
+        if (!ok) continue;
+        placed.push({ x: tx + w / 2, y: ty, w });
+        ctx.save();
+        ctx.shadowColor = 'rgba(0,0,0,.9)';
+        ctx.shadowBlur = 4;
+        ctx.fillStyle = 'rgba(219, 233, 255, .85)';
+        ctx.fillText(c.text, tx, ty);
+        ctx.restore();
+      }
     }
 
     // obstruction-free note: horizon line already drawn
@@ -1014,7 +1072,7 @@ function renderSky() {
   const slider = $('#sky-slider');
   const sout = $('#sky-sout');
   const pad2 = (x) => String(x).padStart(2, '0');
-  const rangeStart = () => skyRangeStart(S.skyTime);
+  const rangeStart = () => skyAnchor(S.skyTime);
   const sliderVal = () => {
     const rs = rangeStart();
     return Math.max(0, Math.min(1440, Math.round((S.skyTime.getTime() - rs.getTime()) / 60000)));
@@ -1605,7 +1663,9 @@ function applyEdge() {
 }
 
 function refreshView() {
-  if (S.view === 'tonight') renderTonight();
+  // Tonight recomputes SILENTLY here: pref/filter changes keep the current
+  // cards on screen and swap in fresh ones when done (no blank frame).
+  if (S.view === 'tonight') renderTonight(true);
   else if (S.view === 'sky') renderSky();
   else if (S.view === 'catalog') renderCatalog();
   else renderHorizonView();
@@ -2164,18 +2224,17 @@ async function boot() {
   const scrub = $('#tb-scrub'), scrubT = $('#tb-scrub-time');
   if (scrub) {
     const syncScrub = () => {
-      const rs = skyRangeStart(S.skyTime);
+      const rs = skyAnchor(S.skyTime);
       const mins = Math.max(0, Math.min(1440, Math.round((S.skyTime.getTime() - rs.getTime()) / 60000)));
       scrub.value = String(mins);
       if (scrubT) scrubT.textContent = fmtClock(S.skyTime);
     };
     syncScrub();
     const onScrub = () => {
-      // one range for the whole drag: derive it from the CURRENT skyTime
-      // (not from the day the slider was built), then only update the pieced
-      // S.skyTime; the sky view redraws via the sky:time event — no full
-      // view rebuild, no per-tick recompute.
-      const rs = skyRangeStart(S.skyTime);
+      // stable anchor for the whole drag: skyAnchor keeps the current
+      // window fixed while the time stays inside it, so crossing noon
+      // never snaps the slider back.
+      const rs = skyAnchor(S.skyTime);
       S.skyTime = new Date(rs.getTime() + Number(scrub.value) * 60000);
       if (scrubT) scrubT.textContent = fmtClock(S.skyTime);
       window.dispatchEvent(new CustomEvent('sky:time'));
@@ -2352,7 +2411,7 @@ async function boot() {
     }
   });
   if (tonightTimer) clearInterval(tonightTimer);
-  tonightTimer = setInterval(() => { if (S.view === 'tonight' && !document.hidden) renderTonight(); }, 60000);
+  tonightTimer = setInterval(() => { if (S.view === 'tonight' && !document.hidden) renderTonight(true); }, 60000);
 
   route();
 }
