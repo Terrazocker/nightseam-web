@@ -2,96 +2,41 @@
  {
   "version": "0.5.6",
   "date": "2026-08-30",
-  "summary": "fix free-space slider (content width, visible on any screen), fix landing download text entities, panorama photos cached compressed in IndexedDB (survive reload), release package no longer ships README"
+  "summary": "Horizon photos now survive reloading the page, and the \u201cfree space\u201d layout setting works on any screen."
  },
  {
   "version": "0.5.5",
   "date": "2026-08-30",
-  "summary": "web sliders (no per-tick view rebuild, morning times no longer force sliders left) + correct OpenNGC URL (mattiaverga/OpenNGC, was astronexus 404)"
+  "summary": "More stable time slider; changing the minimum altitude no longer flashes the target list."
  },
  {
   "version": "0.5.4",
   "date": "2026-08-30",
-  "summary": "public release prep \u00e2\u20ac\u201d MIT license, NOTICE (OpenNGC CC BY-SA, images, weather), About/credits in both UIs, DNS-rebinding Host guard, desktop update checker, landing download section + privacy/imprint pages, clean release packaging"
+  "summary": "Public release: open source (MIT), credits and notices, automatic update checker in the desktop app, download page."
  },
  {
   "version": "0.5.3",
   "date": "2026-08-30",
-  "summary": "Grade (S/A/B/C/D) in desktop, weather (click-to-load + auto-load toggle) in web and desktop, landing page as classic hub"
+  "summary": "Target grades (S\u2013D) in the desktop app; weather with a 4-day forecast in both versions; new website."
  },
  {
   "version": "0.5.2",
   "date": "2026-08-30",
-  "summary": "rename tier system to Grade (S/A/B/C/D) \u00e2\u20ac\u201d not rarity, every object is equally rare"
+  "summary": "Target grades (S\u2013D) for the web; the sky map zoom now opens a wider rectangular view."
  },
  {
   "version": "0.5.1",
   "date": "2026-08-30",
-  "summary": "web UI overhaul (desktop-style layout, hamburger menu, Glass theme), Glass theme for desktop, landing page, FTPS remove command"
+  "summary": "New interface: hamburger menu, Glass theme, desktop-style layout in the browser."
  },
  {
   "version": "0.5.0",
   "date": "2026-08-30",
-  "summary": "web/ Tier-1 parity \u00e2\u20ac\u201d sites, rigs, custom targets, session journal, backup/restore, first-run wizard, per-site timezones"
+  "summary": "Web version: sites, rigs, custom targets, observing journal and first-run setup."
  },
  {
   "version": "0.4.2",
   "date": "2026-08-30",
-  "summary": "integrate AstroPilot Web as web/ sub-version"
- },
- {
-  "version": "0.4.1",
-  "date": "2026-08-27",
-  "summary": "AstroPilot 0.4.1"
- },
- {
-  "version": "0.4.0",
-  "date": "2026-08-24",
-  "summary": "AstroPilot 0.4.0"
- },
- {
-  "version": "0.3.2",
-  "date": "2026-08-24",
-  "summary": "AstroPilot 0.3.2"
- },
- {
-  "version": "0.3.1",
-  "date": "2026-08-24",
-  "summary": "AstroPilot 0.3.1"
- },
- {
-  "version": "0.3.0",
-  "date": "2026-08-24",
-  "summary": "AstroPilot 0.3.0"
- },
- {
-  "version": "0.2.1",
-  "date": "2026-08-24",
-  "summary": "AstroPilot 0.2.1"
- },
- {
-  "version": "0.2.0",
-  "date": "2026-08-23",
-  "summary": "AstroPilot 0.2.0"
- },
- {
-  "version": "0.1.7",
-  "date": "2026-08-23",
-  "summary": "AstroPilot 0.1.7"
- },
- {
-  "version": "0.1.6",
-  "date": "2026-08-23",
-  "summary": "AstroPilot 0.1.6"
- },
- {
-  "version": "0.1.5",
-  "date": "2026-08-23",
-  "summary": "AstroPilot 0.1.5"
- },
- {
-  "version": "0.1",
-  "date": "2026-08-22",
-  "summary": "AstroPilot 0.1"
+  "summary": "The web version joined the project."
  }
 ]

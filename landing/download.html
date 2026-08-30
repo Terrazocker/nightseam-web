@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Download — AstroPilot</title>
-<meta name="description" content="Download AstroPilot for Windows — the deep-sky night planner with the full Image Catalog. Free, MIT licensed, runs offline. Changelog and release history.">
+<meta name="description" content="Download AstroPilot for Windows — the deep-sky night planner with an image catalog for your FITS captures. Free, works offline, and what's new in each version.">
 <link rel="icon" type="image/png" href="app.png">
 <link rel="stylesheet" href="style.css">
 </head>
@@ -30,7 +30,7 @@
     <div class="container hero-inner">
       <p class="eyebrow">Download</p>
       <h1>AstroPilot for Windows</h1>
-      <p class="hero-sub">The desktop version of the planner — plus the full Image Catalog for ingesting and organizing your FITS captures. Runs fully offline; your data stays on your machine.</p>
+      <p class="hero-sub">The desktop app for planning deep-sky observing nights — plus an image catalog that keeps your captures organized. Works offline; your data stays on your machine.</p>
     </div>
   </section>
 
@@ -41,22 +41,22 @@
       </div>
       <p class="hero-note" id="dlMeta">loading version…</p>
       <ul class="dl-facts">
-        <li>&#9989; <b>Free</b> &#8212; MIT licensed (code), catalog data CC BY-SA 4.0 (see <a href="/downloads/NOTICE" target="_blank" rel="noopener">NOTICE</a>)</li>
-        <li>&#128421;&#65039; <b>Portable</b> &#8212; no installer; unzip and double-click <code>AstroPilot.exe</code></li>
-        <li>&#128190; <b>Your data</b> lives in a <code>data</code>&nbsp;folder next to the exe &#8212; delete it and everything is gone</li>
-        <li>&#128736;&#65039; <b>First launch:</b> Windows SmartScreen may show "Unknown publisher" &#8212; choose <em>More info &rarr; Run anyway</em> (the app is not code-signed)</li>
-        <li>&#128270; <b>Update check:</b> the app checks once per start whether a newer version exists here</li>
-        <li>&#127760; <b>Web version:</b> prefer no install? <a href="/astro">Run the planner in your browser</a></li>
+        <li>Everything works offline — planning, maps, catalogs, all of it.</li>
+        <li>No installation needed: unzip the download and double-click <code>AstroPilot.exe</code>.</li>
+        <li>Your data (sites, panoramas, captures) lives in a <code>data</code> folder next to the app.</li>
+        <li>Free and open source.</li>
+        <li>Prefer not to install? <a href="/astro">Run the web version in your browser.</a></li>
       </ul>
+      <p class="hero-note" style="margin-top:14px">&#128737;&#65039; Windows may show &#8220;Unknown publisher&#8221; the first time — that is normal for a self-signed app. Choose <em>More info &#8594; Run anyway</em>.</p>
     </div>
   </section>
 
-  <!-- ============ CHANGELOG ============ -->
+  <!-- ============ WHAT'S NEW ============ -->
   <section class="section" style="padding-top:10px">
     <div class="container">
-      <h2 class="section-title">Changelog</h2>
-      <p class="section-sub">What changed in each release.</p>
-      <div class="cl-list" id="clList"><p class="hero-note">loading changelog…</p></div>
+      <h2 class="section-title">What&rsquo;s new</h2>
+      <p class="section-sub">The big changes, in plain words.</p>
+      <div class="cl-list" id="clList"><p class="hero-note">loading…</p></div>
     </div>
   </section>
 </main>
@@ -81,18 +81,16 @@
         if (!j || !j.url) return;
         var link = document.getElementById('dlLink');
         var meta = document.getElementById('dlMeta');
-        if (link) { link.href = j.url; link.setAttribute('download', 'AstroPilot-' + j.version + '.zip'); }
+        if (link) link.href = j.url;
         if (meta) {
-          meta.innerHTML = 'v' + j.version + ' · Windows 10/11 · ' +
-            (j.size ? Math.round(j.size / 1048576) + ' MB' : '~20 MB') +
-            ' · free, MIT licensed — your data never leaves your machine' +
-            (j.sha256 ? ' · SHA-256 ' + j.sha256.slice(0, 16) + '…' : '');
+          meta.textContent = 'v' + j.version + ' · Windows 10/11 · ' +
+            (j.size ? Math.round(j.size / 1048576) + ' MB' : '~20 MB') + ' · free';
         }
       })
       .catch(function () { /* static fallback stays */ });
   } catch (e) { /* static fallback stays */ }
 })();
-/* changelog from changelog.json (same origin) */
+/* what's new from changelog.json (same origin) */
 (function () {
   try {
     fetch('changelog.json', { cache: 'no-store' })
@@ -110,7 +108,7 @@
       })
       .catch(function () {
         var el = document.getElementById('clList');
-        if (el) el.innerHTML = '<p class="hero-note">changelog unavailable</p>';
+        if (el) el.innerHTML = '<p class="hero-note">nothing here yet</p>';
       });
   } catch (e) { /* leave the loading note */ }
 })();

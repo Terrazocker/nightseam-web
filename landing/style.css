@@ -230,7 +230,7 @@ header, main, footer { position: relative; z-index: 1; }
 .feature-card p { font-size: 13.5px; line-height: 1.65; color: var(--dim); }
 .feature-card.link { display: block; text-decoration: none; color: var(--text); }
 .feature-card.link .go { display: inline-block; margin-top: 12px; font-size: 13px; font-weight: 600; color: var(--accent); }
-.feature-card.link:hover .go { text-decoration: underline; }
+.feature-card.link:hover .go { color: #c3b8ff; }
 
 /* small "page" hero (features/about/download) */
 .hero.hero-page { padding: 60px 0 34px; }
