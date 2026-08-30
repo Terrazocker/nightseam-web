@@ -9,4 +9,5 @@ apweb-cdp-*/
 # Local verification artifacts
 verify-*.png
 verify-*.html
-verify-*.txt
+verify-*.txtwhale/
+dev/
