@@ -63,7 +63,6 @@ async function loadState() {
   applySavedTheme(S.cfg.theme);   // syncs the menu when the head script missed
 
   applyCfgToUI();
-  S.observedIds = new Set((S.cfg.observed || []).map(x => x.object_id));
   $("#dateInput").value = todayLocal();   // zone-aware local date
 
   // first-run: guided setup instead of a bare locations dialog

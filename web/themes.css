@@ -310,9 +310,6 @@ html[data-theme="dome"] .sky-side input[type="datetime-local"] {
 }
 html[data-theme="dome"] .sky-side .card { border-radius: 18px; }
 html[data-theme="dome"] .win-note { color: #45d6a0; }
-html[data-theme="dome"] .journal { border-top-color: rgba(255,255,255,0.07); }
-html[data-theme="dome"] .j-list li { background: rgba(143,123,255,.06); border-color: rgba(255,255,255,0.07); }
-html[data-theme="dome"] .j-list li b { color: #b3a6ff; }
 html[data-theme="dome"] .set-form { border-color: rgba(255,255,255,0.07); }
 
 /* === FOOTER / version === */

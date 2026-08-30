@@ -56,8 +56,11 @@ Two modes, switched with the top-right button:
   now / rising later, ranked by an imaging-quality score. Moon-aware ranking
   penalizes targets near a bright Moon (per object type) and honors your
   Bortle sky class (hamburger menu).
-- **Session journal** - mark objects as observed with date and notes; an
-  "observed" hide-filter and constellation filter keep the target list tidy.
+- **Timezone-aware planning** - all times render in your machine's zone with
+  DST applied per date (planning a December night in summer is not shifted).
+  An optional IANA timezone picker (advanced mode) plans for a distant
+  observing site.
+- **Constellation filter** keeps the target list tidy.
 - **Timezone-aware planning** - all times render in your machine's zone with
   DST applied per date (planning a December night in summer is not shifted).
   An optional IANA timezone picker (advanced mode) plans for a distant

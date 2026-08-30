@@ -420,15 +420,6 @@ tr.lib-sess td { background: var(--bg2) !important; cursor: default;
 .frame img { width: 64px; height: 64px; object-fit: cover; border-radius: var(--r-sm);
   background: var(--bg); border: 1px solid var(--border-soft); }
 
-/* session journal */
-.journal-form { display: flex; gap: 6px; align-items: center; margin-bottom: 8px; }
-.journal-form input[type=date] { width: 120px; }
-.journal-form input[type=text] { flex: 1; }
-.jentry { display: flex; gap: 8px; align-items: baseline; padding: 2px 0;
-  font-size: 12.5px; color: var(--faint); }
-.jentry b { color: var(--text); white-space: nowrap; }
-.jentry .jdel { margin-left: auto; }
-
 /* ---------- static sky map ---------- */
 #tab-skymap { padding-top: 8px; }
 #tab-skymap #skyWrap { flex: 1; min-width: 0; }
@@ -495,11 +486,9 @@ table.std th { text-align: left; font-size: 11.5px; color: var(--dim); text-tran
 table.std td, table.std th { padding: 6px 8px; border-bottom: 1px solid var(--border-soft); }
 
 /* session stars + framing */
-.starbtn, .obsbtn { background: none; border: none; color: var(--star-off); font-size: 15px;
+.starbtn { background: none; border: none; color: var(--star-off); font-size: 15px;
   padding: 0 6px 0 0; vertical-align: -2px; }
 .starbtn.on { color: var(--warn); }
-.obsbtn.on { color: var(--good); }
-.obsbtn { font-size: 13px; }
 .lgchip { font-size: 10.5px; color: var(--faint); display: inline-flex;
   align-items: center; gap: 5px; margin: 0 10px 4px 0; cursor: pointer;
   user-select: none; transition: opacity .15s; }

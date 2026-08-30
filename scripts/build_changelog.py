@@ -22,7 +22,7 @@ CURATED = {
     "0.5.3": "Target grades (S–D) in the desktop app; weather with a 4-day forecast in both versions; new website.",
     "0.5.2": "Target grades (S–D) for the web; the sky map zoom now opens a wider rectangular view.",
     "0.5.1": "New interface: hamburger menu, Glass theme, desktop-style layout in the browser.",
-    "0.5.0": "Web version: sites, rigs, custom targets, observing journal and first-run setup.",
+    "0.5.0": "Web version: sites, rigs, custom targets and first-run setup.",
     "0.4.2": "The web version joined the project.",
 }
 

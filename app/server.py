@@ -95,11 +95,6 @@ class LibraryEditIn(BaseModel):
     otype: Optional[str] = None
 
 
-class ObservationIn(BaseModel):
-    date_obs: Optional[str] = None
-    notes: Optional[str] = None
-
-
 class FolderOpenIn(BaseModel):
     rel: str                      # relative path inside the archive folder
 
@@ -281,7 +276,6 @@ def create_app(db: Database, *, prefetch: bool = True) -> FastAPI:
             "timezone": db.setting("timezone") or "",
             "theme": db.setting("theme", "") or "",
             "weather_auto": bool(db.setting("weather_auto", False)),
-            "observed": db.observations(),
         }
 
     @app.post("/api/settings")
@@ -769,24 +763,6 @@ def create_app(db: Database, *, prefetch: bool = True) -> FastAPI:
         return Response(content=png, media_type="image/png",
                         headers={"Cache-Control":
                                  "public, max-age=604800, immutable"})
-
-    # ---------------- observations (session journal) ----------------
-
-    @app.post("/api/object/{oid}/observed")
-    def api_add_observation(oid: str, body: ObservationIn):
-        if db.get_object(oid) is None:
-            raise HTTPException(404, "Object not found")
-        db.add_observation(oid, body.date_obs, body.notes)
-        return {"ok": True}
-
-    @app.get("/api/object/{oid}/observed")
-    def api_observations(oid: str):
-        return db.observations_for(oid)
-
-    @app.delete("/api/object/{oid}/observed/{obs_id}")
-    def api_delete_observation(oid: str, obs_id: int):
-        db.delete_observation(obs_id)
-        return {"ok": True}
 
     @app.get("/api/shutdown")
     @app.post("/api/shutdown")

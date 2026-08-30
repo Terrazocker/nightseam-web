@@ -197,10 +197,10 @@ ingest + library), switched via the top-right button or the brand name.
   the FITS preview PNG machinery (`fits.preview_png_file`,
   `/api/images/{id}/preview`) is currently only exercised by tests - the
   library UI no longer shows frame thumbnails.
-- Session journal: `POST/GET/DELETE /api/object/{oid}/observed` stores
-  observed marks with date + notes (observations table); the targets table
-  has a checkmark toggle and an "observed" hide-filter; the detail modal has
-  the journal form.
+- Session journal was REMOVED (desktop + web) — no `/api/object/{oid}/observed`
+  endpoints, no journal UI, no observed marks/filters. The `observations`
+  table still exists in the DB (schema is additive-only) and is no longer
+  exported/imported; leave it untouched.
 - `/api/object/{oid}/image?thumb=1` is the cache-only thumbnail variant used
   by the targets table, tonight view and detail placeholder (never hits the
   network, so a 250-row page is instant even offline); the detail view's
@@ -211,8 +211,8 @@ ingest + library), switched via the top-right button or the brand name.
 - `/api/library/edit` renames/retypes only unresolved objects (`object_id IS
   NULL`); it moves the archive folder on disk and rewrites stored paths.
 - Export/import ZIP covers settings, sites, rigs, panoramas, custom targets,
-  the images library (rows + files, restored into the configured image dir)
-  and the session journal; the import confirm dialog reflects that.
+  and the images library (rows + files, restored into the configured image
+  dir); the import confirm dialog reflects that.
 - Numeric inputs accept comma OR dot decimals everywhere (German locale):
   `num()` in `util.js` parses both; typable numerics are text+`inputmode`.
   `api()` in util.js adds a 30 s timeout unless the caller passes its own
@@ -266,12 +266,10 @@ ingest + library), switched via the top-right button or the brand name.
   renders via `fmtT()`/`zoneHour()` which apply the effective zone per
   instant. The effective zone is the `timezone` setting (IANA name, stored
   empty = machine local; hidden in the hamburger menu unless advanced mode
-  is on) or the machine zone. Journal entries default to the local date in
-  the effective zone (never `toISOString()` - that is UTC and off by a day
-  near midnight).
+  is on) or the machine zone. (The session journal is gone; no journal
+  entries exist anymore.)
 - `/api/library/export?format=csv|json` downloads the library.
-- The targets filter bar has a constellation select (`fConst`) and an
-  "observed" hide-filter.
+- The targets filter bar has a constellation select (`fConst`).
 - A background `img-prefetch` thread starts on every app start and hits the
   network; the server itself is otherwise local-only.
 - Custom targets are deleted via a `u_` id-prefix check - ids without it are
@@ -284,10 +282,10 @@ ingest + library), switched via the top-right button or the brand name.
 
 - `web/` is AstroPilot Web, a static in-browser planner: same Meeus engine
   (JS mirror `web/astro.js`), same catalog, and Tier-1 user data (sites,
-  rigs, custom targets, session journal/observations) mirrored from the
-  SQLite tables into IndexedDB via `web/webstore.js`. It shares THIS repo's
-  version line: commits `AstroPilot X.Y.Z` and tags `vX.Y.Z` cover both the
-  desktop app and the web.
+  rigs, custom targets) mirrored from the SQLite tables into IndexedDB via
+  `web/webstore.js`. It shares THIS repo's version line: commits
+  `AstroPilot X.Y.Z` and tags `vX.Y.Z` cover both the desktop app and the
+  web. (The session journal/observations were removed from the web too.)
 - The web catalog is ALWAYS derived: `python web/build_web.py catalog` reads
   `data/astropilot.db` (`objects` + `advanced_objects`, insertion order) and
   rewrites `web/catalog.json` — byte-identical to the committed file,
@@ -314,7 +312,6 @@ ingest + library), switched via the top-right button or the brand name.
 - Sync from the dev mirror: robocopy `<workspace>\Astro-Web` -> `web/` (exclude
   `.git` and `ftp.env`), then commit here. `web/.gitignore` covers the dev
   mirror leftovers (`whale/`, `dev/`).
-- Custom targets keep the `u_*` id rule; journal entries mirror the desktop
-  `observations` table (date + notes, multiple entries per object).
+- Custom targets keep the `u_*` id rule.
   Visibility scoring/keyboard shortcuts/timezone handling match the desktop
   semantics (per-site IANA timezone, DST-aware via Intl).

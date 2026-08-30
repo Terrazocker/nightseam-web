@@ -4,7 +4,7 @@
  *   • Tonight  — dark time, moon phase, ranked best targets
  *   • Sky map  — live polar all-dome chart with sun/moon/all catalog objects
  *   • Catalog  — search/sort across 12,116 objects (Messier + OpenNGC)
- *   • Detail   — meta + tonight rise/transit/set + altitude chart + journal
+ *   • Detail   — meta + tonight rise/transit/set + altitude chart
  *   • Settings — sites, rigs, custom targets, backup/restore (webstore.js)
  * All sky math runs client-side (astro.js, Meeus algorithms).
  */
@@ -45,7 +45,6 @@ function legacySite() {
 }
 
 let SITES = [];            // site records from the store
-let OBSERVED = new Map();  // object_id -> observation count
 const CONSTELLATIONS = []; // all constellation names from the catalog
 
 /** Active site record from the sites store. */
@@ -78,7 +77,7 @@ const S = {
   playing: false,
   view: 'tonight',
   detailId: null,
-  cat: { q: '', chip: 'all', con: '', hideSeen: false, sort: 'mag', up: true, page: 0 },
+  cat: { q: '', chip: 'all', con: '', sort: 'mag', up: true, page: 0 },
 };
 
 const $ = (s) => document.querySelector(s);
@@ -366,19 +365,6 @@ function wxRenderPanel() {
     <p class="hint" style="margin-top:8px">Weather by <a href="https://open-meteo.com/" target="_blank" rel="noopener" style="color:var(--accent)">Open-Meteo</a>, for the active site.</p>`;
 }
 
-/** Toggle the observed mark for an object (quick ✓ in lists). */
-async function toggleSeen(oid) {
-  if (OBSERVED.has(oid)) {
-    await WS.clearObs(oid);
-    OBSERVED.delete(oid);
-  } else {
-    await WS.addObsEntry(oid, null, '');
-    OBSERVED.set(oid, 1);
-  }
-  if (S.view === 'tonight') renderTonight();
-  else if (S.view === 'catalog') renderCatalog();
-}
-
 /* ---------- Wikipedia thumbnails with IndexedDB cache ---------- */
 // Only objects without a bundled photo fetch from Wikipedia, only when their
 // detail view is opened, thumbnails only. Results (image blobs AND definite
@@ -555,9 +541,7 @@ function renderTonight(silent) {
       moonAlt.push(ma); moonAz.push(maz);
     }
 
-    const hideSeen = !!Hor.getPrefs().hideSeen;
-    const candidates = activeCatalog().filter((o) => o.vmag != null && (!o._adv || o.vmag <= 9) && o.vmag < 14
-      && (!hideSeen || !OBSERVED.has(o.id)));
+    const candidates = activeCatalog().filter((o) => o.vmag != null && (!o._adv || o.vmag <= 9) && o.vmag < 14);
     const rows = [];
     for (const o of candidates) {
       let maxAlt = -90, transitJd = jd0, bestRun = 0, bestStart = jd0;
@@ -620,12 +604,11 @@ function renderTonight(silent) {
       const win = r.bestRun > 0
         ? `clear ${fmtClock(E.dateFromJD(r.bestStart))} – ${fmtClock(E.dateFromJD(r.bestStart + r.bestRun * step))}`
         : 'no clear window';
-      const seen = OBSERVED.has(o.id);
       const fOwn = filterOwned(o);
       return `<li data-id="${esc(o.id)}">
         <span class="dot" style="background:${typeColor(o)}"></span>
         <span>${r.flash >= 60 ? '<span class="p-flash">✨</span> ' : ''}<span class="p-name">${esc(o.primary_name)}</span>${tags ? `<span class="p-tags">${esc(tags)}</span>` : ''}${gradeTag(o)}${fOwn ? `<span class="f-own" title="filter owned">${esc(fOwn)}</span>` : ''}</span>
-        <span class="p-right"><button class="seen" data-seen="${esc(o.id)}" title="${seen ? 'observed — click to unmark' : 'not observed — click to mark'}" aria-label="observed toggle">${seen ? '✓' : '○'}</button>
+        <span class="p-right">
           <b>${r.maxAlt.toFixed(0)}°</b>
           <span class="p-vis">${r.visN ? `${r.obsPct}% of night · ${fmtDur(r.visN * step * 1440)} visible` : 'not clear tonight'}</span>${win}</span>
       </li>`;
@@ -669,10 +652,6 @@ function renderTonight(silent) {
     if (token !== tonightToken) return; // superseded while computing
     box.innerHTML = html;
     box.querySelectorAll('.pick li[data-id]').forEach((li) => li.addEventListener('click', () => openDetail(li.dataset.id)));
-    box.querySelectorAll('button[data-seen]').forEach((b) => b.addEventListener('click', (ev) => {
-      ev.stopPropagation();
-      toggleSeen(b.dataset.seen);
-    }));
     hideSplash();
   }, 30);
 }
@@ -1132,7 +1111,6 @@ function filteredCatalog() {
   const q = f.q.trim().toLowerCase();
   let out = activeCatalog().filter((o) => CHIP_FILTERS[f.chip](o));
   if (f.con) out = out.filter((o) => o.constellation === f.con);
-  if (f.hideSeen) out = out.filter((o) => !OBSERVED.has(o.id));
   if (q) out = out.filter((o) => searchBlob(o).includes(q));
   const col = f.sort;
   const pctG = obsNightGrid();
@@ -1177,22 +1155,19 @@ function renderCatalog() {
         <option value="">All constellations</option>
         ${CONSTELLATIONS.map((c) => `<option value="${esc(c)}"${S.cat.con === c ? ' selected' : ''}>${esc(c)}</option>`).join('')}
       </select>
-      <label class="chk" title="hide objects you have already observed"><input type="checkbox" id="cat-hide-seen"${S.cat.hideSeen ? ' checked' : ''}> hide seen</label>
       <span class="cat-count">${list.length.toLocaleString()} of ${CAT.length.toLocaleString()} objects${advMode() ? '' : ' (standard mode)'}</span>
       <span class="cat-count" id="pct-status" style="margin-left:12px"></span>
     </div>
     <div class="card" style="padding:8px 10px">
       <table class="cat">
-        <thead><tr><th class="seen-th" title="observed"></th>${th('name', 'Name')}${th('grade', 'Grade')}${th('mag', 'Mag', true)}${th('pct', '% visibility', true)}${th('type', 'Type')}${th('con', 'Con')}${th('size', 'Size', true)}${showFrame ? `<th class="frame" title="frame coverage with the active rig">Frame</th>` : ''}${th('ra', 'RA', true)}${th('dec', 'Dec', true)}</tr></thead>
+        <thead><tr>${th('name', 'Name')}${th('grade', 'Grade')}${th('mag', 'Mag', true)}${th('pct', '% visibility', true)}${th('type', 'Type')}${th('con', 'Con')}${th('size', 'Size', true)}${showFrame ? `<th class="frame" title="frame coverage with the active rig">Frame</th>` : ''}${th('ra', 'RA', true)}${th('dec', 'Dec', true)}</tr></thead>
         <tbody>
           ${slice.map((o) => {
             const tags = [o.messier, o.ngcic].filter(Boolean).join(' · ');
-            const seen = OBSERVED.has(o.id);
             const fOwn = filterOwned(o);
             const fp = showFrame ? rigFramePct(o) : null;
             const rr = gradeOf(o);
             return `<tr data-id="${esc(o.id)}">
-              <td class="seen-td"><button class="seen" data-seen="${esc(o.id)}" title="${seen ? 'observed — click to unmark' : 'not observed — click to mark'}" aria-label="observed toggle">${seen ? '✓' : '○'}</button></td>
               <td><span class="tname">${esc(o.primary_name)}</span> ${tags ? `<span class="tags">${esc(tags)}</span>` : ''}${fOwn ? `<span class="f-own" title="filter owned">${esc(fOwn)}</span>` : ''}</td>
               <td class="grade"><span class="rtag" style="color:${rr.color}" title="Grade ${rr.label} — how visually striking the object is (brightness + size + fame + type)">${rr.label}</span></td>
               <td class="num">${o.vmag != null ? o.vmag.toFixed(1) : '—'}</td>
@@ -1227,12 +1202,6 @@ function renderCatalog() {
   $('#pg-prev').addEventListener('click', () => { if (S.cat.page > 0) { S.cat.page--; renderCatalog(); } });
   $('#pg-next').addEventListener('click', () => { if (S.cat.page < pages - 1) { S.cat.page++; renderCatalog(); } });
   $('#cat-con').addEventListener('change', (ev) => { S.cat.con = ev.target.value; S.cat.page = 0; renderCatalog(); });
-  $('#cat-hide-seen').addEventListener('change', (ev) => {
-    S.cat.hideSeen = ev.target.checked;
-    Hor.setPrefs({ hideSeen: ev.target.checked });
-    S.cat.page = 0; renderCatalog();
-  });
-  box.querySelectorAll('button[data-seen]').forEach((b) => b.addEventListener('click', (ev) => { ev.stopPropagation(); toggleSeen(b.dataset.seen); }));
   fillPctCells(slice);
   if (S.cat.sort === 'pct') warmPct(list);
 }
@@ -1356,17 +1325,8 @@ function openDetail(id) {
           </dl>
           ${o.blurb ? `<p class="blurb">${esc(o.blurb)}</p>` : ''}
           <p class="blurb" style="margin-top:8px;font-size:13px"><a class="wiki" href="https://en.wikipedia.org/wiki/${encodeURIComponent(wiki)}" target="_blank" rel="noopener">Wikipedia ↗</a></p>
+          ${o.custom ? '<button class="btn small" id="m-del" style="margin-top:10px" title="remove this custom target">🗑 delete target</button>' : ''}
         </div>
-      </div>
-      <div class="journal">
-        <h3>Session journal</h3>
-        <ul class="j-list" id="j-list"></ul>
-        <div class="j-form">
-          <label>Date <input type="date" id="j-date" value="${dateKey(WS.effToday())}"></label>
-          <input type="text" id="j-notes" placeholder="notes — magnitude, seeing, conditions…">
-          <button class="btn small primary" id="j-add">Log observation</button>
-        </div>
-        ${o.custom ? '<button class="btn small" id="m-del" style="margin-top:6px" title="remove this custom target">🗑 delete target</button>' : ''}
       </div>
       <div class="tonight-box">
         <h3>Altitude tonight <span class="cat-count">(local time)</span></h3>
@@ -1385,7 +1345,7 @@ function openDetail(id) {
   modal.hidden = false;
   $('#m-close').addEventListener('click', closeDetail);
   modal.addEventListener('click', (ev) => { if (ev.target === modal) closeDetail(); });
-  renderJournal(modal, o);
+  wireDetailExtras(modal, o);
 
   // bundled photo first; if missing, fetch a Wikipedia thumbnail (cached)
   const dImg = $('#d-img');
@@ -1596,43 +1556,19 @@ function closeDetail() {
   if (S.detailResize) window.removeEventListener('resize', S.detailResize);
 }
 
-/* ---- session journal (observations, mirror of the local app) ---- */
+/* ---- detail extras (custom-target delete) ---- */
 
-async function renderJournal(modal, o) {
-  const list = modal.querySelector('#j-list');
-  if (!list) return; // modal already closed
-  const entries = await WS.getObs(o.id);
-  list.innerHTML = entries.length
-    ? entries.map((e) => `<li><b>${esc(e.date_obs || '—')}</b>${esc(e.notes || '')}<button class="btn small" data-jdel="${esc(e.created_at)}" title="delete entry">✕</button></li>`).join('')
-    : '<li class="j-empty">nothing logged yet — note your observation below.</li>';
-  list.querySelectorAll('button[data-jdel]').forEach((b) => b.addEventListener('click', async (ev) => {
-    ev.stopPropagation();
-    await WS.deleteObsEntry(o.id, b.dataset.jdel);
-    if (OBSERVED.has(o.id) && !(await WS.getObs(o.id)).length) OBSERVED.delete(o.id);
-    renderJournal(modal, o);
-  }));
-  const add = modal.querySelector('#j-add');
-  if (add) add.onclick = async () => {
-    const date = modal.querySelector('#j-date').value || null;
-    const notes = modal.querySelector('#j-notes').value;
-    await WS.addObsEntry(o.id, date, notes);
-    OBSERVED.set(o.id, 1);
-    modal.querySelector('#j-notes').value = '';
-    renderJournal(modal, o);
+function wireDetailExtras(modal, o) {
+  if (!o.custom) return;
+  const del = modal.querySelector('#m-del');
+  if (del) del.onclick = async () => {
+    await WS.deleteTargetRec(o.id);
+    CAT = CAT.filter((x) => x.id !== o.id);
+    byId.delete(o.id);
+    closeDetail();
+    if (S.cat.chip === 'custom') S.cat.chip = 'all';
+    renderCatalog();
   };
-  if (o.custom) {
-    const del = modal.querySelector('#m-del');
-    if (del) del.onclick = async () => {
-      await WS.deleteTargetRec(o.id);
-      await WS.clearObs(o.id);
-      CAT = CAT.filter((x) => x.id !== o.id);
-      byId.delete(o.id);
-      OBSERVED.delete(o.id);
-      closeDetail();
-      if (S.cat.chip === 'custom') S.cat.chip = 'all';
-      renderCatalog();
-    };
-  }
 }
 
 const tip = {
@@ -1792,7 +1728,7 @@ async function renderSettings() {
           <label class="btn" for="set-import" style="text-align:center">⬆ Import backup</label>
           <input type="file" id="set-import" accept="application/json,.json" class="vhidden">
         </div>
-        <p class="sub" style="margin-top:8px">A backup covers sites, rigs, custom targets, observations, horizon profiles and settings — the browser equivalent of the desktop app's ZIP export/import.</p>
+        <p class="sub" style="margin-top:8px">A backup covers sites, rigs, custom targets, horizon profiles and settings — the browser equivalent of the desktop app's ZIP export/import.</p>
       </div>
     </div>`;
   modal.hidden = false;
@@ -1869,8 +1805,6 @@ async function renderSettings() {
     await WS.deleteTargetRec(t.id);
     CAT = CAT.filter((x) => x.id !== t.id);
     byId.delete(t.id);
-    OBSERVED.delete(t.id);
-    await WS.clearObs(t.id);
     closeModal(); refreshView();
   }));
   $('#set-add-target').addEventListener('click', () => openTargetForm(null));
@@ -1898,10 +1832,9 @@ async function renderSettings() {
           sites: (data.sites || []).length,
           rigs: (data.rigs || []).length,
           targets: (data.targets || []).length,
-          obs: Object.keys(data.obs || {}).length,
           panos: (data.panos && data.panos.panos ? data.panos.panos : []).length,
         };
-        if (!confirm(`Import backup?\nSites: ${counts.sites} · Rigs: ${counts.rigs} · Custom targets: ${counts.targets}\nObjects with journal entries: ${counts.obs} · Horizons: ${counts.panos}\n\nYour current browser data will be replaced.`)) return;
+        if (!confirm(`Import backup?\nSites: ${counts.sites} · Rigs: ${counts.rigs} · Custom targets: ${counts.targets}\nHorizons: ${counts.panos}\n\nYour current browser data will be replaced.`)) return;
         const applied = await WS.restoreBackup(data);
         if (applied.prefs) Hor.setPrefs(applied.prefs);
         if (applied.panos) Hor.importPanos(applied.panos);
@@ -2051,11 +1984,10 @@ function closeModal() {
   if (modal) { modal.hidden = true; modal.innerHTML = ''; }
 }
 
-/** Re-read user data after a backup import (sites, targets, observations). */
+/** Re-read user data after a backup import (sites, targets). */
 async function reinitUserData() {
   SITES = await WS.getSites();
   for (const t of await WS.getTargets()) upsertTarget(t);
-  OBSERVED = await WS.observedMap();
   let sid = Hor.getPrefs().activeSiteId;
   if (!SITES.some((s) => s.id === sid)) sid = SITES.length ? SITES[0].id : null;
   if (sid && SITES.some((s) => s.id === sid)) applyActiveSite(SITES.find((s) => s.id === sid));
@@ -2142,7 +2074,7 @@ async function boot() {
     return;
   }
 
-  // ---- user data: sites (with first-run welcome), custom targets, observations ----
+  // ---- user data: sites (with first-run welcome), custom targets ----
   SITES = await WS.getSites();
   if (!SITES.length) {
     const legacy = legacySite();
@@ -2162,11 +2094,9 @@ async function boot() {
   let sid = Hor.getPrefs().activeSiteId;
   if (!SITES.some((s) => s.id === sid)) sid = SITES[0].id;
   applyActiveSite(SITES.find((s) => s.id === sid) || SITES[0]);
-  S.cat.hideSeen = !!Hor.getPrefs().hideSeen;
 
-  // custom targets join the catalog; observed map feeds the ✓ marks and filters
+  // custom targets join the catalog
   for (const t of await WS.getTargets()) upsertTarget(t);
-  OBSERVED = await WS.observedMap();
   applyEdge();
   const ver = await WS.loadVersion();
   const fv = $('#foot-ver');
@@ -2320,7 +2250,6 @@ async function boot() {
     const bortle = $('#bortle'), bortleV = $('#bortleVal');
     if (bortle) bortle.value = String(prefs.bortle || 4);
     if (bortleV) bortleV.textContent = String(prefs.bortle || 4);
-    const hs = $('#hideSeen'); if (hs) hs.checked = !!prefs.hideSeen;
     const bb = $('#fltBb'); if (bb) bb.checked = !!prefs.fltBb;
     const ha = $('#fltHa'); if (ha) ha.checked = !!prefs.fltHa;
     const o3 = $('#fltOiii'); if (o3) o3.checked = !!prefs.fltOiii;
@@ -2359,11 +2288,6 @@ async function boot() {
   $('#bortle').addEventListener('change', (ev) => {
     Hor.setPrefs({ bortle: Hor.num(ev.target.value) || 4 });
     refreshMenuUI(); syncTopPrefs(); refreshView();
-  });
-  $('#hideSeen').addEventListener('change', (ev) => {
-    Hor.setPrefs({ hideSeen: ev.target.checked });
-    S.cat.hideSeen = ev.target.checked;
-    refreshView();
   });
   $('#fltBb').addEventListener('change', (ev) => { Hor.setPrefs({ fltBb: ev.target.checked }); refreshView(); });
   $('#fltHa').addEventListener('change', (ev) => { Hor.setPrefs({ fltHa: ev.target.checked }); refreshView(); });

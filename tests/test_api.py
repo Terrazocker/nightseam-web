@@ -623,23 +623,6 @@ def test_preview_endpoint(client):
     assert r.status_code == 404
 
 
-# ------------------------------------------------------------------ observations
-
-def test_observations(client):
-    r = client.post("/api/object/m31/observed",
-                    json={"date_obs": "2026-08-24", "notes": "great night"})
-    assert r.status_code == 200
-    rows = client.get("/api/object/m31/observed").json()
-    assert len(rows) == 1 and rows[0]["notes"] == "great night"
-    st = client.get("/api/state").json()
-    assert st["observed"][0]["object_id"] == "m31"
-    rid = rows[0]["id"]
-    assert client.delete(f"/api/object/m31/observed/{rid}").status_code == 200
-    assert client.get("/api/object/m31/observed").json() == []
-    assert client.post("/api/object/nope/observed",
-                       json={"notes": "x"}).status_code == 404
-
-
 # ------------------------------------------------------------------ bortle
 
 def test_bortle_setting_and_min_alt_default(client):
@@ -773,8 +756,6 @@ def test_export_import_roundtrip(client, tmp_path):
                 files=[("files", ("m31.fit", m31_fits(),
                                   "application/octet-stream"))])
     client.post("/api/settings", json={"min_useful_alt": 33.0})
-    client.post("/api/object/m31/observed",
-                json={"date_obs": "2026-08-24", "notes": "roundtrip note"})
 
     z = client.get("/api/export")
     assert z.status_code == 200
@@ -795,7 +776,6 @@ def test_export_import_roundtrip(client, tmp_path):
         st = c2.get("/api/state").json()
         assert st["min_useful_alt"] == 33.0
         assert st["sites"][0]["name"] == "Export Site"
-        assert st["observed"][0]["notes"] == "roundtrip note"
         lib = c2.get("/api/library").json()
         assert lib["total_images"] == 1
         assert lib["objects"][0]["name"]

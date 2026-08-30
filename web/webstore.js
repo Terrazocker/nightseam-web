@@ -4,8 +4,6 @@
  *   sites   — {id, name, lat, lon, elev, tz}            (local: sites table)
  *   rigs    — {id, name, focal_mm, sensor_w, sensor_h, fov_w, fov_h}  (rigs)
  *   targets — custom objects, id "u_*"                   (custom_objects)
- *   obs     — key: object_id, value {entries:[{date_obs, notes, created_at}]}
- *                                                       (observations)
  * Plus: per-site timezone helpers (DST-aware, Intl), backup/restore of all
  * user data as JSON, and the version stamp (version.json, git describe).
  * IndexedDB database: "apweb-db-v1".
@@ -172,37 +170,6 @@ function sexa(s) {
   return NaN;
 }
 
-/* ---------------------------- observations ---------------------------- */
-
-export async function getObs(objectId) {
-  const v = await get('obs', objectId);
-  return v && Array.isArray(v.entries) ? v.entries : [];
-}
-
-export async function addObsEntry(objectId, dateObs, notes) {
-  const entries = await getObs(objectId);
-  entries.push({ date_obs: dateObs || null, notes: notes || '', created_at: new Date().toISOString() });
-  return set('obs', objectId, { entries });
-}
-
-export async function deleteObsEntry(objectId, createdAt) {
-  const entries = (await getObs(objectId)).filter((e) => e.created_at !== createdAt);
-  if (entries.length) return set('obs', objectId, { entries });
-  return del('obs', objectId);
-}
-
-export async function clearObs(objectId) {
-  return del('obs', objectId);
-}
-
-/** Map object_id -> entry count (for observed filters/indicators). */
-export async function observedMap() {
-  const rows = await all('obs');
-  const m = new Map();
-  for (const r of rows) m.set(r.key, r.val.entries ? r.val.entries.length : 0);
-  return m;
-}
-
 /* ---------------------------- timezone (DST-aware) ---------------------------- */
 
 let activeTz = null; // IANA name of the active site, or null = browser local
@@ -263,11 +230,9 @@ export async function loadVersion() {
 /* --------------------------- backup / restore --------------------------- */
 
 export async function collectBackup(prefs, panos) {
-  const [sites, rigs, targets, obsRows] = await Promise.all([
-    all('sites'), all('rigs'), all('targets'), all('obs'),
+  const [sites, rigs, targets] = await Promise.all([
+    all('sites'), all('rigs'), all('targets'),
   ]);
-  const obs = {};
-  for (const r of obsRows) obs[r.key] = r.val;
   return {
     app: 'astropilot-web',
     exportedAt: new Date().toISOString(),
@@ -276,7 +241,6 @@ export async function collectBackup(prefs, panos) {
     sites: sites.map((r) => r.val),
     rigs: rigs.map((r) => r.val),
     targets: targets.map((r) => r.val),
-    obs,
   };
 }
 
@@ -289,7 +253,6 @@ export async function restoreBackup(data) {
   for (const s of (data.sites || [])) { if (s && s.id) jobs.push(set('sites', s.id, s)); }
   for (const r of (data.rigs || [])) { if (r && r.id) jobs.push(set('rigs', r.id, r)); }
   for (const t of (data.targets || [])) { if (t && t.id) jobs.push(set('targets', t.id, t)); }
-  for (const key of Object.keys(data.obs || {})) jobs.push(set('obs', key, data.obs[key]));
   await Promise.all(jobs);
   return {
     prefs: (data.prefs && typeof data.prefs === 'object') ? data.prefs : null,

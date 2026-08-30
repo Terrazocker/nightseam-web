@@ -253,7 +253,6 @@ if(x.status===200){var t=JSON.parse(x.responseText).theme;if(t)document.document
       </label>
       <label class="inline"><input type="checkbox" id="fUnblocked" checked> clear window only</label>
       <label class="inline"><input type="checkbox" id="fFav"> &#9733; session</label>
-      <label class="inline"><input type="checkbox" id="fObserved" title="hide targets you already logged as observed"> observed</label>
       <select id="fConst" title="constellation filter">
         <option value="">All constellations</option>
       </select>
@@ -510,13 +509,6 @@ if(x.status===200){var t=JSON.parse(x.responseText).theme;if(t)document.document
         <img id="dImage" alt="">
         <table class="kv" id="dMeta"></table>
         <p id="dBlurb"></p>
-        <h4 style="margin:14px 0 6px">Session journal</h4>
-        <div class="journal-form">
-          <input id="jDate" type="date" title="date observed">
-          <input id="jNotes" placeholder="notes (seeing, sky, result...)" maxlength="200">
-          <button id="jAdd" class="ghost">Log</button>
-        </div>
-        <div id="jList" class="hint"></div>
       </div>
       <div class="detail-chart">
         <canvas id="altChart"></canvas>

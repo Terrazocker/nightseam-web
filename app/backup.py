@@ -43,7 +43,6 @@ def build_export_zip(db: Database) -> bytes:
             "panoramas": db.panoramas(),
             "customs": db.customs(),
             "images": db.images(),
-            "observations": db.observations(),
         }
         z.writestr("setup.json", json.dumps(setup, indent=1))
         for p in setup["panoramas"]:
@@ -74,11 +73,10 @@ def apply_import_zip(db: Database, blob: bytes) -> dict:
     panos = setup.get("panoramas", [])
     customs = setup.get("customs", [])
     images = setup.get("images", [])
-    observations = setup.get("observations", [])
     settings = setup.get("settings", {})
 
     db.import_bundle(settings, sites, rigs, panos, customs=customs,
-                     images=images, observations=observations)
+                     images=images)
 
     pano_files = 0
     for p in panos:
@@ -113,5 +111,4 @@ def apply_import_zip(db: Database, blob: bytes) -> dict:
     return {"ok": True, "sites": len(sites), "rigs": len(rigs),
             "panoramas": len(panos), "pano_images": pano_files,
             "customs": len(customs), "images": len(images),
-            "observations": len(observations),
             "library_files": image_files}

@@ -1,6 +1,6 @@
 /* Targets tab: filters, sorting, paginated table rendering */
 
-import { $, esc, api, fmtSize, todayLocal, TYPE_LABEL, TYPE_COLOR, constName } from "./util.js";
+import { $, esc, api, fmtSize, TYPE_LABEL, TYPE_COLOR, constName } from "./util.js";
 import { S, IMG_VER } from "./state.js";
 import { statusOf, windowText, desigLine,
          objScore, filterAdvice, frameCoverage, coverageCell,
@@ -23,7 +23,6 @@ export function bindFilters() {
   });
   $("#fUnblocked").addEventListener("change", () => { resetPage(); renderTargets(); });
   $("#fFav").addEventListener("change", () => { resetPage(); renderTargets(); });
-  $("#fObserved").addEventListener("change", () => { resetPage(); renderTargets(); });
   $("#fConst").addEventListener("change", () => { resetPage(); renderTargets(); });
   $("#fSort").addEventListener("change", () => { resetPage(); renderTargets(); });
   $("#pagerPrev").addEventListener("click", () => {
@@ -54,26 +53,6 @@ export function bindFilters() {
         });
       return;
     }
-    const obs = e.target.closest("[data-obs]");
-    if (obs) {
-      e.preventDefault();
-      e.stopPropagation();
-      const id = obs.dataset.obs;
-      const isObs = S.observedIds.has(id);
-      const p = isObs
-        ? api(`/api/object/${id}/observed`, { method: "GET" })
-            .then(list => Promise.all((list || []).map(r =>
-              api(`/api/object/${id}/observed/${r.id}`, { method: "DELETE", silent: true }))))
-        : api(`/api/object/${id}/observed`, { method: "POST", silent: true,
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ date_obs: todayLocal() }) });
-      p.then(async () => {
-        S.cfg = await api("/api/state");
-        S.observedIds = new Set((S.cfg.observed || []).map(x => x.object_id));
-        renderTargets();
-      }).catch(() => {});
-      return;
-    }
     const tr = e.target.closest("tr[data-id]");
     if (tr) openDetail(tr.dataset.id);
   });
@@ -95,8 +74,6 @@ export function passesFilters(m, o) {
   if ($("#fUnblocked").checked && !(o.best && o.best[1]-o.best[0] >= 3)) return false;
   if ($("#fFav") && $("#fFav").checked &&
       !(S.cfg.favorites || []).includes(m.id)) return false;
-  if ($("#fObserved") && $("#fObserved").checked &&
-      (S.observedIds || []).has(m.id)) return false;
   const fc = $("#fConst").value;
   if (fc && m.constellation !== fc) return false;
   return true;
@@ -171,7 +148,7 @@ export function renderTargets(fromPager = false) {
     const fav = favs.has(m.id);
     return `<tr data-id="${m.id}">
       <td>${thumbHTML(m.id)}</td>
-      <td class="objcell"><button class="starbtn${fav?" on":""}" data-fav="${m.id}" title="mark for session">&#9733;</button><button class="obsbtn${S.observedIds.has(m.id)?" on":""}" data-obs="${m.id}" title="logged as observed (session journal)">&#10003;</button><b>${esc(m.primary_name)}</b><span>${esc(desigLine(m))}${m.constellation?" \u00B7 "+esc(constName(m.constellation)):""}</span></td>
+      <td class="objcell"><button class="starbtn${fav?" on":""}" data-fav="${m.id}" title="mark for session">&#9733;</button><b>${esc(m.primary_name)}</b><span>${esc(desigLine(m))}${m.constellation?" \u00B7 "+esc(constName(m.constellation)):""}</span></td>
       <td><span class="typebadge" style="color:${TYPE_COLOR[m.otype]};border-color:${TYPE_COLOR[m.otype]}55">${TYPE_LABEL[m.otype]||m.otype}</span>${adv ? " " + adv.pill : ""}</td>
       <td class="grade">${gradeTag(m, o)}</td>
       <td>${m.vmag!=null?m.vmag.toFixed(1):"&mdash;"}</td>

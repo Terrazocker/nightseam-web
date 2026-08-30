@@ -15,5 +15,4 @@ export const S = {
   catmode: false,     // Image Archive mode active
   library: null,      // /api/library
   disabledTypes: new Set(),   // object types greyed out on the sky charts
-  observedIds: new Set(),     // object ids logged in the session journal
 };
