@@ -692,6 +692,16 @@ function skyClampFocus(W) {
   if (SKYV.fy != null) SKYV.fy = Math.max(W / 2 - Rlim, Math.min(W / 2 + Rlim, SKYV.fy));
 }
 
+/** Start of the 24 h scrub window that CONTAINS the given time: the most
+ *  recent noon at-or-before it (yesterday's noon when the clock reads
+ *  before 12:00). Without this, any time before noon lands outside the
+ *  noon->next-noon range and the slider clamps to its left edge. */
+function skyRangeStart(t) {
+  const w = WS.utcToWall(t);
+  const dayOffset = w.getHours() < 12 ? -1 : 0;
+  return WS.wallToUtc(new Date(w.getFullYear(), w.getMonth(), w.getDate() + dayOffset, 12, 0, 0));
+}
+
 function dtoLocalInput(d) {
   const w = WS.utcToWall(d);
   const p = (x) => String(x).padStart(2, '0');
@@ -999,14 +1009,16 @@ function renderSky() {
   const resetBtn = $('#sky-reset');
   if (resetBtn) resetBtn.addEventListener('click', () => { skyResetView(); });
 
-  // time scrub slider: noon -> next noon (site wall clock)
+  // time scrub slider: 24 h window containing the current sky time
   const timeEl = $('#sky-time');
   const slider = $('#sky-slider');
   const sout = $('#sky-sout');
-  const wallNow = WS.utcToWall(S.skyTime);
-  const rangeStart = WS.wallToUtc(new Date(wallNow.getFullYear(), wallNow.getMonth(), wallNow.getDate(), 12, 0, 0));
   const pad2 = (x) => String(x).padStart(2, '0');
-  const sliderVal = () => Math.max(0, Math.min(1440, Math.round((S.skyTime.getTime() - rangeStart.getTime()) / 60000)));
+  const rangeStart = () => skyRangeStart(S.skyTime);
+  const sliderVal = () => {
+    const rs = rangeStart();
+    return Math.max(0, Math.min(1440, Math.round((S.skyTime.getTime() - rs.getTime()) / 60000)));
+  };
   const syncControls = () => {
     slider.value = String(sliderVal());
     sout.textContent = fmtClock(S.skyTime); // wall clock at the site
@@ -1014,7 +1026,7 @@ function renderSky() {
   };
   syncControls();
   slider.addEventListener('input', () => {
-    S.skyTime = new Date(rangeStart.getTime() + Number(slider.value) * 60000);
+    S.skyTime = new Date(rangeStart().getTime() + Number(slider.value) * 60000);
     syncControls();
     draw();
   });
@@ -2119,10 +2131,14 @@ async function boot() {
     if (note) note.textContent = p.minAlt == null ? 'auto (bortle)' : 'explicit';
   };
   syncTopPrefs();
+  // live label + pref on every tick, but only recompute the views when the
+  // drag ENDS — a per-tick refreshView() re-ranks the whole night and
+  // rebuilds the view under the pointer, making the slider feel broken.
   const applyMinAlt = (ev) => {
     const v = Hor.num(ev.target.value);
     Hor.setPrefs({ minAlt: Number.isFinite(v) && v >= 5 && v <= 89 ? v : null });
-    syncTopPrefs(); refreshView();
+    syncTopPrefs();
+    if (ev.type === 'change') refreshView();
   };
   $('#tb-minalt').addEventListener('input', applyMinAlt);
   $('#tb-minalt').addEventListener('change', applyMinAlt);
@@ -2148,20 +2164,21 @@ async function boot() {
   const scrub = $('#tb-scrub'), scrubT = $('#tb-scrub-time');
   if (scrub) {
     const syncScrub = () => {
-      const wallNow = WS.utcToWall(S.skyTime);
-      const rangeStart = WS.wallToUtc(new Date(wallNow.getFullYear(), wallNow.getMonth(), wallNow.getDate(), 12, 0, 0));
-      const mins = Math.max(0, Math.min(1440, Math.round((S.skyTime.getTime() - rangeStart.getTime()) / 60000)));
+      const rs = skyRangeStart(S.skyTime);
+      const mins = Math.max(0, Math.min(1440, Math.round((S.skyTime.getTime() - rs.getTime()) / 60000)));
       scrub.value = String(mins);
       if (scrubT) scrubT.textContent = fmtClock(S.skyTime);
     };
     syncScrub();
     const onScrub = () => {
-      const wallNow = WS.utcToWall(S.skyTime);
-      const rangeStart = WS.wallToUtc(new Date(wallNow.getFullYear(), wallNow.getMonth(), wallNow.getDate(), 12, 0, 0));
-      S.skyTime = new Date(rangeStart.getTime() + Number(scrub.value) * 60000);
+      // one range for the whole drag: derive it from the CURRENT skyTime
+      // (not from the day the slider was built), then only update the pieced
+      // S.skyTime; the sky view redraws via the sky:time event — no full
+      // view rebuild, no per-tick recompute.
+      const rs = skyRangeStart(S.skyTime);
+      S.skyTime = new Date(rs.getTime() + Number(scrub.value) * 60000);
       if (scrubT) scrubT.textContent = fmtClock(S.skyTime);
       window.dispatchEvent(new CustomEvent('sky:time'));
-      if (S.view === 'sky') refreshView();
     };
     scrub.addEventListener('input', onScrub);
     window.addEventListener('sky:time', syncScrub);
@@ -2274,6 +2291,10 @@ async function boot() {
   });
   $('#moonAware').addEventListener('change', (ev) => { Hor.setPrefs({ moonAware: ev.target.checked }); refreshView(); });
   $('#bortle').addEventListener('input', (ev) => {
+    Hor.setPrefs({ bortle: Hor.num(ev.target.value) || 4 });
+    refreshMenuUI(); syncTopPrefs();
+  });
+  $('#bortle').addEventListener('change', (ev) => {
     Hor.setPrefs({ bortle: Hor.num(ev.target.value) || 4 });
     refreshMenuUI(); syncTopPrefs(); refreshView();
   });
