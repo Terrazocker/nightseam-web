@@ -7,6 +7,12 @@
 > sub-version (`web/`, AstroPilot Web v0.5.0) is fully integrated in this
 > repo with the same history and tags (`v0.4.2`, `v0.5.0`).
 
+> **Design — READ `DESIGN.md` before any UI work.** Glass (`dome`) is the
+> project's design language and the web default. Every UI change must follow
+> its tokens, glass surfaces, typography and structural rules (themes.css
+> dome blocks in `web/` and `static/` are the reference implementation).
+> "Classic" is a flat fallback, not a second language.
+
 AstroPilot: a desktop DSO-planning app that runs a local FastAPI server and
 serves a vanilla-JS UI. Pure-Python astronomy (Meeus algorithms) - no
 numpy/astropy, no JS build step, no npm. Works fully offline except optional
