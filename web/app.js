@@ -104,6 +104,25 @@ function flashOf(o) {
   return v;
 }
 
+/* ---- Rarity tiers: MMO-style, better -> worse: yellow > pink > blue > green > grey ----
+   Computed from the flash desirability score (brightness + size + fame + type),
+   so every one of the ~12k objects gets a tier automatically. */
+const RARITY_TIERS = [
+  { label: 'Legendary', min: 80, color: '#ffd166' },  // yellow
+  { label: 'Epic',      min: 60, color: '#ff7eb6' },  // pink
+  { label: 'Rare',      min: 40, color: '#7cc4ff' },  // blue
+  { label: 'Uncommon',  min: 20, color: '#7bf1a8' },  // green
+  { label: 'Common',    min: 0,  color: '#67749c' },  // grey
+];
+function rarityOf(o) {
+  const f = flashOf(o);
+  return RARITY_TIERS.find((t) => f >= t.min) || RARITY_TIERS[RARITY_TIERS.length - 1];
+}
+function rarityTag(o) {
+  const r = rarityOf(o);
+  return `<span class="p-rarity" style="color:${r.color}" title="Rarity ${r.label} — how visually striking the object is (computed from brightness, size, fame and type)">◆ ${r.label}</span>`;
+}
+
 function searchBlob(o) {
   let b = searchCache.get(o);
   if (b === undefined) {
@@ -490,7 +509,7 @@ function renderTonight() {
       const fOwn = filterOwned(o);
       return `<li data-id="${esc(o.id)}">
         <span class="dot" style="background:${typeColor(o)}"></span>
-        <span>${r.flash >= 60 ? '<span class="p-flash">✨</span> ' : ''}<span class="p-name">${esc(o.primary_name)}</span>${tags ? `<span class="p-tags">${esc(tags)}</span>` : ''}${fOwn ? `<span class="f-own" title="filter owned">${esc(fOwn)}</span>` : ''}</span>
+        <span>${r.flash >= 60 ? '<span class="p-flash">✨</span> ' : ''}<span class="p-name">${esc(o.primary_name)}</span>${tags ? `<span class="p-tags">${esc(tags)}</span>` : ''}${rarityTag(o)}${fOwn ? `<span class="f-own" title="filter owned">${esc(fOwn)}</span>` : ''}</span>
         <span class="p-right"><button class="seen" data-seen="${esc(o.id)}" title="${seen ? 'observed — click to unmark' : 'not observed — click to mark'}" aria-label="observed toggle">${seen ? '✓' : '○'}</button>
           <b>${r.maxAlt.toFixed(0)}°</b>
           <span class="p-vis">${r.visN ? `${r.obsPct}% of night · ${fmtDur(r.visN * step * 1440)} visible` : 'not clear tonight'}</span>${win}</span>
@@ -545,6 +564,30 @@ function renderTonight() {
 /* ----------------------------- sky map ----------------------------- */
 
 let skyItems = [];
+// uranometria-style rectangular viewport zoom: the chart is a circle in a
+// square, but zooming opens a RECTANGLE window (1..8x) over the chart —
+// the disc edge can leave the screen, so you see more sky than a circular
+// magnifier would show. Wheel = zoom to cursor, drag = pan, double-click
+// (or Reset view) = back to 1x.
+let SKYV = { zoom: 1, fx: null, fy: null, drag: null, suppressClick: false };
+
+function skyResetView() {
+  SKYV.zoom = 1; SKYV.fx = null; SKYV.fy = null;
+  if (SKYV.onReset) SKYV.onReset();
+}
+
+/** screen (css px within the canvas) -> base chart coords */
+function skyScreenToBase(W, sx, sy) {
+  const fx = SKYV.fx == null ? W / 2 : SKYV.fx;
+  const fy = SKYV.fy == null ? W / 2 : SKYV.fy;
+  return [fx + (sx - W / 2) / SKYV.zoom, fy + (sy - W / 2) / SKYV.zoom];
+}
+
+function skyClampFocus(W) {
+  const Rlim = W / 2 - 22;
+  if (SKYV.fx != null) SKYV.fx = Math.max(W / 2 - Rlim, Math.min(W / 2 + Rlim, SKYV.fx));
+  if (SKYV.fy != null) SKYV.fy = Math.max(W / 2 - Rlim, Math.min(W / 2 + Rlim, SKYV.fy));
+}
 
 function dtoLocalInput(d) {
   const w = WS.utcToWall(d);
@@ -566,6 +609,7 @@ function renderSky() {
           </label>
           <div class="btnrow" style="margin-top:12px">
             <button class="btn primary" id="sky-now">Now</button>
+            <button class="btn" id="sky-reset" title="double-click the chart also resets">↺ Reset view</button>
           </div>
           <p class="sub" style="margin-top:10px">slider spans noon → next noon, site time</p>
         </div>
@@ -578,7 +622,7 @@ function renderSky() {
             ${Object.entries(TYPE_COLORS).map(([t, c]) => `<li><span class="dot" style="background:${c}"></span>${TYPE_LABELS[t]}</li>`).join('')}
           </ul>
         </div>
-        <div class="card"><h3>Hint</h3><p class="sub" style="font-size:13px">Click an object to open its detail panel. The chart is an all-sky polar view: center = zenith, rim = horizon, north at top.</p></div>
+        <div class="card"><h3>Hint</h3><p class="sub" style="font-size:13px">Click an object to open its detail panel. The chart is an all-sky polar view: center = zenith, rim = horizon, north at top. <b>Scroll = zoom · drag = pan · double-click = reset</b> — zooming opens a rectangular window over the chart, so you see more sky than a circular magnifier.</p></div>
       </div>
     </div>`;
   hideSplash();
@@ -594,18 +638,34 @@ function renderSky() {
       .sort((a, b) => (a.vmag ?? 99) - (b.vmag ?? 99)).slice(0, 1400),
   ];
 
+  let _dpr = 1;
   function sizeCanvas() {
     const w = cvs.clientWidth;
     const dpr = window.devicePixelRatio || 1;
+    _dpr = dpr;
     cvs.width = w * dpr; cvs.height = w * dpr;
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+
+  /** apply the rectangular viewport: zoom about the focus point (which sits
+   *  under the canvas centre), so the visible window is a RECTANGLE of the
+   *  chart, exactly like the uranometria sky map. */
+  function applyView(W) {
+    const fx = SKYV.fx == null ? W / 2 : SKYV.fx;
+    const fy = SKYV.fy == null ? W / 2 : SKYV.fy;
+    ctx.setTransform(_dpr * SKYV.zoom, 0, 0, _dpr * SKYV.zoom,
+                     _dpr * (W / 2 - fx * SKYV.zoom),
+                     _dpr * (W / 2 - fy * SKYV.zoom));
   }
 
   function draw() {
     const W = cvs.clientWidth;
     const cx = W / 2, cy = W / 2;
     const R = W / 2 - 22;
-    ctx.clearRect(0, 0, W, W);
+    // reset to identity then clear in DEVICE pixels, then apply the view
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, cvs.width, cvs.height);
+    applyView(W);
+    skyClampFocus(W);
 
     // grid
     ctx.strokeStyle = 'rgba(124, 196, 255, .16)';
@@ -739,8 +799,14 @@ function renderSky() {
     return [ev.clientX - r.left, ev.clientY - r.top];
   }
 
+  /* screen px -> base chart coords (zoom-aware hit-testing) */
+  const toBase = (ev) => {
+    const [sx, sy] = posEl(ev);
+    return skyScreenToBase(cvs.clientWidth || 1, sx, sy);
+  };
+
   cvs.addEventListener('mousemove', (ev) => {
-    const [x, y] = posEl(ev);
+    const [x, y] = toBase(ev);
     let best = null, bestD = 10000;
     for (const it of skyItems) {
       const d = (it.x - x) ** 2 + (it.y - y) ** 2;
@@ -758,7 +824,8 @@ function renderSky() {
   });
   cvs.addEventListener('mouseleave', () => { tip.hidden = true; });
   cvs.addEventListener('click', (ev) => {
-    const [x, y] = posEl(ev);
+    if (SKYV.suppressClick) { SKYV.suppressClick = false; return; }
+    const [x, y] = toBase(ev);
     let best = null, bestD = 10000;
     for (const it of skyItems) {
       if (it.id === 'SUN' || it.id === 'MOON') continue;
@@ -767,6 +834,67 @@ function renderSky() {
     }
     if (best && bestD < 140) openDetail(best.id);
   });
+
+  // ---- rectangular viewport zoom: wheel = zoom-to-cursor, drag = pan,
+  //      double-click = reset (uranometria-style) ----
+  SKYV.onReset = () => { if (S.view === 'sky') { const w = cvs.clientWidth; sizeCanvas(); draw(); } };
+  cvs.addEventListener('wheel', (ev) => {
+    if (S.view !== 'sky') return;
+    ev.preventDefault();
+    const W = cvs.clientWidth || 1;
+    const [sx, sy] = posEl(ev);
+    const [bx, by] = skyScreenToBase(W, sx, sy);
+    const factor = ev.deltaY < 0 ? 1.25 : 0.8;
+    const nz = Math.max(1, Math.min(8, SKYV.zoom * factor));
+    if (nz === SKYV.zoom) return;
+    SKYV.zoom = nz;
+    if (SKYV.zoom > 1) {
+      // keep the point under the cursor fixed while zooming
+      SKYV.fx = bx - (sx - W / 2) / SKYV.zoom;
+      SKYV.fy = by - (sy - W / 2) / SKYV.zoom;
+      skyClampFocus(W);
+    } else { SKYV.fx = null; SKYV.fy = null; }
+    draw();
+  }, { passive: false });
+  cvs.addEventListener('pointerdown', (ev) => {
+    if (ev.button !== 0) return;
+    const rect = cvs.getBoundingClientRect();
+    SKYV.drag = {
+      sx: ev.clientX, sy: ev.clientY,
+      fx: SKYV.fx == null ? rect.width / 2 : SKYV.fx,
+      fy: SKYV.fy == null ? rect.width / 2 : SKYV.fy,
+      moved: false,
+    };
+  });
+  cvs.addEventListener('pointermove', (ev) => {
+    if (SKYV.drag && (ev.buttons & 1)) {
+      if (SKYV.zoom <= 1) return;
+      const rect = cvs.getBoundingClientRect();
+      const dx = ev.clientX - SKYV.drag.sx, dy = ev.clientY - SKYV.drag.sy;
+      if (!SKYV.drag.moved && Math.hypot(dx, dy) > 4) {
+        SKYV.drag.moved = true;
+        tip.hidden = true;
+      }
+      if (SKYV.drag.moved) {
+        SKYV.fx = SKYV.drag.fx - dx / SKYV.zoom;
+        SKYV.fy = SKYV.drag.fy - dy / SKYV.zoom;
+        skyClampFocus(rect.width);
+        draw();
+      }
+      return;
+    }
+    cvs.dispatchEvent(new MouseEvent('mousemove', { clientX: ev.clientX, clientY: ev.clientY, bubbles: true }));
+  });
+  window.addEventListener('pointerup', () => {
+    if (SKYV.drag && SKYV.drag.moved) { SKYV.suppressClick = true; setTimeout(() => { SKYV.suppressClick = false; }, 0); }
+    SKYV.drag = null;
+  });
+  cvs.addEventListener('dblclick', (ev) => {
+    ev.preventDefault();
+    skyResetView();
+  });
+  const resetBtn = $('#sky-reset');
+  if (resetBtn) resetBtn.addEventListener('click', () => { skyResetView(); });
 
   // time scrub slider: noon -> next noon (site wall clock)
   const timeEl = $('#sky-time');
@@ -810,9 +938,11 @@ let skyTimeHandler = null;
 
 /* ----------------------------- catalog ----------------------------- */
 
-const CHIP_LABELS = { all: 'All', messier: 'Messier', bright: 'Bright <8', galaxies: 'Galaxies', nebulae: 'Nebulae', clusters: 'Clusters', custom: 'Custom' };
+const CHIP_LABELS = { all: 'All', legendary: 'Legendary', epicplus: 'Epic+', messier: 'Messier', bright: 'Bright <8', galaxies: 'Galaxies', nebulae: 'Nebulae', clusters: 'Clusters', custom: 'Custom' };
 const CHIP_FILTERS = {
   all: () => true,
+  legendary: (o) => flashOf(o) >= 80,
+  epicplus: (o) => flashOf(o) >= 60,
   messier: (o) => !!o.messier,
   bright: (o) => o.vmag != null && o.vmag < 8,
   galaxies: (o) => o.otype === 'galaxy',
@@ -838,6 +968,7 @@ function filteredCatalog() {
     else if (col === 'type') v = (TYPE_LABELS[a.otype] || a.otype).localeCompare(TYPE_LABELS[b.otype] || b.otype);
     else if (col === 'con') v = a.constellation.localeCompare(b.constellation);
     else if (col === 'size') v = parseFloat(String(a.size_am || '0').split('x')[0]) - parseFloat(String(b.size_am || '0').split('x')[0]);
+    else if (col === 'rarity') v = flashOf(b) - flashOf(a); // best rarity first (up) / worst first (down)
     else if (col === 'pct') {
       const pa = (obsCache.get(obsKey(pctG, a.id)) || {}).pct ?? -1;
       const pb = (obsCache.get(obsKey(pctG, b.id)) || {}).pct ?? -1;
@@ -876,16 +1007,18 @@ function renderCatalog() {
     </div>
     <div class="card" style="padding:8px 10px">
       <table class="cat">
-        <thead><tr><th class="seen-th" title="observed"></th>${th('name', 'Name')}${th('mag', 'Mag', true)}${th('pct', '% visibility', true)}${th('type', 'Type')}${th('con', 'Con')}${th('size', 'Size', true)}${showFrame ? `<th class="frame" title="frame coverage with the active rig">Frame</th>` : ''}${th('ra', 'RA', true)}${th('dec', 'Dec', true)}</tr></thead>
+        <thead><tr><th class="seen-th" title="observed"></th>${th('name', 'Name')}${th('rarity', 'Rarity')}${th('mag', 'Mag', true)}${th('pct', '% visibility', true)}${th('type', 'Type')}${th('con', 'Con')}${th('size', 'Size', true)}${showFrame ? `<th class="frame" title="frame coverage with the active rig">Frame</th>` : ''}${th('ra', 'RA', true)}${th('dec', 'Dec', true)}</tr></thead>
         <tbody>
           ${slice.map((o) => {
             const tags = [o.messier, o.ngcic].filter(Boolean).join(' · ');
             const seen = OBSERVED.has(o.id);
             const fOwn = filterOwned(o);
             const fp = showFrame ? rigFramePct(o) : null;
+            const rr = rarityOf(o);
             return `<tr data-id="${esc(o.id)}">
               <td class="seen-td"><button class="seen" data-seen="${esc(o.id)}" title="${seen ? 'observed — click to unmark' : 'not observed — click to mark'}" aria-label="observed toggle">${seen ? '✓' : '○'}</button></td>
               <td><span class="tname">${esc(o.primary_name)}</span> ${tags ? `<span class="tags">${esc(tags)}</span>` : ''}${fOwn ? `<span class="f-own" title="filter owned">${esc(fOwn)}</span>` : ''}</td>
+              <td class="rarity"><span class="rtag" style="color:${rr.color}" title="Rarity ${rr.label} — how visually striking the object is (brightness + size + fame + type)">${rr.label}</span></td>
               <td class="num">${o.vmag != null ? o.vmag.toFixed(1) : '—'}</td>
               <td class="num pct" data-objid="${escAttr(o.id)}">${cachedPctText(o.id)}</td>
               <td><span class="tag-dot" style="color:${typeColor(o)}">●</span> ${TYPE_LABELS[o.otype] || o.otype}</td>
@@ -994,6 +1127,27 @@ function openDetail(id) {
   const localMidnight = new Date(S.date.getFullYear(), S.date.getMonth(), S.date.getDate(), 0, 30);
   const dayInfo = E.objectDayInfo(o.ra_hours * 15, o.dec_deg, localMidnight, lat, lon);
 
+  // Moon distance now + at tonight's peak (proximity awareness, like the smart-scope apps)
+  const [moonRa, moonDec] = E.moonRaDec(jd);
+  const [moonAltNow, moonAzNow] = E.altaz(moonRa * 15, moonDec, jd, lat, lon);
+  const sepNow = E.sepDeg(altNow, azNow, moonAltNow, moonAzNow);
+  const illumNow = E.moonIllumination ? E.moonIllumination(jd) : 0;
+  let sepPeak = null;
+  const peakJd = E.julianDay(dayInfo.transit instanceof Date ? dayInfo.transit : jd);
+  try {
+    const [mr2, md2] = E.moonRaDec(peakJd);
+    const [ma2, maz2] = E.altaz(mr2 * 15, md2, peakJd, lat, lon);
+    const [pa, paz] = E.altaz(o.ra_hours * 15, o.dec_deg, peakJd, lat, lon);
+    sepPeak = E.sepDeg(pa, paz, ma2, maz2);
+  } catch { /* e.g. transit not a Date — keep null */ }
+  const moonRow = (label, sep) => {
+    if (sep == null) return '';
+    const a = Math.round(sep);
+    const col = illumNow < 15 ? 'var(--green)' : a >= 90 ? 'var(--green)' : a >= 45 ? 'var(--amber)' : 'var(--bad)';
+    const note = a < 30 ? ' — very close to the Moon' : a < 60 ? ' — close to the Moon' : '';
+    return `<dt>${label}</dt><dd><span style="color:${col}">${a}°</span><span class="tags">from Moon${note}</span></dd>`;
+  };
+
   const tags = [o.messier, o.ngcic, o.other].filter(Boolean).map(esc).join(' · ');
   const wiki = o.wiki || o.primary_name;
 
@@ -1012,6 +1166,7 @@ function openDetail(id) {
         <div>
           <dl class="meta">
             <dt>Type</dt><dd><span style="color:${typeColor(o)}">●</span> ${TYPE_LABELS[o.otype] || o.otype}</dd>
+            <dt>Rarity</dt><dd><span style="color:${rarityOf(o).color}">◆ ${rarityOf(o).label}</span> <span class="tags">visual ${flashOf(o)}/100</span></dd>
             <dt>Magnitude</dt><dd>${o.vmag != null ? o.vmag.toFixed(1) : '—'}</dd>
             <dt>Size</dt><dd>${esc(fmtSize(o)) || '—'}</dd>
             <dt>Constellation</dt><dd>${esc(o.constellation || '—')}</dd>
@@ -1019,6 +1174,8 @@ function openDetail(id) {
             <dt>RA / Dec (J2000)</dt><dd>${E.formatRA(o.ra_hours)} · ${E.formatDec(o.dec_deg)}</dd>
             <dt>Right now</dt><dd>alt ${altNow.toFixed(1)}°, az ${azNow.toFixed(0)}°</dd>
             <dt>Tonight</dt><dd>rises ${fmtClock(dayInfo.rise)} · transits ${fmtClock(dayInfo.transit)} · sets ${fmtClock(dayInfo.set)} · peaks ${dayInfo.maxAlt.toFixed(0)}°</dd>
+            ${moonRow('Moon dist now', sepNow)}
+            ${sepPeak != null ? moonRow('Moon dist @ peak', sepPeak) : ''}
             <dt>Observable</dt><dd id="d-obs">—</dd>
           </dl>
           ${o.blurb ? `<p class="blurb">${esc(o.blurb)}</p>` : ''}

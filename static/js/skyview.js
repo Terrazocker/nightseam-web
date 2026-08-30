@@ -104,6 +104,8 @@ export function bindSky() {
     renderSky();
   }, { passive: false });
   $("#skyZoomReset").addEventListener("click", resetSkyView);
+  // uranometria-style: double-click anywhere on the chart resets the zoom
+  cv.addEventListener("dblclick", e => { e.preventDefault(); resetSkyView(); });
 
   $("#showLabels").addEventListener("change", renderSky);
   $("#showMoon").addEventListener("change", renderSky);
@@ -180,11 +182,16 @@ function drawSkyBackdrop(ctx, cx, cy, R) {
   const tIso = tl.times_iso[Math.min(S.tIdx, tl.n - 1)];
   const jd = jdFromDate(new Date(tIso + "Z"));
 
-  // keep everything inside the horizon circle
+  // keep everything inside the horizon circle — but ONLY at full zoom-out:
+  // once zoomed, the viewport is a RECTANGLE over the chart (uranometria
+  // style), so the disc edge can leave the screen and you see more sky than
+  // a circular magnifier would show.
   ctx.save();
-  ctx.beginPath();
-  ctx.arc(cx, cy, R, 0, 7);
-  ctx.clip();
+  if (SKY_ZOOM <= 1) {
+    ctx.beginPath();
+    ctx.arc(cx, cy, R, 0, 7);
+    ctx.clip();
+  }
 
   const proj = (raH, decD) => {
     const [a, z] = altAzFast(raH, decD, site.lat, site.lon, jd);
