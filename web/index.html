@@ -6,7 +6,7 @@
 <title>AstroPilot Web — night-planning in your browser</title>
 <meta name="description" content="AstroPilot Web: tonight's best deep-sky targets, live polar sky map and per-object altitude charts — computed entirely in your browser. Catalog: Messier + OpenNGC (12,116 objects).">
 <link rel="icon" type="image/png" href="app.png">
-<link rel="stylesheet" href="style.css?v=2">
+<link rel="stylesheet" href="style.css?v=3">
 </head>
 <body>
 
@@ -21,6 +21,8 @@
   <div class="sitebox" id="sitebox">
     <div class="top-prefs">
       <label>Min alt <input id="tb-minalt" type="text" inputmode="decimal" placeholder="auto" value=""></label>
+      <label>Site <select id="tb-site" title="observing site"></select></label>
+      <button id="btn-settings" class="iconbtn" title="Settings — sites, rigs, custom targets, backup" aria-label="Settings">⚙</button>
       <span class="site-note" id="tb-note"></span>
     </div>
     <label>Lat <input id="in-lat" type="text" inputmode="decimal" value="52.52"></label>
@@ -47,12 +49,12 @@
 </main>
 
 <footer class="foot">
-  <p>AstroPilot Web — browser port of AstroPilot. Catalog: Messier + OpenNGC (12,116 objects). Runs 100% client-side — no server involved. <span class="foot-ver">v0.1.0</span></p>
+  <p>AstroPilot Web — browser port of AstroPilot. Catalog: Messier + OpenNGC (12,116 objects). Runs 100% client-side — no server involved. <span class="foot-ver" id="foot-ver">…</span></p>
 </footer>
 
 <div class="modal-wrap" id="modal" hidden></div>
 <div class="tooltip" id="tooltip" hidden></div>
 
-<script type="module" src="app.js?v=15"></script>
+<script type="module" src="app.js?v=16"></script>
 </body>
 </html>

@@ -9,5 +9,11 @@ apweb-cdp-*/
 # Local verification artifacts
 verify-*.png
 verify-*.html
-verify-*.txtwhale/
+verify-*.txt
+
+# Non-repo folders (kept on disk, never tracked)
+whale/
 dev/
+
+# Generated at release time by web/build_web.py version
+version.json

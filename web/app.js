@@ -4,11 +4,13 @@
  *   • Tonight  — dark time, moon phase, ranked best targets
  *   • Sky map  — live polar all-dome chart with sun/moon/all catalog objects
  *   • Catalog  — search/sort across 12,116 objects (Messier + OpenNGC)
- *   • Detail   — meta + tonight rise/transit/set + altitude chart
+ *   • Detail   — meta + tonight rise/transit/set + altitude chart + journal
+ *   • Settings — sites, rigs, custom targets, backup/restore (webstore.js)
  * All sky math runs client-side (astro.js, Meeus algorithms).
  */
 import * as E from './astro.js?v=3';
-import * as Hor from './horizon.js?v=9';
+import * as Hor from './horizon.js?v=10';
+import * as WS from './webstore.js?v=1';
 import { meteorShower } from './meteor.js?v=1';
 
 const TYPE_COLORS = {
@@ -29,8 +31,9 @@ const TYPE_LABELS = {
 
 /* ------------------------------ state ------------------------------ */
 
+/** Legacy single-site key — migrated into the sites store on first run. */
 const LS_KEY = 'apweb_site_v1';
-function loadSite() {
+function legacySite() {
   try {
     const raw = localStorage.getItem(LS_KEY);
     if (raw) {
@@ -38,23 +41,42 @@ function loadSite() {
       if (typeof s.lat === 'number' && typeof s.lon === 'number') return s;
     }
   } catch { /* ignore */ }
-  return { lat: 52.52, lon: 13.4, label: 'Berlin (default)' };
+  return null;
 }
-function saveSite() {
-  try { localStorage.setItem(LS_KEY, JSON.stringify(S.site)); } catch { /* ignore */ }
+
+let SITES = [];            // site records from the store
+let OBSERVED = new Map();  // object_id -> observation count
+const CONSTELLATIONS = []; // all constellation names from the catalog
+
+/** Active site record from the sites store. */
+function activeSite() { return SITES.find((s) => s.id === S.site.id) || SITES[0] || null; }
+
+/** Apply a site record as the active one (state, timezone, top bar). */
+function applyActiveSite(site) {
+  S.site = { lat: site.lat, lon: site.lon, label: site.name, id: site.id, tz: site.tz || null };
+  WS.setActiveTz(site.tz || null);
+  Hor.setPrefs({ activeSiteId: site.id });
+  const sel = $('#tb-site');
+  if (sel) {
+    sel.innerHTML = SITES.map((s) => `<option value="${esc(s.id)}"${s.id === site.id ? ' selected' : ''}>${esc(s.name)}</option>`).join('');
+    sel.value = site.id;
+  }
+  const ii = $('#in-lat'); if (ii) ii.value = site.lat;
+  const io = $('#in-lon'); if (io) io.value = site.lon;
+  const sn = $('#site-note'); if (sn) sn.textContent = site.name;
 }
 
 let CAT = null;                 // array of catalog objects
 const byId = new Map();         // id -> object
 const searchCache = new Map();  // object -> lowercase search blob
 const S = {
-  site: loadSite(),
+  site: { lat: 52.52, lon: 13.4, label: 'Berlin (default)' },
   date: new Date(),
   skyTime: new Date(),
   playing: false,
   view: 'tonight',
   detailId: null,
-  cat: { q: '', chip: 'all', sort: 'mag', up: true, page: 0 },
+  cat: { q: '', chip: 'all', con: '', hideSeen: false, sort: 'mag', up: true, page: 0 },
 };
 
 const $ = (s) => document.querySelector(s);
@@ -108,7 +130,7 @@ function computeObs(obj, jd0, jd1, step, minAlt, pano, lat, lon) {
 }
 function obsNightGrid() {
   const { lat, lon } = S.site;
-  const info = E.nightInfo(S.date, lat, lon);
+  const info = E.nightInfo(WS.effToday(), lat, lon);
   const startT = info.civilDusk || info.sunset || new Date(S.date.getFullYear(), S.date.getMonth(), S.date.getDate(), 20, 0);
   const endT = info.civilDawn || info.sunrise || new Date(S.date.getFullYear(), S.date.getMonth(), S.date.getDate() + 1, 5, 0);
   return {
@@ -117,12 +139,28 @@ function obsNightGrid() {
     minAlt: Hor.effectiveMinAlt(), pano: Hor.activePano(), lat, lon,
   };
 }
-function obsKey(g, oid) { return `${dateKey(S.date)}|${g.minAlt.toFixed(2)}|${g.pano ? g.pano.id : '-'}|${oid}`; }
+function obsKey(g, oid) {
+  if (obsCache.size > 250000) obsCache.clear(); // guard against stale-site growth
+  return `${dateKey(WS.effToday())}|${g.minAlt.toFixed(2)}|${g.pano ? g.pano.id : '-'}|${g.lat.toFixed(2)}|${g.lon.toFixed(2)}|${oid}`;
+}
 function escAttr(s) { return String(s).replace(/[^a-zA-Z0-9_-]/g, (c) => '\\' + c); }
 function cachedPctText(oid) {
   const v = obsCache.get(obsKey(obsNightGrid(), oid));
   if (!v) return '…';
   return `${v.pct}%`;
+}
+
+/** Toggle the observed mark for an object (quick ✓ in lists). */
+async function toggleSeen(oid) {
+  if (OBSERVED.has(oid)) {
+    await WS.clearObs(oid);
+    OBSERVED.delete(oid);
+  } else {
+    await WS.addObsEntry(oid, null, '');
+    OBSERVED.set(oid, 1);
+  }
+  if (S.view === 'tonight') renderTonight();
+  else if (S.view === 'catalog') renderCatalog();
 }
 
 /* ---------- Wikipedia thumbnails with IndexedDB cache ---------- */
@@ -246,7 +284,8 @@ let tonightTimer = null;
 
 function fmtClock(dt) {
   if (!dt) return '—';
-  return `${String(dt.getHours()).padStart(2, '0')}:${String(dt.getMinutes()).padStart(2, '0')}`;
+  const d = WS.utcToWall(dt);
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 }
 
 function fmtDur(min) {
@@ -262,7 +301,7 @@ function renderTonight() {
   // defer heavy math so the UI paints first
   setTimeout(() => {
     const { lat, lon } = S.site;
-    const info = E.nightInfo(S.date, lat, lon);
+    const info = E.nightInfo(WS.effToday(), lat, lon);
     const jdNow = E.julianDay(new Date());
     const mo = E.moonPhase(jdNow);
 
@@ -290,7 +329,9 @@ function renderTonight() {
       moonAlt.push(ma); moonAz.push(maz);
     }
 
-    const candidates = CAT.filter((o) => o.vmag != null && (!o._adv || o.vmag <= 9) && o.vmag < 14);
+    const hideSeen = !!Hor.getPrefs().hideSeen;
+    const candidates = CAT.filter((o) => o.vmag != null && (!o._adv || o.vmag <= 9) && o.vmag < 14
+      && (!hideSeen || !OBSERVED.has(o.id)));
     const rows = [];
     for (const o of candidates) {
       let maxAlt = -90, transitJd = jd0, bestRun = 0, bestStart = jd0;
@@ -353,10 +394,12 @@ function renderTonight() {
       const win = r.bestRun > 0
         ? `clear ${fmtClock(E.dateFromJD(r.bestStart))} – ${fmtClock(E.dateFromJD(r.bestStart + r.bestRun * step))}`
         : 'no clear window';
+      const seen = OBSERVED.has(o.id);
       return `<li data-id="${esc(o.id)}">
         <span class="dot" style="background:${typeColor(o)}"></span>
         <span>${r.flash >= 60 ? '<span class="p-flash">✨</span> ' : ''}<span class="p-name">${esc(o.primary_name)}</span>${tags ? `<span class="p-tags">${esc(tags)}</span>` : ''}</span>
-        <span class="p-right"><b>${r.maxAlt.toFixed(0)}°</b>
+        <span class="p-right"><button class="seen" data-seen="${esc(o.id)}" title="${seen ? 'observed — click to unmark' : 'not observed — click to mark'}" aria-label="observed toggle">${seen ? '✓' : '○'}</button>
+          <b>${r.maxAlt.toFixed(0)}°</b>
           <span class="p-vis">${r.visN ? `${r.obsPct}% of night · ${fmtDur(r.visN * step * 1440)} visible` : 'not clear tonight'}</span>${win}</span>
       </li>`;
     };
@@ -395,8 +438,12 @@ function renderTonight() {
           <span class="p-right"><b>transit ${fmtClock(E.dateFromJD(r.transitJd))}</b>peaks ${r.maxAlt.toFixed(0)}°</span>
         </li>`).join('') : '<li style="cursor:default">everything already up or setting</li>'}</ul></div>
       </div>
-      <p class="cat-count" style="margin-top:10px;text-align:center">night of ${dateKey(S.date)} · ${S.site.label || `${S.site.lat.toFixed(2)}, ${S.site.lon.toFixed(2)}`} · horizon: ${pano ? esc(pano.name) : 'none'} · flash-aware ranking · click any target for details</p>`;
+      <p class="cat-count" style="margin-top:10px;text-align:center">night of ${dateKey(WS.effToday())} · ${esc(S.site.label || `${S.site.lat.toFixed(2)}, ${S.site.lon.toFixed(2)}`)} · horizon: ${pano ? esc(pano.name) : 'none'} · flash-aware ranking · click any target for details</p>`;
     box.querySelectorAll('.pick li[data-id]').forEach((li) => li.addEventListener('click', () => openDetail(li.dataset.id)));
+    box.querySelectorAll('button[data-seen]').forEach((b) => b.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      toggleSeen(b.dataset.seen);
+    }));
     hideSplash();
   }, 30);
 }
@@ -406,8 +453,9 @@ function renderTonight() {
 let skyItems = [];
 
 function dtoLocalInput(d) {
+  const w = WS.utcToWall(d);
   const p = (x) => String(x).padStart(2, '0');
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+  return `${w.getFullYear()}-${p(w.getMonth() + 1)}-${p(w.getDate())}T${p(w.getHours())}:${p(w.getMinutes())}`;
 }
 
 function renderSky() {
@@ -418,14 +466,14 @@ function renderSky() {
       <div class="sky-side">
         <div class="card">
           <h3>Time</h3>
-          <label>Local time <input id="sky-time" type="datetime-local" value="${dtoLocalInput(S.skyTime)}"></label>
+          <label>Wall clock <input id="sky-time" type="datetime-local" value="${dtoLocalInput(S.skyTime)}"></label>
           <label style="margin-top:12px">Scrub <output id="sky-sout"></output>
             <input type="range" id="sky-slider" min="0" max="1440" step="15">
           </label>
           <div class="btnrow" style="margin-top:12px">
             <button class="btn primary" id="sky-now">Now</button>
           </div>
-          <p class="sub" style="margin-top:10px">slider spans noon → next noon, local time</p>
+          <p class="sub" style="margin-top:10px">slider spans noon → next noon, site time</p>
         </div>
         <div class="card">
           <h3>Legend</h3>
@@ -625,16 +673,17 @@ function renderSky() {
     if (best && bestD < 140) openDetail(best.id);
   });
 
-  // time scrub slider: noon -> next noon, local time
+  // time scrub slider: noon -> next noon (site wall clock)
   const timeEl = $('#sky-time');
   const slider = $('#sky-slider');
   const sout = $('#sky-sout');
-  const rangeStart = new Date(S.skyTime.getFullYear(), S.skyTime.getMonth(), S.skyTime.getDate(), 12, 0, 0);
+  const wallNow = WS.utcToWall(S.skyTime);
+  const rangeStart = WS.wallToUtc(new Date(wallNow.getFullYear(), wallNow.getMonth(), wallNow.getDate(), 12, 0, 0));
   const pad2 = (x) => String(x).padStart(2, '0');
   const sliderVal = () => Math.max(0, Math.min(1440, Math.round((S.skyTime.getTime() - rangeStart.getTime()) / 60000)));
   const syncControls = () => {
     slider.value = String(sliderVal());
-    sout.textContent = fmtClock(S.skyTime); // actual local clock time
+    sout.textContent = fmtClock(S.skyTime); // wall clock at the site
     timeEl.value = dtoLocalInput(S.skyTime);
   };
   syncControls();
@@ -645,7 +694,7 @@ function renderSky() {
   });
   timeEl.addEventListener('input', () => {
     const v = timeEl.value;
-    if (v) { S.skyTime = new Date(v); syncControls(); draw(); }
+    if (v) { S.skyTime = WS.wallToUtc(new Date(v)); syncControls(); draw(); }
   });
   $('#sky-now').addEventListener('click', () => {
     S.skyTime = new Date();
@@ -666,7 +715,7 @@ let skyTimeHandler = null;
 
 /* ----------------------------- catalog ----------------------------- */
 
-const CHIP_LABELS = { all: 'All', messier: 'Messier', bright: 'Bright <8', galaxies: 'Galaxies', nebulae: 'Nebulae', clusters: 'Clusters' };
+const CHIP_LABELS = { all: 'All', messier: 'Messier', bright: 'Bright <8', galaxies: 'Galaxies', nebulae: 'Nebulae', clusters: 'Clusters', custom: 'Custom' };
 const CHIP_FILTERS = {
   all: () => true,
   messier: (o) => !!o.messier,
@@ -674,12 +723,15 @@ const CHIP_FILTERS = {
   galaxies: (o) => o.otype === 'galaxy',
   nebulae: (o) => ['nebula', 'planetary', 'supernova_remnant', 'star_cloud'].includes(o.otype),
   clusters: (o) => ['open_cluster', 'globular', 'asterism'].includes(o.otype),
+  custom: (o) => !!o.custom,
 };
 
 function filteredCatalog() {
   const f = S.cat;
   const q = f.q.trim().toLowerCase();
   let out = CAT.filter((o) => CHIP_FILTERS[f.chip](o));
+  if (f.con) out = out.filter((o) => o.constellation === f.con);
+  if (f.hideSeen) out = out.filter((o) => !OBSERVED.has(o.id));
   if (q) out = out.filter((o) => searchBlob(o).includes(q));
   const col = f.sort;
   const pctG = obsNightGrid();
@@ -717,16 +769,23 @@ function renderCatalog() {
     <div class="cat-bar">
       <input type="search" id="cat-q" placeholder="Search: name, M 31, NGC 7000, galaxy, Cyg…" value="${esc(S.cat.q)}">
       <div class="chips">${Object.keys(CHIP_FILTERS).map((c) => `<button class="chip${S.cat.chip === c ? ' on' : ''}" data-c="${c}">${CHIP_LABELS[c]}</button>`).join('')}</div>
+      <select id="cat-con" title="constellation filter">
+        <option value="">All constellations</option>
+        ${CONSTELLATIONS.map((c) => `<option value="${esc(c)}"${S.cat.con === c ? ' selected' : ''}>${esc(c)}</option>`).join('')}
+      </select>
+      <label class="chk" title="hide objects you have already observed"><input type="checkbox" id="cat-hide-seen"${S.cat.hideSeen ? ' checked' : ''}> hide seen</label>
       <span class="cat-count">${list.length.toLocaleString()} of ${CAT.length.toLocaleString()} objects</span>
       <span class="cat-count" id="pct-status" style="margin-left:12px"></span>
     </div>
     <div class="card" style="padding:8px 10px">
       <table class="cat">
-        <thead><tr>${th('name', 'Name')}${th('mag', 'Mag', true)}${th('pct', '% visibility', true)}${th('type', 'Type')}${th('con', 'Con')}${th('size', 'Size', true)}${th('ra', 'RA', true)}${th('dec', 'Dec', true)}</tr></thead>
+        <thead><tr><th class="seen-th" title="observed"></th>${th('name', 'Name')}${th('mag', 'Mag', true)}${th('pct', '% visibility', true)}${th('type', 'Type')}${th('con', 'Con')}${th('size', 'Size', true)}${th('ra', 'RA', true)}${th('dec', 'Dec', true)}</tr></thead>
         <tbody>
           ${slice.map((o) => {
             const tags = [o.messier, o.ngcic].filter(Boolean).join(' · ');
+            const seen = OBSERVED.has(o.id);
             return `<tr data-id="${esc(o.id)}">
+              <td class="seen-td"><button class="seen" data-seen="${esc(o.id)}" title="${seen ? 'observed — click to unmark' : 'not observed — click to mark'}" aria-label="observed toggle">${seen ? '✓' : '○'}</button></td>
               <td><span class="tname">${esc(o.primary_name)}</span> ${tags ? `<span class="tags">${esc(tags)}</span>` : ''}</td>
               <td class="num">${o.vmag != null ? o.vmag.toFixed(1) : '—'}</td>
               <td class="num pct" data-objid="${escAttr(o.id)}">${cachedPctText(o.id)}</td>
@@ -758,6 +817,13 @@ function renderCatalog() {
   document.querySelectorAll('tbody tr').forEach((tr) => tr.addEventListener('click', () => openDetail(tr.dataset.id)));
   $('#pg-prev').addEventListener('click', () => { if (S.cat.page > 0) { S.cat.page--; renderCatalog(); } });
   $('#pg-next').addEventListener('click', () => { if (S.cat.page < pages - 1) { S.cat.page++; renderCatalog(); } });
+  $('#cat-con').addEventListener('change', (ev) => { S.cat.con = ev.target.value; S.cat.page = 0; renderCatalog(); });
+  $('#cat-hide-seen').addEventListener('change', (ev) => {
+    S.cat.hideSeen = ev.target.checked;
+    Hor.setPrefs({ hideSeen: ev.target.checked });
+    S.cat.page = 0; renderCatalog();
+  });
+  box.querySelectorAll('button[data-seen]').forEach((b) => b.addEventListener('click', (ev) => { ev.stopPropagation(); toggleSeen(b.dataset.seen); }));
   fillPctCells(slice);
   if (S.cat.sort === 'pct') warmPct(list);
 }
@@ -820,7 +886,7 @@ function openDetail(id) {
   const modal = $('#modal');
   const pano = Hor.activePano();
   const { lat, lon } = S.site;
-  const info = E.nightInfo(S.date, lat, lon);
+  const info = E.nightInfo(WS.effToday(), lat, lon);
   const jd = E.julianDay(new Date());
   const [altNow, azNow] = E.altaz(o.ra_hours * 15, o.dec_deg, jd, lat, lon);
   const localMidnight = new Date(S.date.getFullYear(), S.date.getMonth(), S.date.getDate(), 0, 30);
@@ -855,6 +921,16 @@ function openDetail(id) {
           <p class="blurb" style="margin-top:8px;font-size:13px"><a class="wiki" href="https://en.wikipedia.org/wiki/${encodeURIComponent(wiki)}" target="_blank" rel="noopener">Wikipedia ↗</a></p>
         </div>
       </div>
+      <div class="journal">
+        <h3>Session journal</h3>
+        <ul class="j-list" id="j-list"></ul>
+        <div class="j-form">
+          <label>Date <input type="date" id="j-date" value="${dateKey(WS.effToday())}"></label>
+          <input type="text" id="j-notes" placeholder="notes — magnitude, seeing, conditions…">
+          <button class="btn small primary" id="j-add">Log observation</button>
+        </div>
+        ${o.custom ? '<button class="btn small" id="m-del" style="margin-top:6px" title="remove this custom target">🗑 delete target</button>' : ''}
+      </div>
       <div class="tonight-box">
         <h3>Altitude tonight <span class="cat-count">(local time)</span></h3>
         <canvas id="graph"></canvas>
@@ -872,6 +948,7 @@ function openDetail(id) {
   modal.hidden = false;
   $('#m-close').addEventListener('click', closeDetail);
   modal.addEventListener('click', (ev) => { if (ev.target === modal) closeDetail(); });
+  renderJournal(modal, o);
 
   // bundled photo first; if missing, fetch a Wikipedia thumbnail (cached)
   const dImg = $('#d-img');
@@ -1082,12 +1159,468 @@ function closeDetail() {
   if (S.detailResize) window.removeEventListener('resize', S.detailResize);
 }
 
+/* ---- session journal (observations, mirror of the local app) ---- */
+
+async function renderJournal(modal, o) {
+  const list = modal.querySelector('#j-list');
+  if (!list) return; // modal already closed
+  const entries = await WS.getObs(o.id);
+  list.innerHTML = entries.length
+    ? entries.map((e) => `<li><b>${esc(e.date_obs || '—')}</b>${esc(e.notes || '')}<button class="btn small" data-jdel="${esc(e.created_at)}" title="delete entry">✕</button></li>`).join('')
+    : '<li class="j-empty">nothing logged yet — note your observation below.</li>';
+  list.querySelectorAll('button[data-jdel]').forEach((b) => b.addEventListener('click', async (ev) => {
+    ev.stopPropagation();
+    await WS.deleteObsEntry(o.id, b.dataset.jdel);
+    if (OBSERVED.has(o.id) && !(await WS.getObs(o.id)).length) OBSERVED.delete(o.id);
+    renderJournal(modal, o);
+  }));
+  const add = modal.querySelector('#j-add');
+  if (add) add.onclick = async () => {
+    const date = modal.querySelector('#j-date').value || null;
+    const notes = modal.querySelector('#j-notes').value;
+    await WS.addObsEntry(o.id, date, notes);
+    OBSERVED.set(o.id, 1);
+    modal.querySelector('#j-notes').value = '';
+    renderJournal(modal, o);
+  };
+  if (o.custom) {
+    const del = modal.querySelector('#m-del');
+    if (del) del.onclick = async () => {
+      await WS.deleteTargetRec(o.id);
+      await WS.clearObs(o.id);
+      CAT = CAT.filter((x) => x.id !== o.id);
+      byId.delete(o.id);
+      OBSERVED.delete(o.id);
+      closeDetail();
+      if (S.cat.chip === 'custom') S.cat.chip = 'all';
+      renderCatalog();
+    };
+  }
+}
+
 const tip = {
   set innerHTML(v) { $('#tooltip').innerHTML = v; },
   set hidden(v) { $('#tooltip').hidden = v; },
   get style() { return $('#tooltip').style; },
 };
 // note: `tip` above is a shim so detail code works before #tooltip exists; declared after use is fine (hoisting of const is not — so we define functions after). See boot below.
+
+/* ------------------------------ settings ------------------------------ */
+
+const TZ_LIST = [
+  'Etc/UTC', 'Europe/London', 'Europe/Lisbon', 'Europe/Dublin', 'Europe/Paris',
+  'Europe/Berlin', 'Europe/Vienna', 'Europe/Zurich', 'Europe/Madrid', 'Europe/Rome',
+  'Europe/Amsterdam', 'Europe/Brussels', 'Europe/Stockholm', 'Europe/Oslo',
+  'Europe/Copenhagen', 'Europe/Warsaw', 'Europe/Prague', 'Europe/Budapest',
+  'Europe/Athens', 'Europe/Helsinki', 'Europe/Bucharest', 'Europe/Istanbul',
+  'Europe/Moscow', 'Europe/Kyiv', 'America/New_York', 'America/Chicago',
+  'America/Denver', 'America/Los_Angeles', 'America/Toronto', 'America/Mexico_City',
+  'America/Sao_Paulo', 'America/Argentina/Buenos_Aires', 'Africa/Cairo',
+  'Africa/Johannesburg', 'Asia/Dubai', 'Asia/Kolkata', 'Asia/Bangkok', 'Asia/Singapore',
+  'Asia/Hong_Kong', 'Asia/Shanghai', 'Asia/Tokyo', 'Asia/Seoul', 'Australia/Perth',
+  'Australia/Adelaide', 'Australia/Sydney', 'Pacific/Auckland',
+];
+
+const TZ_DATALIST = `<datalist id="tz-list">${TZ_LIST.map((t) => `<option value="${t}">`).join('')}</datalist>`;
+
+function applyEdge() {
+  const e = Hor.getPrefs().edge;
+  document.documentElement.style.setProperty('--edge', (Number.isFinite(e) ? e : 14) + 'px');
+}
+
+function refreshView() {
+  if (S.view === 'tonight') renderTonight();
+  else if (S.view === 'sky') renderSky();
+  else if (S.view === 'catalog') renderCatalog();
+  else renderHorizonView();
+}
+
+/** Merge or update a custom target in the catalog (and detail/byId maps). */
+function upsertTarget(t) {
+  t.custom = true;
+  const existing = byId.get(t.id);
+  if (existing) Object.assign(existing, t);
+  else { CAT.push(t); byId.set(t.id, t); }
+}
+
+const objName = (o) => o.primary_name || o.id;
+
+/** Settings modal — sites, rigs, custom targets, edge, backup/restore. */
+async function renderSettings() {
+  const modal = $('#modal');
+  const sites = await WS.getSites();
+  SITES = sites;
+  const rigs = await WS.getRigs();
+  const targets = await WS.getTargets();
+  const prefs = Hor.getPrefs();
+  const active = activeSite();
+
+  const siteRow = (s) => `
+    <li data-id="${esc(s.id)}">
+      <input type="radio" name="site-active" ${active && s.id === active.id ? 'checked' : ''} title="use for planning">
+      <span class="p-name">${esc(s.name)}</span>
+      <span class="p-tags">${s.lat.toFixed(3)}, ${s.lon.toFixed(3)} · ${s.elev || 0} m${s.tz ? ` · ${esc(s.tz)}` : ''}</span>
+      <button class="btn small" data-editsite="${esc(s.id)}">edit</button>
+      <button class="btn small" data-delsite="${esc(s.id)}" title="delete site">✕</button>
+    </li>`;
+  const rigRow = (r) => `
+    <li data-id="${esc(r.id)}">
+      <span class="p-name">${esc(r.name)}</span>
+      <span class="p-tags">${r.focal_mm ? `${r.focal_mm} mm` : '—'}</span>
+      <button class="btn small" data-editrig="${esc(r.id)}">edit</button>
+      <button class="btn small" data-delrig="${esc(r.id)}" title="delete rig">✕</button>
+    </li>`;
+  const targetRow = (t) => `
+    <li data-id="${esc(t.id)}">
+      <span class="p-name">${esc(t.primary_name)}</span>
+      <span class="p-tags">${TYPE_LABELS[t.otype] || t.otype} · RA ${E.formatRA(t.ra_hours)}, Dec ${E.formatDec(t.dec_deg)}${t.vmag != null ? ` · mag ${t.vmag.toFixed(1)}` : ''}</span>
+      <button class="btn small" data-edittarget="${esc(t.id)}">edit</button>
+      <button class="btn small" data-deltarget="${esc(t.id)}" title="delete target">✕</button>
+    </li>`;
+
+  modal.innerHTML = `
+    <div class="modal settings" role="dialog">
+      <button class="close" id="m-close" title="close">✕</button>
+      <h2>Settings</h2>
+      <div class="card">
+        <h3>Sites</h3>
+        <ul class="pick" id="set-sites">${sites.length ? sites.map(siteRow).join('') : '<li style="cursor:default">no site yet — add one below</li>'}</ul>
+        <div class="btnrow" style="margin-top:8px"><button class="btn small" id="set-add-site">＋ Add site</button></div>
+        <div class="set-form" id="sf-site" hidden>
+          <input type="hidden" id="sf-site-id">
+          <label>Name <input type="text" id="sf-site-name"></label>
+          <label>Lat <input type="text" inputmode="decimal" id="sf-site-lat"></label>
+          <label>Lon <input type="text" inputmode="decimal" id="sf-site-lon"></label>
+          <label>Elev (m) <input type="text" inputmode="decimal" id="sf-site-elev" value="0"></label>
+          <label>Timezone <input type="text" id="sf-site-tz" list="tz-list" placeholder="browser default">${TZ_DATALIST}</label>
+          <div class="btnrow"><button class="btn primary" id="sf-site-save">Save site</button><button class="btn" id="sf-site-cancel">Cancel</button></div>
+        </div>
+      </div>
+      <div class="card">
+        <h3>Rigs</h3>
+        <ul class="pick" id="set-rigs">${rigs.length ? rigs.map(rigRow).join('') : '<li style="cursor:default">no rig stored yet</li>'}</ul>
+        <div class="btnrow" style="margin-top:8px"><button class="btn small" id="set-add-rig">＋ Add rig</button></div>
+        <div class="set-form" id="sf-rig" hidden>
+          <input type="hidden" id="sf-rig-id">
+          <label>Name <input type="text" id="sf-rig-name"></label>
+          <label>Focal (mm) <input type="text" inputmode="decimal" id="sf-rig-focal"></label>
+          <label>Sensor W (mm) <input type="text" inputmode="decimal" id="sf-rig-sw"></label>
+          <label>Sensor H (mm) <input type="text" inputmode="decimal" id="sf-rig-sh"></label>
+          <p class="sub" id="sf-rig-fov"></p>
+          <div class="btnrow"><button class="btn primary" id="sf-rig-save">Save rig</button><button class="btn" id="sf-rig-cancel">Cancel</button></div>
+        </div>
+      </div>
+      <div class="card">
+        <h3>Custom targets</h3>
+        <ul class="pick" id="set-targets">${targets.length ? targets.map(targetRow).join('') : '<li style="cursor:default">no custom targets — add your own objects (ids u_*)</li>'}</ul>
+        <div class="btnrow" style="margin-top:8px"><button class="btn small" id="set-add-target">＋ New target</button></div>
+        <div class="set-form" id="sf-target" hidden>
+          <input type="hidden" id="sf-target-id">
+          <label>Name <input type="text" id="sf-target-name"></label>
+          <label>Type <select id="sf-target-type">${Object.entries(TYPE_LABELS).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}</select></label>
+          <label>RA <input type="text" id="sf-target-ra" placeholder="e.g. 5 34 32 or 5.575 h"></label>
+          <label>Dec <input type="text" id="sf-target-dec" placeholder="e.g. +22 0 60 or 22.017°"></label>
+          <label>Mag <input type="text" inputmode="decimal" id="sf-target-vmag"></label>
+          <label>Size (arcmin) <input type="text" id="sf-target-size" placeholder="e.g. 6x4"></label>
+          <label>Constellation <input type="text" id="sf-target-con" placeholder="e.g. Ori"></label>
+          <label>Notes <input type="text" id="sf-target-blurb"></label>
+          <p class="sub" id="sf-target-err"></p>
+          <div class="btnrow"><button class="btn primary" id="sf-target-save">Save target</button><button class="btn" id="sf-target-cancel">Cancel</button></div>
+        </div>
+      </div>
+      <div class="card">
+        <h3>General</h3>
+        <label style="display:flex;align-items:center;gap:10px;font-size:12.5px;color:var(--muted)">Content margin
+          <input type="range" id="set-edge" min="0" max="160" step="8" value="${Number.isFinite(prefs.edge) ? prefs.edge : 14}" style="flex:1;max-width:300px">
+          <output id="set-edge-v">${Number.isFinite(prefs.edge) ? prefs.edge : 14}px</output>
+        </label>
+        <div class="btnrow" style="margin-top:10px">
+          <button class="btn primary" id="set-export">⬇ Export backup (JSON)</button>
+          <label class="btn" for="set-import" style="text-align:center">⬆ Import backup</label>
+          <input type="file" id="set-import" accept="application/json,.json" class="vhidden">
+        </div>
+        <p class="sub" style="margin-top:8px">A backup covers sites, rigs, custom targets, observations, horizon profiles and settings — the browser equivalent of the desktop app's ZIP export/import.</p>
+      </div>
+    </div>`;
+  modal.hidden = false;
+
+  $('#m-close').addEventListener('click', closeModal);
+  modal.addEventListener('click', (ev) => { if (ev.target === modal) closeModal(); });
+
+  // — sites —
+  if ($('#set-sites')) $('#set-sites').querySelectorAll('li[data-id]').forEach((li) => {
+    const radio = li.querySelector('input[type=radio]');
+    if (radio) radio.addEventListener('change', () => {
+      const s = SITES.find((x) => x.id === li.dataset.id);
+      if (s) { applyActiveSite(s); closeModal(); refreshView(); }
+    });
+  });
+  modal.querySelectorAll('[data-editsite]').forEach((b) => b.addEventListener('click', () => openSiteForm(sites.find((s) => s.id === b.dataset.editsite))));
+  modal.querySelectorAll('[data-delsite]').forEach((b) => b.addEventListener('click', async () => {
+    const s = sites.find((x) => x.id === b.dataset.delsite);
+    if (!s || !confirm(`Delete site "${s.name}"?`)) return;
+    await WS.deleteSiteRec(s.id);
+    SITES = SITES.filter((x) => x.id !== s.id);
+    if (!SITES.length) { closeModal(); return; }
+    const still = SITES.find((x) => x.id === S.site.id);
+    applyActiveSite(still || SITES[0]);
+    closeModal(); refreshView();
+  }));
+  $('#set-add-site').addEventListener('click', () => openSiteForm(null));
+
+  // — rigs —
+  modal.querySelectorAll('[data-editrig]').forEach((b) => b.addEventListener('click', () => openRigForm(rigs.find((r) => r.id === b.dataset.editrig))));
+  modal.querySelectorAll('[data-delrig]').forEach((b) => b.addEventListener('click', async () => {
+    if (!confirm('Delete this rig?')) return;
+    await WS.deleteRigRec(b.dataset.delrig);
+    closeModal(); renderSettings();
+  }));
+  $('#set-add-rig').addEventListener('click', () => openRigForm(null));
+
+  // — custom targets —
+  modal.querySelectorAll('[data-edittarget]').forEach((b) => b.addEventListener('click', () => openTargetForm(targets.find((t) => t.id === b.dataset.edittarget))));
+  modal.querySelectorAll('[data-deltarget]').forEach((b) => b.addEventListener('click', async () => {
+    const t = targets.find((x) => x.id === b.dataset.deltarget);
+    if (!t || !confirm(`Delete custom target "${objName(t)}"?`)) return;
+    await WS.deleteTargetRec(t.id);
+    CAT = CAT.filter((x) => x.id !== t.id);
+    byId.delete(t.id);
+    OBSERVED.delete(t.id);
+    await WS.clearObs(t.id);
+    closeModal(); refreshView();
+  }));
+  $('#set-add-target').addEventListener('click', () => openTargetForm(null));
+
+  // — general —
+  $('#set-edge').addEventListener('input', (ev) => {
+    const v = Hor.num(ev.target.value);
+    Hor.setPrefs({ edge: Number.isFinite(v) ? v : 14 });
+    applyEdge();
+    $('#set-edge-v').textContent = `${Number.isFinite(v) ? v : 14}px`;
+  });
+  $('#set-export').addEventListener('click', async () => {
+    const backup = await WS.collectBackup(Hor.getPrefs(), Hor.exportPanos());
+    WS.downloadText(`astropilot-web-backup-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify(backup, null, 1));
+  });
+  $('#set-import').addEventListener('change', (ev) => {
+    const f = ev.target.files && ev.target.files[0];
+    ev.target.value = '';
+    if (!f) return;
+    const rd = new FileReader();
+    rd.onload = async () => {
+      try {
+        const data = JSON.parse(rd.result);
+        const counts = {
+          sites: (data.sites || []).length,
+          rigs: (data.rigs || []).length,
+          targets: (data.targets || []).length,
+          obs: Object.keys(data.obs || {}).length,
+          panos: (data.panos && data.panos.panos ? data.panos.panos : []).length,
+        };
+        if (!confirm(`Import backup?\nSites: ${counts.sites} · Rigs: ${counts.rigs} · Custom targets: ${counts.targets}\nObjects with journal entries: ${counts.obs} · Horizons: ${counts.panos}\n\nYour current browser data will be replaced.`)) return;
+        const applied = await WS.restoreBackup(data);
+        if (applied.prefs) Hor.setPrefs(applied.prefs);
+        if (applied.panos) Hor.importPanos(applied.panos);
+        applyEdge();
+        await reinitUserData();
+        closeModal(); refreshView();
+      } catch (err) {
+        alert('Import failed: ' + err.message);
+      }
+    };
+    rd.onerror = () => alert('could not read the file');
+    rd.readAsText(f);
+  });
+
+  // form save/cancel wiring
+  $('#sf-site-save').addEventListener('click', saveSiteForm);
+  $('#sf-site-cancel').addEventListener('click', () => { closeModal(); renderSettings(); });
+  $('#sf-rig-save').addEventListener('click', saveRigForm);
+  $('#sf-rig-cancel').addEventListener('click', () => { closeModal(); renderSettings(); });
+  $('#sf-target-save').addEventListener('click', saveTargetForm);
+  $('#sf-target-cancel').addEventListener('click', () => { closeModal(); renderSettings(); });
+  ['sf-rig-focal', 'sf-rig-sw', 'sf-rig-sh'].forEach((id) => $('#' + id).addEventListener('input', fovPreview));
+}
+
+function showForm(id) {
+  ['sf-site', 'sf-rig', 'sf-target'].forEach((f) => { $('#' + f).hidden = f !== id; });
+}
+
+function openSiteForm(site) {
+  showForm('sf-site');
+  $('#sf-site-id').value = site ? site.id : '';
+  $('#sf-site-name').value = site ? site.name : '';
+  $('#sf-site-lat').value = site ? site.lat : S.site.lat;
+  $('#sf-site-lon').value = site ? site.lon : S.site.lon;
+  $('#sf-site-elev').value = site ? (site.elev || 0) : 0;
+  $('#sf-site-tz').value = site ? (site.tz || '') : '';
+  $('#sf-site-name').focus();
+}
+
+async function saveSiteForm() {
+  const name = $('#sf-site-name').value.trim();
+  const lat = Hor.num($('#sf-site-lat').value);
+  const lon = Hor.num($('#sf-site-lon').value);
+  const elev = Hor.num($('#sf-site-elev').value);
+  const tz = $('#sf-site-tz').value.trim() || null;
+  if (!name) { alert('Please name the site.'); return; }
+  if (!Number.isFinite(lat) || lat < -90 || lat > 90 || !Number.isFinite(lon) || lon < -180 || lon > 180) {
+    alert('Latitude must be -90…90 and longitude -180…180.');
+    return;
+  }
+  const id = $('#sf-site-id').value || WS.NEW_SITE_ID();
+  const rec = { id, name, lat, lon, elev: Number.isFinite(elev) ? elev : 0, tz };
+  await WS.saveSiteRec(rec);
+  SITES = await WS.getSites();
+  if (!SITES.some((s) => s.id === S.site.id)) applyActiveSite(rec);
+  else if (S.site.id === id) applyActiveSite(rec);
+  renderSettings();
+}
+
+function openRigForm(rig) {
+  showForm('sf-rig');
+  $('#sf-rig-id').value = rig ? rig.id : '';
+  $('#sf-rig-name').value = rig ? rig.name : '';
+  $('#sf-rig-focal').value = rig ? rig.focal_mm : '';
+  $('#sf-rig-sw').value = rig ? rig.sensor_w : '';
+  $('#sf-rig-sh').value = rig ? rig.sensor_h : '';
+  fovPreview();
+  $('#sf-rig-name').focus();
+}
+
+function fovPreview() {
+  const f = Hor.num($('#sf-rig-focal').value);
+  const w = Hor.num($('#sf-rig-sw').value);
+  const h = Hor.num($('#sf-rig-sh').value);
+  const el = $('#sf-rig-fov');
+  if (el) {
+    const fw = WS.fovFrom(f, w), fh = WS.fovFrom(f, h);
+    el.textContent = fw != null && fh != null ? `field of view ≈ ${fw.toFixed(2)}° × ${fh.toFixed(2)}°` : 'field of view appears once focal length + sensor size are set';
+  }
+}
+
+async function saveRigForm() {
+  const name = $('#sf-rig-name').value.trim();
+  if (!name) { alert('Please name the rig.'); return; }
+  const id = $('#sf-rig-id').value || 'r' + Date.now().toString(36);
+  const focal = Hor.num($('#sf-rig-focal').value);
+  const sw = Hor.num($('#sf-rig-sw').value);
+  const sh = Hor.num($('#sf-rig-sh').value);
+  const rec = {
+    id, name,
+    focal_mm: Number.isFinite(focal) && focal > 0 ? focal : null,
+    sensor_w: Number.isFinite(sw) && sw > 0 ? sw : null,
+    sensor_h: Number.isFinite(sh) && sh > 0 ? sh : null,
+    fov_w: null, fov_h: null,
+  };
+  rec.fov_w = WS.fovFrom(rec.focal_mm, rec.sensor_w);
+  rec.fov_h = WS.fovFrom(rec.focal_mm, rec.sensor_h);
+  await WS.saveRigRec(rec);
+  renderSettings();
+}
+
+function openTargetForm(target) {
+  showForm('sf-target');
+  $('#sf-target-id').value = target ? target.id : '';
+  $('#sf-target-name').value = target ? target.primary_name : '';
+  $('#sf-target-type').value = target ? target.otype : 'galaxy';
+  $('#sf-target-ra').value = target ? E.formatRA(target.ra_hours) : '';
+  $('#sf-target-dec').value = target ? E.formatDec(target.dec_deg) : '';
+  $('#sf-target-vmag').value = target && target.vmag != null ? String(target.vmag) : '';
+  $('#sf-target-size').value = target ? (target.size_am || '') : '';
+  $('#sf-target-con').value = target ? (target.constellation || '') : '';
+  $('#sf-target-blurb').value = target ? (target.blurb || '') : '';
+  $('#sf-target-err').textContent = '';
+  $('#sf-target-name').focus();
+}
+
+async function saveTargetForm() {
+  const err = $('#sf-target-err');
+  const name = $('#sf-target-name').value.trim();
+  const ra = WS.parseRA($('#sf-target-ra').value);
+  const dec = WS.parseDec($('#sf-target-dec').value);
+  if (!name || !Number.isFinite(ra) || !Number.isFinite(dec)) {
+    err.textContent = 'Name is required; RA in hours (e.g. "5 34 32", "5.575") and Dec in degrees (e.g. "+22 0 60", "22.017").';
+    return;
+  }
+  const vmagS = $('#sf-target-vmag').value.trim();
+  const vmag = vmagS ? Hor.num(vmagS) : null;
+  const id = $('#sf-target-id').value || WS.newTargetId();
+  const rec = {
+    id, primary_name: name, otype: $('#sf-target-type').value,
+    ra_hours: ra, dec_deg: dec,
+    vmag: Number.isFinite(vmag) ? vmag : null,
+    size_am: $('#sf-target-size').value.trim(),
+    constellation: $('#sf-target-con').value.trim(),
+    blurb: $('#sf-target-blurb').value.trim(),
+    distance: null, wiki: null, messier: null, ngcic: null, other: '',
+    _adv: false,
+  };
+  await WS.saveTargetRec(rec);
+  upsertTarget(rec);
+  renderSettings();
+}
+
+function closeModal() {
+  const modal = $('#modal');
+  if (modal) { modal.hidden = true; modal.innerHTML = ''; }
+}
+
+/** Re-read user data after a backup import (sites, targets, observations). */
+async function reinitUserData() {
+  SITES = await WS.getSites();
+  for (const t of await WS.getTargets()) upsertTarget(t);
+  OBSERVED = await WS.observedMap();
+  let sid = Hor.getPrefs().activeSiteId;
+  if (!SITES.some((s) => s.id === sid)) sid = SITES.length ? SITES[0].id : null;
+  if (sid && SITES.some((s) => s.id === sid)) applyActiveSite(SITES.find((s) => s.id === sid));
+}
+
+/* ---- first-run welcome (browser equivalent of the desktop wizard) ---- */
+
+function welcomeFlow() {
+  return new Promise((resolve) => {
+    const modal = $('#modal');
+    modal.innerHTML = `
+      <div class="modal welcome" role="dialog">
+        <h2>👋 Welcome to AstroPilot Web</h2>
+        <p class="sub">Where will you observe? You can add more sites any time via ⚙ Settings.</p>
+        <div class="set-form">
+          <label>Site name <input type="text" id="w-name" value="My observing site"></label>
+          <label>Latitude <input type="text" inputmode="decimal" id="w-lat" value="52.52"></label>
+          <label>Longitude <input type="text" inputmode="decimal" id="w-lon" value="13.40"></label>
+          <label>Elevation (m) <input type="text" inputmode="decimal" id="w-elev" value="0"></label>
+          <label>Timezone <input type="text" id="w-tz" list="tz-list" placeholder="browser default">${TZ_DATALIST}</label>
+          <div class="btnrow" style="margin-top:12px">
+            <button class="btn primary" id="w-save">Save my site</button>
+            <button class="btn" id="w-geo">use my location</button>
+            <button class="btn" id="w-skip">Skip</button>
+          </div>
+        </div>
+      </div>`;
+    modal.hidden = false;
+    const finish = (site) => { modal.hidden = true; modal.innerHTML = ''; resolve(site); };
+    $('#w-save').addEventListener('click', () => {
+      const name = $('#w-name').value.trim() || 'My observing site';
+      const lat = Hor.num($('#w-lat').value);
+      const lon = Hor.num($('#w-lon').value);
+      if (!Number.isFinite(lat) || lat < -90 || lat > 90 || !Number.isFinite(lon) || lon < -180 || lon > 180) {
+        $('#w-lat').value = 52.52; $('#w-lon').value = 13.4;
+        return;
+      }
+      const elev = Hor.num($('#w-elev').value);
+      finish({ id: WS.NEW_SITE_ID(), name, lat, lon, elev: Number.isFinite(elev) ? elev : 0, tz: $('#w-tz').value.trim() || null });
+    });
+    $('#w-geo').addEventListener('click', () => {
+      if (!navigator.geolocation) return;
+      navigator.geolocation.getCurrentPosition((pos) => {
+        $('#w-lat').value = pos.coords.latitude;
+        $('#w-lon').value = pos.coords.longitude;
+      }, () => { /* permission denied — user can type manually */ });
+    });
+    $('#w-skip').addEventListener('click', () => finish(null));
+  });
+}
 
 /* ------------------------------- boot ------------------------------ */
 
@@ -1114,25 +1647,66 @@ async function boot() {
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     CAT = await res.json();
     for (const o of CAT) byId.set(o.id, o);
+    for (const c of new Set(CAT.map((o) => o.constellation).filter(Boolean))) CONSTELLATIONS.push(c);
+    CONSTELLATIONS.sort((a, b) => a.localeCompare(b));
     splashText(`catalog ready · ${CAT.length.toLocaleString()} objects`);
   } catch (err) {
     splashText(`catalog failed to load: ${err.message}`);
     return;
   }
 
-  // init site controls
-  $('#in-lat').value = S.site.lat;
-  $('#in-lon').value = S.site.lon;
-  $('#site-note').textContent = S.site.label || '';
-  const applySite = () => {
+  // ---- user data: sites (with first-run welcome), custom targets, observations ----
+  SITES = await WS.getSites();
+  if (!SITES.length) {
+    const legacy = legacySite();
+    if (legacy) {
+      await WS.saveSiteRec({ id: WS.NEW_SITE_ID(), name: 'My site', lat: legacy.lat, lon: legacy.lon, elev: 0, tz: null });
+      SITES = await WS.getSites();
+    } else {
+      const w = await welcomeFlow();
+      if (w) await WS.saveSiteRec(w);
+      SITES = await WS.getSites();
+    }
+  }
+  if (!SITES.length) {
+    await WS.saveSiteRec({ id: WS.NEW_SITE_ID(), name: 'Berlin (default)', lat: 52.52, lon: 13.4, elev: 0, tz: null });
+    SITES = await WS.getSites();
+  }
+  let sid = Hor.getPrefs().activeSiteId;
+  if (!SITES.some((s) => s.id === sid)) sid = SITES[0].id;
+  applyActiveSite(SITES.find((s) => s.id === sid) || SITES[0]);
+  S.cat.hideSeen = !!Hor.getPrefs().hideSeen;
+
+  // custom targets join the catalog; observed map feeds the ✓ marks and filters
+  for (const t of await WS.getTargets()) upsertTarget(t);
+  OBSERVED = await WS.observedMap();
+  applyEdge();
+  const ver = await WS.loadVersion();
+  const fv = $('#foot-ver');
+  if (fv) fv.textContent = ver ? `AstroPilot Web ${ver.version}` : 'dev build';
+  splashText(`catalog ready · ${CAT.length.toLocaleString()} objects · site “${S.site.label}”`);
+
+  // ---- site controls: quick-edit the active site's coordinates ----
+  const syncSiteInputs = () => {
+    $('#in-lat').value = S.site.lat;
+    $('#in-lon').value = S.site.lon;
+    $('#site-note').textContent = S.site.label || '';
+  };
+  syncSiteInputs();
+  const applySite = async () => {
     const lat = Hor.num($('#in-lat').value);
     const lon = Hor.num($('#in-lon').value);
     if (Number.isFinite(lat) && Number.isFinite(lon) && lat >= -90 && lat <= 90 && lon >= -180 && lon <= 180) {
-      S.site = { lat, lon, label: `${lat.toFixed(3)}, ${lon.toFixed(3)}` };
-      saveSite();
-      $('#site-note').textContent = S.site.label;
-      if (S.view === 'tonight') renderTonight();
-      else if (S.view === 'sky') renderSky();
+      const rec = activeSite();
+      if (rec) {
+        rec.lat = lat; rec.lon = lon;
+        await WS.saveSiteRec(rec);
+        applyActiveSite(rec);
+      } else {
+        S.site = { ...S.site, lat, lon };
+      }
+      syncSiteInputs();
+      refreshView();
     } else {
       $('#in-lat').value = S.site.lat;
       $('#in-lon').value = S.site.lon;
@@ -1143,19 +1717,27 @@ async function boot() {
   $('#in-lon').addEventListener('change', applySite);
   $('#btn-locate').addEventListener('click', () => {
     if (!navigator.geolocation) { $('#site-note').textContent = 'geolocation unavailable'; return; }
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        S.site = { lat: pos.coords.latitude, lon: pos.coords.longitude, label: 'your location' };
-        saveSite();
-        $('#in-lat').value = S.site.lat;
-        $('#in-lon').value = S.site.lon;
-        $('#site-note').textContent = S.site.label;
-        if (S.view === 'tonight') renderTonight();
-        else if (S.view === 'sky') renderSky();
-      },
-      () => { $('#site-note').textContent = 'location denied'; }
-    );
+    navigator.geolocation.getCurrentPosition(async (pos) => {
+      const rec = activeSite();
+      if (rec) {
+        rec.lat = pos.coords.latitude;
+        rec.lon = pos.coords.longitude;
+        await WS.saveSiteRec(rec);
+        applyActiveSite(rec);
+      } else {
+        S.site = { ...S.site, lat: pos.coords.latitude, lon: pos.coords.longitude };
+      }
+      syncSiteInputs();
+      refreshView();
+      $('#site-note').textContent = S.site.label + ' — location set';
+    }, () => { $('#site-note').textContent = 'location denied'; });
   });
+  const ts = $('#tb-site');
+  if (ts) ts.addEventListener('change', (ev) => {
+    const s = SITES.find((x) => x.id === ev.target.value);
+    if (s) { applyActiveSite(s); refreshView(); }
+  });
+  $('#btn-settings').addEventListener('click', () => { renderSettings(); });
 
   // top-bar planning prefs (min altitude, bortle, moon-aware) — shared with Horizon
   const syncTopPrefs = () => {
@@ -1164,17 +1746,12 @@ async function boot() {
     $('#tb-note').textContent = `eff. min ${Hor.effectiveMinAlt().toFixed(0)}°`;
   };
   syncTopPrefs();
-  const refreshView = () => {
-    if (S.view === 'tonight') renderTonight();
-    else if (S.view === 'sky') renderSky();
-    else if (S.view === 'catalog') renderCatalog();
-    else renderHorizonView();
-  };
-  $('#tb-minalt').addEventListener('change', (ev) => {
+  const applyMinAlt = (ev) => {
     const v = Hor.num(ev.target.value);
     Hor.setPrefs({ minAlt: Number.isFinite(v) && v >= 0 && v <= 89 ? v : null });
     syncTopPrefs(); refreshView();
-  });
+  };
+  $('#tb-minalt').addEventListener('change', applyMinAlt);
 
   // easter egg: click the brand logo for a meteor shower
   const brand = document.querySelector('.brand');

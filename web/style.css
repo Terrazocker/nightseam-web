@@ -253,6 +253,55 @@ td.pct { font-family: var(--mono); color: var(--green); white-space: nowrap; }
 .btn.on { border-color: #ff8a8a; color: #ff8a8a; }
 .vhidden { position: fixed; left: -9999px; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
 
+/* ---------- settings / journal / observed (webstore parity) ---------- */
+main { padding-left: var(--edge, 22px); padding-right: var(--edge, 22px); }
+.iconbtn {
+  background: none; border: 1px solid var(--line); color: var(--muted); cursor: pointer;
+  border-radius: 8px; width: 30px; height: 30px; font-size: 15px; line-height: 1;
+}
+.iconbtn:hover { color: var(--txt); border-color: var(--accent); }
+#tb-site { width: auto; max-width: 150px; }
+.modal.settings { max-width: 860px; }
+.modal.welcome h2 { text-align: center; }
+.set-form {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 8px 12px; margin-top: 10px; padding: 12px; border: 1px solid var(--line); border-radius: 10px;
+}
+.set-form label { font-size: 12px; color: var(--muted); display: flex; flex-direction: column; gap: 4px; }
+.set-form input, .set-form select {
+  background: var(--panel); border: 1px solid var(--line); color: var(--txt);
+  border-radius: 8px; padding: 6px 8px; font-size: 13px; font-family: var(--mono);
+}
+.set-form .btnrow { grid-column: 1 / -1; }
+.chk { font-size: 12px; color: var(--muted); display: inline-flex; align-items: center; gap: 6px; cursor: pointer; white-space: nowrap; }
+.chk input { accent-color: var(--accent); }
+
+/* observed toggle (lists + catalog) */
+button.seen {
+  background: none; border: 1px solid var(--line); color: var(--muted); cursor: pointer;
+  border-radius: 7px; width: 26px; height: 26px; font-size: 13px; line-height: 1; flex: 0 0 auto;
+}
+button.seen:hover { color: var(--accent); border-color: var(--accent); }
+.p-right button.seen { margin-left: auto; margin-bottom: 4px; }
+th.seen-th { width: 34px; }
+td.seen-td { width: 34px; text-align: center; padding: 4px 2px !important; }
+
+/* session journal */
+.journal { margin-top: 16px; border-top: 1px solid var(--line); padding-top: 12px; }
+.journal h3 { font-size: 13px; text-transform: uppercase; letter-spacing: 1.2px; color: var(--muted); margin-bottom: 8px; font-weight: 600; }
+.j-list { list-style: none; display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; }
+.j-list li { display: flex; gap: 10px; align-items: baseline; font-size: 13.5px; padding: 6px 10px; background: rgba(124,196,255,.05); border: 1px solid var(--line); border-radius: 8px; }
+.j-list li b { color: var(--accent); font-family: var(--mono); font-size: 12.5px; white-space: nowrap; }
+.j-list li .btn.small { margin-left: auto; flex: 0 0 auto; }
+.j-list .j-empty { color: var(--muted); background: none; border-style: dashed; font-style: italic; }
+.j-form { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.j-form input, .j-form button { }
+.j-form input[type="date"], .j-form input[type="text"] {
+  background: var(--panel); border: 1px solid var(--line); color: var(--txt);
+  border-radius: 8px; padding: 6px 8px; font-size: 13px; font-family: var(--mono);
+}
+.j-form input[type="text"] { flex: 1; min-width: 180px; }
+
 @media (prefers-reduced-motion: reduce) {
   * { animation-duration: .01ms !important; animation-iteration-count: 1 !important; }
 }

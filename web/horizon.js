@@ -45,6 +45,30 @@ function save() {
 export function allPanos() { return db.panos; }
 export function activePano() { return db.panos.find((p) => p.id === db.activeId) || null; }
 
+/** Snapshot of all panoramas for backup (in-memory image pixels excluded). */
+export function exportPanos() {
+  return {
+    ...db,
+    panos: db.panos.map((p) => {
+      const { _img, ...rest } = p;
+      return rest;
+    }),
+  };
+}
+
+/** Replace all panoramas from a backup snapshot. Returns true on success. */
+export function importPanos(data) {
+  if (!data || !Array.isArray(data.panos)) return false;
+  db = {
+    panos: data.panos.map((p) => ({ ...p, _img: null, hasImage: !!p.hasImage })),
+    activeId: data.activeId || null,
+  };
+  if (!db.activeId && db.panos.length) db.activeId = db.panos[0].id;
+  if (db.activeId && !db.panos.some((p) => p.id === db.activeId)) db.activeId = db.panos.length ? db.panos[0].id : null;
+  save();
+  return true;
+}
+
 export function newPano(name) {
   const id = 'p' + Math.random().toString(36).slice(2, 8);
   const p = {
