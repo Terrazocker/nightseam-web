@@ -1,0 +1,13 @@
+# Secrets — never commit credentials
+ftp.env
+
+# Dev / runtime junk
+node_modules/
+apweb-cdp-*/
+*.log
+
+# Local verification artifacts
+verify-*.png
+verify-*.html
+verify-*.txtwhale/
+dev/
