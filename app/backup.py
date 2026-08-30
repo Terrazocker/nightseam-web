@@ -59,7 +59,13 @@ def build_export_zip(db: Database) -> bytes:
 
 def apply_import_zip(db: Database, blob: bytes) -> dict:
     """Replace all user data from an exported ZIP. Raises ValueError on
-    malformed input. Returns a summary dict."""
+    malformed input. Returns a summary dict.
+
+    Before touching anything, the CURRENT setup is written to
+    ``<db>.backup-auto.zip`` next to the database, so an interrupted or
+    failed restore never destroys the pre-import data (it can be re-imported
+    manually). The safety copy is best-effort: a failure to write it must
+    not block the user's deliberate restore."""
     try:
         zf = zipfile.ZipFile(io.BytesIO(blob))
         setup = json.loads(zf.read("setup.json").decode("utf-8"))
@@ -67,6 +73,13 @@ def apply_import_zip(db: Database, blob: bytes) -> dict:
         raise ValueError(f"Not a valid AstroPilot export: {exc}") from None
     if setup.get("app") != "AstroPilot":
         raise ValueError("This zip is not an AstroPilot setup export")
+
+    safety_path = db.path.with_suffix(".backup-auto.zip")
+    try:
+        safety_path.write_bytes(build_export_zip(db))
+        safety = str(safety_path)
+    except Exception:  # noqa: BLE001 - best-effort safety net
+        safety = None
 
     sites = setup.get("sites", [])
     rigs = setup.get("rigs", [])
@@ -111,4 +124,5 @@ def apply_import_zip(db: Database, blob: bytes) -> dict:
     return {"ok": True, "sites": len(sites), "rigs": len(rigs),
             "panoramas": len(panos), "pano_images": pano_files,
             "customs": len(customs), "images": len(images),
-            "library_files": image_files}
+            "library_files": image_files,
+            "auto_backup": safety}

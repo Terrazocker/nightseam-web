@@ -34,13 +34,18 @@ ingest + library), switched via the top-right button or the brand name.
     `Get-CimInstance Win32_Process`), not the exe.
   - If 8407 is briefly taken at boot, `free_port()` silently picks a RANDOM
     port (written to instance.json) - the app runs, just not on 8407.
-- Tests: `python -m pytest tests/` - 100 tests, run in ~20 s (pure-function
+- Tests: `python -m pytest tests/` - 122 tests, run in ~22 s (pure-function
   tests are fast; `tests/test_api.py` spins up real `create_app()` instances
   via fastapi TestClient/httpx). Single test:
   `python -m pytest tests/test_astro.py -k name`. API tests use
   `create_app(db, prefetch=False)` so no image-cache thread hits the network;
   the archive is pointed at a tmp dir per test. A broken Windows temp-dir ACL
   means pytest runs use a repo-local `.pytest-tmp` base (see `pytest.ini`).
+  Under the DSH file sandbox, Python 3.14's `os.mkdir(mode=0o700)` (which
+  pytest uses for the basetemp) creates an owner-SID-only DACL that the
+  sandbox's restricted token cannot re-read, so every tmp_path test errors
+  with PermissionError - an environment artifact, NOT a code failure. Run
+  the suite with full access / in a normal shell: 122/122 pass (~22 s).
 - PowerShell quirk: heredocs / inline `python -c` with quotes break - write
   probe scripts to files (`C:\Users\<user>\AppData\Local\Temp\opencode\`) and
   run them.
@@ -212,7 +217,11 @@ ingest + library), switched via the top-right button or the brand name.
   NULL`); it moves the archive folder on disk and rewrites stored paths.
 - Export/import ZIP covers settings, sites, rigs, panoramas, custom targets,
   and the images library (rows + files, restored into the configured image
-  dir); the import confirm dialog reflects that.
+  dir); the import confirm dialog reflects that. Every import first writes a
+  best-effort safety copy of the CURRENT setup to `<db>.backup-auto.zip`
+  next to the database (`data/astropilot.backup-auto.zip` in prod) - an
+  interrupted restore never destroys the pre-import data; the summary
+  reports it as `auto_backup`.
 - Numeric inputs accept comma OR dot decimals everywhere (German locale):
   `num()` in `util.js` parses both; typable numerics are text+`inputmode`.
   `api()` in util.js adds a 30 s timeout unless the caller passes its own

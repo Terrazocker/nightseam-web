@@ -30,6 +30,24 @@ APP_VERSION = app_version()
 _state = {"last_request": time.time()}
 
 
+async def _read_limited(file: UploadFile, limit: int, label: str) -> bytes:
+    """Read an upload in 1 MB chunks, aborting as soon as `limit` is
+    exceeded - an oversized file is rejected without ever being buffered
+    in full (the old `await file.read()` loaded the whole upload first)."""
+    chunks: list[bytes] = []
+    total = 0
+    while True:
+        chunk = await file.read(1 << 20)
+        if not chunk:
+            break
+        total += len(chunk)
+        if total > limit:
+            raise HTTPException(
+                400, f"{label} too large (max {limit // (1024 * 1024)} MB)")
+        chunks.append(chunk)
+    return b"".join(chunks)
+
+
 # ------------------------------------------------------------------ models
 
 class SiteIn(BaseModel):
@@ -455,9 +473,7 @@ def create_app(db: Database, *, prefetch: bool = True) -> FastAPI:
         ext = Path(file.filename or "").suffix.lower().lstrip(".")
         if ext not in ("jpg", "jpeg", "png", "webp"):
             raise HTTPException(400, "Use JPG, PNG or WebP")
-        blob = await file.read()
-        if len(blob) > 60 * 1024 * 1024:
-            raise HTTPException(400, "Image too large (max 60 MB)")
+        blob = await _read_limited(file, 60 * 1024 * 1024, "Image")
         pid = new_id()
         fname = f"{pid}.{ext}"
         out = data_dir() / "panos" / fname
@@ -499,8 +515,8 @@ def create_app(db: Database, *, prefetch: bool = True) -> FastAPI:
         ext = Path(file.filename or "").suffix.lower().lstrip(".")
         if ext not in ("jpg", "jpeg", "png", "webp"):
             raise HTTPException(400, "Use JPG, PNG or WebP")
-        blob = await file.read()
-        if not blob or len(blob) > 60 * 1024 * 1024:
+        blob = await _read_limited(file, 60 * 1024 * 1024, "Image")
+        if not blob:
             raise HTTPException(400, "Image missing or too large (max 60 MB)")
         fname = f"{pid}.{ext}"
         old = data_dir() / "panos" / row["file"]
@@ -554,7 +570,8 @@ def create_app(db: Database, *, prefetch: bool = True) -> FastAPI:
 
     @app.post("/api/import")
     async def api_import(file: UploadFile = File(...)):
-        blob = await file.read()
+        # backup zips embed the whole image library, so allow a generous cap
+        blob = await _read_limited(file, 2 * 1024 * 1024 * 1024, "Backup zip")
         try:
             summary = apply_import_zip(db, blob)
         except ValueError as exc:

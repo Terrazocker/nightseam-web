@@ -5,10 +5,12 @@ venv/
 build/
 dist/
 .pytest-tmp/
+.pytest_cache/
 app/_version_baked.py
 *.spec.bak
 data/*.db
 data/*.db.backup
+data/*.backup-auto.zip
 data/panos/*
 !data/panos/.gitkeep
 data/imgcache/

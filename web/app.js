@@ -29,6 +29,10 @@ const TYPE_LABELS = {
   asterism: 'Asterism', star_cloud: 'Star cloud',
 };
 
+/** Debounce timer for the catalog search box — re-renders at most every
+ *  150 ms while typing instead of once per keystroke (12k-row filter). */
+let _catQDeb = null;
+
 /* ------------------------------ state ------------------------------ */
 
 /** Legacy single-site key — migrated into the sites store on first run. */
@@ -1190,7 +1194,12 @@ function renderCatalog() {
     </div>`;
   hideSplash();
 
-  $('#cat-q').addEventListener('input', (ev) => { S.cat.q = ev.target.value; S.cat.page = 0; renderCatalog(); });
+  $('#cat-q').addEventListener('input', (ev) => {
+    S.cat.q = ev.target.value;
+    S.cat.page = 0;
+    clearTimeout(_catQDeb);
+    _catQDeb = setTimeout(renderCatalog, 150);
+  });
   document.querySelectorAll('.chip').forEach((c) => c.addEventListener('click', () => { S.cat.chip = c.dataset.c; S.cat.page = 0; renderCatalog(); }));
   document.querySelectorAll('th[data-k]').forEach((thEl) => thEl.addEventListener('click', () => {
     const k = thEl.dataset.k;

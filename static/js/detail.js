@@ -8,6 +8,11 @@ import { filterAdvice, frameCoverage, moonAt, moonBandX, flashOf, gradeTag } fro
 
 let DETAIL = null;      // cached detail payload
 let DETAIL_HOVER = null;// hovered sample index for crosshair
+let _imgUrl = null;     // current blob URL assigned to #dImage
+
+function revokeImgUrl() {
+  if (_imgUrl) { URL.revokeObjectURL(_imgUrl); _imgUrl = null; }
+}
 
 export async function openDetail(id) {
   S.currentId = id;
@@ -30,12 +35,18 @@ export async function openDetail(id) {
   // (capped at 8 s so a slow chain can never hog a browser connection and
   // starve other requests)
   const img = $("#dImage");
+  revokeImgUrl();   // drop the previous object's blob before replacing it
   img.src = `/api/object/${id}/image?thumb=1&v=${IMG_VER}`;
   const upCtl = new AbortController();
   const upTimer = setTimeout(() => upCtl.abort(), 8000);
   fetch(`/api/object/${id}/image?v=${Date.now()}`, { signal: upCtl.signal })
     .then(r => (r.ok ? r.blob() : null))
-    .then(b => { if (b && S.currentId === id) img.src = URL.createObjectURL(b); })
+    .then(b => {
+      if (!b) return;
+      const u = URL.createObjectURL(b);
+      if (S.currentId === id) { _imgUrl = u; img.src = u; }
+      else URL.revokeObjectURL(u);   // modal closed while fetching - never leak
+    })
     .catch(() => {})
     .finally(() => clearTimeout(upTimer));
 
@@ -96,13 +107,16 @@ export function bindDetail() {
   $("#dClose").addEventListener("click", () => {
     $("#detailModal").classList.add("hidden");
     DETAIL = null;
+    revokeImgUrl();
   });
   // rig/filter/unit changes made elsewhere re-render the open modal
   document.addEventListener("detail:changed", () => {
     if (DETAIL && S.currentId) renderDetailMeta(S.meta[S.currentId], DETAIL);
   });
   $("#detailModal").addEventListener("mousedown", e => {
-    if (e.target.id === "detailModal") { $("#detailModal").classList.add("hidden"); DETAIL = null; }
+    if (e.target.id === "detailModal") {
+      $("#detailModal").classList.add("hidden"); DETAIL = null; revokeImgUrl();
+    }
   });
   $("#chkMoon").addEventListener("change", drawAltChart);
   window.addEventListener("resize", () => { if (DETAIL) drawAltChart(); });
@@ -112,6 +126,7 @@ export function bindDetail() {
       $("#detailModal").classList.add("hidden");
       $("#sitesModal").classList.add("hidden");
       DETAIL = null;
+      revokeImgUrl();
     }
     if (!DETAIL) return;
     if (e.key === "ArrowRight") stepDetail(+1);

@@ -88,7 +88,7 @@ Two modes, switched with the top-right button:
 
 ### Packaged executable
 
-1. Download the latest release from <https://pitop.net/#download>.
+1. Download the latest release from <https://pitop.net/download.html>.
 2. Double-click `AstroPilot.exe`.
 3. Your browser (or the app window) opens `http://127.0.0.1:<port>`
    automatically.
