@@ -3,27 +3,9 @@
 import struct
 
 from app import fits
+from _util import make_fits, make_fits_with_data
 
 _BLOCK = 2880
-
-
-def make_fits(records, end=True) -> bytes:
-    block = bytearray()
-    for k, v in records:
-        block += f"{k:<8}= {v}".encode("latin-1").ljust(80)[:80]
-    if end:
-        block += b"END".ljust(80)
-    block += b" " * (-len(block) % _BLOCK)
-    return bytes(block)
-
-
-def make_fits_with_data(records, data: bytes) -> bytes:
-    block = bytearray()
-    for k, v in records:
-        block += f"{k:<8}= {v}".encode("latin-1").ljust(80)[:80]
-    block += b"END".ljust(80)
-    block += b" " * (-len(block) % _BLOCK)
-    return bytes(block) + data
 
 
 def test_reads_basic_keywords():

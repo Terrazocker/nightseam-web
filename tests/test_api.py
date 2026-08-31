@@ -13,43 +13,10 @@ from fastapi.testclient import TestClient
 
 from app.database import Database
 from app.server import create_app
+from _util import make_fits, m31_fits, unresolved_fits
 
-_BLOCK = 2880
 _DATE = "2026-08-24"
 _TZ = 120
-
-
-def make_fits(records, end=True) -> bytes:
-    block = bytearray()
-    for k, v in records:
-        block += f"{k:<8}= {v}".encode("latin-1").ljust(80)[:80]
-    if end:
-        block += b"END".ljust(80)
-    block += b" " * (-len(block) % _BLOCK)
-    return bytes(block)
-
-
-def m31_fits(exposure: float = 300.0) -> bytes:
-    return make_fits([
-        ("SIMPLE", "T"),
-        ("OBJECT", "'M 31                     ' / Andromeda"),
-        ("EXPTIME", str(exposure)),
-        ("DATE-OBS", "'2026-08-22T23:14:05'"),
-        ("FILTER", "'L'"),
-        ("TELESCOP", "'Seestar S50'"),
-        ("NAXIS", "2"),
-        ("RA", "0.712"),
-        ("DEC", "41.269"),
-    ])
-
-
-def unresolved_fits() -> bytes:
-    return make_fits([
-        ("SIMPLE", "T"),
-        ("OBJECT", "'TestObj42'"),
-        ("EXPTIME", "60.0"),
-        ("DATE-OBS", "'2026-08-22T22:00:00'"),
-    ])
 
 
 @pytest.fixture()
@@ -691,6 +658,36 @@ def test_paint_mode_roundtrip(client, tmp_path):
             row = c2.get("/api/panoramas").json()[0]
             assert row["paint_mode"] == "sky"
             assert len(row["profile_top"]) == 720
+    finally:
+        client.delete(f"/api/panorama/{pid}")
+
+
+def test_panorama_activate_deactivate(client):
+    """active:true makes a pano the active one; active:false clears it."""
+    r = client.post("/api/panorama",
+                    files={"file": ("pano.jpg", b"fake jpeg", "image/jpeg")})
+    assert r.status_code == 200
+    pid = r.json()["id"]
+    try:
+        # activate via the PUT endpoint
+        assert client.put(f"/api/panorama/{pid}",
+                          json={"active": True}).status_code == 200
+        assert client.get("/api/state").json()["active_pano_id"] == pid
+        # explicit False deactivates (clears the global pointer)
+        assert client.put(f"/api/panorama/{pid}",
+                          json={"active": False}).status_code == 200
+        assert client.get("/api/state").json()["active_pano_id"] is None
+        # an update that doesn't mention active leaves the pointer alone
+        other = client.post("/api/panorama",
+                            files={"file": ("p2.jpg", b"x", "image/jpeg")}).json()["id"]
+        try:
+            assert client.put(f"/api/panorama/{other}",
+                              json={"active": True}).status_code == 200
+            assert client.put(f"/api/panorama/{other}",
+                              json={"az_offset": 5.0}).status_code == 200
+            assert client.get("/api/state").json()["active_pano_id"] == other
+        finally:
+            client.delete(f"/api/panorama/{other}")
     finally:
         client.delete(f"/api/panorama/{pid}")
 

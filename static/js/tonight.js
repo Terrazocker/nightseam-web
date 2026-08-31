@@ -1,6 +1,6 @@
 /* Tonight tab: summary cards + ranked pick lists */
 
-import { $, esc, parseUTC, fmtHM, fmtT, TYPE_LABEL } from "./util.js";
+import { $, esc, parseUTC, fmtHM, fmtT, TYPE_LABEL, phaseName } from "./util.js";
 import { S, IMG_VER } from "./state.js";
 import { statusOf, objScore, windowText, desigLine,
          curTimeISO, gradeTag } from "./derive.js";
@@ -51,7 +51,7 @@ export function renderTonight() {
     <div class="card"><div class="k">Dark time</div><div class="v">${darkH}</div>
       <div class="s">${fmtHM(N.dusk)} &ndash; ${fmtHM(N.dawn)}</div></div>
     <div class="card"><div class="k">Moon</div><div class="v">${Math.round(N.moon_illum*100)}%</div>
-      <div class="s">${phaseNameOf(N.moon_illum)}</div></div>
+      <div class="s">${phaseName(N.moon_illum)}</div></div>
     <div class="card"><div class="k">Busiest hour</div>
       <div class="v">${counts[bi] ? fmtHM(N.timeline.times_iso[bi]) : "\u2014"}</div>
       <div class="s">${counts[bi]} of ${objs.length} targets observable</div></div>
@@ -69,12 +69,4 @@ export function renderTonight() {
                     .slice(0,8);
   $("#laterList").innerHTML = later.length ? later.map(cardHTML).join("")
      : '<p class="hint">No further clear windows tonight.</p>';
-}
-
-function phaseNameOf(k) {
-  if (k < 0.05) return "New";
-  if (k < 0.35) return "Crescent";
-  if (k < 0.65) return "Quarter";
-  if (k < 0.95) return "Gibbous";
-  return "Full";
 }

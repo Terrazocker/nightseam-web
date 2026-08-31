@@ -49,8 +49,7 @@ def session_folder_name(epoch: float | None) -> str:
     or 'undated' for frames without a parseable DATE-OBS."""
     if epoch is None:
         return "undated"
-    from datetime import datetime as _dt
-    return _dt.fromtimestamp(epoch).strftime("%Y-%m-%d_%H%M")
+    return datetime.fromtimestamp(epoch).strftime("%Y-%m-%d_%H%M")
 
 
 def _session_dir(db: Database, archive: Path, slug: str, object_id,

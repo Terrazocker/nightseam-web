@@ -241,9 +241,12 @@ class Database:
                 if len(vals) != len(cols):
                     continue
                 d = dict(zip(cols, vals))
-                d["ra_hours"] = float(d["ra_hours"]) if d["ra_hours"] else None
-                d["dec_deg"] = float(d["dec_deg"]) if d["dec_deg"] else None
-                d["vmag"] = float(d["vmag"]) if d["vmag"] else None
+                try:
+                    d["ra_hours"] = float(d["ra_hours"]) if d["ra_hours"] else None
+                    d["dec_deg"] = float(d["dec_deg"]) if d["dec_deg"] else None
+                    d["vmag"] = float(d["vmag"]) if d["vmag"] else None
+                except ValueError:
+                    continue          # malformed row - skip, don't crash boot
                 rows.append(tuple(d[c] for c in cols))
         with self.lock:
             self.conn.executemany(

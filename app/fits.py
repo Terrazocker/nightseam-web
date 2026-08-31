@@ -283,7 +283,7 @@ def preview_png_file(f, max_px: int = 256) -> bytes | None:
     return _encode_png_gray(vals, w, h)
 
 
-def _encode_png_gray(vals: list[float], w: int, h: int) -> bytes:
+def _encode_png_gray(vals: list[float], w: int, h: int) -> bytes | None:
     """8-bit grayscale PNG via zlib+struct (1%/99% stretch, no palette)."""
     if not vals or w < 1 or h < 1:
         return None

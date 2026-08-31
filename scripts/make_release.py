@@ -5,7 +5,7 @@ version), from the repo root:
 
     python scripts/make_release.py
 
-Stages a CLEAN package (exe + LICENSE + NOTICE + README — never the
+Stages a CLEAN package (exe + LICENSE + NOTICE — never the
 developer's own dist\\data) into dist/release/ and writes:
 
   dist/release/AstroPilot-<version>.zip     the distributable

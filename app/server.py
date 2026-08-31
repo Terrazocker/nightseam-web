@@ -414,10 +414,13 @@ def create_app(db: Database, *, prefetch: bool = True) -> FastAPI:
         minalt_eff = float(minalt if minalt is not None
                            else db.setting("min_useful_alt", 25.0))
 
-        result = object_detail(db, oid, date, tz_offset_min,
-                               site_row["lat"], site_row["lon"],
-                               profile, minalt_eff,
-                               profile_top=profile_top)
+        try:
+            result = object_detail(db, oid, date, tz_offset_min,
+                                   site_row["lat"], site_row["lon"],
+                                   profile, minalt_eff,
+                                   profile_top=profile_top)
+        except Exception as exc:  # noqa: BLE001 - mirror api_night
+            raise HTTPException(500, f"Computation failed: {exc}") from exc
         if result is None:
             raise HTTPException(404, "Object not found")
         return JSONResponse(result)
@@ -519,8 +522,10 @@ def create_app(db: Database, *, prefetch: bool = True) -> FastAPI:
         fields = {k: v for k, v in body.model_dump().items() if v is not None}
         if fields:
             db.update_panorama(pid, **fields)
-        if body.active:
-            db.set_setting("active_pano_id", pid)
+        # explicit active flag: True makes this pano the active one; False
+        # deactivates it (clears the global pointer). None = not mentioned.
+        if body.active is not None:
+            db.set_setting("active_pano_id", pid if body.active else None)
         return {"ok": True}
 
     @app.delete("/api/panorama/{pid}")
@@ -537,7 +542,7 @@ def create_app(db: Database, *, prefetch: bool = True) -> FastAPI:
 
     @app.get("/api/export")
     def api_export():
-        stamp = datetime.now().strftime("%Y%m%d-%H%M")
+        stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M")
         return Response(
             content=build_export_zip(db),
             media_type="application/zip",
@@ -557,6 +562,9 @@ def create_app(db: Database, *, prefetch: bool = True) -> FastAPI:
                 summary = apply_import_zip(db, spool)
             except ValueError as exc:
                 raise HTTPException(400, str(exc)) from None
+            except OSError as exc:      # e.g. disk full while restoring
+                raise HTTPException(
+                    500, f"Failed to write restored files: {exc}") from None
         finally:
             spool.unlink(missing_ok=True)
         return summary
@@ -659,12 +667,14 @@ def create_app(db: Database, *, prefetch: bool = True) -> FastAPI:
     @app.post("/api/library/open_folder")
     def api_library_open_folder(body: FolderOpenIn):
         rel = body.rel.strip().replace("\\", "/").strip("/")
-        if not rel or ".." in rel.split("/") or rel.split("/")[0] == "":
+        if not rel or any(p == ".." for p in rel.split("/")):
             raise HTTPException(400, "bad folder path")
-        folder = Path(db.image_dir()) / rel
+        base = Path(db.image_dir()).resolve()
+        folder = (base / rel).resolve()
+        if folder != base and base not in folder.parents:
+            raise HTTPException(400, "folder outside the archive")
         if not folder.is_dir():
             raise HTTPException(404, "folder not found on disk")
-        import os
         try:
             os.startfile(folder)         # Windows file explorer
         except OSError as exc:
@@ -767,7 +777,6 @@ def create_app(db: Database, *, prefetch: bool = True) -> FastAPI:
     @app.get("/api/shutdown")
     @app.post("/api/shutdown")
     def api_shutdown():
-        import os
         os._exit(0)
 
     # ---------------- static files ----------------

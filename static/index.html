@@ -16,7 +16,7 @@ if(x.status===200){var t=JSON.parse(x.responseText).theme;if(t)document.document
 </head>
 <body>
 <header id="topbar">
-  <div class="brand" id="brand" title="Switch mode" role="button" tabindex="0">
+  <div class="brand" id="brand" title="Switch mode" role="button" tabindex="0" aria-label="Switch mode">
     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
       <path d="M12 2.81 L13.59 9.85 L20.63 11.44 L13.59 13.03 L12 20.06 L10.41 13.03 L3.38 11.44 L10.41 9.85 Z" fill="#ffd166" stroke="#d6a03c" stroke-width="0.5" stroke-linejoin="round"/>
       <path d="M18.38 4.12 L18.93 6.38 L21.19 6.94 L18.93 7.49 L18.38 9.75 L17.82 7.49 L15.56 6.94 L17.82 6.38 Z" fill="#e9eefa"/>
@@ -69,14 +69,14 @@ if(x.status===200){var t=JSON.parse(x.responseText).theme;if(t)document.document
       </div>
     </div>
     <button id="btnMode" class="ghost modebtn" title="Switch to the image catalog">
-      <svg class="ic ic-tel" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+      <svg class="ic ic-tel" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
         <path d="M4 13 L13 7 L17 11 L8 17 Z"/>
         <path d="M17 11 L20 8"/>
         <path d="M10.5 12.5 L7 20"/>
         <path d="M10.5 12.5 L14 20"/>
         <circle cx="18.5" cy="15" r="1" fill="currentColor" stroke="none"/>
       </svg>
-      <svg class="ic ic-night hidden" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+      <svg class="ic ic-night hidden" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
         <path d="M20 12.8 A9 9 0 1 1 11.2 3 A7 7 0 0 0 20 12.8 Z" fill="currentColor" stroke="none"/>
         <circle cx="5.5" cy="6.5" r="1" fill="currentColor" stroke="none"/>
       </svg>
@@ -84,7 +84,7 @@ if(x.status===200){var t=JSON.parse(x.responseText).theme;if(t)document.document
     </button>
     <div class="popwrap menuwrap">
       <button id="btnMenu" class="ghost menubtn" title="Options">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
           <path d="M4 6h16M4 12h16M4 18h16"/>
         </svg>
       </button>
@@ -101,7 +101,7 @@ if(x.status===200){var t=JSON.parse(x.responseText).theme;if(t)document.document
         <div class="menu-section">
           <h4>Layout</h4>
           <label class="inline">Free space per side <span id="edgeSpaceVal" class="mono">200px</span></label>
-          <input type="range" id="edgeSpace" min="0" max="800" step="10" value="200" style="width:100%">
+          <input type="range" id="edgeSpace" min="0" max="800" step="10" value="200" style="width:100%" aria-label="Free space per side">
           <p class="hint">Lower fills big screens, raise centers content on
           ultrawide monitors.</p>
         </div>
@@ -172,7 +172,7 @@ if(x.status===200){var t=JSON.parse(x.responseText).theme;if(t)document.document
           <p class="hint">Ranks targets down while the Moon is up; objects far
           from the Moon and clusters survive moonlight best.</p>
           <label class="inline">Bortle sky class <span id="bortleVal" class="mono">4</span>
-            <input type="range" id="bortle" min="1" max="9" step="1" value="4" style="width:100%">
+            <input type="range" id="bortle" min="1" max="9" step="1" value="4" style="width:100%" aria-label="Bortle sky darkness">
           </label>
           <p class="hint">1 = pristine dark sky, 9 = city centre. Darker skies
           lower the default minimum altitude and weaken moonlight penalties.</p>
@@ -288,7 +288,7 @@ if(x.status===200){var t=JSON.parse(x.responseText).theme;if(t)document.document
   <!-- ================= SKY VIEW ================= -->
   <section id="tab-sky" class="tabpane">
     <div class="chart-layout">
-      <div id="skyWrap"><canvas id="skyCanvas"></canvas>
+      <div id="skyWrap" class="skywrap"><canvas id="skyCanvas"></canvas>
         <div id="skyTip" class="tooltip hidden"></div>
       </div>
       <aside class="chart-side">
@@ -301,7 +301,7 @@ if(x.status===200){var t=JSON.parse(x.responseText).theme;if(t)document.document
             <label class="inline"><input type="checkbox" id="showMoon" checked> moon &amp; sun</label>
             <label class="inline"><input type="checkbox" id="showMinAlt" checked> min-alt band</label>
             <label class="inline">Mag &le; <span id="skyMagVal">10.0</span></label>
-            <input type="range" id="skyMag" min="0" max="14" step="0.5" value="10" style="width:140px">
+            <input type="range" id="skyMag" min="0" max="14" step="0.5" value="10" style="width:140px" aria-label="Sky chart magnitude limit">
             <button id="skyZoomReset" class="ghost">reset view</button>
             <span class="hint">scroll = zoom &middot; drag = pan &middot; double-click = reset — zooming opens a rectangular window over the chart, so you see more sky than a circular magnifier</span>
           </div>
@@ -476,7 +476,7 @@ if(x.status===200){var t=JSON.parse(x.responseText).theme;if(t)document.document
   <!-- ================= SKY MAP ================= -->
   <section id="tab-skymap" class="tabpane">
     <div class="chart-layout">
-      <div id="skyWrap"><canvas id="skymapCanvas"></canvas>
+      <div id="skymapWrap" class="skywrap"><canvas id="skymapCanvas"></canvas>
         <div id="skymapTip" class="tooltip hidden"></div>
       </div>
       <aside class="chart-side">
@@ -503,7 +503,7 @@ if(x.status===200){var t=JSON.parse(x.responseText).theme;if(t)document.document
     <header>
       <h2 id="dTitle"></h2>
       <span id="dNames"></span>
-      <button class="close" id="dClose">&times;</button>
+      <button class="close" id="dClose" aria-label="Close details">&times;</button>
     </header>
     <div class="detail-grid">
       <div class="detail-info">
@@ -531,7 +531,7 @@ if(x.status===200){var t=JSON.parse(x.responseText).theme;if(t)document.document
 <div id="sitesModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="sitesTitle">
   <div class="modal-box">
     <header><h2 id="sitesTitle">Setup</h2>
-      <button class="close" id="sitesClose">&times;</button></header>
+      <button class="close" id="sitesClose" aria-label="Close setup">&times;</button></header>
     <div class="modal-tabs">
       <button data-mtab="sites" class="tab active">Sites</button>
       <button data-mtab="rigs" class="tab">Rigs</button>
@@ -612,7 +612,7 @@ if(x.status===200){var t=JSON.parse(x.responseText).theme;if(t)document.document
 <div id="libEditModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="libEditTitle">
   <div class="modal-box">
     <header><h2 id="libEditTitle">Edit library object</h2>
-      <button class="close" id="libEditClose">&times;</button></header>
+      <button class="close" id="libEditClose" aria-label="Close">&times;</button></header>
     <p class="hint">Rename the object and pick its type. The archive folder
     (and the saved files in it) are renamed to match.</p>
     <div class="formrow" style="flex-direction:column;align-items:stretch;gap:10px">

@@ -291,6 +291,8 @@ td.frame .fit { color: var(--green); }
 .modal {
   width: min(900px, 100%); background: #0b1526; border: 1px solid var(--line); border-radius: 16px;
   padding: 22px 24px; box-shadow: 0 24px 70px rgba(0,0,0,.6);
+  margin: auto;  /* safe vertical centering inside the flex wrapper: centers
+                    when the modal fits, scrolls from the top when it doesn't */
 }
 .modal h2 { font-size: 22px; }
 .modal .tags { font-size: 12.5px; margin: 6px 0 0; display: block; }

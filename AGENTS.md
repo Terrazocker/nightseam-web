@@ -55,7 +55,11 @@ ingest + library), switched via the top-right button or the brand name.
   `Network.setCacheDisabled` + a `?v=` query or the page serves stale files;
   `S` (state.js) is NOT global - probe the DOM/API, not `S.*`; patch
   `window.alert` instead of accepting dialogs; kill chrome between runs
-  (instances accumulate on 9222).
+  (instances accumulate on 9222). Chrome CANNOT launch under the DSH
+  sandbox's restricted token (crashpad/mojo pipe creation is denied) - run
+  it with full access, and give the profile an ABSOLUTE path inside the
+  workspace (e.g. `theme-preview\.a11y-prof`); a relative or temp-dir path
+  fails with "requires a non-default data directory" / lock-file errors.
 - No Python linter/formatter configured. The JS "lint" is three scripts that
   must pass after touching `static/`; `python scripts/check_js.py` runs all
   three and exits non-zero on hard failures (recommended one-command check):
@@ -76,6 +80,17 @@ ingest + library), switched via the top-right button or the brand name.
   `<version>-dirty` instead of silently claiming a clean tag. The build never
   touches `dist\data` - the frozen app's user data (db, imgcache) next to the
   exe survives rebuilds.
+  Note: the `pip install` phases at the top of build.ps1 can HANG for many
+  minutes with no network. `.venv-build` is complete after the first build,
+  so when pip stalls, kill it and run the rest manually: bake
+  `app/_version_baked.py` from `git describe --tags --always --dirty` (e.g.
+  `Set-Content app\_version_baked.py "BAKED_VERSION = '<ver>'"`) then
+  `.\.venv-build\Scripts\python.exe -m PyInstaller --clean --noconfirm
+  --onefile --noconsole --name AstroPilot --icon assets\app.ico
+  --add-data "static;static" --add-data "app\data;app\data"
+  --collect-all uvicorn --collect-all webview
+  --hidden-import python_multipart main.py`. A direct PyInstaller run takes
+  ~90 s; the whole build.ps1 normally takes ~8 min.
 
 ## Versioning
 
@@ -117,7 +132,9 @@ ingest + library), switched via the top-right button or the brand name.
   `preview_png_file()` - a strided, pure-stdlib grayscale PNG thumbnail of
   the image data (currently used only by tests; the UI dropped frame
   thumbnails). BITPIX 8 is
-  unsigned, 16/32-bit signed, -32/-64 floats.
+  unsigned, 16/32-bit signed, -32/-64 floats. `parse_ra_hours` /
+  `parse_dec_deg` are the SINGLE source for coordinate parsing -
+  `app/server.py` imports them from here; never re-implement elsewhere.
 - `app/imglib.py` - catalog resolution, library grouping (per-frame-type and
   per-filter integration rollups), session math.
 - `app/paths.py` - source vs PyInstaller-frozen path resolution; when frozen,
@@ -265,6 +282,13 @@ ingest + library), switched via the top-right button or the brand name.
   and clickable, offset `main`/`body` so pinned chrome never covers
   content, stay below z-index 100 (toasts = 300, popover = 60,
   modal = 40, #versionTag = 5).
+- A11y invariants (desktop + web): every modal opens with
+  `role="dialog" aria-modal="true" aria-labelledby=<h2 id>`; a delegated
+  Tab focus trap lives in `util.js` (`initFocusTrap`, wired at boot) and
+  keeps focus inside the open dialog. Keep that pattern when adding
+  modals. Search inputs carry an accessible name (`<label>` or
+  `aria-label`); click-only controls (like `#brand`) get
+  `role="button" tabindex="0"` + an Enter/Space handler (`bindKeyboardClick`).
 - `bortle` setting (1-9, hamburger menu) shifts the default min-altitude
   (`17 + 2*bortle`, only when no explicit min alt is stored) and scales the
   moon-aware scoring penalty. Moon-aware scoring uses the angular separation
@@ -316,6 +340,13 @@ ingest + library), switched via the top-right button or the brand name.
   `--env <path>` pointing at ftp.env (never committed). Cloudflare serves
   the remote site and injects a script into delivered index.html —
   hash-verify only after stripping that block.
+  FTP gotchas: the `upload` command's remote name is FTP-ROOT-relative in
+  practice, so ALWAYS pass the full path (`upload web/app.js /astro/app.js`,
+  `upload dist/release/version.json /downloads/version.json`) - a bare name
+  silently lands in `/`. Also, ProFTPD kills a reused control connection
+  after ~2 transfers, so `uploadtree` often stalls mid-tree; when it does,
+  upload the remaining/changed files individually (one fresh connection
+  per file) and verify with `download` or `list`.
 - Public release artifacts live under `/downloads/` on the site
   (`dist/release/` content — see `scripts/make_release.py`): the desktop
   zip, `version.json` (read by the landing page) and `ap-version.js`

@@ -197,11 +197,6 @@ html[data-theme="dome"] #topbar input:not([type=range]):not([type=checkbox]) {
   padding: 4px 8px;
 }
 html[data-theme="dome"] .topbar-right {
-  gap: 8px;
-}
-
-/* Topbar right side */
-html[data-theme="dome"] .topbar-right {
   gap: 10px;
 }
 

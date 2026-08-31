@@ -169,6 +169,8 @@ function nextTab() {
 
 init().catch(err => {
   console.error(err);
-  document.body.insertAdjacentHTML("afterbegin",
-    `<div style="background:#5c1a1a;color:#fff;padding:10px 16px;font-weight:600">Failed to start: ${String(err.message || err)}</div>`);
+  const banner = document.createElement("div");
+  banner.style.cssText = "background:#5c1a1a;color:#fff;padding:10px 16px;font-weight:600";
+  banner.textContent = "Failed to start: " + String(err.message || err);
+  document.body.prepend(banner);
 });

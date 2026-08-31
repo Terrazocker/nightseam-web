@@ -1309,7 +1309,7 @@ function openDetail(id) {
     <div class="modal" role="dialog" aria-modal="true" aria-labelledby="m-title">
       <div class="modal-head">
         <h2 id="m-title">${esc(o.primary_name)}</h2>
-        <button class="close" id="m-close" title="close">✕</button>
+        <button class="close" id="m-close" title="close" aria-label="Close">✕</button>
       </div>
       <span class="tags">${tags}</span>
       <div class="detail-grid">
@@ -1666,7 +1666,7 @@ async function renderSettings() {
     <div class="modal settings" role="dialog" aria-modal="true" aria-labelledby="m-set-title">
       <div class="modal-head">
         <h2 id="m-set-title">Settings</h2>
-        <button class="close" id="m-close" title="close">✕</button>
+        <button class="close" id="m-close" title="close" aria-label="Close">✕</button>
       </div>
       <div class="card">
         <h3>Active site</h3>

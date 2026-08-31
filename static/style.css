@@ -315,8 +315,8 @@ table { border-collapse: collapse; width: 100%; }
   gap: 6px; padding-top: 2px; }
 .side-chk { flex-direction: column; gap: 8px; align-items: flex-start; }
 .chart-side .hint { margin-top: 4px; }
-#skyWrap { position: relative; }
-#tab-sky #skyWrap { width: min(calc(100vh - 150px), 100%); aspect-ratio: 1; margin: 0 auto; }
+.skywrap { position: relative; width: 100%; }
+#tab-sky .skywrap { width: min(calc(100vh - 150px), 100%); aspect-ratio: 1; margin: 0 auto; }
 #skyCanvas { width: 100%; height: 100%; border-radius: 50%; background: radial-gradient(circle at 50% 42%, var(--sky2) 0%, var(--sky1) 75%); border: 1px solid var(--border); }
 .tooltip {
   position: fixed; z-index: 50; pointer-events: none;
@@ -425,10 +425,9 @@ tr.lib-sess td { background: var(--bg2) !important; cursor: default;
 
 /* ---------- static sky map ---------- */
 #tab-skymap { padding-top: 8px; }
-#tab-skymap #skyWrap { flex: 1; min-width: 0; }
+#skymapWrap { flex: 1; min-width: 0; }
 #skymapCanvas { display: block; margin: 0 auto; border-radius: var(--r-xl);
   background: var(--chart-bg); border: 1px solid var(--border); }
-#skyWrap { position: relative; width: 100%; }
 #skymapTip { position: fixed; z-index: 50; pointer-events: none;
   background: var(--tooltip-bg); border: 1px solid var(--border); border-radius: var(--r-md);
   padding: 7px 10px; font-size: 12px; line-height: 1.5; box-shadow: 0 6px 24px var(--shadow-lg); }

@@ -11,7 +11,6 @@ import sys
 from pathlib import Path
 
 JS_DIR = Path(__file__).resolve().parents[1] / "static" / "js"
-PANO = Path(__file__).resolve().parents[1] / "static" / "pano.js"
 
 BUILTINS = {
     # browser / JS
