@@ -307,6 +307,9 @@ export function bindArchive() {
   _bound = true;
 
   $("#brand").addEventListener("click", toggleMode);
+  $("#brand").addEventListener("keydown", e => {
+    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleMode(); }
+  });
   $("#btnMode").addEventListener("click", toggleMode);
 
   // archive folder

@@ -234,7 +234,15 @@ _ROWS = [
 ]
 
 
+_ROWS_CACHE: list[dict] | None = None
+
+
 def rows() -> list[dict]:
+    """The curated catalog as dicts - computed once, then cached (the data
+    is static; callers treat the result as read-only)."""
+    global _ROWS_CACHE
+    if _ROWS_CACHE is not None:
+        return _ROWS_CACHE
     out = []
     for (oid, common, messier, ngcic, other, otype,
          ra_h, dec_d, mag, size_am, const, dist_ly, wiki, blurb) in _ROWS:
@@ -267,4 +275,5 @@ def rows() -> list[dict]:
             "blurb": blurb,
             "search": search_blob,
         })
+    _ROWS_CACHE = out
     return out

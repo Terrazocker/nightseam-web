@@ -268,8 +268,13 @@ const GRADE_TIERS = [
   { label: 'D', min: 0,  color: '#67749c' },  // grey
 ];
 const _flashCache = new Map();
+// Bounded memoization: values are deterministic per object, so entries can
+// never go stale - the cap only keeps a pathological session from growing
+// the map without limit.
+const _FLASH_CACHE_MAX = 20000;
 export function flashOf(m, o) {
   if (!m) return 0;
+  if (_flashCache.size >= _FLASH_CACHE_MAX) _flashCache.clear();
   let v = _flashCache.get(m.id);
   if (v !== undefined) return v;
   const magScore = m.vmag != null ? Math.max(0, Math.min(100, (12 - m.vmag) * 9)) : 0;

@@ -219,3 +219,40 @@ export function watchCaps(container, warnEl) {
   container.addEventListener("keyup", upd);
   container.addEventListener("focusout", () => warnEl.classList.add("hidden"));
 }
+
+/* ------------------------------------------------------------------ a11y */
+
+/* Wrap Tab focus inside the first open [role=dialog] so keyboard users
+   cannot tab behind a modal. One delegated listener covers every modal. */
+export function initFocusTrap() {
+  const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), '
+    + 'select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+  document.addEventListener("keydown", e => {
+    if (e.key !== "Tab") return;
+    const dialog = document.querySelector('[role="dialog"]:not(.hidden)');
+    if (!dialog) return;
+    const els = dialog.querySelectorAll(FOCUSABLE);
+    if (!els.length) { e.preventDefault(); return; }
+    const first = els[0], last = els[els.length - 1];
+    const cur = document.activeElement;
+    if (e.shiftKey && (cur === first || !dialog.contains(cur))) {
+      e.preventDefault(); last.focus();
+    } else if (!e.shiftKey && cur === last) {
+      e.preventDefault(); first.focus();
+    } else if (!dialog.contains(cur)) {
+      // focus arrived from outside (e.g. after open) - pin to the first
+      e.preventDefault(); first.focus();
+    }
+  });
+}
+
+/* Keyboard activation for click-only controls (role=button on a div). */
+export function bindKeyboardClick(el, fn) {
+  if (!el) return;
+  el.addEventListener("keydown", e => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      fn();
+    }
+  });
+}

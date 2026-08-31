@@ -89,6 +89,30 @@ def test_night_window_summer_polar_day_falls_back():
     assert w["level"] == "fallback"
 
 
+def test_night_window_short_summer_night_is_nautical():
+    """London (51.5 N) on the solstice: the sun dips to ~-15 deg, so it
+    reaches nautical (-12) but never astronomical (-18) twilight."""
+    w = night_window(2026, 6, 21, 60, 51.5, -0.1)
+    assert w["level"] == "nautical"
+    assert w["dusk"] is not None and w["dawn"] is not None
+    assert w["dawn"] > w["dusk"]
+    sun = make_sun_alt_fn(51.5, -0.1)
+    assert sun(w["dusk"]) == pytest.approx(-12.0, abs=0.3)
+    assert sun(w["dawn"]) == pytest.approx(-12.0, abs=0.3)
+
+
+def test_night_window_far_north_summer_night_is_civil():
+    """Edinburgh (57 N) on the solstice: the sun dips to ~-10 deg, so only
+    civil (-6) twilight exists."""
+    w = night_window(2026, 6, 21, 60, 57.0, -3.2)
+    assert w["level"] == "civil"
+    assert w["dusk"] is not None and w["dawn"] is not None
+    assert w["dawn"] > w["dusk"]
+    sun = make_sun_alt_fn(57.0, -3.2)
+    assert sun(w["dusk"]) == pytest.approx(-6.0, abs=0.3)
+    assert sun(w["dawn"]) == pytest.approx(-6.0, abs=0.3)
+
+
 def test_night_window_southern_hemisphere():
     """Southern hemisphere in their autumn: still returns a sane window."""
     w = night_window(2026, 3, 21, 0, -33.9, 18.4)   # Cape Town

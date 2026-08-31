@@ -11,7 +11,7 @@
 
 const DB_NAME = 'apweb-db-v1';
 const DB_VER = 1;
-const STORES = ['obs', 'targets', 'sites', 'rigs', 'meta'];
+const STORES = ['targets', 'sites', 'rigs', 'meta'];
 let _db = null;
 let _dbP = null;
 

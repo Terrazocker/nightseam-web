@@ -16,7 +16,7 @@ if(x.status===200){var t=JSON.parse(x.responseText).theme;if(t)document.document
 </head>
 <body>
 <header id="topbar">
-  <div class="brand" id="brand" title="Switch mode">
+  <div class="brand" id="brand" title="Switch mode" role="button" tabindex="0">
     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
       <path d="M12 2.81 L13.59 9.85 L20.63 11.44 L13.59 13.03 L12 20.06 L10.41 13.03 L3.38 11.44 L10.41 9.85 Z" fill="#ffd166" stroke="#d6a03c" stroke-width="0.5" stroke-linejoin="round"/>
       <path d="M18.38 4.12 L18.93 6.38 L21.19 6.94 L18.93 7.49 L18.38 9.75 L17.82 7.49 L15.56 6.94 L17.82 6.38 Z" fill="#e9eefa"/>
@@ -236,6 +236,7 @@ if(x.status===200){var t=JSON.parse(x.responseText).theme;if(t)document.document
   <!-- ================= TARGETS ================= -->
   <section id="tab-targets" class="tabpane">
     <div id="filterBar">
+      <label class="visually-hidden" for="fSearch">Search targets</label>
       <input type="search" id="fSearch" placeholder="Search M101, NGC 7000, Orion, galaxy...">
       <select id="fType">
         <option value="">All types</option>
@@ -497,7 +498,7 @@ if(x.status===200){var t=JSON.parse(x.responseText).theme;if(t)document.document
 </main>
 
 <!-- ============ object detail modal ============ -->
-<div id="detailModal" class="modal hidden">
+<div id="detailModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="dTitle">
   <div class="modal-box wide">
     <header>
       <h2 id="dTitle"></h2>
@@ -527,9 +528,9 @@ if(x.status===200){var t=JSON.parse(x.responseText).theme;if(t)document.document
 </div>
 
 <!-- ============ sites & equipment modal ============ -->
-<div id="sitesModal" class="modal hidden">
+<div id="sitesModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="sitesTitle">
   <div class="modal-box">
-    <header><h2>Setup</h2>
+    <header><h2 id="sitesTitle">Setup</h2>
       <button class="close" id="sitesClose">&times;</button></header>
     <div class="modal-tabs">
       <button data-mtab="sites" class="tab active">Sites</button>
@@ -608,9 +609,9 @@ if(x.status===200){var t=JSON.parse(x.responseText).theme;if(t)document.document
 </div>
 
 <!-- ============ library object edit modal ============ -->
-<div id="libEditModal" class="modal hidden">
+<div id="libEditModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="libEditTitle">
   <div class="modal-box">
-    <header><h2>Edit library object</h2>
+    <header><h2 id="libEditTitle">Edit library object</h2>
       <button class="close" id="libEditClose">&times;</button></header>
     <p class="hint">Rename the object and pick its type. The archive folder
     (and the saved files in it) are renamed to match.</p>
@@ -643,7 +644,7 @@ if(x.status===200){var t=JSON.parse(x.responseText).theme;if(t)document.document
 <div id="versionTag"></div>
 
 <!-- ============ first-run wizard ============ -->
-<div id="wizardModal" class="modal hidden">
+<div id="wizardModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="wizTitle">
   <div class="modal-box">
     <header><h2 id="wizTitle">Welcome to AstroPilot</h2></header>
     <div id="wizBody"></div>

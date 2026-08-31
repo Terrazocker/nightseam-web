@@ -88,6 +88,22 @@ def test_export_import_roundtrip(db, tmp_path):
     assert new_img.read_bytes() == b"FITSDATA"
 
 
+def test_import_from_path_file(db, tmp_path):
+    """The server spools uploads to a temp FILE and imports from the path -
+    the Path branch of apply_import_zip must behave like the bytes branch."""
+    _seed(db, tmp_path)
+    blob = build_export_zip(db)
+    spool = tmp_path / ".import-test.zip"
+    spool.write_bytes(blob)
+
+    db2 = Database(tmp_path / "other.db")
+    db2.set_setting("image_dir", str(tmp_path / "archive"))
+    summary = apply_import_zip(db2, spool)
+    assert summary["sites"] == 1 and summary["images"] == 1
+    assert db2.sites()[0]["name"] == "Home"
+    assert summary["auto_backup"]
+
+
 def test_import_preserves_current_state_in_safety_backup(db, tmp_path):
     db.add_site("Old Site", 48.0, 11.0, 500)
 

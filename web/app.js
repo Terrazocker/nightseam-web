@@ -1153,7 +1153,7 @@ function renderCatalog() {
 
   box.innerHTML = `
     <div class="cat-bar">
-      <input type="search" id="cat-q" placeholder="Search: name, M 31, NGC 7000, galaxy, Cyg…" value="${esc(S.cat.q)}">
+      <input type="search" id="cat-q" aria-label="Search the catalog" placeholder="Search: name, M 31, NGC 7000, galaxy, Cyg…" value="${esc(S.cat.q)}">
       <div class="chips">${Object.keys(CHIP_FILTERS).map((c) => `<button class="chip${S.cat.chip === c ? ' on' : ''}" data-c="${c}">${CHIP_LABELS[c]}</button>`).join('')}</div>
       <select id="cat-con" title="constellation filter">
         <option value="">All constellations</option>
@@ -1306,9 +1306,9 @@ function openDetail(id) {
   const wiki = o.wiki || o.primary_name;
 
   modal.innerHTML = `
-    <div class="modal" role="dialog">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="m-title">
       <div class="modal-head">
-        <h2>${esc(o.primary_name)}</h2>
+        <h2 id="m-title">${esc(o.primary_name)}</h2>
         <button class="close" id="m-close" title="close">✕</button>
       </div>
       <span class="tags">${tags}</span>
@@ -1663,9 +1663,9 @@ async function renderSettings() {
     </li>`;
 
   modal.innerHTML = `
-    <div class="modal settings" role="dialog">
+    <div class="modal settings" role="dialog" aria-modal="true" aria-labelledby="m-set-title">
       <div class="modal-head">
-        <h2>Settings</h2>
+        <h2 id="m-set-title">Settings</h2>
         <button class="close" id="m-close" title="close">✕</button>
       </div>
       <div class="card">
@@ -2008,9 +2008,9 @@ function welcomeFlow() {
   return new Promise((resolve) => {
     const modal = $('#modal');
     modal.innerHTML = `
-      <div class="modal welcome" role="dialog">
+      <div class="modal welcome" role="dialog" aria-modal="true" aria-labelledby="m-wel-title">
         <div class="modal-head">
-          <h2>👋 Welcome to AstroPilot Web</h2>
+          <h2 id="m-wel-title">👋 Welcome to AstroPilot Web</h2>
         </div>
         <p class="sub">Where will you observe? You can add more sites any time via Setup in the top bar.</p>
         <div class="set-form">
@@ -2348,6 +2348,25 @@ async function boot() {
   });
   if (tonightTimer) clearInterval(tonightTimer);
   tonightTimer = setInterval(() => { if (S.view === 'tonight' && !document.hidden) renderTonight(true); }, 60000);
+
+  // a11y: keep Tab focus inside the open dialog
+  document.addEventListener('keydown', (ev) => {
+    if (ev.key !== 'Tab') return;
+    const dialog = document.querySelector('#modal .modal:not([hidden])') ||
+                   document.querySelector('[role="dialog"]:not([hidden])');
+    if (!dialog) return;
+    const els = dialog.querySelectorAll('a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])');
+    if (!els.length) { ev.preventDefault(); return; }
+    const first = els[0], last = els[els.length - 1];
+    const cur = document.activeElement;
+    if (ev.shiftKey && (cur === first || !dialog.contains(cur))) {
+      ev.preventDefault(); last.focus();
+    } else if (!ev.shiftKey && cur === last) {
+      ev.preventDefault(); first.focus();
+    } else if (!dialog.contains(cur)) {
+      ev.preventDefault(); first.focus();
+    }
+  });
 
   route();
 }

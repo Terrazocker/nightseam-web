@@ -30,20 +30,20 @@ def _safe_join(root: Path, rel: str) -> Path | None:
     return p
 
 
-def build_export_zip(db: Database) -> bytes:
-    buf = io.BytesIO()
-    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
-        setup = {
-            "app": "AstroPilot",
-            "version": APP_VERSION,
-            "exported_at": datetime.now(UTC).isoformat(),
-            "settings": db.all_settings(),
-            "sites": db.sites(),
-            "rigs": db.rigs(),
-            "panoramas": db.panoramas(),
-            "customs": db.customs(),
-            "images": db.images(),
-        }
+def _export_zip_to(db: Database, target) -> int:
+    """Write the setup ZIP to any writable file object; returns byte count."""
+    setup = {
+        "app": "AstroPilot",
+        "version": APP_VERSION,
+        "exported_at": datetime.now(UTC).isoformat(),
+        "settings": db.all_settings(),
+        "sites": db.sites(),
+        "rigs": db.rigs(),
+        "panoramas": db.panoramas(),
+        "customs": db.customs(),
+        "images": db.images(),
+    }
+    with zipfile.ZipFile(target, "w", zipfile.ZIP_DEFLATED) as z:
         z.writestr("setup.json", json.dumps(setup, indent=1))
         for p in setup["panoramas"]:
             f = _safe_join(data_dir() / "panos", p["file"])
@@ -54,12 +54,37 @@ def build_export_zip(db: Database) -> bytes:
             src = _safe_join(image_dir, img["file"])
             if src and src.is_file():
                 z.write(src, f"library/{img['file']}")
+    return target.tell()
+
+
+def build_export_zip(db: Database) -> bytes:
+    """The setup ZIP as bytes (kept for the HTTP download + tests)."""
+    buf = io.BytesIO()
+    _export_zip_to(db, buf)
     return buf.getvalue()
 
 
-def apply_import_zip(db: Database, blob: bytes) -> dict:
+def _write_safety_copy(db: Database, dest: Path) -> str | None:
+    """Best-effort streaming safety copy of the CURRENT setup to `dest`.
+
+    Streams the ZIP straight to disk (never a second full copy in RAM), so
+    even a multi-GB image library cannot double the import's memory peak.
+    Returns the path string on success, None on any failure."""
+    try:
+        with open(dest, "wb") as f:
+            _export_zip_to(db, f)
+        return str(dest)
+    except Exception:  # noqa: BLE001 - best-effort safety net
+        return None
+
+
+def apply_import_zip(db: Database, blob: bytes | Path) -> dict:
     """Replace all user data from an exported ZIP. Raises ValueError on
     malformed input. Returns a summary dict.
+
+    `blob` may be raw zipped bytes or a path to a zip file on disk (the
+    server spools large uploads to a temp file so the whole import never
+    has to live in RAM twice).
 
     Before touching anything, the CURRENT setup is written to
     ``<db>.backup-auto.zip`` next to the database, so an interrupted or
@@ -67,7 +92,8 @@ def apply_import_zip(db: Database, blob: bytes) -> dict:
     manually). The safety copy is best-effort: a failure to write it must
     not block the user's deliberate restore."""
     try:
-        zf = zipfile.ZipFile(io.BytesIO(blob))
+        zf = zipfile.ZipFile(io.BytesIO(blob) if isinstance(blob, bytes)
+                             else blob)
         setup = json.loads(zf.read("setup.json").decode("utf-8"))
     except Exception as exc:  # noqa: BLE001
         raise ValueError(f"Not a valid AstroPilot export: {exc}") from None
@@ -75,11 +101,7 @@ def apply_import_zip(db: Database, blob: bytes) -> dict:
         raise ValueError("This zip is not an AstroPilot setup export")
 
     safety_path = db.path.with_suffix(".backup-auto.zip")
-    try:
-        safety_path.write_bytes(build_export_zip(db))
-        safety = str(safety_path)
-    except Exception:  # noqa: BLE001 - best-effort safety net
-        safety = None
+    safety = _write_safety_copy(db, safety_path)
 
     sites = setup.get("sites", [])
     rigs = setup.get("rigs", [])

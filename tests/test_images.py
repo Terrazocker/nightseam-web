@@ -23,6 +23,11 @@ SVG = b"<svg/>"                             # rejected: too small / svg
 def nw(tmp_path, monkeypatch):
     """Stubbed network layer + isolated cache dir; returns call counters."""
     monkeypatch.setattr("app.images.CACHE_DIR", tmp_path / "imgcache")
+    # isolate the offline circuit-breaker globals per test (monkeypatch
+    # restores the imported values on teardown, so no state leaks between
+    # tests even if a test trips the failure counters)
+    monkeypatch.setattr("app.images._consec_fail", 0)
+    monkeypatch.setattr("app.images._offline_until", 0.0)
     calls = {"download": 0, "wikidata": 0, "wikipedia": 0, "dss": 0}
 
     def stub_download(url, timeout=10.0):
@@ -102,6 +107,29 @@ def test_fetch_image_offline_breaker(nw, monkeypatch):
     blob, ctype = img.fetch_image(OBJ)
     assert blob is None and ctype is None
     assert nw["download"] == 0 and nw["wikidata"] == 0
+
+
+def test_fetch_image_dss_fallback(nw, monkeypatch):
+    """Wikidata and Wikipedia find nothing -> the DSS2 survey cutout is
+    used and cached like any other source."""
+    monkeypatch.setattr("app.images._wikidata_thumb", lambda title: None)
+    monkeypatch.setattr("app.images._wikipedia_thumb", lambda title: None)
+
+    def dss_cutout(ra, dec, size, pixels=512):
+        nw["dss"] += 1
+        return "https://alasky.cds.unistra.fr/hips-image-services/hips2fits?x=1"
+
+    monkeypatch.setattr("app.images._dss_cutout", dss_cutout)
+    blob, ctype = img.fetch_image(OBJ)
+    assert blob == JPEG
+    assert ctype == "image/jpeg"
+    assert nw["dss"] == 1                   # first (512px) attempt succeeded
+    assert nw["download"] == 1
+
+    # cached now - no second DSS call or download
+    blob2, _ = img.fetch_image(OBJ)
+    assert blob2 == JPEG
+    assert nw["dss"] == 1 and nw["download"] == 1
 
 
 def test_fetch_image_temporary_failure_not_cached(nw, monkeypatch):

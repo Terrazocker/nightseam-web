@@ -9,6 +9,7 @@ import os
 import re
 import threading
 import time
+import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Optional
@@ -20,6 +21,7 @@ from pydantic import BaseModel
 
 from .backup import apply_import_zip, build_export_zip
 from .database import Database, new_id
+from .fits import parse_dec_deg, parse_ra_hours
 from .ingest import ingest_one, obj_slug, reindex_library, rename_archive_folder
 from .nightcalc import PROFILE_BINS, compute_night, object_detail
 from .paths import data_dir, static_dir
@@ -30,22 +32,30 @@ APP_VERSION = app_version()
 _state = {"last_request": time.time()}
 
 
-async def _read_limited(file: UploadFile, limit: int, label: str) -> bytes:
-    """Read an upload in 1 MB chunks, aborting as soon as `limit` is
-    exceeded - an oversized file is rejected without ever being buffered
-    in full (the old `await file.read()` loaded the whole upload first)."""
-    chunks: list[bytes] = []
+async def _drain_upload(file: UploadFile, dest: Path, limit: int,
+                        label: str) -> int:
+    """Stream an upload into `dest` in 1 MB chunks, aborting as soon as
+    `limit` is exceeded (partial file removed). Peak memory stays at one
+    chunk regardless of upload size. Returns the byte count."""
     total = 0
-    while True:
-        chunk = await file.read(1 << 20)
-        if not chunk:
-            break
-        total += len(chunk)
-        if total > limit:
-            raise HTTPException(
-                400, f"{label} too large (max {limit // (1024 * 1024)} MB)")
-        chunks.append(chunk)
-    return b"".join(chunks)
+    try:
+        with open(dest, "wb") as f:
+            while True:
+                chunk = await file.read(1 << 20)
+                if not chunk:
+                    break
+                total += len(chunk)
+                if total > limit:
+                    raise HTTPException(
+                        400, f"{label} too large (max {limit // (1024 * 1024)} MB)")
+                f.write(chunk)
+    except BaseException:
+        dest.unlink(missing_ok=True)
+        raise
+    if total == 0:
+        dest.unlink(missing_ok=True)
+        raise HTTPException(400, f"{label} is empty")
+    return total
 
 
 # ------------------------------------------------------------------ models
@@ -118,42 +128,7 @@ class FolderOpenIn(BaseModel):
 
 
 # ------------------------------------------------------------------ coord parsing
-
-def parse_ra_hours(text) -> Optional[float]:
-    """Decimal hours (dot or comma), or 'HH MM[.m][ SS]' with h/m/s or colons."""
-    s = str(text).strip().lower().replace(",", ".").replace("h", " ").replace("m", " ").replace("s", " ")
-    parts = [p for p in re.split(r"[\s:]+", s) if p]
-    try:
-        vals = [float(p) for p in parts]
-    except ValueError:
-        return None
-    if not vals:
-        return None
-    if len(vals) == 1:
-        return vals[0]
-    if len(vals) == 2:
-        return vals[0] + vals[1] / 60.0
-    return vals[0] + vals[1] / 60.0 + vals[2] / 3600.0
-
-
-def parse_dec_deg(text) -> Optional[float]:
-    s = str(text).strip().replace(",", ".").replace("\u00b0", " ").replace("d", " ")
-    sign = -1.0 if s.startswith("-") else 1.0
-    s = s.lstrip("+-").replace("'", " ").replace('"', " ")
-    parts = [p for p in re.split(r"[\s:]+", s) if p]
-    try:
-        vals = [float(p) for p in parts]
-    except ValueError:
-        return None
-    if not vals:
-        return None
-    v = abs(vals[0])
-    if len(vals) >= 2:
-        v += vals[1] / 60.0
-    if len(vals) >= 3:
-        v += vals[2] / 3600.0
-    return sign * v
-
+# parse_ra_hours / parse_dec_deg live in app/fits.py (single source of truth)
 
 def fov_arcmin(focal_mm: float, sensor_mm: float) -> float:
     """Field of view in arcminutes for a given focal length and sensor dimension."""
@@ -473,11 +448,10 @@ def create_app(db: Database, *, prefetch: bool = True) -> FastAPI:
         ext = Path(file.filename or "").suffix.lower().lstrip(".")
         if ext not in ("jpg", "jpeg", "png", "webp"):
             raise HTTPException(400, "Use JPG, PNG or WebP")
-        blob = await _read_limited(file, 60 * 1024 * 1024, "Image")
         pid = new_id()
         fname = f"{pid}.{ext}"
         out = data_dir() / "panos" / fname
-        out.write_bytes(blob)
+        await _drain_upload(file, out, 60 * 1024 * 1024, "Image")
         name = Path(file.filename).stem or "Panorama"
         db.add_panorama(pid, name, fname)
         db.update_panorama(pid, active=False)
@@ -515,15 +489,17 @@ def create_app(db: Database, *, prefetch: bool = True) -> FastAPI:
         ext = Path(file.filename or "").suffix.lower().lstrip(".")
         if ext not in ("jpg", "jpeg", "png", "webp"):
             raise HTTPException(400, "Use JPG, PNG or WebP")
-        blob = await _read_limited(file, 60 * 1024 * 1024, "Image")
-        if not blob:
-            raise HTTPException(400, "Image missing or too large (max 60 MB)")
         fname = f"{pid}.{ext}"
-        old = data_dir() / "panos" / row["file"]
-        out = data_dir() / "panos" / fname
-        out.write_bytes(blob)
-        if old.exists() and old.name != fname:
-            old.unlink(missing_ok=True)
+        tmp = data_dir() / "panos" / f".{pid}.upload.tmp"
+        try:
+            await _drain_upload(file, tmp, 60 * 1024 * 1024, "Image")
+            out = data_dir() / "panos" / fname
+            old = data_dir() / "panos" / row["file"]
+            tmp.replace(out)                    # atomic swap into place
+            if old.exists() and old.name != fname:
+                old.unlink(missing_ok=True)
+        finally:
+            tmp.unlink(missing_ok=True)
         fields: dict = {"file": fname, "strokes": [], "profile": []}
         if az_offset is not None:
             fields["az_offset"] = float(az_offset)
@@ -570,12 +546,19 @@ def create_app(db: Database, *, prefetch: bool = True) -> FastAPI:
 
     @app.post("/api/import")
     async def api_import(file: UploadFile = File(...)):
-        # backup zips embed the whole image library, so allow a generous cap
-        blob = await _read_limited(file, 2 * 1024 * 1024 * 1024, "Backup zip")
+        # backup zips embed the whole image library, so allow a generous cap.
+        # Spool to a temp file next to the db so the blob never lives in RAM
+        # (apply_import_zip accepts a Path).
+        spool = db.path.parent / f".import-{uuid.uuid4().hex}.zip"
         try:
-            summary = apply_import_zip(db, blob)
-        except ValueError as exc:
-            raise HTTPException(400, str(exc)) from None
+            await _drain_upload(file, spool, 2 * 1024 * 1024 * 1024,
+                                "Backup zip")
+            try:
+                summary = apply_import_zip(db, spool)
+            except ValueError as exc:
+                raise HTTPException(400, str(exc)) from None
+        finally:
+            spool.unlink(missing_ok=True)
         return summary
 
     # ---------------- custom targets ----------------

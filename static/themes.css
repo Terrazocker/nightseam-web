@@ -248,6 +248,11 @@ html[data-theme="dome"] .busy-dot {
   to { transform: rotate(360deg); }
 }
 
+@media (prefers-reduced-motion: reduce) {
+  * { animation-duration: .01ms !important; animation-iteration-count: 1 !important;
+      transition-duration: .01ms !important; }
+}
+
 /* === TABS: floating pill dock, attached below the glass bar === */
 html[data-theme="dome"] #tabs,
 html[data-theme="dome"] #tabs-cat {

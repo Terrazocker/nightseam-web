@@ -1,6 +1,6 @@
 /* orchestrator: boot sequence, tabs, cross-view events */
 
-import { $, $$, todayLocal } from "./util.js";
+import { $, $$, todayLocal, initFocusTrap } from "./util.js";
 import { S } from "./state.js";
 import { api } from "./util.js";
 import { loadNight } from "./night.js";
@@ -120,6 +120,7 @@ async function init() {
   bindArchive();
   bindSkyMap();
   bindWeather();
+  initFocusTrap();
 
   // keyboard shortcuts: arrows scrub the night, n cycles the tabs.
   // Modals and text entry keep their own keys.
