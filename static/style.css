@@ -230,9 +230,7 @@ button.danger { color: var(--bad); }
   background: radial-gradient(circle at 30% 30%, var(--thumb1), var(--thumb2)); }
 .pick-body { min-width: 0; }
 .pick .nm { font-weight: 650; }
-.p-grade { font-size: 10.5px; margin-left: 6px; font-family: var(--font-mono, monospace); white-space: nowrap; }
-td.grade { white-space: nowrap; }
-td.grade .p-grade { margin-left: 0; font-weight: 600; }
+.p-flash { font-size: 12px; margin-left: 4px; }
 
 /* ---------- weather chip + submenu ---------- */
 .weatherwrap { position: relative; }

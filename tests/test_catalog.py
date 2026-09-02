@@ -1,8 +1,21 @@
 """Sanity checks on the embedded DSO catalog."""
 
-from app.catalog_data import rows, TYPE_LABELS
+from app.catalog_data import POPULARITY, rows, TYPE_LABELS
 
 VALID_TYPES = set(TYPE_LABELS.keys())
+
+
+def test_popularity_dict_scores():
+    # 193 of the 197 curated objects matched against the popularity source
+    assert len(POPULARITY) == 193
+    # spot-check the formerly-missing matches (apostrophe / CL / other-field)
+    assert POPULARITY.get("ngc7317") == 8820       # Stephan's Quintet
+    assert POPULARITY.get("lmc") == 7940           # via PGC 17223
+    assert POPULARITY.get("cr399") == 4010         # CL COLLINDER 399
+    assert POPULARITY.get("mel111") == 3490        # CL MELOTTE 111
+    # everything in POPULARITY must reference a real catalog id
+    ids = {r["id"] for r in rows()}
+    assert set(POPULARITY) <= ids
 
 
 def test_catalog_size():

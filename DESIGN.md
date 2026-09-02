@@ -33,15 +33,15 @@ borders, one lavender accent, soft glows, rounded corners. Calm, restrained,
 | Hairline borders | `--border` / `--border-soft` | `#1e2848` / `rgba(255,255,255,0.06–0.09)` |
 | Text | `--text` | `#dfe7ff` |
 | Secondary text | `--dim` | `#93a3cc` |
-| Tertiary text | `--faint` | `#67749c` |
+| Tertiary text | `--faint` | `#7a8bb5` |
 | **Accent (lavender)** | `--accent` | `#8f7bff` |
 | Secondary accent (teal) | `--accent2` | `#4fd9c1` |
 | Accent on dark | `--accent-ink` | `#0a0d1a` |
 | Gold / good / warn / bad | `--gold --good --warn --bad` | `#ffd166` / `#45d6a0` / `#ffb454` / `#ff6b7a` |
-| Grade ladder | — | S `#ffd166` · A `#ff7eb6` · B `#7cc4ff` · C `#7bf1a8` · D `#67749c` |
+
 
 Rules: hardcoded colors are only allowed for **data-driven** values (type
-dots, grade labels, chart series). Everything else goes through tokens
+dots, chart series). Everything else goes through tokens
 defined in the dome block. Never introduce a new hue; stick to lavender,
 teal, gold and the base grays.
 
@@ -83,7 +83,7 @@ toasts stay fixed at their own z-levels).
 - System UI stack (`--font-ui`); **no webfonts**, offline-friendly.
 - Section headings: `11px`, `uppercase`, `letter-spacing: 1–1.4px`,
   `font-weight: 600`, muted color (the "H4" style in menus).
-- Numbers / meta / IDs / grades / timestamps: `--font-mono`
+- Numbers / meta / IDs / timestamps: `--font-mono`
   (Consolas, "Cascadia Mono", monospace).
 - Body/labels: 12–14px, `--dim` or `--faint` for secondary text.
 - The prominent value (cards, stats): large, `700`, `--text`, can carry a

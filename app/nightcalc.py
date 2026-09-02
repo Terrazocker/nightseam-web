@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 
-from .astro import altaz, julian_day, moon_illumination, moon_ra_dec, sun_ra_dec
+from .astro import altaz, julian_day, moon_illumination, moon_age, moon_ra_dec, sun_ra_dec
 from .database import Database
 from .planning import night_window
 
@@ -73,6 +73,7 @@ def compute_night(db: Database, lat: float, lon: float, elev_m: int,
 
     midnight_jd = jds[len(jds) // 2]
     illum = round(moon_illumination(midnight_jd), 2)
+    m_age = round(moon_age(midnight_jd), 2)
 
     ceil_fn = ceil_lookup(profile)
     # sky-mode bands carry an upper ceiling: everything above the painted
@@ -89,6 +90,7 @@ def compute_night(db: Database, lat: float, lon: float, elev_m: int,
                 "id": o["id"], "adv": True,
                 "ra_hours": o["ra_hours"], "dec_deg": o["dec_deg"],
                 "vmag": o.get("vmag"), "otype": o.get("otype"),
+                "popularity": o.get("popularity") or 0,
             })
             continue
         ra = o["ra_hours"] * 15.0
@@ -136,6 +138,7 @@ def compute_night(db: Database, lat: float, lon: float, elev_m: int,
         "dusk": _iso(dusk) if dusk else None,
         "dawn": _iso(dawn) if dawn else None,
         "moon_illum": illum,
+        "moon_age_days": m_age,
         "timeline": timeline,
         "sun_alt": sun_track,
         "sun_az": sun_az_track,

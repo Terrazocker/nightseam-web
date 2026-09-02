@@ -141,6 +141,10 @@ def test_night_advanced_metadata_only(client, db):
     assert all("alt" in o and "az" in o for o in plain)
     assert all(o.get("adv") is True for o in adv_objs)
     assert all("alt" not in o and "az" not in o for o in adv_objs)
+    # advanced metadata carries the popularity source popularity score
+    scored = [o for o in adv_objs if o.get("popularity")]
+    assert scored
+    assert all(isinstance(o["popularity"], int) for o in adv_objs)
 
 
 def test_night_tz_offset_shifts_local_window(client):

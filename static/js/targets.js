@@ -4,7 +4,7 @@ import { $, esc, api, fmtSize, TYPE_LABEL, TYPE_COLOR, constName } from "./util.
 import { S, IMG_VER } from "./state.js";
 import { statusOf, windowText, desigLine,
          objScore, filterAdvice, frameCoverage, coverageCell,
-         flashOf, gradeOf, gradeTag } from "./derive.js";
+         popularityFactor } from "./derive.js";
 
 const PAGE_SIZE = 250;
 let _page = 0;
@@ -94,13 +94,16 @@ export function populateConstFilter() {
 function sortObjects(list) {
   const mode = $("#fSort").value;
   const cmp = {
-    score:   (a,b) => objScore(b.o) - objScore(a.o),
+    score:   (a,b) => {
+      const d = objScore(b.o) - objScore(a.o);
+      return d !== 0 ? d : popularityFactor(b.m) - popularityFactor(a.m);
+    },
+    popularity: (a,b) => popularityFactor(b.m) - popularityFactor(a.m),
     pct:     (a,b) => (b.o.obs_pct||0) - (a.o.obs_pct||0),
     maxalt:  (a,b) => b.o.max_alt - a.o.max_alt,
     beststart:(a,b) => (a.o.best?a.o.best[0]:999) - (b.o.best?b.o.best[0]:999),
     mag:     (a,b) => (a.m.vmag??99) - (b.m.vmag??99),
     name:    (a,b) => a.m.primary_name.localeCompare(b.m.primary_name),
-    grade:   (a,b) => flashOf(b.m, b.o) - flashOf(a.m, a.o), // best grade first
   }[mode];
   return list.sort(cmp);
 }
@@ -150,7 +153,6 @@ export function renderTargets(fromPager = false) {
       <td>${thumbHTML(m.id)}</td>
       <td class="objcell"><button class="starbtn${fav?" on":""}" data-fav="${m.id}" title="mark for session">&#9733;</button><b>${esc(m.primary_name)}</b><span>${esc(desigLine(m))}${m.constellation?" \u00B7 "+esc(constName(m.constellation)):""}</span></td>
       <td><span class="typebadge" style="color:${TYPE_COLOR[m.otype]};border-color:${TYPE_COLOR[m.otype]}55">${TYPE_LABEL[m.otype]||m.otype}</span>${adv ? " " + adv.pill : ""}</td>
-      <td class="grade">${gradeTag(m, o)}</td>
       <td>${m.vmag!=null?m.vmag.toFixed(1):"&mdash;"}</td>
       <td>${fmtSize(m.size_am, unit)}</td>
       <td class="col-opt">${coverageCell(cov)}</td>

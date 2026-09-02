@@ -22,8 +22,8 @@ ingest + library), switched via the top-right button or the brand name.
 ## Commands
 
 - Run from source: `python main.py` (default port 8407; `--console` for logs,
-  `--no-browser` for headless, `--port N`). Also `--browser` (tab instead of
-  app window) and `--idle-exit-hours 0` (never exit on idle - the default is
+  `--no-browser` for headless, `--port N`, `--version` prints the version).
+  Also `--browser` (tab instead of app window) and `--idle-exit-hours 0` (never exit on idle - the default is
   12 h, which kills a server an agent left running). Data is created under
   `data/` (gitignored) in the repo root. Port-8407 traps:
   - A stale `dist\AstroPilot.exe` (frozen OLD code) can silently hold the
@@ -34,7 +34,7 @@ ingest + library), switched via the top-right button or the brand name.
     `Get-CimInstance Win32_Process`), not the exe.
   - If 8407 is briefly taken at boot, `free_port()` silently picks a RANDOM
     port (written to instance.json) - the app runs, just not on 8407.
-- Tests: `python -m pytest tests/` - 126 tests, run in ~23 s (pure-function
+- Tests: `python -m pytest tests/` - 135 tests, run in ~28 s (pure-function
   tests are fast; `tests/test_api.py` spins up real `create_app()` instances
   via fastapi TestClient/httpx). Single test:
   `python -m pytest tests/test_astro.py -k name`. API tests use
@@ -45,7 +45,7 @@ ingest + library), switched via the top-right button or the brand name.
   pytest uses for the basetemp) creates an owner-SID-only DACL that the
   sandbox's restricted token cannot re-read, so every tmp_path test errors
   with PermissionError - an environment artifact, NOT a code failure. Run
-  the suite with full access / in a normal shell: 126/126 pass (~23 s).
+  the suite with full access / in a normal shell: 135/135 pass (~28 s).
 - PowerShell quirk: heredocs / inline `python -c` with quotes break - write
   probe scripts to files (`C:\Users\<user>\AppData\Local\Temp\opencode\`) and
   run them.
@@ -135,6 +135,22 @@ ingest + library), switched via the top-right button or the brand name.
   unsigned, 16/32-bit signed, -32/-64 floats. `parse_ra_hours` /
   `parse_dec_deg` are the SINGLE source for coordinate parsing -
   `app/server.py` imports them from here; never re-implement elsewhere.
+- Popularity (The popularity source): `catalog_data.POPULARITY` (193/197 curated) and
+  `app/adv_popularity_data.py` `ADV_POPULARITY` (7,408 advanced) are
+  community scores used as a SILENT TIEBREAKER in ranking (visibility score
+  decides, popularity separates equals) - see `popularityFactor()` in
+  `static/js/derive.js` (log-scale, ~0.3-1.0) and the web's `popularityOf()`
+  in `web/app.js` (live fetch with baked-catalog fallback). `objects` and
+  `advanced_objects` carry the scores via `Database.apply_popularity()`
+  (runs every start; `advanced_objects` column is additive). `build_web.py`
+  bakes popularity into `web/catalog.json`. Grade tiers were REMOVED.
+  The matcher regenerator is `scripts/match_popularity.py` (fetches
+  popularity-source.invalid, caches to `data/popularity_snapshot.json` - gitignored);
+  root-level match/debug scripts from the original match pass are
+  gitignored scratch. Moon-age-aware scoring: `astro.moon_age()` /
+  `web/astro.js` `moonAge()`, shipped as `moon_age_days` in /api/night;
+  `derive.js` applies phase-dependent min-moon-distance (Lorentzian),
+  filter-aware + bortle-scaled.
 - `app/imglib.py` - catalog resolution, library grouping (per-frame-type and
   per-filter integration rollups), session math.
 - `app/paths.py` - source vs PyInstaller-frozen path resolution; when frozen,

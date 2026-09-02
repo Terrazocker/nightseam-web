@@ -222,6 +222,9 @@ def moon_ra_dec(jd: float) -> tuple[float, float]:
     return ra_j2000, dec_j2000
 
 
+SYNODIC_MONTH = 29.53058770576  # days
+
+
 def moon_illumination(jd: float) -> float:
     """Fractional illuminated disc (0..1)."""
     ra_s, dec_s = sun_ra_dec(jd)
@@ -233,3 +236,15 @@ def moon_illumination(jd: float) -> float:
     psi = math.acos(max(-1.0, min(1.0, cos_elong)))
     k = (1.0 - math.cos(psi)) / 2.0
     return max(0.0, min(1.0, k))
+
+
+def moon_age(jd: float) -> float:
+    """Moon age in days (0 = new, ~14.76 = full). Derived from elongation."""
+    ra_s, dec_s = sun_ra_dec(jd)
+    ra_m, dec_m = moon_ra_dec(jd)
+    ras, decs = D2R * ra_s, D2R * dec_s
+    ram, decm = D2R * ra_m, D2R * dec_m
+    cos_elong = (math.sin(decs) * math.sin(decm)
+                 + math.cos(decs) * math.cos(decm) * math.cos(ras - ram))
+    psi = math.acos(max(-1.0, min(1.0, cos_elong)))
+    return SYNODIC_MONTH * psi / (2.0 * math.pi)

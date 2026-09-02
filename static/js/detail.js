@@ -4,7 +4,7 @@ import { $, api, clamp, parseUTC, esc, fmtHM, fmtT, toast, tzOffAt,
          zoneHour,
          TYPE_LABEL, constName, fmtSize } from "./util.js";
 import { S, IMG_VER } from "./state.js";
-import { filterAdvice, frameCoverage, moonAt, moonBandX, flashOf, gradeTag } from "./derive.js";
+import { filterAdvice, frameCoverage, moonAt, moonBandX } from "./derive.js";
 
 let DETAIL = null;      // cached detail payload
 let DETAIL_HOVER = null;// hovered sample index for crosshair
@@ -75,7 +75,6 @@ function renderDetailMeta(m, d) {
       : "\u2014";
   const rows = [
     ["Type", TYPE_LABEL[m.otype] || m.otype],
-    ["Grade", gradeTag(m, nObj) + ` <small>visual ${flashOf(m, nObj)}/100</small>`],
     ["Filters", adv ? `<span class="fbadge ${adv.cls}">${adv.text}</span>` : "no special filter needed"],
     ["Magnitude", m.vmag != null ? m.vmag.toFixed(1) + " mag" : "\u2014"],
     ["Size", fmtSize(m.size_am, (S.cfg && S.cfg.size_unit) || "arcmin")],

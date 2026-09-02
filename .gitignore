@@ -2,6 +2,7 @@ __pycache__/
 *.pyc
 .venv*/
 venv/
+*.env
 build/
 dist/
 .pytest-tmp/
@@ -15,6 +16,17 @@ data/panos/*
 !data/panos/.gitkeep
 data/imgcache/
 data/instance.json
+data/popularity_snapshot.json
+# popularity popularity matcher scratch tooling (regenerable)
+popularity_snapshot.json
+match_popularity.py
+match_final.py
+check_unmatched.py
+check_unmatched2.py
+debug_matches.py
+verify_matches.py
+scripts/adv_popularity.py
+PROMPT_popularity_integration.md
 theme-preview/
 .dsh-vision-toolkit/
 dist/release/

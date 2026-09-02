@@ -120,7 +120,8 @@ CREATE TABLE IF NOT EXISTS advanced_objects (
     distance TEXT,
     wiki TEXT,
     blurb TEXT,
-    search TEXT
+    search TEXT,
+    popularity INTEGER DEFAULT 0
 );
 """
 
@@ -167,9 +168,18 @@ class Database:
             self.conn.execute("ALTER TABLE import_batches ADD COLUMN run_id TEXT")
         except sqlite3.OperationalError:
             pass
+        try:  # migration: the popularity source popularity scores for tiebreaking
+            self.conn.execute("ALTER TABLE objects ADD COLUMN popularity INTEGER DEFAULT 0")
+        except sqlite3.OperationalError:
+            pass
+        try:  # migration: the popularity source popularity for advanced objects too
+            self.conn.execute("ALTER TABLE advanced_objects ADD COLUMN popularity INTEGER DEFAULT 0")
+        except sqlite3.OperationalError:
+            pass
         self.conn.commit()
         self.seed_catalog()
         self.seed_advanced_catalog()
+        self.apply_popularity()
         self.make_backup()
 
     def make_backup(self) -> None:
@@ -191,7 +201,7 @@ class Database:
             self.conn.executemany(
                 """INSERT OR IGNORE INTO objects VALUES
                    (:id,:primary_name,:messier,:ngcic,:other,:otype,:ra_hours,:dec_deg,
-                    :mag,:size,:constellation,:distance,:wiki,:blurb,:search)""",
+                    :mag,:size,:constellation,:distance,:wiki,:blurb,:search,:popularity)""",
                 [dict(r, primary_name=r["primary"], otype=r["type"]) for r in rows],
             )
             self.conn.commit()
@@ -250,9 +260,28 @@ class Database:
                 rows.append(tuple(d[c] for c in cols))
         with self.lock:
             self.conn.executemany(
-                "INSERT OR IGNORE INTO advanced_objects VALUES "
-                f"({','.join('?' * len(cols))})", rows)
+                "INSERT OR IGNORE INTO advanced_objects "
+                f"({','.join(cols)}) VALUES ({','.join('?' * len(cols))})",
+                rows)
             self.conn.commit()
+
+    def apply_popularity(self) -> int:
+        """Stamp the popularity source scores onto objects + advanced_objects
+        (idempotent, runs on every start so newly matched entries
+        propagate to DBs seeded before popularity existed). Returns the
+        total number of scored entries."""
+        from .adv_popularity_data import ADV_POPULARITY
+        from .catalog_data import POPULARITY
+        with self.lock:
+            # curated rows live in `objects`; advanced rows in `advanced_objects`
+            self.conn.executemany(
+                "UPDATE objects SET popularity = ? WHERE id = ?",
+                [(s, o) for o, s in POPULARITY.items()])
+            self.conn.executemany(
+                "UPDATE advanced_objects SET popularity = ? WHERE id = ?",
+                [(s, o) for o, s in ADV_POPULARITY.items()])
+            self.conn.commit()
+            return len(POPULARITY) + len(ADV_POPULARITY)
 
     def get_object(self, oid: str) -> dict | None:
         with self.lock:

@@ -104,6 +104,44 @@ export async function synthesizeAdvancedTracks(N) {
   }
 }
 
+/* ---------- moon scoring helpers (shared by desktop + web) ---------- */
+
+/* Filter type derived from user settings — narrowband filters tolerate
+   much closer moon distances than broadband. */
+function filterType() {
+  const F = (S.cfg && S.cfg.filters) || {};
+  if (F.narrowband_oiii) return "oiii";   // 90° base
+  if (F.narrowband_ha)   return "narrowband"; // 60° base
+  if (F.broadband)       return "lrgb";    // 120° base
+  return "lrgb";
+}
+
+/* Phase-dependent minimum moon distance (Lorentzian).
+   At new moon: minDist = base (60–120°).
+   At full moon: minDist → ∞ (nothing is safe).
+   The 0.333 constant controls how sharply the threshold rises near full. */
+function moonMinDist(filterType, moonAgeDays) {
+  const BASE = { narrowband: 60, oiii: 90, lrgb: 120 }[filterType] || 120;
+  const frac = moonAgeDays / 29.53;           // 0 = new, 0.5 = full
+  return BASE / (1 + Math.pow((0.5 - frac) / 0.333, 2));
+}
+
+/* Effective moon illumination for scoring: raw illumination attenuated by
+   angular separation AND filter-specific distance tolerance. */
+function effectiveMoonGlow(illum, sep, filterType, moonAgeDays) {
+  const minD = moonMinDist(filterType, moonAgeDays);
+  const distDeg = Math.max(0, sep - minD);   // excess beyond safe distance
+  const distFactor = Math.max(0, 1 - distDeg / 180);
+  return illum * distFactor;
+}
+
+/* Bortle scaling — darker skies reduce the moon penalty more. Non-linear:
+   bortle 1–3 (dark sites) get a much bigger break than 6–8 (suburban). */
+function bortleMoonFactor(bortle) {
+  if (bortle <= 3) return 0.25 + 0.05 * bortle;   // 0.40–0.55 (dark)
+  return 0.55 + 0.12 * (bortle - 3);              // 0.55–1.31 (suburban→city)
+}
+
 export function recomputeNightDerived() {
   const N = S.night;
   if (!N) return;
@@ -112,6 +150,9 @@ export function recomputeNightDerived() {
   const minAlt = S.minAlt;
   const illum = N.moon_illum || 0;
   const bortle = (S.cfg && S.cfg.bortle) || 4;
+  const fType = filterType();
+  const moonAge = N.moon_age_days || 0;  // 0–29.53, 0 = new, ~14.76 = full
+  const bortleF = bortleMoonFactor(bortle);
 
   for (const o of N.objects) {
     o.vis = o.alt.map((a, i) =>
@@ -129,13 +170,9 @@ export function recomputeNightDerived() {
         sClassic += w;
         const ma = N.moon_alt[i];
         if (ma > 0) {
-          // moonlight penalty: target's angular distance from the Moon and
-          // how much this object TYPE suffers under moonlight (faint
-          // nebulae far worse than point-like clusters), plus skyglow.
           const sep = sepDeg(o.alt[i], o.az[i], ma, N.moon_az[i]);
-          const moonGlow = illum * (1 - Math.min(1, sep / 180));
-          const bortleF = 0.4 + 0.15 * bortle;   // darker skies hurt far less
-          w *= Math.max(0.05, 1 - 0.95 * moonGlow * typeF * bortleF);
+          const glow = effectiveMoonGlow(illum, sep, fType, moonAge);
+          w *= Math.max(0.05, 1 - 0.95 * glow * typeF * bortleF);
         }
         sMoon += w;
       }
@@ -254,48 +291,15 @@ export function objScore(o) {
   return o.score || 0;
 }
 
-/* ---------------- Grade tiers (S/A/B/C/D, MMO colors) ----------------
-   Not "rarity" — every object is equally rare; this grades how visually
-   striking it is: brightness + size + fame + type, exactly the web
-   version's formula. S (yellow) > A (pink) > B (blue) > C (green) > D (grey).
-   `o` (night object, has .adv) is optional; without it fame falls back to
-   messier=15 / named=8. */
-const GRADE_TIERS = [
-  { label: 'S', min: 80, color: '#ffd166' },  // yellow
-  { label: 'A', min: 60, color: '#ff7eb6' },  // pink
-  { label: 'B', min: 40, color: '#7cc4ff' },  // blue
-  { label: 'C', min: 20, color: '#7bf1a8' },  // green
-  { label: 'D', min: 0,  color: '#67749c' },  // grey
-];
-const _flashCache = new Map();
-// Bounded memoization: values are deterministic per object, so entries can
-// never go stale - the cap only keeps a pathological session from growing
-// the map without limit.
-const _FLASH_CACHE_MAX = 20000;
-export function flashOf(m, o) {
-  if (!m) return 0;
-  if (_flashCache.size >= _FLASH_CACHE_MAX) _flashCache.clear();
-  let v = _flashCache.get(m.id);
-  if (v !== undefined) return v;
-  const magScore = m.vmag != null ? Math.max(0, Math.min(100, (12 - m.vmag) * 9)) : 0;
-  const sm = String(m.size_am || '').split(/[x\u00D7]/);
-  let sx = 0;
-  if (sm.length >= 2) sx = Math.max(parseFloat(sm[0]) || 0, parseFloat(sm[1]) || 0);
-  else sx = parseFloat(sm[0]) || 0;
-  const sizeScore = Math.min(40, (sx / 30) * 40);
-  const fame = m.messier ? 15 : (o && o.adv ? 0 : (m.ngcic ? 8 : 0));
-  const typeBoost = { nebula: 6, supernova_remnant: 6, planetary: 5, open_cluster: 4, globular: 3, star_cloud: 2, galaxy: 1, asterism: 0 }[m.otype] || 0;
-  v = Math.round(Math.min(100, magScore + sizeScore + fame + typeBoost));
-  _flashCache.set(m.id, v);
-  return v;
-}
-export function gradeOf(m, o) {
-  const f = flashOf(m, o);
-  return GRADE_TIERS.find(t => f >= t.min) || GRADE_TIERS[GRADE_TIERS.length - 1];
-}
-export function gradeTag(m, o) {
-  const g = gradeOf(m, o);
-  return `<span class="p-grade" style="color:${g.color}" title="Grade ${g.label} — how visually striking the object is (brightness + size + fame + type)">&#9670; ${g.label}</span>`;
+/* ---------------- hidden popularity scoring ----------------
+   Popularity data from the popularity source (community engagement scores).
+   Used as a silent tiebreaker — two objects with the same moon-aware
+   score get differentiated by how popular they are with imagers.
+   The score lives in the catalog as m.popularity (set during seed). */
+/* Log-scale normalization: M42 (165k) → ~1.0, dim object (100) → ~0.3 */
+export function popularityFactor(m) {
+  if (!m || !m.popularity) return 0;
+  return Math.min(1, 0.3 + 0.7 * Math.log10(m.popularity) / 5.2);
 }
 
 export function filterAdvice(m) {

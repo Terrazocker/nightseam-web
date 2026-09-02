@@ -25,7 +25,7 @@ DEFAULT_DB = ROOT / "data" / "astropilot.db"
 COLS = [
     "id", "primary_name", "messier", "ngcic", "other", "otype",
     "ra_hours", "dec_deg", "vmag", "size_am", "constellation",
-    "distance", "wiki", "blurb",
+    "distance", "wiki", "blurb", "popularity",
 ]
 
 

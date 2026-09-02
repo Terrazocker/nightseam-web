@@ -221,9 +221,6 @@ main {
 .pick .p-right { margin-left: auto; text-align: right; font-size: 12px; color: var(--muted); white-space: nowrap; }
 .pick .p-right b { color: var(--txt); font-size: 13px; display: block; }
 .f-own { color: var(--amber); font-size: 11px; margin-left: 6px; font-family: var(--mono); }
-.p-grade { font-size: 10.5px; margin-left: 6px; font-family: var(--mono); white-space: nowrap; }
-td.grade { white-space: nowrap; font-size: 12px; }
-td.grade .rtag { font-family: var(--mono); font-size: 11px; font-weight: 600; }
 
 /* ---------- sky view ---------- */
 .sky-wrap { display: grid; grid-template-columns: 1fr 260px; gap: 14px; }

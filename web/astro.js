@@ -218,6 +218,18 @@ export function moonIllumination(jd) {
   return Math.max(0, Math.min(1, k));
 }
 
+const SYNODIC_MONTH = 29.53058770576;
+/** Moon age in days (0 = new, ~14.76 = full). Derived from elongation. */
+export function moonAge(jd) {
+  const [raS, decS] = sunRaDec(jd);
+  const [raM, decM] = moonRaDec(jd);
+  const ras = D2R * raS, decs = D2R * decS;
+  const ram = D2R * raM, decm = D2R * decM;
+  const cosElong = Math.sin(decs) * Math.sin(decm) + Math.cos(decs) * Math.cos(decm) * Math.cos(ras - ram);
+  const psi = Math.acos(Math.max(-1, Math.min(1, cosElong)));
+  return SYNODIC_MONTH * psi / (2 * Math.PI);
+}
+
 /** Sun/moon elongation angle in degrees and phase label. */
 export function moonPhase(jd) {
   const [raS, decS] = sunRaDec(jd);

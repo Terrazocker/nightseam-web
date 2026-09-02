@@ -19,6 +19,7 @@ from pathlib import Path
 from app import paths
 from app.database import Database
 from app.server import create_app
+from app.version import app_version
 
 
 def setup_logging(console: bool):
@@ -180,6 +181,8 @@ def launch_app_window(url: str) -> bool:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description="AstroPilot - DSO planning tool")
+    ap.add_argument("--version", action="version",
+                    version=f"AstroPilot {app_version()}")
     ap.add_argument("--port", type=int, default=8407)
     ap.add_argument("--host", default="127.0.0.1")
     ap.add_argument("--browser", action="store_true",

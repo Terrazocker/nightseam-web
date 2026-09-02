@@ -8,7 +8,7 @@ if (-not (Test-Path ".venv-build")) {
 $py = ".\.venv-build\Scripts\python.exe"
 
 & $py -m pip install --upgrade pip wheel --quiet
-& $py -m pip install -r requirements.txt --quiet
+& $py -m pip install -r requirements-dev.txt --quiet
 
 # make sure no running instance locks the output file
 Get-Process AstroPilot -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue

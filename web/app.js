@@ -88,42 +88,31 @@ const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const typeColor = (o) => TYPE_COLORS[o.otype] || '#9fb4d8';
 
-/* "flash" desirability score (static, per object): brightness + size + fame + type */
-const flashCache = new Map();
-function flashOf(o) {
-  let v = flashCache.get(o.id);
-  if (v !== undefined) return v;
-  const magScore = o.vmag != null ? Math.max(0, Math.min(100, (12 - o.vmag) * 9)) : 0;
-  const sm = String(o.size_am || '').split('x');
-  let sx = 0;
-  if (sm.length >= 2) sx = Math.max(parseFloat(sm[0]) || 0, parseFloat(sm[1]) || 0);
-  else sx = parseFloat(sm[0]) || 0;
-  const sizeScore = Math.min(40, (sx / 30) * 40);
-  const fame = o.messier ? 15 : (!o._adv ? 8 : 0);
-  const typeBoost = { nebula: 6, supernova_remnant: 6, planetary: 5, open_cluster: 4, globular: 3, star_cloud: 2, galaxy: 1, asterism: 0 }[o.otype] || 0;
-  v = Math.round(Math.min(100, magScore + sizeScore + fame + typeBoost));
-  flashCache.set(o.id, v);
-  return v;
+/* Hidden popularity scoring — log-scale normalization of the popularity source data.
+   M42 (165k) → ~1.0, dim object (100) → ~0.3, no data → 0. */
+let _popMap = null;
+async function loadPopularity() {
+  try {
+    const r = await fetch('https://popularity-source.invalid/');
+    if (r.ok) _popMap = await r.json();
+  } catch (_) { /* offline or blocked — scoring still works without it */ }
 }
-
-/* ---- Grade tiers: MMO item-grade style, better -> worse:
-   S (yellow) > A (pink) > B (blue) > C (green) > D (grey).
-   Not "rarity" — every object is equally rare; this grades how visually
-   striking it is (brightness + size + fame + type). */
-const GRADE_TIERS = [
-  { label: 'S', min: 80, color: '#ffd166' },  // yellow
-  { label: 'A', min: 60, color: '#ff7eb6' },  // pink
-  { label: 'B', min: 40, color: '#7cc4ff' },  // blue
-  { label: 'C', min: 20, color: '#7bf1a8' },  // green
-  { label: 'D', min: 0,  color: '#67749c' },  // grey
-];
-function gradeOf(o) {
-  const f = flashOf(o);
-  return GRADE_TIERS.find((t) => f >= t.min) || GRADE_TIERS[GRADE_TIERS.length - 1];
+function popularityOf(o) {
+  /* Prefer the live the popularity source fetch; fall back to the baked catalog
+     field (from the DB via build_web.py) when offline/blocked. */
+  if (_popMap) {
+    const keys = [o.messier, o.ngcic, o.primary_name].filter(Boolean);
+    for (const k of keys) {
+      const v = _popMap[k];
+      if (v) return v;
+    }
+  }
+  return o.popularity || 0;
 }
-function gradeTag(o) {
-  const r = gradeOf(o);
-  return `<span class="p-grade" style="color:${r.color}" title="Grade ${r.label} — how visually striking the object is (computed from brightness, size, fame and type)">◆ ${r.label}</span>`;
+function popularityFactor(o) {
+  const pop = popularityOf(o);
+  if (!pop) return 0;
+  return Math.min(1, 0.3 + 0.7 * Math.log10(pop) / 5.2);
 }
 
 function searchBlob(o) {
@@ -582,12 +571,13 @@ function renderTonight(silent) {
       const visNow = altNow >= minAlt && altNow > ceilNow.ceil && altNow < (ceilNow.ceilTop ?? 90.5);
       const obsPct = Math.round(100 * visN / (n + 1));
       const blockedPct = Math.round(100 * blocked / (n + 1));
-      const flash = flashOf(o);
-      // blend: visibility score x (0.45..1.2) depending on how flashy the object is
-      const score = Math.round((moonAware ? sMoon : sClassic) * (0.45 + 0.75 * (flash / 100)) * 10) / 100;
-      rows.push({ o, maxAlt, altNow, visNow, score, bestRun, bestStart, transitJd, visN, obsPct, blockedPct, flash });
+      const pop = popularityFactor(o);
+      // popularity is a silent TIEBREAKER (like the desktop): the pure
+      // visibility score decides, popularity only separates equal scores
+      const score = Math.round((moonAware ? sMoon : sClassic) * 10) / 100;
+      rows.push({ o, maxAlt, altNow, visNow, score, bestRun, bestStart, transitJd, visN, obsPct, blockedPct, pop });
     }
-    rows.sort((a, b) => b.score - a.score);
+    rows.sort((a, b) => (b.score - a.score) || (b.pop - a.pop));
     // share the computed visibility with the catalog column
     {
       const g = { minAlt, pano, lat, lon, jd0, jd1, step };
@@ -611,7 +601,7 @@ function renderTonight(silent) {
       const fOwn = filterOwned(o);
       return `<li data-id="${esc(o.id)}">
         <span class="dot" style="background:${typeColor(o)}"></span>
-        <span>${r.flash >= 60 ? '<span class="p-flash">✨</span> ' : ''}<span class="p-name">${esc(o.primary_name)}</span>${tags ? `<span class="p-tags">${esc(tags)}</span>` : ''}${gradeTag(o)}${fOwn ? `<span class="f-own" title="filter owned">${esc(fOwn)}</span>` : ''}</span>
+        <span>${r.pop >= 0.7 ? '<span class="p-flash">✨</span> ' : ''}<span class="p-name">${esc(o.primary_name)}</span>${tags ? `<span class="p-tags">${esc(tags)}</span>` : ''}${fOwn ? `<span class="f-own" title="filter owned">${esc(fOwn)}</span>` : ''}</span>
         <span class="p-right">
           <b>${r.maxAlt.toFixed(0)}°</b>
           <span class="p-vis">${r.visN ? `${r.obsPct}% of night · ${fmtDur(r.visN * step * 1440)} visible` : 'not clear tonight'}</span>${win}</span>
@@ -652,7 +642,7 @@ function renderTonight(silent) {
           <span class="p-right"><b>transit ${fmtClock(E.dateFromJD(r.transitJd))}</b>peaks ${r.maxAlt.toFixed(0)}°</span>
         </li>`).join('') : '<li style="cursor:default">everything already up or setting</li>'}</ul></div>
       </div>
-      <p class="cat-count" style="margin-top:10px;text-align:center">night of ${dateKey(nightAnchor())} · ${esc(S.site.label || `${S.site.lat.toFixed(2)}, ${S.site.lon.toFixed(2)}`)} · horizon: ${pano ? esc(pano.name) : 'none'} · flash-aware ranking · click any target for details</p>`;
+      <p class="cat-count" style="margin-top:10px;text-align:center">night of ${dateKey(nightAnchor())} · ${esc(S.site.label || `${S.site.lat.toFixed(2)}, ${S.site.lon.toFixed(2)}`)} · horizon: ${pano ? esc(pano.name) : 'none'} · popularity-aware ranking · click any target for details</p>`;
     if (token !== tonightToken) return; // superseded while computing
     box.innerHTML = html;
     box.querySelectorAll('.pick li[data-id]').forEach((li) => li.addEventListener('click', () => openDetail(li.dataset.id)));
@@ -1097,11 +1087,10 @@ let skyTimeHandler = null;
 
 /* ----------------------------- catalog ----------------------------- */
 
-const CHIP_LABELS = { all: 'All', gradeS: 'Grade S', gradeAPlus: 'Grade A+', messier: 'Messier', bright: 'Bright <8', galaxies: 'Galaxies', nebulae: 'Nebulae', clusters: 'Clusters', custom: 'Custom' };
+const CHIP_LABELS = { all: 'All', popular: 'Popular', messier: 'Messier', bright: 'Bright <8', galaxies: 'Galaxies', nebulae: 'Nebulae', clusters: 'Clusters', custom: 'Custom' };
 const CHIP_FILTERS = {
   all: () => true,
-  gradeS: (o) => flashOf(o) >= 80,
-  gradeAPlus: (o) => flashOf(o) >= 60,
+  popular: (o) => popularityOf(o) >= 10000,
   messier: (o) => !!o.messier,
   bright: (o) => o.vmag != null && o.vmag < 8,
   galaxies: (o) => o.otype === 'galaxy',
@@ -1126,7 +1115,7 @@ function filteredCatalog() {
     else if (col === 'type') v = (TYPE_LABELS[a.otype] || a.otype).localeCompare(TYPE_LABELS[b.otype] || b.otype);
     else if (col === 'con') v = a.constellation.localeCompare(b.constellation);
     else if (col === 'size') v = parseFloat(String(a.size_am || '0').split('x')[0]) - parseFloat(String(b.size_am || '0').split('x')[0]);
-    else if (col === 'grade') v = flashOf(b) - flashOf(a); // best grade first (up) / worst first (down)
+    else if (col === 'popularity') v = popularityOf(b) - popularityOf(a); // most popular first
     else if (col === 'pct') {
       const pa = (obsCache.get(obsKey(pctG, a.id)) || {}).pct ?? -1;
       const pb = (obsCache.get(obsKey(pctG, b.id)) || {}).pct ?? -1;
@@ -1164,16 +1153,15 @@ function renderCatalog() {
     </div>
     <div class="card" style="padding:8px 10px">
       <table class="cat">
-        <thead><tr>${th('name', 'Name')}${th('grade', 'Grade')}${th('mag', 'Mag', true)}${th('pct', '% visibility', true)}${th('type', 'Type')}${th('con', 'Con')}${th('size', 'Size', true)}${showFrame ? `<th class="frame" title="frame coverage with the active rig">Frame</th>` : ''}${th('ra', 'RA', true)}${th('dec', 'Dec', true)}</tr></thead>
+        <thead><tr>${th('name', 'Name')}${th('popularity', 'Popularity', true)}${th('mag', 'Mag', true)}${th('pct', '% visibility', true)}${th('type', 'Type')}${th('con', 'Con')}${th('size', 'Size', true)}${showFrame ? `<th class="frame" title="frame coverage with the active rig">Frame</th>` : ''}${th('ra', 'RA', true)}${th('dec', 'Dec', true)}</tr></thead>
         <tbody>
           ${slice.map((o) => {
             const tags = [o.messier, o.ngcic].filter(Boolean).join(' · ');
             const fOwn = filterOwned(o);
             const fp = showFrame ? rigFramePct(o) : null;
-            const rr = gradeOf(o);
             return `<tr data-id="${esc(o.id)}">
               <td><span class="tname">${esc(o.primary_name)}</span> ${tags ? `<span class="tags">${esc(tags)}</span>` : ''}${fOwn ? `<span class="f-own" title="filter owned">${esc(fOwn)}</span>` : ''}</td>
-              <td class="grade"><span class="rtag" style="color:${rr.color}" title="Grade ${rr.label} — how visually striking the object is (brightness + size + fame + type)">${rr.label}</span></td>
+              <td class="num">${popularityOf(o) ? popularityOf(o).toLocaleString() : '—'}</td>
               <td class="num">${o.vmag != null ? o.vmag.toFixed(1) : '—'}</td>
               <td class="num pct" data-objid="${escAttr(o.id)}">${cachedPctText(o.id)}</td>
               <td><span class="tag-dot" style="color:${typeColor(o)}">●</span> ${TYPE_LABELS[o.otype] || o.otype}</td>
@@ -1320,7 +1308,7 @@ function openDetail(id) {
         <div>
           <dl class="meta">
             <dt>Type</dt><dd><span style="color:${typeColor(o)}">●</span> ${TYPE_LABELS[o.otype] || o.otype}</dd>
-            <dt>Grade</dt><dd><span style="color:${gradeOf(o).color}">◆ ${gradeOf(o).label}</span> <span class="tags">visual ${flashOf(o)}/100</span></dd>
+            <dt>Popularity</dt><dd>${popularityOf(o) ? `${popularityOf(o).toLocaleString()} (The popularity source)` : '—'}</dd>
             <dt>Magnitude</dt><dd>${o.vmag != null ? o.vmag.toFixed(1) : '—'}</dd>
             <dt>Size</dt><dd>${esc(fmtSize(o)) || '—'}</dd>
             <dt>Constellation</dt><dd>${esc(o.constellation || '—')}</dd>
@@ -2082,6 +2070,9 @@ async function boot() {
     splashText(`catalog failed to load: ${err.message}`);
     return;
   }
+
+  // load the popularity source popularity scores in background (non-blocking)
+  loadPopularity();
 
   // ---- user data: sites (with first-run welcome), custom targets ----
   SITES = await WS.getSites();
