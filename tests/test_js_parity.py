@@ -502,3 +502,26 @@ def _assert_web_sinks_escaped(app_js: str, hz: str) -> None:
     # ... and both id-bearing attributes are still the escaped form
     assert 'data-id="${esc(p.id)}"' in hz
     assert 'data-del="${esc(p.id)}"' in hz
+
+_SIZE_CASES = [
+    [size, unit]
+    for unit in ("arcmin", "arcsec", "deg")
+    for size in (None, "", "330", "110", "50", "1.4", "9.3", "0.05",
+                 "645x550", "120x80.0", "6x4", "1000", "0.5")
+]
+
+
+def test_web_size_column_matches_desktop():
+    """Catalog sizes are arcminutes shown in ONE unit - single-axis too.
+
+    The web used to reformat only "NxM" strings and echo everything else
+    verbatim, so the 961 single-axis entries (Hyades 330, Pleiades 110, Ring
+    Nebula 1.4, IC planetaries ...) lost their unit AND ignored the
+    arcmin/arcsec/deg setting, while the desktop showed "330'"; the same
+    strict regex also left the Frame % column empty for those objects.
+    web/format.js is the web twin of static/js/util.js::fmtSize.
+    """
+    got = _run_node("size", _SIZE_CASES)
+    assert len(got) == len(_SIZE_CASES)
+    bad = [c for c in got if not c["ok"]]
+    assert not bad, bad[:6]

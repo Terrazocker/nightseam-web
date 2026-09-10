@@ -16,8 +16,8 @@
  */
 const engine = process.argv[2];
 if (!["desktop", "web", "window", "darkwindow", "pick", "crosszone",
-     "scoring", "ceil"].includes(engine)) {
-  console.error("usage: node astro_parity.mjs <desktop|web|window|darkwindow|pick|crosszone|scoring|ceil>");
+     "scoring", "ceil", "size"].includes(engine)) {
+  console.error("usage: node astro_parity.mjs <desktop|web|window|darkwindow|pick|crosszone|scoring|ceil|size>");
   process.exit(2);
 }
 
@@ -37,7 +37,21 @@ const input = await new Promise((resolve, reject) => {
 
 const cases = JSON.parse(input);
 
-if (engine === "pick") {
+if (engine === "size") {
+  // display formatting: the web formatter (web/format.js) must produce exactly
+  // what the desktop's static/js/util.js::fmtSize does - catalog sizes are
+  // arcminutes shown in ONE user-chosen unit, single-axis entries ("330",
+  // "1.4") included. cases: [[size_am, unit], ...]
+  const [webFmt, deskUtil] = await Promise.all([
+    import(new URL("../../web/format.js", import.meta.url).href),
+    import(new URL("../../static/js/util.js", import.meta.url).href),
+  ]);
+  process.stdout.write(JSON.stringify(cases.map(([s, unit]) => {
+    const web = webFmt.fmtSize(s, unit);
+    const desktop = deskUtil.fmtSize(s, unit);
+    return { size: s, unit, web, desktop, ok: web === desktop };
+  })));
+} else if (engine === "pick") {
   // unit-test the twilight-preference rule (cascade + polar fallback) with
   // synthetic night info; TZ=UTC makes the fallback times comparable with
   // app/planning.py's local_utc() output

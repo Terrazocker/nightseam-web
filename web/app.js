@@ -12,6 +12,7 @@ import * as E from './astro.js?v=4';
 import * as Hor from './horizon.js?v=13';
 import * as WS from './webstore.js?v=5';
 import { initDragWindows } from './dragwin.js?v=1';
+import { fmtSize, sizeArcmin } from './format.js?v=1';
 
 const TYPE_COLORS = {
   galaxy: '#ffd166',
@@ -212,29 +213,12 @@ function advMode() { return !!Hor.getPrefs().advMode; }
 function activeCatalog() {
   return advMode() ? CAT : CAT.filter((o) => !o._adv);
 }
-
-const SIZE_UNIT_MULT = { arcmin: 1, arcsec: 60, deg: 1 / 60 };
-/** Format an object's size string ("6x4" arcmin) in the chosen unit. */
-function fmtSize(o) {
-  const raw = o && o.size_am;
-  if (!raw) return '';
-  const unit = Hor.getPrefs().sizeUnit || 'arcmin';
-  const m = String(raw).toLowerCase().match(/([\d.]+)\s*x\s*([\d.]+)/);
-  if (!m) return raw;
-  const mult = SIZE_UNIT_MULT[unit] || 1;
-  const a = parseFloat(m[1]) * mult, b = parseFloat(m[2]) * mult;
-  const fmt = (x) => (x >= 100 ? x.toFixed(0) : x >= 10 ? x.toFixed(1) : x.toFixed(2));
-  return `${fmt(a)}×${fmt(b)}${unit === 'arcmin' ? '′' : unit === 'arcsec' ? '″' : '°'}`;
-}
-
-/** Largest dimension in arcminutes (for rig framing). */
-function sizeArcmin(o) {
-  const raw = o && o.size_am;
-  if (!raw) return null;
-  const m = String(raw).toLowerCase().match(/([\d.]+)\s*x\s*([\d.]+)/);
-  if (!m) return null;
-  return Math.max(parseFloat(m[1]), parseFloat(m[2]));
-}
+/** An object's size in the user's chosen unit. The formatting itself lives in
+ *  web/format.js - the web twin of static/js/util.js::fmtSize, pinned by the
+ *  "size" engine of tests/js/astro_parity.mjs. It handles BOTH shapes: the
+ *  paired "645x550" and the single-axis "330" (a diameter), which used to be
+ *  echoed verbatim without a unit and without the unit setting. */
+const fmtSizeU = (s) => fmtSize(s, Hor.getPrefs().sizeUnit || 'arcmin');
 
 const RIGS = []; // rig records (filled at boot)
 function activeRig() {
@@ -246,7 +230,7 @@ function activeRig() {
 function rigFramePct(o) {
   const rig = activeRig();
   if (!rig || !(rig.fov_w > 0)) return null;
-  const size = sizeArcmin(o);
+  const size = sizeArcmin(o.size_am);
   if (size == null || size <= 0) return null;
   return Math.max(0, Math.min(100, Math.round(100 * (rig.fov_w * 60) / size)));
 }
@@ -1240,7 +1224,7 @@ function renderCatalog() {
               <td class="num pct" data-objid="${escAttr(o.id)}">${cachedPctText(o.id)}</td>
               <td><span class="tag-dot" style="color:${typeColor(o)}">●</span> ${esc(TYPE_LABELS[o.otype] || o.otype || "")}</td>
               <td>${esc(o.constellation)}</td>
-              <td class="num">${esc(fmtSize(o))}</td>
+              <td class="num">${esc(fmtSizeU(o.size_am))}</td>
               ${showFrame ? `<td class="frame">${fp == null ? '—' : fp >= 100 ? '<span class="fit">fits</span>' : fp + '%'}</td>` : ''}
               <td class="num">${E.formatRA(o.ra_hours)}</td>
               <td class="num">${E.formatDec(o.dec_deg)}</td>
@@ -1389,7 +1373,7 @@ function openDetail(id) {
           <dl class="meta">
             <dt>Type</dt><dd><span style="color:${typeColor(o)}">●</span> ${esc(TYPE_LABELS[o.otype] || o.otype || "")}</dd>
             <dt>Magnitude</dt><dd>${o.vmag != null ? o.vmag.toFixed(1) : '—'}</dd>
-            <dt>Size</dt><dd>${esc(fmtSize(o)) || '—'}</dd>
+            <dt>Size</dt><dd>${esc(fmtSizeU(o.size_am)) || '—'}</dd>
             <dt>Constellation</dt><dd>${esc(o.constellation || '—')}</dd>
             <dt>Distance</dt><dd>${esc(o.distance || '—')}</dd>
             <dt>RA / Dec (J2000)</dt><dd>${E.formatRA(o.ra_hours)} · ${E.formatDec(o.dec_deg)}</dd>
