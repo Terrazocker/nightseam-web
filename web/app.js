@@ -662,7 +662,7 @@ function renderTonight(silent) {
           <span class="p-right"><b>transit ${fmtClock(E.dateFromJD(r.transitJd))}</b>peaks ${r.maxAlt.toFixed(0)}°</span>
         </li>`).join('') : '<li style="cursor:default">everything already up or setting</li>'}</ul></div>
       </div>
-      <p class="cat-count" style="margin-top:10px;text-align:center">night of ${dateKey(nightAnchor())} · ${esc(S.site.label || `${S.site.lat.toFixed(2)}, ${S.site.lon.toFixed(2)}`)} · horizon: ${pano ? esc(pano.name) : 'none'} · popularity-aware ranking · click any target for details</p>`;
+      <p class="cat-count" style="margin-top:10px;text-align:center">night of ${dateKey(nightAnchor())} · ${esc(S.site.label || `${S.site.lat.toFixed(2)}, ${S.site.lon.toFixed(2)}`)} · horizon: ${pano ? esc(pano.name) : 'none'} · click any target for details</p>`;
     if (token !== tonightToken || S.view !== 'tonight') return; // superseded / view switched
     box.innerHTML = html;
     box.querySelectorAll('.pick li[data-id]').forEach((li) => li.addEventListener('click', () => openDetail(li.dataset.id)));
@@ -1148,7 +1148,6 @@ function filteredCatalog() {
     else if (col === 'type') v = (TYPE_LABELS[a.otype] || a.otype).localeCompare(TYPE_LABELS[b.otype] || b.otype);
     else if (col === 'con') v = a.constellation.localeCompare(b.constellation);
     else if (col === 'size') v = parseFloat(String(a.size_am || '0').split('x')[0]) - parseFloat(String(b.size_am || '0').split('x')[0]);
-    else if (col === 'popularity') v = popularityOf(b) - popularityOf(a); // most popular first
     else if (col === 'pct') {
       const pa = (obsCache.get(obsKey(pctG, a.id)) || {}).pct ?? -1;
       const pb = (obsCache.get(obsKey(pctG, b.id)) || {}).pct ?? -1;
@@ -1189,7 +1188,7 @@ function renderCatalog() {
     </div>
     <div class="card" style="padding:8px 10px">
       <table class="cat">
-        <thead><tr>${th('name', 'Name')}${th('popularity', 'Popularity', true)}${th('mag', 'Mag', true)}${th('pct', '% visibility', true)}${th('type', 'Type')}${th('con', 'Con')}${th('size', 'Size', true)}${showFrame ? `<th class="frame" title="frame coverage with the active rig">Frame</th>` : ''}${th('ra', 'RA', true)}${th('dec', 'Dec', true)}</tr></thead>
+        <thead><tr>${th('name', 'Name')}${th('mag', 'Mag', true)}${th('pct', '% visibility', true)}${th('type', 'Type')}${th('con', 'Con')}${th('size', 'Size', true)}${showFrame ? `<th class="frame" title="frame coverage with the active rig">Frame</th>` : ''}${th('ra', 'RA', true)}${th('dec', 'Dec', true)}</tr></thead>
         <tbody>
           ${slice.map((o) => {
             const tags = [o.messier, o.ngcic].filter(Boolean).join(' · ');
@@ -1197,7 +1196,6 @@ function renderCatalog() {
             const fp = showFrame ? rigFramePct(o) : null;
             return `<tr data-id="${esc(o.id)}">
               <td><span class="tname">${esc(o.primary_name)}</span> ${tags ? `<span class="tags">${esc(tags)}</span>` : ''}${fOwn ? `<span class="f-own" title="filter owned">${esc(fOwn)}</span>` : ''}</td>
-              <td class="num">${popularityOf(o) ? popularityOf(o).toLocaleString() : '—'}</td>
               <td class="num">${o.vmag != null ? o.vmag.toFixed(1) : '—'}</td>
               <td class="num pct" data-objid="${escAttr(o.id)}">${cachedPctText(o.id)}</td>
               <td><span class="tag-dot" style="color:${typeColor(o)}">●</span> ${TYPE_LABELS[o.otype] || o.otype}</td>
@@ -1348,7 +1346,6 @@ function openDetail(id) {
         <div>
           <dl class="meta">
             <dt>Type</dt><dd><span style="color:${typeColor(o)}">●</span> ${TYPE_LABELS[o.otype] || o.otype}</dd>
-            <dt>Popularity</dt><dd>${popularityOf(o) ? `${popularityOf(o).toLocaleString()} (The popularity source)` : '—'}</dd>
             <dt>Magnitude</dt><dd>${o.vmag != null ? o.vmag.toFixed(1) : '—'}</dd>
             <dt>Size</dt><dd>${esc(fmtSize(o)) || '—'}</dd>
             <dt>Constellation</dt><dd>${esc(o.constellation || '—')}</dd>

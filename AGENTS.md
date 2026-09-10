@@ -482,7 +482,7 @@ over the fuller commands below wherever they differ:
   `app.js?v=N` and `web/app.js` carries a `?v=` on each import
   (`astro.js`, `horizon.js`, `webstore.js`, `dragwin.js`). Bump the token of
   every module whose BEHAVIOUR changed (comment-only edits do not need it) or
-  returning visitors keep the old file. Current: `app.js?v=24`,
+  returning visitors keep the old file. Current: `app.js?v=25`,
   `horizon.js?v=12`, `webstore.js?v=4`, `astro.js?v=4`, `dragwin.js?v=1`,
   plus `style.css?v=8` / `themes.css?v=2` in `web/index.html`.
   **A token bump is also the cure for a browser that cached a BAD pairing**: an
@@ -514,8 +514,18 @@ over the fuller commands below wherever they differ:
   `seedDefaultRigs()` + the `rigsSeeded` pref, button in Setup → Rigs. The
   two lists are twins — change both; `tests/test_rig_presets.py` pins
   `rig_presets.fov_arcmin` to `server.fov_arcmin`.
-- The ✨ popularity marker (`.p-flash`) was REMOVED from both apps —
-  popularity stays a silent tiebreaker, never a badge.
+- **Popularity is INVISIBLE in the UI (both apps) - never render the number.**
+  The ✨ marker (`.p-flash`) is gone, and 0.6.3 removed the web's remaining
+  value displays: the catalog's sortable "Popularity" column (+ its sort
+  branch), the detail dialog's "Popularity … (The popularity source)" row, and the
+  "popularity-aware ranking" phrase in the catalog footer. What stays is
+  scoring only: `popularityFactor()` as the ranking TIEBREAKER (visibility
+  decides, popularity separates equals - desktop `derive.js`, web `app.js`),
+  the background the popularity source fetch with the baked `catalog.json` fallback, the
+  desktop's `Sort: popularity` option, and the web's "Popular" chip
+  (`popularityOf(o) >= 10000`). That chip is the LAST place popularity is
+  user-visible: remove it too if "hidden" is meant strictly (it is the only
+  remaining consumer of `popularityOf()` outside `popularityFactor`).
 - "Free space per side" (web): `main` uses
   `max-width: min(100%, 1500px, max(320px, calc(100% - 2 * var(--edge, 14px))))`,
   so the slider takes that many px off EACH side at every screen size
@@ -523,21 +533,18 @@ over the fuller commands below wherever they differ:
   previous rule only shrank via padding above 22px, and its CSS fix shipped
   without a token bump — if a CSS-only fix "does nothing" for a returning
   visitor, that is a stale `style.css`, so always bump its `?v=`.
-- **State after the v0.6.2 web deploy (2026-09-10) - read before the next
-  release**: HEAD is exactly at the tag `v0.6.2`, the tree is clean, and
-  `web/version.json` was baked at that tag, so `/astro` reports 0.6.2. 0.6.2 is
-  the hotfix for the 0.6.1 mid-deploy breakage (`TypeError:
-  WS.seedDefaultRigs is not a function`): tokens `app.js?v=24` /
-  `webstore.js?v=4` discard the broken pairing browsers had cached, and
-  `ftps_deploy.py` now uploads HTML entry points last. The DESKTOP side is
-  still 0.6.0 EVERYWHERE (`dist\NightSeam.exe`, `dist\release\*`, `/downloads/*`
-  incl. `ns-version.js`, landing page, and no curated changelog entry) -
-  deliberate, because no new exe was built, so installed apps correctly see no
-  update. HEAD being at the tag right now is the moment to finish it:
-  `build.ps1` -> `scripts/make_release.py` -> upload `dist/release/*` to
-  `/downloads/` -> `build_changelog.py` -> commit `landing/changelog.json`
-  separately. Any commit before that ends the window and the desktop version
-  becomes `0.6.2-N-g<sha>`.
+- **State after the v0.6.3 web deploy (2026-09-10) - read before the next
+  release**: HEAD is exactly at the tag `v0.6.3`, the tree is clean, and
+  `web/version.json` was baked at that tag, so `/astro` reports 0.6.3 (0.6.2
+  was the hotfix for the 0.6.1 mid-deploy breakage; 0.6.3 hides the popularity
+  stat). The DESKTOP side is still 0.6.0 EVERYWHERE (`dist\NightSeam.exe`,
+  `dist\release\*`, `/downloads/*` incl. `ns-version.js`, landing page, and no
+  curated changelog entry) - deliberate, because no new exe was built, so
+  installed apps correctly see no update. HEAD being at the tag right now is
+  the moment to finish it: `build.ps1` -> `scripts/make_release.py` -> upload
+  `dist/release/*` to `/downloads/` -> `build_changelog.py` -> commit
+  `landing/changelog.json` separately. Any commit before that ends the window
+  and the desktop version becomes `0.6.3-N-g<sha>`.
   **Process lesson:** write the session notes BEFORE tagging while a release is
   still pending - the 0.6.1 notes landed as a post-tag commit and cost exactly
   that clean window.
