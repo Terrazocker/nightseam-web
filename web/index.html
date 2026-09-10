@@ -11,7 +11,7 @@
 (function(){try{var t=localStorage.getItem('nightseam_theme')||'dome';document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 </script>
 <link rel="icon" type="image/png" href="app.png">
-<link rel="stylesheet" href="style.css?v=7">
+<link rel="stylesheet" href="style.css?v=8">
 <link rel="stylesheet" href="themes.css?v=2">
 </head>
 <body>
@@ -85,8 +85,8 @@
         <div class="menu-section">
           <h4>Layout</h4>
           <label class="inline" for="edgeSpace">Free space per side <span id="edgeSpaceVal" class="mono">14&nbsp;px</span></label>
-          <input type="range" id="edgeSpace" min="0" max="200" step="4" value="14" style="width:100%">
-          <p class="hint">Lower fills big screens, raise centers content on wide monitors.</p>
+          <input type="range" id="edgeSpace" min="0" max="300" step="2" value="14" style="width:100%">
+          <p class="hint">Takes that much space away on each side of the content. 0 lets it fill the window, higher values center a narrower column.</p>
         </div>
         <div class="menu-section">
           <h4>Catalog</h4>
@@ -212,6 +212,6 @@
 <div class="modal-wrap" id="modal" hidden></div>
 <div class="tooltip" id="tooltip" hidden></div>
 
-<script type="module" src="app.js?v=22"></script>
+<script type="module" src="app.js?v=23"></script>
 </body>
 </html>

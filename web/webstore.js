@@ -126,6 +126,38 @@ export async function getRigs() {
 export function saveRigRec(rig) { return set('rigs', rig.id, rig); }
 export function deleteRigRec(id) { return del('rigs', id); }
 
+/* Preset rigs: popular smart telescopes (ZWO Seestar, DwarfLab DWARF).
+ * Twin of DEFAULT_RIGS in app/rig_presets.py - the web app is static and
+ * cannot read Python, so keep both lists in sync. sensor_w/h are the imaging
+ * sensor's active area in mm. */
+export const DEFAULT_RIGS = [
+  { id: 'rig-zwo-seestar-s50', name: 'ZWO Seestar S50', focal_mm: 250, sensor_w: 5.57, sensor_h: 3.13 },
+  { id: 'rig-zwo-seestar-s30', name: 'ZWO Seestar S30', focal_mm: 150, sensor_w: 5.57, sensor_h: 3.13 },
+  { id: 'rig-zwo-seestar-s30-pro', name: 'ZWO Seestar S30 Pro', focal_mm: 150, sensor_w: 11.14, sensor_h: 6.26 },
+  { id: 'rig-dwarflab-dwarf-3', name: 'DwarfLab DWARF 3', focal_mm: 150, sensor_w: 7.68, sensor_h: 4.32 },
+  { id: 'rig-dwarflab-dwarf-mini', name: 'DwarfLab DWARF mini', focal_mm: 150, sensor_w: 5.57, sensor_h: 3.13 },
+  { id: 'rig-dwarflab-dwarf-2', name: 'DwarfLab DWARF II', focal_mm: 100, sensor_w: 5.60, sensor_h: 3.18 },
+];
+
+/** Store the preset rigs (called once per browser, see `rigsSeeded`).
+ *  Rigs whose name is already stored are skipped, so a hand-made rig with the
+ *  same name wins and nothing is duplicated. Returns how many were added. */
+export async function seedDefaultRigs() {
+  const have = new Set((await getRigs()).map((r) => String(r.name || '').trim().toLowerCase()));
+  let added = 0;
+  for (const p of DEFAULT_RIGS) {
+    if (have.has(p.name.toLowerCase())) continue;
+    const rec = {
+      id: p.id, name: p.name,
+      focal_mm: p.focal_mm, sensor_w: p.sensor_w, sensor_h: p.sensor_h,
+      fov_w: fovFrom(p.focal_mm, p.sensor_w), fov_h: fovFrom(p.focal_mm, p.sensor_h),
+    };
+    await saveRigRec(rec);
+    added++;
+  }
+  return added;
+}
+
 /** Field-of-view from focal length + sensor size (mirrors the local app). */
 export function fovFrom(focalMm, sensorMm) {
   if (!(focalMm > 0) || !(sensorMm > 0)) return null;

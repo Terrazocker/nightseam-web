@@ -10,7 +10,7 @@
  */
 import * as E from './astro.js?v=4';
 import * as Hor from './horizon.js?v=12';
-import * as WS from './webstore.js?v=2';
+import * as WS from './webstore.js?v=3';
 import { initDragWindows } from './dragwin.js?v=1';
 
 const TYPE_COLORS = {
@@ -621,7 +621,7 @@ function renderTonight(silent) {
       const fOwn = filterOwned(o);
       return `<li data-id="${esc(o.id)}">
         <span class="dot" style="background:${typeColor(o)}"></span>
-        <span>${r.pop >= 0.7 ? '<span class="p-flash">✨</span> ' : ''}<span class="p-name">${esc(o.primary_name)}</span>${tags ? `<span class="p-tags">${esc(tags)}</span>` : ''}${fOwn ? `<span class="f-own" title="filter owned">${esc(fOwn)}</span>` : ''}</span>
+        <span><span class="p-name">${esc(o.primary_name)}</span>${tags ? `<span class="p-tags">${esc(tags)}</span>` : ''}${fOwn ? `<span class="f-own" title="filter owned">${esc(fOwn)}</span>` : ''}</span>
         <span class="p-right">
           <b>${r.maxAlt.toFixed(0)}°</b>
           <span class="p-vis">${r.visN ? `${r.obsPct}% of night · ${fmtDur(r.visN * step * 1440)} visible` : 'not clear tonight'}</span>${win}</span>
@@ -1657,14 +1657,30 @@ function upsertTarget(t) {
 
 const objName = (o) => o.primary_name || o.id;
 
-/** Settings modal — sites, rigs, custom targets, edge, backup/restore. */
+/** Setup dialog — tabs mirror the desktop app: Sites / Rigs / Targets / Backup.
+ *  The open tab survives a re-render (save/delete re-renders the whole dialog). */
+let SETTINGS_TAB = 'sites';
+
+function showMTab(name) {
+  SETTINGS_TAB = name;
+  const modal = $('#modal');
+  if (!modal) return;
+  modal.querySelectorAll('.modal-tabs .tab').forEach((b) => {
+    const on = b.dataset.mtab === name;
+    b.classList.toggle('active', on);
+    b.setAttribute('aria-selected', on ? 'true' : 'false');
+  });
+  modal.querySelectorAll('.mtabpane').forEach((p) => {
+    p.classList.toggle('hidden', p.id !== 'mtab-' + name);
+  });
+}
+
 async function renderSettings() {
   const modal = $('#modal');
   const sites = await WS.getSites();
   SITES = sites;
   const rigs = await WS.getRigs();
   const targets = await WS.getTargets();
-  const prefs = Hor.getPrefs();
   const active = activeSite();
 
   const siteRow = (s) => `
@@ -1693,85 +1709,110 @@ async function renderSettings() {
   modal.innerHTML = `
     <div class="modal settings" role="dialog" aria-modal="true" aria-labelledby="m-set-title">
       <div class="modal-head">
-        <h2 id="m-set-title">Settings</h2>
+        <h2 id="m-set-title">Setup</h2>
         <button class="close" id="m-close" title="close" aria-label="Close">✕</button>
       </div>
-      <div class="card">
-        <h3>Active site</h3>
-        <div class="set-form" style="margin-top:0">
-          <label>Latitude <input type="text" inputmode="decimal" id="sf-quick-lat"></label>
-          <label>Longitude <input type="text" inputmode="decimal" id="sf-quick-lon"></label>
-          <div class="btnrow">
-            <button class="btn primary" id="sf-quick-save">Update active site</button>
-            <button class="btn" id="sf-quick-locate">use my location</button>
-            <span class="sub" id="sf-quick-note" style="align-self:center"></span>
+      <div class="modal-tabs" role="tablist" aria-label="Setup sections">
+        <button class="tab" data-mtab="sites" role="tab" aria-selected="true">Sites</button>
+        <button class="tab" data-mtab="rigs" role="tab" aria-selected="false">Rigs</button>
+        <button class="tab" data-mtab="targets" role="tab" aria-selected="false">Targets</button>
+        <button class="tab" data-mtab="backup" role="tab" aria-selected="false">Backup</button>
+      </div>
+
+      <div class="mtabpane" id="mtab-sites" role="tabpanel">
+        <div class="card">
+          <h3>Active site</h3>
+          <div class="set-form" style="margin-top:0">
+            <label>Latitude <input type="text" inputmode="decimal" id="sf-quick-lat"></label>
+            <label>Longitude <input type="text" inputmode="decimal" id="sf-quick-lon"></label>
+            <div class="btnrow">
+              <button class="btn primary" id="sf-quick-save">Update active site</button>
+              <button class="btn" id="sf-quick-locate">use my location</button>
+              <span class="sub" id="sf-quick-note" style="align-self:center"></span>
+            </div>
+          </div>
+        </div>
+        <div class="card">
+          <h3>Sites</h3>
+          <ul class="pick" id="set-sites">${sites.length ? sites.map(siteRow).join('') : '<li style="cursor:default">no site yet — add one below</li>'}</ul>
+          <div class="btnrow" style="margin-top:8px"><button class="btn small" id="set-add-site">＋ Add site</button></div>
+          <div class="set-form" id="sf-site" hidden>
+            <input type="hidden" id="sf-site-id">
+            <label>Name <input type="text" id="sf-site-name"></label>
+            <label>Lat <input type="text" inputmode="decimal" id="sf-site-lat"></label>
+            <label>Lon <input type="text" inputmode="decimal" id="sf-site-lon"></label>
+            <label>Elev (m) <input type="text" inputmode="decimal" id="sf-site-elev" value="0"></label>
+            <label>Timezone <input type="text" id="sf-site-tz" list="tz-list" placeholder="browser default">${TZ_DATALIST}</label>
+            <div class="btnrow"><button class="btn primary" id="sf-site-save">Save site</button><button class="btn" id="sf-site-cancel">Cancel</button></div>
           </div>
         </div>
       </div>
-      <div class="card">
-        <h3>Sites</h3>
-        <ul class="pick" id="set-sites">${sites.length ? sites.map(siteRow).join('') : '<li style="cursor:default">no site yet — add one below</li>'}</ul>
-        <div class="btnrow" style="margin-top:8px"><button class="btn small" id="set-add-site">＋ Add site</button></div>
-        <div class="set-form" id="sf-site" hidden>
-          <input type="hidden" id="sf-site-id">
-          <label>Name <input type="text" id="sf-site-name"></label>
-          <label>Lat <input type="text" inputmode="decimal" id="sf-site-lat"></label>
-          <label>Lon <input type="text" inputmode="decimal" id="sf-site-lon"></label>
-          <label>Elev (m) <input type="text" inputmode="decimal" id="sf-site-elev" value="0"></label>
-          <label>Timezone <input type="text" id="sf-site-tz" list="tz-list" placeholder="browser default">${TZ_DATALIST}</label>
-          <div class="btnrow"><button class="btn primary" id="sf-site-save">Save site</button><button class="btn" id="sf-site-cancel">Cancel</button></div>
+
+      <div class="mtabpane hidden" id="mtab-rigs" role="tabpanel">
+        <div class="card">
+          <h3>Rigs</h3>
+          <p class="sub">Telescope + camera combinations for the frame-coverage estimates; the field of view comes from focal length and sensor size. Smart telescopes (ZWO Seestar, DwarfLab DWARF) are preconfigured.</p>
+          <ul class="pick" id="set-rigs">${rigs.length ? rigs.map(rigRow).join('') : '<li style="cursor:default">no rig stored yet</li>'}</ul>
+          <div class="btnrow" style="margin-top:8px">
+            <button class="btn small" id="set-add-rig">＋ Add rig</button>
+            <button class="btn small" id="set-add-presets" title="add any missing smart telescope">Add smart telescopes</button>
+          </div>
+          <p class="sub" id="set-rig-note"></p>
+          <div class="set-form" id="sf-rig" hidden>
+            <input type="hidden" id="sf-rig-id">
+            <label>Name <input type="text" id="sf-rig-name"></label>
+            <label>Focal (mm) <input type="text" inputmode="decimal" id="sf-rig-focal"></label>
+            <label>Sensor W (mm) <input type="text" inputmode="decimal" id="sf-rig-sw"></label>
+            <label>Sensor H (mm) <input type="text" inputmode="decimal" id="sf-rig-sh"></label>
+            <p class="sub" id="sf-rig-fov"></p>
+            <div class="btnrow"><button class="btn primary" id="sf-rig-save">Save rig</button><button class="btn" id="sf-rig-cancel">Cancel</button></div>
+          </div>
         </div>
       </div>
-      <div class="card">
-        <h3>Rigs</h3>
-        <ul class="pick" id="set-rigs">${rigs.length ? rigs.map(rigRow).join('') : '<li style="cursor:default">no rig stored yet</li>'}</ul>
-        <div class="btnrow" style="margin-top:8px"><button class="btn small" id="set-add-rig">＋ Add rig</button></div>
-        <div class="set-form" id="sf-rig" hidden>
-          <input type="hidden" id="sf-rig-id">
-          <label>Name <input type="text" id="sf-rig-name"></label>
-          <label>Focal (mm) <input type="text" inputmode="decimal" id="sf-rig-focal"></label>
-          <label>Sensor W (mm) <input type="text" inputmode="decimal" id="sf-rig-sw"></label>
-          <label>Sensor H (mm) <input type="text" inputmode="decimal" id="sf-rig-sh"></label>
-          <p class="sub" id="sf-rig-fov"></p>
-          <div class="btnrow"><button class="btn primary" id="sf-rig-save">Save rig</button><button class="btn" id="sf-rig-cancel">Cancel</button></div>
+
+      <div class="mtabpane hidden" id="mtab-targets" role="tabpanel">
+        <div class="card">
+          <h3>Custom targets</h3>
+          <ul class="pick" id="set-targets">${targets.length ? targets.map(targetRow).join('') : '<li style="cursor:default">no custom targets — add your own objects (ids u_*)</li>'}</ul>
+          <div class="btnrow" style="margin-top:8px"><button class="btn small" id="set-add-target">＋ New target</button></div>
+          <div class="set-form" id="sf-target" hidden>
+            <input type="hidden" id="sf-target-id">
+            <label>Name <input type="text" id="sf-target-name"></label>
+            <label>Type <select id="sf-target-type">${Object.entries(TYPE_LABELS).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}</select></label>
+            <label>RA <input type="text" id="sf-target-ra" placeholder="e.g. 5 34 32 or 5.575 h"></label>
+            <label>Dec <input type="text" id="sf-target-dec" placeholder="e.g. +22 0 60 or 22.017°"></label>
+            <label>Mag <input type="text" inputmode="decimal" id="sf-target-vmag"></label>
+            <label>Size (arcmin) <input type="text" id="sf-target-size" placeholder="e.g. 6x4"></label>
+            <label>Constellation <input type="text" id="sf-target-con" placeholder="e.g. Ori"></label>
+            <label>Notes <input type="text" id="sf-target-blurb"></label>
+            <p class="sub" id="sf-target-err"></p>
+            <div class="btnrow"><button class="btn primary" id="sf-target-save">Save target</button><button class="btn" id="sf-target-cancel">Cancel</button></div>
+          </div>
         </div>
       </div>
-      <div class="card">
-        <h3>Custom targets</h3>
-        <ul class="pick" id="set-targets">${targets.length ? targets.map(targetRow).join('') : '<li style="cursor:default">no custom targets — add your own objects (ids u_*)</li>'}</ul>
-        <div class="btnrow" style="margin-top:8px"><button class="btn small" id="set-add-target">＋ New target</button></div>
-        <div class="set-form" id="sf-target" hidden>
-          <input type="hidden" id="sf-target-id">
-          <label>Name <input type="text" id="sf-target-name"></label>
-          <label>Type <select id="sf-target-type">${Object.entries(TYPE_LABELS).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}</select></label>
-          <label>RA <input type="text" id="sf-target-ra" placeholder="e.g. 5 34 32 or 5.575 h"></label>
-          <label>Dec <input type="text" id="sf-target-dec" placeholder="e.g. +22 0 60 or 22.017°"></label>
-          <label>Mag <input type="text" inputmode="decimal" id="sf-target-vmag"></label>
-          <label>Size (arcmin) <input type="text" id="sf-target-size" placeholder="e.g. 6x4"></label>
-          <label>Constellation <input type="text" id="sf-target-con" placeholder="e.g. Ori"></label>
-          <label>Notes <input type="text" id="sf-target-blurb"></label>
-          <p class="sub" id="sf-target-err"></p>
-          <div class="btnrow"><button class="btn primary" id="sf-target-save">Save target</button><button class="btn" id="sf-target-cancel">Cancel</button></div>
+
+      <div class="mtabpane hidden" id="mtab-backup" role="tabpanel">
+        <div class="card">
+          <h3>Backup &amp; transfer</h3>
+          <p class="sub">A backup covers sites, rigs, custom targets, horizon profiles and settings — the browser equivalent of the desktop app's ZIP export/import.</p>
+          <div class="btnrow" style="margin-top:10px">
+            <button class="btn primary" id="set-export">⬇ Export backup (JSON)</button>
+            <label class="btn" for="set-import" style="text-align:center">⬆ Import backup</label>
+            <input type="file" id="set-import" accept="application/json,.json" class="vhidden">
+          </div>
+          <p class="sub" style="margin-top:8px">Layout (free space per side) lives in the hamburger menu under <b>Layout</b>.</p>
         </div>
-      </div>
-      <div class="card">
-        <h3>General</h3>
-        <label style="display:flex;align-items:center;gap:10px;font-size:12.5px;color:var(--muted)">Content margin
-          <input type="range" id="set-edge" min="0" max="160" step="8" value="${Number.isFinite(prefs.edge) ? prefs.edge : 14}" style="flex:1;max-width:300px">
-          <output id="set-edge-v">${Number.isFinite(prefs.edge) ? prefs.edge : 14}px</output>
-        </label>
-        <div class="btnrow" style="margin-top:10px">
-          <button class="btn primary" id="set-export">⬇ Export backup (JSON)</button>
-          <label class="btn" for="set-import" style="text-align:center">⬆ Import backup</label>
-          <input type="file" id="set-import" accept="application/json,.json" class="vhidden">
-        </div>
-        <p class="sub" style="margin-top:8px">A backup covers sites, rigs, custom targets, horizon profiles and settings — the browser equivalent of the desktop app's ZIP export/import.</p>
       </div>
     </div>`;
   modal.hidden = false;
+  showMTab(SETTINGS_TAB);
 
   $('#m-close').addEventListener('click', closeModal);
   modal.addEventListener('click', (ev) => { if (ev.target === modal) closeModal(); });
+  // tab strip (desktop parity: Sites / Rigs / Targets / Backup)
+  modal.querySelectorAll('.modal-tabs .tab').forEach((b) => {
+    b.addEventListener('click', () => showMTab(b.dataset.mtab));
+  });
 
   // — quick active-site coordinates —
   const qlat = $('#sf-quick-lat'), qlon = $('#sf-quick-lon'), qnote = $('#sf-quick-note');
@@ -1833,6 +1874,14 @@ async function renderSettings() {
     closeModal(); renderSettings();
   }));
   $('#set-add-rig').addEventListener('click', () => openRigForm(null));
+  $('#set-add-presets').addEventListener('click', async () => {
+    const added = await WS.seedDefaultRigs();
+    await renderSettings();                       // keeps the Rigs tab open
+    const note = $('#set-rig-note');
+    if (note) note.textContent = added
+      ? `Added ${added} smart telescope rig${added === 1 ? '' : 's'}.`
+      : 'All smart telescopes are already in the list.';
+  });
 
   // — custom targets —
   modal.querySelectorAll('[data-edittarget]').forEach((b) => b.addEventListener('click', () => openTargetForm(targets.find((t) => t.id === b.dataset.edittarget))));
@@ -1846,13 +1895,7 @@ async function renderSettings() {
   }));
   $('#set-add-target').addEventListener('click', () => openTargetForm(null));
 
-  // — general —
-  $('#set-edge').addEventListener('input', (ev) => {
-    const v = Hor.num(ev.target.value);
-    Hor.setPrefs({ edge: Number.isFinite(v) ? v : 14 });
-    applyEdge();
-    $('#set-edge-v').textContent = `${Number.isFinite(v) ? v : 14}px`;
-  });
+  // — backup / transfer —
   $('#set-export').addEventListener('click', async () => {
     const backup = await WS.collectBackup(Hor.getPrefs(), Hor.exportPanos());
     WS.downloadText(`nightseam-web-backup-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify(backup, null, 1));
@@ -2341,7 +2384,12 @@ async function boot() {
   });
   refreshMenuUI();
 
-  // rigs for the framing selector
+  // rigs for the framing selector — the preset smart telescopes (ZWO Seestar,
+  // DwarfLab DWARF) are stored once per browser; deleting one keeps it deleted
+  if (!Hor.getPrefs().rigsSeeded) {
+    await WS.seedDefaultRigs();
+    Hor.setPrefs({ rigsSeeded: true });
+  }
   const rigs = await WS.getRigs();
   RIGS.length = 0;
   RIGS.push(...rigs);
@@ -2399,7 +2447,10 @@ async function boot() {
     const dialog = document.querySelector('#modal .modal:not([hidden])') ||
                    document.querySelector('[role="dialog"]:not([hidden])');
     if (!dialog) return;
-    const els = dialog.querySelectorAll('a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])');
+    const els = [...dialog.querySelectorAll('a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])')]
+      // the Setup dialog hides whole tab panes and forms: only rendered
+      // controls may take focus, else Tab would land in an invisible field
+      .filter((el) => !el.closest('.vhidden') && el.getClientRects().length > 0);
     if (!els.length) { ev.preventDefault(); return; }
     const first = els[0], last = els[els.length - 1];
     const cur = document.activeElement;

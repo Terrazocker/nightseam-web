@@ -90,6 +90,18 @@ export function bindSetup() {
       $("#rigFovPreview").textContent = `FOV \u2248 ${fmtFovPair(w, h)}`;
     });
   }
+  // the built-in smart telescopes (seeded once per database, re-addable here)
+  $("#btnRigPresets").addEventListener("click", async () => {
+    try {
+      const res = await api("/api/rigs/presets", { method:"POST" });
+      S.cfg = await api("/api/state");
+      applyCfgToUI(); renderRigsTable();
+      toast(res.added
+              ? `Added ${res.added} smart telescope rig${res.added === 1 ? "" : "s"}.`
+              : "All smart telescopes are already in the list.",
+            "info", 3500);
+    } catch (err) { /* api() already toasted */ }
+  });
 
   // preferences that live in the popover but persist through settings
   $("#sizeUnit").addEventListener("change", async e => {

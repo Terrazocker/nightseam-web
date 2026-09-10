@@ -62,7 +62,7 @@ over the fuller commands below wherever they differ:
     when both sockets set SO_REUSEADDR.
   - If 8407 is briefly taken at boot, `free_port()` silently picks a RANDOM
     port (written to instance.json) - the app runs, just not on 8407.
-- Tests: `python -m pytest tests/` - 141 tests, run in ~32 s (pure-function
+- Tests: `python -m pytest tests/` - 150 tests, run in ~36 s (pure-function
   tests are fast; `tests/test_api.py` spins up real `create_app()` instances
   via fastapi TestClient/httpx). Single test:
   `python -m pytest tests/test_astro.py -k name`. API tests use
@@ -73,7 +73,7 @@ over the fuller commands below wherever they differ:
   pytest uses for the basetemp) creates an owner-SID-only DACL that the
   sandbox's restricted token cannot re-read, so every tmp_path test errors
   with PermissionError - an environment artifact, NOT a code failure. Run
-  the suite with full access / in a normal shell: 141/141 pass (~32 s).
+  the suite with full access / in a normal shell: 150/150 pass (~36 s).
   Careful with the `client` fixture: it must leave `data/panos` in place
   under the tmp dir it patches in, because the pano upload route writes
   there without mkdir'ing (the real `data_dir()` creates it). Without that
@@ -452,8 +452,34 @@ over the fuller commands below wherever they differ:
   `app.js?v=N` and `web/app.js` carries a `?v=` on each import
   (`astro.js`, `horizon.js`, `webstore.js`, `dragwin.js`). Bump the token of
   every module whose BEHAVIOUR changed (comment-only edits do not need it) or
-  returning visitors keep the old file. Current: `app.js?v=22`,
-  `horizon.js?v=12`, `webstore.js?v=2`, `astro.js?v=4`, `dragwin.js?v=1`.
+  returning visitors keep the old file. Current: `app.js?v=23`,
+  `horizon.js?v=12`, `webstore.js?v=3`, `astro.js?v=4`, `dragwin.js?v=1`,
+  plus `style.css?v=8` / `themes.css?v=2` in `web/index.html`.
+- **Setup dialog (web) = tabs**, the same four sections as the desktop's
+  Setup dialog (Sites / Rigs / Targets / Backup). `showMTab()` maps
+  `data-mtab` → `#mtab-*` panes and `SETTINGS_TAB` keeps the open tab across
+  the full re-render that every save/delete triggers; a new section is one
+  `.tab` button plus one `.mtabpane`. The web's old "Content margin" slider
+  was dropped from the dialog (layout lives in the hamburger menu only).
+- **Smart-telescope rigs ship preconfigured in BOTH apps** (ZWO Seestar
+  S50/S30/S30 Pro, DwarfLab DWARF 3 / mini / II; sensor = imaging sensor's
+  active area, FOV from focal length). Desktop: `app/rig_presets.py`, seeded
+  from `create_app()` (NOT `Database.__init__`, so bare-Database tooling and
+  tests keep their rig table) once per DB via the `rigs_preset_seeded`
+  setting; `POST /api/rigs/presets` refills deleted ones (button in
+  Setup → Rigs). Web: the same list as `DEFAULT_RIGS` in `web/webstore.js`,
+  `seedDefaultRigs()` + the `rigsSeeded` pref, button in Setup → Rigs. The
+  two lists are twins — change both; `tests/test_rig_presets.py` pins
+  `rig_presets.fov_arcmin` to `server.fov_arcmin`.
+- The ✨ popularity marker (`.p-flash`) was REMOVED from both apps —
+  popularity stays a silent tiebreaker, never a badge.
+- "Free space per side" (web): `main` uses
+  `max-width: min(100%, 1500px, max(320px, calc(100% - 2 * var(--edge, 14px))))`,
+  so the slider takes that many px off EACH side at every screen size
+  (desktop parity; `applyEdge()` writes `--edge`, slider range 0–300). The
+  previous rule only shrank via padding above 22px, and its CSS fix shipped
+  without a token bump — if a CSS-only fix "does nothing" for a returning
+  visitor, that is a stale `style.css`, so always bump its `?v=`.
 - Sync from the dev mirror: robocopy `<workspace>\Astro-Web` -> `web/` (exclude
   `.git` and `ftp.env`), then commit here. `web/.gitignore` covers the dev
   mirror leftovers (`whale/`, `dev/`).

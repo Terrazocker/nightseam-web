@@ -21,12 +21,11 @@ export function bindTonight() {
 
 function cardHTML({o, m}) {
   const st = statusOf(o, S.tIdx);
-  const pop = popularityFactor(m);
   return `<div class="pick ${st.code==="blk"?"blocked":st.code==="low"||st.code==="hor"?"low":""}" data-id="${m.id}" role="button" tabindex="0">
     <img class="pick-thumb" loading="lazy" src="/api/object/${m.id}/image?thumb=1&v=${IMG_VER}"
       onerror="this.onerror=null;this.style.visibility='hidden'">
     <div class="pick-body">
-      <div class="nm">${esc(m.primary_name)}${pop >= 0.7 ? '<span class="p-flash">✨</span>' : ''}</div>
+      <div class="nm">${esc(m.primary_name)}</div>
       <div class="ds">${esc(desigLine(m))} &middot; ${TYPE_LABEL[m.otype]||""}</div>
       <div class="win">${st.text} &middot; alt ${o.alt[S.tIdx].toFixed(0)}&deg; &middot; ${o.obs_pct!=null?o.obs_pct+"% of night":"-"}</div>
       <div class="ds">${windowText(o) || ""}</div>

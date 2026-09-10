@@ -179,16 +179,15 @@ body {
 .tabs a.active { color: var(--accent); background: var(--panel); border-color: var(--line); }
 
 /* ---------- content ---------- */
-main { max-width: 1500px; margin: 0 auto; padding: 20px 22px 40px; position: relative; }
-
-/* "Free space per side" (hamburger menu): EdgeInsets shrinks the content
-   width at ANY screen size — same as the desktop, where the edge slider
-   drives a whole-view width, not padding (which is invisible below the
-   max-width breakpoint). */
+/* "Free space per side" (hamburger menu → Layout) removes that many pixels from
+   EACH side of the content on every screen size — the desktop keeps the same
+   semantics (content width = viewport - 2 * edge). `100%` can never overflow the
+   viewport, 320px is the usable floor and 1500px the maximum reading width. */
 main {
-  max-width: min(1500px, calc(100vw - 2 * var(--edge, 22px)));
-  padding-left: max(22px, var(--edge, 22px));
-  padding-right: max(22px, var(--edge, 22px));
+  max-width: min(100%, 1500px, max(320px, calc(100% - 2 * var(--edge, 14px))));
+  margin: 0 auto;
+  padding: 20px 22px 40px;
+  position: relative;
 }
 
 .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
@@ -374,7 +373,6 @@ a.wiki { color: var(--accent); }
 .pref-row { display: flex; justify-content: space-between; align-items: center; font-size: 13px; color: var(--muted); padding: 5px 0; gap: 10px; }
 .pref-row input[type="checkbox"] { accent-color: var(--accent); }
 .p-blk { color: #ff8a8a; font-size: 11px; margin-left: 6px; }
-.p-flash { font-size: 12px; }
 .p-vis { display: block; font-size: 11.5px; color: var(--muted); margin-top: 2px; }
 .top-prefs { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; }
 .top-prefs label { font-size: 12px; color: var(--muted); display: flex; align-items: center; gap: 6px; }
@@ -391,7 +389,7 @@ td.pct { font-family: var(--mono); color: var(--green); white-space: nowrap; }
 .vhidden { position: fixed; left: -9999px; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
 
 /* ---------- settings (webstore parity) ---------- */
-/* (edge-space is handled by the earlier `main` rule: width + padding) */
+/* ("Free space per side" is handled by the earlier `main` rule) */
 .iconbtn {
   background: none; border: 1px solid var(--line); color: var(--muted); cursor: pointer;
   border-radius: 8px; width: 30px; height: 30px; font-size: 15px; line-height: 1;
@@ -400,6 +398,23 @@ td.pct { font-family: var(--mono); color: var(--green); white-space: nowrap; }
 #tb-site { width: auto; max-width: 150px; }
 .modal.settings { max-width: 860px; }
 .modal.welcome h2 { text-align: center; }
+
+/* setup dialog tabs — the same sections as the desktop's Setup dialog.
+   Glass language (DESIGN.md §6): pill container, active pill = accent + dark ink */
+.modal-tabs {
+  display: flex; flex-wrap: wrap; gap: 2px; width: fit-content; max-width: 100%;
+  margin: 2px 0 16px; padding: 4px;
+  border: 1px solid var(--line); border-radius: 999px; background: var(--panel);
+}
+.modal-tabs .tab {
+  background: none; border: none; border-radius: 999px;
+  color: var(--muted); font-family: inherit; font-weight: 600; font-size: 13px;
+  padding: 7px 16px; cursor: pointer;
+}
+.modal-tabs .tab:hover { color: var(--txt); }
+.modal-tabs .tab.active { color: #0a0d1a; background: var(--accent); }
+.mtabpane > .card + .card { margin-top: 12px; }
+
 .set-form {
   display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   gap: 8px 12px; margin-top: 10px; padding: 12px; border: 1px solid var(--line); border-radius: 10px;
