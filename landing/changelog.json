@@ -1,5 +1,10 @@
 [
  {
+  "version": "0.6.0",
+  "date": "2026-09-10",
+  "summary": "AstroPilot is now NightSeam: new name, and the website has moved to nightseam.de. Planning and the image library work exactly as before. If you replace an older installation in place, rename data/astropilot.db to data/nightseam.db to keep your sites and captures."
+ },
+ {
   "version": "0.5.12",
   "date": "2026-09-10",
   "summary": "Reliability release: a failed backup import can no longer wipe your data, planning now resolves the correct night at every location (timezone fix), safer panorama handling, and many small fixes in both apps."
