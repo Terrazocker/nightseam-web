@@ -93,12 +93,13 @@ export function populateConstFilter() {
 
 function sortObjects(list) {
   const mode = $("#fSort").value;
+  // popularity is never a sort mode of its own - it only breaks ties inside
+  // "imaging quality" (see derive.js), so it stays invisible in the UI
   const cmp = {
     score:   (a,b) => {
       const d = objScore(b.o) - objScore(a.o);
       return d !== 0 ? d : popularityFactor(b.m) - popularityFactor(a.m);
     },
-    popularity: (a,b) => popularityFactor(b.m) - popularityFactor(a.m),
     pct:     (a,b) => (b.o.obs_pct||0) - (a.o.obs_pct||0),
     maxalt:  (a,b) => b.o.max_alt - a.o.max_alt,
     beststart:(a,b) => (a.o.best?a.o.best[0]:999) - (b.o.best?b.o.best[0]:999),

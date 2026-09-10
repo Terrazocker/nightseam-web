@@ -1120,10 +1120,11 @@ let skyResizeHandler = null;
 
 /* ----------------------------- catalog ----------------------------- */
 
-const CHIP_LABELS = { all: 'All', popular: 'Popular', messier: 'Messier', bright: 'Bright <8', galaxies: 'Galaxies', nebulae: 'Nebulae', clusters: 'Clusters', custom: 'Custom' };
+/* Chip row for the catalog. Popularity is deliberately NOT a chip: it is a
+ * hidden scoring input (see popularityFactor), never a user-facing criterion. */
+const CHIP_LABELS = { all: 'All', messier: 'Messier', bright: 'Bright <8', galaxies: 'Galaxies', nebulae: 'Nebulae', clusters: 'Clusters', custom: 'Custom' };
 const CHIP_FILTERS = {
   all: () => true,
-  popular: (o) => popularityOf(o) >= 10000,
   messier: (o) => !!o.messier,
   bright: (o) => o.vmag != null && o.vmag < 8,
   galaxies: (o) => o.otype === 'galaxy',

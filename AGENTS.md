@@ -62,7 +62,7 @@ over the fuller commands below wherever they differ:
     when both sockets set SO_REUSEADDR.
   - If 8407 is briefly taken at boot, `free_port()` silently picks a RANDOM
     port (written to instance.json) - the app runs, just not on 8407.
-- Tests: `python -m pytest tests/` - 155 tests, run in ~36 s (pure-function
+- Tests: `python -m pytest tests/` - 159 tests, run in ~36 s (pure-function
   tests are fast; `tests/test_api.py` spins up real `create_app()` instances
   via fastapi TestClient/httpx). Single test:
   `python -m pytest tests/test_astro.py -k name`. API tests use
@@ -73,7 +73,7 @@ over the fuller commands below wherever they differ:
   pytest uses for the basetemp) creates an owner-SID-only DACL that the
   sandbox's restricted token cannot re-read, so every tmp_path test errors
   with PermissionError - an environment artifact, NOT a code failure. Run
-  the suite with full access / in a normal shell: 155/155 pass (~36 s).
+  the suite with full access / in a normal shell: 159/159 pass (~36 s).
   Careful with the `client` fixture: it must leave `data/panos` in place
   under the tmp dir it patches in, because the pano upload route writes
   there without mkdir'ing (the real `data_dir()` creates it). Without that
@@ -482,7 +482,7 @@ over the fuller commands below wherever they differ:
   `app.js?v=N` and `web/app.js` carries a `?v=` on each import
   (`astro.js`, `horizon.js`, `webstore.js`, `dragwin.js`). Bump the token of
   every module whose BEHAVIOUR changed (comment-only edits do not need it) or
-  returning visitors keep the old file. Current: `app.js?v=26`,
+  returning visitors keep the old file. Current: `app.js?v=27`,
   `horizon.js?v=12`, `webstore.js?v=5`, `astro.js?v=4`, `dragwin.js?v=1`,
   plus `style.css?v=8` / `themes.css?v=2` in `web/index.html`.
   **A token bump is also the cure for a browser that cached a BAD pairing**: an
@@ -520,18 +520,20 @@ over the fuller commands below wherever they differ:
   those leftovers ONCE and only when a rig still matches a preset exactly - an
   edited or renamed rig is user data and stays. A preset the user adds later is
   never removed again (`rigs_preset_cleaned` setting / `rigsPresetCleaned` pref).
-- **Popularity is INVISIBLE in the UI (both apps) - never render the number.**
-  The ✨ marker (`.p-flash`) is gone, and 0.6.3 removed the web's remaining
-  value displays: the catalog's sortable "Popularity" column (+ its sort
-  branch), the detail dialog's "Popularity … (The popularity source)" row, and the
-  "popularity-aware ranking" phrase in the catalog footer. What stays is
-  scoring only: `popularityFactor()` as the ranking TIEBREAKER (visibility
-  decides, popularity separates equals - desktop `derive.js`, web `app.js`),
-  the background the popularity source fetch with the baked `catalog.json` fallback, the
-  desktop's `Sort: popularity` option, and the web's "Popular" chip
-  (`popularityOf(o) >= 10000`). That chip is the LAST place popularity is
-  user-visible: remove it too if "hidden" is meant strictly (it is the only
-  remaining consumer of `popularityOf()` outside `popularityFactor`).
+- **Popularity is INVISIBLE in the UI (both apps) - never render the number and
+  never offer it as a criterion.** Gone: the ✨ marker (`.p-flash`), the web
+  catalog's sortable "Popularity" column (+ its sort branch), the detail
+  dialog's "Popularity … (The popularity source)" row, the "popularity-aware ranking"
+  footer phrase, the web's "Popular" filter chip (`CHIP_LABELS`/`CHIP_FILTERS`
+  in `web/app.js`; with it gone, `popularityOf()`'s only remaining caller is
+  `popularityFactor()`), and the desktop's `Sort: popularity` option
+  (`static/index.html` plus its comparator in `js/targets.js`). What stays is
+  scoring only: `popularityFactor()` as the ranking TIEBREAKER inside the
+  "imaging quality" sort (visibility decides, popularity separates equals -
+  desktop `derive.js`/`targets.js`, web `app.js`), plus the background
+  The popularity source fetch with the baked `catalog.json` fallback.
+  `tests/test_ui_invariants.py` pins all of this - including that the
+  tiebreaker itself is still in place.
 - "Free space per side" (web): `main` uses
   `max-width: min(100%, 1500px, max(320px, calc(100% - 2 * var(--edge, 14px))))`,
   so the slider takes that many px off EACH side at every screen size
@@ -539,11 +541,12 @@ over the fuller commands below wherever they differ:
   previous rule only shrank via padding above 22px, and its CSS fix shipped
   without a token bump — if a CSS-only fix "does nothing" for a returning
   visitor, that is a stale `style.css`, so always bump its `?v=`.
-- **State after the v0.6.4 web deploy (2026-09-10) - read before the next
-  release**: HEAD is exactly at the tag `v0.6.4`, the tree is clean, and
-  `web/version.json` was baked at that tag, so `/astro` reports 0.6.4 (0.6.2
+- **State after the v0.6.5 web deploy (2026-09-10) - read before the next
+  release**: HEAD is exactly at the tag `v0.6.5`, the tree is clean, and
+  `web/version.json` was baked at that tag, so `/astro` reports 0.6.5 (0.6.2
   was the hotfix for the 0.6.1 mid-deploy breakage, 0.6.3 hid the popularity
-  stat, 0.6.4 made the rig presets a picker and left a fresh setup empty).
+  stat, 0.6.4 made the rig presets a picker, 0.6.5 removed the last popularity
+  affordances: chip + desktop sort mode).
   The DESKTOP side is still 0.6.0 EVERYWHERE (`dist\NightSeam.exe`,
   `dist\release\*`, `/downloads/*` incl. `ns-version.js`, landing page, and no
   curated changelog entry) - deliberate, because no new exe was built, so
@@ -551,7 +554,7 @@ over the fuller commands below wherever they differ:
   the moment to finish it: `build.ps1` -> `scripts/make_release.py` -> upload
   `dist/release/*` to `/downloads/` -> `build_changelog.py` -> commit
   `landing/changelog.json` separately. Any commit before that ends the window
-  and the desktop version becomes `0.6.4-N-g<sha>`.
+  and the desktop version becomes `0.6.5-N-g<sha>`.
   **Process lesson:** write the session notes BEFORE tagging while a release is
   still pending - the 0.6.1 notes landed as a post-tag commit and cost exactly
   that clean window.
