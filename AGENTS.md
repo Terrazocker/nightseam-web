@@ -19,6 +19,30 @@ numpy/astropy, no JS build step, no npm. Works fully offline except optional
 Wikipedia example images. Two modes: Night Planner and Image Catalog (FITS
 ingest + library), switched via the top-right button or the brand name.
 
+## Context discipline (read before starting work)
+
+The transcript is the budget. These rules measurably cut it - this section wins
+over the fuller commands below wherever they differ:
+
+- **Batch edits to this file.** Every edit re-injects all of AGENTS.md (~25 KB).
+  Collect documentation changes and apply them in ONE write, at the end if you can.
+- **Run tests cheaply:** `python -m pytest tests/ -q --tb=no`, and only the modules
+  that matter (`python -m pytest tests/test_astro.py tests/test_planning.py -q`).
+  The full suite prints ~14 KB of sandbox `PermissionError`s that say nothing new -
+  run it once, at the end of the work.
+- **Never dump output into chat:** no build/tool logs, no whole files, no raw grep
+  matches. Use `read` with `offset`/`limit`, read tails, or counts
+  (`Select-String -Quiet`, `Measure-Object`) instead - a count costs one line, a
+  dump costs thousands.
+- **Delegate bulk reading:** anything touching 2-3+ files goes to a subagent with a
+  self-contained prompt and an explicit "return a digest, not the files".
+- **Write findings to files** (`AUDIT.md`-style) and reference the path in chat
+  instead of pasting content.
+- **`/compact` at phase boundaries** - when one task ships and the next starts -
+  and start a new session per deliverable rather than letting the meter fill.
+  (`/compact` condenses older history on demand, keeps recent turns, and consumes
+  no model turn.)
+
 ## Commands
 
 - Run from source: `python main.py` (default port 8407; `--console` for logs,
