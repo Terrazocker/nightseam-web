@@ -108,7 +108,7 @@ tests - do not regress them:
 - **Tests never touch the user profile**: `tests/conftest.py` redirects
   `paths.default_archive_dir()` into `logs/` for every test - a test that forgot
   to set `image_dir` used to write into the real `~/Documents/NightSeam Images`.
-- **Current test count: 465** (`python -m pytest tests/ -q`, full access).
+- **Current test count: 466** (`python -m pytest tests/ -q`, full access).
 
 ## Context discipline (read before starting work)
 
@@ -153,7 +153,7 @@ over the fuller commands below wherever they differ:
     when both sockets set SO_REUSEADDR.
   - If 8407 is briefly taken at boot, `free_port()` silently picks a RANDOM
     port (written to instance.json) - the app runs, just not on 8407.
-- Tests: `python -m pytest tests/` - 465 tests, run in ~75 s (pure-function
+- Tests: `python -m pytest tests/` - 466 tests, run in ~75 s (pure-function
   tests are fast; `tests/test_api.py` spins up real `create_app()` instances
   via fastapi TestClient/httpx). Single test:
   `python -m pytest tests/test_astro.py -k name`. API tests use
@@ -164,7 +164,7 @@ over the fuller commands below wherever they differ:
   pytest uses for the basetemp) creates an owner-SID-only DACL that the
   sandbox's restricted token cannot re-read, so every tmp_path test errors
   with PermissionError - an environment artifact, NOT a code failure. Run
-  the suite with full access / in a normal shell: 465/465 pass (~75 s).
+  the suite with full access / in a normal shell: 466/466 pass (~75 s).
   Careful with the `client` fixture: it must leave `data/panos` in place
   under the tmp dir it patches in, because the pano upload route writes
   there without mkdir'ing (the real `data_dir()` creates it). Without that
@@ -591,7 +591,7 @@ over the fuller commands below wherever they differ:
   every module whose BEHAVIOUR changed (comment-only edits do not need it) or
   returning visitors keep the old file. Current: `app.js?v=28`,
   `horizon.js?v=13`, `webstore.js?v=5`, `astro.js?v=4`, `dragwin.js?v=1`,
-  plus `style.css?v=10` / `themes.css?v=2` in `web/index.html`.
+  plus `style.css?v=11` / `themes.css?v=2` in `web/index.html`.
   **A token bump is also the cure for a browser that cached a BAD pairing**: an
   `app.js` that calls a module member the cached dependency does not have stays
   broken across plain reloads, because the query string in the import specifier
@@ -646,12 +646,19 @@ over the fuller commands below wherever they differ:
   `tests/test_ui_invariants.py` pins all of this - including that the
   tiebreaker itself is still in place.
 - "Free space per side" (web): `main` uses
-  `max-width: min(100%, 1500px, max(320px, calc(100% - 2 * var(--edge, 14px))))`,
-  so the slider takes that many px off EACH side at every screen size
-  (desktop parity; `applyEdge()` writes `--edge`, slider range 0–300). The
-  previous rule only shrank via padding above 22px, and its CSS fix shipped
-  without a token bump — if a CSS-only fix "does nothing" for a returning
-  visitor, that is a stale `style.css`, so always bump its `?v=`.
+  `max-width: min(100%, max(320px, calc(100% - 2 * var(--edge, 14px))))` and
+  NO other px cap, so the slider takes that many px off EACH side at EVERY
+  screen size (desktop parity: `static/style.css` `.tabpane` is
+  `calc(100vw - 2 * var(--edge-space))`; `applyEdge()` writes `--edge`, slider
+  range 0–300). A cap INSIDE that `min()` silently DEFEATS the slider: the
+  1500px "maximum reading width" that sat there made the control inert below
+  edge 210 on a 1920px screen and dead outright from ~2100px up — the 2560px
+  owner saw exactly "free space per side does nothing" (fixed 2026-09-10,
+  pinned by `tests/test_ui_invariants.py::test_web_content_width_is_edge_driven`).
+  Two traps around this one control: a CSS-only fix "does nothing" for a
+  returning visitor unless `style.css`'s `?v=` is bumped in the SAME commit,
+  and "it works" must be verified at a WIDE viewport — 1280/1440 looked
+  perfect while 2560 was dead.
 - **State after the v0.6.9 release (2026-09-10) - read before the next
   release**: 0.6.9 shipped BOTH sides (desktop exe + web app) and
   `web/version.json` is baked at that tag, so `/astro` reports 0.6.9. TWO

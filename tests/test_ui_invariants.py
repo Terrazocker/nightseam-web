@@ -9,8 +9,12 @@ fail loudly when a future edit re-surfaces the stat.
 The same file also pins the `hidden` handling, because that broke once: an
 author `display` beats the UA's `[hidden] { display:none }`, so a panel hidden
 with the ATTRIBUTE shows up unless an author rule restores it.
+
+And it pins the web's content width, because a width CAP there silently killed
+the "Free space per side" slider (test_web_content_width_is_edge_driven).
 """
 
+import re
 from pathlib import Path
 
 import pytest
@@ -90,3 +94,29 @@ def test_rig_selector_sits_in_the_topbar():
         assert sep, f"{tree}/index.html lost its hamburger menu"
         assert 'id="rigSelect"' in head, f"{tree}: the rig selector left the topbar"
         assert 'id="rigSelect"' not in menu, f"{tree}: the rig selector is back in the hamburger menu"
+
+def test_web_content_width_is_edge_driven():
+    """The main max-width must never cap the "Free space per side" slider.
+
+    The shape is min(100%, max(320px, 100% - 2*var(--edge))) - the ONLY px
+    literal allowed is the 320px usable floor. 0.6.9 carried a 1500px "maximum
+    reading width" inside that min(), and it silently WON over the edge term on
+    any viewport wider than 1500 + 2*edge: the slider was inert below edge 210
+    on a 1920px screen and had NO effect at all from ~2100px up - which is how
+    a 2560px owner met it ("free space per side does nothing"). The desktop has
+    no such cap (static/style.css .tabpane is 100vw - 2*edge-space).
+    """
+    rule = re.search(r"^main\s*\{(.*?)\}", _read("web", "style.css"), re.M | re.S)
+    assert rule, "web/style.css lost its main rule"
+    width = re.search(r"max-width:\s*([^;]+);", rule.group(1))
+    assert width, "web/style.css main has no max-width"
+    expr = width.group(1)
+    assert "--edge" in expr, "the web content width no longer follows --edge: " + expr
+    # ignore var()'s own fallback (var(--edge, 14px)) - only real caps count
+    literals = re.findall(r"\d+px", re.sub(r"var\([^)]*\)", "VAR", expr))
+    assert literals == ["320px"], (
+        "a px cap in main's max-width defeats the edge slider on wide screens: " + expr)
+
+    desktop = _read("static", "style.css")
+    assert re.search(r"max-width:\s*calc\(100vw\s*-\s*2\s*\*\s*var\(--edge-space", desktop), (
+        "desktop parity: static/style.css content width is 100vw - 2*edge-space")

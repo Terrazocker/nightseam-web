@@ -184,10 +184,15 @@ body {
 /* ---------- content ---------- */
 /* "Free space per side" (hamburger menu → Layout) removes that many pixels from
    EACH side of the content on every screen size — the desktop keeps the same
-   semantics (content width = viewport - 2 * edge). `100%` can never overflow the
-   viewport, 320px is the usable floor and 1500px the maximum reading width. */
+   semantics (content width = viewport - 2 * edge, static/style.css). `100%` can
+   never overflow the viewport and 320px is the usable floor.
+   A 1500px reading-width cap used to sit in this min() as well. It silently WON
+   over the edge term on any viewport wider than 1500 + 2*edge, so the slider was
+   inert below edge 210 on a 1920px screen and had NO effect at all from ~2100px
+   up (2560/3440 owners: the control did nothing). The cap is gone — the slider
+   decides, exactly as on the desktop. */
 main {
-  max-width: min(100%, 1500px, max(320px, calc(100% - 2 * var(--edge, 14px))));
+  max-width: min(100%, max(320px, calc(100% - 2 * var(--edge, 14px))));
   margin: 0 auto;
   padding: 20px 22px 40px;
   position: relative;

@@ -127,8 +127,10 @@ toasts stay fixed at their own z-levels).
   radius `18px` — floats over the starfield with a gap on all sides.
 - **Pill tab dock**: sticky right below the bar, centered, radius `999px`.
 - **Centered sheet menus** and draggable modals (see above).
-- Content main: relative + z1; cards in grids (`grid2`/`grid3`), maximum
-  ~1500px centered, the edge-space setting controls content width.
+- Content main: relative + z1; cards in grids (`grid2`/`grid3`); the
+  edge-space setting alone controls content width (content = viewport - 2 x
+  edge, centered) — there is NO fixed maximum: a ~1500px "reading width" cap
+  used to sit here and silently defeated the slider on wide screens.
 - **Compact widths**: ≤1240px tighten controls; ≤900px shrink the bar/tabs,
   hide the night-info chip and tagline. Keep everything reachable.
 
