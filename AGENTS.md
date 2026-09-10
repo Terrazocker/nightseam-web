@@ -97,6 +97,22 @@ over the fuller commands below wherever they differ:
   auto-maintenance then complains "cannot create standard input pipe for
   pack-objects: Permission denied" / "task 'geometric-repack' failed". That is
   noise, not a failed commit - confirm with `git log -1` / `git describe`.
+  It ALSO puts a Windows message box on the USER's desktop: a commit spawns a
+  DETACHED `git maintenance run --auto` child, that child cannot initialise
+  under the restricted token and dies as `git.exe - Application Error ...
+  (0xc0000142)` (= STATUS_DLL_INIT_FAILED) - the `git` we call is fine, only
+  that spawn is, so the dialog is harmless and no work is at risk. The trigger
+  is a DEFAULT, not config: `maintenance.auto` is true with nothing set
+  (`git config --get maintenance.auto` exits 1, no `maintenance.repo`
+  registration exists, yet a commit runs the task). This repo therefore carries
+  `maintenance.auto=false` + `gc.auto=0` in its LOCAL config - repo config is
+  invisible to `git status`, so it costs no release window. Undo with
+  `git config --unset maintenance.auto`; to keep background maintenance
+  instead, set `maintenance.autoDetach=false` (it then fails in-process and
+  only prints the pipe noise). Never run `git gc` from the sandboxed shell -
+  same pipe denial; the store is healthy without it
+  (`git fsck --connectivity-only` = only the usual dangling objects, 3 packs,
+  0 loose, 22 MB).
 - PowerShell quirk: heredocs / inline `python -c` with quotes break - write
   probe scripts to files (`C:\Users\<user>\AppData\Local\Temp\opencode\`) and
   run them.
@@ -546,8 +562,10 @@ over the fuller commands below wherever they differ:
   without a token bump — if a CSS-only fix "does nothing" for a returning
   visitor, that is a stale `style.css`, so always bump its `?v=`.
 - **State after the v0.6.8 web deploy (2026-09-10) - read before the next
-  release**: HEAD is exactly at the tag `v0.6.8`, the tree is clean, and
-  `web/version.json` was baked at that tag, so `/astro` reports 0.6.8. The
+  release**: `web/version.json` was baked at the tag `v0.6.8`, so `/astro`
+  reports 0.6.8; ONE docs-only commit now sits on top of that tag (see the
+  DESKTOP note below), which is why the next release has to be tagged
+  `v0.6.9`. The
   0.6.2-0.6.8 arc: 0.6.2 hotfixed the 0.6.1 mid-deploy breakage, 0.6.3 hid the
   popularity stat, 0.6.4 made the rig presets a picker (empty default), 0.6.5
   removed the last popularity affordances (chip + desktop sort mode), 0.6.6
@@ -562,11 +580,18 @@ over the fuller commands below wherever they differ:
   The DESKTOP side is still 0.6.0 EVERYWHERE (`dist\NightSeam.exe`,
   `dist\release\*`, `/downloads/*` incl. `ns-version.js`, landing page, and no
   curated changelog entry) - deliberate, because no new exe was built, so
-  installed apps correctly see no update. HEAD being at the tag right now is
-  the moment to finish it: `build.ps1` -> `scripts/make_release.py` -> upload
-  `dist/release/*` to `/downloads/` -> `build_changelog.py` -> commit
-  `landing/changelog.json` separately. Any commit before that ends the window
-  and the desktop version becomes `0.6.8-N-g<sha>`.
+  installed apps correctly see no update. HEAD sat exactly on `v0.6.8` (the
+  clean `git describe --dirty` window `make_release.py` needs) only until the
+  post-tag docs commit that added the `git.exe (0xc0000142)` note; that window
+  is therefore SPENT. Build the desktop as the NEXT tag (`v0.6.9`) instead of
+  accepting a `0.6.8-1-g<sha>` version string in the exe, the zip name and
+  `/downloads/version.json`, and keep the order: `build.ps1` ->
+  `scripts/make_release.py` -> upload `dist/release/*` to `/downloads/` ->
+  `build_changelog.py` -> commit `landing/changelog.json` separately. A desktop
+  release was already overdue independently: `static/` changed in every 0.6.1 -
+  0.6.7 step (sparkle out, rig picker, popularity affordances gone,
+  `#rigSelect` in the topbar, the `[hidden]` CSS fix), so the 0.6.0 exe predates
+  all of it.
   **Process lesson:** write the session notes BEFORE tagging while a release is
   still pending - the 0.6.1 notes landed as a post-tag commit and cost exactly
   that clean window.
