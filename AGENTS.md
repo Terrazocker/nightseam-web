@@ -81,10 +81,22 @@ over the fuller commands below wherever they differ:
   to still hold the folder.
 - Sandbox gotcha (cost me three attempts): a command whose stdout is piped
   into another PowerShell command dies with "Zugriff verweigert" (named-pipe
-  EPERM), so `python -m pytest ... | Select-Object` never runs. Run the tool
-  bare, or have a small python wrapper write the log to a FILE **inside the
-  repo** (the platform temp dir is not writable for spawned processes) and
+  EPERM), so `python -m pytest ... | Select-Object` never runs - same for
+  `git log ... | Select-Object` (git itself is fine, the PIPE dies). Run the
+  tool bare, or have a small python wrapper write the log to a FILE **inside
+  the repo** (the platform temp dir is not writable for spawned processes) and
   read that instead.
+- Any tool that shells out with `capture_output=True` / piped stdio dies the
+  same way. Concretely: `python web/build_web.py version` fails with
+  `PermissionError: [WinError 5]` from `_winapi.CreatePipe` (it pipes
+  `git describe`). It is a release step, so run that ONE command with full
+  access - or bake `web/version.json` by hand in the same shape
+  (`{"version","describe","built"}`, `version = describe.lstrip("v")`,
+  `built` = ISO-8601 UTC, seconds).
+- `git commit` / `git tag` work from the sandboxed shell, but git's background
+  auto-maintenance then complains "cannot create standard input pipe for
+  pack-objects: Permission denied" / "task 'geometric-repack' failed". That is
+  noise, not a failed commit - confirm with `git log -1` / `git describe`.
 - PowerShell quirk: heredocs / inline `python -c` with quotes break - write
   probe scripts to files (`C:\Users\<user>\AppData\Local\Temp\opencode\`) and
   run them.
@@ -99,6 +111,24 @@ over the fuller commands below wherever they differ:
   it with full access, and give the profile an ABSOLUTE path inside the
   workspace (e.g. `theme-preview\.a11y-prof`); a relative or temp-dir path
   fails with "requires a non-default data directory" / lock-file errors.
+- **Chrome may refuse to run here even escalated - do not burn turns on it.**
+  On 2026-09-10 `chrome --headless=new --dump-dom` (plus `--no-sandbox
+  --disable-crash-reporter`, fresh `--user-data-dir` inside the workspace,
+  tried via `&` and via `Start-Process -Wait -PassThru`) returned exit 0 with
+  ZERO bytes even for `data:text/html,<h1>HI</h1>`, under the restricted token
+  and after a `danger-full-access` escalation was approved. Verify UI work
+  without a browser instead:
+  - `node --check` for syntax (Node 24 is installed): copy the file to
+    `*.mjs` first, otherwise `import` is not legal to parse.
+  - structure of a JS-built template: extract `modal.innerHTML = \`...\``,
+    blank out every `${...}` (count nested braces), then stack-walk the tags
+    with `html.parser`. Pick the RIGHT occurrence - several modals assign
+    `modal.innerHTML`; the Setup dialog is the match whose next ~300 chars
+    contain `modal settings`.
+  - the DEPLOYED web app: FTP is ground truth - `ftps_deploy.py download
+    /astro/<file> <tmp>` + `Get-FileHash` against the local file, plus
+    `web_fetch` on `/astro/version.json` and `/astro/index.html` as the public
+    end-to-end check. (For 0.6.1 all five changed files matched byte-for-byte.)
 - No Python linter/formatter configured. The JS "lint" is three scripts that
   must pass after touching `static/` OR `web/`; `python scripts/check_js.py`
   runs all three and exits non-zero on hard failures (recommended one-command
@@ -480,6 +510,38 @@ over the fuller commands below wherever they differ:
   previous rule only shrank via padding above 22px, and its CSS fix shipped
   without a token bump — if a CSS-only fix "does nothing" for a returning
   visitor, that is a stale `style.css`, so always bump its `?v=`.
+- **State after the v0.6.1 web deploy (2026-09-10) - read before the next
+  release**: `v0.6.1` is `1b47a2b` (the release commit), `/astro` IS live at
+  0.6.1 (FTP hash compare) and `web/version.json` was baked while HEAD was at
+  the tag, so it says 0.6.1. The docs commit recording all of this sits one
+  commit AFTER the tag, so `git describe` from HEAD is `v0.6.1-1-g<sha>`. The
+  DESKTOP half of 0.6.1 is NOT shipped: `dist\NightSeam.exe`, `dist\release\*`,
+  `/downloads/*` (`version.json`, `ns-version.js`) and the landing page are all
+  still 0.6.0, and there is no curated changelog entry for 0.6.1
+  (`build_changelog.py` will warn) - deliberate, since no new exe was built, so
+  installed apps correctly see no update. Consequence: a desktop build from
+  HEAD today would be stamped `0.6.1-1-g<sha>`, NOT `0.6.1` - so finish the
+  desktop side by tagging the new HEAD (v0.6.2+, never move the v0.6.1 tag)
+  and then `build.ps1` -> `scripts/make_release.py` -> upload
+  `dist/release/*` to `/downloads/` -> `build_changelog.py` -> commit
+  `landing/changelog.json` on its own. Re-bake `web/version.json` right after
+  that tag too, or `/astro` keeps advertising 0.6.1 forever.
+  **Process lesson:** ANY commit after the tag - a docs note like this one
+  included - ends the "HEAD is exactly at the tag" window that
+  `make_release.py` / `build_web.py version` need for a clean version string.
+  Write the session notes BEFORE tagging while a release is still pending, or
+  plan on a follow-up tag.
+- `web/version.json` is gitignored and baked from the tag: after a later web
+  change, a plain `uploadtree web /astro` keeps advertising 0.6.1 until a new
+  tag + `build_web.py version` run, so re-bake on every deploy.
+- FTPS works from the sandbox WITHOUT escalation - reading the out-of-repo
+  `--env <workspace>\Astro-Web\ftp.env` is allowed (reads outside the workspace are
+  fine, only writes are restricted). For 0.6.1 `uploadtree web /astro` pushed
+  the whole tree in one pass; the documented ProFTPD stall did not occur.
+- **The dev mirror `<workspace>\Astro-Web` is now BEHIND this repo** - the 0.6.1 web
+  work was done here, not there. The robocopy below runs mirror -> repo, so
+  running it unchanged would REVERT that work: copy the changed files into the
+  mirror first, or skip the sync.
 - Sync from the dev mirror: robocopy `<workspace>\Astro-Web` -> `web/` (exclude
   `.git` and `ftp.env`), then commit here. `web/.gitignore` covers the dev
   mirror leftovers (`whale/`, `dev/`).
