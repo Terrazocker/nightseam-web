@@ -1,5 +1,10 @@
 [
  {
+  "version": "0.6.9",
+  "date": "2026-09-10",
+  "summary": "Accuracy, safety and consistency release. Object positions were off by up to half a degree (a precession bug, fixed in all sky-calculation engines), importing a setup file can no longer read or write files outside your own archive, and the clear-window times no longer include twilight. The web planner now resolves the same night, moon and filter scores as the desktop in any time zone. This build also brings the desktop app up to date with every web change since 0.6.0."
+ },
+ {
   "version": "0.6.8",
   "date": "2026-09-10",
   "summary": "Web: internal stylesheet version bump so the 0.6.7 layout reaches visitors who still had the old file cached."
