@@ -92,6 +92,15 @@ tests - do not regress them:
   `check_js.py`) parses all 25 shipped modules with `node --check` via temporary
   `.mjs` copies; it skips cleanly without node. It exists because a duplicate
   `const` once reached the tree unseen.
+- **Encoding is checked**: `scripts/check_encoding.py` (wired into `check_js.py`,
+  pinned by `tests/test_encoding.py`) rejects non-UTF8 files, UTF-8 BOMs, C1
+  control characters and cp1252 mojibake clusters in shipped text. 0.6.9
+  committed `web/app.js` + `web/horizon.js` after a tool had read them as cp1252
+  and written them back as UTF-8: every em dash, degree sign and emoji shipped as
+  its three-glyph mojibake cluster and the LIVE web app showed garble in the
+  catalog type/size columns, the rig picker and the horizon editor. The
+  ASCII-only character stream stayed byte-identical, so no other check - and no
+  test - could see it. Repaired in `d34c3f5` (tokens bumped, `/astro` redeployed).
 - **Release validation is two-sided**: `scripts/check_release.py` verifies the
   staged zip's real sha256/size against `version.json`, the zip's exe against the
   staged exe, `ns-version.js`'s url, the changelog schema, and the git-describe
@@ -99,7 +108,7 @@ tests - do not regress them:
 - **Tests never touch the user profile**: `tests/conftest.py` redirects
   `paths.default_archive_dir()` into `logs/` for every test - a test that forgot
   to set `image_dir` used to write into the real `~/Documents/NightSeam Images`.
-- **Current test count: 464** (`python -m pytest tests/ -q`, full access).
+- **Current test count: 465** (`python -m pytest tests/ -q`, full access).
 
 ## Context discipline (read before starting work)
 
@@ -144,7 +153,7 @@ over the fuller commands below wherever they differ:
     when both sockets set SO_REUSEADDR.
   - If 8407 is briefly taken at boot, `free_port()` silently picks a RANDOM
     port (written to instance.json) - the app runs, just not on 8407.
-- Tests: `python -m pytest tests/` - 464 tests, run in ~75 s (pure-function
+- Tests: `python -m pytest tests/` - 465 tests, run in ~75 s (pure-function
   tests are fast; `tests/test_api.py` spins up real `create_app()` instances
   via fastapi TestClient/httpx). Single test:
   `python -m pytest tests/test_astro.py -k name`. API tests use
@@ -155,7 +164,7 @@ over the fuller commands below wherever they differ:
   pytest uses for the basetemp) creates an owner-SID-only DACL that the
   sandbox's restricted token cannot re-read, so every tmp_path test errors
   with PermissionError - an environment artifact, NOT a code failure. Run
-  the suite with full access / in a normal shell: 464/464 pass (~75 s).
+  the suite with full access / in a normal shell: 465/465 pass (~75 s).
   Careful with the `client` fixture: it must leave `data/panos` in place
   under the tmp dir it patches in, because the pano upload route writes
   there without mkdir'ing (the real `data_dir()` creates it). Without that
@@ -228,9 +237,9 @@ over the fuller commands below wherever they differ:
     `web_fetch` on `/astro/version.json` and `/astro/index.html` as the public
     end-to-end check. (For 0.6.1 all five changed files matched byte-for-byte.)
 - No Python linter/formatter configured. The JS "lint" is three scripts that
-  must pass after touching `static/` OR `web/`; `python scripts/check_js.py`
-  runs all three and exits non-zero on hard failures (recommended one-command
-  check). Both JS graphs are covered - namespace and bare side-effect imports
+  must pass after touching `static/` OR `web/` (plus the encoding guard below);
+  `python scripts/check_js.py` runs all of them and exits non-zero on hard
+  failures (recommended one-command check). Both JS graphs are covered - namespace and bare side-effect imports
   included (a wrong path there kills the module graph just like a bad named
   import), and `export let/var/class` counts as an export:
   - `python scripts/check_js_imports.py` - broken relative ES-module imports and named imports missing from the target's exports (hard failures)
@@ -580,8 +589,8 @@ over the fuller commands below wherever they differ:
   `app.js?v=N` and `web/app.js` carries a `?v=` on each import
   (`astro.js`, `horizon.js`, `webstore.js`, `dragwin.js`). Bump the token of
   every module whose BEHAVIOUR changed (comment-only edits do not need it) or
-  returning visitors keep the old file. Current: `app.js?v=27`,
-  `horizon.js?v=12`, `webstore.js?v=5`, `astro.js?v=4`, `dragwin.js?v=1`,
+  returning visitors keep the old file. Current: `app.js?v=28`,
+  `horizon.js?v=13`, `webstore.js?v=5`, `astro.js?v=4`, `dragwin.js?v=1`,
   plus `style.css?v=10` / `themes.css?v=2` in `web/index.html`.
   **A token bump is also the cure for a browser that cached a BAD pairing**: an
   `app.js` that calls a module member the cached dependency does not have stays
@@ -643,11 +652,14 @@ over the fuller commands below wherever they differ:
   previous rule only shrank via padding above 22px, and its CSS fix shipped
   without a token bump — if a CSS-only fix "does nothing" for a returning
   visitor, that is a stale `style.css`, so always bump its `?v=`.
-- **State after the v0.6.8 web deploy (2026-09-10) - read before the next
-  release**: `web/version.json` was baked at the tag `v0.6.8`, so `/astro`
-  reports 0.6.8; ONE docs-only commit now sits on top of that tag (see the
-  DESKTOP note below), which is why the next release has to be tagged
-  `v0.6.9`. The
+- **State after the v0.6.9 release (2026-09-10) - read before the next
+  release**: 0.6.9 shipped BOTH sides (desktop exe + web app) and
+  `web/version.json` is baked at that tag, so `/astro` reports 0.6.9. TWO
+  commits sit on top of the tag - the docs/changelog commit and `d34c3f5`,
+  which repaired the cp1252-mangled `web/app.js` + `web/horizon.js` and was
+  REDEPLOYED to `/astro` with bumped tokens (see the encoding bullet above) -
+  so the next release is tagged `v0.6.10`, with `web/version.json` re-baked at
+  it. The
   0.6.2-0.6.8 arc: 0.6.2 hotfixed the 0.6.1 mid-deploy breakage, 0.6.3 hid the
   popularity stat, 0.6.4 made the rig presets a picker (empty default), 0.6.5
   removed the last popularity affordances (chip + desktop sort mode), 0.6.6
@@ -659,21 +671,14 @@ over the fuller commands below wherever they differ:
   next to Site in both apps (0.6.8 only bumped `style.css?v=9` -> `v=10`, which
   should have gone into 0.6.7 with the CSS - a good reminder to bump the token
   in the SAME commit as the CSS edit).
-  The DESKTOP side is still 0.6.0 EVERYWHERE (`dist\NightSeam.exe`,
-  `dist\release\*`, `/downloads/*` incl. `ns-version.js`, landing page, and no
-  curated changelog entry) - deliberate, because no new exe was built, so
-  installed apps correctly see no update. HEAD sat exactly on `v0.6.8` (the
-  clean `git describe --dirty` window `make_release.py` needs) only until the
-  post-tag docs commit that added the `git.exe (0xc0000142)` note; that window
-  is therefore SPENT. Build the desktop as the NEXT tag (`v0.6.9`) instead of
-  accepting a `0.6.8-1-g<sha>` version string in the exe, the zip name and
-  `/downloads/version.json`, and keep the order: `build.ps1` ->
+  The DESKTOP 0.6.0 gap is CLOSED: `v0.6.9` built and published the exe
+  (`dist\NightSeam.exe`, `dist\release\*`, `/downloads/*` incl.
+  `ns-version.js`) with the curated changelog entry, in the order `build.ps1` ->
   `scripts/make_release.py` -> upload `dist/release/*` to `/downloads/` ->
-  `build_changelog.py` -> commit `landing/changelog.json` separately. A desktop
-  release was already overdue independently: `static/` changed in every 0.6.1 -
-  0.6.7 step (sparkle out, rig picker, popularity affordances gone,
-  `#rigSelect` in the topbar, the `[hidden]` CSS fix), so the 0.6.0 exe predates
-  all of it.
+  `build_changelog.py` -> commit `landing/changelog.json` separately. Keep that
+  order: `git describe --dirty` is what the exe, the zip name and
+  `/downloads/version.json` report, so any uncommitted change at bake time
+  leaks into the published version.
   **Process lesson:** write the session notes BEFORE tagging while a release is
   still pending - the 0.6.1 notes landed as a post-tag commit and cost exactly
   that clean window.
