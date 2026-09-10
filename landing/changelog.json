@@ -1,5 +1,10 @@
 [
  {
+  "version": "0.5.12",
+  "date": "2026-09-10",
+  "summary": "Reliability release: a failed backup import can no longer wipe your data, planning now resolves the correct night at every location (timezone fix), safer panorama handling, and many small fixes in both apps."
+ },
+ {
   "version": "0.5.11",
   "date": "2026-09-02",
   "summary": "Targets are ranked with community popularity as a silent tiebreaker, and moon-aware scoring now accounts for the Moon's phase, your filters and your sky brightness (Bortle class)."

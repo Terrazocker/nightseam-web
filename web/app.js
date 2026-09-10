@@ -8,8 +8,8 @@
  *   • Settings — sites, rigs, custom targets, backup/restore (webstore.js)
  * All sky math runs client-side (astro.js, Meeus algorithms).
  */
-import * as E from './astro.js?v=3';
-import * as Hor from './horizon.js?v=10';
+import * as E from './astro.js?v=4';
+import * as Hor from './horizon.js?v=11';
 import * as WS from './webstore.js?v=1';
 import { initDragWindows } from './dragwin.js?v=1';
 
