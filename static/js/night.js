@@ -30,7 +30,15 @@ async function doLoadNight() {
     const N = await api("/api/night?" + q, { signal: ctl.signal, silent: true });
     if (ctl !== _nightCtl) return;              // superseded meanwhile
 
-    if (N.objects.some(o => o.adv)) await synthesizeAdvancedTracks(N);
+    // The synthesis awaits for seconds in advanced mode, so the supersede check
+    // has to be repeated AFTER it: without this, a load superseded while
+    // synthesising still committed its payload below and repainted every view
+    // with the previous date's data (and cleared busy while the newer load was
+    // still in flight).
+    if (N.objects.some(o => o.adv)) {
+      await synthesizeAdvancedTracks(N);
+      if (ctl !== _nightCtl) return;            // superseded during synthesis
+    }
     S.night = N;
     const n = N.timeline.n;
     const nowIdx = timeIndexFor(new Date());
@@ -39,10 +47,14 @@ async function doLoadNight() {
 
     // views derive their own flags/scores from the raw tracks
     document.dispatchEvent(new CustomEvent("night:loaded"));
-    setBusy(false);
+    if (ctl === _nightCtl) setBusy(false);      // only the current load clears it
   } catch (err) {
     if (err.name === "AbortError") return;      // superseded
-    if (ctl === _nightCtl) setBusy(false);
+    // A superseded load must not report its failure either: the newer request
+    // is still in flight (or has already succeeded) and reports the real
+    // problem itself - a stale toast only confuses the user.
+    if (ctl !== _nightCtl) return;
+    setBusy(false);
     toast("Night calculation failed: " + err.message);
     console.error(err);
   }

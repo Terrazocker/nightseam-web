@@ -146,6 +146,111 @@ def test_import_traversal_paths_are_dropped(db, tmp_path):
     assert not (pdir / ".." / "escape.jpg").exists()
 
 
+@pytest.mark.parametrize("evil", [
+    "../escape.jpg",
+    "..\\escape.jpg",
+    "sub/../../escape.jpg",
+    "/etc/passwd",
+    "C:/Windows/win.ini",
+    "C:escape.jpg",
+    "\\\\server\\share\\evil.jpg",
+])
+def test_import_drops_escaping_records_entirely(db, tmp_path, evil):
+    """The DB must never even *store* an escaping path.
+
+    Regression: the import refused to write the file but still inserted the
+    row, so `/api/panorama/{id}/image` served the target file long after the
+    import - a crafted setup ZIP was an arbitrary-file-read primitive.
+    """
+    (tmp_path / "data" / "panos").mkdir(parents=True)
+    setup = {"app": "NightSeam", "sites": [], "rigs": [], "panoramas": [
+        {"id": "pX", "name": "evil", "file": evil}],
+        "customs": [], "images": [
+            {"id": 1, "file": evil, "object_name": "evil"}]}
+    summary = apply_import_zip(db, _zip_with("NightSeam", setup))
+
+    assert summary["panoramas"] == 0        # not restored ...
+    assert summary["images"] == 0
+    assert db.panoramas() == []             # ... and not stored either
+    assert db.images() == []
+
+
+def test_import_normalizes_legitimate_subfolder_paths(db, tmp_path):
+    """Safe paths keep working - and are canonicalized (separators, ./ )."""
+    (tmp_path / "data" / "panos").mkdir(parents=True)
+    setup = {"app": "NightSeam", "sites": [], "rigs": [], "panoramas": [
+        {"id": "ok", "name": "fine", "file": ".\\sub//pano.jpg"}],
+        "customs": [], "images": [
+            {"id": 1, "file": "M 31/lights\\m31.fit", "object_name": "M 31"}]}
+    summary = apply_import_zip(db, _zip_with("NightSeam", setup,
+                                            files={"panos/sub/pano.jpg": b"jpeg"}))
+    assert summary["panoramas"] == 1 and summary["images"] == 1
+    assert db.panoramas()[0]["file"] == "sub/pano.jpg"
+    assert db.images()[0]["file"] == "M 31/lights/m31.fit"
+    assert (tmp_path / "data" / "panos" / "sub" / "pano.jpg").read_bytes() == b"jpeg"
+
+
+@pytest.mark.parametrize("evil_id", [
+    "..\\evil", "../evil", "sub/../../evil", ".\\evil", "C:evil",
+    "evil\x00", "", "x" * 80, "-leading-dash",
+])
+def test_import_drops_panorama_records_with_ids_that_could_act_as_paths(
+        db, tmp_path, evil_id):
+    """Regression (post-remediation review): `POST /api/panorama/{pid}/image`
+    interpolates the id into a FILENAME, so an id is a path input just like
+    `file` is - a crafted bundle must not be able to plant one."""
+    (tmp_path / "data" / "panos").mkdir(parents=True)
+    setup = {"app": "NightSeam", "sites": [], "rigs": [], "panoramas": [
+        {"id": evil_id, "name": "evil", "file": "ok.jpg"}],
+        "customs": [], "images": []}
+    summary = apply_import_zip(db, _zip_with("NightSeam", setup,
+                                            files={"panos/ok.jpg": b"jpeg"}))
+    assert summary["panoramas"] == 0
+    assert db.panoramas() == []
+
+
+def test_import_cannot_redirect_the_archive_root(db, tmp_path):
+    """Regression (post-remediation review): `settings.image_dir` came from the
+    ZIP and was stored verbatim, so the restore then wrote `library/*` into an
+    attacker-chosen directory (arbitrary name, extension and content) and
+    `/api/export` read that directory back out - a crafted "setup export" was
+    an arbitrary-write/arbitrary-read primitive. The documented behaviour is
+    that the library is restored into the CURRENTLY CONFIGURED archive, so the
+    imported value is ignored and reported."""
+    attacker = tmp_path / "attacker_dir"
+    setup = {
+        "app": "NightSeam",
+        "settings": {"image_dir": str(attacker), "bortle": 7},
+        "sites": [], "rigs": [], "panoramas": [], "customs": [],
+        "images": [{"id": 1, "file": "sub/pwn.bat", "object_name": "x"}],
+    }
+    summary = apply_import_zip(
+        db, _zip_with("NightSeam", setup, files={"library/sub/pwn.bat": b"@echo PWNED"}))
+
+    assert not attacker.exists(), "the imported image_dir was used as a root"
+    assert db.setting("image_dir") == str(tmp_path / "archive")
+    assert summary["image_dir_ignored"] == str(attacker)
+    assert summary["library_files"] == 1
+    # the file went into the CONFIGURED archive instead
+    restored = tmp_path / "archive" / "sub" / "pwn.bat"
+    assert restored.read_bytes() == b"@echo PWNED"
+    assert db.images()[0]["file"] == "sub/pwn.bat"
+    # other settings from the bundle still apply
+    assert db.setting("bortle") == 7
+
+
+def test_import_without_image_dir_keeps_the_configured_archive(db, tmp_path):
+    """A bundle that omits image_dir must not reset the user's archive root."""
+    db.set_setting("image_dir", str(tmp_path / "mine"))
+    setup = {"app": "NightSeam", "settings": {}, "sites": [], "rigs": [],
+             "panoramas": [], "customs": [],
+             "images": [{"id": 1, "file": "x.fit", "object_name": "x"}]}
+    apply_import_zip(db, _zip_with("NightSeam", setup,
+                                  files={"library/x.fit": b"FITS"}))
+    assert db.setting("image_dir") == str(tmp_path / "mine")
+    assert (tmp_path / "mine" / "x.fit").read_bytes() == b"FITS"
+
+
 def test_failed_import_rolls_back_everything(db):
     """A bundle that blows up mid-restore must leave the existing data intact.
 

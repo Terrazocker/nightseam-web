@@ -1,7 +1,9 @@
-"""One-command JS health check: runs the three static/js checkers.
+"""One-command JS health check: runs the four static/js checkers.
 
-Hard failures (broken imports, missing DOM ids) exit non-zero; the defs
-checker stays review-only (it is heuristic). Usage: python scripts/check_js.py
+Hard failures (broken imports, missing DOM ids, syntax errors) exit non-zero;
+the defs checker stays review-only (it is heuristic) and the syntax checker
+skips itself when node is not installed.
+Usage: python scripts/check_js.py
 """
 
 from __future__ import annotations
@@ -23,6 +25,7 @@ def main() -> int:
     hard = 0
     hard += _run("check_js_imports")
     hard += _run("check_dom_ids")
+    hard += _run("check_js_syntax")  # parses the modules (skips without node)
     _run("check_js_defs")            # heuristic - candidates only
     print("check_js:", "FAIL" if hard else "OK")
     return 1 if hard else 0

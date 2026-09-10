@@ -1,37 +1,180 @@
 # Builds NightSeam.exe with PyInstaller in an isolated venv.
+#
+#   powershell -ExecutionPolicy Bypass -File build.ps1 [-AllowDirty]
+#
+# The exe's version comes from ONE authoritative source:
+#   git describe --tags --always --dirty
+# A dirty tree or a HEAD that is not exactly a tag makes the build REFUSE to
+# bake a version (it would claim a clean release for uncommitted work); pass
+# -AllowDirty to build such a snapshot on purpose - the baked version then
+# keeps its '-dirty' suffix / commit suffix.
+param(
+    [switch]$AllowDirty
+)
+
 $ErrorActionPreference = "Stop"
 Set-Location $PSScriptRoot
 
-if (-not (Test-Path ".venv-build")) {
-    python -m venv .venv-build
-}
-$py = ".\.venv-build\Scripts\python.exe"
+$venv = ".venv-build"
+$py = "$venv\Scripts\python.exe"
+$devReqs = "requirements-dev.txt"
 
-& $py -m pip install --upgrade pip wheel --quiet
-& $py -m pip install -r requirements-dev.txt --quiet
+function Invoke-Native {
+    # Runs a native command and fails LOUDLY on a non-zero exit code. The pip
+    # steps used to be unchecked, so a failed install produced a build from a
+    # stale/partial venv without any message.
+    param([string]$Label, [string]$Exe, [string[]]$ExeArgs)
+    & $Exe @ExeArgs
+    if ($LASTEXITCODE -ne 0) {
+        throw "$Label failed (exit code $LASTEXITCODE)"
+    }
+}
+
+# --- build venv (reused, but verified) ------------------------------------
+if (-not (Test-Path $py)) {
+    if (Test-Path $venv) {
+        # half-created, half-deleted or copied from another checkout: it is
+        # gitignored and fully regenerable, so start over instead of limping
+        Write-Host "WARNING: $venv has no usable interpreter - recreating it." -ForegroundColor Yellow
+        Remove-Item -Recurse -Force $venv
+    }
+    Write-Host "Creating $venv ..."
+    Invoke-Native "python -m venv $venv" "python" @("-m", "venv", $venv)
+    if (-not (Test-Path $py)) { throw "python -m venv produced no $py" }
+}
+
+$cfg = Join-Path $venv "pyvenv.cfg"
+if (Test-Path $cfg) {
+    $cfgText = Get-Content $cfg -Raw
+    if ($cfgText -match "(?m)^\s*command\s*=\s*(.+)$") {
+        # an absolute path token that names this venv but is NOT this checkout
+        # means the venv came from somewhere else (e.g. the deprecated
+        # <archive>\Object-Astro\.venv-build) and is probably incomplete
+        foreach ($tok in ($Matches[1].Trim() -split '\s+')) {
+            if ($tok -like '*:*' -and $tok -like "*$venv*" -and $tok -notlike "$PSScriptRoot*") {
+                Write-Host "WARNING: $venv was created elsewhere ($tok)." -ForegroundColor Yellow
+                Write-Host "         A venv moved from another checkout often misses packages;" -ForegroundColor Yellow
+                Write-Host "         the dependency check below repairs it, otherwise delete $venv." -ForegroundColor Yellow
+            }
+        }
+    }
+}
+
+# --- dependencies: install when incomplete or when the requirement files moved
+$reqSig = ""
+foreach ($f in @("requirements.txt", $devReqs)) {
+    $item = Get-Item $f
+    $reqSig += ("{0}={1}/{2};" -f $item.Name, $item.Length, $item.LastWriteTimeUtc.Ticks)
+}
+$sigFile = Join-Path $venv ".deps.sig"
+$installedSig = ""
+if (Test-Path $sigFile) { $installedSig = (Get-Content $sigFile -Raw).Trim() }
+
+# import names the requirement files must provide (package name != import name):
+#   fastapi uvicorn python-multipart pywebview  -> requirements.txt
+#   pytest httpx pyinstaller Pillow             -> requirements-dev.txt
+$depsProbe = @'
+import importlib.util, sys
+mods = ["fastapi", "uvicorn", "multipart", "webview",
+        "PyInstaller", "PIL", "pytest", "httpx"]
+missing = []
+for name in mods:
+    try:
+        if importlib.util.find_spec(name) is None:
+            missing.append(name)
+    except Exception:
+        missing.append(name)
+print("MISSING:" + ",".join(missing))
+sys.exit(1 if missing else 0)
+'@
+# written to a file instead of `python -c`: no command-line quoting to get wrong
+$probeFile = Join-Path $venv ".deps_probe.py"
+Set-Content -Path $probeFile -Value $depsProbe -Encoding ascii
+
+function Get-MissingModules {
+    # stdout is captured into a variable - never piped into a cmdlet (pipe
+    # creation is denied under the DSH sandbox)
+    $out = & $py $probeFile
+    $rc = $LASTEXITCODE
+    if ($rc -ne 0 -and $rc -ne 1) { return @("dependency probe failed (exit $rc)") }
+    $line = @($out)[0]
+    if (-not $line) { return @("dependency probe printed nothing (exit $rc)") }
+    $text = "$line".Trim()
+    if (-not $text.StartsWith("MISSING:")) { return @("unreadable probe output: $text") }
+    $rest = $text.Substring("MISSING:".Length)
+    if (-not $rest) { return @() }
+    return @($rest.Split(","))
+}
+
+$missing = @(Get-MissingModules)
+if ($missing.Count -gt 0 -or $reqSig -ne $installedSig) {
+    if ($missing.Count -gt 0) {
+        Write-Host "Build venv is missing: $($missing -join ', ')" -ForegroundColor Yellow
+    } else {
+        Write-Host "Requirements changed since the last install." -ForegroundColor Yellow
+    }
+    Write-Host "Installing dependencies into $venv (this can take minutes; with no"
+    Write-Host "network access pip may stall - Ctrl+C and fix the venv by hand then)."
+    Invoke-Native "pip install --upgrade pip wheel" $py @("-m", "pip", "install", "--upgrade", "pip", "wheel", "--quiet")
+    Invoke-Native "pip install -r $devReqs" $py @("-m", "pip", "install", "-r", $devReqs, "--quiet")
+
+    $missing = @(Get-MissingModules)
+    if ($missing.Count -gt 0) {
+        throw ("dependencies are STILL missing after 'pip install -r $devReqs': " +
+               ($missing -join ", ") + ". The build would run against a partial " +
+               "venv, so it is stopped here. Delete $venv and re-run once the " +
+               "network is available.")
+    }
+    Set-Content -Path $sigFile -Value $reqSig -Encoding ascii
+} else {
+    Write-Host "Build venv OK - dependencies present and unchanged."
+}
 
 # make sure no running instance locks the output file
 Get-Process NightSeam -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
 Start-Sleep -Milliseconds 500
 
-# Bake the current git version into the frozen app (app/_version_baked.py is gitignored).
-# The bake uses `--dirty` so a build from uncommitted work can never silently claim a
-# clean tag (AGENTS.md: "Tag BEFORE rebuilding"). Warn loudly when the tree is dirty
-# or HEAD is not exactly a tag - the baked version stays truthful either way.
-# NOTE: run git through `cmd /c ... 2>nul` so its stderr can never trip
-# $ErrorActionPreference = "Stop" (a PS 5.1 native-stderr kill).
-$dirtyCount = ((& cmd /c "git status --porcelain 2>nul") | Measure-Object).Count
-if ($dirtyCount -gt 0) {
-    Write-Host "WARNING: working tree is dirty ($dirtyCount changed file(s)) - baked version will end in '-dirty'." -ForegroundColor Yellow
+# --- bake the authoritative version ---------------------------------------
+# git output is captured with `cmd /c ... 2>nul` into a VARIABLE. Never pipe a
+# native command's stdout into a PowerShell cmdlet here: '| Measure-Object' /
+# '| Select-Object' dies with a pipe-denied error under the DSH sandbox, and the
+# build then silently baked the fallback version 'dev'.
+$describeLines = @(& cmd /c "git describe --tags --always --dirty 2>nul")
+if ($LASTEXITCODE -ne 0 -or $describeLines.Count -lt 1) {
+    throw "git describe --tags --always --dirty produced no version - refusing to bake a guessed one (run the build from a git checkout)."
 }
+$describe = "$($describeLines[0])".Trim()
+if (-not $describe) {
+    throw "git describe --tags --always --dirty produced an empty version - refusing to bake a guessed one."
+}
+
+$changed = @(& cmd /c "git status --porcelain 2>nul")
+$dirtyTree = $describe.EndsWith("-dirty")
 & cmd /c "git describe --tags --exact-match HEAD >nul 2>nul"
-if ($LASTEXITCODE -ne 0) {
-    Write-Host "WARNING: HEAD is not exactly a git tag - baked version will carry a commit suffix (and/or '-dirty')." -ForegroundColor Yellow
+$onTag = ($LASTEXITCODE -eq 0)
+
+if ($dirtyTree -or (-not $onTag)) {
+    $reasons = @()
+    if ($dirtyTree) { $reasons += "the working tree is dirty ($($changed.Count) changed file(s))" }
+    if (-not $onTag) { $reasons += "HEAD is not exactly a git tag" }
+    $why = $reasons -join " and "
+    $ver = $describe.TrimStart("v")
+    if (-not $AllowDirty) {
+        throw ("refusing to bake version '$ver': $why. Commit and tag first " +
+               "(AGENTS.md: 'Tag BEFORE rebuilding'), or re-run with " +
+               "-AllowDirty to build a snapshot - it stays labelled '$ver', " +
+               "never a clean tag.")
+    }
+    Write-Host "WARNING: $why - baking '$ver' anyway (-AllowDirty)." -ForegroundColor Yellow
 }
-$ver = ((& cmd /c "git describe --tags --always --dirty 2>nul") | Select-Object -First 1).Trim().TrimStart("v")
-if (-not $ver) { $ver = "dev" }
+
+$ver = $describe.TrimStart("v")
 Set-Content -Encoding utf8 "app\_version_baked.py" "BAKED_VERSION = '$ver'"
-Write-Host "Baking version '$ver' into the build"
+$bakedText = Get-Content "app\_version_baked.py" -Raw
+if (-not $bakedText.Contains("BAKED_VERSION = '$ver'")) {
+    throw "the version bake did not stick - app\_version_baked.py does not contain '$ver'"
+}
+Write-Host "Baking version '$ver' into the build" -ForegroundColor Green
 
 & $py -m PyInstaller --clean --noconfirm --onefile --noconsole `
     --name NightSeam `
@@ -49,7 +192,16 @@ if ($LASTEXITCODE -ne 0) {
 
 $exe = Join-Path $PSScriptRoot "dist\NightSeam.exe"
 if (-not (Test-Path $exe)) { throw "Build produced no exe" }
+
+# the exe must be NEWER than the bake, otherwise it cannot carry it
+$bakedItem = Get-Item "app\_version_baked.py"
+$exeItem = Get-Item $exe
+if ($bakedItem.LastWriteTimeUtc -gt $exeItem.LastWriteTimeUtc) {
+    throw "dist\NightSeam.exe ($($exeItem.LastWriteTime)) is older than the bake ($($bakedItem.LastWriteTime)) - the exe does not contain version '$ver'."
+}
+
 Write-Host ""
 Write-Host ("Build finished -> dist\NightSeam.exe  (" +
-    "{0:N1} MB, {1})" -f ((Get-Item $exe).Length / 1MB),
-    (Get-Item $exe).LastWriteTime)
+    "{0:N1} MB, {1}, version {2})" -f ($exeItem.Length / 1MB),
+    $exeItem.LastWriteTime, $ver)
+Write-Host "Next: python scripts/check_release.py, then python scripts/make_release.py"

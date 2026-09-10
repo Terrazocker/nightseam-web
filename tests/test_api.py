@@ -11,6 +11,7 @@ import zipfile
 import pytest
 from fastapi.testclient import TestClient
 
+from app import server as server_mod
 from app.database import Database
 from app.server import create_app
 from _util import make_fits, m31_fits, unresolved_fits
@@ -168,6 +169,44 @@ def test_night_tz_offset_shifts_local_window(client):
     d2 = datetime.fromisoformat(r2["dusk"])
     assert abs((d1 - d2).total_seconds()) == 120 * 60
     assert d1.hour == 18 and d2.hour == 20
+
+
+def test_polar_day_compute_night_pins_the_fallback_window(db):
+    """The polar NULL-dusk path, pinned at the computation layer.
+
+    At 78 N in June the sun never reaches even the civil twilight level, so
+    app/planning.night_window() finds no crossing pair at all and substitutes
+    the documented 20:00 -> 04:00 local fallback. app/nightcalc.compute_night()
+    therefore ships NON-NULL dusk/dawn (not null - the `_iso(dusk) if dusk else
+    None` in its payload would render as "--:--" in both UIs) and must still
+    produce a usable planning payload: a real grid and object tracks on it.
+    """
+    from datetime import datetime as _dt
+
+    from app.nightcalc import compute_night
+    from app.planning import find_twilight, make_sun_alt_fn, night_window
+
+    # the condition the fallback exists for: no crossing at even the civil
+    # level anywhere in the 30 h scan (else this test would silently test
+    # nothing and a latitude/date change would go unnoticed)
+    win = night_window(2026, 6, 21, 120, 78.22, 15.63)
+    assert find_twilight(make_sun_alt_fn(78.22, 15.63), win["t_start"],
+                         win["t_end"], -6.0) == (None, None)
+
+    night = compute_night(db, 78.22, 15.63, 50, "2026-06-21", 120, [])
+    assert night["twilight_level"] == "fallback"
+    assert night["dusk"] is not None and night["dawn"] is not None
+    dusk = _dt.fromisoformat(night["dusk"])
+    dawn = _dt.fromisoformat(night["dawn"])
+    assert (dusk.hour, dusk.minute) == (18, 0)      # 20:00 at UTC+2
+    assert dawn > dusk and (dawn - dusk).total_seconds() > 6 * 3600
+    n = night["timeline"]["n"]
+    assert n > 0 and night["timeline"]["step_min"] == 6
+    assert len(night["sun_alt"]) == len(night["moon_alt"]) == n
+    assert night["objects"], "a polar night must still plan objects"
+    assert all(len(o["alt"]) == n for o in night["objects"])
+    # the fallback window is not a silent "whole day" scan
+    assert n < 24 * 60 / 6
 
 
 def test_object_detail(client):
@@ -600,6 +639,150 @@ def test_preview_endpoint(client):
     assert r.status_code == 404
 
 
+# ------------------------------------------------- stored-path trust (C2)
+
+def _crafted_pano(db, pid: str, file_value: str):
+    """Simulate a database that holds an unsafe path - exactly what a crafted
+    setup ZIP used to plant before import validation existed."""
+    db.conn.execute("INSERT INTO panoramas(id,name,file) VALUES(?,?,?)",
+                    (pid, "crafted", file_value))
+    db.conn.commit()
+
+
+def _crafted_image(db, file_value: str):
+    cur = db.conn.execute(
+        "INSERT INTO images(file,orig_name,object_name,ingested_at) "
+        "VALUES(?,?,?,?)", (file_value, "x.fit", "X", "2026-08-24T00:00:00"))
+    db.conn.commit()
+    return cur.lastrowid
+
+
+@pytest.mark.parametrize("evil", [
+    "../secret.jpg",
+    "..\\secret.jpg",                 # Windows separator
+    "/etc/passwd",
+    "C:/Windows/win.ini",
+])
+def test_pano_image_never_leaves_the_pano_folder(client, db, tmp_path, evil):
+    """Regression: a stored `file` value was joined onto data/panos raw, so a
+    crafted import turned this route into an arbitrary-file-read primitive."""
+    secret = tmp_path / "secret.jpg"
+    secret.write_bytes(b"TOP-SECRET-OUTSIDE-PANOS")
+    _crafted_pano(db, "evilpano", evil)
+
+    r = client.get("/api/panorama/evilpano/image")
+    assert r.status_code == 404
+    assert b"TOP-SECRET" not in r.content
+
+
+def test_pano_image_still_serves_a_legitimate_file(client, db, tmp_path):
+    payload = b"a-real-panorama"
+    (tmp_path / "data" / "panos" / "goodpano.jpg").write_bytes(payload)
+    db.add_panorama("goodpano", "mine", "goodpano.jpg")
+    db.update_panorama("goodpano", active=False)
+
+    r = client.get("/api/panorama/goodpano/image")
+    assert r.status_code == 200
+    assert r.content == payload
+    # the self-heal fallback (db names a variant that is gone) still works
+    db.update_panorama("goodpano", file="goodpano.png")
+    r = client.get("/api/panorama/goodpano/image")
+    assert r.status_code == 200 and r.content == payload
+
+
+def test_pano_delete_cannot_remove_a_file_outside_the_pano_folder(client, db, tmp_path):
+    victim = tmp_path / "victim.jpg"
+    victim.write_bytes(b"keep me")
+    _crafted_pano(db, "evilpano", "../victim.jpg")
+
+    assert client.delete("/api/panorama/evilpano").status_code == 200
+    assert victim.exists(), "a stored path escaped the panorama folder on delete"
+    assert db.get_panorama("evilpano") is None
+
+
+def test_pano_replace_cannot_unlink_a_file_outside_the_pano_folder(client, db, tmp_path):
+    victim = tmp_path / "victim.jpg"
+    victim.write_bytes(b"keep me")
+    _crafted_pano(db, "evilpano", "../victim.jpg")
+
+    r = client.post("/api/panorama/evilpano/image",
+                    files={"file": ("new.jpg", b"new pano", "image/jpeg")})
+    assert r.status_code == 200
+    assert victim.exists(), "the replace path unlinked a file it does not own"
+
+
+def test_image_preview_never_leaves_the_archive(client, db, tmp_path):
+    secret = tmp_path / "secret.fit"
+    secret.write_bytes(m42_light_fits())
+    img_id = _crafted_image(db, "../secret.fit")
+
+    assert client.get(f"/api/images/{img_id}/preview").status_code == 404
+
+
+@pytest.mark.parametrize("evil_id,url_pid,refused", [
+    ("..\\evil", "..%5Cevil", {404}),      # decoded backslash; route matches
+    (".\\evil", ".%5Cevil", {404}),        # '.' + '\' -> temp name escapes
+    ("C:evil", "C%3Aevil", {404}),
+    ("evil\x00", "evil%00", {404}),
+    # the router does not turn %2F into a separator, so these never reach a
+    # handler at all (405 for POST, 404 for the GET route) - equally safe
+    ("../evil", "..%2Fevil", {404, 405}),
+    ("sub/../../evil", "sub%2F..%2F..%2Fevil", {404, 405}),
+])
+def test_pano_routes_refuse_ids_that_could_act_as_paths(client, db, tmp_path,
+                                                        evil_id, url_pid,
+                                                        refused):
+    """Regression (found in post-remediation review): the crop/replace route
+    builds `f"{pid}.{ext}"` and writes it under data/panos, so an id planted by
+    a crafted setup ZIP reached the filesystem - `..\\evil` made the server try
+    to open data/panos/...\\evil.<hex>.upload.tmp (HTTP 500) and `.\\evil` wrote
+    a temp file into data/ itself. Ids that are not plain tokens must be
+    refused on every pid route, before anything path-like is built."""
+    db.conn.execute("INSERT INTO panoramas(id,name,file,active) VALUES(?,?,?,?)",
+                    (evil_id, "crafted", "legit.jpg", 0))
+    db.conn.commit()
+    (tmp_path / "data" / "panos" / "legit.jpg").write_bytes(b"ORIGINAL")
+
+    r = client.post(f"/api/panorama/{url_pid}/image",
+                    files={"file": ("new.jpg", b"ATTACKER-BYTES", "image/jpeg")})
+    assert r.status_code in refused, (evil_id, r.status_code, r.text[:200])
+    assert client.get(f"/api/panorama/{url_pid}/image").status_code in refused
+    assert client.put(f"/api/panorama/{url_pid}",
+                      json={"paint_mode": "sky"}).status_code in refused
+    # deleting stays idempotent (200) when the route matches, and never touches
+    # anything outside panos either way
+    assert client.delete(f"/api/panorama/{url_pid}").status_code in (200, 405)
+
+    # nothing was created next to the panorama folder, and the original file
+    # (and the legitimate picture) is untouched
+    assert sorted(p.name for p in (tmp_path / "data").iterdir()) == ["panos"]
+    assert (tmp_path / "data" / "panos" / "legit.jpg").read_bytes() == b"ORIGINAL"
+    assert not list((tmp_path / "data" / "panos").glob("*.tmp"))
+
+
+def test_pano_replace_still_works_for_a_normal_id(client, db, tmp_path):
+    """The guard must not break the crop tool's normal flow."""
+    pid = client.post("/api/panorama",
+                      files={"file": ("p.jpg", b"first", "image/jpeg")}).json()["id"]
+    r = client.post(f"/api/panorama/{pid}/image",
+                    files={"file": ("p2.jpg", b"SECOND", "image/jpeg")})
+    assert r.status_code == 200
+    assert (tmp_path / "data" / "panos" / f"{pid}.jpg").read_bytes() == b"SECOND"
+    assert client.get(f"/api/panorama/{pid}/image").content == b"SECOND"
+
+
+def test_image_preview_still_serves_an_archived_frame(client, db, tmp_path):
+    """The safe path is unchanged: a normal ingest + preview still works."""
+    client.post("/api/images/ingest",
+                files=[("files", ("m42.fit", m42_light_fits(),
+                                  "application/octet-stream"))])
+    lib = client.get("/api/library").json()
+    m42 = next(o for o in lib["objects"] if o["object_id"] == "m42")
+    img_id = m42["images"][0]["id"]
+    r = client.get(f"/api/images/{img_id}/preview")
+    assert r.status_code == 200 and r.content.startswith(b"\x89PNG")
+
+
 # ------------------------------------------------------------------ bortle
 
 def test_bortle_setting_and_min_alt_default(client):
@@ -662,6 +845,9 @@ def test_paint_mode_roundtrip(client, tmp_path):
         # export -> import preserves the mode and both profiles
         data = client.get("/api/export").content
         db2 = Database(tmp_path / "other.db")
+        # give the second database its own archive: without this the import
+        # restored into the DEFAULT folder (~/Documents/NightSeam Images)
+        db2.set_setting("image_dir", str(tmp_path / "archive2"))
         with TestClient(create_app(db2, prefetch=False)) as c2:
             c2.post("/api/import", files={
                 "file": ("b.zip", data, "application/zip")})
@@ -773,6 +959,8 @@ def test_export_import_roundtrip(client, tmp_path):
 
     # fresh database + app -> import
     db2 = Database(tmp_path / "other.db")
+    # own archive: the default would be the developer's real Documents folder
+    db2.set_setting("image_dir", str(tmp_path / "archive2"))
     with TestClient(create_app(db2, prefetch=False)) as c2:
         r = c2.post("/api/import", files={
             "file": ("backup.zip", data, "application/zip")})
@@ -794,3 +982,169 @@ def test_import_rejects_garbage(client):
     r = client.post("/api/import", files={
         "file": ("junk.zip", b"not a zip at all", "application/zip")})
     assert r.status_code == 400
+
+
+# -------------------------------------------------- request guard (middleware)
+# The guard is what stops any website the user visits from reaching this local
+# API (a no-cors request to 127.0.0.1 is not blocked by CORS). It covers EVERY
+# route, so it is exercised here on a harmless GET and on a state-changing POST.
+
+def test_cross_site_requests_are_rejected(client):
+    assert client.get("/api/state").status_code == 200
+
+    r = client.get("/api/state", headers={"Sec-Fetch-Site": "cross-site"})
+    assert r.status_code == 403 and "cross-site" in r.json()["detail"]
+
+    r = client.post("/api/settings", json={"min_useful_alt": 42.0},
+                    headers={"Sec-Fetch-Site": "cross-site"})
+    assert r.status_code == 403
+    # ... and the rejected request really did not change anything
+    assert client.get("/api/state").json()["min_useful_alt"] != 42.0
+
+    r = client.get("/api/state", headers={"Origin": "http://evil.example"})
+    assert r.status_code == 403
+
+    # same-origin and non-browser callers (no headers) stay allowed
+    assert client.get("/api/state",
+                      headers={"Sec-Fetch-Site": "same-origin"}).status_code == 200
+    assert client.get("/api/state",
+                      headers={"Origin": "http://testserver"}).status_code == 200
+
+
+def test_foreign_host_header_is_rejected(client):
+    r = client.get("/api/state", headers={"Host": "evil.example"})
+    assert r.status_code == 403 and r.json()["detail"] == "forbidden host"
+
+
+# ------------------------------------------------------------- upload limits
+# The per-file cap inside ingest can only run once Starlette has spooled the
+# whole body, so the middleware rejects an oversized request from its declared
+# length first. The limits are module constants so the mechanism is testable
+# without sending gigabytes.
+
+def test_oversized_request_body_is_rejected_before_parsing(client, monkeypatch):
+    """A 413 + "too large" alone does not say WHERE the request died: the
+    route's own per-file cap (60 MB, inside the handler) produces a similar
+    body. This proves the rejection happened BEFORE the handler: the streaming
+    drain the route calls is replaced by a recorder, the declared request cap is
+    set to 3 MB, and the reply must be the middleware's REQUEST-cap wording
+    ("... per request", which the per-file cap never emits) with no recorded
+    call and no panorama row."""
+    cap = 3 * 1024 * 1024
+    calls = []
+
+    async def _record(*args, **kwargs):
+        calls.append((args, kwargs))
+
+    with monkeypatch.context() as m:
+        m.setitem(server_mod._MAX_REQUEST_BYTES, "/api/panorama", cap)
+        m.setattr(server_mod, "_drain_upload", _record)
+        r = client.post("/api/panorama",
+                        files={"file": ("big.jpg", b"x" * (cap + 1),
+                                        "image/jpeg")})
+    assert r.status_code == 413, r.text
+    # distinct from the per-file message: f"Image too large (max 60 MB)"
+    assert r.json()["detail"] == "upload too large (max 3 MB per request)"
+    assert calls == [], "the handler ran despite the oversized request"
+    assert client.get("/api/panoramas").json() == [], "a panorama was stored"
+
+    # a request under the cap still goes through the real handler
+    r = client.post("/api/panorama",
+                    files={"file": ("ok.jpg", b"x" * 64, "image/jpeg")})
+    assert r.status_code == 200
+    client.delete(f"/api/panorama/{r.json()['id']}")
+
+
+def test_too_many_files_in_one_ingest_request(client, monkeypatch):
+    monkeypatch.setattr("app.server.MAX_FILES_PER_REQUEST", 2)
+    files = [("files", (f"m{i}.fit", m31_fits(), "application/octet-stream"))
+             for i in range(3)]
+    r = client.post("/api/images/ingest", files=files)
+    assert r.status_code == 400
+    assert "too many files" in r.json()["detail"]
+    monkeypatch.setattr("app.server.MAX_FILES_PER_REQUEST", 8)
+    r = client.post("/api/images/ingest", files=files[:2])
+    assert r.status_code == 200
+
+
+# --------------------------------------------------- panorama profile shapes
+
+def test_panorama_profile_length_and_types_are_validated(client):
+    pid = client.post("/api/panorama",
+                      files={"file": ("p.jpg", b"fake jpeg", "image/jpeg")}
+                      ).json()["id"]
+    try:
+        # a short profile used to be stored and then failed OPEN at read time
+        assert client.put(f"/api/panorama/{pid}",
+                          json={"profile": [10.0] * 719}).status_code == 400
+        assert client.put(f"/api/panorama/{pid}",
+                          json={"profile_top": [10.0] * 721}).status_code == 400
+        # non-numeric values used to make /api/night return 500 forever
+        assert client.put(f"/api/panorama/{pid}",
+                          json={"profile": ["x"] * 720}).status_code == 400
+        assert client.put(f"/api/panorama/{pid}",
+                          json={"profile": [True] * 720}).status_code == 400
+        # empty (clear) and exactly 720 finite numbers are fine
+        assert client.put(f"/api/panorama/{pid}",
+                          json={"profile": [], "profile_top": []}).status_code == 200
+        assert client.put(f"/api/panorama/{pid}",
+                          json={"profile": [12.5] * 720}).status_code == 200
+        assert client.post("/api/settings",
+                           json={"active_pano_id": pid}).status_code == 200
+        add_site(client)
+        assert client.get("/api/night", params={
+            "date": _DATE, "tz_offset_min": _TZ}).status_code == 200
+    finally:
+        client.delete(f"/api/panorama/{pid}")
+
+
+# ------------------------------------------------------------- site validation
+
+def test_site_coordinates_are_validated(client):
+    for body in ({"name": "x", "lat": 999, "lon": 0},
+                 {"name": "x", "lat": 0, "lon": 200},
+                 {"name": "x", "lat": 0, "lon": 0, "elev": 99999}):
+        r = client.post("/api/sites", json=body)
+        assert r.status_code == 400, body
+    assert client.get("/api/sites").json() == []
+    sid = add_site(client)
+    assert client.put(f"/api/sites/{sid}",
+                      json={"name": "x", "lat": 91, "lon": 0}).status_code == 400
+
+
+def test_deleting_the_active_site_keeps_planning_usable(client):
+    """Regression: the active pointer dangled, so /api/night answered 400 with
+    no way back through the UI."""
+    first = add_site(client, "First")
+    second = add_site(client, "Second")
+    assert client.get("/api/state").json()["active_site_id"] == first
+
+    client.post("/api/settings", json={"active_site_id": second})
+    assert client.delete(f"/api/sites/{second}").status_code == 200
+    st = client.get("/api/state").json()
+    assert st["active_site_id"] == first
+    assert client.get("/api/night", params={
+        "date": _DATE, "tz_offset_min": _TZ}).status_code == 200
+
+    # deleting every site clears the pointer (and planning reports it clearly)
+    assert client.delete(f"/api/sites/{first}").status_code == 200
+    assert client.get("/api/state").json()["active_site_id"] is None
+    r = client.get("/api/night", params={"date": _DATE, "tz_offset_min": _TZ})
+    assert r.status_code == 400
+    # ... and adding a new site repairs it without touching the files
+    again = add_site(client, "Again")
+    assert client.get("/api/state").json()["active_site_id"] == again
+    assert client.get("/api/night", params={
+        "date": _DATE, "tz_offset_min": _TZ}).status_code == 200
+
+
+# ------------------------------------------------------------ UI cache policy
+
+def test_ui_assets_are_never_cached(client):
+    """A stale themes.css/style.css next to a fresh index.html breaks the UI -
+    themes.css was missing from the no-store list."""
+    for path in ("/", "/index.html", "/style.css", "/themes.css",
+                 "/favicon.ico", "/js/util.js"):
+        r = client.get(path)
+        assert r.status_code == 200, path
+        assert r.headers.get("cache-control") == "no-store", path

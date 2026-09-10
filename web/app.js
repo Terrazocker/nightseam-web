@@ -1,11 +1,11 @@
 /*
- * NightSeam Web — static in-browser night-planning app.
+ * NightSeam Web â€” static in-browser night-planning app.
  * Port of NightSeam (<archive>\Object-Astro) core features:
- *   • Tonight  — dark time, moon phase, ranked best targets
- *   • Sky map  — live polar all-dome chart with sun/moon/all catalog objects
- *   • Catalog  — search/sort across 12,116 objects (Messier + OpenNGC)
- *   • Detail   — meta + tonight rise/transit/set + altitude chart
- *   • Settings — sites, rigs, custom targets, backup/restore (webstore.js)
+ *   â€¢ Tonight  â€” dark time, moon phase, ranked best targets
+ *   â€¢ Sky map  â€” live polar all-dome chart with sun/moon/all catalog objects
+ *   â€¢ Catalog  â€” search/sort across 12,116 objects (Messier + OpenNGC)
+ *   â€¢ Detail   â€” meta + tonight rise/transit/set + altitude chart
+ *   â€¢ Settings â€” sites, rigs, custom targets, backup/restore (webstore.js)
  * All sky math runs client-side (astro.js, Meeus algorithms).
  */
 import * as E from './astro.js?v=4';
@@ -29,13 +29,13 @@ const TYPE_LABELS = {
   asterism: 'Asterism', star_cloud: 'Star cloud',
 };
 
-/** Debounce timer for the catalog search box — re-renders at most every
+/** Debounce timer for the catalog search box â€” re-renders at most every
  *  150 ms while typing instead of once per keystroke (12k-row filter). */
 let _catQDeb = null;
 
 /* ------------------------------ state ------------------------------ */
 
-/** Legacy single-site key — migrated into the sites store on first run. */
+/** Legacy single-site key â€” migrated into the sites store on first run. */
 const LS_KEY = 'nightseam_site_v1';
 function legacySite() {
   try {
@@ -85,8 +85,8 @@ const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const typeColor = (o) => TYPE_COLORS[o.otype] || '#9fb4d8';
 
-/* Hidden popularity scoring — log-scale normalization of the popularity source data.
-   M42 (165k) → ~1.0, dim object (100) → ~0.3, no data → 0. */
+/* Hidden popularity scoring â€” log-scale normalization of the popularity source data.
+   M42 (165k) â†’ ~1.0, dim object (100) â†’ ~0.3, no data â†’ 0. */
 let _popMap = null;   // normalized-name -> score, from the live the popularity source fetch
 
 /* the popularity source keys Messier objects with a space ("M 42") while the catalog
@@ -101,7 +101,7 @@ async function loadPopularity() {
       _popMap = {};
       for (const [k, v] of Object.entries(raw)) _popMap[popKey(k)] = v;
     }
-  } catch (_) { /* offline or blocked — scoring still works without it */ }
+  } catch (_) { /* offline or blocked â€” scoring still works without it */ }
 }
 function popularityOf(o) {
   /* Prefer the live the popularity source fetch; fall back to the baked catalog
@@ -148,14 +148,40 @@ function computeObs(obj, jd0, jd1, step, minAlt, pano, lat, lon) {
   }
   return { pct: Math.round(100 * visN / (n + 1)), blk: Math.round(100 * blocked / (n + 1)) };
 }
+/* ONE definition of the night window behind every visibility number, so the
+   catalog % column and the Tonight ranking can never disagree with each other
+   or with the desktop: astronomical twilight first (app/planning.py), then
+   nautical, then civil, then sunset/sunrise, sampled every 6 minutes
+   (nightcalc.py's night grid). */
+const NIGHT_STEP_MIN = 6;
+
+/** The real instant of the SITE's local noon for a calendar date whose
+ *  browser-local getters carry the site's date (see nightAnchor/effToday).
+ *  nightInfo() anchors its 48 h scan here, so a site in another timezone is
+ *  planned for ITS night instead of the browser's. */
+function siteNoon(d) {
+  const day = (d && d instanceof Date && !isNaN(d)) ? d : WS.effToday();
+  return WS.wallToUtc(new Date(day.getFullYear(), day.getMonth(), day.getDate(), 12, 0, 0));
+}
+
+function nightWindow() {
+  const { lat, lon } = S.site;
+  const info = E.nightInfo(nightAnchor(), lat, lon, siteNoon(nightAnchor()));
+  const d = (S.date && S.date instanceof Date) ? S.date : WS.effToday();
+  // pickDarkWindow applies the polar-day fallback (20:00 -> 04:00) itself, the
+  // same one app/planning.py uses
+  const { dusk, dawn } = E.pickDarkWindow(info, d);
+  return {
+    jd0: E.julianDay(dusk), jd1: E.julianDay(dawn),
+    step: NIGHT_STEP_MIN / 1440,
+    startT: dusk, endT: dawn, info,
+  };
+}
 function obsNightGrid() {
   const { lat, lon } = S.site;
-  const info = E.nightInfo(nightAnchor(), lat, lon);
-  const startT = info.civilDusk || info.sunset || new Date(S.date.getFullYear(), S.date.getMonth(), S.date.getDate(), 20, 0);
-  const endT = info.civilDawn || info.sunrise || new Date(S.date.getFullYear(), S.date.getMonth(), S.date.getDate() + 1, 5, 0);
+  const w = nightWindow();
   return {
-    jd0: E.julianDay(startT), jd1: E.julianDay(endT),
-    step: 600 / 86400,
+    jd0: w.jd0, jd1: w.jd1, step: w.step,
     minAlt: Hor.effectiveMinAlt(), pano: Hor.activePano(), lat, lon,
   };
 }
@@ -168,7 +194,7 @@ function obsKey(g, oid) {
 function escAttr(s) { return String(s).replace(/[^a-zA-Z0-9_-]/g, (c) => '\\' + c); }
 function cachedPctText(oid) {
   const v = obsCache.get(obsKey(obsNightGrid(), oid));
-  if (!v) return '…';
+  if (!v) return 'â€¦';
   return `${v.pct}%`;
 }
 
@@ -198,7 +224,7 @@ function fmtSize(o) {
   const mult = SIZE_UNIT_MULT[unit] || 1;
   const a = parseFloat(m[1]) * mult, b = parseFloat(m[2]) * mult;
   const fmt = (x) => (x >= 100 ? x.toFixed(0) : x >= 10 ? x.toFixed(1) : x.toFixed(2));
-  return `${fmt(a)}×${fmt(b)}${unit === 'arcmin' ? '′' : unit === 'arcsec' ? '″' : '°'}`;
+  return `${fmt(a)}Ã—${fmt(b)}${unit === 'arcmin' ? 'â€²' : unit === 'arcsec' ? 'â€³' : 'Â°'}`;
 }
 
 /** Largest dimension in arcminutes (for rig framing). */
@@ -248,14 +274,14 @@ const THEME_KEY = 'nightseam_theme';
 /** Commit a theme choice (user action): apply attribute + persist.
  *  Glass ('dome') is the default look; 'classic' is the flat blue one.
  *  The key is always persisted (its ABSENCE means "use the default =
- *  Glass" — the head script falls back to 'dome'). */
+ *  Glass" â€” the head script falls back to 'dome'). */
 function applyTheme(t) {
   const name = t === 'classic' || t === '' ? 'classic' : 'dome';
   document.documentElement.setAttribute('data-theme', name);
   try { localStorage.setItem(THEME_KEY, name); } catch { /* ignore */ }
   reflectTheme();
 }
-/** Sync the picker's active state only — never touches storage or the
+/** Sync the picker's active state only â€” never touches storage or the
  *  attribute (boot must not undo the theme the head script applied). */
 function reflectTheme() {
   const t = document.documentElement.getAttribute('data-theme') || '';
@@ -263,22 +289,22 @@ function reflectTheme() {
   if (row) row.querySelectorAll('.theme-btn').forEach((b) => b.classList.toggle('active', b.dataset.theme === t));
 }
 
-/* ---- weather: Open-Meteo, load-on-demand — nothing is fetched until the
+/* ---- weather: Open-Meteo, load-on-demand â€” nothing is fetched until the
    user clicks the top-bar chip (or auto-load is switched on) ---- */
 const WX_STATE = { data: null, loading: false, error: false };
 const WMO_INFO = {
-  0: ['☀️', 'Clear sky'], 1: ['🌤️', 'Mainly clear'], 2: ['⛅', 'Partly cloudy'], 3: ['☁️', 'Overcast'],
-  45: ['🌫️', 'Fog'], 48: ['🌫️', 'Icy fog'],
-  51: ['🌦️', 'Light drizzle'], 53: ['🌦️', 'Drizzle'], 55: ['🌦️', 'Dense drizzle'],
-  56: ['🌧️', 'Freezing drizzle'], 57: ['🌧️', 'Freezing drizzle'],
-  61: ['🌧️', 'Light rain'], 63: ['🌧️', 'Rain'], 65: ['🌧️', 'Heavy rain'],
-  66: ['🌧️', 'Freezing rain'], 67: ['🌧️', 'Freezing rain'],
-  71: ['🌨️', 'Light snow'], 73: ['🌨️', 'Snow'], 75: ['🌨️', 'Heavy snow'], 77: ['🌨️', 'Snow grains'],
-  80: ['🌦️', 'Rain showers'], 81: ['🌦️', 'Rain showers'], 82: ['🌧️', 'Violent rain showers'],
-  85: ['🌨️', 'Snow showers'], 86: ['🌨️', 'Snow showers'],
-  95: ['⛈️', 'Thunderstorm'], 96: ['⛈️', 'Thunderstorm, hail'], 99: ['⛈️', 'Thunderstorm, hail'],
+  0: ['â˜€ï¸', 'Clear sky'], 1: ['ðŸŒ¤ï¸', 'Mainly clear'], 2: ['â›…', 'Partly cloudy'], 3: ['â˜ï¸', 'Overcast'],
+  45: ['ðŸŒ«ï¸', 'Fog'], 48: ['ðŸŒ«ï¸', 'Icy fog'],
+  51: ['ðŸŒ¦ï¸', 'Light drizzle'], 53: ['ðŸŒ¦ï¸', 'Drizzle'], 55: ['ðŸŒ¦ï¸', 'Dense drizzle'],
+  56: ['ðŸŒ§ï¸', 'Freezing drizzle'], 57: ['ðŸŒ§ï¸', 'Freezing drizzle'],
+  61: ['ðŸŒ§ï¸', 'Light rain'], 63: ['ðŸŒ§ï¸', 'Rain'], 65: ['ðŸŒ§ï¸', 'Heavy rain'],
+  66: ['ðŸŒ§ï¸', 'Freezing rain'], 67: ['ðŸŒ§ï¸', 'Freezing rain'],
+  71: ['ðŸŒ¨ï¸', 'Light snow'], 73: ['ðŸŒ¨ï¸', 'Snow'], 75: ['ðŸŒ¨ï¸', 'Heavy snow'], 77: ['ðŸŒ¨ï¸', 'Snow grains'],
+  80: ['ðŸŒ¦ï¸', 'Rain showers'], 81: ['ðŸŒ¦ï¸', 'Rain showers'], 82: ['ðŸŒ§ï¸', 'Violent rain showers'],
+  85: ['ðŸŒ¨ï¸', 'Snow showers'], 86: ['ðŸŒ¨ï¸', 'Snow showers'],
+  95: ['â›ˆï¸', 'Thunderstorm'], 96: ['â›ˆï¸', 'Thunderstorm, hail'], 99: ['â›ˆï¸', 'Thunderstorm, hail'],
 };
-function wxInfo(code) { return WMO_INFO[code] || ['🌡️', 'Condition ' + code]; }
+function wxInfo(code) { return WMO_INFO[code] || ['ðŸŒ¡ï¸', 'Condition ' + code]; }
 
 async function loadWeather() {
   const chip = $('#wxChip');
@@ -307,12 +333,12 @@ async function loadWeather() {
 }
 
 function wxChipText() {
-  if (WX_STATE.loading) return '⏳ loading weather…';
-  if (WX_STATE.error) return '⚠️ weather unavailable — click to retry';
-  if (!WX_STATE.data) return '☁️ Weather — click to load';
+  if (WX_STATE.loading) return 'â³ loading weatherâ€¦';
+  if (WX_STATE.error) return 'âš ï¸ weather unavailable â€” click to retry';
+  if (!WX_STATE.data) return 'â˜ï¸ Weather â€” click to load';
   const c = WX_STATE.data.current;
   const [icon] = wxInfo(c.weather_code);
-  return `${icon} ${Math.round(c.temperature_2m)}°C · ${Math.round(c.wind_speed_10m)} km/h`;
+  return `${icon} ${Math.round(c.temperature_2m)}Â°C Â· ${Math.round(c.wind_speed_10m)} km/h`;
 }
 
 function wxRenderChip() {
@@ -321,7 +347,7 @@ function wxRenderChip() {
 }
 
 /** Re-fetch weather when the active site changed, but only if the user has
- *  already loaded it once (or auto-load is on) — never fetch unasked. */
+ *  already loaded it once (or auto-load is on) â€” never fetch unasked. */
 function refreshWeatherForSite() {
   if (!$( '#wxChip')) return;
   if (WX_STATE.data || WX_STATE.error || Hor.getPrefs().weatherAuto) loadWeather();
@@ -332,9 +358,9 @@ function wxRenderPanel() {
   if (!body) return;
   const siteName = (activeSite() && activeSite().name) || S.site.label || 'active site';
   if (siteEl) siteEl.textContent = siteName;
-  if (WX_STATE.loading) { body.innerHTML = '<p class="hint">loading…</p>'; return; }
+  if (WX_STATE.loading) { body.innerHTML = '<p class="hint">loadingâ€¦</p>'; return; }
   if (WX_STATE.error || !WX_STATE.data) {
-    body.innerHTML = '<p class="wx-err">⚠️ Could not load weather' + (WX_STATE.error ? ' — are you offline?' : '') + '</p>' +
+    body.innerHTML = '<p class="wx-err">âš ï¸ Could not load weather' + (WX_STATE.error ? ' â€” are you offline?' : '') + '</p>' +
       '<p class="hint">Weather comes from Open-Meteo and is only fetched when you click the chip. Try again in a moment.</p>';
     return;
   }
@@ -343,16 +369,16 @@ function wxRenderPanel() {
   const days = (daily.time || []).map((t, i) => {
     const dt = new Date(t + 'T12:00:00');
     const [di] = wxInfo((daily.weather_code || [])[i] ?? 0);
-    const hi = daily.temperature_2m_max ? Math.round(daily.temperature_2m_max[i]) : '—';
-    const lo = daily.temperature_2m_min ? Math.round(daily.temperature_2m_min[i]) : '—';
+    const hi = daily.temperature_2m_max ? Math.round(daily.temperature_2m_max[i]) : 'â€”';
+    const lo = daily.temperature_2m_min ? Math.round(daily.temperature_2m_min[i]) : 'â€”';
     const pc = daily.precipitation_probability_max ? daily.precipitation_probability_max[i] : null;
-    return `<div class="wx-day"><div class="wx-di">${di}</div><div>${dt.toLocaleDateString(undefined, { weekday: 'short' })}</div><div class="wx-t">${hi}°/${lo}°</div>${pc != null ? `<div class="wx-p">💧${pc}%</div>` : ''}</div>`;
+    return `<div class="wx-day"><div class="wx-di">${di}</div><div>${dt.toLocaleDateString(undefined, { weekday: 'short' })}</div><div class="wx-t">${hi}Â°/${lo}Â°</div>${pc != null ? `<div class="wx-p">ðŸ’§${pc}%</div>` : ''}</div>`;
   }).join('');
   body.innerHTML = `
     <div class="wx-now">
       <span class="wx-icon">${icon}</span>
-      <span class="wx-big">${Math.round(c.temperature_2m)}°C</span>
-      <span class="sub" style="flex:1">${label}<br>feels like ${Math.round(c.apparent_temperature)}°</span>
+      <span class="wx-big">${Math.round(c.temperature_2m)}Â°C</span>
+      <span class="sub" style="flex:1">${label}<br>feels like ${Math.round(c.apparent_temperature)}Â°</span>
     </div>
     <div class="wx-grid">
       <div><span>Wind</span><b>${Math.round(c.wind_speed_10m)} km/h</b></div>
@@ -360,7 +386,7 @@ function wxRenderPanel() {
       <div><span>Humidity</span><b>${Math.round(c.relative_humidity_2m)}%</b></div>
       <div><span>Clouds</span><b>${Math.round(c.cloud_cover)}%</b></div>
       <div><span>Rain now</span><b>${c.precipitation ? c.precipitation.toFixed(1) + ' mm' : '0 mm'}</b></div>
-      <div><span>Updated</span><b>${(c.time || '').slice(11, 16) || '—'}</b></div>
+      <div><span>Updated</span><b>${(c.time || '').slice(11, 16) || 'â€”'}</b></div>
     </div>
     ${days ? `<div class="wx-days">${days}</div>` : ''}
     <p class="hint" style="margin-top:8px">Weather by <a href="https://open-meteo.com/" target="_blank" rel="noopener" style="color:var(--accent)">Open-Meteo</a>, for the active site.</p>`;
@@ -399,7 +425,7 @@ async function idbSet(key, val) {
       t.onsuccess = () => resolve();
       t.onerror = () => reject(t.error);
     });
-  } catch { /* storage unavailable — display-only for the session */ }
+  } catch { /* storage unavailable â€” display-only for the session */ }
 }
 const NEG_TTL = 30 * 86400000; // remember "no photo" for 30 days
 const WIKI_API = 'https://en.wikipedia.org/api/rest_v1/page/summary/';
@@ -407,18 +433,18 @@ let currentObjUrl = null;
 
 async function loadWikiThumb(o, imgEl, phEl) {
   if (window.matchMedia && window.matchMedia('(prefers-reduced-data: reduce)').matches) {
-    phEl.textContent = 'photo skipped — reduced data mode';
+    phEl.textContent = 'photo skipped â€” reduced data mode';
     return;
   }
   const key = 'w:' + o.id;
   const cached = await idbGet(key);
   if (cached && cached.blob) { showBlob(cached.blob); return; }
   if (cached && cached.missing && Date.now() - cached.ts < NEG_TTL) {
-    phEl.textContent = 'no photo on Wikipedia — see the link below';
+    phEl.textContent = 'no photo on Wikipedia â€” see the link below';
     return;
   }
   const title = o.wiki || o.primary_name;
-  phEl.textContent = 'loading Wikipedia photo…';
+  phEl.textContent = 'loading Wikipedia photoâ€¦';
   let definitive = false;
   const ac = new AbortController();
   const to = setTimeout(() => ac.abort(), 12000);
@@ -437,7 +463,7 @@ async function loadWikiThumb(o, imgEl, phEl) {
     showBlob(blob);
   } catch {
     if (definitive) await idbSet(key, { missing: true, ts: Date.now() });
-    phEl.textContent = definitive ? 'no photo on Wikipedia — see the link below' : 'photo unavailable (offline?) — see the link below';
+    phEl.textContent = definitive ? 'no photo on Wikipedia â€” see the link below' : 'photo unavailable (offline?) â€” see the link below';
   } finally {
     clearTimeout(to);
   }
@@ -485,7 +511,7 @@ let tonightTimer = null;
 let tonightToken = 0;
 
 function fmtClock(dt) {
-  if (!dt) return '—';
+  if (!dt) return 'â€”';
   const d = WS.utcToWall(dt);
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 }
@@ -498,52 +524,58 @@ function fmtDur(min) {
 
 function renderTonight(silent) {
   // `silent` (pref changes, auto-refresh): keep the current cards on screen
-  // and swap in the new ones when the compute finishes — no blank-splash
+  // and swap in the new ones when the compute finishes â€” no blank-splash
   // frame that makes the recommended targets vanish and reappear.
   const token = ++tonightToken;
   const box = $('#view');
   if (!silent) {
-    splashText('computing tonight…');
-    box.innerHTML = `<div class="splash"><div class="splash-inner"><div class="spinner"></div><p id="splash-text">computing tonight…</p></div></div>`;
-    // no busy chip here — the ranking compute takes a few milliseconds and
+    splashText('computing tonightâ€¦');
+    box.innerHTML = `<div class="splash"><div class="splash-inner"><div class="spinner"></div><p id="splash-text">computing tonightâ€¦</p></div></div>`;
+    // no busy chip here â€” the ranking compute takes a few milliseconds and
     // toggling the topbar chip shifts the layout for nothing.
   }
   // defer heavy math so the UI paints first
   setTimeout(() => {
     if (token !== tonightToken || S.view !== 'tonight') return; // superseded / view switched
     const { lat, lon } = S.site;
-    const info = E.nightInfo(nightAnchor(), lat, lon);
-    const jdNow = E.julianDay(new Date());
-    const mo = E.moonPhase(jdNow);
+    const win = nightWindow();
+    const info = win.info;
+    // The selected observing time is the source of truth, exactly like the
+    // desktop's scrubbed S.tIdx: "visible now" means "visible at the selected
+    // time", and the topbar/sky scrub re-renders this view (see the sky:time
+    // listener at boot). S.skyTime is initialised to the current instant, so an
+    // untouched page still shows the live situation.
+    const selTime = (S.skyTime instanceof Date && !isNaN(S.skyTime))
+      ? S.skyTime : new Date();
+    const jdSel = E.julianDay(selTime);
 
-    const startT = info.civilDusk || info.sunset;
-    const endT = info.civilDawn || info.sunrise;
-    const gridStart = startT || new Date(S.date.getFullYear(), S.date.getMonth(), S.date.getDate(), 22, 0);
-    const gridEnd = endT || new Date(S.date.getFullYear(), S.date.getMonth(), S.date.getDate() + 1, 4, 0);
-    const jd0 = E.julianDay(gridStart), jd1 = E.julianDay(gridEnd);
-    const step = 600 / 86400; // 10 min
+    const gridStart = win.startT;
+    const gridEnd = win.endT;
+    const jd0 = win.jd0, jd1 = win.jd1;
+    const step = win.step;                      // 6 min, like the desktop
     const n = Math.max(2, Math.round((jd1 - jd0) / step));
+    // moon values for the PLANNED NIGHT (its midpoint), not for "now" - the
+    // desktop ships N.moon_illum/N.moon_age_days for the same grid midpoint,
+    // and mixing in tonight's live moon made the penalty wrong
+    const jdMid = (jd0 + jd1) / 2;
+    const mo = E.moonPhase(jdMid);
 
     const pano = Hor.activePano();
     const prefs = Hor.getPrefs();
     const minAlt = Hor.effectiveMinAlt();
     const moonAware = prefs.moonAware;
-    const typeF = (o) => ({ nebula: 1.6, supernova_remnant: 1.6, planetary: 1.3, star_cloud: 1.1, galaxy: 0.8, open_cluster: 0.55, globular: 0.5, asterism: 0.55 }[o.otype] || 1.0);
-    const illum = E.moonIllumination(jdNow);
-    /* Moon-aware model shared with the desktop (static/js/derive.js): the safe
-       separation grows with the Moon's phase (largest at full moon, smallest at
-       new), and the Bortle curve is continuous at the 3/4 junction. The web has
-       no filter settings yet, so the broadband base (120 deg) applies unless
-       prefs ever gain them. */
-    const F = prefs.filters || {};
-    const filterType = F.narrowband_oiii ? 'oiii' : F.narrowband_ha ? 'narrowband' : 'lrgb';
-    const moonAge = E.moonAge((jd0 + jd1) / 2);
-    const moonMinDist = (() => {
-      const BASE = { narrowband: 60, oiii: 90, lrgb: 120 }[filterType] || 120;
-      return BASE / (1 + Math.pow((0.5 - moonAge / 29.53) / 0.333, 2));
-    })();
-    const bortleF = prefs.bortle <= 3 ? 0.25 + 0.05 * prefs.bortle
-                                      : 0.40 + 0.12 * (prefs.bortle - 3);
+    const tfOf = (o) => E.moonSensitivity(o.otype);
+    const illum = E.moonIllumination(jdMid);
+    /* Moon-aware model shared with the desktop (static/js/derive.js) - the
+       curves themselves live in web/astro.js so tests/test_js_parity.py can
+       compare them with the desktop's. The filter checkboxes persist as flat
+       prefs (fltBb/fltHa/fltOiii), so that is what selects the base separation
+       - OIII 90, Ha 60, broadband 120 - exactly like the desktop's
+       filterType() (the old `prefs.filters` object was never written by any
+       code, which locked the web to the broadband base). */
+    const filterType = prefs.fltOiii ? 'oiii' : prefs.fltHa ? 'narrowband' : 'lrgb';
+    const moonAge = E.moonAge(jdMid);
+    const bortleF = E.bortleMoonFactor(prefs.bortle);
     // moon track over the night grid (computed once)
     const moonAlt = [], moonAz = [];
     for (let i = 0; i <= n; i++) {
@@ -553,14 +585,21 @@ function renderTonight(silent) {
       moonAlt.push(ma); moonAz.push(maz);
     }
 
-    const candidates = activeCatalog().filter((o) => o.vmag != null && (!o._adv || o.vmag <= 9) && o.vmag < 14);
+    // Standard mode mirrors the desktop exactly: every curated object is a
+    // Tonight candidate (the desktop applies no magnitude gate here - its mag
+    // filter belongs to the Targets view). The advanced catalog is the one
+    // exception: 12k objects x 121 samples would make this view sluggish in the
+    // browser, so the web caps advanced candidates at mag 9 (documented
+    // intentional difference; the desktop filters those in Targets instead).
+    const candidates = activeCatalog().filter(
+      (o) => o.vmag != null && (!o._adv || o.vmag <= 9));
     const rows = [];
     for (const o of candidates) {
       let maxAlt = -90, transitJd = jd0, bestRun = 0, bestStart = jd0;
       let cur = 0, curStart = jd0, visN = 0, blocked = 0;
       let sClassic = 0, sMoon = 0;
       const ra = o.ra_hours * 15;
-      const tf = typeF(o);
+      const tf = tfOf(o);
       for (let i = 0; i <= n; i++) {
         const jd = jd0 + i * step;
         const [alt, az] = E.altaz(ra, o.dec_deg, jd, lat, lon);
@@ -573,8 +612,8 @@ function renderTonight(silent) {
           sClassic += w;
           if (moonAware && moonAlt[i] > 0) {
             const sep = E.sepDeg(alt, az, moonAlt[i], moonAz[i]);
-            const glow = illum * Math.max(0, 1 - Math.max(0, sep - moonMinDist) / 180);
-            w *= Math.max(0.05, 1 - 0.95 * glow * tf * bortleF);
+            const glow = E.effectiveMoonGlow(illum, sep, filterType, moonAge);
+            w *= E.moonPenalty(glow, tf, bortleF);
           }
           sMoon += w;
           if (cur === 0) curStart = jd;
@@ -585,7 +624,7 @@ function renderTonight(silent) {
           cur = 0;
         }
       }
-      const [altNow, azNow] = E.altaz(ra, o.dec_deg, jdNow, lat, lon);
+      const [altNow, azNow] = E.altaz(ra, o.dec_deg, jdSel, lat, lon);
       const ceilNow = pano ? Hor.ceilFor(pano, azNow) : { ceil: Hor.NO_BLOCK, ceilTop: null };
       const visNow = altNow >= minAlt && altNow > ceilNow.ceil && altNow < (ceilNow.ceilTop ?? 90.5);
       const obsPct = Math.round(100 * visN / (n + 1));
@@ -614,17 +653,17 @@ function renderTonight(silent) {
 
     const pickItem = (r) => {
       const o = r.o;
-      const tags = [o.messier, o.ngcic].filter(Boolean).join(' · ');
+      const tags = [o.messier, o.ngcic].filter(Boolean).join(' Â· ');
       const win = r.bestRun > 0
-        ? `clear ${fmtClock(E.dateFromJD(r.bestStart))} – ${fmtClock(E.dateFromJD(r.bestStart + r.bestRun * step))}`
+        ? `clear ${fmtClock(E.dateFromJD(r.bestStart))} â€“ ${fmtClock(E.dateFromJD(r.bestStart + r.bestRun * step))}`
         : 'no clear window';
       const fOwn = filterOwned(o);
       return `<li data-id="${esc(o.id)}">
         <span class="dot" style="background:${typeColor(o)}"></span>
         <span><span class="p-name">${esc(o.primary_name)}</span>${tags ? `<span class="p-tags">${esc(tags)}</span>` : ''}${fOwn ? `<span class="f-own" title="filter owned">${esc(fOwn)}</span>` : ''}</span>
         <span class="p-right">
-          <b>${r.maxAlt.toFixed(0)}°</b>
-          <span class="p-vis">${r.visN ? `${r.obsPct}% of night · ${fmtDur(r.visN * step * 1440)} visible` : 'not clear tonight'}</span>${win}</span>
+          <b>${r.maxAlt.toFixed(0)}Â°</b>
+          <span class="p-vis">${r.visN ? `${r.obsPct}% of night Â· ${fmtDur(r.visN * step * 1440)} visible` : 'not clear tonight'}</span>${win}</span>
       </li>`;
     };
 
@@ -632,8 +671,8 @@ function renderTonight(silent) {
       <div class="grid3">
         <div class="card">
           <h3>Dark time</h3>
-          <div class="big">${darkH != null ? darkH + ' h' : '—'}</div>
-          <div class="sub">astronomical night<br>${darkStart ? fmtClock(darkStart) + ' – ' + fmtClock(darkEnd) : 'no full dark night'}</div>
+          <div class="big">${darkH != null ? darkH + ' h' : 'â€”'}</div>
+          <div class="sub">astronomical night<br>${darkStart ? fmtClock(darkStart) + ' â€“ ' + fmtClock(darkEnd) : 'no full dark night'}</div>
         </div>
         <div class="card">
           <h3>Moon</h3>
@@ -641,28 +680,28 @@ function renderTonight(silent) {
           <div class="sub">${mo.name}</div>
         </div>
         <div class="card">
-          <h3>Visible now</h3>
+          <h3>Visible at ${fmtClock(selTime)}</h3>
           <div class="big">${visibleCount}</div>
-          <div class="sub">catalog objects above the horizon</div>
+          <div class="sub">catalog objects clear at the selected time</div>
         </div>
       </div>
       <div class="card" style="margin-top:14px">
         <h3>Best targets tonight</h3>
-        <ul class="pick">${top.length ? top.map(pickItem).join('') : '<li style="cursor:default">nothing tonight — check again in darker skies</li>'}</ul>
+        <ul class="pick">${top.length ? top.map(pickItem).join('') : '<li style="cursor:default">nothing tonight â€” check again in darker skies</li>'}</ul>
       </div>
       <div class="grid2" style="margin-top:14px">
-        <div class="card"><h3>Right now</h3><ul class="pick">${nowVisible.length ? nowVisible.map((r) => `<li data-id="${esc(r.o.id)}">
+        <div class="card"><h3>Visible at ${fmtClock(selTime)}</h3><ul class="pick">${nowVisible.length ? nowVisible.map((r) => `<li data-id="${esc(r.o.id)}">
           <span class="dot" style="background:${typeColor(r.o)}"></span>
           <span><span class="p-name">${esc(r.o.primary_name)}</span>${r.o.messier ? `<span class="p-tags">${esc(r.o.messier)}</span>` : ''}</span>
-          <span class="p-right"><b>${r.altNow.toFixed(0)}° alt</b>transit ${fmtClock(E.dateFromJD(r.transitJd))}</span>
-        </li>`).join('') : '<li style="cursor:default">nothing above the horizon right now</li>'}</ul></div>
+          <span class="p-right"><b>${r.altNow.toFixed(0)}Â° alt</b>transit ${fmtClock(E.dateFromJD(r.transitJd))}</span>
+        </li>`).join('') : '<li style="cursor:default">nothing clear at the selected time</li>'}</ul></div>
         <div class="card"><h3>Rising later tonight</h3><ul class="pick">${risingLater.length ? risingLater.map((r) => `<li data-id="${esc(r.o.id)}">
           <span class="dot" style="background:${typeColor(r.o)}"></span>
           <span><span class="p-name">${esc(r.o.primary_name)}</span>${r.o.messier ? `<span class="p-tags">${esc(r.o.messier)}</span>` : ''}</span>
-          <span class="p-right"><b>transit ${fmtClock(E.dateFromJD(r.transitJd))}</b>peaks ${r.maxAlt.toFixed(0)}°</span>
+          <span class="p-right"><b>transit ${fmtClock(E.dateFromJD(r.transitJd))}</b>peaks ${r.maxAlt.toFixed(0)}Â°</span>
         </li>`).join('') : '<li style="cursor:default">everything already up or setting</li>'}</ul></div>
       </div>
-      <p class="cat-count" style="margin-top:10px;text-align:center">night of ${dateKey(nightAnchor())} · ${esc(S.site.label || `${S.site.lat.toFixed(2)}, ${S.site.lon.toFixed(2)}`)} · horizon: ${pano ? esc(pano.name) : 'none'} · click any target for details</p>`;
+      <p class="cat-count" style="margin-top:10px;text-align:center">night of ${dateKey(nightAnchor())} Â· ${esc(S.site.label || `${S.site.lat.toFixed(2)}, ${S.site.lon.toFixed(2)}`)} Â· horizon: ${pano ? esc(pano.name) : 'none'} Â· click any target for details</p>`;
     if (token !== tonightToken || S.view !== 'tonight') return; // superseded / view switched
     box.innerHTML = html;
     box.querySelectorAll('.pick li[data-id]').forEach((li) => li.addEventListener('click', () => openDetail(li.dataset.id)));
@@ -674,7 +713,7 @@ function renderTonight(silent) {
 
 let skyItems = [];
 // uranometria-style rectangular viewport zoom: the chart is a circle in a
-// square, but zooming opens a RECTANGLE window (1..8x) over the chart —
+// square, but zooming opens a RECTANGLE window (1..8x) over the chart â€”
 // the disc edge can leave the screen, so you see more sky than a circular
 // magnifier would show. Wheel = zoom to cursor, drag = pan, double-click
 // (or Reset view) = back to 1x.
@@ -709,7 +748,7 @@ function skyRangeStart(t) {
 }
 
 /* Stable scrub anchor: SKY_ANCHOR is fixed at the first noon, and stays
- * fixed while the time moves WITHIN its 24 h window — this is what stops
+ * fixed while the time moves WITHIN its 24 h window â€” this is what stops
  * the slider from jumping back when the time crosses noon mid-drag (a
  * naive "re-anchor to the most recent noon" flips the window under the
  * drag). Only when the time leaves the window (wall-clock picker, "Now",
@@ -751,9 +790,9 @@ function renderSky() {
           </label>
           <div class="btnrow" style="margin-top:12px">
             <button class="btn primary" id="sky-now">Now</button>
-            <button class="btn" id="sky-reset" title="double-click the chart also resets">↺ Reset view</button>
+            <button class="btn" id="sky-reset" title="double-click the chart also resets">â†º Reset view</button>
           </div>
-          <p class="sub" style="margin-top:10px">slider spans noon → next noon, site time</p>
+          <p class="sub" style="margin-top:10px">slider spans noon â†’ next noon, site time</p>
         </div>
         <div class="card">
           <h3>Legend</h3>
@@ -764,7 +803,7 @@ function renderSky() {
             ${Object.entries(TYPE_COLORS).map(([t, c]) => `<li><span class="dot" style="background:${c}"></span>${TYPE_LABELS[t]}</li>`).join('')}
           </ul>
         </div>
-        <div class="card"><h3>Hint</h3><p class="sub" style="font-size:13px">Click an object to open its detail panel. The chart is an all-sky polar view: center = zenith, rim = horizon, north at top. <b>Scroll = zoom · drag = pan · double-click = reset</b> — zooming opens a rectangular window over the chart, so you see more sky than a circular magnifier.</p></div>
+        <div class="card"><h3>Hint</h3><p class="sub" style="font-size:13px">Click an object to open its detail panel. The chart is an all-sky polar view: center = zenith, rim = horizon, north at top. <b>Scroll = zoom Â· drag = pan Â· double-click = reset</b> â€” zooming opens a rectangular window over the chart, so you see more sky than a circular magnifier.</p></div>
       </div>
     </div>`;
   hideSplash();
@@ -826,7 +865,7 @@ function renderSky() {
     ctx.fillStyle = 'rgba(123, 241, 168, .9)';
     ctx.font = '10.5px system-ui, sans-serif';
     ctx.textAlign = 'left';
-    ctx.fillText(`min ${minRing.toFixed(0)}°`, cx + (R * (1 - minRing / 90)) + 6, cy + 3);
+    ctx.fillText(`min ${minRing.toFixed(0)}Â°`, cx + (R * (1 - minRing / 90)) + 6, cy + 3);
     ctx.strokeStyle = 'rgba(124, 196, 255, .10)';
     for (let az = 0; az < 360; az += 30) {
       const a = E.D2R * az;
@@ -981,9 +1020,9 @@ function renderSky() {
     }
     if (best && bestD < 130) {
       const extra = best.o
-        ? `${best.label} · ${TYPE_LABELS[best.o.otype] || best.o.otype} · mag ${best.o.vmag ?? '—'}`
+        ? `${best.label} Â· ${TYPE_LABELS[best.o.otype] || best.o.otype} Â· mag ${best.o.vmag ?? 'â€”'}`
         : best.label;
-      tip.innerHTML = `<b>${esc(extra)}</b>${best.o ? `<br>${esc(best.o.constellation)} · click for detail` : ''}`;
+      tip.innerHTML = `<b>${esc(extra)}</b>${best.o ? `<br>${esc(best.o.constellation)} Â· click for detail` : ''}`;
       tip.hidden = false;
       tip.style.left = (ev.clientX + 14) + 'px';
       tip.style.top = (ev.clientY + 14) + 'px';
@@ -1171,14 +1210,14 @@ function renderCatalog() {
   const showFrame = !!rig && rig.fov_w > 0;
 
   const th = (key, label, num = false) =>
-    `<th class="${num ? 'num' : ''}" data-k="${key}">${label}${S.cat.sort === key ? (S.cat.up ? ' ▲' : ' ▼') : ''}</th>`;
+    `<th class="${num ? 'num' : ''}" data-k="${key}">${label}${S.cat.sort === key ? (S.cat.up ? ' â–²' : ' â–¼') : ''}</th>`;
 
   // focus/caret in the search box must survive the re-render below
   const qHadFocus = !!document.activeElement && document.activeElement.id === 'cat-q';
   const qCaret = qHadFocus ? document.activeElement.selectionStart : null;
   box.innerHTML = `
     <div class="cat-bar">
-      <input type="search" id="cat-q" aria-label="Search the catalog" placeholder="Search: name, M 31, NGC 7000, galaxy, Cyg…" value="${esc(S.cat.q)}">
+      <input type="search" id="cat-q" aria-label="Search the catalog" placeholder="Search: name, M 31, NGC 7000, galaxy, Cygâ€¦" value="${esc(S.cat.q)}">
       <div class="chips">${Object.keys(CHIP_FILTERS).map((c) => `<button class="chip${S.cat.chip === c ? ' on' : ''}" data-c="${c}">${CHIP_LABELS[c]}</button>`).join('')}</div>
       <select id="cat-con" title="constellation filter">
         <option value="">All constellations</option>
@@ -1192,17 +1231,17 @@ function renderCatalog() {
         <thead><tr>${th('name', 'Name')}${th('mag', 'Mag', true)}${th('pct', '% visibility', true)}${th('type', 'Type')}${th('con', 'Con')}${th('size', 'Size', true)}${showFrame ? `<th class="frame" title="frame coverage with the active rig">Frame</th>` : ''}${th('ra', 'RA', true)}${th('dec', 'Dec', true)}</tr></thead>
         <tbody>
           ${slice.map((o) => {
-            const tags = [o.messier, o.ngcic].filter(Boolean).join(' · ');
+            const tags = [o.messier, o.ngcic].filter(Boolean).join(' Â· ');
             const fOwn = filterOwned(o);
             const fp = showFrame ? rigFramePct(o) : null;
             return `<tr data-id="${esc(o.id)}">
               <td><span class="tname">${esc(o.primary_name)}</span> ${tags ? `<span class="tags">${esc(tags)}</span>` : ''}${fOwn ? `<span class="f-own" title="filter owned">${esc(fOwn)}</span>` : ''}</td>
-              <td class="num">${o.vmag != null ? o.vmag.toFixed(1) : '—'}</td>
+              <td class="num">${o.vmag != null ? o.vmag.toFixed(1) : 'â€”'}</td>
               <td class="num pct" data-objid="${escAttr(o.id)}">${cachedPctText(o.id)}</td>
-              <td><span class="tag-dot" style="color:${typeColor(o)}">●</span> ${TYPE_LABELS[o.otype] || o.otype}</td>
+              <td><span class="tag-dot" style="color:${typeColor(o)}">â—</span> ${esc(TYPE_LABELS[o.otype] || o.otype || "")}</td>
               <td>${esc(o.constellation)}</td>
               <td class="num">${esc(fmtSize(o))}</td>
-              ${showFrame ? `<td class="frame">${fp == null ? '—' : fp >= 100 ? '<span class="fit">fits</span>' : fp + '%'}</td>` : ''}
+              ${showFrame ? `<td class="frame">${fp == null ? 'â€”' : fp >= 100 ? '<span class="fit">fits</span>' : fp + '%'}</td>` : ''}
               <td class="num">${E.formatRA(o.ra_hours)}</td>
               <td class="num">${E.formatDec(o.dec_deg)}</td>
             </tr>`;
@@ -1211,9 +1250,9 @@ function renderCatalog() {
       </table>
     </div>
     <div class="pager">
-      <button class="btn" id="pg-prev" ${S.cat.page === 0 ? 'disabled' : ''}>← prev</button>
+      <button class="btn" id="pg-prev" ${S.cat.page === 0 ? 'disabled' : ''}>â† prev</button>
       <span>page ${S.cat.page + 1} / ${pages}</span>
-      <button class="btn" id="pg-next" ${S.cat.page >= pages - 1 ? 'disabled' : ''}>next →</button>
+      <button class="btn" id="pg-next" ${S.cat.page >= pages - 1 ? 'disabled' : ''}>next â†’</button>
     </div>`;
   hideSplash();
 
@@ -1251,7 +1290,7 @@ function warmPct(list) {
   const status = document.querySelector('#pct-status');
   const total = missing.length;
   if (!total) return;
-  busy(true, 'computing visibility…');
+  busy(true, 'computing visibilityâ€¦');
   let i = 0;
   const tick = () => {
     const t0 = performance.now();
@@ -1260,7 +1299,7 @@ function warmPct(list) {
       obsCache.set(obsKey(g, o.id), computeObs(o, g.jd0, g.jd1, g.step, g.minAlt, g.pano, g.lat, g.lon));
       i++;
     }
-    if (status) status.textContent = `computing visibility… ${Math.round(100 * i / total)}%`;
+    if (status) status.textContent = `computing visibilityâ€¦ ${Math.round(100 * i / total)}%`;
     if (i < missing.length) setTimeout(tick, 0);
     else {
       if (status) status.textContent = '';
@@ -1302,10 +1341,12 @@ function openDetail(id) {
   const modal = $('#modal');
   const pano = Hor.activePano();
   const { lat, lon } = S.site;
-  const info = E.nightInfo(nightAnchor(), lat, lon);
+  const info = E.nightInfo(nightAnchor(), lat, lon, siteNoon(nightAnchor()));
   const jd = E.julianDay(new Date());
   const [altNow, azNow] = E.altaz(o.ra_hours * 15, o.dec_deg, jd, lat, lon);
-  const localMidnight = new Date(S.date.getFullYear(), S.date.getMonth(), S.date.getDate(), 0, 30);
+  // the SITE's 00:30, not the browser's (same anchoring rule as nightInfo)
+  const localMidnight = WS.wallToUtc(new Date(
+    S.date.getFullYear(), S.date.getMonth(), S.date.getDate(), 0, 30));
   const dayInfo = E.objectDayInfo(o.ra_hours * 15, o.dec_deg, localMidnight, lat, lon);
 
   // Moon distance now + at tonight's peak (proximity awareness, like the smart-scope apps)
@@ -1320,23 +1361,23 @@ function openDetail(id) {
     const [ma2, maz2] = E.altaz(mr2 * 15, md2, peakJd, lat, lon);
     const [pa, paz] = E.altaz(o.ra_hours * 15, o.dec_deg, peakJd, lat, lon);
     sepPeak = E.sepDeg(pa, paz, ma2, maz2);
-  } catch { /* e.g. transit not a Date — keep null */ }
+  } catch { /* e.g. transit not a Date â€” keep null */ }
   const moonRow = (label, sep) => {
     if (sep == null) return '';
     const a = Math.round(sep);
     const col = illumNow < 15 ? 'var(--green)' : a >= 90 ? 'var(--green)' : a >= 45 ? 'var(--amber)' : 'var(--bad)';
-    const note = a < 30 ? ' — very close to the Moon' : a < 60 ? ' — close to the Moon' : '';
-    return `<dt>${label}</dt><dd><span style="color:${col}">${a}°</span><span class="tags">from Moon${note}</span></dd>`;
+    const note = a < 30 ? ' â€” very close to the Moon' : a < 60 ? ' â€” close to the Moon' : '';
+    return `<dt>${label}</dt><dd><span style="color:${col}">${a}Â°</span><span class="tags">from Moon${note}</span></dd>`;
   };
 
-  const tags = [o.messier, o.ngcic, o.other].filter(Boolean).map(esc).join(' · ');
+  const tags = [o.messier, o.ngcic, o.other].filter(Boolean).map(esc).join(' Â· ');
   const wiki = o.wiki || o.primary_name;
 
   modal.innerHTML = `
     <div class="modal" role="dialog" aria-modal="true" aria-labelledby="m-title">
       <div class="modal-head">
         <h2 id="m-title">${esc(o.primary_name)}</h2>
-        <button class="close" id="m-close" title="close" aria-label="Close">✕</button>
+        <button class="close" id="m-close" title="close" aria-label="Close">âœ•</button>
       </div>
       <span class="tags">${tags}</span>
       <div class="detail-grid">
@@ -1346,21 +1387,21 @@ function openDetail(id) {
         </div>
         <div>
           <dl class="meta">
-            <dt>Type</dt><dd><span style="color:${typeColor(o)}">●</span> ${TYPE_LABELS[o.otype] || o.otype}</dd>
-            <dt>Magnitude</dt><dd>${o.vmag != null ? o.vmag.toFixed(1) : '—'}</dd>
-            <dt>Size</dt><dd>${esc(fmtSize(o)) || '—'}</dd>
-            <dt>Constellation</dt><dd>${esc(o.constellation || '—')}</dd>
-            <dt>Distance</dt><dd>${esc(o.distance || '—')}</dd>
-            <dt>RA / Dec (J2000)</dt><dd>${E.formatRA(o.ra_hours)} · ${E.formatDec(o.dec_deg)}</dd>
-            <dt>Right now</dt><dd>alt ${altNow.toFixed(1)}°, az ${azNow.toFixed(0)}°</dd>
-            <dt>Tonight</dt><dd>rises ${fmtClock(dayInfo.rise)} · transits ${fmtClock(dayInfo.transit)} · sets ${fmtClock(dayInfo.set)} · peaks ${dayInfo.maxAlt.toFixed(0)}°</dd>
+            <dt>Type</dt><dd><span style="color:${typeColor(o)}">â—</span> ${esc(TYPE_LABELS[o.otype] || o.otype || "")}</dd>
+            <dt>Magnitude</dt><dd>${o.vmag != null ? o.vmag.toFixed(1) : 'â€”'}</dd>
+            <dt>Size</dt><dd>${esc(fmtSize(o)) || 'â€”'}</dd>
+            <dt>Constellation</dt><dd>${esc(o.constellation || 'â€”')}</dd>
+            <dt>Distance</dt><dd>${esc(o.distance || 'â€”')}</dd>
+            <dt>RA / Dec (J2000)</dt><dd>${E.formatRA(o.ra_hours)} Â· ${E.formatDec(o.dec_deg)}</dd>
+            <dt>Right now</dt><dd>alt ${altNow.toFixed(1)}Â°, az ${azNow.toFixed(0)}Â°</dd>
+            <dt>Tonight</dt><dd>rises ${fmtClock(dayInfo.rise)} Â· transits ${fmtClock(dayInfo.transit)} Â· sets ${fmtClock(dayInfo.set)} Â· peaks ${dayInfo.maxAlt.toFixed(0)}Â°</dd>
             ${moonRow('Moon dist now', sepNow)}
             ${sepPeak != null ? moonRow('Moon dist @ peak', sepPeak) : ''}
-            <dt>Observable</dt><dd id="d-obs">—</dd>
+            <dt>Observable</dt><dd id="d-obs">â€”</dd>
           </dl>
           ${o.blurb ? `<p class="blurb">${esc(o.blurb)}</p>` : ''}
-          <p class="blurb" style="margin-top:8px;font-size:13px"><a class="wiki" href="https://en.wikipedia.org/wiki/${encodeURIComponent(wiki)}" target="_blank" rel="noopener">Wikipedia ↗</a></p>
-          ${o.custom ? '<button class="btn small" id="m-del" style="margin-top:10px" title="remove this custom target">🗑 delete target</button>' : ''}
+          <p class="blurb" style="margin-top:8px;font-size:13px"><a class="wiki" href="https://en.wikipedia.org/wiki/${encodeURIComponent(wiki)}" target="_blank" rel="noopener">Wikipedia â†—</a></p>
+          ${o.custom ? '<button class="btn small" id="m-del" style="margin-top:10px" title="remove this custom target">ðŸ—‘ delete target</button>' : ''}
         </div>
       </div>
       <div class="tonight-box">
@@ -1391,13 +1432,13 @@ function openDetail(id) {
     wikiStarted = true;
     dImg.style.display = 'none';
     dPh.style.display = 'flex';
-    dPh.textContent = 'loading Wikipedia photo…';
+    dPh.textContent = 'loading Wikipedia photoâ€¦';
     loadWikiThumb(o, dImg, dPh);
   });
 
   // ---- altitude chart ----
-  const startT = info.sunset || new Date(S.date.getFullYear(), S.date.getMonth(), S.date.getDate(), 19, 0);
-  const endT = info.sunrise || new Date(S.date.getFullYear(), S.date.getMonth(), S.date.getDate() + 1, 6, 0);
+  const startT = info.sunset || WS.wallToUtc(new Date(S.date.getFullYear(), S.date.getMonth(), S.date.getDate(), 19, 0));
+  const endT = info.sunrise || WS.wallToUtc(new Date(S.date.getFullYear(), S.date.getMonth(), S.date.getDate() + 1, 6, 0));
   const t0 = new Date(startT.getTime() - 60 * 60000);
   const t1 = new Date(endT.getTime() + 60 * 60000);
   const jd0 = E.julianDay(t0), jd1 = E.julianDay(t1);
@@ -1422,25 +1463,36 @@ function openDetail(id) {
   const tEnd = new Date(t1.getTime());
   const durMs = tEnd - tStart;
 
-  // best window = longest clear run
+  // The statistics below use the SAME dark window as the targets table
+  // (dusk..dawn). The chart itself spans sunset-1h..sunrise+1h for visual
+  // context, and counting that wider span made the modal's "% of night" and
+  // "best window" disagree with the table (and with the desktop, which clips to
+  // dusk..dawn for exactly the same reason).
+  const darkWin = E.pickDarkWindow(info, nightAnchor());
+  const jdDusk = E.julianDay(darkWin.dusk), jdDawn = E.julianDay(darkWin.dawn);
+  const inNight = samples.map((s) => s.t >= jdDusk && s.t <= jdDawn);
+
+  // best window = longest clear run INSIDE the dark window ([start, end) over
+  // samples - the same half-open contract as the table's bestRun)
   let run = 0, best = 0, bestStart = -1, curStart = -1;
   for (let i = 0; i <= steps; i++) {
-    if (samples[i].vis) {
+    if (samples[i].vis && inNight[i]) {
       if (run === 0) curStart = i;
       run++;
       if (run > best) { best = run; bestStart = curStart; }
     } else run = 0;
   }
   const winNote = bestStart >= 0 && best > 1
-    ? `Best window (clear, ≥${minAlt.toFixed(0)}°): ${fmtClock(new Date(tStart.getTime() + (bestStart / steps) * durMs))} – ${fmtClock(new Date(tStart.getTime() + ((bestStart + best) / steps) * durMs))}`
+    ? `Best window (clear, â‰¥${minAlt.toFixed(0)}Â°): ${fmtClock(new Date(tStart.getTime() + (bestStart / steps) * durMs))} â€“ ${fmtClock(new Date(tStart.getTime() + ((bestStart + best) / steps) * durMs))}`
     : 'No clear window tonight';
   $('#win-note').textContent = winNote;
-  const visCount = samples.reduce((a, s) => a + (s.vis ? 1 : 0), 0);
+  const visCount = samples.reduce((a, s, i) => a + (s.vis && inNight[i] ? 1 : 0), 0);
+  const nightSamples = inNight.filter(Boolean).length || 1;
   const obsEl = $('#d-obs');
   if (obsEl) {
-    const pct = Math.round(100 * visCount / (steps + 1));
+    const pct = Math.round(100 * visCount / nightSamples);
     const visMin = visCount * (durMs / 60000 / steps);
-    obsEl.textContent = visCount ? `${pct}% of night · ${fmtDur(visMin)} visible (min ${minAlt.toFixed(0)}°${pano ? ` + horizon "${esc(pano.name)}"` : ''})` : 'nothing clear at your min altitude / horizon';
+    obsEl.textContent = visCount ? `${pct}% of night Â· ${fmtDur(visMin)} visible (min ${minAlt.toFixed(0)}Â°${pano ? ` + horizon "${esc(pano.name)}"` : ''})` : 'nothing clear at your min altitude / horizon';
   }
 
   const g = $('#graph');
@@ -1475,7 +1527,7 @@ function openDetail(id) {
         gCtx.fillRect(x1, padT, x2 - x1, H - padT - padB);
       }
     }
-    // horizon + 20° line
+    // horizon + 20Â° line
     gCtx.strokeStyle = 'rgba(255,255,255,.22)'; gCtx.lineWidth = 1;
     gCtx.setLineDash([]);
     gCtx.beginPath(); gCtx.moveTo(padL, yOf(0)); gCtx.lineTo(W - padR, yOf(0)); gCtx.stroke();
@@ -1486,7 +1538,7 @@ function openDetail(id) {
     gCtx.fillStyle = 'rgba(127,151,184,.9)';
     gCtx.font = '10px ui-monospace, monospace';
     gCtx.textAlign = 'right';
-    for (const alt of [0, 20, 40, 60, 80]) gCtx.fillText(`${alt}°`, padL - 6, yOf(alt) + 3);
+    for (const alt of [0, 20, 40, 60, 80]) gCtx.fillText(`${alt}Â°`, padL - 6, yOf(alt) + 3);
     gCtx.textAlign = 'center';
     const ticks = 10;
     for (let i = 0; i <= ticks; i++) {
@@ -1504,7 +1556,7 @@ function openDetail(id) {
     gCtx.beginPath(); gCtx.moveTo(padL, yOf(minAlt)); gCtx.lineTo(W - padR, yOf(minAlt)); gCtx.stroke();
     gCtx.setLineDash([]);
     gCtx.fillStyle = 'rgba(123, 241, 168, .85)'; gCtx.font = '10px ui-monospace, monospace'; gCtx.textAlign = 'right';
-    gCtx.fillText(`min ${minAlt.toFixed(0)}°`, W - padR - 4, yOf(minAlt) - 4);
+    gCtx.fillText(`min ${minAlt.toFixed(0)}Â°`, W - padR - 4, yOf(minAlt) - 4);
     // obstruction ceilings (active panorama)
     if (pano) {
       gCtx.lineWidth = 1.4;
@@ -1560,7 +1612,7 @@ function openDetail(id) {
       gCtx.fillStyle = '#0b1526';
       gCtx.beginPath(); gCtx.arc(x, y, 4.5, 0, Math.PI * 2); gCtx.fill();
       gCtx.strokeStyle = '#8fd3ff'; gCtx.stroke();
-      tip.innerHTML = `<b>${fmtClock(new Date(tStart.getTime() + (i / steps) * durMs))}</b><br>alt ${s.alt.toFixed(1)}° · moon ${s.mAlt.toFixed(1)}°`;
+      tip.innerHTML = `<b>${fmtClock(new Date(tStart.getTime() + (i / steps) * durMs))}</b><br>alt ${s.alt.toFixed(1)}Â° Â· moon ${s.mAlt.toFixed(1)}Â°`;
       const rr = g.getBoundingClientRect();
       tip.hidden = false;
       tip.style.left = Math.round(rr.left + Math.min(x + 14, W - 190)) + 'px';
@@ -1611,7 +1663,7 @@ const tip = {
   set hidden(v) { $('#tooltip').hidden = v; },
   get style() { return $('#tooltip').style; },
 };
-// note: `tip` above is a shim so detail code works before #tooltip exists; declared after use is fine (hoisting of const is not — so we define functions after). See boot below.
+// note: `tip` above is a shim so detail code works before #tooltip exists; declared after use is fine (hoisting of const is not â€” so we define functions after). See boot below.
 
 /* ------------------------------ settings ------------------------------ */
 
@@ -1655,7 +1707,7 @@ function upsertTarget(t) {
 
 const objName = (o) => o.primary_name || o.id;
 
-/** Setup dialog — tabs mirror the desktop app: Sites / Rigs / Targets / Backup.
+/** Setup dialog â€” tabs mirror the desktop app: Sites / Rigs / Targets / Backup.
  *  The open tab survives a re-render (save/delete re-renders the whole dialog). */
 let SETTINGS_TAB = 'sites';
 
@@ -1685,30 +1737,30 @@ async function renderSettings() {
     <li data-id="${esc(s.id)}">
       <input type="radio" name="site-active" ${active && s.id === active.id ? 'checked' : ''} title="use for planning">
       <span class="p-name">${esc(s.name)}</span>
-      <span class="p-tags">${s.lat.toFixed(3)}, ${s.lon.toFixed(3)} · ${s.elev || 0} m${s.tz ? ` · ${esc(s.tz)}` : ''}</span>
+      <span class="p-tags">${s.lat.toFixed(3)}, ${s.lon.toFixed(3)} Â· ${s.elev || 0} m${s.tz ? ` Â· ${esc(s.tz)}` : ''}</span>
       <button class="btn small" data-editsite="${esc(s.id)}">edit</button>
-      <button class="btn small" data-delsite="${esc(s.id)}" title="delete site">✕</button>
+      <button class="btn small" data-delsite="${esc(s.id)}" title="delete site">âœ•</button>
     </li>`;
   const rigRow = (r) => `
     <li data-id="${esc(r.id)}">
       <span class="p-name">${esc(r.name)}</span>
-      <span class="p-tags">${r.focal_mm ? `${r.focal_mm} mm` : '—'}</span>
+      <span class="p-tags">${r.focal_mm ? `${r.focal_mm} mm` : 'â€”'}</span>
       <button class="btn small" data-editrig="${esc(r.id)}">edit</button>
-      <button class="btn small" data-delrig="${esc(r.id)}" title="delete rig">✕</button>
+      <button class="btn small" data-delrig="${esc(r.id)}" title="delete rig">âœ•</button>
     </li>`;
   const targetRow = (t) => `
     <li data-id="${esc(t.id)}">
       <span class="p-name">${esc(t.primary_name)}</span>
-      <span class="p-tags">${TYPE_LABELS[t.otype] || t.otype} · RA ${E.formatRA(t.ra_hours)}, Dec ${E.formatDec(t.dec_deg)}${t.vmag != null ? ` · mag ${t.vmag.toFixed(1)}` : ''}</span>
+      <span class="p-tags">${esc(TYPE_LABELS[t.otype] || t.otype || "")} Â· RA ${E.formatRA(t.ra_hours)}, Dec ${E.formatDec(t.dec_deg)}${t.vmag != null ? ` Â· mag ${t.vmag.toFixed(1)}` : ''}</span>
       <button class="btn small" data-edittarget="${esc(t.id)}">edit</button>
-      <button class="btn small" data-deltarget="${esc(t.id)}" title="delete target">✕</button>
+      <button class="btn small" data-deltarget="${esc(t.id)}" title="delete target">âœ•</button>
     </li>`;
 
   modal.innerHTML = `
     <div class="modal settings" role="dialog" aria-modal="true" aria-labelledby="m-set-title">
       <div class="modal-head">
         <h2 id="m-set-title">Setup</h2>
-        <button class="close" id="m-close" title="close" aria-label="Close">✕</button>
+        <button class="close" id="m-close" title="close" aria-label="Close">âœ•</button>
       </div>
       <div class="modal-tabs" role="tablist" aria-label="Setup sections">
         <button class="tab" data-mtab="sites" role="tab" aria-selected="true">Sites</button>
@@ -1732,8 +1784,8 @@ async function renderSettings() {
         </div>
         <div class="card">
           <h3>Sites</h3>
-          <ul class="pick" id="set-sites">${sites.length ? sites.map(siteRow).join('') : '<li style="cursor:default">no site yet — add one below</li>'}</ul>
-          <div class="btnrow" style="margin-top:8px"><button class="btn small" id="set-add-site">＋ Add site</button></div>
+          <ul class="pick" id="set-sites">${sites.length ? sites.map(siteRow).join('') : '<li style="cursor:default">no site yet â€” add one below</li>'}</ul>
+          <div class="btnrow" style="margin-top:8px"><button class="btn small" id="set-add-site">ï¼‹ Add site</button></div>
           <div class="set-form" id="sf-site" hidden>
             <input type="hidden" id="sf-site-id">
             <label>Name <input type="text" id="sf-site-name"></label>
@@ -1750,13 +1802,13 @@ async function renderSettings() {
         <div class="card">
           <h3>Rigs</h3>
           <p class="sub">Telescope + camera combinations for the frame-coverage estimates; the field of view comes from focal length and sensor size.</p>
-          <ul class="pick" id="set-rigs">${rigs.length ? rigs.map(rigRow).join('') : '<li style="cursor:default">no rig yet — press “Add rig”</li>'}</ul>
-          <div class="btnrow" style="margin-top:8px"><button class="btn small" id="set-add-rig">＋ Add rig</button></div>
+          <ul class="pick" id="set-rigs">${rigs.length ? rigs.map(rigRow).join('') : '<li style="cursor:default">no rig yet â€” press â€œAdd rigâ€</li>'}</ul>
+          <div class="btnrow" style="margin-top:8px"><button class="btn small" id="set-add-rig">ï¼‹ Add rig</button></div>
           <div id="set-rig-picker" hidden>
             <p class="sub">Pick a smart telescope, or build a custom rig.</p>
             <ul class="pick" id="set-rig-presets"></ul>
             <div class="btnrow">
-              <button class="btn small" id="set-rig-custom">Custom rig…</button>
+              <button class="btn small" id="set-rig-custom">Custom rigâ€¦</button>
               <button class="btn small" id="set-rig-pick-cancel">Cancel</button>
             </div>
           </div>
@@ -1775,14 +1827,14 @@ async function renderSettings() {
       <div class="mtabpane hidden" id="mtab-targets" role="tabpanel">
         <div class="card">
           <h3>Custom targets</h3>
-          <ul class="pick" id="set-targets">${targets.length ? targets.map(targetRow).join('') : '<li style="cursor:default">no custom targets — add your own objects (ids u_*)</li>'}</ul>
-          <div class="btnrow" style="margin-top:8px"><button class="btn small" id="set-add-target">＋ New target</button></div>
+          <ul class="pick" id="set-targets">${targets.length ? targets.map(targetRow).join('') : '<li style="cursor:default">no custom targets â€” add your own objects (ids u_*)</li>'}</ul>
+          <div class="btnrow" style="margin-top:8px"><button class="btn small" id="set-add-target">ï¼‹ New target</button></div>
           <div class="set-form" id="sf-target" hidden>
             <input type="hidden" id="sf-target-id">
             <label>Name <input type="text" id="sf-target-name"></label>
             <label>Type <select id="sf-target-type">${Object.entries(TYPE_LABELS).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}</select></label>
             <label>RA <input type="text" id="sf-target-ra" placeholder="e.g. 5 34 32 or 5.575 h"></label>
-            <label>Dec <input type="text" id="sf-target-dec" placeholder="e.g. +22 0 60 or 22.017°"></label>
+            <label>Dec <input type="text" id="sf-target-dec" placeholder="e.g. +22 0 60 or 22.017Â°"></label>
             <label>Mag <input type="text" inputmode="decimal" id="sf-target-vmag"></label>
             <label>Size (arcmin) <input type="text" id="sf-target-size" placeholder="e.g. 6x4"></label>
             <label>Constellation <input type="text" id="sf-target-con" placeholder="e.g. Ori"></label>
@@ -1796,10 +1848,10 @@ async function renderSettings() {
       <div class="mtabpane hidden" id="mtab-backup" role="tabpanel">
         <div class="card">
           <h3>Backup &amp; transfer</h3>
-          <p class="sub">A backup covers sites, rigs, custom targets, horizon profiles and settings — the browser equivalent of the desktop app's ZIP export/import.</p>
+          <p class="sub">A backup covers sites, rigs, custom targets, horizon profiles and settings â€” the browser equivalent of the desktop app's ZIP export/import.</p>
           <div class="btnrow" style="margin-top:10px">
-            <button class="btn primary" id="set-export">⬇ Export backup (JSON)</button>
-            <label class="btn" for="set-import" style="text-align:center">⬆ Import backup</label>
+            <button class="btn primary" id="set-export">â¬‡ Export backup (JSON)</button>
+            <label class="btn" for="set-import" style="text-align:center">â¬† Import backup</label>
             <input type="file" id="set-import" accept="application/json,.json" class="vhidden">
           </div>
           <p class="sub" style="margin-top:8px">Layout (free space per side) lives in the hamburger menu under <b>Layout</b>.</p>
@@ -1816,7 +1868,7 @@ async function renderSettings() {
     b.addEventListener('click', () => showMTab(b.dataset.mtab));
   });
 
-  // — quick active-site coordinates —
+  // â€” quick active-site coordinates â€”
   const qlat = $('#sf-quick-lat'), qlon = $('#sf-quick-lon'), qnote = $('#sf-quick-note');
   if (qlat && qlon) {
     qlat.value = S.site.lat.toFixed(4);
@@ -1835,7 +1887,7 @@ async function renderSettings() {
     } else {
       S.site = { ...S.site, lat, lon };
     }
-    if (qnote) qnote.textContent = rec ? 'saved — ' + rec.name : 'saved';
+    if (qnote) qnote.textContent = rec ? 'saved â€” ' + rec.name : 'saved';
     refreshView();
   };
   const qsave = $('#sf-quick-save');
@@ -1847,7 +1899,7 @@ async function renderSettings() {
       () => { if (qnote) qnote.textContent = 'location denied'; });
   });
 
-  // — sites —
+  // â€” sites â€”
   if ($('#set-sites')) $('#set-sites').querySelectorAll('li[data-id]').forEach((li) => {
     const radio = li.querySelector('input[type=radio]');
     if (radio) radio.addEventListener('change', () => {
@@ -1868,7 +1920,7 @@ async function renderSettings() {
   }));
   $('#set-add-site').addEventListener('click', () => openSiteForm(null));
 
-  // — rigs —
+  // â€” rigs â€”
   modal.querySelectorAll('[data-editrig]').forEach((b) => b.addEventListener('click', () => openRigForm(rigs.find((r) => r.id === b.dataset.editrig))));
   modal.querySelectorAll('[data-delrig]').forEach((b) => b.addEventListener('click', async () => {
     if (!confirm('Delete this rig?')) return;
@@ -1888,7 +1940,7 @@ async function renderSettings() {
     $('#sf-rig-name').focus();
   });
 
-  // — custom targets —
+  // â€” custom targets â€”
   modal.querySelectorAll('[data-edittarget]').forEach((b) => b.addEventListener('click', () => openTargetForm(targets.find((t) => t.id === b.dataset.edittarget))));
   modal.querySelectorAll('[data-deltarget]').forEach((b) => b.addEventListener('click', async () => {
     const t = targets.find((x) => x.id === b.dataset.deltarget);
@@ -1900,7 +1952,7 @@ async function renderSettings() {
   }));
   $('#set-add-target').addEventListener('click', () => openTargetForm(null));
 
-  // — backup / transfer —
+  // â€” backup / transfer â€”
   $('#set-export').addEventListener('click', async () => {
     const backup = await WS.collectBackup(Hor.getPrefs(), Hor.exportPanos());
     WS.downloadText(`nightseam-web-backup-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify(backup, null, 1));
@@ -1919,7 +1971,7 @@ async function renderSettings() {
           targets: (data.targets || []).length,
           panos: (data.panos && data.panos.panos ? data.panos.panos : []).length,
         };
-        if (!confirm(`Import backup?\nSites: ${counts.sites} · Rigs: ${counts.rigs} · Custom targets: ${counts.targets}\nHorizons: ${counts.panos}\n\nYour current browser data will be replaced.`)) return;
+        if (!confirm(`Import backup?\nSites: ${counts.sites} Â· Rigs: ${counts.rigs} Â· Custom targets: ${counts.targets}\nHorizons: ${counts.panos}\n\nYour current browser data will be replaced.`)) return;
         const applied = await WS.restoreBackup(data);
         if (applied.prefs) Hor.setPrefs(applied.prefs);
         if (applied.panos) Hor.importPanos(applied.panos);
@@ -1967,7 +2019,7 @@ async function saveSiteForm() {
   const tz = $('#sf-site-tz').value.trim() || null;
   if (!name) { alert('Please name the site.'); return; }
   if (!Number.isFinite(lat) || lat < -90 || lat > 90 || !Number.isFinite(lon) || lon < -180 || lon > 180) {
-    alert('Latitude must be -90…90 and longitude -180…180.');
+    alert('Latitude must be -90â€¦90 and longitude -180â€¦180.');
     return;
   }
   const id = $('#sf-site-id').value || WS.NEW_SITE_ID();
@@ -1990,10 +2042,10 @@ function showRigPicker() {
   panel.hidden = false;
   box.innerHTML = WS.DEFAULT_RIGS.map((p, i) => {
     const fw = WS.fovFrom(p.focal_mm, p.sensor_w), fh = WS.fovFrom(p.focal_mm, p.sensor_h);
-    const fov = fw != null && fh != null ? `${fw.toFixed(2)}° × ${fh.toFixed(2)}°` : '';
+    const fov = fw != null && fh != null ? `${fw.toFixed(2)}Â° Ã— ${fh.toFixed(2)}Â°` : '';
     return `<li data-preset="${i}">
       <span class="p-name">${esc(p.name)}</span>
-      <span class="p-tags">${p.focal_mm} mm${fov ? ` · ${fov}` : ''}</span>
+      <span class="p-tags">${p.focal_mm} mm${fov ? ` Â· ${fov}` : ''}</span>
       <button class="btn small" data-addpreset="${i}">Add</button>
     </li>`;
   }).join('');
@@ -2027,7 +2079,7 @@ function fovPreview() {
   const el = $('#sf-rig-fov');
   if (el) {
     const fw = WS.fovFrom(f, w), fh = WS.fovFrom(f, h);
-    el.textContent = fw != null && fh != null ? `field of view ≈ ${fw.toFixed(2)}° × ${fh.toFixed(2)}°` : 'field of view appears once focal length + sensor size are set';
+    el.textContent = fw != null && fh != null ? `field of view â‰ˆ ${fw.toFixed(2)}Â° Ã— ${fh.toFixed(2)}Â°` : 'field of view appears once focal length + sensor size are set';
   }
 }
 
@@ -2115,7 +2167,7 @@ function welcomeFlow() {
     modal.innerHTML = `
       <div class="modal welcome" role="dialog" aria-modal="true" aria-labelledby="m-wel-title">
         <div class="modal-head">
-          <h2 id="m-wel-title">👋 Welcome to NightSeam Web</h2>
+          <h2 id="m-wel-title">ðŸ‘‹ Welcome to NightSeam Web</h2>
         </div>
         <p class="sub">Where will you observe? You can add more sites any time via Setup in the top bar.</p>
         <div class="set-form">
@@ -2149,7 +2201,7 @@ function welcomeFlow() {
       navigator.geolocation.getCurrentPosition((pos) => {
         $('#w-lat').value = pos.coords.latitude;
         $('#w-lon').value = pos.coords.longitude;
-      }, () => { /* permission denied — user can type manually */ });
+      }, () => { /* permission denied â€” user can type manually */ });
     });
     $('#w-skip').addEventListener('click', () => finish(null));
   });
@@ -2158,14 +2210,14 @@ function welcomeFlow() {
 /* ------------------------------- boot ------------------------------ */
 
 async function boot() {
-  // visible error reporting — never fail silently again
+  // visible error reporting â€” never fail silently again
   const errBox = document.createElement('div');
   errBox.id = 'err-banner';
   errBox.style.cssText = 'position:fixed;top:8px;left:50%;transform:translateX(-50%);z-index:99;background:#5b1620;border:1px solid #ff6b6b;color:#ffd7d7;border-radius:10px;padding:8px 14px;font-size:13px;max-width:90vw;box-shadow:0 8px 24px rgba(0,0,0,.5);display:none';
   document.body.appendChild(errBox);
   let errTimer = null;
   const showErr = (msg) => {
-    errBox.textContent = '⚠ ' + String(msg).slice(0, 400);
+    errBox.textContent = 'âš  ' + String(msg).slice(0, 400);
     errBox.style.display = 'block';
     if (errTimer) clearTimeout(errTimer);
     errTimer = setTimeout(() => { errBox.style.display = 'none'; }, 15000);
@@ -2175,14 +2227,14 @@ async function boot() {
   const tipEl = $('#tooltip');
   S.detailResize = null;
   try {
-    splashText('loading catalog…');
+    splashText('loading catalogâ€¦');
     const res = await fetch('catalog.json');
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     CAT = await res.json();
     for (const o of CAT) byId.set(o.id, o);
     for (const c of new Set(CAT.map((o) => o.constellation).filter(Boolean))) CONSTELLATIONS.push(c);
     CONSTELLATIONS.sort((a, b) => a.localeCompare(b));
-    splashText(`catalog ready · ${CAT.length.toLocaleString()} objects`);
+    splashText(`catalog ready Â· ${CAT.length.toLocaleString()} objects`);
   } catch (err) {
     splashText(`catalog failed to load: ${err.message}`);
     return;
@@ -2220,10 +2272,10 @@ async function boot() {
   if (fv) fv.textContent = ver ? `NightSeam Web ${ver.version}` : 'dev build';
   const av = $('#aboutVersion');
   if (av) av.textContent = ver ? `${ver.version}` : 'dev build';
-  splashText(`catalog ready · ${CAT.length.toLocaleString()} objects · site “${S.site.label}”`);
+  splashText(`catalog ready Â· ${CAT.length.toLocaleString()} objects Â· site â€œ${S.site.label}â€`);
 
   // ---- site controls: the active site's coordinates are edited in
-  // Setup → Active site (desktop parity); quick-edit handled there ----
+  // Setup â†’ Active site (desktop parity); quick-edit handled there ----
   const ts = $('#tb-site');
   if (ts) ts.addEventListener('change', (ev) => {
     const s = SITES.find((x) => x.id === ev.target.value);
@@ -2231,18 +2283,18 @@ async function boot() {
   });
   $('#btn-settings').addEventListener('click', () => { renderSettings(); });
 
-  // — topbar: min-alt slider (desktop parity) —
+  // â€” topbar: min-alt slider (desktop parity) â€”
   const syncTopPrefs = () => {
     const p = Hor.getPrefs();
     const eff = Hor.effectiveMinAlt();
     const mua = $('#tb-minalt'), muaV = $('#tb-minalt-val'), note = $('#tb-note');
     if (mua) mua.value = String(eff);
-    if (muaV) muaV.textContent = eff + '°';
+    if (muaV) muaV.textContent = eff + 'Â°';
     if (note) note.textContent = p.minAlt == null ? 'auto (bortle)' : 'explicit';
   };
   syncTopPrefs();
   // live label + pref on every tick, but only recompute the views when the
-  // drag ENDS — a per-tick refreshView() re-ranks the whole night and
+  // drag ENDS â€” a per-tick refreshView() re-ranks the whole night and
   // rebuilds the view under the pointer, making the slider feel broken.
   const applyMinAlt = (ev) => {
     const v = Hor.num(ev.target.value);
@@ -2253,7 +2305,7 @@ async function boot() {
   $('#tb-minalt').addEventListener('input', applyMinAlt);
   $('#tb-minalt').addEventListener('change', applyMinAlt);
 
-  // — topbar: night of (date) —
+  // â€” topbar: night of (date) â€”
   const dateEl = $('#tb-date');
   if (dateEl) {
     const today = WS.effToday();
@@ -2272,7 +2324,7 @@ async function boot() {
     });
   }
 
-  // — topbar: night scrub (syncs Sky View time) —
+  // â€” topbar: night scrub (syncs Sky View time) â€”
   const scrub = $('#tb-scrub'), scrubT = $('#tb-scrub-time');
   if (scrub) {
     const syncScrub = () => {
@@ -2295,24 +2347,30 @@ async function boot() {
     window.addEventListener('sky:time', syncScrub);
   }
 
-  // — night info chip (dark window + moon) —
+  // â€” night info chip (dark window + moon) â€”
   const renderNightInfo = () => {
     const el = $('#nightInfo');
     if (!el) return;
-    const info = E.nightInfo(nightAnchor(), S.site.lat, S.site.lon);
-    const mo = E.moonPhase(E.julianDay(new Date()));
-    let darkTxt = '—';
-    if (info.astroDusk && info.astroDawn) {
-      darkTxt = `${fmtClock(info.astroDusk)}–${fmtClock(info.astroDawn)}`;
-    } else if (info.civilDusk && info.civilDawn) {
-      darkTxt = `${fmtClock(info.civilDusk)}–${fmtClock(info.civilDawn)}`;
+    const info = E.nightInfo(nightAnchor(), S.site.lat, S.site.lon,
+                             siteNoon(nightAnchor()));
+    const dw = E.pickDarkWindow(info);
+    // the ANCHORED night's moon (desktop header parity: it reports the night's
+    // illumination, not the live one) - only "now" when there is no dark
+    // window at all (polar day)
+    const moJd = (dw.dusk && dw.dawn)
+      ? (E.julianDay(dw.dusk) + E.julianDay(dw.dawn)) / 2
+      : E.julianDay(new Date());
+    const mo = E.moonPhase(moJd);
+    let darkTxt = 'â€”';
+    if (dw.dusk && dw.dawn) {
+      darkTxt = `${fmtClock(dw.dusk)}â€“${fmtClock(dw.dawn)}`;
     }
-    el.textContent = `moon ${(mo.illumination * 100).toFixed(0)}% · ${mo.name} · dark ${darkTxt}`;
+    el.textContent = `moon ${(mo.illumination * 100).toFixed(0)}% Â· ${mo.name} Â· dark ${darkTxt}`;
   };
   renderNightInfo();
   setInterval(renderNightInfo, 60000);
 
-  // — weather chip (load-on-demand; auto-load toggle in the submenu) —
+  // â€” weather chip (load-on-demand; auto-load toggle in the submenu) â€”
   const wxBtn = $('#btnWeather'), wxPanel = $('#weatherPanel');
   if (wxBtn && wxPanel) {
     wxBtn.addEventListener('click', (ev) => {
@@ -2343,7 +2401,7 @@ async function boot() {
   }
   if (Hor.getPrefs().weatherAuto) loadWeather(); // auto-load on startup
 
-  // — hamburger menu (desktop parity) —
+  // â€” hamburger menu (desktop parity) â€”
   const menuBtn = $('#btnMenu'), menuPanel = $('#menuPanel');
   const closeMenu = () => { if (menuPanel) menuPanel.classList.add('hidden'); };
   menuBtn.addEventListener('click', (ev) => {
@@ -2365,7 +2423,7 @@ async function boot() {
     const adv = $('#advMode'); if (adv) adv.checked = !!prefs.advMode;
     const tzSec = $('#tzSection'); if (tzSec) tzSec.classList.toggle('hidden', !prefs.advMode);
     const tz = $('#tzSelect'); if (tz) tz.value = prefs.tz || '';
-    const moon = $('#moonAware'); if (moon) moon.checked = prefs.moonAware !== false;
+    const moon = $('#moonAware'); if (moon) moon.checked = !!prefs.moonAware;
     const bortle = $('#bortle'), bortleV = $('#bortleVal');
     if (bortle) bortle.value = String(prefs.bortle || 4);
     if (bortleV) bortleV.textContent = String(prefs.bortle || 4);
@@ -2418,7 +2476,7 @@ async function boot() {
   });
   refreshMenuUI();
 
-  // rigs for the framing selector — presets are a PICKER, never defaults.
+  // rigs for the framing selector â€” presets are a PICKER, never defaults.
   // 0.6.1/0.6.2 stored them in this browser; drop those leftovers once (an
   // edited or renamed rig is user data and stays).
   const rigPrefs = Hor.getPrefs();
@@ -2433,7 +2491,7 @@ async function boot() {
   RIGS.push(...rigs);
   const rsSel = $('#rigSelect');
   if (rsSel) {
-    rsSel.innerHTML = '<option value="">None — no frame coverage shown</option>' +
+    rsSel.innerHTML = '<option value="">None â€” no frame coverage shown</option>' +
       rigs.map((r) => `<option value="${esc(r.id)}">${esc(r.name)}</option>`).join('');
   }
   refreshMenuUI(); // re-sync select values now that the rig options exist
@@ -2454,7 +2512,7 @@ async function boot() {
   }
 
   window.addEventListener('hashchange', () => { route(); });
-  // keyboard shortcuts: n = cycle tabs; on sky view ←/→ scrub the night (Shift = 10 min)
+  // keyboard shortcuts: n = cycle tabs; on sky view â†/â†’ scrub the night (Shift = 10 min)
   window.addEventListener('keydown', (ev) => {
     const tag = (ev.target.tagName || '').toUpperCase();
     if (['INPUT', 'SELECT', 'TEXTAREA'].includes(tag)) return;
@@ -2478,6 +2536,18 @@ async function boot() {
   });
   if (tonightTimer) clearInterval(tonightTimer);
   tonightTimer = setInterval(() => { if (S.view === 'tonight' && !document.hidden) renderTonight(true); }, 60000);
+
+  // Scrub -> Tonight, like the desktop (whose "visible now" follows S.tIdx).
+  // Debounced: the topbar scrub fires on every pointer move, and re-ranking
+  // during a drag would stutter the slider.
+  let tonightScrubTimer = null;
+  window.addEventListener('sky:time', () => {
+    if (S.view !== 'tonight') return;
+    clearTimeout(tonightScrubTimer);
+    tonightScrubTimer = setTimeout(() => {
+      if (S.view === 'tonight') renderTonight(true);
+    }, 120);
+  });
 
   // a11y: keep Tab focus inside the open dialog
   document.addEventListener('keydown', (ev) => {

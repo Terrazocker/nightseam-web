@@ -280,6 +280,31 @@ export async function collectBackup(prefs, panos) {
   };
 }
 
+/** Coerce one imported record, or drop it.
+ *
+ *  A backup file is UNTRUSTED input: its records are rendered into the DOM and
+ *  their numbers feed `.toFixed()` calls while the Setup dialog builds, so a
+ *  single malformed entry used to break the dialog and a crafted one could
+ *  inject markup. Only records with a usable id survive, and every field the UI
+ *  formats is coerced here. */
+function cleanRecord(r, { numbers = [], strings = [] } = {}) {
+  if (!r || typeof r !== 'object') return null;
+  const id = String(r.id ?? '').trim();
+  if (!id || id.length > 64) return null;
+  const out = { ...r, id };
+  for (const k of numbers) {
+    const v = r[k];
+    out[k] = (typeof v === 'number' && Number.isFinite(v)) ? v : null;
+    if (out[k] == null && (k === 'lat' || k === 'lon' || k === 'ra_hours' || k === 'dec_deg')) {
+      return null;                       // without a position the record is useless
+    }
+  }
+  for (const k of strings) {
+    if (r[k] != null) out[k] = String(r[k]).slice(0, 200);
+  }
+  return out;
+}
+
 /** Write a previously exported backup into storage.
  *  Returns { prefs, panos } for the caller to apply to localStorage. */
 export async function restoreBackup(data) {
@@ -288,9 +313,27 @@ export async function restoreBackup(data) {
   }
   await Promise.all(STORES.filter((s) => s !== 'meta').map((s) => clearStore(s)));
   const jobs = [];
-  for (const s of (data.sites || [])) { if (s && s.id) jobs.push(set('sites', s.id, s)); }
-  for (const r of (data.rigs || [])) { if (r && r.id) jobs.push(set('rigs', r.id, r)); }
-  for (const t of (data.targets || [])) { if (t && t.id) jobs.push(set('targets', t.id, t)); }
+  const siteOf = (s) => cleanRecord(s, {
+    numbers: ['lat', 'lon', 'elev'],
+    strings: ['name', 'tz', 'notes'],
+  });
+  const rigOf = (r) => cleanRecord(r, {
+    numbers: ['focal_mm', 'sensor_w', 'sensor_h', 'fov_w', 'fov_h'],
+    strings: ['name'],
+  });
+  const targetOf = (t) => cleanRecord(t, {
+    numbers: ['ra_hours', 'dec_deg', 'vmag'],
+    strings: ['primary_name', 'otype', 'size_am', 'constellation', 'blurb'],
+  });
+  for (const s of (data.sites || [])) {
+    const rec = siteOf(s); if (rec) jobs.push(set('sites', rec.id, rec));
+  }
+  for (const r of (data.rigs || [])) {
+    const rec = rigOf(r); if (rec) jobs.push(set('rigs', rec.id, rec));
+  }
+  for (const t of (data.targets || [])) {
+    const rec = targetOf(t); if (rec) jobs.push(set('targets', rec.id, rec));
+  }
   await Promise.all(jobs);
   return {
     prefs: (data.prefs && typeof data.prefs === 'object') ? data.prefs : null,

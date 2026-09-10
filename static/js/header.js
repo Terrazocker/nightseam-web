@@ -131,8 +131,13 @@ export function renderNightInfo() {
 }
 
 function durStrLocal(N) {
+  // high latitudes have no astronomical night: nightcalc sends null dusk/dawn,
+  // and an unguarded subtraction would print "NaNh NaNm" (same guard as
+  // tonight.js's dark-time line)
+  if (!N || !N.dusk || !N.dawn) return "\u2014";
   const mins = Math.max(0, Math.round(
     (new Date(N.dawn + "Z") - new Date(N.dusk + "Z")) / 60000));
+  if (!Number.isFinite(mins)) return "\u2014";
   return `${Math.floor(mins/60)}h ${String(mins%60).padStart(2,"0")}m`;
 }
 

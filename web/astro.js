@@ -37,72 +37,53 @@ export function gmstDeg(jd) {
   return ((g % 360) + 360) % 360;
 }
 
-/** Precess ICRS/J2000 coords to mean equinox of date (Meeus ch.21). */
+/** Precess ICRS/J2000 coords to mean equinox of date (Meeus ch.21).
+ *  Z(zeta) -> Y(theta) -> Z(z): the MIDDLE rotation is about the Y axis.
+ *  `app/astro.py` and `static/js/astro.js` implement the same equations;
+ *  tests/test_js_parity.py compares all three against published values. */
 export function precessJ2000ToDate(raDeg, decDeg, jd) {
   const t = (jd - J2000) / 36525.0;
-  const xi = (2306.2181 * t + 0.30188 * t * t + 0.017998 * t ** 3) * ASEC2DEG;
-  const ze = (2306.2181 * t + 1.09468 * t * t + 0.018203 * t ** 3) * ASEC2DEG;
-  const th = (2004.3109 * t - 0.42665 * t * t - 0.041833 * t ** 3) * ASEC2DEG;
+  const zeta = (2306.2181 * t + 0.30188 * t * t + 0.017998 * t ** 3) * ASEC2DEG;
+  const z = (2306.2181 * t + 1.09468 * t * t + 0.018203 * t ** 3) * ASEC2DEG;
+  const theta = (2004.3109 * t - 0.42665 * t * t - 0.041833 * t ** 3) * ASEC2DEG;
 
   const a = D2R * raDeg;
   const d = D2R * decDeg;
-  const xia = D2R * xi, zea = D2R * ze, tha = D2R * th;
+  const zr = D2R * zeta, th = D2R * theta;
 
   const cosd = Math.cos(d), sind = Math.sin(d);
-  const cosa = Math.cos(a), sina = Math.sin(a);
-  const x = cosd * cosa;
-  const y = cosd * sina;
-  const z = sind;
+  const sinAz = Math.sin(a + zr), cosAz = Math.cos(a + zr);
 
-  const cx = Math.cos(xia), sx = Math.sin(xia);
-  const cz = Math.cos(zea), sz = Math.sin(zea);
-  const ct = Math.cos(tha), st = Math.sin(tha);
+  const A = cosd * sinAz;
+  const B = Math.cos(th) * cosd * cosAz - Math.sin(th) * sind;
+  const C = Math.sin(th) * cosd * cosAz + Math.cos(th) * sind;
 
-  const x2 = cx * x - sx * y;
-  const y2 = sx * x + cx * y;
-  const x3 = x2;
-  const y3 = ct * y2 - st * z;
-  const z3 = st * y2 + ct * z;
-  const xf = cz * x3 + sz * y3;
-  const yf = -sz * x3 + cz * y3;
-  const zf = z3;
-
-  const raNew = ((Math.atan2(yf, xf) * R2D) % 360 + 360) % 360;
-  const decNew = Math.asin(Math.max(-1, Math.min(1, zf))) * R2D;
+  const raNew = ((Math.atan2(A, B) * R2D + z) % 360 + 360) % 360;
+  const decNew = Math.asin(Math.max(-1, Math.min(1, C))) * R2D;
   return [raNew, decNew];
 }
 
-/** Precess equinox-of-date back to J2000 (inverse). */
+/** Precess equinox-of-date back to J2000 (inverse).
+ *  Meeus ch.21: same equations with (zeta, z, theta) -> (-z, -zeta, -theta). */
 export function precessDateToJ2000(raDeg, decDeg, jd) {
   const t = (jd - J2000) / 36525.0;
-  const xi = (2306.2181 * t + 0.30188 * t * t + 0.017998 * t ** 3) * ASEC2DEG;
-  const ze = (2306.2181 * t + 1.09468 * t * t + 0.018203 * t ** 3) * ASEC2DEG;
-  const th = (2004.3109 * t - 0.42665 * t * t - 0.041833 * t ** 3) * ASEC2DEG;
+  const zeta = (2306.2181 * t + 0.30188 * t * t + 0.017998 * t ** 3) * ASEC2DEG;
+  const z = (2306.2181 * t + 1.09468 * t * t + 0.018203 * t ** 3) * ASEC2DEG;
+  const theta = (2004.3109 * t - 0.42665 * t * t - 0.041833 * t ** 3) * ASEC2DEG;
 
   const a = D2R * raDeg;
   const d = D2R * decDeg;
-  const xia = D2R * xi, zea = D2R * ze, tha = D2R * th;
+  const zr = D2R * (-z), th = D2R * (-theta);
 
   const cosd = Math.cos(d), sind = Math.sin(d);
-  const cosa = Math.cos(a), sina = Math.sin(a);
-  const x = cosd * cosa;
-  const y = cosd * sina;
-  const z = sind;
+  const sinAz = Math.sin(a + zr), cosAz = Math.cos(a + zr);
 
-  const cz = Math.cos(zea), sz = Math.sin(zea);
-  const ct = Math.cos(tha), st = Math.sin(tha);
+  const A = cosd * sinAz;
+  const B = Math.cos(th) * cosd * cosAz - Math.sin(th) * sind;
+  const C = Math.sin(th) * cosd * cosAz + Math.cos(th) * sind;
 
-  const x2 = cz * x - sz * y;
-  const y2 = sz * x + cz * y;
-  const y3 = ct * y2 + st * z;
-  const z3 = -st * y2 + ct * z;
-  const x4 = x2;
-  const cx = Math.cos(xia), sx = Math.sin(xia);
-  const xf = cx * x4 + sx * y3;
-  const yf = -sx * x4 + cx * y3;
-
-  const raNew = ((Math.atan2(yf, xf) * R2D) % 360 + 360) % 360;
-  const decNew = Math.asin(Math.max(-1, Math.min(1, z3))) * R2D;
+  const raNew = ((Math.atan2(A, B) * R2D - zeta) % 360 + 360) % 360;
+  const decNew = Math.asin(Math.max(-1, Math.min(1, C))) * R2D;
   return [raNew, decNew];
 }
 
@@ -294,16 +275,26 @@ export function sunCrossings(scanStartUTC, lat, lon, thresholdDeg) {
 
 /** Night summary for one local date at a site.
  *  Returns { sunset, civilDusk, nauticalDusk, astroDusk, astroDawn, nauticalDawn, civilDawn, sunrise }
- *  each Date|null, plus dayStart (scan window start). */
-export function nightInfo(localDate, lat, lon) {
-  // Scan window: LOCAL midnight of the target date (local noon - 12 h) for 48 h
+ *  each Date|null, plus dayStart (scan window start).
+ *
+ *  `localNoon` is the REAL instant of the site's local noon for that date
+ *  (app.js computes it with webstore's wallToUtc). Without it the browser's own
+ *  zone stands in for the site's - correct only while both are the same. That
+ *  fallback is what made planning for a site far EAST of the browser pick the
+ *  previous evening's dusk and a dawn up to two days later: the 48 h window
+ *  then starts before the previous local noon, so "first descending crossing"
+ *  is not tonight's dusk. */
+export function nightInfo(localDate, lat, lon, localNoon) {
+  // Scan window: local midnight of the target date (local noon - 12 h) for 48 h
   // - always contains exactly the target evening and the following morning.
-  // `new Date(y, m, d, 12)` already carries the browser's zone, so subtracting
-  // getTimezoneOffset() here cancelled it and anchored the window at UTC
+  // `new Date(y, m, d, 12)` carries the BROWSER's zone, so subtracting
+  // getTimezoneOffset() here once cancelled it and anchored the window at UTC
   // midnight instead - which shifted the whole night by a day for every site
   // outside roughly UTC-4..+2.
-  const localNoon = new Date(localDate.getFullYear(), localDate.getMonth(), localDate.getDate(), 12, 0, 0);
-  const scanStart = new Date(localNoon.getTime() - 12 * 3600000);
+  const anchor = (localNoon instanceof Date && !isNaN(localNoon))
+    ? localNoon
+    : new Date(localDate.getFullYear(), localDate.getMonth(), localDate.getDate(), 12, 0, 0);
+  const scanStart = new Date(anchor.getTime() - 12 * 3600000);
   const g = (thr) => sunCrossings(scanStart, lat, lon, thr);
   const zero = g(0), civil = g(-6), naut = g(-12), astro = g(-18);
   return {
@@ -313,6 +304,81 @@ export function nightInfo(localDate, lat, lon) {
     nauticalDusk: naut.evening, nauticalDawn: naut.morning,
     astroDusk: astro.evening, astroDawn: astro.morning,
   };
+}
+
+/** Pick the dark window used for every visibility number.
+ *
+ *  Desktop parity (app/planning.py `night_window`): use the ASTRONOMICAL night
+ *  when the sun reaches -18 deg, else nautical (-12), else civil (-6), else
+ *  plain sunset/sunrise. When a crossing is missing entirely (polar day) the
+ *  same fixed evening-to-morning fallback applies: 20:00 local -> 04:00 local
+ *  the next day, with level 'fallback'.
+ *
+ *  The web used to score over the civil window, which made "share of the
+ *  night" and the ranking disagree with the desktop for the same site/date.
+ *  `dayDate` is the calendar day the window belongs to (defaults to today). */
+export function pickDarkWindow(info, dayDate) {
+  const level = (info.astroDusk && info.astroDawn) ? "astronomical"
+    : (info.nauticalDusk && info.nauticalDawn) ? "nautical"
+      : (info.civilDusk && info.civilDawn) ? "civil"
+        : null;
+  const dusk = info.astroDusk || info.nauticalDusk || info.civilDusk
+    || info.sunset || null;
+  const dawn = info.astroDawn || info.nauticalDawn || info.civilDawn
+    || info.sunrise || null;
+  if (dusk && dawn) return { dusk, dawn, level: level || "fallback" };
+
+  const d = dayDate || new Date();
+  return {
+    dusk: dusk || new Date(d.getFullYear(), d.getMonth(), d.getDate(), 20, 0, 0),
+    dawn: dawn || new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1, 4, 0, 0),
+    level: level || "fallback",
+  };
+}
+
+/* ---------------- moon-aware scoring model (desktop parity) ----------------
+   The same constants and curves as static/js/derive.js. Both files export them
+   so tests/test_js_parity.py can feed one input grid to both implementations
+   and fail if they ever drift apart again - the web used to apply the moon
+   penalty with the wrong illumination and a civil twilight window. */
+
+/* how badly an object type suffers under moonlight (nebulae worst, clusters
+   least) */
+export const MOON_TYPE_FACTOR = {
+  nebula: 1.6, supernova_remnant: 1.6, planetary: 1.3,
+  star_cloud: 1.1, galaxy: 0.8, open_cluster: 0.55, globular: 0.5,
+  asterism: 0.55,
+};
+export function moonSensitivity(otype) {
+  return MOON_TYPE_FACTOR[otype] || 1.0;
+}
+
+/** Phase-dependent minimum moon distance (Lorentzian, symmetric about full
+ *  moon): LARGEST at full (= BASE), smallest at new (= BASE/3.25).
+ *  `moonAgeDays` is the folded age (0 = new ... ~14.76 = full). */
+export function moonMinDist(filterType, moonAgeDays) {
+  const BASE = { narrowband: 60, oiii: 90, lrgb: 120 }[filterType] || 120;
+  const frac = moonAgeDays / 29.53;
+  return BASE / (1 + Math.pow((0.5 - frac) / 0.333, 2));
+}
+
+/** Illumination attenuated by separation and the filter's distance tolerance. */
+export function effectiveMoonGlow(illum, sep, filterType, moonAgeDays) {
+  const minD = moonMinDist(filterType, moonAgeDays);
+  const distDeg = Math.max(0, sep - minD);
+  return illum * Math.max(0, 1 - distDeg / 180);
+}
+
+/** Multiplier applied to a sample's altitude weight under moonlight. */
+export function moonPenalty(glow, typeF, bortleF) {
+  return Math.max(0.05, 1 - 0.95 * glow * typeF * bortleF);
+}
+
+/** Bortle scaling - darker skies reduce the moon penalty more; continuous at
+ *  the 3/4 junction (0.30 at bortle 1 ... 1.12 at bortle 9). */
+export function bortleMoonFactor(bortle) {
+  if (bortle <= 3) return 0.25 + 0.05 * bortle;
+  return 0.40 + 0.12 * (bortle - 3);
 }
 
 /** Sample an object's altitude over [jd0, jd1] at stepMin minutes. */

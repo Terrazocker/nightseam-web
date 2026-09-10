@@ -53,21 +53,41 @@ def _note_failure():
         _offline_until = time.time() + 120     # pause all lookups for 2 min
 
 # the CDS survey server ships an incomplete cert chain on some systems;
-# allow it without verification (public GET-only astronomy data service)
+# allow it without verification (public GET-only astronomy data service).
+# EXACT host names only: a substring test also matched hostile look-alikes such
+# as "cds.unistra.example.com", which would have handed them the bypass.
 _INSECURE_CTX = ssl._create_unverified_context()
+_INSECURE_HOSTS = {"alasky.cds.unistra.fr", "cds.unistra.fr"}
 
 
 def _context_for(url: str):
     host = (urllib.parse.urlsplit(url).hostname or "").lower()
-    return _INSECURE_CTX if "cds.unistra" in host else None
+    return _INSECURE_CTX if host in _INSECURE_HOSTS else None
 
 
 class Temporary(Exception):
     """Rate limits / server hiccups / network issues -> must NOT be cached."""
 
 
-# errors that are environmental and worth a retry
+# errors that are environmental and worth a retry. HTTPError is a subclass of
+# URLError/OSError, so membership here would mark a permanent 404 as temporary
+# and keep re-fetching it forever - `_is_temporary` classifies HTTP codes
+# explicitly instead.
 TEMP_EXC = (Temporary, urllib.error.URLError, TimeoutError, OSError)
+
+MAX_IMAGE_BYTES = 12 * 1024 * 1024      # a thumbnail/cutout is far smaller
+
+
+def _is_temporary(exc: BaseException) -> bool:
+    """True when the failure is environmental (retry later), False when the
+    answer is permanent (e.g. HTTP 404 -> this object has no image there)."""
+    if isinstance(exc, urllib.error.HTTPError):
+        # same set `_http_bytes` converts into Temporary: rate limits, blocks
+        # and server hiccups - everything else (404/410/...) is an answer
+        return exc.code in (403, 408, 429, 500, 502, 503, 504)
+    if isinstance(exc, json.JSONDecodeError):
+        return True                      # truncated/hostile response
+    return isinstance(exc, TEMP_EXC)
 
 
 def _http_json(url: str, timeout: float = 6.0):
@@ -87,7 +107,21 @@ def _http_bytes(url: str, timeout: float = 10.0):
         with urllib.request.urlopen(req, timeout=timeout,
                                     context=_context_for(url)) as r:
             ctype = r.headers.get("Content-Type", "image/jpeg")
-            return r.read(), ctype.split(";")[0]
+            # read with a cap: these are third-party hosts and the bytes are
+            # cached on disk, so an oversized/hostile response must not be
+            # buffered whole (nor written into the cache)
+            chunks = []
+            total = 0
+            while True:
+                chunk = r.read(1 << 20)
+                if not chunk:
+                    break
+                total += len(chunk)
+                if total > MAX_IMAGE_BYTES:
+                    raise Temporary(
+                        f"image larger than {MAX_IMAGE_BYTES // (1 << 20)} MB")
+                chunks.append(chunk)
+            return b"".join(chunks), ctype.split(";")[0]
     except urllib.error.HTTPError as e:
         if e.code in (403, 429, 500, 502, 503):
             raise Temporary(str(e.code)) from None
@@ -95,10 +129,14 @@ def _http_bytes(url: str, timeout: float = 10.0):
 
 
 def _download(url: str, timeout: float = 10.0):
-    """Download with one retry after a short pause on transient errors."""
+    """Download with one retry after a short pause on TRANSIENT errors.
+    A permanent answer (e.g. 404) is raised immediately so `fetch_image` can
+    write the negative marker instead of retrying the object forever."""
     try:
         return _http_bytes(url, timeout=timeout)
-    except TEMP_EXC:
+    except Exception as exc:                # noqa: BLE001 - classified below
+        if not _is_temporary(exc):
+            raise
         time.sleep(1.5)
         return _http_bytes(url, timeout=timeout)
 
@@ -141,6 +179,11 @@ def _wikidata_thumb(title: str):
 
 
 def _wikipedia_thumb(title: str):
+    """Summary-thumbnail URL, or None when the title has no usable image.
+
+    Like `_wikidata_thumb`, a TEMPORARY failure propagates: swallowing it here
+    made a pure network outage look like "this object has no image", which then
+    poisoned the 24 h negative cache."""
     try:
         data = _http_json(
             "https://en.wikipedia.org/api/rest_v1/page/summary/"
@@ -149,8 +192,10 @@ def _wikipedia_thumb(title: str):
         if thumb and thumb.startswith("http"):
             big = thumb.replace("/330px-", "/500px-")
             return big if "/thumb/" in thumb else thumb
+    except TEMP_EXC:
+        raise
     except Exception:
-        pass
+        return None
     return None
 
 
@@ -236,7 +281,12 @@ def fetch_image(obj: dict, ignore_negative: bool = False):
     meta_path = CACHE_DIR / f"{slug}.json"
 
     def cached():
-        if not (cache_path.exists() and meta_path.exists()):
+        # The failure MARKER lives in the .json and has no .bin beside it, so
+        # the marker must be read first: requiring the image file made every
+        # permanent failure (a 404 for an object with no Wikipedia/Wikidata/DSS
+        # image) invisible, and the object was re-fetched on every detail view
+        # and every prefetch pass, forever.
+        if not meta_path.exists():
             return None
         try:
             meta = json.loads(meta_path.read_text())
@@ -247,6 +297,8 @@ def fetch_image(obj: dict, ignore_negative: bool = False):
                     and time.time() - meta.get("ts", 0) < NEG_TTL):
                 return (None, None)        # recent, deliberate failure
             return None                    # stale marker -> retry below
+        if not cache_path.exists():
+            return None
         if meta.get("v") != CACHE_VERSION:
             return None                    # image from older resolver logic -> refetch
         return cache_path.read_bytes(), meta["ctype"]
@@ -286,10 +338,9 @@ def fetch_image(obj: dict, ignore_negative: bool = False):
                     if blob and len(blob) > 500 and ctype and ctype != "image/svg+xml":
                         break
                     blob = ctype = None
-            except TEMP_EXC:
-                temporary_failure = True
-            except Exception:
-                pass
+            except Exception as exc:        # noqa: BLE001
+                if _is_temporary(exc):
+                    temporary_failure = True
 
         # 2) Wikipedia summary thumbnails for exact page titles
         if blob is None:
@@ -301,10 +352,9 @@ def fetch_image(obj: dict, ignore_negative: bool = False):
                         if blob and len(blob) > 500:
                             break
                         blob = ctype = None
-                except TEMP_EXC:
-                    temporary_failure = True
-                except Exception:
-                    pass
+                except Exception as exc:    # noqa: BLE001
+                    if _is_temporary(exc):
+                        temporary_failure = True
 
         # 3) coordinate-based survey cutout - always the right patch of sky
         if blob is None:
@@ -319,10 +369,9 @@ def fetch_image(obj: dict, ignore_negative: bool = False):
                     if blob and len(blob) > 500 and "image" in (ctype or ""):
                         break
                     blob = ctype = None
-                except TEMP_EXC:
-                    temporary_failure = True
-                except Exception:
-                    pass
+                except Exception as exc:    # noqa: BLE001
+                    if _is_temporary(exc):
+                        temporary_failure = True
 
         if blob is not None:
             cache_path.write_bytes(blob)

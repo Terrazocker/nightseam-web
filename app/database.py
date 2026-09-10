@@ -12,6 +12,7 @@ from datetime import datetime, UTC
 from pathlib import Path
 
 from . import catalog_data
+from .paths import safe_rel, safe_token
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS objects (
@@ -357,8 +358,14 @@ class Database:
             return c.lastrowid
 
     def delete_site(self, sid: int):
+        """Delete a site; the active pointer moves to another site (or clears)
+        instead of dangling - a dangling pointer made /api/night answer 400
+        "No observing location configured" with no way back through the UI."""
         with self.lock:
             self.conn.execute("DELETE FROM sites WHERE id=?", (sid,))
+            if self.setting("active_site_id") == sid:
+                rows = list(self.conn.execute("SELECT id FROM sites ORDER BY id"))
+                self.set_setting("active_site_id", rows[0]["id"] if rows else None)
             self.conn.commit()
 
     def update_site(self, sid: int, name: str, lat: float, lon: float, elev: int):
@@ -616,7 +623,7 @@ class Database:
     def import_bundle(self, settings: dict, sites: list, rigs: list,
                       panoramas: list, customs: list | None = None,
                       images: list | None = None,
-                      observations: list | None = None) -> None:
+                      observations: list | None = None) -> dict:
         """Replace all user data with an imported bundle (catalog untouched).
 
         The replace runs inside ONE transaction and rolls back on any failure:
@@ -626,6 +633,12 @@ class Database:
 
         The legacy `observations` table is deliberately NOT cleared - it is kept
         for schema compatibility and is no longer exported or imported.
+
+        File paths inside the bundle are UNTRUSTED: every `panoramas[].file` /
+        `images[].file` goes through `paths.safe_rel`, which rejects absolute,
+        drive/UNC and `..` paths. A record with such a value is dropped instead
+        of stored (it would otherwise be resolved by the read/delete routes
+        long after the import). Returns the number of dropped records.
         """
         customs = customs or []
         images = images or []
@@ -634,6 +647,7 @@ class Database:
                 isinstance(x, list)
                 for x in (sites, rigs, panoramas, customs, images)):
             raise ValueError("malformed setup bundle")
+        skipped = {"panoramas": 0, "images": 0}
         with self.lock:
             cur = self.conn.cursor()
             try:
@@ -656,11 +670,18 @@ class Database:
                          r.get("sensor_w"), r.get("sensor_h"),
                          r.get("fov_w"), r.get("fov_h")))
                 for p in panoramas:
+                    rel = safe_rel(p.get("file"))
+                    # the ID is interpolated into a filename by the crop route,
+                    # so an id that could act as a path is dropped too
+                    pid_ok = safe_token(p.get("id"))
+                    if rel is None or pid_ok is None:
+                        skipped["panoramas"] += 1
+                        continue
                     cur.execute(
                         "INSERT INTO panoramas(id,name,file,az_offset,alt_bottom,"
                         "alt_top,strokes,profile,profile_top,active,fov,paint_mode) "
                         "VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
-                        (p.get("id"), p.get("name"), p.get("file"),
+                        (pid_ok, p.get("name"), rel,
                          p.get("az_offset", 0), p.get("alt_bottom", 0),
                          p.get("alt_top", 45), json.dumps(p.get("strokes", [])),
                          json.dumps(p.get("profile", [])),
@@ -682,12 +703,16 @@ class Database:
                              str(c.get("otype", "")).lower(), "custom",
                              str(c.get("id", ""))]))))
                 for im in images:
+                    rel = safe_rel(im.get("file"))
+                    if rel is None:
+                        skipped["images"] += 1
+                        continue
                     cur.execute(
                         "INSERT OR REPLACE INTO images"
                         "(id,file,orig_name,object_id,object_name,otype,ra_hours,"
                         "dec_deg,exposure,date_obs,filter,telescope,imagetyp,"
                         "ingested_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                        (im.get("id"), im.get("file"), im.get("orig_name", ""),
+                        (im.get("id"), rel, im.get("orig_name", ""),
                          im.get("object_id"), im.get("object_name", ""),
                          im.get("otype"), im.get("ra_hours"), im.get("dec_deg"),
                          im.get("exposure"), im.get("date_obs"),
@@ -708,6 +733,7 @@ class Database:
             except Exception:
                 self.conn.rollback()
                 raise
+        return skipped
 
 
 def _csv_adv_count(csv_path: Path) -> int:

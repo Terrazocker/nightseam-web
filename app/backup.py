@@ -14,20 +14,19 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from .database import Database
-from .paths import data_dir
+from .paths import data_dir, safe_join, safe_rel
 from .version import app_version
 
 APP_VERSION = app_version()
 
 
 def _safe_join(root: Path, rel: str) -> Path | None:
-    """Join rel onto root, refusing anything that escapes the root."""
-    p = (root / rel).resolve()
-    try:
-        p.relative_to(root.resolve())
-    except ValueError:
-        return None
-    return p
+    """Join rel onto root, refusing anything that escapes the root.
+
+    Thin alias of `paths.safe_join` (kept because tests and the export path
+    call it by this name); the implementation is shared with the server's
+    read/delete routes so both sides of a restore agree on what is safe."""
+    return safe_join(root, rel)
 
 
 MAX_MEMBER_BYTES = 1 << 30          # 1 GiB per zip member (same cap as ingest)
@@ -135,42 +134,68 @@ def apply_import_zip(db: Database, blob: bytes | Path) -> dict:
     customs = setup.get("customs", [])
     images = setup.get("images", [])
     settings = setup.get("settings", {})
+    if not isinstance(settings, dict):
+        raise ValueError("malformed setup bundle")
+    # `image_dir` is a FILESYSTEM ROOT, and the bundle is untrusted: taking it
+    # from the ZIP let a crafted "setup export" redirect the restore (arbitrary
+    # write, arbitrary name/content, mkdir -p) and, via the export path, read
+    # any directory the app can reach. The documented behaviour is that the
+    # library is restored into the CURRENTLY CONFIGURED archive folder. The
+    # replace below wipes the settings table, so the CURRENT value has to be
+    # re-injected (dropping the key instead would reset the user's archive to
+    # the default) - and the imported value is reported back to the user.
+    current_image_dir = db.image_dir()
+    imported_image_dir = settings.pop("image_dir", None)
+    # ALWAYS re-inject the local value: the replace below wipes the settings
+    # table, so simply dropping the key would reset the user's archive folder
+    # to the default (and a restore that omits the key would silently move the
+    # library into ~/Documents).
+    settings["image_dir"] = current_image_dir
 
-    db.import_bundle(settings, sites, rigs, panos, customs=customs,
-                     images=images)
+    # import_bundle drops records whose stored path escapes its folder and
+    # reports how many, so the summary below never over-counts a restore.
+    skipped = db.import_bundle(settings, sites, rigs, panos, customs=customs,
+                               images=images) or {}
 
     pano_files = 0
+    pano_root = data_dir() / "panos"
     for p in panos:
-        name = p.get("file")
-        if not name or _safe_join(data_dir() / "panos", name) is None:
+        rel = safe_rel(p.get("file"))
+        target = safe_join(pano_root, rel) if rel else None
+        if target is None:
             continue
         try:
-            data = _read_member(zf, f"panos/{name}")
+            data = _read_member(zf, f"panos/{rel}")
         except KeyError:
             continue
-        (data_dir() / "panos" / name).write_bytes(data)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(data)
         pano_files += 1
 
     image_files = 0
     image_dir = Path(db.image_dir())
     image_dir.mkdir(parents=True, exist_ok=True)
     for img in images:
-        rel = img.get("file")
-        if not rel or _safe_join(image_dir, rel) is None:
+        rel = safe_rel(img.get("file"))
+        target = safe_join(image_dir, rel) if rel else None
+        if target is None:
             continue
         try:
             data = _read_member(zf, f"library/{rel}")
         except KeyError:
             continue
-        target = _safe_join(image_dir, rel)
-        if target is None:
-            continue
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(data)
         image_files += 1
 
-    return {"ok": True, "sites": len(sites), "rigs": len(rigs),
-            "panoramas": len(panos), "pano_images": pano_files,
-            "customs": len(customs), "images": len(images),
-            "library_files": image_files,
-            "auto_backup": safety}
+    # records whose stored path was rejected are not part of the restored set
+    summary = {"ok": True, "sites": len(sites), "rigs": len(rigs),
+               "panoramas": len(panos) - skipped.get("panoramas", 0),
+               "pano_images": pano_files,
+               "customs": len(customs),
+               "images": len(images) - skipped.get("images", 0),
+               "library_files": image_files,
+               "auto_backup": safety}
+    if imported_image_dir:
+        summary["image_dir_ignored"] = str(imported_image_dir)[:200]
+    return summary

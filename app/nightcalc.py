@@ -7,11 +7,14 @@ layer; server.py handles routing, site/pano resolution and error codes.
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timedelta
 
 from .astro import altaz, julian_day, moon_illumination, moon_age, moon_ra_dec, sun_ra_dec
 from .database import Database
 from .planning import night_window
+
+log = logging.getLogger(__name__)
 
 PROFILE_BINS = 720          # 0.5-degree azimuth bins
 BIN_DEG = 360.0 / PROFILE_BINS
@@ -23,8 +26,18 @@ def _iso(dt_utc: datetime) -> str:
 
 
 def ceil_lookup(profile: list[float]):
-    """Return a function az_deg -> obstacle top elevation."""
+    """Return a function az_deg -> obstacle top elevation.
+
+    An EMPTY profile means "no panorama painted" -> nothing blocks. A profile of
+    the wrong length or with non-numeric values is a corrupt record: it also
+    falls back to "nothing blocks" (a planning call must never 500 on it) but is
+    logged, because a silently disabled horizon mask is exactly what the user
+    cannot see. Writes are validated in server._check_profile()."""
     if not profile or len(profile) != PROFILE_BINS:
+        if profile:
+            log.warning("ignoring a corrupt obstruction profile "
+                        "(%d values, expected %d) - nothing will block",
+                        len(profile), PROFILE_BINS)
         return lambda az: NO_BLOCK
     prof = profile  # local ref
 
@@ -190,7 +203,13 @@ def object_detail(db: Database, oid: str, date_local: str, tz_off_min: int,
                    (ceils_top is None or a < ceils_top[-1]))
 
     max_i = max(range(len(alts)), key=lambda i: alts[i])
-    best = longest_run(vis)
+    # The clear window is measured WITHIN the dark window (dusk..dawn): the
+    # 4-min grid carries 75/45-minute margins for chart context, and counting
+    # them made the modal report a different - longer, partly daylight - window
+    # than the targets table (which uses the clipped 6-min night grid).
+    # `vis` itself stays per-sample: the chart colours every point.
+    in_night = [dusk <= t <= dawn for t in times]
+    best = longest_run([v and w for v, w in zip(vis, in_night)])
 
     meta = {k: obj[k] for k in
             ("id", "primary_name", "messier", "ngcic", "other", "otype",
@@ -204,6 +223,7 @@ def object_detail(db: Database, oid: str, date_local: str, tz_off_min: int,
         "twilight_level": win["level"],
         "dusk": _iso(dusk), "dawn": _iso(dawn),
         "times_iso": [_iso(x) for x in times],
+        "step_min": 4,          # the client needs it to resolve `best[1]`
         "alt": alts, "az": azs, "ceil": ceils, "vis": vis,
         "max_alt": alts[max_i], "max_time": _iso(times[max_i]),
         "best": list(best) if best else None,
@@ -215,6 +235,23 @@ def object_detail(db: Database, oid: str, date_local: str, tz_off_min: int,
 
 
 def longest_run(flags: list[bool]):
+    """Longest run of visible samples as a HALF-OPEN range [start, end).
+
+    CONTRACT (mirrored by `longestRunJS` in static/js/derive.js):
+    * `start` is the index of the first visible sample,
+    * `end`   is the index of the first sample AFTER the run - i.e. the
+      exclusive boundary, so the run covers `end - start` samples and lasts
+      `(end - start) * step` minutes,
+    * `end` may equal `len(flags)` (the run reaches the last sample), which is
+      a boundary, NOT an index into the time grid: `times_iso[end]` does not
+      exist in that case and callers must use `windowEndISO()`/an equivalent
+      boundary time instead of indexing.
+    * None when no sample is visible.
+
+    Regression: consumers used to print `times_iso[end]` directly, so any
+    object still visible at the last sample showed "--:--" in the target list
+    and "NaNh NaNm" in the detail modal.
+    """
     best = None
     start = None
     for i, f in enumerate(list(flags) + [False]):

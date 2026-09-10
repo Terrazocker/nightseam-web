@@ -4,7 +4,8 @@ import { $, api, clamp, parseUTC, esc, fmtHM, fmtT, toast, tzOffAt,
          zoneHour,
          TYPE_LABEL, constName, fmtSize } from "./util.js";
 import { S, IMG_VER } from "./state.js";
-import { filterAdvice, frameCoverage, moonAt, moonBandX } from "./derive.js";
+import { filterAdvice, frameCoverage, moonAt, moonBandX,
+         windowEndISO } from "./derive.js";
 
 let DETAIL = null;      // cached detail payload
 let DETAIL_HOVER = null;// hovered sample index for crosshair
@@ -88,7 +89,10 @@ function renderDetailMeta(m, d) {
     ["Observable time", nObj && nObj.obs_pct != null
         ? `<b>${nObj.obs_pct}%</b> of astronomical night` : "\u2014"],
     ["Max altitude tonight", `${d.max_alt.toFixed(1)}\u00B0 at ${fmtHM(d.max_time)}`],
-    ["Clear window", d.best ? durStr(d.times_iso[d.best[0]], d.times_iso[d.best[1]]) : "none"],
+    ["Clear window", d.best
+        ? durStr(d.times_iso[d.best[0]],
+                 windowEndISO(d.times_iso, d.best[1], d.step_min))
+        : "none"],
   ];
   $("#dMeta").innerHTML = rows.map(([k,v]) =>
     `<tr><td>${k}</td><td>${v}</td></tr>`).join("");
@@ -100,7 +104,11 @@ function activeRigName() {
   return rig ? rig.name : "";
 }
 function durStr(aIso, bIso) {
+  // never render NaN for a valid window: both ends come from windowEndISO(),
+  // which resolves an exclusive end index to a real timestamp
+  if (!aIso || !bIso) return "\u2014";
   const mins = Math.max(0, Math.round((parseUTC(bIso) - parseUTC(aIso)) / 60000));
+  if (!Number.isFinite(mins)) return "\u2014";
   return `${Math.floor(mins/60)}h ${String(mins%60).padStart(2,"0")}m`;
 }
 
@@ -312,13 +320,16 @@ export function drawAltChart() {
     ctx.beginPath(); ctx.moveTo(X(i),Y(d.alt[i])); ctx.lineTo(X(i+1),Y(d.alt[i+1])); ctx.stroke();
   }
 
-  // best window highlight
+  // best window highlight: the run is a half-open sample range, so the band
+  // covers exactly the visible samples and never runs past the last one
   if (d.best) {
+    const a = d.best[0];
+    const b = Math.min(d.best[1], nT - 1);      // last visible sample
     ctx.fillStyle = "rgba(53,208,127,.09)";
-    ctx.fillRect(X(d.best[0]), MT, X(d.best[1])-X(d.best[0]), ph);
+    ctx.fillRect(X(a), MT, X(b) - X(a), ph);
     ctx.fillStyle = C.good;
-    ctx.beginPath(); ctx.arc(X(d.best[0]), Y(d.alt[d.best[0]]), 3.4, 0, 7); ctx.fill();
-    ctx.beginPath(); ctx.arc(X(d.best[1]), Y(d.alt[d.best[1]]), 3.4, 0, 7); ctx.fill();
+    ctx.beginPath(); ctx.arc(X(a), Y(d.alt[a]), 3.4, 0, 7); ctx.fill();
+    ctx.beginPath(); ctx.arc(X(b), Y(d.alt[b]), 3.4, 0, 7); ctx.fill();
   }
 
   // max marker

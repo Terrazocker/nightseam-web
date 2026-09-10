@@ -36,40 +36,49 @@ def julian_day(dt_utc: datetime) -> float:
 
 # ---------------------------------------------------------------- coordinate helpers
 
-def _precess_j2000_to_date(ra_deg: float, dec_deg: float, jd: float) -> tuple[float, float]:
-    """Precess ICRS/J2000 coords to mean equinox of date (Meeus ch. 21)."""
+def _precession_angles(jd: float) -> tuple[float, float, float]:
+    """Meeus ch. 21 precession angles (zeta, z, theta) in degrees, J2000->date."""
     t = (jd - J2000) / 36525.0
-    xi = (2306.2181 * t + 0.30188 * t * t + 0.017998 * t ** 3) * ASEC2DEG
-    ze = (2306.2181 * t + 1.09468 * t * t + 0.018203 * t ** 3) * ASEC2DEG
-    th = (2004.3109 * t - 0.42665 * t * t - 0.041833 * t ** 3) * ASEC2DEG
+    zeta = (2306.2181 * t + 0.30188 * t * t + 0.017998 * t ** 3) * ASEC2DEG
+    z = (2306.2181 * t + 1.09468 * t * t + 0.018203 * t ** 3) * ASEC2DEG
+    theta = (2004.3109 * t - 0.42665 * t * t - 0.041833 * t ** 3) * ASEC2DEG
+    return zeta, z, theta
 
+
+def _precess(ra_deg: float, dec_deg: float, zeta_deg: float, z_deg: float,
+             theta_deg: float) -> tuple[float, float]:
+    """Meeus ch. 21 rigorous precession (eq. 21.4).
+
+        A = cos d0 * sin(a0 + zeta)
+        B = cos theta * cos d0 * cos(a0 + zeta) - sin theta * sin d0
+        C = sin theta * cos d0 * cos(a0 + zeta) + cos theta * sin d0
+        a = atan2(A, B) + z          d = asin(C)
+
+    The rotation sequence is Z(zeta) -> Y(theta) -> Z(z): the MIDDLE rotation
+    is about the Y axis. An earlier implementation rotated about X and flipped
+    the node sign, which left the coordinates effectively unprecessed (the
+    vernal equinox moved by ~0.0004 deg instead of 0.34 deg over 27 years).
+    A round-trip test could not see it, because the inverse was built from the
+    same wrong matrix. tests/test_astro.py now pins the published values."""
     a = D2R * ra_deg
     d = D2R * dec_deg
-    xia, zea, tha = D2R * xi, D2R * ze, D2R * th
+    zeta, z, th = D2R * zeta_deg, D2R * z_deg, D2R * theta_deg
 
-    # rotation matrix applied to unit vector
-    cosd, sind = math.cos(d), math.sin(d)
-    cosa, sina = math.cos(a), math.sin(a)
-    x = cosd * cosa
-    y = cosd * sina
-    z = sind
+    cos_d, sin_d = math.cos(d), math.sin(d)
+    sin_az, cos_az = math.sin(a + zeta), math.cos(a + zeta)
 
-    cx, sx = math.cos(xia), math.sin(xia)
-    cz, sz = math.cos(zea), math.sin(zea)
-    ct, st = math.cos(tha), math.sin(tha)
+    ca = cos_d * sin_az
+    cb = math.cos(th) * cos_d * cos_az - math.sin(th) * sin_d
+    cc = math.sin(th) * cos_d * cos_az + math.cos(th) * sin_d
 
-    x2 = cx * x - sx * y
-    y2 = sx * x + cx * y
-    x3 = x2
-    y3 = ct * y2 - st * z
-    z3 = st * y2 + ct * z
-    xf = cz * x3 + sz * y3
-    yf = -sz * x3 + cz * y3
-    zf = z3
-
-    ra_new = math.atan2(yf, xf) * R2D % 360.0
-    dec_new = math.asin(max(-1.0, min(1.0, zf))) * R2D
+    ra_new = (math.degrees(math.atan2(ca, cb)) + z_deg) % 360.0
+    dec_new = math.degrees(math.asin(max(-1.0, min(1.0, cc))))
     return ra_new, dec_new
+
+
+def _precess_j2000_to_date(ra_deg: float, dec_deg: float, jd: float) -> tuple[float, float]:
+    """Precess ICRS/J2000 coords to mean equinox of date (Meeus ch. 21)."""
+    return _precess(ra_deg, dec_deg, *_precession_angles(jd))
 
 
 def gmst_deg(jd: float) -> float:
@@ -138,37 +147,12 @@ def sun_ra_dec(jd: float) -> tuple[float, float]:
 
 
 def _precess_j2000_to_date_inverse(ra_deg: float, dec_deg: float, jd: float) -> tuple[float, float]:
-    """Precess equinox-of-date back to J2000 (inverse of _precess_j2000_to_date)."""
-    t = (jd - J2000) / 36525.0
-    xi = (2306.2181 * t + 0.30188 * t * t + 0.017998 * t ** 3) * ASEC2DEG
-    ze = (2306.2181 * t + 1.09468 * t * t + 0.018203 * t ** 3) * ASEC2DEG
-    th = (2004.3109 * t - 0.42665 * t * t - 0.041833 * t ** 3) * ASEC2DEG
+    """Precess equinox-of-date back to J2000 (inverse of _precess_j2000_to_date).
 
-    a = D2R * ra_deg
-    d = D2R * dec_deg
-    xia, zea, tha = D2R * xi, D2R * ze, D2R * th
-
-    cosd, sind = math.cos(d), math.sin(d)
-    cosa, sina = math.cos(a), math.sin(a)
-    x = cosd * cosa
-    y = cosd * sina
-    z = sind
-
-    cz, sz = math.cos(zea), math.sin(zea)
-    ct, st = math.cos(tha), math.sin(tha)
-
-    x2 = cz * x - sz * y
-    y2 = sz * x + cz * y
-    y3 = ct * y2 + st * z
-    z3 = -st * y2 + ct * z
-    x4 = x2
-    cx, sx = math.cos(xia), math.sin(xia)
-    xf = cx * x4 + sx * y3
-    yf = -sx * x4 + cx * y3
-
-    ra_new = math.atan2(yf, xf) * R2D % 360.0
-    dec_new = math.asin(max(-1.0, min(1.0, z3))) * R2D
-    return ra_new, dec_new
+    Meeus ch. 21: the same equations with the angle triple exchanged and
+    negated - (zeta, z, theta) -> (-z, -zeta, -theta)."""
+    zeta, z, theta = _precession_angles(jd)
+    return _precess(ra_deg, dec_deg, -z, -zeta, -theta)
 
 
 # ---------------------------------------------------------------- moon

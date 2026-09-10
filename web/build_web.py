@@ -6,10 +6,16 @@
 
 The web app is a sub-version of NightSeam: catalog.json is ALWAYS derived
 from data/nightseam.db (objects + advanced_objects), and version.json is
-stamped from `git describe` right before a deploy (tag BEFORE running
-version, exactly like the desktop build bakes _version_baked.py).
+stamped from `git describe --tags --always --dirty` right before a deploy
+(tag BEFORE running version, exactly like the desktop build bakes
+_version_baked.py — and with the same `--dirty` flag, so a web build from
+uncommitted work can never advertise a clean tag).
 
 Both commands are idempotent. web/version.json is gitignored.
+
+NOTE (DSH sandbox): `version` pipes git's stdout (capture_output), which the
+sandbox denies with WinError 5 — run that one command with full access, or
+bake web/version.json by hand in the same shape.
 """
 import json
 import sqlite3
@@ -48,12 +54,20 @@ def parse_args(argv):
 
 
 def cmd_version(db_path):
-    desc = subprocess.run(
-        ["git", "describe", "--tags", "--always"],
+    # The ONE authoritative version, with --dirty like build.ps1's bake and
+    # scripts/make_release.py: a web build from uncommitted work must not
+    # advertise a clean tag while the exe/zip say "-dirty".
+    proc = subprocess.run(
+        ["git", "describe", "--tags", "--always", "--dirty"],
         cwd=str(ROOT), capture_output=True, text=True,
-    ).stdout.strip()
-    if not desc:
-        desc = "0.0.0"
+    )
+    desc = proc.stdout.strip()
+    if proc.returncode != 0 or not desc:
+        detail = proc.stderr.strip() or "no output"
+        raise SystemExit(
+            f"git describe --tags --always --dirty failed (exit "
+            f"{proc.returncode}): {detail} - refusing to stamp a guessed "
+            f"version into web/version.json")
     version = desc.lstrip("v")
     data = {
         "version": version,

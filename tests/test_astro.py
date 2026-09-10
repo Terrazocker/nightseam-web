@@ -1,10 +1,29 @@
 """Golden-value tests for the pure-python astronomy engine."""
 
+import math
 from datetime import datetime, timedelta
 
 import pytest
 
 from app import astro
+
+
+def _meeus_precess(ra_deg, dec_deg, jd):
+    """Independent transcription of Meeus ch. 21, eq. 21.4 (the reference).
+
+    Deliberately written from the book formula (A/B/C + atan2(A, B) + z) rather
+    than shared with app/astro.py, so a wrong axis or sign in the engine cannot
+    hide behind an identical helper."""
+    t = (jd - 2451545.0) / 36525.0
+    zeta = (2306.2181 * t + 0.30188 * t * t + 0.017998 * t ** 3) / 3600.0
+    z = (2306.2181 * t + 1.09468 * t * t + 0.018203 * t ** 3) / 3600.0
+    theta = (2004.3109 * t - 0.42665 * t * t - 0.041833 * t ** 3) / 3600.0
+    a0, d0 = math.radians(ra_deg), math.radians(dec_deg)
+    zr, zr2, tr = math.radians(zeta), math.radians(z), math.radians(theta)
+    A = math.cos(d0) * math.sin(a0 + zr)
+    B = math.cos(tr) * math.cos(d0) * math.cos(a0 + zr) - math.sin(tr) * math.sin(d0)
+    C = math.sin(tr) * math.cos(d0) * math.cos(a0 + zr) + math.cos(tr) * math.sin(d0)
+    return math.degrees(math.atan2(A, B) + zr2) % 360.0, math.degrees(math.asin(C))
 
 
 # ---------------------------------------------------------------- time
@@ -34,6 +53,70 @@ def test_precession_round_trip_exact():
         assert d3 == pytest.approx(dec, abs=1e-6)
 
 
+@pytest.mark.parametrize("year", [1900, 1950, 2000, 2026, 2100, 2200])
+@pytest.mark.parametrize("ra,dec", [
+    (0.0, 0.0), (41.049942, 49.228467), (83.63, 22.01), (250.42, 36.46),
+    (210.80, -45.50), (15.0, 89.0), (359.5, -70.0), (120.0, 0.0),
+])
+def test_precession_matches_meeus_reference(year, ra, dec):
+    """The engine must reproduce published Meeus ch. 21 values at many epochs.
+
+    Regression: the original implementation rotated about the X axis (instead
+    of Y) and flipped the node sign, so it moved the vernal equinox by
+    ~0.0004 deg over 27 years instead of ~0.34 deg - every catalog altitude
+    was off by up to 0.5 deg. A round-trip test could not catch it, because the
+    inverse was built from the same wrong matrix."""
+    jd = astro.julian_day(datetime(year, 1, 1, 12, 0))
+    got_ra, got_dec = astro._precess_j2000_to_date(ra, dec, jd)
+    want_ra, want_dec = _meeus_precess(ra, dec, jd)
+    # 1e-5 deg = 0.036 arcsec: the two implementations are the same equations
+    # evaluated in a different order, so only rounding separates them (the bug
+    # this guards against was ~0.4 deg, five orders of magnitude larger)
+    sep = _sep_deg(got_ra, got_dec, want_ra, want_dec)
+    assert sep < 1e-5, f"{year}: {sep} deg off the ch. 21 reference"
+
+
+def test_precession_moves_the_vernal_equinox_at_the_published_rate():
+    """Independent of any implementation: over T centuries the equinox moves
+    m = 3.07496 s/yr in RA and n = 20.0431"/yr in Dec (Meeus ch. 21)."""
+    jd = astro.julian_day(datetime(2026, 8, 22, 22, 0))
+    t_years = (jd - astro.J2000) / 365.25
+    ra, dec = astro._precess_j2000_to_date(0.0, 0.0, jd)
+    want_ra = (3.07496 / 3600.0 / 24.0 * 360.0) * t_years
+    want_dec = (20.0431 / 3600.0) * t_years
+    assert ra == pytest.approx(want_ra, abs=0.002)
+    assert dec == pytest.approx(want_dec, abs=0.002)
+    # and it must actually move (the old code returned ~0.0004 deg here)
+    assert ra > 0.3 and dec > 0.1
+
+
+def test_transit_altitude_uses_the_precessed_declination():
+    """M13 culminates at 90 - |lat - dec_of_date|. Using the J2000 dec as if it
+    were of date is the exact symptom of the precession bug (M13's dec drifts
+    ~-0.05 deg by 2026 - small, but larger than this test's tolerance).
+
+    The window is a full day: in late August M13 transits in the afternoon at
+    this longitude, so a night-only window would measure a lower altitude."""
+    lat, lon = 52.52, 13.40
+    ra, dec_j2000 = 16.695 * 15, 36.467
+    _, dec_of_date = _meeus_precess(ra, dec_j2000,
+                                    astro.julian_day(datetime(2026, 8, 22, 22, 0)))
+    best = -99.0
+    t = datetime(2026, 8, 22, 0, 0)
+    while t < datetime(2026, 8, 23, 0, 0):
+        alt, _az = astro.altaz(ra, dec_j2000, astro.julian_day(t), lat, lon)
+        best = max(best, alt)
+        t += timedelta(minutes=2)
+    assert best == pytest.approx(90 - abs(lat - dec_of_date), abs=0.05)
+
+
+def _sep_deg(ra1, dec1, ra2, dec2) -> float:
+    a1, a2 = math.radians(dec1), math.radians(dec2)
+    return math.degrees(math.acos(max(-1.0, min(1.0,
+        math.sin(a1) * math.sin(a2)
+        + math.cos(a1) * math.cos(a2) * math.cos(math.radians(ra1 - ra2))))))
+
+
 @pytest.mark.parametrize("hour_utc", [0, 6, 12, 18])
 def test_polaris_tracks_latitude(hour_utc):
     lat, lon = 52.52, 13.40          # Berlin
@@ -46,26 +129,38 @@ def test_polaris_tracks_latitude(hour_utc):
 def test_m13_transit_berlin():
     """M13 culminates at 90 - |lat - dec| due south."""
     lat, lon = 52.52, 13.40
-    ra, dec = 16.695 * 15, 36.467
+    ra, dec_j2000 = 16.695 * 15, 36.467
+    # the catalog ships J2000 coords, but the transit altitude is set by the
+    # declination OF DATE - using the J2000 value here would hide a broken
+    # precession behind the old, loose tolerance
+    _, dec = _meeus_precess(ra, dec_j2000,
+                            astro.julian_day(datetime(2026, 8, 22, 22, 0)))
     best_alt, best_az = -99, None
     t = datetime(2026, 8, 22, 0, 0)
     while t < datetime(2026, 8, 23, 0, 0):
         jd = astro.julian_day(t)
-        a, az = astro.altaz(ra, dec, jd, lat, lon)
+        a, az = astro.altaz(ra, dec_j2000, jd, lat, lon)
         if a > best_alt:
             best_alt, best_az = a, az
         t += timedelta(minutes=5)
     theory = 90 - abs(lat - dec)
-    assert best_alt == pytest.approx(theory, abs=0.3)
+    assert best_alt == pytest.approx(theory, abs=0.1)
     assert best_az == pytest.approx(180, abs=1.5)
 
 
 def test_sun_position_august_2026():
     jd = astro.julian_day(datetime(2026, 8, 22, 12, 0))
     ra, dec = astro.sun_ra_dec(jd)
-    ra_hours = ra / 15
-    assert ra_hours == pytest.approx(10.1, abs=0.05)
-    assert dec == pytest.approx(11.6, abs=0.15)
+    # Contract: the pair is in the J2000 frame, which is what altaz() expects
+    # (it precesses it to the equinox of date itself). Before the precession
+    # fix this function returned values that only *looked* like of-date
+    # coordinates, because the inverse it used was the inverse of a wrong
+    # matrix - so both frames are pinned here.
+    ra_of_date, dec_of_date = _meeus_precess(ra, dec, jd)
+    assert ra / 15 == pytest.approx(10.1, abs=0.05)          # J2000 frame
+    assert dec == pytest.approx(11.80, abs=0.15)             # J2000 frame
+    assert ra_of_date / 15 == pytest.approx(10.1, abs=0.05)  # of date
+    assert dec_of_date == pytest.approx(11.60, abs=0.15)     # of date
 
 
 def test_sun_noon_altitude_berlin():

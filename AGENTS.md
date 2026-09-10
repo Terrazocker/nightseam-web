@@ -19,6 +19,88 @@ numpy/astropy, no JS build step, no npm. Works fully offline except optional
 Wikipedia example images. Two modes: Night Planner and Image Catalog (FITS
 ingest + library), switched via the top-right button or the brand name.
 
+## Remediation 0.6.9 — invariants added (read before touching these areas)
+
+The audit `AUDIT-0.6.8-handover.md` and the fix record `REMEDIATION-0.6.9.md`
+cover the 2026-09-10/11 remediation session. These invariants are pinned by
+tests - do not regress them:
+
+- **Untrusted paths**: every path from stored/imported JSON goes through
+  `paths.safe_rel()` (before storing) and `paths.safe_join()` (before opening).
+  A crafted setup ZIP used to be an arbitrary-file-read primitive through
+  `/api/panorama/{id}/image`. Tests: `tests/test_paths.py`, `test_backup.py`,
+  `test_api.py`.
+- **Precession**: `app/astro.py::_precess` is Meeus ch. 21 eq. 21.4 with the
+  middle rotation about **Y**; `static/js/astro.js` and `web/astro.js` mirror it.
+  Correctness is pinned by published values in `tests/test_astro.py` - NOT by a
+  round-trip test, which is exactly why the old wrong matrix survived. Three-engine
+  parity lives in `tests/test_js_parity.py` + `tests/js/astro_parity.mjs`.
+- **Clear window**: `longest_run`/`longestRunJS` return a HALF-OPEN
+  `[start, end)` whose `end` may equal the grid length. Never index
+  `times_iso[end]`; resolve it with `windowEndISO()` (`static/js/derive.js`).
+  `/api/object/{oid}` ships `step_min` for that.
+- **Night load**: after every `await` in `static/js/night.js`, re-check
+  `ctl === _nightCtl` before touching state, UI or the busy chip
+  (`tests/js/night_race.mjs` drives the real module).
+- **Scoring parity**: the moon/Bortle curves are exported by BOTH
+  `static/js/derive.js` and `web/astro.js` and compared numerically by
+  `tests/test_js_parity.py`. The web scores over the same window as the desktop
+  (`pickDarkWindow()` mirrors `app/planning.py`: astronomical -> nautical ->
+  civil -> sunset, polar fallback 20:00-04:00) on a 6-minute grid and uses the
+  PLANNED night's moon (midpoint), never "now".
+- **Web night anchoring**: `nightInfo(localDate, lat, lon, localNoon)` - pass the
+  SITE's local noon (`siteNoon()` in `web/app.js`, via `webstore.wallToUtc`), or
+  a site in another timezone resolves the wrong night (measured: a >24 h "night"
+  either side of the browser's zone).
+- **Release**: `scripts/check_release.py` must pass before staging;
+  `build.ps1` refuses a dirty/off-tag bake unless `-AllowDirty` and no longer
+  falls back to `dev`. **The manual `Set-Content app\_version_baked.py` bake
+  described below is a red flag, not a workaround** - it is how the live 0.6.0
+  exe came to claim a clean tag it never had.
+- **Changelog**: `python scripts/build_changelog.py --check` exits non-zero for
+  tags since the newest curated entry; the older "cannot silently go stale" claim
+  only holds while that check runs in the release path. 0.6.1-0.6.8 are now
+  curated (they were WEB-only releases - no exe was published - and each entry
+  says so); `check_release.py` requires the entry for the tag being released.
+
+### Review-pass corrections (same session) — also pinned
+
+- **Ids are path inputs too**: `paths.safe_token()` guards any record id that is
+  interpolated into a file name (`/api/panorama/{pid}/image` builds
+  `f"{pid}.{ext}"`); `import_bundle` drops panorama records whose *id* is not a
+  plain token, and every pid route resolves through `_pano_or_404`. `safe_rel`
+  additionally rejects segments Windows would rewrite (trailing dot/space,
+  all-dots, device names) and `safe_join` refuses the root itself.
+- **The import never controls the archive ROOT**: `apply_import_zip` ignores
+  `settings.image_dir` from the bundle, re-injects the LOCAL configured archive
+  (the settings replace wipes the table, so dropping the key would reset it to
+  `~/Documents/...`) and reports `image_dir_ignored`. Untrusted `image_dir` was
+  an arbitrary-write/read primitive.
+- **One dark window for every number**: the clear window, `% of night` and the
+  score are measured inside `dusk..dawn` on BOTH sides - `static/js/derive.js`
+  clips them (the payload grid carries twilight margins for the charts) and
+  `nightcalc.object_detail` clips its 4-min window the same way. Tests:
+  `tests/js/derive_window.mjs` (harness) and `tests/test_js_parity.py`.
+- **Selected time is the source of truth** (web): the Tonight view computes
+  "visible" at `S.skyTime` and re-renders (debounced) on the topbar/sky scrub -
+  the desktop equivalent is `S.tIdx`. No magnitude gate on curated objects;
+  advanced candidates are capped at mag 9 in the web for responsiveness
+  (documented, intentional).
+- **Stale async work stays silent**: a superseded night load neither repaints,
+  nor clears the busy chip, nor shows an error toast (`tests/js/night_race.mjs`).
+- **JS syntax is checked**: `python scripts/check_js_syntax.py` (wired into
+  `check_js.py`) parses all 25 shipped modules with `node --check` via temporary
+  `.mjs` copies; it skips cleanly without node. It exists because a duplicate
+  `const` once reached the tree unseen.
+- **Release validation is two-sided**: `scripts/check_release.py` verifies the
+  staged zip's real sha256/size against `version.json`, the zip's exe against the
+  staged exe, `ns-version.js`'s url, the changelog schema, and the git-describe
+  grammar (a fabricated `-dirty-dirty` fails even with `--allow-dirty`).
+- **Tests never touch the user profile**: `tests/conftest.py` redirects
+  `paths.default_archive_dir()` into `logs/` for every test - a test that forgot
+  to set `image_dir` used to write into the real `~/Documents/NightSeam Images`.
+- **Current test count: 464** (`python -m pytest tests/ -q`, full access).
+
 ## Context discipline (read before starting work)
 
 The transcript is the budget. These rules measurably cut it - this section wins
@@ -62,7 +144,7 @@ over the fuller commands below wherever they differ:
     when both sockets set SO_REUSEADDR.
   - If 8407 is briefly taken at boot, `free_port()` silently picks a RANDOM
     port (written to instance.json) - the app runs, just not on 8407.
-- Tests: `python -m pytest tests/` - 162 tests, run in ~36 s (pure-function
+- Tests: `python -m pytest tests/` - 464 tests, run in ~75 s (pure-function
   tests are fast; `tests/test_api.py` spins up real `create_app()` instances
   via fastapi TestClient/httpx). Single test:
   `python -m pytest tests/test_astro.py -k name`. API tests use
@@ -73,7 +155,7 @@ over the fuller commands below wherever they differ:
   pytest uses for the basetemp) creates an owner-SID-only DACL that the
   sandbox's restricted token cannot re-read, so every tmp_path test errors
   with PermissionError - an environment artifact, NOT a code failure. Run
-  the suite with full access / in a normal shell: 162/162 pass (~36 s).
+  the suite with full access / in a normal shell: 464/464 pass (~75 s).
   Careful with the `client` fixture: it must leave `data/panos` in place
   under the tmp dir it patches in, because the pano upload route writes
   there without mkdir'ing (the real `data_dir()` creates it). Without that

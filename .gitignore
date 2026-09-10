@@ -12,6 +12,10 @@ app/_version_baked.py
 data/*.db
 data/*.db.backup
 data/*.backup-auto.zip
+# downloaded catalog inputs (OpenNGC etc.) are regenerable, not repo content:
+# scripts/build_adv_catalog.py fetches them, and a stray `git add -A` must not
+# commit a multi-MB third-party CSV
+data/*.csv
 data/panos/*
 !data/panos/.gitkeep
 data/imgcache/

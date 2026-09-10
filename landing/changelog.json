@@ -1,5 +1,45 @@
 [
  {
+  "version": "0.6.8",
+  "date": "2026-09-10",
+  "summary": "Web: internal stylesheet version bump so the 0.6.7 layout reaches visitors who still had the old file cached."
+ },
+ {
+  "version": "0.6.7",
+  "date": "2026-09-10",
+  "summary": "The imaging-rig (framing) selector moved out of the menu and into the top bar, right next to the site selector - in both the desktop app and the web version. Web release; the desktop change arrives with 0.6.9."
+ },
+ {
+  "version": "0.6.6",
+  "date": "2026-09-10",
+  "summary": "Web: the Sites, Rigs and Targets forms no longer render before you open them."
+ },
+ {
+  "version": "0.6.5",
+  "date": "2026-09-10",
+  "summary": "Web: the last visible traces of the popularity score are gone (the \"Popular\" filter chip). The desktop's popularity sort option was removed in the same step and ships with 0.6.9."
+ },
+ {
+  "version": "0.6.4",
+  "date": "2026-09-10",
+  "summary": "Telescope presets are now a picker instead of automatic entries: a fresh setup starts empty and \"Add rig\" offers the Seestar / DWARF models or a custom rig. Web release; the desktop version arrives with 0.6.9."
+ },
+ {
+  "version": "0.6.3",
+  "date": "2026-09-10",
+  "summary": "Web: the community-popularity number is no longer displayed anywhere - it still breaks ties in the ranking, silently."
+ },
+ {
+  "version": "0.6.2",
+  "date": "2026-09-10",
+  "summary": "Web: fixed an update-order problem that could briefly serve the app's page before its scripts, leaving visitors with a broken view until they reloaded."
+ },
+ {
+  "version": "0.6.1",
+  "date": "2026-09-10",
+  "summary": "Web: sample telescope presets (ZWO Seestar, DwarfLab) with their field of view, plus layout fixes. They were added automatically at the time; 0.6.4 turned them into a picker."
+ },
+ {
   "version": "0.6.0",
   "date": "2026-09-10",
   "summary": "AstroPilot is now NightSeam: new name, and the website has moved to nightseam.de. Planning and the image library work exactly as before. If you replace an older installation in place, rename data/astropilot.db to data/nightseam.db to keep your sites and captures."

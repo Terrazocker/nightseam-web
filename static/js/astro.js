@@ -27,29 +27,29 @@ function gmstDeg(jd) {
   return g < 0 ? g + 360 : g;
 }
 
+/* Meeus ch. 21 rigorous precession (eq. 21.4): Z(zeta) -> Y(theta) -> Z(z).
+   The middle rotation is about the Y axis - rotating about X instead (the
+   original port of this file did) leaves the coordinates effectively
+   unprecessed. `app/astro.py` is the reference; tests/test_js_parity.py
+   compares this function against it. */
 export function precessJ2000ToDate(raDeg, decDeg, jd) {
   const t = (jd - J2000) / 36525.0;
-  const xi = (2306.2181 * t + 0.30188 * t * t + 0.017998 * t ** 3) / 3600.0;
-  const ze = (2306.2181 * t + 1.09468 * t * t + 0.018203 * t ** 3) / 3600.0;
-  const th = (2004.3109 * t - 0.42665 * t * t - 0.041833 * t ** 3) / 3600.0;
+  const zeta = (2306.2181 * t + 0.30188 * t * t + 0.017998 * t ** 3) / 3600.0;
+  const z = (2306.2181 * t + 1.09468 * t * t + 0.018203 * t ** 3) / 3600.0;
+  const theta = (2004.3109 * t - 0.42665 * t * t - 0.041833 * t ** 3) / 3600.0;
+
   const a = raDeg * D2R, d = decDeg * D2R;
-  const xia = xi * D2R, zea = ze * D2R, tha = th * D2R;
+  const zr = zeta * D2R, th = theta * D2R;
   const cosd = Math.cos(d), sind = Math.sin(d);
-  const cosa = Math.cos(a), sina = Math.sin(a);
-  let x = cosd * cosa, y = cosd * sina, z = sind;
-  const cx = Math.cos(xia), sx = Math.sin(xia);
-  const cz = Math.cos(zea), sz = Math.sin(zea);
-  const ct = Math.cos(tha), st = Math.sin(tha);
-  const x2 = cx * x - sx * y;
-  const y2 = sx * x + cx * y;
-  const x3 = x2;
-  const y3 = ct * y2 - st * z;
-  const z3 = st * y2 + ct * z;
-  const xf = cz * x3 + sz * y3;
-  const yf = -sz * x3 + cz * y3;
-  let ra = Math.atan2(yf, xf) * R2D % 360;
+  const sinAz = Math.sin(a + zr), cosAz = Math.cos(a + zr);
+
+  const A = cosd * sinAz;
+  const B = Math.cos(th) * cosd * cosAz - Math.sin(th) * sind;
+  const C = Math.sin(th) * cosd * cosAz + Math.cos(th) * sind;
+
+  let ra = (Math.atan2(A, B) * R2D + z) % 360;
   if (ra < 0) ra += 360;
-  const dec = Math.asin(Math.max(-1, Math.min(1, z3))) * R2D;
+  const dec = Math.asin(Math.max(-1, Math.min(1, C))) * R2D;
   return [ra, dec];
 }
 

@@ -7,6 +7,7 @@ are monkeypatched, and CACHE_DIR points at a tmp dir.
 
 import json
 import time
+import urllib.error
 
 import pytest
 
@@ -156,3 +157,81 @@ def test_slug_and_fields_sanitized():
     assert img._full_messier("NGC 224") is None
     assert img._first_ngc("NGC 224/205") == "NGC 224"
     assert img._parse_size("12.5x8") == 12.5
+
+
+# ------------------------------------------------- transient vs permanent
+# HTTPError subclasses URLError/OSError, so membership in TEMP_EXC made a
+# permanent 404 look transient: no negative marker was written and the object
+# was re-fetched on every detail view and prefetch pass, forever.
+
+def _http_error(code: int) -> urllib.error.HTTPError:
+    return urllib.error.HTTPError("https://example.invalid/x", code, "err",
+                                  {}, None)
+
+
+@pytest.mark.parametrize("code,temporary", [
+    (404, False), (403, True), (410, False), (429, True), (500, True),
+    (502, True), (503, True),
+])
+def test_http_status_classification(code, temporary):
+    assert img._is_temporary(_http_error(code)) is temporary
+
+
+def test_network_errors_are_temporary():
+    assert img._is_temporary(urllib.error.URLError("offline")) is True
+    assert img._is_temporary(TimeoutError()) is True
+    assert img._is_temporary(img.Temporary("429")) is True
+    # a truncated JSON body must not become a permanent negative marker
+    assert img._is_temporary(json.JSONDecodeError("x", "y", 0)) is True
+
+
+def test_permanent_failure_is_negative_cached(nw, monkeypatch):
+    """A 404 must be remembered, so the object is not re-fetched forever."""
+    def not_found(url, timeout=10.0):
+        nw["download"] += 1
+        raise _http_error(404)
+
+    monkeypatch.setattr("app.images._download", not_found)
+    blob, ctype = img.fetch_image(OBJ)
+    assert blob is None and ctype is None
+    markers = list(img.CACHE_DIR.glob("*.json"))
+    assert markers and any(json.loads(p.read_text()).get("none") is True
+                           for p in markers)
+    calls_after_first = nw["download"]
+    assert img.fetch_image(OBJ) == (None, None)
+    assert nw["download"] == calls_after_first, "a cached 404 was re-fetched"
+
+
+def test_the_insecure_tls_context_is_limited_to_exact_cds_hosts():
+    """A substring test also matched look-alikes such as
+    'cds.unistra.example.com', handing a hostile host the verification bypass."""
+    assert img._context_for("https://alasky.cds.unistra.fr/hips2fits?x=1") is not None
+    assert img._context_for("https://cds.unistra.fr/x") is not None
+    assert img._context_for("https://cds.unistra.example.com/x") is None
+    assert img._context_for("https://evil.example/cds.unistra.fr") is None
+    assert img._context_for("https://commons.wikimedia.org/x") is None
+
+
+def test_image_download_reads_are_capped(monkeypatch):
+    """Third-party bytes are cached, so an oversized response must be refused
+    instead of buffered whole."""
+    class BigResponse:
+        headers = {"Content-Type": "image/jpeg"}
+
+        def __init__(self):
+            self.served = 0
+
+        def read(self, n=-1):
+            self.served += n
+            return b"x" * n
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    monkeypatch.setattr(img.urllib.request, "urlopen",
+                        lambda *a, **k: BigResponse())
+    with pytest.raises(img.Temporary):
+        img._http_bytes("https://example.invalid/huge.jpg")

@@ -3,7 +3,7 @@
 Run AFTER build.ps1 (which produced dist\\NightSeam.exe with the baked
 version), from the repo root:
 
-    python scripts/make_release.py
+    python scripts/make_release.py [--allow-dirty]
 
 Stages a CLEAN package (exe + LICENSE + NOTICE — never the
 developer's own dist\\data) into dist/release/ and writes:
@@ -15,16 +15,32 @@ developer's own dist\\data) into dist/release/ and writes:
 The website serves release/ content under /downloads/; the landing page
 reads version.json (same origin) and the desktop app's update checker loads
 ns-version.js (script tag — CORS-free).
+
+Version integrity: <version> is `git describe --tags --always --dirty` —
+the same source build.ps1 bakes into the exe and web/build_web.py bakes into
+web/version.json.  Before anything is staged, scripts/check_release.py
+verifies that the exe's baked version, web/version.json, landing/changelog.json
+and the staged artifacts all agree with it; the run aborts on any ERROR, so a
+stale exe can no longer be published under a fresh version.  --allow-dirty
+forwards to that check and only forgives a dirty tree / off-tag HEAD (the
+published version then carries '-dirty' or a commit suffix, never a clean tag).
 """
+import argparse
 import hashlib
 import json
-import os
 import shutil
-import subprocess
+import sys
 import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(Path(__file__).resolve().parent))  # scripts/ -> check_release
+
+from check_release import (  # noqa: E402  (needs the path insert above)
+    ERROR, ROOT as CHECK_ROOT, collect, evaluate, git_describe,
+    normalize_version,
+)
+
 DIST = ROOT / "dist"
 EXE = DIST / "NightSeam.exe"
 STAGE = DIST / "release"
@@ -33,20 +49,51 @@ RELEASE_JS = "ns-version.js"
 
 DOCS = ["LICENSE", "NOTICE"]
 
+assert CHECK_ROOT == ROOT, "check_release.py must live in this repo's scripts/"
+
 
 def describe():
-    # --dirty, like build.ps1's bake: a release built from uncommitted work must
-    # not claim a clean tag, or the zip/version.json would disagree with the
-    # version the exe inside actually reports
-    out = subprocess.run(["git", "describe", "--tags", "--always", "--dirty"],
-                         cwd=str(ROOT), capture_output=True, text=True).stdout.strip()
-    return out.lstrip("v") or "0.0.0"
+    """The ONE authoritative version: `git describe --tags --always --dirty`."""
+    raw = git_describe(ROOT)
+    if not raw:
+        raise SystemExit(
+            "`git describe --tags --always --dirty` produced nothing - run "
+            "make_release.py from the repo root on a machine with git and at "
+            "least one tag.")
+    return normalize_version(raw)
 
 
-def main():
+def run_check(version, allow_dirty, include_stage, when):
+    """Run the release integrity check; abort on the first ERROR."""
+    findings = evaluate(collect(ROOT), allow_dirty=allow_dirty,
+                        include_stage=include_stage)
+    errors = [f for f in findings if f.level == ERROR]
+    for finding in findings:
+        print("  " + finding.render())
+    if errors:
+        raise SystemExit(
+            f"\nrelease check failed {when} ({len(errors)} error(s)) - nothing "
+            f"was staged. Fix the above, or see `python scripts/check_release.py`.")
+    print(f"release check {when}: ok (version {version})")
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("--allow-dirty", action="store_true",
+                        help="accept a dirty tree / HEAD not on a tag (the "
+                             "published version then carries -dirty or a "
+                             "commit suffix)")
+    args = parser.parse_args(argv)
+
     if not EXE.is_file():
-        raise SystemExit(f"missing {EXE} — run build.ps1 first")
+        raise SystemExit(f"missing {EXE} - run build.ps1 first")
     version = describe()
+
+    # fail BEFORE staging anything: the exe's bake, web/version.json and
+    # landing/changelog.json must all agree with this version
+    print(f"checking release integrity for {version} ...")
+    run_check(version, args.allow_dirty, include_stage=False,
+              when="before staging")
 
     # fresh stage
     if STAGE.exists():
@@ -84,6 +131,11 @@ def main():
     payload = json.dumps({"version": version, "url": url})
     (STAGE / RELEASE_JS).write_text(
         f"window.__NS_RELEASE={payload};\n", encoding="utf-8")
+
+    # verify what was just written (zip name, version.json, ns-version.js and
+    # the latest-zip copy must all carry the same version); the tree state is
+    # already settled, so only real contradictions can fail here
+    run_check(version, True, include_stage=True, when="after staging")
 
     print(f"release: {zip_path} ({size/1e6:.1f} MB)")
     print(f"version: {version}")

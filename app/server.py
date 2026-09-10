@@ -25,7 +25,7 @@ from .fits import parse_dec_deg, parse_ra_hours
 from .imglib import name_key
 from .ingest import ingest_one, obj_slug, reindex_library, rename_archive_folder
 from .nightcalc import PROFILE_BINS, compute_night, object_detail
-from .paths import data_dir, static_dir
+from .paths import TOKEN_RE, data_dir, safe_join, safe_token, static_dir
 from .rig_presets import presets_payload as rig_presets_payload
 from .rig_presets import remove_seeded_once as unseed_rig_presets
 from .version import app_version
@@ -33,6 +33,22 @@ from .version import app_version
 from starlette.background import BackgroundTask
 
 APP_VERSION = app_version()
+
+# panorama ids come from new_id() (hex + digits) or an imported bundle. The
+# crop route interpolates the id into a FILE NAME, so an id that is not a plain
+# token is refused outright - and the self-heal glob must never be fed a pattern
+# metacharacter.
+_PID_RE = TOKEN_RE
+
+# per-request upload caps, checked against Content-Length before the body is
+# spooled (ingest: MAX_FILES_PER_REQUEST files, each capped at 1 GiB inside
+# app/ingest.py; import: the whole-setup ZIP)
+MAX_FILES_PER_REQUEST = 24
+_MAX_REQUEST_BYTES = {
+    "/api/images/ingest": MAX_FILES_PER_REQUEST * (1 << 30),
+    "/api/import": 2 * (1 << 30),
+    "/api/panorama": 64 * (1 << 20),
+}
 
 _state = {"last_request": time.time(), "shutdown": False}
 
@@ -89,7 +105,6 @@ class SiteIn(BaseModel):
     lat: float
     lon: float
     elev: int = 0
-
 
 class SettingsIn(BaseModel):
     active_site_id: Optional[int] = None
@@ -157,6 +172,34 @@ class FolderOpenIn(BaseModel):
 def fov_arcmin(focal_mm: float, sensor_mm: float) -> float:
     """Field of view in arcminutes for a given focal length and sensor dimension."""
     return round(2 * math.degrees(math.atan(sensor_mm / 2 / focal_mm)) * 60, 1)
+
+
+def _check_site(lat: float, lon: float, elev: int) -> None:
+    """Reject coordinates that cannot describe a place on Earth (a lat of 999
+    otherwise produced silently meaningless tracks)."""
+    for value, lo, hi, label in ((lat, -90, 90, "Latitude"),
+                                 (lon, -180, 180, "Longitude"),
+                                 (elev, -500, 9000, "Elevation")):
+        if value is None or not math.isfinite(float(value)) or \
+                not (lo <= float(value) <= hi):
+            raise HTTPException(400, f"{label} must be between {lo} and {hi}")
+
+
+def _check_profile(values, label: str) -> None:
+    """Panorama obstruction arrays are exactly PROFILE_BINS numbers or empty.
+
+    Without this a short/corrupt profile was stored and then failed OPEN at
+    read time (ceil_lookup returns "nothing blocks"), silently disabling the
+    horizon mask the user painted."""
+    if values is None:
+        return
+    if not isinstance(values, list) or len(values) not in (0, PROFILE_BINS):
+        raise HTTPException(
+            400, f"{label} must be empty or exactly {PROFILE_BINS} values")
+    for v in values:
+        if isinstance(v, bool) or not isinstance(v, (int, float)) or \
+                not math.isfinite(float(v)):
+            raise HTTPException(400, f"{label} must contain only finite numbers")
 
 
 # ------------------------------------------------------------------ image prefetch
@@ -255,12 +298,27 @@ def create_app(db: Database, *, prefetch: bool = True) -> FastAPI:
     @app.middleware("http")
     async def touch(request, call_next):
         _state["last_request"] = time.time()
+        # Reject an oversized upload from its declared length BEFORE Starlette
+        # spools the body to a temp file: the per-file cap inside the ingest
+        # route can only run once the whole request has been buffered.
+        limit = _MAX_REQUEST_BYTES.get(request.url.path)
+        if limit is not None:
+            try:
+                declared = int(request.headers.get("content-length") or 0)
+            except ValueError:
+                declared = 0
+            if declared > limit:
+                return JSONResponse(
+                    {"detail": f"upload too large (max "
+                               f"{limit // (1024 * 1024)} MB per request)"},
+                    status_code=413)
         resp = await call_next(request)
         # the UI ships as plain files served from the exe/source bundle; a
         # stale cached index.html next to fresh ES modules breaks the app
-        # (missing DOM ids). Never cache the UI shell or its assets.
+        # (missing DOM ids). Never cache the UI shell or its assets - including
+        # themes.css, which carries the whole Glass theme.
         if request.url.path in ("/", "/index.html", "/style.css",
-                                "/favicon.ico") or \
+                                "/themes.css", "/favicon.ico") or \
                 request.url.path.startswith("/js/"):
             resp.headers["Cache-Control"] = "no-store"
         return resp
@@ -357,6 +415,7 @@ def create_app(db: Database, *, prefetch: bool = True) -> FastAPI:
 
     @app.post("/api/sites")
     def api_add_site(body: SiteIn):
+        _check_site(body.lat, body.lon, body.elev)
         sid = db.add_site(body.name.strip(), body.lat, body.lon, body.elev)
         if db.setting("active_site_id") is None:
             db.set_setting("active_site_id", sid)
@@ -364,6 +423,7 @@ def create_app(db: Database, *, prefetch: bool = True) -> FastAPI:
 
     @app.put("/api/sites/{sid}")
     def api_update_site(sid: int, body: SiteIn):
+        _check_site(body.lat, body.lon, body.elev)
         db.update_site(sid, body.name.strip(), body.lat, body.lon, body.elev)
         return {"ok": True}
 
@@ -479,6 +539,20 @@ def create_app(db: Database, *, prefetch: bool = True) -> FastAPI:
 
     # ---------------- panoramas ----------------
 
+    def _pano_or_404(pid: str) -> dict:
+        """Panorama row for an id that is safe to use as a filename component.
+
+        `POST /api/panorama/{pid}/image` builds `f"{pid}.{ext}"` and writes it
+        under data/panos, so an id that is not a plain token must be treated as
+        "not found" rather than reaching the filesystem (a crafted setup ZIP
+        could plant `..\\evil`)."""
+        if safe_token(pid) is None:
+            raise HTTPException(404)
+        row = db.get_panorama(pid)
+        if row is None:
+            raise HTTPException(404)
+        return row
+
     @app.post("/api/panorama")
     async def api_upload_pano(file: UploadFile = File(...)):
         ext = Path(file.filename or "").suffix.lower().lstrip(".")
@@ -499,13 +573,16 @@ def create_app(db: Database, *, prefetch: bool = True) -> FastAPI:
 
     @app.get("/api/panorama/{pid}/image")
     def api_pano_image(pid: str):
-        row = db.get_panorama(pid)
-        if row is None:
+        row = _pano_or_404(pid)
+        # the stored name is untrusted data (a setup ZIP can plant it): it must
+        # resolve INSIDE data/panos, never to an arbitrary file
+        f = safe_join(data_dir() / "panos", row.get("file"))
+        if f is None:
             raise HTTPException(404)
-        f = data_dir() / "panos" / row["file"]
         if not f.exists():
             # self-heal: db may point at a renamed/deleted variant
-            candidates = sorted((data_dir() / "panos").glob(f"{pid}.*"))
+            candidates = sorted((data_dir() / "panos").glob(f"{pid}.*")) \
+                if _PID_RE.match(pid) else []
             if candidates:
                 f = candidates[0]
                 db.update_panorama(pid, file=f.name)
@@ -519,9 +596,7 @@ def create_app(db: Database, *, prefetch: bool = True) -> FastAPI:
                                      fov: Optional[float] = Form(None)):
         """Replace the stored panorama image (used by the crop tool).
         Optionally applies the recalibrated az_offset / fov in one step."""
-        row = db.get_panorama(pid)
-        if row is None:
-            raise HTTPException(404)
+        row = _pano_or_404(pid)
         ext = Path(file.filename or "").suffix.lower().lstrip(".")
         if ext not in ("jpg", "jpeg", "png", "webp"):
             raise HTTPException(400, "Use JPG, PNG or WebP")
@@ -532,9 +607,11 @@ def create_app(db: Database, *, prefetch: bool = True) -> FastAPI:
         try:
             await _drain_upload(file, tmp, 60 * 1024 * 1024, "Image")
             out = data_dir() / "panos" / fname
-            old = data_dir() / "panos" / row["file"]
+            # only ever delete a file inside the panorama folder - `row["file"]`
+            # is untrusted (imported), so a raw join could unlink anything
+            old = safe_join(data_dir() / "panos", row.get("file"))
             tmp.replace(out)                    # atomic swap into place
-            if old.exists() and old.name != fname:
+            if old is not None and old.exists() and old.name != fname:
                 old.unlink(missing_ok=True)
         finally:
             tmp.unlink(missing_ok=True)
@@ -551,12 +628,12 @@ def create_app(db: Database, *, prefetch: bool = True) -> FastAPI:
 
     @app.put("/api/panorama/{pid}")
     def api_update_pano(pid: str, body: PanoramaUpdate):
-        row = db.get_panorama(pid)
-        if row is None:
-            raise HTTPException(404)
+        row = _pano_or_404(pid)
         if body.paint_mode is not None and \
                 body.paint_mode not in ("obstacle", "sky"):
             raise HTTPException(400, "paint_mode must be 'obstacle' or 'sky'")
+        _check_profile(body.profile, "profile")
+        _check_profile(body.profile_top, "profile_top")
         fields = {k: v for k, v in body.model_dump().items() if v is not None}
         if fields:
             db.update_panorama(pid, **fields)
@@ -568,10 +645,12 @@ def create_app(db: Database, *, prefetch: bool = True) -> FastAPI:
 
     @app.delete("/api/panorama/{pid}")
     def api_delete_pano(pid: str):
-        row = db.get_panorama(pid)
+        # deleting is idempotent (200 for an unknown id), but the id must be a
+        # plain token before it is used to build anything path-like
+        row = db.get_panorama(pid) if safe_token(pid) else None
         if row:
-            f = data_dir() / "panos" / row["file"]
-            if f.exists():
+            f = safe_join(data_dir() / "panos", row.get("file"))
+            if f is not None and f.exists():
                 f.unlink(missing_ok=True)
         db.delete_panorama(pid)
         return {"ok": True}
@@ -666,6 +745,10 @@ def create_app(db: Database, *, prefetch: bool = True) -> FastAPI:
                                 frame: str = Form(""),
                                 session: str = Form(""),
                                 run_id: str = Form("")):
+        if len(files) > MAX_FILES_PER_REQUEST:
+            raise HTTPException(
+                400, f"too many files in one request (max "
+                     f"{MAX_FILES_PER_REQUEST}) - the client uploads in chunks")
         archive = Path(db.image_dir())
         try:
             archive.mkdir(parents=True, exist_ok=True)
@@ -816,8 +899,10 @@ def create_app(db: Database, *, prefetch: bool = True) -> FastAPI:
         row = db.image(img_id)
         if row is None:
             raise HTTPException(404, "image not found")
-        p = Path(db.image_dir()) / row["file"]
-        if not p.is_file():
+        # same rule as the panorama route: a stored path must stay inside the
+        # archive folder (imports can plant arbitrary values in `file`)
+        p = safe_join(db.image_dir(), row.get("file"))
+        if p is None or not p.is_file():
             raise HTTPException(404, "file missing on disk")
         try:
             with open(p, "rb") as f:

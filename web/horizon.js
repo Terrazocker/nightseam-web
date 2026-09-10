@@ -1,15 +1,15 @@
-/*
- * NightSeam Web — Horizon / panorama obstruction profiles.
+﻿/*
+ * NightSeam Web â€” Horizon / panorama obstruction profiles.
  * Port of the original panorama feature (Plesk web port):
- *  • Photo (or blank sky) uploaded in-browser, never leaves the machine
- *  • Calibrate: azimuth at left edge, elevation at bottom/top, horizontal FOV
- *  • Paint the mask (brush/eraser) in two modes:
- *      obstacle — paint over trees/houses; profile = obstruction top per bin
- *      sky      — paint the visible sky band; profile = band bottom edge,
+ *  â€¢ Photo (or blank sky) uploaded in-browser, never leaves the machine
+ *  â€¢ Calibrate: azimuth at left edge, elevation at bottom/top, horizontal FOV
+ *  â€¢ Paint the mask (brush/eraser) in two modes:
+ *      obstacle â€” paint over trees/houses; profile = obstruction top per bin
+ *      sky      â€” paint the visible sky band; profile = band bottom edge,
  *                 profileTop = band top edge (overhang/balcony above)
- *  • Profile is exactly 720 bins (0.5 deg per azimuth), NO_BLOCK = -90,
+ *  â€¢ Profile is exactly 720 bins (0.5 deg per azimuth), NO_BLOCK = -90,
  *    unpainted columns in sky mode block fully (90), outside FOV follows mode
- *  • Persisted per browser in localStorage (per visiting site)
+ *  â€¢ Persisted per browser in localStorage (per visiting site)
  */
 const LS_KEY = 'nightseam_panos_v1';
 export const NO_BLOCK = -90;
@@ -20,7 +20,7 @@ export const MASK_H = 360; // 0.25 deg per row of altitude
 /* ----- compressed panorama-image cache (survives reload) -----
    The full-resolution photo is memory-only (it can exceed localStorage
    quota), but a downscaled JPEG copy is kept in IndexedDB so the painted
-   horizon doesn't vanish after a reload — the user never has to re-upload. */
+   horizon doesn't vanish after a reload â€” the user never has to re-upload. */
 const PANOIMG_DB = 'nightseam-panoimg';
 const PANOIMG_MAX_W = 1400;   // downscale width cap
 const PANOIMG_QUALITY = 0.78;
@@ -53,7 +53,7 @@ async function panoImgSet(id, blob) {
       t.onsuccess = () => resolve();
       t.onerror = () => reject(t.error);
     });
-  } catch { /* storage unavailable — photo stays memory-only for the session */ }
+  } catch { /* storage unavailable â€” photo stays memory-only for the session */ }
 }
 async function panoImgDel(id) {
   try {
@@ -100,7 +100,7 @@ function load() {
 }
 
 function save() {
-  // strip in-memory image data URLs before persisting — they can exceed the
+  // strip in-memory image data URLs before persisting â€” they can exceed the
   // localStorage quota; profiles/strokes/calibration are what planning needs.
   try {
     const slim = { ...db, panos: db.panos.map((p) => {
@@ -285,11 +285,11 @@ export function renderHorizon(box, onChanged) {
   const active = pano ? pano.id : null;
 
   const panoRow = (p) => `
-    <li data-id="${p.id}">
+    <li data-id="${esc(p.id)}">
       <input type="radio" name="pano-active" ${p.id === active ? 'checked' : ''} title="use for planning">
       <span class="p-name">${esc(p.name)}</span>
-      <span class="p-tags">${p.paintMode} · ${p.fov}°${p.hasImage ? ' · 📷' : ''}</span>
-      <button class="btn small" data-del="${p.id}" title="delete">🗑</button>
+      <span class="p-tags">${p.paintMode} Â· ${p.fov}Â°${p.hasImage ? ' Â· ðŸ“·' : ''}</span>
+      <button class="btn small" data-del="${esc(p.id)}" title="delete">ðŸ—‘</button>
     </li>`;
 
   box.innerHTML = `
@@ -299,7 +299,7 @@ export function renderHorizon(box, onChanged) {
       <div style="margin-top:12px">
         <label>Name <input id="pano-name" type="text" value="backyard" style="width:120px"></label>
         <div class="btnrow" style="margin-top:8px">
-          <label class="btn primary" for="pano-file" style="text-align:center" title="choose a photo">📷 Upload photo</label>
+          <label class="btn primary" for="pano-file" style="text-align:center" title="choose a photo">ðŸ“· Upload photo</label>
           <button class="btn" id="pano-blank">Blank sky</button>
         </div>
         <input type="file" id="pano-file" accept="image/*" class="vhidden">
@@ -307,7 +307,7 @@ export function renderHorizon(box, onChanged) {
       </div>
     </div>
     <div class="card" style="margin-top:14px">
-      <h3>${active ? `Horizon editor — ${esc(pano.name)}` : 'Horizon editor'}</h3>
+      <h3>${active ? `Horizon editor â€” ${esc(pano.name)}` : 'Horizon editor'}</h3>
       ${active ? haziEditorHTML(pano) : '<p class="sub">create or select a horizon to start painting.</p>'}
     </div>`;
   hideSplash(box);
@@ -337,11 +337,11 @@ export function renderHorizon(box, onChanged) {
       onChanged();
     } catch (err) {
       const note = $('#pano-note');
-      if (note) note.textContent = '😕 could not create horizon: ' + err.message;
+      if (note) note.textContent = 'ðŸ˜• could not create horizon: ' + err.message;
     }
   };
   $('#pano-blank').addEventListener('click', () => mk(null));
-  // the upload button is a <label for="pano-file"> — the browser opens the
+  // the upload button is a <label for="pano-file"> â€” the browser opens the
   // file picker natively (no JS click involved, works in every browser);
   // drag & drop onto the page is wired once per view container below.
   $('#pano-file').addEventListener('change', (ev) => {
@@ -349,7 +349,7 @@ export function renderHorizon(box, onChanged) {
     if (!f) return;
     const rd = new FileReader();
     rd.onload = () => mk(rd.result);
-    rd.onerror = () => { const n = $('#pano-note'); if (n) n.textContent = '😕 could not read the file'; };
+    rd.onerror = () => { const n = $('#pano-note'); if (n) n.textContent = 'ðŸ˜• could not read the file'; };
     rd.readAsDataURL(f);
   });
   if (!box.__panoDrop) {
@@ -377,7 +377,7 @@ export function renderHorizon(box, onChanged) {
           rd.onload = () => { p._img = rd.result; wireEditor(box, p, onChanged); };
           rd.readAsDataURL(blob);
         } else {
-          wireEditor(box, p, onChanged); // no cached photo — blank canvas
+          wireEditor(box, p, onChanged); // no cached photo â€” blank canvas
         }
       }).catch(() => wireEditor(box, p, onChanged));
     } else {
@@ -399,39 +399,39 @@ function haziEditorHTML(p) {
         <option value="sky" ${p.paintMode === 'sky' ? 'selected' : ''}>Sky band (paint visible sky)</option>
       </select>
       <label>Brush <input id="ed-brush" type="range" min="3" max="80" value="28"></label>
-      <button class="btn" id="ed-eraser" title="toggle eraser (also right-click)">🧽 Eraser</button>
-      <button class="btn" id="ed-undo" title="undo last stroke (Ctrl+Z)">↩ Undo</button>
+      <button class="btn" id="ed-eraser" title="toggle eraser (also right-click)">ðŸ§½ Eraser</button>
+      <button class="btn" id="ed-undo" title="undo last stroke (Ctrl+Z)">â†© Undo</button>
       <button class="btn" id="ed-clear">Clear</button>
     </div>
     <div class="cal-grid" style="margin-top:10px">
       <label>Az @ left
         <input id="ed-az" type="range" min="0" max="360" step="5" value="${p.azOffset}">
-        <output id="ed-az-v">${p.azOffset}°</output>
+        <output id="ed-az-v">${p.azOffset}Â°</output>
       </label>
       <label>Alt bottom
         <input id="ed-ab" type="range" min="-30" max="90" step="5" value="${p.altBottom}">
-        <output id="ed-ab-v">${p.altBottom}°</output>
+        <output id="ed-ab-v">${p.altBottom}Â°</output>
       </label>
       <label>Alt top
         <input id="ed-at" type="range" min="0" max="90" step="5" value="${p.altTop}">
-        <output id="ed-at-v">${p.altTop}°</output>
+        <output id="ed-at-v">${p.altTop}Â°</output>
       </label>
       <label>FOV
         <input id="ed-fov" type="range" min="5" max="360" step="5" value="${p.fov}">
-        <output id="ed-fov-v">${p.fov}°</output>
+        <output id="ed-fov-v">${p.fov}Â°</output>
       </label>
     </div>
     <div class="pano-canvas-box" id="pano-box"><canvas id="pano-canvas" width="720" height="360"></canvas></div>
     <canvas id="pano-profile" width="720" height="56"></canvas>
-    <p class="sub" style="margin-top:6px">profile preview scales to your alt-bottom / alt-top range · strokes are applied to the sky map and planning immediately</p>
+    <p class="sub" style="margin-top:6px">profile preview scales to your alt-bottom / alt-top range Â· strokes are applied to the sky map and planning immediately</p>
     <div class="btnrow" style="margin-top:8px">
-      <button class="btn primary" id="ed-save">💾 Save</button>
+      <button class="btn primary" id="ed-save">ðŸ’¾ Save</button>
     </div>`;
 }
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
-/* prefs — shared with app.js via module state */
+/* prefs â€” shared with app.js via module state */
 let prefs = loadPrefs();
 export function getPrefs() { return prefs; }
 export function effectiveMinAlt() { return prefs.minAlt != null ? prefs.minAlt : 17 + 2 * prefs.bortle; }
@@ -439,9 +439,9 @@ export function setPrefs(patch) { prefs = { ...prefs, ...patch }; savePrefs(); }
 function loadPrefs() {
   try {
     const raw = localStorage.getItem('nightseam_prefs_v1');
-    if (raw) return { bortle: 4, minAlt: null, moonAware: true, ...JSON.parse(raw) };
+    if (raw) return { bortle: 4, minAlt: null, moonAware: false, ...JSON.parse(raw) };
   } catch { /* ignore */ }
-  return { bortle: 4, minAlt: null, moonAware: true };
+  return { bortle: 4, minAlt: null, moonAware: false };
 }
 function savePrefs() { try { localStorage.setItem('nightseam_prefs_v1', JSON.stringify(prefs)); } catch { /* ignore */ } }
 
@@ -481,7 +481,7 @@ function wireEditor(box, p, onChanged) {
         ctx.fillStyle = 'rgba(255,190,107,.9)';
         ctx.font = '15px system-ui';
         ctx.textAlign = 'center';
-        ctx.fillText('😕 could not decode this image (HEIC files need conversion)', MASK_W / 2, MASK_H / 2);
+        ctx.fillText('ðŸ˜• could not decode this image (HEIC files need conversion)', MASK_W / 2, MASK_H / 2);
       };
       img.src = p._img;
     } else {
@@ -568,9 +568,9 @@ function wireEditor(box, p, onChanged) {
     }
     profCtx.fillStyle = 'rgba(127,151,184,.8)';
     profCtx.font = '9px system-ui';
-    profCtx.fillText(lo.toFixed(0) + '°', 2, 53);
-    profCtx.fillText(hi.toFixed(0) + '°', 2, 12);
-    profCtx.fillText('profile — ' + paintMode() + ' · alt ' + lo.toFixed(0) + '…' + hi.toFixed(0) + '°', 540, 12);
+    profCtx.fillText(lo.toFixed(0) + 'Â°', 2, 53);
+    profCtx.fillText(hi.toFixed(0) + 'Â°', 2, 12);
+    profCtx.fillText('profile â€” ' + paintMode() + ' Â· alt ' + lo.toFixed(0) + 'â€¦' + hi.toFixed(0) + 'Â°', 540, 12);
   }
 
   // pointer painting
@@ -622,10 +622,10 @@ function wireEditor(box, p, onChanged) {
     const at = $('#ed-at', box);
     at.min = String(Math.min(90, p.altBottom + 5));
     at.value = String(p.altTop);
-    $('#ed-az-v', box).textContent = p.azOffset + '°';
-    $('#ed-ab-v', box).textContent = p.altBottom + '°';
-    $('#ed-at-v', box).textContent = p.altTop + '°';
-    $('#ed-fov-v', box).textContent = p.fov + '°';
+    $('#ed-az-v', box).textContent = p.azOffset + 'Â°';
+    $('#ed-ab-v', box).textContent = p.altBottom + 'Â°';
+    $('#ed-at-v', box).textContent = p.altTop + 'Â°';
+    $('#ed-fov-v', box).textContent = p.fov + 'Â°';
     updatePano(p);
     overlay();
   };
@@ -637,8 +637,8 @@ function wireEditor(box, p, onChanged) {
     updatePano(p);
     onChanged();
     const b = $('#ed-save', box);
-    b.textContent = '✓ Saved';
-    setTimeout(() => { b.textContent = '💾 Save'; }, 1200);
+    b.textContent = 'âœ“ Saved';
+    setTimeout(() => { b.textContent = 'ðŸ’¾ Save'; }, 1200);
   });
 
   if (p._img) { draw(); } else { draw(); }

@@ -3,6 +3,11 @@
 import { S } from "./state.js";
 import { parseUTC, clamp, fmtHM } from "./util.js";
 
+/* Longest run of true flags as a HALF-OPEN range [start, end) - the same
+   contract as app/nightcalc.py's longest_run(): `end` is the first sample
+   AFTER the run (== flags.length when the run reaches the last sample), so the
+   run covers `end - start` samples. `end` is a boundary, never an index into
+   the time grid. */
 export function longestRunJS(flags) {
   let best = null, start = null;
   for (let i = 0; i <= flags.length; i++) {
@@ -14,6 +19,24 @@ export function longestRunJS(flags) {
     }
   }
   return best;
+}
+
+/* Timestamp of a half-open window's END BOUNDARY, always a real time.
+   `end` may equal the grid length (a run that reaches the last sample), where
+   `timesIso[end]` does not exist - the window then ends one step after the
+   final sample. Never returns undefined, so no consumer can render "--:--" or
+   "NaNh NaNm" for a valid window. */
+export function windowEndISO(timesIso, end, stepMin) {
+  if (!timesIso || !timesIso.length) return null;
+  if (end < timesIso.length) return timesIso[end];
+  let step = stepMin;
+  if (step == null) {
+    step = timesIso.length > 1
+      ? (parseUTC(timesIso[1]) - parseUTC(timesIso[0])) / 60000 : 0;
+  }
+  const d = parseUTC(timesIso[timesIso.length - 1]);
+  d.setUTCMinutes(d.getUTCMinutes() + step);
+  return d.toISOString().slice(0, 19);
 }
 
 export function timeIndexFor(dateObj) {
@@ -33,6 +56,10 @@ export function curTimeISO() {
 function nightIndexRange() {
   const tl = S.night.timeline;
   let i0 = 0, i1 = tl.n - 1;
+  // no astronomical night (polar summer) -> the whole grid is the window;
+  // without this guard parseUTC(null) yields Invalid Date and every
+  // comparison silently fails
+  if (!S.night.dusk || !S.night.dawn) return [i0, i1];
   for (let i = 0; i < tl.n; i++) {
     if (parseUTC(tl.times_iso[i]) >= parseUTC(S.night.dusk)) { i0 = i; break; }
   }
@@ -122,8 +149,13 @@ function filterType() {
    penalty, and beyond it the glow decays over 180°. `moonAgeDays` is the folded
    age the server ships (0 = new ... ~14.76 = full), so `frac` spans 0-0.5 - the
    symmetry means a full 0-29.53 age would give the same result.
-   The 0.333 constant controls how sharply the threshold rises toward full. */
-function moonMinDist(filterType, moonAgeDays) {
+   The 0.333 constant controls how sharply the threshold rises toward full.
+
+   EXPORTED TOGETHER WITH THE WEB TWIN (web/astro.js): tests/test_js_parity.py
+   compares both implementations on one input grid, so the two apps cannot drift
+   apart again the way they did when the web scored over a civil window with
+   the wrong moon illumination. */
+export function moonMinDist(filterType, moonAgeDays) {
   const BASE = { narrowband: 60, oiii: 90, lrgb: 120 }[filterType] || 120;
   const frac = moonAgeDays / 29.53;           // 0 = new, 0.5 = full
   return BASE / (1 + Math.pow((0.5 - frac) / 0.333, 2));
@@ -131,18 +163,23 @@ function moonMinDist(filterType, moonAgeDays) {
 
 /* Effective moon illumination for scoring: raw illumination attenuated by
    angular separation AND filter-specific distance tolerance. */
-function effectiveMoonGlow(illum, sep, filterType, moonAgeDays) {
+export function effectiveMoonGlow(illum, sep, filterType, moonAgeDays) {
   const minD = moonMinDist(filterType, moonAgeDays);
   const distDeg = Math.max(0, sep - minD);   // excess beyond safe distance
   const distFactor = Math.max(0, 1 - distDeg / 180);
   return illum * distFactor;
 }
 
+/* Multiplier applied to a sample's altitude weight under moonlight. */
+export function moonPenalty(glow, typeF, bortleF) {
+  return Math.max(0.05, 1 - 0.95 * glow * typeF * bortleF);
+}
+
 /* Bortle scaling - darker skies reduce the moon penalty more. The curve is
    CONTINUOUS at the bortle 3/4 junction (0.40 either side of it): before, one
    slider step changed the penalty by ~67 %, more than any other step.
    Range: 0.30 (bortle 1) ... 0.40 (3) ... 1.12 (9). */
-function bortleMoonFactor(bortle) {
+export function bortleMoonFactor(bortle) {
   if (bortle <= 3) return 0.25 + 0.05 * bortle;   // 0.30-0.40 (dark sites)
   return 0.40 + 0.12 * (bortle - 3);              // 0.52-1.12 (suburban->city)
 }
@@ -166,25 +203,35 @@ export function recomputeNightDerived() {
     let visIn = 0, blocked = 0, sClassic = 0, sMoon = 0;
     const m = S.meta[o.id];
     const typeF = moonSensitivity(m && m.otype);
+    /* The clear window, the score and the "% of night" are all measured WITHIN
+       the dark window (dusk..dawn = i0..i1). The payload's grid deliberately
+       carries an hour of twilight on each side for chart context; counting it
+       made the desktop advertise clear windows that included daylight (e.g.
+       19:37-07:01 for a 20:37-06:02 night) and score samples the web - which
+       clips to the same window - never sees. `o.vis` itself stays unclipped:
+       the charts and the sky view colour every sample. */
     for (let i = 0; i < o.vis.length; i++) {
       const v = o.vis[i], up = o.above[i];
-      if (i >= i0 && i <= i1 && v) visIn++;
+      const inNight = i >= i0 && i <= i1;
+      if (inNight && v) visIn++;
       if (up && !v) blocked++;
-      if (v) {
+      if (v && inNight) {
         let w = Math.sin(Math.max(0, Math.min(90, o.alt[i])) * Math.PI / 180);
         sClassic += w;
         const ma = N.moon_alt[i];
         if (ma > 0) {
           const sep = sepDeg(o.alt[i], o.az[i], ma, N.moon_az[i]);
           const glow = effectiveMoonGlow(illum, sep, fType, moonAge);
-          w *= Math.max(0.05, 1 - 0.95 * glow * typeF * bortleF);
+          w *= moonPenalty(glow, typeF, bortleF);
         }
         sMoon += w;
       }
     }
+    const inNightFlags = o.vis.map((v, i) => v && i >= i0 && i <= i1);
+    const nightOnly = o.above.map((v, i) => v && i >= i0 && i <= i1);
     o.obs_pct = Math.round(100 * visIn / nightN);
-    o.best = longestRunJS(o.vis);
-    o.best_above = longestRunJS(o.above);
+    o.best = longestRunJS(inNightFlags);
+    o.best_above = longestRunJS(nightOnly);
     o.blocked_n = blocked;
     o.score = Math.round(sClassic * 10) / 100;
     o.score_moon = Math.round(sMoon * 10) / 100;
@@ -192,13 +239,14 @@ export function recomputeNightDerived() {
 }
 
 /* how badly an object type suffers under moonlight: faint extended nebulae
-   wash out, while star clusters and bright galaxies keep their cores */
-const MOON_TYPE_FACTOR = {
+   wash out, while star clusters and bright galaxies keep their cores.
+   Shared with the web twin - tests/test_js_parity.py compares both. */
+export const MOON_TYPE_FACTOR = {
   nebula: 1.6, supernova_remnant: 1.6, planetary: 1.3,
   star_cloud: 1.1, galaxy: 0.8, open_cluster: 0.55, globular: 0.5,
   asterism: 0.55,
 };
-function moonSensitivity(otype) {
+export function moonSensitivity(otype) {
   return MOON_TYPE_FACTOR[otype] || 1.0;
 }
 
@@ -250,16 +298,17 @@ export function statusOf(o, i) {
 }
 
 export function windowText(o) {
+  const tl = S.night.timeline;
   if (!o.best) {
     if (o.best_above) {
       const [a, b] = o.best_above;
-      return `<span class="wininfo">${fmtHM(S.night.timeline.times_iso[a])}&ndash;${fmtHM(S.night.timeline.times_iso[b])} <small>(obstructed)</small></span>`;
+      return `<span class="wininfo">${fmtHM(tl.times_iso[a])}&ndash;${fmtHM(windowEndISO(tl.times_iso, b, tl.step_min))} <small>(obstructed)</small></span>`;
     }
     return '<span class="wininfo"><small>&mdash;</small></span>';
   }
   const [a, b] = o.best;
-  const mins = (b - a) * S.night.timeline.step_min;
-  return `<span class="wininfo">${fmtHM(S.night.timeline.times_iso[a])}&ndash;${fmtHM(S.night.timeline.times_iso[b])}<br>` +
+  const mins = (b - a) * tl.step_min;
+  return `<span class="wininfo">${fmtHM(tl.times_iso[a])}&ndash;${fmtHM(windowEndISO(tl.times_iso, b, tl.step_min))}<br>` +
          `<small>${Math.floor(mins/60)}h ${String(mins%60).padStart(2,"0")}m clear</small></span>`;
 }
 

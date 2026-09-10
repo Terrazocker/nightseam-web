@@ -2,8 +2,109 @@
 
 from __future__ import annotations
 
+import re
 import sys
 from pathlib import Path
+
+_DRIVE_RE = re.compile(r"^[A-Za-z]:")
+
+# Opaque record ids (panorama ids, custom-object ids). Some routes interpolate
+# an id into a FILE NAME, so an id must never be able to act as a path.
+TOKEN_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$")
+
+
+def safe_token(value) -> str | None:
+    """Canonical opaque id, or None when it could act as a path.
+
+    Panorama ids come from `new_id()` (hex + digits) or from an imported bundle,
+    and `POST /api/panorama/{pid}/image` builds a filename from the id. A crafted
+    bundle carrying an id like `..\\evil` therefore made the crop tool write
+    outside `data/panos` (and a sibling id crashed the route with a 500) even
+    though the *file* value was validated. Ids are stored and compared, never
+    interpreted: anything outside [A-Za-z0-9_-] is refused.
+    """
+    if value is None:
+        return None
+    text = str(value)
+    return text if TOKEN_RE.match(text) else None
+
+
+_WINDOWS_DEVICES = {
+    "con", "prn", "aux", "nul",
+    *(f"com{i}" for i in range(1, 10)),
+    *(f"lpt{i}" for i in range(1, 10)),
+}
+
+
+def _segment_ok(part: str) -> bool:
+    """False for a path segment Windows would silently rewrite.
+
+    A segment that ends in a dot or a space, or that consists only of dots, is
+    normalized away by the filesystem ("..." and ".. ." resolve to the parent
+    directory, and `a. ` becomes `a`), so accepting it would let a stored value
+    mean something different from what was validated. Device names (NUL, CON,
+    COM1, ...) address devices rather than files.
+    """
+    if part != part.rstrip(". "):
+        return False
+    if not part.strip(". "):
+        return False
+    stem = part.split(".", 1)[0].lower()
+    return stem not in _WINDOWS_DEVICES
+
+
+def safe_rel(rel) -> str | None:
+    """Canonicalize an *untrusted* relative path, or return None when unsafe.
+
+    Used for every path that arrives from stored/imported JSON (a setup ZIP's
+    `panoramas[].file` / `images[].file`), so a crafted backup can never plant
+    a value that a later read/delete/export resolves outside its folder.
+
+    Rejects: absolute POSIX paths, UNC paths, Windows drive-absolute
+    ("C:/x") and drive-relative ("C:x") paths, any `..` segment, NUL bytes,
+    empty values, and segments Windows would normalize (see `_segment_ok`).
+    Backslashes are treated as separators (the app stores forward-slash
+    relative paths) and `.`/duplicate separators are removed, so the returned
+    value is a normalized, root-relative path.
+    """
+    if rel is None:
+        return None
+    text = str(rel).strip().replace("\\", "/")
+    if not text or "\x00" in text:
+        return None
+    if text.startswith("/") or _DRIVE_RE.match(text):
+        return None
+    parts = [p for p in text.split("/") if p not in ("", ".")]
+    if not parts or any(p == ".." for p in parts):
+        return None
+    if not all(_segment_ok(p) for p in parts):
+        return None
+    return "/".join(parts)
+
+
+def safe_join(root: Path | str, rel) -> Path | None:
+    """Resolve `rel` inside `root`, or None when it escapes.
+
+    The second line of defence behind `safe_rel`: even a path that passes the
+    textual check must still resolve to a location under `root` - this also
+    catches symlinks pointing outside the folder. Callers must treat None as
+    "not found" and never fall back to the raw value.
+    """
+    clean = safe_rel(rel)
+    if clean is None:
+        return None
+    try:
+        base = Path(root).resolve()
+        target = (base / clean).resolve()
+    except (OSError, ValueError, RuntimeError):
+        return None
+    try:
+        target.relative_to(base)
+    except ValueError:
+        return None
+    if target == base:
+        return None          # the "path" addressed the root itself, not a file
+    return target
 
 
 def app_base_dir() -> Path:
