@@ -29,6 +29,9 @@
 
   <div class="planner-controls" id="plannerControls">
     <label>Site <select id="tb-site"></select></label>
+    <label title="Imaging rig — drives the Frame % (coverage) estimates">Rig
+      <select id="rigSelect"></select>
+    </label>
     <button id="btn-settings" class="ghost" title="Locations &amp; equipment — sites, rigs, custom targets, backup">Setup</button>
     <label class="nightof">Night of
       <input type="date" id="tb-date">
@@ -170,12 +173,6 @@
             <option value="arcmin">Arcminutes (&prime;)</option>
             <option value="arcsec">Arcseconds (&Prime;)</option>
             <option value="deg">Degrees (&deg;)</option>
-          </select>
-        </div>
-        <div class="menu-section">
-          <h4>Imaging rig (framing)</h4>
-          <select id="rigSelect" style="width:100%">
-            <option value="">None &mdash; no frame coverage shown</option>
           </select>
         </div>
         <div class="menu-section">

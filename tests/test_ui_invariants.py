@@ -80,3 +80,13 @@ def test_desktop_keeps_the_hidden_class_authoritative():
     html = _read("static", "index.html")
     assert 'id="rigPicker" class="hidden"' in html
     assert 'id="rigForm" class="formrow hidden"' in html
+
+
+def test_rig_selector_sits_in_the_topbar():
+    """The imaging rig belongs next to Site, not buried in the hamburger menu."""
+    for tree in ("web", "static"):
+        html = _read(tree, "index.html")
+        head, sep, menu = html.partition('id="menuPanel"')
+        assert sep, f"{tree}/index.html lost its hamburger menu"
+        assert 'id="rigSelect"' in head, f"{tree}: the rig selector left the topbar"
+        assert 'id="rigSelect"' not in menu, f"{tree}: the rig selector is back in the hamburger menu"

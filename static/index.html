@@ -31,6 +31,9 @@ if(x.status===200){var t=JSON.parse(x.responseText).theme;if(t)document.document
     <label>Site
       <select id="siteSelect"></select>
     </label>
+    <label title="Imaging rig - drives the Frame % (coverage) estimates">Rig
+      <select id="rigSelect"></select>
+    </label>
     <button id="btnSites" class="ghost" title="Locations &amp; equipment">Setup</button>
     <label>Night of
       <input type="date" id="dateInput">
@@ -194,12 +197,6 @@ if(x.status===200){var t=JSON.parse(x.responseText).theme;if(t)document.document
             <option value="arcmin">Arcminutes (&prime;)</option>
             <option value="arcsec">Arcseconds (&Prime;)</option>
             <option value="deg">Degrees (&deg;)</option>
-          </select>
-        </div>
-        <div class="menu-section">
-          <h4>Imaging rig (framing)</h4>
-          <select id="rigSelect" style="width:100%">
-            <option value="">none &mdash; no frame coverage shown</option>
           </select>
         </div>
         <div class="menu-section">
