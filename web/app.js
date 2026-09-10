@@ -10,7 +10,7 @@
  */
 import * as E from './astro.js?v=4';
 import * as Hor from './horizon.js?v=12';
-import * as WS from './webstore.js?v=4';
+import * as WS from './webstore.js?v=5';
 import { initDragWindows } from './dragwin.js?v=1';
 
 const TYPE_COLORS = {
@@ -1748,13 +1748,17 @@ async function renderSettings() {
       <div class="mtabpane hidden" id="mtab-rigs" role="tabpanel">
         <div class="card">
           <h3>Rigs</h3>
-          <p class="sub">Telescope + camera combinations for the frame-coverage estimates; the field of view comes from focal length and sensor size. Smart telescopes (ZWO Seestar, DwarfLab DWARF) are preconfigured.</p>
-          <ul class="pick" id="set-rigs">${rigs.length ? rigs.map(rigRow).join('') : '<li style="cursor:default">no rig stored yet</li>'}</ul>
-          <div class="btnrow" style="margin-top:8px">
-            <button class="btn small" id="set-add-rig">＋ Add rig</button>
-            <button class="btn small" id="set-add-presets" title="add any missing smart telescope">Add smart telescopes</button>
+          <p class="sub">Telescope + camera combinations for the frame-coverage estimates; the field of view comes from focal length and sensor size.</p>
+          <ul class="pick" id="set-rigs">${rigs.length ? rigs.map(rigRow).join('') : '<li style="cursor:default">no rig yet — press “Add rig”</li>'}</ul>
+          <div class="btnrow" style="margin-top:8px"><button class="btn small" id="set-add-rig">＋ Add rig</button></div>
+          <div id="set-rig-picker" hidden>
+            <p class="sub">Pick a smart telescope, or build a custom rig.</p>
+            <ul class="pick" id="set-rig-presets"></ul>
+            <div class="btnrow">
+              <button class="btn small" id="set-rig-custom">Custom rig…</button>
+              <button class="btn small" id="set-rig-pick-cancel">Cancel</button>
+            </div>
           </div>
-          <p class="sub" id="set-rig-note"></p>
           <div class="set-form" id="sf-rig" hidden>
             <input type="hidden" id="sf-rig-id">
             <label>Name <input type="text" id="sf-rig-name"></label>
@@ -1870,14 +1874,17 @@ async function renderSettings() {
     await WS.deleteRigRec(b.dataset.delrig);
     closeModal(); renderSettings();
   }));
-  $('#set-add-rig').addEventListener('click', () => openRigForm(null));
-  $('#set-add-presets').addEventListener('click', async () => {
-    const added = await WS.seedDefaultRigs();
-    await renderSettings();                       // keeps the Rigs tab open
-    const note = $('#set-rig-note');
-    if (note) note.textContent = added
-      ? `Added ${added} smart telescope rig${added === 1 ? '' : 's'}.`
-      : 'All smart telescopes are already in the list.';
+  $('#set-add-rig').addEventListener('click', () => showRigPicker());
+  $('#set-rig-pick-cancel').addEventListener('click', () => renderSettings());
+  $('#set-rig-custom').addEventListener('click', () => {
+    showForm('sf-rig');
+    $('#set-rig-picker').hidden = true;
+    $('#sf-rig-name').value = '';
+    $('#sf-rig-focal').value = '';
+    $('#sf-rig-sw').value = '';
+    $('#sf-rig-sh').value = '';
+    fovPreview();
+    $('#sf-rig-name').focus();
   });
 
   // — custom targets —
@@ -1970,6 +1977,35 @@ async function saveSiteForm() {
   else if (S.site.id === id) applyActiveSite(rec);
   refreshWeatherForSite();
   renderSettings();
+}
+
+/** "Add rig" picker: the preset smart telescopes, or a custom rig.
+ *  Presets are plain data - adding one stores a normal rig record, so the rig
+ *  can be edited or deleted like any other. */
+function showRigPicker() {
+  const box = $('#set-rig-presets'), panel = $('#set-rig-picker');
+  if (!box || !panel) return;
+  showForm(null);                                  // custom form stays hidden
+  panel.hidden = false;
+  box.innerHTML = WS.DEFAULT_RIGS.map((p, i) => {
+    const fw = WS.fovFrom(p.focal_mm, p.sensor_w), fh = WS.fovFrom(p.focal_mm, p.sensor_h);
+    const fov = fw != null && fh != null ? `${fw.toFixed(2)}° × ${fh.toFixed(2)}°` : '';
+    return `<li data-preset="${i}">
+      <span class="p-name">${esc(p.name)}</span>
+      <span class="p-tags">${p.focal_mm} mm${fov ? ` · ${fov}` : ''}</span>
+      <button class="btn small" data-addpreset="${i}">Add</button>
+    </li>`;
+  }).join('');
+  box.querySelectorAll('[data-addpreset]').forEach((b) => b.addEventListener('click', async () => {
+    const p = WS.DEFAULT_RIGS[+b.dataset.addpreset];
+    if (!p) return;
+    await WS.saveRigRec({
+      id: 'r' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+      name: p.name, focal_mm: p.focal_mm, sensor_w: p.sensor_w, sensor_h: p.sensor_h,
+      fov_w: WS.fovFrom(p.focal_mm, p.sensor_w), fov_h: WS.fovFrom(p.focal_mm, p.sensor_h),
+    });
+    await renderSettings();                        // keeps the Rigs tab open
+  }));
 }
 
 function openRigForm(rig) {
@@ -2381,11 +2417,15 @@ async function boot() {
   });
   refreshMenuUI();
 
-  // rigs for the framing selector — the preset smart telescopes (ZWO Seestar,
-  // DwarfLab DWARF) are stored once per browser; deleting one keeps it deleted
-  if (!Hor.getPrefs().rigsSeeded) {
-    await WS.seedDefaultRigs();
-    Hor.setPrefs({ rigsSeeded: true });
+  // rigs for the framing selector — presets are a PICKER, never defaults.
+  // 0.6.1/0.6.2 stored them in this browser; drop those leftovers once (an
+  // edited or renamed rig is user data and stays).
+  const rigPrefs = Hor.getPrefs();
+  if (rigPrefs.rigsSeeded && !rigPrefs.rigsPresetCleaned) {
+    const gone = await WS.removeSeededRigs();
+    const patch = { rigsPresetCleaned: true };
+    if (gone.includes(rigPrefs.activeRigId)) patch.activeRigId = '';
+    Hor.setPrefs(patch);
   }
   const rigs = await WS.getRigs();
   RIGS.length = 0;

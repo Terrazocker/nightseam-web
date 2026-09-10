@@ -1,7 +1,8 @@
-"""Preset rigs: the smart telescopes seeded into a fresh setup.
+"""Rig presets are a PICKER, never defaults.
 
-Seeding happens once per database (settings flag) and never overwrites a rig
-the user made under the same name.
+0.6.1/0.6.2 auto-seeded the smart telescopes into every database; that is gone.
+`remove_seeded_once` undoes those leftovers exactly once, and only for rigs that
+still match a preset - a rig the user edited or renamed is their data.
 """
 
 import pytest
@@ -15,6 +16,17 @@ from app.server import create_app, fov_arcmin
 @pytest.fixture()
 def db(tmp_path):
     return Database(tmp_path / "nightseam.db")
+
+
+def _fake_old_seed(db, names=None):
+    """Reproduce what 0.6.1/0.6.2 wrote: the presets + the seeded flag."""
+    for name, focal, sw, sh in rig_presets.DEFAULT_RIGS:
+        if names is not None and name not in names:
+            continue
+        db.add_rig(name, focal, sw, sh,
+                   rig_presets.fov_arcmin(focal, sw),
+                   rig_presets.fov_arcmin(focal, sh))
+    db.set_setting(rig_presets.SEEDED_FLAG, 1)
 
 
 def test_fov_twin_matches_server():
@@ -38,65 +50,77 @@ def test_golden_fov_values():
     assert rig_presets.fov_arcmin(150.0, 7.68) == pytest.approx(176.0, abs=0.4)
 
 
-def test_ensure_seeded_adds_presets_once(db):
-    added = rig_presets.ensure_seeded(db)
-    assert added == len(rig_presets.DEFAULT_RIGS)
-    rigs = db.rigs()
-    assert [r["name"] for r in rigs] == [n for n, *_ in rig_presets.DEFAULT_RIGS]
-    for r in rigs:
-        assert r["focal_mm"] > 0
-        assert r["sensor_w"] > r["sensor_h"] > 0
-        assert r["fov_w"] > r["fov_h"] > 0
-    # second start: nothing to do
-    assert rig_presets.ensure_seeded(db) == 0
-    assert len(db.rigs()) == len(rig_presets.DEFAULT_RIGS)
-
-
-def test_deleted_preset_stays_deleted(db):
-    rig_presets.ensure_seeded(db)
-    first = db.rigs()[0]
-    db.delete_rig(first["id"])
-    assert rig_presets.ensure_seeded(db) == 0
-    assert first["name"] not in [r["name"] for r in db.rigs()]
-
-
-def test_add_missing_refills_deleted_presets(db):
-    """The Rigs tab button: seed-once still holds, but a refill is possible."""
-    rig_presets.ensure_seeded(db)
-    gone = db.rigs()[0]["name"]
-    db.delete_rig(db.rigs()[0]["id"])
-    assert rig_presets.add_missing(db) == 1
-    names = [r["name"] for r in db.rigs()]
-    assert len(names) == len(rig_presets.DEFAULT_RIGS)
-    assert gone in names
-    assert rig_presets.add_missing(db) == 0        # nothing left to add
-
-
-def test_existing_rig_with_same_name_wins(db):
-    db.add_rig("ZWO Seestar S50", 250.0, 6.0, 4.0, 82.5, 55.0)
-    rig_presets.ensure_seeded(db)
-    rows = [r for r in db.rigs() if r["name"] == "ZWO Seestar S50"]
-    assert len(rows) == 1
-    assert rows[0]["sensor_w"] == 6.0          # the user's own numbers are kept
-    assert len(db.rigs()) == len(rig_presets.DEFAULT_RIGS)
-
-
-def test_create_app_seeds_presets(tmp_path):
-    db = Database(tmp_path / "nightseam.db")
-    assert db.rigs() == []                     # a bare Database stays untouched
-    with TestClient(create_app(db, prefetch=False)) as c:
-        rigs = c.get("/api/state").json()["rigs"]
-    assert len(rigs) == len(rig_presets.DEFAULT_RIGS)
-    assert rigs[0]["fov_w"] > 0
-
-
-def test_presets_route_refills(tmp_path):
+def test_fresh_setup_has_no_rigs(tmp_path):
     db = Database(tmp_path / "nightseam.db")
     with TestClient(create_app(db, prefetch=False)) as c:
-        first = c.get("/api/state").json()["rigs"][0]
-        assert c.delete(f"/api/rigs/{first['id']}").status_code == 200
-        assert len(c.get("/api/state").json()["rigs"]) == len(rig_presets.DEFAULT_RIGS) - 1
-        assert c.post("/api/rigs/presets").json()["added"] == 1
+        state = c.get("/api/state").json()
+    assert state["rigs"] == []                      # nothing added by default
+    assert state["active_rig_id"] is None
+    presets = state["rig_presets"]                  # ... but the picker is filled
+    assert [p["name"] for p in presets] == [n for n, *_ in rig_presets.DEFAULT_RIGS]
+    for p in presets:
+        assert p["focal_mm"] > 0 and p["sensor_w"] > p["sensor_h"] > 0
+        assert p["fov_w"] > p["fov_h"] > 0
+        assert p["fov_w"] == fov_arcmin(p["focal_mm"], p["sensor_w"])
+
+
+def test_picker_values_can_be_added_as_a_rig(tmp_path):
+    """A preset is just data: posting it must produce a normal rig row."""
+    db = Database(tmp_path / "nightseam.db")
+    with TestClient(create_app(db, prefetch=False)) as c:
+        preset = c.get("/api/state").json()["rig_presets"][0]
+        r = c.post("/api/rigs", json={k: preset[k] for k in
+                                      ("name", "focal_mm", "sensor_w", "sensor_h")})
+        assert r.status_code == 200
+        assert r.json()["fov_w"] == preset["fov_w"]
         rigs = c.get("/api/state").json()["rigs"]
-    assert len(rigs) == len(rig_presets.DEFAULT_RIGS)
-    assert first["name"] in [r["name"] for r in rigs]
+    assert [x["name"] for x in rigs] == [preset["name"]]
+
+
+def test_auto_seeded_leftovers_are_removed_once(tmp_path):
+    db = Database(tmp_path / "nightseam.db")
+    _fake_old_seed(db)
+    assert len(db.rigs()) == len(rig_presets.DEFAULT_RIGS)
+    with TestClient(create_app(db, prefetch=False)) as c:
+        assert c.get("/api/state").json()["rigs"] == []
+
+
+def test_cleanup_keeps_edited_and_renamed_rigs(tmp_path):
+    db = Database(tmp_path / "nightseam.db")
+    _fake_old_seed(db)
+    # the user tweaked the S50 for a reducer -> different sensor, keep it
+    db.add_rig("ZWO Seestar S50 (reduced)", 250.0, 5.57, 3.13, 76.6, 43.0)
+    # ... and re-typed one preset's numbers under their own name
+    db.add_rig("My scope", 150.0, 5.57, 3.13, 127.9, 71.8)
+    with TestClient(create_app(db, prefetch=False)) as c:
+        names = [r["name"] for r in c.get("/api/state").json()["rigs"]]
+    assert names == ["ZWO Seestar S50 (reduced)", "My scope"]
+
+
+def test_a_preset_added_after_the_cleanup_stays(tmp_path):
+    db = Database(tmp_path / "nightseam.db")
+    _fake_old_seed(db)
+    with TestClient(create_app(db, prefetch=False)) as c:
+        preset = c.get("/api/state").json()["rig_presets"][0]
+        c.post("/api/rigs", json={k: preset[k] for k in
+                                  ("name", "focal_mm", "sensor_w", "sensor_h")})
+    # next start must not treat the user's own pick as a leftover
+    with TestClient(create_app(db, prefetch=False)) as c:
+        assert [r["name"] for r in c.get("/api/state").json()["rigs"]] == [preset["name"]]
+
+
+def test_remove_seeded_once_is_idempotent(db):
+    _fake_old_seed(db)
+    assert rig_presets.remove_seeded_once(db) == len(rig_presets.DEFAULT_RIGS)
+    assert db.rigs() == []
+    assert rig_presets.remove_seeded_once(db) == 0
+
+
+def test_refill_route_is_gone(tmp_path):
+    """The old bulk "Add smart telescopes" endpoint must not come back silently."""
+    db = Database(tmp_path / "nightseam.db")
+    with TestClient(create_app(db, prefetch=False)) as c:
+        # 405: the path now only matches DELETE /api/rigs/{rid} ("presets" is
+        # not an int, but the shape matches, so FastAPI answers Method Not
+        # Allowed instead of Not Found). Either way there is no refill route.
+        assert c.post("/api/rigs/presets").status_code in (404, 405)

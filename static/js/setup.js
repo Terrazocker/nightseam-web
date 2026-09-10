@@ -10,6 +10,7 @@ import { renderTargets } from "./targets.js";
 export async function openSites() {
   $("#sitesModal").classList.remove("hidden");
   showMtab("sites");
+  hideRigAdd();
   renderSitesTable(await api("/api/sites"));
   renderRigsTable();
   renderCustomList();
@@ -75,6 +76,7 @@ export function bindSetup() {
                                sensor_w:num(rigForm.sensor_w.value),
                                sensor_h:num(rigForm.sensor_h.value) })});
       rigForm.reset(); $("#rigFovPreview").textContent="";
+      hideRigAdd();
       S.cfg = await api("/api/state");
       applyCfgToUI(); renderRigsTable();
     } catch (err) { /* api() already toasted */ }
@@ -90,18 +92,21 @@ export function bindSetup() {
       $("#rigFovPreview").textContent = `FOV \u2248 ${fmtFovPair(w, h)}`;
     });
   }
-  // the built-in smart telescopes (seeded once per database, re-addable here)
-  $("#btnRigPresets").addEventListener("click", async () => {
-    try {
-      const res = await api("/api/rigs/presets", { method:"POST" });
-      S.cfg = await api("/api/state");
-      applyCfgToUI(); renderRigsTable();
-      toast(res.added
-              ? `Added ${res.added} smart telescope rig${res.added === 1 ? "" : "s"}.`
-              : "All smart telescopes are already in the list.",
-            "info", 3500);
-    } catch (err) { /* api() already toasted */ }
+  // "Add rig" is a PICKER: smart telescope off the list, or a custom rig.
+  // Nothing is preinstalled - a fresh setup has an empty rig table.
+  $("#btnAddRig").addEventListener("click", () => {
+    hideRigAdd();
+    renderRigPicker();
+    $("#rigPicker").classList.remove("hidden");
   });
+  $("#btnRigCustom").addEventListener("click", () => {
+    $("#rigPicker").classList.add("hidden");
+    rigForm.reset(); $("#rigFovPreview").textContent="";
+    rigForm.classList.remove("hidden");
+    rigForm.name.focus();
+  });
+  $("#btnRigPickCancel").addEventListener("click", hideRigAdd);
+  $("#btnRigFormCancel").addEventListener("click", hideRigAdd);
 
   // preferences that live in the popover but persist through settings
   $("#sizeUnit").addEventListener("change", async e => {
@@ -332,7 +337,7 @@ function renderRigsTable() {
   const tb = document.querySelector("#rigTable tbody");
   if (!tb) return;
   if (!rigs.length) {
-    tb.innerHTML = '<tr><td colspan="5" class="hint">No rigs yet - add one below.</td></tr>';
+    tb.innerHTML = '<tr><td colspan="5" class="hint">No rigs yet &mdash; press &ldquo;Add rig&rdquo;.</td></tr>';
     return;
   }
   tb.innerHTML = rigs.map(r => `<tr>
@@ -358,5 +363,44 @@ function renderRigsTable() {
     S.cfg = await api("/api/state");
     applyCfgToUI(); renderRigsTable(); renderTargets();
     document.dispatchEvent(new CustomEvent("detail:changed"));
+  }));
+}
+
+/* ---------------- "Add rig": picker (smart telescope) or custom ---------------- */
+
+function hideRigAdd() {
+  const pick = $("#rigPicker"); if (pick) pick.classList.add("hidden");
+  const form = $("#rigForm"); if (form) form.classList.add("hidden");
+  const prev = $("#rigFovPreview"); if (prev) prev.textContent = "";
+}
+
+function renderRigPicker() {
+  const box = $("#rigPresetList");
+  if (!box) return;
+  const presets = S.cfg.rig_presets || [];
+  if (!presets.length) {
+    box.innerHTML = '<p class="hint">No preset telescopes available &mdash; use &ldquo;Custom rig&hellip;&rdquo;.</p>';
+    return;
+  }
+  box.innerHTML = presets.map((p, i) => `<div class="pano-item">
+      <span class="nm">${esc(p.name)}</span>
+      <span class="mono">${p.focal_mm} mm &middot; ${fmtFovPair(p.fov_w, p.fov_h)}</span>
+      <button type="button" class="ghost" data-rigpreset="${i}">Add</button>
+    </div>`).join("");
+  box.querySelectorAll("[data-rigpreset]").forEach(b => b.addEventListener("click", async () => {
+    const p = presets[+b.dataset.rigpreset];
+    if (!p) return;
+    try {
+      // a preset is plain data: POST it like any hand-typed rig, so the server
+      // stays the single source for the FOV numbers
+      await api("/api/rigs", { method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({ name:p.name, focal_mm:p.focal_mm,
+                               sensor_w:p.sensor_w, sensor_h:p.sensor_h })});
+      hideRigAdd();
+      S.cfg = await api("/api/state");
+      applyCfgToUI(); renderRigsTable();
+      toast(`${p.name} added.`, "info", 3000);
+    } catch (err) { /* api() already toasted */ }
   }));
 }

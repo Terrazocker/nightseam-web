@@ -126,10 +126,13 @@ export async function getRigs() {
 export function saveRigRec(rig) { return set('rigs', rig.id, rig); }
 export function deleteRigRec(id) { return del('rigs', id); }
 
-/* Preset rigs: popular smart telescopes (ZWO Seestar, DwarfLab DWARF).
- * Twin of DEFAULT_RIGS in app/rig_presets.py - the web app is static and
- * cannot read Python, so keep both lists in sync. sensor_w/h are the imaging
- * sensor's active area in mm. */
+/* Preset rigs for the "Add rig" picker: popular smart telescopes (ZWO Seestar,
+ * DwarfLab DWARF). Twin of DEFAULT_RIGS in app/rig_presets.py - the web app is
+ * static and cannot read Python, so keep both lists in sync. sensor_w/h are the
+ * imaging sensor's active area in mm.
+ * Nothing is ever stored automatically: a fresh browser has an EMPTY rig list
+ * and the user picks a telescope in Setup -> Rigs -> Add rig (or builds a
+ * custom rig from focal length + sensor size). */
 export const DEFAULT_RIGS = [
   { id: 'rig-zwo-seestar-s50', name: 'ZWO Seestar S50', focal_mm: 250, sensor_w: 5.57, sensor_h: 3.13 },
   { id: 'rig-zwo-seestar-s30', name: 'ZWO Seestar S30', focal_mm: 150, sensor_w: 5.57, sensor_h: 3.13 },
@@ -139,23 +142,23 @@ export const DEFAULT_RIGS = [
   { id: 'rig-dwarflab-dwarf-2', name: 'DwarfLab DWARF II', focal_mm: 100, sensor_w: 5.60, sensor_h: 3.18 },
 ];
 
-/** Store the preset rigs (called once per browser, see `rigsSeeded`).
- *  Rigs whose name is already stored are skipped, so a hand-made rig with the
- *  same name wins and nothing is duplicated. Returns how many were added. */
-export async function seedDefaultRigs() {
-  const have = new Set((await getRigs()).map((r) => String(r.name || '').trim().toLowerCase()));
-  let added = 0;
-  for (const p of DEFAULT_RIGS) {
-    if (have.has(p.name.toLowerCase())) continue;
-    const rec = {
-      id: p.id, name: p.name,
-      focal_mm: p.focal_mm, sensor_w: p.sensor_w, sensor_h: p.sensor_h,
-      fov_w: fovFrom(p.focal_mm, p.sensor_w), fov_h: fovFrom(p.focal_mm, p.sensor_h),
-    };
-    await saveRigRec(rec);
-    added++;
+/** One-time cleanup of the rigs 0.6.1/0.6.2 auto-stored in this browser (the
+ *  caller passes the `rigsSeeded` pref so it only runs once). Only rigs that
+ *  still match a preset exactly are deleted - one the user edited or renamed is
+ *  their data and stays. Returns the ids that were removed. */
+export async function removeSeededRigs() {
+  const near = (a, b) => Math.abs((Number(a) || 0) - b) < 1e-9;
+  const gone = [];
+  for (const r of await getRigs()) {
+    const name = String(r.name || '').trim().toLowerCase();
+    const p = DEFAULT_RIGS.find((x) => x.name.toLowerCase() === name);
+    if (!p) continue;
+    if (!near(r.focal_mm, p.focal_mm) || !near(r.sensor_w, p.sensor_w) ||
+        !near(r.sensor_h, p.sensor_h)) continue;
+    await deleteRigRec(r.id);
+    gone.push(r.id);
   }
-  return added;
+  return gone;
 }
 
 /** Field-of-view from focal length + sensor size (mirrors the local app). */

@@ -62,7 +62,7 @@ over the fuller commands below wherever they differ:
     when both sockets set SO_REUSEADDR.
   - If 8407 is briefly taken at boot, `free_port()` silently picks a RANDOM
     port (written to instance.json) - the app runs, just not on 8407.
-- Tests: `python -m pytest tests/` - 154 tests, run in ~36 s (pure-function
+- Tests: `python -m pytest tests/` - 155 tests, run in ~36 s (pure-function
   tests are fast; `tests/test_api.py` spins up real `create_app()` instances
   via fastapi TestClient/httpx). Single test:
   `python -m pytest tests/test_astro.py -k name`. API tests use
@@ -73,7 +73,7 @@ over the fuller commands below wherever they differ:
   pytest uses for the basetemp) creates an owner-SID-only DACL that the
   sandbox's restricted token cannot re-read, so every tmp_path test errors
   with PermissionError - an environment artifact, NOT a code failure. Run
-  the suite with full access / in a normal shell: 154/154 pass (~36 s).
+  the suite with full access / in a normal shell: 155/155 pass (~36 s).
   Careful with the `client` fixture: it must leave `data/panos` in place
   under the tmp dir it patches in, because the pano upload route writes
   there without mkdir'ing (the real `data_dir()` creates it). Without that
@@ -482,8 +482,8 @@ over the fuller commands below wherever they differ:
   `app.js?v=N` and `web/app.js` carries a `?v=` on each import
   (`astro.js`, `horizon.js`, `webstore.js`, `dragwin.js`). Bump the token of
   every module whose BEHAVIOUR changed (comment-only edits do not need it) or
-  returning visitors keep the old file. Current: `app.js?v=25`,
-  `horizon.js?v=12`, `webstore.js?v=4`, `astro.js?v=4`, `dragwin.js?v=1`,
+  returning visitors keep the old file. Current: `app.js?v=26`,
+  `horizon.js?v=12`, `webstore.js?v=5`, `astro.js?v=4`, `dragwin.js?v=1`,
   plus `style.css?v=8` / `themes.css?v=2` in `web/index.html`.
   **A token bump is also the cure for a browser that cached a BAD pairing**: an
   `app.js` that calls a module member the cached dependency does not have stays
@@ -504,16 +504,22 @@ over the fuller commands below wherever they differ:
   the full re-render that every save/delete triggers; a new section is one
   `.tab` button plus one `.mtabpane`. The web's old "Content margin" slider
   was dropped from the dialog (layout lives in the hamburger menu only).
-- **Smart-telescope rigs ship preconfigured in BOTH apps** (ZWO Seestar
-  S50/S30/S30 Pro, DwarfLab DWARF 3 / mini / II; sensor = imaging sensor's
-  active area, FOV from focal length). Desktop: `app/rig_presets.py`, seeded
-  from `create_app()` (NOT `Database.__init__`, so bare-Database tooling and
-  tests keep their rig table) once per DB via the `rigs_preset_seeded`
-  setting; `POST /api/rigs/presets` refills deleted ones (button in
-  Setup → Rigs). Web: the same list as `DEFAULT_RIGS` in `web/webstore.js`,
-  `seedDefaultRigs()` + the `rigsSeeded` pref, button in Setup → Rigs. The
-  two lists are twins — change both; `tests/test_rig_presets.py` pins
-  `rig_presets.fov_arcmin` to `server.fov_arcmin`.
+- **Rig presets are a PICKER, never defaults - a fresh setup is EMPTY**
+  (ZWO Seestar S50/S30/S30 Pro, DwarfLab DWARF 3 / mini / II; sensor = the
+  imaging sensor's active area, FOV from focal length). Setup → Rigs →
+  "＋ Add rig" shows the telescope list plus "Custom rig…", which reveals the
+  usual name/focal/sensor form; the desktop does exactly the same
+  (`#btnAddRig` → `#rigPicker`, `renderRigPicker()` in `static/js/setup.js`,
+  fed by `rig_presets` in /api/state). Desktop data: `app/rig_presets.py`
+  (`DEFAULT_RIGS` + `presets_payload()`); the old `POST /api/rigs/presets` and
+  its bulk button are GONE. Web twin: `DEFAULT_RIGS` in `web/webstore.js`,
+  rendered by `showRigPicker()` - change both lists;
+  `tests/test_rig_presets.py` pins `rig_presets.fov_arcmin` to
+  `server.fov_arcmin`. 0.6.1/0.6.2 DID auto-seed: `remove_seeded_once(db)`
+  (called from `create_app`) and `WS.removeSeededRigs()` (web boot) delete
+  those leftovers ONCE and only when a rig still matches a preset exactly - an
+  edited or renamed rig is user data and stays. A preset the user adds later is
+  never removed again (`rigs_preset_cleaned` setting / `rigsPresetCleaned` pref).
 - **Popularity is INVISIBLE in the UI (both apps) - never render the number.**
   The ✨ marker (`.p-flash`) is gone, and 0.6.3 removed the web's remaining
   value displays: the catalog's sortable "Popularity" column (+ its sort
@@ -533,18 +539,19 @@ over the fuller commands below wherever they differ:
   previous rule only shrank via padding above 22px, and its CSS fix shipped
   without a token bump — if a CSS-only fix "does nothing" for a returning
   visitor, that is a stale `style.css`, so always bump its `?v=`.
-- **State after the v0.6.3 web deploy (2026-09-10) - read before the next
-  release**: HEAD is exactly at the tag `v0.6.3`, the tree is clean, and
-  `web/version.json` was baked at that tag, so `/astro` reports 0.6.3 (0.6.2
-  was the hotfix for the 0.6.1 mid-deploy breakage; 0.6.3 hides the popularity
-  stat). The DESKTOP side is still 0.6.0 EVERYWHERE (`dist\NightSeam.exe`,
+- **State after the v0.6.4 web deploy (2026-09-10) - read before the next
+  release**: HEAD is exactly at the tag `v0.6.4`, the tree is clean, and
+  `web/version.json` was baked at that tag, so `/astro` reports 0.6.4 (0.6.2
+  was the hotfix for the 0.6.1 mid-deploy breakage, 0.6.3 hid the popularity
+  stat, 0.6.4 made the rig presets a picker and left a fresh setup empty).
+  The DESKTOP side is still 0.6.0 EVERYWHERE (`dist\NightSeam.exe`,
   `dist\release\*`, `/downloads/*` incl. `ns-version.js`, landing page, and no
   curated changelog entry) - deliberate, because no new exe was built, so
   installed apps correctly see no update. HEAD being at the tag right now is
   the moment to finish it: `build.ps1` -> `scripts/make_release.py` -> upload
   `dist/release/*` to `/downloads/` -> `build_changelog.py` -> commit
   `landing/changelog.json` separately. Any commit before that ends the window
-  and the desktop version becomes `0.6.3-N-g<sha>`.
+  and the desktop version becomes `0.6.4-N-g<sha>`.
   **Process lesson:** write the session notes BEFORE tagging while a release is
   still pending - the 0.6.1 notes landed as a post-tag commit and cost exactly
   that clean window.

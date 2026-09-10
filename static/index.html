@@ -569,17 +569,27 @@ if(x.status===200){var t=JSON.parse(x.responseText).theme;if(t)document.document
         <tbody></tbody>
       </table>
       <h4>Add rig</h4>
-      <form id="rigForm" class="formrow">
+      <div class="rowbtns">
+        <button type="button" id="btnAddRig" class="ghost">＋ Add rig</button>
+      </div>
+      <div id="rigPicker" class="hidden">
+        <p class="hint">Pick a smart telescope, or build a custom rig from
+        focal length and sensor size.</p>
+        <div id="rigPresetList"></div>
+        <div class="rowbtns">
+          <button type="button" id="btnRigCustom" class="ghost">Custom rig&hellip;</button>
+          <button type="button" id="btnRigPickCancel" class="ghost">Cancel</button>
+        </div>
+      </div>
+      <form id="rigForm" class="formrow hidden">
         <input name="name" placeholder="Rig name" required maxlength="40" style="width:140px">
         <input name="focal_mm" inputmode="decimal" autocomplete="off" spellcheck="false" placeholder="Focal mm" required style="width:95px">
         <input name="sensor_w" inputmode="decimal" autocomplete="off" spellcheck="false" placeholder="Sensor W mm" required style="width:105px">
         <input name="sensor_h" inputmode="decimal" autocomplete="off" spellcheck="false" placeholder="Sensor H mm" required style="width:105px">
         <button type="submit">Add</button>
+        <button type="button" id="btnRigFormCancel" class="ghost">Cancel</button>
       </form>
       <p id="rigFovPreview" class="hint mono"></p>
-      <div class="rowbtns" style="margin-top:8px">
-        <button type="button" id="btnRigPresets" class="ghost">Add smart telescopes (ZWO Seestar, DwarfLab DWARF)</button>
-      </div>
     </div>
 
     <div id="mtab-targets" class="mtabpane hidden">

@@ -26,8 +26,8 @@ from .imglib import name_key
 from .ingest import ingest_one, obj_slug, reindex_library, rename_archive_folder
 from .nightcalc import PROFILE_BINS, compute_night, object_detail
 from .paths import data_dir, static_dir
-from .rig_presets import add_missing as add_missing_rig_presets
-from .rig_presets import ensure_seeded as seed_rig_presets
+from .rig_presets import presets_payload as rig_presets_payload
+from .rig_presets import remove_seeded_once as unseed_rig_presets
 from .version import app_version
 
 from starlette.background import BackgroundTask
@@ -224,10 +224,10 @@ def create_app(db: Database, *, prefetch: bool = True) -> FastAPI:
     app = FastAPI(title="NightSeam", version=APP_VERSION, docs_url=None,
                   redoc_url=None, openapi_url=None)
 
-    # Preset rigs (smart telescopes: ZWO Seestar, DwarfLab DWARF). Seeded here
-    # and not in Database.__init__ so a bare Database (backup tooling, tests)
-    # stays exactly what the caller put in; it runs once per database.
-    seed_rig_presets(db)
+    # Rig presets are a PICKER, not defaults: a fresh setup must be empty, so
+    # nothing is ever inserted here. 0.6.1/0.6.2 did auto-seed - this drops
+    # those untouched leftovers once, so an existing database ends up empty too.
+    unseed_rig_presets(db)
 
     # DNS-rebinding guard: the local API must only ever answer requests whose
     # Host header names this machine (loopback). A malicious website could
@@ -290,6 +290,7 @@ def create_app(db: Database, *, prefetch: bool = True) -> FastAPI:
                                               "narrowband_oiii": False}),
             "size_unit": db.setting("size_unit", "arcmin"),
             "rigs": db.rigs(),
+            "rig_presets": rig_presets_payload(),   # "Add rig" picker (no defaults)
             "active_rig_id": db.setting("active_rig_id"),
             "favorites": db.setting("favorites", []),
             "wizard_done": bool(db.setting("wizard_done", False)),
@@ -389,11 +390,6 @@ def create_app(db: Database, *, prefetch: bool = True) -> FastAPI:
     def api_delete_rig(rid: int):
         db.delete_rig(rid)
         return {"ok": True}
-
-    @app.post("/api/rigs/presets")
-    def api_add_rig_presets():
-        """Re-add the built-in smart telescopes (names already stored are kept)."""
-        return {"added": add_missing_rig_presets(db)}
 
     # ---------------- catalog + night ----------------
 
