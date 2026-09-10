@@ -545,10 +545,10 @@ over the fuller commands below wherever they differ:
   previous rule only shrank via padding above 22px, and its CSS fix shipped
   without a token bump — if a CSS-only fix "does nothing" for a returning
   visitor, that is a stale `style.css`, so always bump its `?v=`.
-- **State after the v0.6.7 web deploy (2026-09-10) - read before the next
-  release**: HEAD is exactly at the tag `v0.6.7`, the tree is clean, and
-  `web/version.json` was baked at that tag, so `/astro` reports 0.6.7. The
-  0.6.2-0.6.7 arc: 0.6.2 hotfixed the 0.6.1 mid-deploy breakage, 0.6.3 hid the
+- **State after the v0.6.8 web deploy (2026-09-10) - read before the next
+  release**: HEAD is exactly at the tag `v0.6.8`, the tree is clean, and
+  `web/version.json` was baked at that tag, so `/astro` reports 0.6.8. The
+  0.6.2-0.6.8 arc: 0.6.2 hotfixed the 0.6.1 mid-deploy breakage, 0.6.3 hid the
   popularity stat, 0.6.4 made the rig presets a picker (empty default), 0.6.5
   removed the last popularity affordances (chip + desktop sort mode), 0.6.6
   fixed the `hidden` ATTRIBUTE panels an author `display` kept visible
@@ -556,7 +556,9 @@ over the fuller commands below wherever they differ:
   rigs / custom-target forms rendered before "Add rig" was pressed - restore
   rules now live in `web/style.css`, hide new things with the `.hidden` CLASS),
   0.6.7 moved the framing `#rigSelect` from the hamburger menu into the topbar
-  next to Site in both apps.
+  next to Site in both apps (0.6.8 only bumped `style.css?v=9` -> `v=10`, which
+  should have gone into 0.6.7 with the CSS - a good reminder to bump the token
+  in the SAME commit as the CSS edit).
   The DESKTOP side is still 0.6.0 EVERYWHERE (`dist\NightSeam.exe`,
   `dist\release\*`, `/downloads/*` incl. `ns-version.js`, landing page, and no
   curated changelog entry) - deliberate, because no new exe was built, so
@@ -564,7 +566,7 @@ over the fuller commands below wherever they differ:
   the moment to finish it: `build.ps1` -> `scripts/make_release.py` -> upload
   `dist/release/*` to `/downloads/` -> `build_changelog.py` -> commit
   `landing/changelog.json` separately. Any commit before that ends the window
-  and the desktop version becomes `0.6.7-N-g<sha>`.
+  and the desktop version becomes `0.6.8-N-g<sha>`.
   **Process lesson:** write the session notes BEFORE tagging while a release is
   still pending - the 0.6.1 notes landed as a post-tag commit and cost exactly
   that clean window.
