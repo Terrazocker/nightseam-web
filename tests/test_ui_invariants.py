@@ -5,6 +5,10 @@ decides, popularity only separates equal scores), but no view may render the
 number or offer it as a criterion - no catalog column, no detail row, no filter
 chip, no sort mode. These are text assertions on the two UIs: cheap, and they
 fail loudly when a future edit re-surfaces the stat.
+
+The same file also pins the `hidden` handling, because that broke once: an
+author `display` beats the UA's `[hidden] { display:none }`, so a panel hidden
+with the ATTRIBUTE shows up unless an author rule restores it.
 """
 
 from pathlib import Path
@@ -51,3 +55,28 @@ def test_popularity_still_breaks_ties():
     assert "d !== 0 ? d : popularityFactor(b.m) - popularityFactor(a.m)" in desk
     assert "function popularityFactor(o)" in web                 # web/app.js is the app entry, no exports
     assert "export function popularityFactor" in _read("static", "js", "derive.js")
+
+
+def test_attribute_hidden_panels_restore_display_none():
+    """Panels hidden with the ATTRIBUTE need an author rule, or they show up.
+
+    0.6.6 bug: `.set-form { display: grid }` beat the UA's `[hidden]` rule, so
+    the rig/sites/targets forms were visible before "Add rig" was pressed.
+    """
+    css = _read("web", "style.css")
+    js = _read("web", "app.js")
+    for selector in (".set-form[hidden]", "#set-rig-picker[hidden]"):
+        assert selector in css, f"web/style.css lost {selector}: the panel will render anyway"
+    # ... and those attributes really are the mechanism the app uses
+    assert 'class="set-form" id="sf-rig" hidden' in js
+    assert '<div id="set-rig-picker" hidden>' in js
+    # the picker stays empty until it is opened
+    assert "function showRigPicker()" in js
+
+
+def test_desktop_keeps_the_hidden_class_authoritative():
+    """The desktop hides things with the `.hidden` CLASS - it must keep winning."""
+    assert ".hidden { display: none !important; }" in _read("static", "style.css")
+    html = _read("static", "index.html")
+    assert 'id="rigPicker" class="hidden"' in html
+    assert 'id="rigForm" class="formrow hidden"' in html

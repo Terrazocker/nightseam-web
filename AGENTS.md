@@ -62,7 +62,7 @@ over the fuller commands below wherever they differ:
     when both sockets set SO_REUSEADDR.
   - If 8407 is briefly taken at boot, `free_port()` silently picks a RANDOM
     port (written to instance.json) - the app runs, just not on 8407.
-- Tests: `python -m pytest tests/` - 159 tests, run in ~36 s (pure-function
+- Tests: `python -m pytest tests/` - 161 tests, run in ~36 s (pure-function
   tests are fast; `tests/test_api.py` spins up real `create_app()` instances
   via fastapi TestClient/httpx). Single test:
   `python -m pytest tests/test_astro.py -k name`. API tests use
@@ -73,7 +73,7 @@ over the fuller commands below wherever they differ:
   pytest uses for the basetemp) creates an owner-SID-only DACL that the
   sandbox's restricted token cannot re-read, so every tmp_path test errors
   with PermissionError - an environment artifact, NOT a code failure. Run
-  the suite with full access / in a normal shell: 159/159 pass (~36 s).
+  the suite with full access / in a normal shell: 161/161 pass (~36 s).
   Careful with the `client` fixture: it must leave `data/panos` in place
   under the tmp dir it patches in, because the pano upload route writes
   there without mkdir'ing (the real `data_dir()` creates it). Without that
@@ -484,7 +484,7 @@ over the fuller commands below wherever they differ:
   every module whose BEHAVIOUR changed (comment-only edits do not need it) or
   returning visitors keep the old file. Current: `app.js?v=27`,
   `horizon.js?v=12`, `webstore.js?v=5`, `astro.js?v=4`, `dragwin.js?v=1`,
-  plus `style.css?v=8` / `themes.css?v=2` in `web/index.html`.
+  plus `style.css?v=9` / `themes.css?v=2` in `web/index.html`.
   **A token bump is also the cure for a browser that cached a BAD pairing**: an
   `app.js` that calls a module member the cached dependency does not have stays
   broken across plain reloads, because the query string in the import specifier
@@ -541,12 +541,19 @@ over the fuller commands below wherever they differ:
   previous rule only shrank via padding above 22px, and its CSS fix shipped
   without a token bump — if a CSS-only fix "does nothing" for a returning
   visitor, that is a stale `style.css`, so always bump its `?v=`.
-- **State after the v0.6.5 web deploy (2026-09-10) - read before the next
-  release**: HEAD is exactly at the tag `v0.6.5`, the tree is clean, and
-  `web/version.json` was baked at that tag, so `/astro` reports 0.6.5 (0.6.2
-  was the hotfix for the 0.6.1 mid-deploy breakage, 0.6.3 hid the popularity
-  stat, 0.6.4 made the rig presets a picker, 0.6.5 removed the last popularity
-  affordances: chip + desktop sort mode).
+- **State after the v0.6.6 web deploy (2026-09-10) - read before the next
+  release**: HEAD is exactly at the tag `v0.6.6`, the tree is clean, and
+  `web/version.json` was baked at that tag, so `/astro` reports 0.6.6. The
+  0.6.2-0.6.6 arc: 0.6.2 hotfixed the 0.6.1 mid-deploy breakage, 0.6.3 hid the
+  popularity stat, 0.6.4 made the rig presets a picker (empty default), 0.6.5
+  removed the last popularity affordances (chip + desktop sort mode), 0.6.6
+  fixed the `hidden` ATTRIBUTE panels that an author `display` kept visible:
+  `.set-form { display: grid }` beat the UA's `[hidden] { display:none }`, so
+  the sites / rigs / custom-target forms rendered before "Add rig" was pressed.
+  `web/style.css` now carries `.set-form[hidden]` / `#set-rig-picker[hidden]`
+  restore rules (exactly like `.modal-wrap[hidden]` before them) and
+  `tests/test_ui_invariants.py` guards them. For anything new, hide it with the
+  `.hidden` CLASS - the desktop uses only the class and never had this bug.
   The DESKTOP side is still 0.6.0 EVERYWHERE (`dist\NightSeam.exe`,
   `dist\release\*`, `/downloads/*` incl. `ns-version.js`, landing page, and no
   curated changelog entry) - deliberate, because no new exe was built, so
@@ -554,7 +561,7 @@ over the fuller commands below wherever they differ:
   the moment to finish it: `build.ps1` -> `scripts/make_release.py` -> upload
   `dist/release/*` to `/downloads/` -> `build_changelog.py` -> commit
   `landing/changelog.json` separately. Any commit before that ends the window
-  and the desktop version becomes `0.6.5-N-g<sha>`.
+  and the desktop version becomes `0.6.6-N-g<sha>`.
   **Process lesson:** write the session notes BEFORE tagging while a release is
   still pending - the 0.6.1 notes landed as a post-tag commit and cost exactly
   that clean window.

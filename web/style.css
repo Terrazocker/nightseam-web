@@ -425,6 +425,13 @@ td.pct { font-family: var(--mono); color: var(--green); white-space: nowrap; }
   border-radius: 8px; padding: 6px 8px; font-size: 13px; font-family: var(--mono);
 }
 .set-form .btnrow { grid-column: 1 / -1; }
+/* The panels hidden with the `hidden` ATTRIBUTE (sites / rigs / custom targets,
+   and the Add-rig picker) need this: an author `display` (grid above) beats the
+   UA's `[hidden] { display:none }`, so without the rule every one of them shows
+   up on render — exactly like `.modal-wrap[hidden]` further up. Elements hidden
+   with the `.hidden` CLASS already win via `!important` and are unaffected. */
+.set-form[hidden],
+#set-rig-picker[hidden] { display: none; }
 .chk { font-size: 12px; color: var(--muted); display: inline-flex; align-items: center; gap: 6px; cursor: pointer; white-space: nowrap; }
 .chk input { accent-color: var(--accent); }
 
