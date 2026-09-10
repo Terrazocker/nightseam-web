@@ -59,11 +59,15 @@ def args_of(argv):
 
 
 # Never uploaded: repo tooling / dev leftovers (names at any depth).
-SKIP = {".gitignore", "build_web.py", "ftps_deploy.py", "whale", "dev", "node_modules"}
+SKIP = {".gitignore", "build_web.py", "ftps_deploy.py", "whale", "dev",
+        "node_modules", "__pycache__"}
 
 
 def skip(name):
-    return name in SKIP
+    # .pyc as well: a __pycache__ created by running the build scripts locally
+    # got published once, and bytecode of the deploy tool has no business on
+    # the webspace.
+    return name in SKIP or name.endswith(".pyc")
 
 
 def mkd_tree(ftp, remote):
