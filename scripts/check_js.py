@@ -1,8 +1,10 @@
-"""One-command JS health check: runs the four static/js checkers.
+"""One-command JS health check: runs the four static/js checkers plus the
+encoding guard (shipped text must be UTF-8, never double-encoded - see
+check_encoding.py for the 0.6.9 mojibake that reached the live web app).
 
-Hard failures (broken imports, missing DOM ids, syntax errors) exit non-zero;
-the defs checker stays review-only (it is heuristic) and the syntax checker
-skips itself when node is not installed.
+Hard failures (broken imports, missing DOM ids, syntax errors, bad encoding)
+exit non-zero; the defs checker stays review-only (it is heuristic) and the
+syntax checker skips itself when node is not installed.
 Usage: python scripts/check_js.py
 """
 
@@ -26,6 +28,7 @@ def main() -> int:
     hard += _run("check_js_imports")
     hard += _run("check_dom_ids")
     hard += _run("check_js_syntax")  # parses the modules (skips without node)
+    hard += _run("check_encoding")   # UTF-8 / no cp1252 mojibake in shipped text
     _run("check_js_defs")            # heuristic - candidates only
     print("check_js:", "FAIL" if hard else "OK")
     return 1 if hard else 0
