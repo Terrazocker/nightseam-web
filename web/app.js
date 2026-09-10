@@ -10,7 +10,7 @@
  */
 import * as E from './astro.js?v=4';
 import * as Hor from './horizon.js?v=12';
-import * as WS from './webstore.js?v=3';
+import * as WS from './webstore.js?v=4';
 import { initDragWindows } from './dragwin.js?v=1';
 
 const TYPE_COLORS = {

@@ -62,7 +62,7 @@ over the fuller commands below wherever they differ:
     when both sockets set SO_REUSEADDR.
   - If 8407 is briefly taken at boot, `free_port()` silently picks a RANDOM
     port (written to instance.json) - the app runs, just not on 8407.
-- Tests: `python -m pytest tests/` - 150 tests, run in ~36 s (pure-function
+- Tests: `python -m pytest tests/` - 154 tests, run in ~36 s (pure-function
   tests are fast; `tests/test_api.py` spins up real `create_app()` instances
   via fastapi TestClient/httpx). Single test:
   `python -m pytest tests/test_astro.py -k name`. API tests use
@@ -73,7 +73,7 @@ over the fuller commands below wherever they differ:
   pytest uses for the basetemp) creates an owner-SID-only DACL that the
   sandbox's restricted token cannot re-read, so every tmp_path test errors
   with PermissionError - an environment artifact, NOT a code failure. Run
-  the suite with full access / in a normal shell: 150/150 pass (~36 s).
+  the suite with full access / in a normal shell: 154/154 pass (~36 s).
   Careful with the `client` fixture: it must leave `data/panos` in place
   under the tmp dir it patches in, because the pano upload route writes
   there without mkdir'ing (the real `data_dir()` creates it). Without that
@@ -482,9 +482,22 @@ over the fuller commands below wherever they differ:
   `app.js?v=N` and `web/app.js` carries a `?v=` on each import
   (`astro.js`, `horizon.js`, `webstore.js`, `dragwin.js`). Bump the token of
   every module whose BEHAVIOUR changed (comment-only edits do not need it) or
-  returning visitors keep the old file. Current: `app.js?v=23`,
-  `horizon.js?v=12`, `webstore.js?v=3`, `astro.js?v=4`, `dragwin.js?v=1`,
+  returning visitors keep the old file. Current: `app.js?v=24`,
+  `horizon.js?v=12`, `webstore.js?v=4`, `astro.js?v=4`, `dragwin.js?v=1`,
   plus `style.css?v=8` / `themes.css?v=2` in `web/index.html`.
+  **A token bump is also the cure for a browser that cached a BAD pairing**: an
+  `app.js` that calls a module member the cached dependency does not have stays
+  broken across plain reloads, because the query string in the import specifier
+  is part of the module URL. Bump BOTH the entry point and the dependency.
+- **Never publish `index.html` before the modules it names.** A deploy is not
+  atomic, and the page carries the `?v=` tokens: uploading it early pairs a
+  fresh entry point with stale modules for everyone who loads mid-deploy - that
+  is exactly how 0.6.1 shipped `TypeError: WS.seedDefaultRigs is not a
+  function` (alphabetical `uploadtree` order put `app.js` first and
+  `webstore.js`, after the ~250-file `img/` tree, last). `ftps_deploy.py` now
+  sorts with `upload_order()` (HTML last, `index.html` very last) and
+  `tests/test_deploy_order.py` pins it. When uploading changed files by hand,
+  keep that order: dependencies first, `index.html` last.
 - **Setup dialog (web) = tabs**, the same four sections as the desktop's
   Setup dialog (Sites / Rigs / Targets / Backup). `showMTab()` maps
   `data-mtab` → `#mtab-*` panes and `SETTINGS_TAB` keeps the open tab across
@@ -510,30 +523,27 @@ over the fuller commands below wherever they differ:
   previous rule only shrank via padding above 22px, and its CSS fix shipped
   without a token bump — if a CSS-only fix "does nothing" for a returning
   visitor, that is a stale `style.css`, so always bump its `?v=`.
-- **State after the v0.6.1 web deploy (2026-09-10) - read before the next
-  release**: `v0.6.1` is `1b47a2b` (the release commit), `/astro` IS live at
-  0.6.1 (FTP hash compare) and `web/version.json` was baked while HEAD was at
-  the tag, so it says 0.6.1. The docs commit recording all of this sits one
-  commit AFTER the tag, so `git describe` from HEAD is `v0.6.1-1-g<sha>`. The
-  DESKTOP half of 0.6.1 is NOT shipped: `dist\NightSeam.exe`, `dist\release\*`,
-  `/downloads/*` (`version.json`, `ns-version.js`) and the landing page are all
-  still 0.6.0, and there is no curated changelog entry for 0.6.1
-  (`build_changelog.py` will warn) - deliberate, since no new exe was built, so
-  installed apps correctly see no update. Consequence: a desktop build from
-  HEAD today would be stamped `0.6.1-1-g<sha>`, NOT `0.6.1` - so finish the
-  desktop side by tagging the new HEAD (v0.6.2+, never move the v0.6.1 tag)
-  and then `build.ps1` -> `scripts/make_release.py` -> upload
-  `dist/release/*` to `/downloads/` -> `build_changelog.py` -> commit
-  `landing/changelog.json` on its own. Re-bake `web/version.json` right after
-  that tag too, or `/astro` keeps advertising 0.6.1 forever.
-  **Process lesson:** ANY commit after the tag - a docs note like this one
-  included - ends the "HEAD is exactly at the tag" window that
-  `make_release.py` / `build_web.py version` need for a clean version string.
-  Write the session notes BEFORE tagging while a release is still pending, or
-  plan on a follow-up tag.
+- **State after the v0.6.2 web deploy (2026-09-10) - read before the next
+  release**: HEAD is exactly at the tag `v0.6.2`, the tree is clean, and
+  `web/version.json` was baked at that tag, so `/astro` reports 0.6.2. 0.6.2 is
+  the hotfix for the 0.6.1 mid-deploy breakage (`TypeError:
+  WS.seedDefaultRigs is not a function`): tokens `app.js?v=24` /
+  `webstore.js?v=4` discard the broken pairing browsers had cached, and
+  `ftps_deploy.py` now uploads HTML entry points last. The DESKTOP side is
+  still 0.6.0 EVERYWHERE (`dist\NightSeam.exe`, `dist\release\*`, `/downloads/*`
+  incl. `ns-version.js`, landing page, and no curated changelog entry) -
+  deliberate, because no new exe was built, so installed apps correctly see no
+  update. HEAD being at the tag right now is the moment to finish it:
+  `build.ps1` -> `scripts/make_release.py` -> upload `dist/release/*` to
+  `/downloads/` -> `build_changelog.py` -> commit `landing/changelog.json`
+  separately. Any commit before that ends the window and the desktop version
+  becomes `0.6.2-N-g<sha>`.
+  **Process lesson:** write the session notes BEFORE tagging while a release is
+  still pending - the 0.6.1 notes landed as a post-tag commit and cost exactly
+  that clean window.
 - `web/version.json` is gitignored and baked from the tag: after a later web
-  change, a plain `uploadtree web /astro` keeps advertising 0.6.1 until a new
-  tag + `build_web.py version` run, so re-bake on every deploy.
+  change, a plain `uploadtree web /astro` keeps advertising the old version
+  until a new tag + `build_web.py version` run, so re-bake on every deploy.
 - FTPS works from the sandbox WITHOUT escalation - reading the out-of-repo
   `--env <workspace>\Astro-Web\ftp.env` is allowed (reads outside the workspace are
   fine, only writes are restricted). For 0.6.1 `uploadtree web /astro` pushed

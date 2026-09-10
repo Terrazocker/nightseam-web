@@ -70,6 +70,22 @@ def skip(name):
     return name in SKIP or name.endswith(".pyc")
 
 
+def upload_order(path: pathlib.Path):
+    """Sort key for uploadmany/uploadtree: the HTML entry point goes LAST.
+
+    A deploy is not atomic: while it runs, the remote tree is a MIX of old and
+    new files. index.html names the new `?v=` cache tokens, so uploading it
+    first (alphabetical order does exactly that, before a big img/ tree and the
+    modules) pairs a fresh entry point with stale modules - a visitor loading
+    mid-deploy then executes `app.js?v=23` against the previous webstore.js.
+    That is precisely how 0.6.1 broke the live site with
+    "WS.seedDefaultRigs is not a function", and the browser cached the broken
+    pair. HTML last => a mid-deploy visitor keeps the fully OLD, consistent app
+    until every module is in place."""
+    is_html = path.suffix.lower() == ".html"
+    return (is_html, path.name == "index.html", path.name.lower())
+
+
 def mkd_tree(ftp, remote):
     """mkdir -p on the remote (idempotent)."""
     parts = [p for p in remote.strip("/").split("/") if p]
@@ -160,7 +176,7 @@ def main():
         elif cmd == "uploadmany":
             local, remote = argv[1], argv[2].rstrip("/")
             check_placeholders(local, "--force" in argv)
-            files = sorted(pathlib.Path(local).iterdir())
+            files = sorted(pathlib.Path(local).iterdir(), key=upload_order)
             for f in files:
                 if not f.is_file() or skip(f.name):
                     continue
@@ -171,7 +187,7 @@ def main():
             local, remote = pathlib.Path(argv[1]), argv[2].rstrip("/")
             check_placeholders(local, "--force" in argv)
             mkd_tree(ftp, remote)
-            items = sorted(local.iterdir())
+            items = sorted(local.iterdir(), key=upload_order)
             for item in items:
                 if skip(item.name):
                     continue
