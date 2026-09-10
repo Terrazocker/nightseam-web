@@ -33,7 +33,8 @@ def _run_node(engine: str, cases):
     try:
         proc = subprocess.run([node, str(HARNESS), engine],
                               input=json.dumps(cases), capture_output=True,
-                              text=True, timeout=120, cwd=str(ROOT))
+                              text=True, encoding="utf-8", timeout=120,
+                              cwd=str(ROOT))
     except OSError as exc:          # sandboxed environments deny pipe creation
         pytest.skip(f"cannot spawn node here: {exc}")
     assert proc.returncode == 0, f"harness failed: {proc.stderr[-1500:]}"

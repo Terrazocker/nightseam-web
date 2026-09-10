@@ -36,3 +36,17 @@ export function sizeArcmin(s) {
   if (!parts.length) return null;
   return Math.max(...parts);
 }
+
+/** Frame coverage: the OBJECT's span as a percentage of the FRAME - the same
+ *  definition as the desktop's frameCoverage (static/js/derive.js), whose
+ *  tooltip reads "object spans X% of the frame". Values above 100 mean the
+ *  object does not fit in one frame (desktop: "needs ~N frames"); the old web
+ *  column inverted the ratio (field/object, clamped 0-100) and showed "fits"
+ *  at >= 100 - the same boolean, but the displayed number meant the opposite.
+ *  `sizeAm` is the object's larger axis, `fovWArcmin` the rig's horizontal
+ *  FOV - both in arcminutes. Returns null for missing/zero inputs.
+ *  Pinned by the "frame" engine of tests/js/astro_parity.mjs. */
+export function framePct(sizeAm, fovWArcmin) {
+  if (sizeAm == null || sizeAm <= 0 || !(fovWArcmin > 0)) return null;
+  return Math.round(100 * sizeAm / fovWArcmin);
+}

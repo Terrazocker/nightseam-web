@@ -3,6 +3,12 @@
 import { S } from "./state.js";
 import { parseUTC, clamp, fmtHM } from "./util.js";
 
+/* keyboard scrub steps in minutes - shared with the web (web/astro.js) and
+   pinned by tests/test_js_parity.py: a plain arrow key is the fine step (one
+   6-min night-grid sample), Shift is the coarse one (10 samples = 60 min). */
+export const SCRUB_STEP_MIN = 6;
+export const SCRUB_SHIFT_STEP_MIN = 60;
+
 /* Longest run of true flags as a HALF-OPEN range [start, end) - the same
    contract as app/nightcalc.py's longest_run(): `end` is the first sample
    AFTER the run (== flags.length when the run reaches the last sample), so the
@@ -291,10 +297,26 @@ export function moonUpDownText() {
 
 export function statusOf(o, i) {
   const alt = o.alt[i], ceil = o.ceil[i], min = S.minAlt;
-  if (alt <= 0)    return { code: "hor", text: "Below horizon" };
-  if (alt <= ceil) return { code: "blk", text: "Blocked" };
-  if (alt < min)   return { code: "low", text: "Too low" };
-  return              { code: "vis", text: "Observable" };
+  // mirror the visibility predicate (o.vis): a sky-mode upper ceiling
+  // (ceil_top) blocks ABOVE the band, exactly like a horizon obstruction
+  // blocks below it - status must never say "Observable" where vis[] says no
+  const top = o.ceil_top ? o.ceil_top[i] : 90.5;
+  if (alt <= 0)       return { code: "hor", text: "Below horizon" };
+  if (alt <= ceil || alt >= top) return { code: "blk", text: "Blocked" };
+  if (alt < min)      return { code: "low", text: "Too low" };
+  return                 { code: "vis", text: "Observable" };
+}
+
+/* The authoritative minimum-altitude rule (shared with the server and the
+   web): an explicitly stored min_useful_alt wins; otherwise the Bortle-derived
+   default 17 + 2*bortle applies ("darker skies -> lower default"). The server
+   ships the resolved value PLUS the explicit flag (api_state), so the client
+   can re-derive the threshold live when Bortle changes instead of freezing it
+   at boot (the web has always done this in horizon.js::effectiveMinAlt). */
+export function effectiveMinAlt(cfg) {
+  if (cfg && cfg.min_useful_alt_explicit && cfg.min_useful_alt != null)
+    return cfg.min_useful_alt;
+  return 17 + 2 * ((cfg && cfg.bortle) || 4);
 }
 
 export function windowText(o) {

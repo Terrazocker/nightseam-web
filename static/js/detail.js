@@ -87,7 +87,7 @@ function renderDetailMeta(m, d) {
     ["Dec (J2000)", `<span class="mono">${d.meta.dec_dms}</span>`],
     ["Distance", m.distance || "\u2014"],
     ["Observable time", nObj && nObj.obs_pct != null
-        ? `<b>${nObj.obs_pct}%</b> of astronomical night` : "\u2014"],
+        ? `<b>${nObj.obs_pct}%</b> of tonight's window` : "\u2014"],
     ["Max altitude tonight", `${d.max_alt.toFixed(1)}\u00B0 at ${fmtHM(d.max_time)}`],
     ["Clear window", d.best
         ? durStr(d.times_iso[d.best[0]],

@@ -325,13 +325,21 @@ def create_app(db: Database, *, prefetch: bool = True) -> FastAPI:
 
     # ---------------- state / settings ----------------
 
+    def _effective_min_alt(db) -> float:
+        """The authoritative min-altitude rule: an explicit min_useful_alt
+        wins; otherwise the Bortle-derived default 17 + 2*bortle ("darker
+        skies -> lower default"). Used by api_state and the detail endpoint -
+        previously the detail endpoint fell back to a hard 25.0 even when
+        Bortle said 31."""
+        mua = db.setting("min_useful_alt")
+        if mua is None:
+            mua = 17.0 + 2.0 * float(db.setting("bortle", 4))
+        return mua
+
     @app.get("/api/state")
     def api_state():
         panos = db.panoramas()
-        bortle = db.setting("bortle", 4)
-        mua = db.setting("min_useful_alt")
-        if mua is None:
-            mua = 17.0 + 2.0 * bortle      # darker skies -> lower default
+        mua = _effective_min_alt(db)
         return {
             "version": APP_VERSION,
             "sites": db.sites(),
@@ -342,6 +350,7 @@ def create_app(db: Database, *, prefetch: bool = True) -> FastAPI:
                            "paint_mode": p.get("paint_mode") or "obstacle"} for p in panos],
             "active_pano_id": db.setting("active_pano_id"),
             "min_useful_alt": mua,
+            "min_useful_alt_explicit": db.setting("min_useful_alt") is not None,
             "moon_aware": bool(db.setting("moon_aware", False)),
             "filters": db.setting("filters", {"broadband": True,
                                               "narrowband_ha": False,
@@ -505,7 +514,7 @@ def create_app(db: Database, *, prefetch: bool = True) -> FastAPI:
         profile = pano_row["profile"] if pano_row else []
         profile_top = pano_row.get("profile_top") or [] if pano_row else []
         minalt_eff = float(minalt if minalt is not None
-                           else db.setting("min_useful_alt", 25.0))
+                           else _effective_min_alt(db))
 
         try:
             result = object_detail(db, oid, date, tz_offset_min,

@@ -158,7 +158,7 @@ export function renderTargets(fromPager = false) {
       <td>${fmtSize(m.size_am, unit)}</td>
       <td class="col-opt">${coverageCell(cov)}</td>
       <td>${o.max_alt.toFixed(0)}&deg;</td>
-      <td title="share of the astronomical night above ${S.minAlt}\u00B0 and unobstructed">${o.obs_pct!=null?o.obs_pct+"<small>%</small>":"&mdash;"}</td>
+        <td title="share of the night window above ${S.minAlt}\u00B0 and unobstructed">${o.obs_pct!=null?o.obs_pct+"<small>%</small>":"&mdash;"}</td>
       <td>${windowText(o)}</td>
       <td><span class="statuspill ${stClass[st.code]}">${st.text}</span></td>
     </tr>`;

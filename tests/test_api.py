@@ -800,6 +800,42 @@ def test_bortle_setting_and_min_alt_default(client):
     assert client.get("/api/state").json()["bortle"] == 9
 
 
+def test_state_min_alt_explicit_flag(client):
+    """E5: /api/state must tell the desktop client whether the min altitude is
+    an EXPLICIT value or the Bortle-derived default - the client re-derives the
+    default live on Bortle changes and must not treat the resolved number as an
+    explicit choice (the flag used to not exist)."""
+    assert client.get("/api/state").json()["min_useful_alt_explicit"] is False
+    client.post("/api/settings", json={"min_useful_alt": 30.0})
+    st = client.get("/api/state").json()
+    assert st["min_useful_alt_explicit"] is True
+    assert st["min_useful_alt"] == 30.0
+    client.post("/api/settings", json={"bortle": 1})
+    st = client.get("/api/state").json()
+    assert st["min_useful_alt_explicit"] is True     # explicit still wins
+    assert st["min_useful_alt"] == 30.0
+
+
+def test_object_detail_defaults_to_bortle_min_alt(client):
+    """E5: the detail endpoint's implicit min-alt default must be the same
+    17 + 2*bortle rule as /api/state (it used to fall back to a hard 25.0, so
+    a Bortle-7 site planned the detail view at 25 deg instead of 31)."""
+    add_site(client)
+    client.post("/api/settings", json={"bortle": 7})
+    d = client.get("/api/object/m31",
+                   params={"date": _DATE, "tz_offset_min": _TZ}).json()
+    assert d["min_useful_alt"] == 31.0
+    client.post("/api/settings", json={"bortle": 1})
+    d = client.get("/api/object/m31",
+                   params={"date": _DATE, "tz_offset_min": _TZ}).json()
+    assert d["min_useful_alt"] == 19.0
+    # an explicit min alt wins over the bortle default
+    client.post("/api/settings", json={"min_useful_alt": 30.0, "bortle": 7})
+    d = client.get("/api/object/m31",
+                   params={"date": _DATE, "tz_offset_min": _TZ}).json()
+    assert d["min_useful_alt"] == 30.0
+
+
 # ------------------------------------------------------------------ library export
 
 def test_library_export(client):

@@ -8,6 +8,12 @@
  */
 export const D2R = Math.PI / 180;
 export const R2D = 180 / Math.PI;
+
+/* keyboard scrub steps in minutes - shared with the desktop
+   (static/js/derive.js) and pinned by tests/test_js_parity.py: a plain arrow
+   key is the fine step (one 6-min night-grid sample), Shift is the coarse one. */
+export const SCRUB_STEP_MIN = 6;
+export const SCRUB_SHIFT_STEP_MIN = 60;
 const ASEC2DEG = 1 / 3600;
 const J2000 = 2451545.0;
 const MS_PER_DAY = 86400000;
@@ -17,7 +23,9 @@ const JD_UNIX_EPOCH = 2440587.5;
 export function julianDay(dt) {
   let y = dt.getUTCFullYear();
   let m = dt.getUTCMonth() + 1;
-  const d = dt.getUTCDate() + (dt.getUTCHours() + dt.getUTCMinutes() / 60 + dt.getUTCSeconds() / 3600) / 24;
+  const d = dt.getUTCDate()
+    + (dt.getUTCHours() + dt.getUTCMinutes() / 60 + dt.getUTCSeconds() / 3600
+       + dt.getUTCMilliseconds() / 3600000) / 24;
   if (m <= 2) { y -= 1; m += 12; }
   const a = Math.floor(y / 100);
   const b = 2 - a + Math.floor(a / 4);
@@ -240,31 +248,38 @@ export function sunAlt(jd, lat, lon) {
 
 /**
  * Find UTC Date crossings of the sun's altitude through `thresholdDeg`
- * within a 48 h window starting at `scanStartUTC` (typically local-midnight
- * of the target date, i.e. target noon - 12 h), which contains exactly one
- * evening and one morning crossing for any timezone.
- * Returns { evening: Date|null, morning: Date|null } (evening = descending).
- * Linear refinement on a 10-minute scan (matches planning.py approach).
+ * within a 30 h window starting at `scanStartUTC` (the SITE's local noon of
+ * the target date - the same anchor app/planning.py uses: local noon + 30 h
+ * contains exactly the target evening and the following morning for any
+ * timezone). Returns { evening: Date|null, morning: Date|null } (evening =
+ * descending). Linear refinement on a 10-minute scan (matches planning.py).
+ *
+ * Anchoring at NOON instead of midnight matters near the solstices at high
+ * latitudes, where a twilight threshold can be crossed twice within one local
+ * night (once just after midnight, once just before it): a midnight-anchored
+ * 48 h scan then reports the PREVIOUS night's dusk as its "first descending"
+ * crossing - one full night early (measured: the civil night at 59.5 N on
+ * 2026-06-21 resolved as 2026-06-20T22:35Z). A noon-anchored scan always sees
+ * the target night's dusk first, exactly like planning.py.
  */
 export function sunCrossings(scanStartUTC, lat, lon, thresholdDeg) {
   const jd0 = julianDay(scanStartUTC);
-  const N = 288; // 10-min steps over 48 h
+  const N = 180; // 10-min steps over 30 h
   let prev = sunAlt(jd0, lat, lon) - thresholdDeg;
   let prevSign = Math.sign(prev);
   let evening = null, morning = null;
   for (let i = 1; i <= N; i++) {
-    const jd = jd0 + i / (N / 2); // 288 steps x 10 min = 48 h window
+    const jd = jd0 + i / 144; // 10 minutes = 1/144 day
     const v = sunAlt(jd, lat, lon) - thresholdDeg;
     const sign = Math.sign(v);
     if (sign !== prevSign && prevSign !== 0) {
       // crossing between step i-1 and i
       const f = prev / (prev - v); // fraction from i-1 to i
-      const jdX = jd0 + (i - 1 + f) / (N / 2);
+      const jdX = jd0 + (i - 1 + f) / 144;
       const dt = dateFromJD(jdX);
-      // descending (sign becomes negative) = evening crossing; ascending = morning.
-      // The 48 h scan window holds two of each (today's and tomorrow's): keep the
-      // FIRST descending (tonight's dusk) and the LAST ascending (tomorrow's dawn),
-      // so dawns/sunrise always fall AFTER the dusk of the same night.
+      // descending (sign becomes negative) = evening crossing; ascending =
+      // morning. Within the noon+30 h window the FIRST descending crossing is
+      // the target night's dusk and the LAST ascending its dawn.
       if (sign < 0) { if (!evening) evening = dt; }
       else { morning = dt; }
     }
@@ -281,20 +296,21 @@ export function sunCrossings(scanStartUTC, lat, lon, thresholdDeg) {
  *  (app.js computes it with webstore's wallToUtc). Without it the browser's own
  *  zone stands in for the site's - correct only while both are the same. That
  *  fallback is what made planning for a site far EAST of the browser pick the
- *  previous evening's dusk and a dawn up to two days later: the 48 h window
- *  then starts before the previous local noon, so "first descending crossing"
+ *  previous evening's dusk and a dawn up to two days later: the scan window
+ *  then started before the previous local noon, so "first descending crossing"
  *  is not tonight's dusk. */
 export function nightInfo(localDate, lat, lon, localNoon) {
-  // Scan window: local midnight of the target date (local noon - 12 h) for 48 h
-  // - always contains exactly the target evening and the following morning.
-  // `new Date(y, m, d, 12)` carries the BROWSER's zone, so subtracting
-  // getTimezoneOffset() here once cancelled it and anchored the window at UTC
-  // midnight instead - which shifted the whole night by a day for every site
-  // outside roughly UTC-4..+2.
+  // Scan window: the SITE's local noon of the target date + 30 h - the same
+  // anchor as app/planning.py (local_utc(y, m, d, tz, 12) + 30 h), so the
+  // first descending crossing is always the TARGET evening's dusk (a
+  // midnight-anchored window can report the previous night's dusk at
+  // twilight-edge latitudes, see sunCrossings). `new Date(y, m, d, 12)`
+  // carries the BROWSER's zone, which is why `localNoon` must be the site's
+  // real noon instant for sites outside it.
   const anchor = (localNoon instanceof Date && !isNaN(localNoon))
     ? localNoon
     : new Date(localDate.getFullYear(), localDate.getMonth(), localDate.getDate(), 12, 0, 0);
-  const scanStart = new Date(anchor.getTime() - 12 * 3600000);
+  const scanStart = new Date(anchor.getTime());
   const g = (thr) => sunCrossings(scanStart, lat, lon, thr);
   const zero = g(0), civil = g(-6), naut = g(-12), astro = g(-18);
   return {
@@ -309,29 +325,35 @@ export function nightInfo(localDate, lat, lon, localNoon) {
 /** Pick the dark window used for every visibility number.
  *
  *  Desktop parity (app/planning.py `night_window`): use the ASTRONOMICAL night
- *  when the sun reaches -18 deg, else nautical (-12), else civil (-6), else
- *  plain sunset/sunrise. When a crossing is missing entirely (polar day) the
- *  same fixed evening-to-morning fallback applies: 20:00 local -> 04:00 local
- *  the next day, with level 'fallback'.
+ *  when the sun reaches -18 deg, else nautical (-12), else civil (-6). When no
+ *  twilight level is reached at all (polar day, polar twilight - the sun may
+ *  still set without ever crossing -6 deg) the same fixed evening-to-morning
+ *  fallback applies as in planning.py: 20:00 local -> 04:00 local the next
+ *  day, with level 'fallback'. Sunset/sunrise NEVER become the window: the
+ *  desktop's fallback is the fixed 20:00-04:00 span, and using the actual
+ *  sunset..sunrise pair instead produced a different (shorter) window for the
+ *  same polar-twilight night (measured: 8.0 h vs 2.1 h at Tromso in May).
  *
- *  The web used to score over the civil window, which made "share of the
- *  night" and the ranking disagree with the desktop for the same site/date.
+ *  `localNoon` is the real instant of the SITE's local noon (app.js passes
+ *  siteNoon()); the fallback is then built in the SITE's zone - 20:00/04:00
+ *  local - exactly like planning.py's tz_min arithmetic. Without it the
+ *  browser's zone stands in, correct only while both are the same.
  *  `dayDate` is the calendar day the window belongs to (defaults to today). */
-export function pickDarkWindow(info, dayDate) {
+export function pickDarkWindow(info, dayDate, localNoon) {
   const level = (info.astroDusk && info.astroDawn) ? "astronomical"
     : (info.nauticalDusk && info.nauticalDawn) ? "nautical"
       : (info.civilDusk && info.civilDawn) ? "civil"
         : null;
-  const dusk = info.astroDusk || info.nauticalDusk || info.civilDusk
-    || info.sunset || null;
-  const dawn = info.astroDawn || info.nauticalDawn || info.civilDawn
-    || info.sunrise || null;
+  const dusk = info.astroDusk || info.nauticalDusk || info.civilDusk || null;
+  const dawn = info.astroDawn || info.nauticalDawn || info.civilDawn || null;
   if (dusk && dawn) return { dusk, dawn, level: level || "fallback" };
 
-  const d = dayDate || new Date();
+  const anchor = (localNoon instanceof Date && !isNaN(localNoon))
+    ? localNoon
+    : (dayDate || new Date());
   return {
-    dusk: dusk || new Date(d.getFullYear(), d.getMonth(), d.getDate(), 20, 0, 0),
-    dawn: dawn || new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1, 4, 0, 0),
+    dusk: new Date(anchor.getTime() + 8 * 3600000),     // 20:00 local
+    dawn: new Date(anchor.getTime() + 16 * 3600000),    // 04:00 local, next day
     level: level || "fallback",
   };
 }

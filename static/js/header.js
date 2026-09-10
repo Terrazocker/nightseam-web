@@ -2,7 +2,7 @@
 
 import { $, fmtHM, fmtT, esc, api, phaseName, applyEdgeSpace } from "./util.js";
 import { S } from "./state.js";
-import { moonUpDownText } from "./derive.js";
+import { moonUpDownText, effectiveMinAlt } from "./derive.js";
 import { scheduleLoadNight } from "./night.js";
 import { openSites } from "./setup.js";
 import { refreshWeatherForSite } from "./weather.js";
@@ -58,6 +58,8 @@ export function bindHeader() {
   let _muaPersist = null;
   $("#minUsefulAlt").addEventListener("input", e => {
     S.minAlt = +e.target.value;
+    S.cfg.min_useful_alt = S.minAlt;         // an explicit value now exists
+    S.cfg.min_useful_alt_explicit = true;    // ... so Bortle must not override it
     $("#muaVal").textContent = S.minAlt + "\u00B0";
     document.dispatchEvent(new CustomEvent("prefs:changed"));
     clearTimeout(_muaPersist);
@@ -79,6 +81,16 @@ export function bindHeader() {
     const v = +e.target.value;
     $("#bortleVal").textContent = v;
     S.cfg.bortle = v;
+    // no explicit min altitude stored? the Bortle-derived default moves with
+    // it (17 + 2*bortle), exactly like the web and the server - the threshold
+    // must not stay frozen at the boot value
+    if (!S.cfg.min_useful_alt_explicit) {
+      S.minAlt = effectiveMinAlt(S.cfg);
+      const mua = $("#minUsefulAlt");
+      if (mua) mua.value = S.minAlt;
+      const muaVal = $("#muaVal");
+      if (muaVal) muaVal.textContent = S.minAlt + "\u00B0";
+    }
     document.dispatchEvent(new CustomEvent("prefs:changed"));
     clearTimeout(_bortleT);
     _bortleT = setTimeout(() => api("/api/settings", {

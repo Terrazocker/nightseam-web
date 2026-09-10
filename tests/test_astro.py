@@ -188,6 +188,41 @@ def test_moon_illumination_bounds():
         assert 0.0 <= k <= 1.0
 
 
+def test_moon_illumination_and_age_at_published_phases():
+    """Independent anchors from published 2026 moon phases (moongiant, lunaf,
+    starwalk and space.com agree: new moon 2026-08-12 17:37 UT, full moon
+    2026-08-28 04:18 UT). The truncated ELP series is accurate to ~0.3-0.4 deg,
+    so at the phases - where cos(elongation) is flat - the illumination anchor
+    is tight, while the age (0.082 d per degree of elongation) tolerates the
+    series error. This pins moon_illumination/moon_age ABSOLUTELY, so the
+    desktop/web parity test cannot pass while both share a wrong phase formula."""
+    jd_new = astro.julian_day(datetime(2026, 8, 12, 17, 37))
+    assert astro.moon_illumination(jd_new) == pytest.approx(0.0, abs=0.002)
+    # the truncated ELP series leaves the elongation ~1.4 deg off at this
+    # instant (0.113 d measured against 0 expected) - age tolerates it
+    assert astro.moon_age(jd_new) == pytest.approx(0.0, abs=0.15)
+    jd_full = astro.julian_day(datetime(2026, 8, 28, 4, 18))
+    assert astro.moon_illumination(jd_full) == pytest.approx(1.0, abs=0.002)
+    # same ~1 deg elongation tolerance as the new-moon anchor (measured 0.07 d)
+    assert astro.moon_age(jd_full) == pytest.approx(astro.SYNODIC_MONTH / 2,
+                                                    abs=0.15)
+
+
+def test_moon_illumination_matches_elongation_from_pinned_positions():
+    """Illumination and age are (1-cos psi)/2 and SYNODIC*psi/2pi with psi the
+    sun-moon elongation - computed here from the ERFA-pinned 2026-08-22 23:00
+    positions (test_moon_position_sanity), so a wrong phase formula or synodic
+    constant cannot hide behind a wrong but shared position series."""
+    jd = astro.julian_day(datetime(2026, 8, 22, 23, 0))
+    ra_s, dec_s = astro.sun_ra_dec(jd)
+    ra_m, dec_m = astro.moon_ra_dec(jd)
+    psi = _sep_deg(ra_s, dec_s, ra_m, dec_m)
+    assert astro.moon_illumination(jd) == pytest.approx(
+        (1 - math.cos(math.radians(psi))) / 2, abs=1e-9)
+    assert astro.moon_age(jd) == pytest.approx(
+        astro.SYNODIC_MONTH * psi / 360.0, abs=1e-9)
+
+
 def test_moon_position_sanity():
     """Moon vs astropy/ERFA reference for 2026-08-22 23:00 UT (truncated ELP
     series are documented to ~0.3-0.4 deg)."""

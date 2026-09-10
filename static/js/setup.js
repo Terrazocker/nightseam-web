@@ -6,6 +6,7 @@ import { S } from "./state.js";
 import { loadNight, scheduleLoadNight } from "./night.js";
 import { updateTimeLabel } from "./header.js";
 import { renderTargets } from "./targets.js";
+import { effectiveMinAlt } from "./derive.js";
 
 export async function openSites() {
   $("#sitesModal").classList.remove("hidden");
@@ -252,7 +253,7 @@ export function applyCfgToUI() {
   S.activeSiteId = S.cfg.active_site_id ?? (S.cfg.sites[0] && S.cfg.sites[0].id);
   if (S.activeSiteId != null) sel.value = String(S.activeSiteId);
 
-  S.minAlt = S.cfg.min_useful_alt ?? 25;
+  S.minAlt = effectiveMinAlt(S.cfg);
   $("#minUsefulAlt").value = S.minAlt;
   $("#muaVal").textContent = S.minAlt + "\u00B0";
   $("#moonAware").checked = !!S.cfg.moon_aware;

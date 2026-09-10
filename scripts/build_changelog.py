@@ -30,6 +30,9 @@ ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "landing" / "changelog.json"
 
 CURATED = {
+    # 0.6.10 is a desktop+web consistency release: the eight confirmed
+    # desktop/web parity differences from the 0.6.9 audit are fixed.
+    "0.6.10": "Consistency release: the desktop app and the web planner now agree everywhere. The night window is identical in both apps at every latitude - including polar twilight, where the web could pick the wrong night - the Dark time card shows the twilight level actually used for scoring, the minimum altitude follows the Bortle class immediately, and \"Best targets tonight\" only lists targets that really clear the sky during the night. Frame coverage and filter advice now read the same in both apps, and the arrow-key time step is 6/60 minutes in both.",
     # 0.6.9 is the first desktop release since the rename: it carries every
     # 0.6.1-0.6.8 web change AND the accuracy/security/consistency work.
     "0.6.9": "Accuracy, safety and consistency release. Object positions were off by up to half a degree (a precession bug, fixed in all sky-calculation engines), importing a setup file can no longer read or write files outside your own archive, and the clear-window times no longer include twilight. The web planner now resolves the same night, moon and filter scores as the desktop in any time zone. This build also brings the desktop app up to date with every web change since 0.6.0.",

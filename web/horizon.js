@@ -452,6 +452,29 @@ export function num(s) {
   return Number.isFinite(v) ? v : NaN;
 }
 
+/** Filter recommendation model - desktop parity (static/js/derive.js
+ *  filterAdvice, pinned by the "advice" engine of tests/js/astro_parity.mjs):
+ *  emission objects (nebula / SNR / planetary) need narrowband - any of Ha or
+ *  OIII - and get a recommendation when none is owned; a broadband-only object
+ *  only warns when the user owns narrowband but no broadband filter. Returns
+ *  { ok, text } (text matches the desktop's badge text) or null.
+ *  `prefs` overrides the stored preferences (used by the parity harness). */
+export function filterAdvice(otype, prefs) {
+  const p = prefs || getPrefs();
+  const hasNB = !!(p.fltHa || p.fltOiii);
+  const hasBB = !!p.fltBb;
+  const t = otype;
+  if (t === "nebula" || t === "supernova_remnant" || t === "planetary") {
+    return hasNB ? { ok: true, text: "narrowband \u2713" }
+                 : { ok: false, text: "narrowband" };
+  }
+  const broadbandOnly = t === "galaxy" || t === "open_cluster"
+    || t === "globular" || t === "star_cloud" || t === "asterism";
+  if (broadbandOnly && !hasBB && hasNB)
+    return { ok: false, text: "broadband \u2717" };
+  return null;
+}
+
 function wireEditor(box, p, onChanged) {
   const cvs = $('#pano-canvas', box);
   const ctx = cvs.getContext('2d');

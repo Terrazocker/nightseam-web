@@ -108,7 +108,48 @@ tests - do not regress them:
 - **Tests never touch the user profile**: `tests/conftest.py` redirects
   `paths.default_archive_dir()` into `logs/` for every test - a test that forgot
   to set `image_dir` used to write into the real `~/Documents/NightSeam Images`.
-- **Current test count: 467** (`python -m pytest tests/ -q`, full access).
+- **Current test count: 490** (`python -m pytest tests/ -q`, full access).
+
+### Desktop/web parity remediation — also pinned (E1–E8)
+
+- **Twilight scan anchoring**: `web/astro.js` `nightInfo`/`sunCrossings` scan
+  from the SITE's local noon + 30 h like `planning.py` — never browser
+  midnight + 48 h. A midnight anchor reported the PREVIOUS night's dusk at
+  twilight-edge latitudes (59.5 N, 2026-06-21 resolved as 2026-06-20T22:35Z).
+  `pickDarkWindow` falls back ONLY to the fixed 20:00 -> 04:00 window in the
+  site's zone; sunset/sunrise are never the window. Tests:
+  `test_web_twilight_choice_rule` (timestamps, not just the level) and
+  `test_web_dark_window_matches_planning_across_levels` (polar day, polar
+  twilight, civil/nautical/astronomical, cross-zone site).
+- **Dark time card**: shows the picked level's window and label
+  (`win.startT/endT/level`), never the astronomical pair alone.
+- **Frame coverage**: OBJECT span / frame (object/field) everywhere; >100%
+  = does not fit ("needs ~N frames"). Web `format.js::framePct`; desktop
+  `frameCoverage` takes the worse of both axes (documented simplification: the
+  web compares the larger axis against `fov_w` only).
+- **`statusOf` mirrors `vis[]`**: `alt >= ceil_top` is Blocked (sky-mode
+  ceiling), not Observable.
+- **Min-alt rule**: explicit `min_useful_alt` wins, else `17 + 2*bortle`.
+  `server.py::_effective_min_alt` is the one server rule (`/api/state` ships
+  `min_useful_alt_explicit`; the detail endpoint used to hardcode 25.0);
+  desktop `derive.js::effectiveMinAlt` re-derives live on a Bortle change, web
+  `horizon.js::effectiveMinAlt` already did.
+- **Best targets tonight** (web): only rows with `visN > 0` (clear at least
+  once in the dark window); ranking unchanged. The web's 6-min scoring loop
+  lives once in `web/nightrank.js::nightStats` (Tonight + catalog % column);
+  the detail modal keeps its own sunset-anchored grid but uses the same
+  visibility predicate (`sampleVisible`).
+- **Filter advice**: one model — narrowband for nebula/SNR/planetary,
+  broadband warning when only NB is owned — desktop `derive.js::filterAdvice`
+  and web `horizon.js::filterAdvice` (pinned identical).
+- **Keyboard scrub**: Arrow = 6 min (one grid sample), Shift = 60 min in BOTH
+  apps (`SCRUB_STEP_MIN` / `SCRUB_SHIFT_STEP_MIN`).
+- **Harness**: new engines `status`, `frame`, `advice`, `minalt`, `shortcut`,
+  `nightstats`; node subprocesses decode UTF-8 explicitly (the Windows cp1252
+  default mangled the check/cross glyphs and made equal-but-wrong strings
+  compare equal); `moonIllumination`/`moonAge`/`julianDay` are now
+  parity-pinned, with absolute anchors from published 2026-08-12/28 phase
+  instants and the ERFA-pinned positions.
 
 ## Context discipline (read before starting work)
 
@@ -502,7 +543,8 @@ over the fuller commands below wherever they differ:
   between target and Moon plus a per-type sensitivity (nebulae/SNR suffer
   most, clusters least) - see `MOON_TYPE_FACTOR` and `sepDeg()` in
   `derive.js`.
-- Keyboard shortcuts: ArrowLeft/Right scrub the night (Shift = 10 min), `n`
+- Keyboard shortcuts: ArrowLeft/Right scrub the night (6 min per step,
+  Shift = 60 min — the same steps as the web), `n`
   cycles the tabs (skipped while typing or with a modal open).
 - Timezones: all server payload times are UTC; the client sends
   `tz_offset_min` computed AT the selected date (`tzOffAt()` in util.js -
@@ -589,9 +631,10 @@ over the fuller commands below wherever they differ:
   `app.js?v=N` and `web/app.js` carries a `?v=` on each import
   (`astro.js`, `horizon.js`, `webstore.js`, `dragwin.js`). Bump the token of
   every module whose BEHAVIOUR changed (comment-only edits do not need it) or
-  returning visitors keep the old file. Current: `app.js?v=29`,
-  `horizon.js?v=13`, `webstore.js?v=5`, `astro.js?v=4`, `dragwin.js?v=1`,
-  `format.js?v=1`, plus `style.css?v=11` / `themes.css?v=2` in `web/index.html`.
+  returning visitors keep the old file. Current: `app.js?v=30`,
+  `horizon.js?v=14`, `webstore.js?v=5`, `astro.js?v=5`, `dragwin.js?v=1`,
+  `format.js?v=2`, `nightrank.js?v=1`, plus `style.css?v=11` /
+  `themes.css?v=2` in `web/index.html`.
   **A token bump is also the cure for a browser that cached a BAD pairing**: an
   `app.js` that calls a module member the cached dependency does not have stays
   broken across plain reloads, because the query string in the import specifier

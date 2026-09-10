@@ -21,8 +21,8 @@ def run_node_harness(script: str):
         pytest.skip("node is not installed - JS behaviour cannot be checked here")
     try:
         proc = subprocess.run([node, str(ROOT / "tests" / "js" / script)],
-                              capture_output=True, text=True, timeout=180,
-                              cwd=str(ROOT))
+                              capture_output=True, text=True, encoding="utf-8",
+                              timeout=180, cwd=str(ROOT))
     except OSError as exc:          # sandboxed environments deny pipe creation
         pytest.skip(f"cannot spawn node here: {exc}")
     assert proc.returncode == 0, (
@@ -44,3 +44,15 @@ def test_desktop_window_contract():
     a real payload: 164/197 objects, worst 690 min for a 590-min night)."""
     out = run_node_harness("derive_window.mjs")
     assert "derive window contract held" in out
+
+
+def test_desktop_preference_and_scrub_handlers():
+    """E5/E8: the real header.js Bortle/min-alt handlers re-derive the Bortle
+    default live and let an explicit value win, and the real main.js keydown
+    handler scrubs by one 6-min sample (Shift = 60 min), clamped. Driven
+    through a stub DOM because headless browsers cannot run in this sandbox;
+    the pure helpers are pinned separately in tests/test_js_parity.py."""
+    out = run_node_harness("dom_handlers.mjs")
+    assert "E5 handler: bortle re-derives min-alt held" in out
+    assert "E5 handler: explicit min-alt survives bortle held" in out
+    assert "E8 handler: 6/60-min steps + clamp held" in out

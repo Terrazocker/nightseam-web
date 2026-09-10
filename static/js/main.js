@@ -4,7 +4,8 @@ import { $, $$, todayLocal, initFocusTrap } from "./util.js";
 import { S } from "./state.js";
 import { api } from "./util.js";
 import { loadNight } from "./night.js";
-import { recomputeNightDerived } from "./derive.js";
+import { recomputeNightDerived, effectiveMinAlt,
+         SCRUB_STEP_MIN, SCRUB_SHIFT_STEP_MIN } from "./derive.js";
 import { bindHeader, renderNightInfo, updateTimeLabel, applySavedTheme } from "./header.js";
 import { bindTonight, renderTonight } from "./tonight.js";
 import { bindFilters, renderTargets, populateConstFilter } from "./targets.js";
@@ -50,7 +51,7 @@ function renderAll() {
 /* ---------------- state loading ---------------- */
 async function loadState() {
   S.cfg = await api("/api/state");
-  S.minAlt = S.cfg.min_useful_alt ?? 25;
+  S.minAlt = effectiveMinAlt(S.cfg);
   S.catalog = await api("/api/catalog" + (S.cfg.adv_mode ? "?adv=1" : ""));
   S.meta = {};
   for (const o of S.catalog) S.meta[o.id] = o;
@@ -132,7 +133,11 @@ async function init() {
         const slider = $("#timeSlider");
         if (!slider) return;
         e.preventDefault();
-        const step = e.shiftKey ? 10 : 1;
+        // fine step = one 6-min grid sample, coarse = Shift (60 min) - the
+        // same steps as the web (pinned by tests/test_js_parity.py)
+        const step = e.shiftKey
+          ? Math.round(SCRUB_SHIFT_STEP_MIN / SCRUB_STEP_MIN)
+          : 1;
         S.tIdx = Math.max(0, Math.min(+slider.max,
           S.tIdx + (e.key === "ArrowRight" ? step : -step)));
         slider.value = S.tIdx;

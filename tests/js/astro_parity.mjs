@@ -16,10 +16,32 @@
  */
 const engine = process.argv[2];
 if (!["desktop", "web", "window", "darkwindow", "pick", "crosszone",
-     "scoring", "ceil", "size"].includes(engine)) {
-  console.error("usage: node astro_parity.mjs <desktop|web|window|darkwindow|pick|crosszone|scoring|ceil|size>");
+     "scoring", "ceil", "size", "status", "frame", "advice", "minalt",
+     "shortcut", "nightstats"].includes(engine)) {
+  console.error("usage: node astro_parity.mjs <engine>");
   process.exit(2);
 }
+
+/* zone helpers shared by the cross-zone and darkwindow engines */
+const tzOffMin = (zone, date) => {
+  if (!zone) return null;
+  try {
+    const parts = new Intl.DateTimeFormat("en-US", {
+      timeZone: zone, timeZoneName: "longOffset", hour12: false,
+    }).formatToParts(date);
+    const p = parts.find((x) => x.type === "timeZoneName");
+    if (!p || !p.value) return null;
+    if (p.value === "GMT" || p.value === "UTC") return 0;
+    const m = p.value.match(/GMT([+-])(\d{1,2}):?(\d{2})?/);
+    if (!m) return null;
+    return (m[1] === "-" ? -1 : 1) * (Number(m[2]) * 60 + Number(m[3] || 0));
+  } catch { return null; }
+};
+const wallToUtc = (date, zone) => {
+  const off = tzOffMin(zone, date);
+  if (off == null) return date;
+  return new Date(date.getTime() - (off + date.getTimezoneOffset()) * 60000);
+};
 
 const mod = engine === "desktop"
   ? await import(new URL("../../static/js/astro.js", import.meta.url).href)
@@ -76,12 +98,15 @@ if (engine === "size") {
     };
   })));
 } else if (engine === "darkwindow") {
-  // real night windows for a site that sits in the harness's own zone
+  // real night windows for a site that sits in the harness's own zone; when a
+  // case carries `tz`, the SITE's zone is used for the noon anchor (localNoon),
+  // so the polar fallback is built in the site's local time like planning.py
   const out = cases.map((c) => {
     const [y, m, d] = c.date.split("-").map(Number);
     const noon = new Date(y, m - 1, d, 12, 0, 0);        // browser-local noon
+    const anchor = c.tz ? wallToUtc(noon, c.tz) : noon;  // site-local noon
     const info = mod.nightInfo(noon, c.lat, c.lon);
-    const w = mod.pickDarkWindow(info, noon);
+    const w = mod.pickDarkWindow(info, noon, anchor);
     return {
       level: w.level,
       dusk: w.dusk ? w.dusk.toISOString() : null,
@@ -95,27 +120,8 @@ if (engine === "size") {
    *
    * Case fields: {date, lat, lon, tz} where tz is the SITE's IANA zone and the
    * PROCESS zone (TZ) is the browser's. Prints the window the web resolves with
-   * the SITE-anchored scan (what app.js now passes via siteNoon()) and, for
+   * the SITE-anchored scan (what app.js passes now via siteNoon()) and, for
    * documentation, the window the old browser-anchored scan produced. */
-  const tzOffMin = (zone, date) => {
-    if (!zone) return null;
-    try {
-      const parts = new Intl.DateTimeFormat("en-US", {
-        timeZone: zone, timeZoneName: "longOffset", hour12: false,
-      }).formatToParts(date);
-      const p = parts.find((x) => x.type === "timeZoneName");
-      if (!p || !p.value) return null;
-      if (p.value === "GMT" || p.value === "UTC") return 0;
-      const m = p.value.match(/GMT([+-])(\d{1,2}):?(\d{2})?/);
-      if (!m) return null;
-      return (m[1] === "-" ? -1 : 1) * (Number(m[2]) * 60 + Number(m[3] || 0));
-    } catch { return null; }
-  };
-  const wallToUtc = (date, zone) => {
-    const off = tzOffMin(zone, date);
-    if (off == null) return date;
-    return new Date(date.getTime() - (off + date.getTimezoneOffset()) * 60000);
-  };
   const span = (w) => (w.dusk && w.dawn)
     ? Math.round((w.dawn - w.dusk) / 3600000 * 10) / 10 : null;
   const out = cases.map((c) => {
@@ -206,6 +212,86 @@ if (engine === "size") {
     return { ceil: r.ceil, ceilTop: r.ceilTop };
   });
   process.stdout.write(JSON.stringify(out));
+} else if (engine === "status") {
+  /* E4: desktop derive.js statusOf must mirror the vis[] visibility predicate
+   * (incl. the sky-mode ceil_top ceiling). Case: {alt, ceil, ceilTop, minAlt}.
+   * ceilTop absent (undefined) means "no upper ceiling" (90.5 sentinel). */
+  const { S } = await import(new URL("../../static/js/state.js", import.meta.url).href);
+  const desk = await import(new URL("../../static/js/derive.js", import.meta.url).href);
+  process.stdout.write(JSON.stringify(cases.map((c) => {
+    S.minAlt = c.minAlt;
+    const o = { alt: [c.alt], ceil: [c.ceil],
+                ceil_top: c.ceilTop == null ? undefined : [c.ceilTop] };
+    return { code: desk.statusOf(o, 0).code };
+  })));
+} else if (engine === "frame") {
+  /* E3: frame coverage - web/format.js framePct (object span / frame width,
+   * arcminutes) vs the desktop's frameCoverage (object/field, worse of both
+   * axes). Case: {side, sizeAm, fovArcmin} or {side:"desktop", sizeAm, fovW,
+   * fovH}. Values above 100 = does not fit in one frame. */
+  const webFmt = await import(new URL("../../web/format.js", import.meta.url).href);
+  const { S } = await import(new URL("../../static/js/state.js", import.meta.url).href);
+  const desk = await import(new URL("../../static/js/derive.js", import.meta.url).href);
+  process.stdout.write(JSON.stringify(cases.map((c) => {
+    if (c.side === "web") return { pct: webFmt.framePct(c.sizeAm, c.fovArcmin) };
+    S.cfg = { rigs: [{ id: "r", fov_w: c.fovW, fov_h: c.fovH }], active_rig_id: "r" };
+    const cov = desk.frameCoverage({ size_am: c.sizeAm });
+    return cov ? { pct: cov.pct, fits: cov.fits, frames: +cov.frames.toFixed(2) }
+               : { pct: null };
+  })));
+} else if (engine === "advice") {
+  /* E7: the filter recommendation model - desktop derive.js filterAdvice vs
+   * web/horizon.js filterAdvice must agree on (ok, text). Case: {otype, bb,
+   * ha, oiii} = filter ownership. */
+  const { S } = await import(new URL("../../static/js/state.js", import.meta.url).href);
+  const desk = await import(new URL("../../static/js/derive.js", import.meta.url).href);
+  const H = await import(new URL("../../web/horizon.js", import.meta.url).href);
+  process.stdout.write(JSON.stringify(cases.map((c) => {
+    S.cfg = { filters: { broadband: !!c.bb, narrowband_ha: !!c.ha,
+                         narrowband_oiii: !!c.oiii } };
+    const d = desk.filterAdvice({ otype: c.otype });
+    const w = H.filterAdvice(c.otype, { fltBb: !!c.bb, fltHa: !!c.ha,
+                                        fltOiii: !!c.oiii });
+    return { desk: d ? { ok: d.cls === "ok", text: d.text } : null,
+             web: w ? { ok: w.ok, text: w.text } : null };
+  })));
+} else if (engine === "minalt") {
+  /* E5: the authoritative min-altitude rule - desktop derive.js
+   * effectiveMinAlt vs web/horizon.js effectiveMinAlt. Case: {bortle,
+   * explicit, value}. */
+  const { S } = await import(new URL("../../static/js/state.js", import.meta.url).href);
+  const desk = await import(new URL("../../static/js/derive.js", import.meta.url).href);
+  const H = await import(new URL("../../web/horizon.js", import.meta.url).href);
+  process.stdout.write(JSON.stringify(cases.map((c) => {
+    S.cfg = { bortle: c.bortle,
+              min_useful_alt: c.explicit ? c.value : null,
+              min_useful_alt_explicit: !!c.explicit };
+    const d = desk.effectiveMinAlt(S.cfg);
+    H.setPrefs({ minAlt: c.explicit ? c.value : null, bortle: c.bortle });
+    return { desk: d, web: H.effectiveMinAlt() };
+  })));
+} else if (engine === "shortcut") {
+  /* E8: keyboard scrub steps - desktop derive.js vs web/astro.js */
+  const desk = await import(new URL("../../static/js/derive.js", import.meta.url).href);
+  const web = await import(new URL("../../web/astro.js", import.meta.url).href);
+  process.stdout.write(JSON.stringify({
+    desk: [desk.SCRUB_STEP_MIN, desk.SCRUB_SHIFT_STEP_MIN],
+    web: [web.SCRUB_STEP_MIN, web.SCRUB_SHIFT_STEP_MIN],
+  }));
+} else if (engine === "nightstats") {
+  /* 11.2: the shared web scoring loop (web/nightrank.js) - absolute values.
+   * Case: {obj:{ra_hours,dec_deg}, jd0, jd1, step, minAlt, lat, lon,
+   *        pano?, ctx?}. */
+  const NS = await import(new URL("../../web/nightrank.js", import.meta.url).href);
+  process.stdout.write(JSON.stringify(cases.map((c) => {
+    const st = NS.nightStats(c.obj, c.jd0, c.jd1, c.step, c.minAlt,
+                             c.pano || null, c.lat, c.lon, c.ctx || {});
+    return { n: st.n, visN: st.visN, blocked: st.blocked,
+             bestRun: st.bestRun, bestStart: st.bestStart,
+             pct: st.pct, blockedPct: st.blockedPct,
+             sClassic: +st.sClassic.toFixed(6), sMoon: +st.sMoon.toFixed(6),
+             maxAlt: +st.maxAlt.toFixed(6) };
+  })));
 } else if (engine === "window") {
   const out = cases.map((c) => {
     const best = mod.longestRunJS(c.flags);
@@ -238,6 +324,10 @@ if (engine === "size") {
       const [mra, mdec] = mod.moonRaDec(c.jd);
       r.moon_ra = mra;
       r.moon_dec = mdec;
+      // 11.1: moon illumination/age + julianDay round-trip parity
+      r.illum = mod.moonIllumination(c.jd);
+      r.age = mod.moonAge(c.jd);
+      r.jd_rt = mod.julianDay(mod.dateFromJD(c.jd));
     } else {
       // the desktop engine takes J2000 coords and precesses once per object at
       // the grid midpoint (derive.js: synthesizeAdvancedTracks) - mirror that

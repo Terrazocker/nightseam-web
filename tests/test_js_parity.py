@@ -59,9 +59,9 @@ def _run_node(engine: str, cases):
         proc = subprocess.run(
             [node, str(HARNESS), engine],
             input=json.dumps(cases), capture_output=True, text=True,
-            timeout=120, cwd=str(ROOT),
+            encoding="utf-8", timeout=120, cwd=str(ROOT),
             # a fixed zone keeps the harness deterministic (the web builds its
-            # scan window from local-midnight getters)
+            # scan window from local-noon getters)
             env={**os.environ, "TZ": "UTC"})
     except OSError as exc:          # sandboxed environments deny pipe creation
         pytest.skip(f"cannot spawn node here: {exc}")
@@ -206,6 +206,32 @@ def test_web_twilight_choice_rule():
     assert polar["level"] == "fallback", polar
     assert polar["dusk"].endswith("T20:00:00.000Z"), polar
     assert polar["dawn"].endswith("T04:00:00.000Z"), polar
+    # E1: even when sunset/sunrise EXIST but no twilight level is reached
+    # (polar-twilight season), the fallback is the FIXED 20:00-04:00 window -
+    # never sunset..sunrise, which is what the web used to return here (a
+    # different "fallback" window than app/planning.py for the same night)
+    twilight = got[3]
+    assert twilight["level"] == "fallback", twilight
+    assert twilight["dusk"].endswith("T20:00:00.000Z"), twilight
+    assert twilight["dawn"].endswith("T04:00:00.000Z"), twilight
+    # E2: the level the planner picks must be the level the "Dark time" card
+    # reports - a civil/nautical night is never shown as an astronomical one
+    assert got[2]["level"] == "civil" and got[2]["dusk"].endswith("T20:00:00.000Z")
+    assert got[1]["level"] == "nautical" and got[1]["dusk"].endswith("T21:00:00.000Z")
+
+
+def test_python_polar_twilight_uses_the_fixed_window():
+    """E1 python side: in the polar-twilight band the sun SETS but never
+    reaches -6 deg (Tromso mid-May: sunset 23:36 local) - planning.py still
+    uses the fixed 20:00-04:00 window, never sunset..sunrise."""
+    from app.planning import night_window
+    win = night_window(2026, 5, 15, 120, 69.65, 18.96)
+    assert win["level"] == "fallback"
+    assert win["sunset"] is not None, "the sun does set - the fallback must win"
+    assert (win["dusk"].hour, win["dusk"].minute) == (18, 0)   # 20:00 at UTC+2
+    assert (win["dawn"].hour, win["dawn"].minute) == (2, 0)    # 04:00 next day
+    assert win["dusk"].day == 15 and win["dawn"].day == 16
+    assert win["dusk"].month == 5
 
 
 def test_python_twilight_choice_rule():
@@ -239,7 +265,8 @@ def test_web_and_python_agree_on_the_real_dark_window(zone, case):
         proc = subprocess.run(
             [node, str(HARNESS), "darkwindow"],
             input=json.dumps([case]), capture_output=True, text=True,
-            timeout=120, cwd=str(ROOT), env={**os.environ, "TZ": zone})
+            encoding="utf-8", timeout=120, cwd=str(ROOT),
+            env={**os.environ, "TZ": zone})
     except OSError as exc:
         pytest.skip(f"cannot spawn node here: {exc}")
     assert proc.returncode == 0, proc.stderr[-1500:]
@@ -399,7 +426,8 @@ def _crosszone(case, browser_zone):
         proc = subprocess.run(
             [node, str(HARNESS), "crosszone"],
             input=json.dumps([case]), capture_output=True, text=True,
-            timeout=120, cwd=str(ROOT), env={**os.environ, "TZ": browser_zone})
+            encoding="utf-8", timeout=120, cwd=str(ROOT),
+            env={**os.environ, "TZ": browser_zone})
     except OSError as exc:
         pytest.skip(f"cannot spawn node here: {exc}")
     assert proc.returncode == 0, proc.stderr[-1500:]
@@ -422,9 +450,12 @@ def test_web_cross_timezone_site_resolves_its_own_night():
         assert abs((got - want).total_seconds()) < 180, (key, got, want)
     assert res["site"]["spanH"] < 20, res["site"]
 
-    # ... and the old browser-anchored scan is demonstrably broken here: it
-    # spans a day and a half, which is what the audit reported
-    assert res["browserAnchored"]["spanH"] > 24, res["browserAnchored"]
+    # ... and the old browser-anchored scan is demonstrably broken here: its
+    # crossings belong to the NEIGHBOURING night (dawn before dusk - the
+    # noon-anchored 30 h scan never spans > 24 h, but a browser noon 12 h off
+    # still resolves the wrong night's pair)
+    assert res["browserAnchored"]["dawn"] < res["browserAnchored"]["dusk"], \
+        res["browserAnchored"]
 
 
 @pytest.mark.parametrize("browser_zone,case", [
@@ -441,9 +472,14 @@ def test_web_cross_timezone_anchoring_is_site_based(browser_zone, case):
     Measured outcome (resolving the reviewers' disagreement about the sign):
     the old browser-anchored scan produced a >24 h "night" for a site EAST of
     the browser AND for a site WEST of it - the direction only changes *how
-    far* the window edge misses, because the 48 h window starts at
+    far* the window edge misses, because the 48 h window started at
     browser-midnight, which in site-local time lands somewhere inside the
-    neighbouring night. Only the site-anchored scan (siteLocalNoon) is stable.
+    neighbouring night. The scan is now anchored at the SITE's local noon
+    (+ 30 h, exactly like planning.py), so the counter-example only survives
+    in the east direction (browser noon ~12 h off the site's -> the
+    neighbouring night's dawn-before-dusk pair); a site WEST of the browser
+    (noon offset < ~2 h) accidentally resolves correctly, which is why the
+    site-anchored anchor is the only stable rule.
     """
     from app.planning import night_window
     res = _crosszone(case, browser_zone)
@@ -457,8 +493,10 @@ def test_web_cross_timezone_anchoring_is_site_based(browser_zone, case):
         assert abs((got - want).total_seconds()) < 180, (case, key, got, want)
     assert res["site"]["spanH"] < 20, (case, res["site"])
     # the superseded browser-anchored behaviour, kept in the harness as the
-    # documented counter-example
-    assert res["browserAnchored"]["spanH"] > 24, (case, res["browserAnchored"])
+    # documented counter-example: still wrong for a site EAST of the browser
+    if "Honolulu" in browser_zone:
+        assert res["browserAnchored"]["dawn"] < res["browserAnchored"]["dusk"], \
+            (case, res["browserAnchored"])
 
 
 # --------------------------------------------------- web sinks stay escaped
@@ -525,3 +563,280 @@ def test_web_size_column_matches_desktop():
     assert len(got) == len(_SIZE_CASES)
     bad = [c for c in got if not c["ok"]]
     assert not bad, bad[:6]
+
+
+# ================================================== E1/E2 remediation pins
+# E1: the polar fallback must be the FIXED 20:00-04:00 window (in the site's
+# zone), never sunset..sunrise - the web used to return the latter whenever the
+# sun still crossed the horizon in the polar-twilight season, producing a
+# different "fallback" window than app/planning.py for the same night.
+# E2: the level the planner picks (astronomical/nautical/civil/fallback) is the
+# window the web "Dark time" card must display - at nautical/civil latitudes
+# the astronomical pair is empty, and the card used to say "no full dark night"
+# while scoring ran on the nautical/civil window.
+
+_POLAR_CASES = [
+    # (date, tz_min_east, lat, lon, browser_zone, site_tz or None, level)
+    ("2026-05-15", 120, 69.65, 18.96, "Europe/Oslo", None, "fallback"),
+    ("2026-07-30", 120, 69.65, 18.96, "Europe/Oslo", None, "fallback"),
+    ("2026-05-25", -480, 64.80, -147.70, "Europe/Oslo", "America/Anchorage",
+     "fallback"),   # polar twilight, site EAST of the browser zone
+    ("2026-06-21", 120, 78.22, 15.63, "Europe/Oslo", None, "fallback"),
+    ("2026-06-21", 120, 59.50, 5.30, "Europe/Oslo", None, "civil"),
+    ("2026-06-21", 120, 52.52, 13.40, "Europe/Oslo", None, "nautical"),
+    ("2026-09-10", 120, 52.52, 13.40, "Europe/Oslo", None, "astronomical"),
+    ("2026-12-21", 660, -33.87, 151.21, "Australia/Sydney", None,
+     "astronomical"),
+]
+
+
+def _darkwindow(case, browser_zone):
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("node is not installed - JS parity cannot be checked here")
+    try:
+        proc = subprocess.run(
+            [node, str(HARNESS), "darkwindow"],
+            input=json.dumps([case]), capture_output=True, text=True,
+            encoding="utf-8", timeout=120, cwd=str(ROOT),
+            env={**os.environ, "TZ": browser_zone})
+    except OSError as exc:
+        pytest.skip(f"cannot spawn node here: {exc}")
+    assert proc.returncode == 0, proc.stderr[-1500:]
+    return json.loads(proc.stdout)["windows"][0]
+
+
+@pytest.mark.parametrize("date,tz,lat,lon,bzone,site_tz,level", _POLAR_CASES)
+def test_web_dark_window_matches_planning_across_levels(
+        date, tz, lat, lon, bzone, site_tz, level):
+    """E1+E2: for polar day, polar twilight, civil/nautical/astronomical nights
+    the web resolves the SAME window and level as app/planning.py. The
+    fallback cases are asserted nearly exactly (both sides construct the fixed
+    20:00-04:00 window); the crossing cases within the usual < 3 min scan
+    tolerance. The window the planner scores on is the window the "Dark time"
+    card must display, so the level is asserted too."""
+    from app.planning import night_window
+    case = {"date": date, "lat": lat, "lon": lon}
+    if site_tz:
+        case["tz"] = site_tz
+    res = _darkwindow(case, bzone)
+    y, m, d = (int(x) for x in date.split("-"))
+    py = night_window(y, m, d, tz, lat, lon)
+
+    assert res["level"] == level == py["level"], (date, res, py)
+    tol = 60 if level == "fallback" else 180
+    for key in ("dusk", "dawn"):
+        got = datetime.fromisoformat(res[key].replace("Z", "+00:00"))
+        want = py[key].replace(tzinfo=timezone.utc)
+        assert abs((got - want).total_seconds()) < tol, \
+            (date, key, got, want, res["level"])
+
+
+# ================================================== E3 frame coverage
+# "Frame coverage" means: how much of the frame the OBJECT spans (object/field,
+# like the desktop tooltip "object spans X% of the frame"). The web used to
+# invert the ratio (field/object, clamped 0-100), so M42 in a Seestar rig read
+# 85% there and 139% on the desktop - same boolean, opposite number meaning.
+
+_FRAME_WEB_CASES = [
+    {"side": "web", "sizeAm": 90, "fovArcmin": 76.8},    # larger than frame
+    {"side": "web", "sizeAm": 30, "fovArcmin": 76.8},    # smaller than frame
+    {"side": "web", "sizeAm": 76.8, "fovArcmin": 76.8},  # exactly equal
+    {"side": "web", "sizeAm": 0, "fovArcmin": 76.8},     # invalid size
+    {"side": "web", "sizeAm": 90, "fovArcmin": 0},       # invalid fov
+]
+_FRAME_DESK_CASES = [
+    {"side": "desktop", "sizeAm": "90x60", "fovW": 76.6, "fovH": 43.0},
+    {"side": "desktop", "sizeAm": "30", "fovW": 76.6, "fovH": 43.0},
+    {"side": "desktop", "sizeAm": "645x550", "fovW": 76.6, "fovH": 43.0},
+    {"side": "desktop", "sizeAm": "76.6x43", "fovW": 76.6, "fovH": 43.0},
+    {"side": "desktop", "sizeAm": "0", "fovW": 76.6, "fovH": 43.0},
+]
+
+
+def test_web_frame_coverage_is_object_over_field():
+    """Absolute values, not just desktop/web equality: object span as % of the
+    frame width, values above 100 = does not fit, null for invalid inputs."""
+    res = _run_node("frame", _FRAME_WEB_CASES)
+    assert [r["pct"] for r in res] == [117, 39, 100, None, None]
+
+
+def test_desktop_frame_coverage_absolute():
+    """Same definition, worse of BOTH axes: max(ow/fw, oh/fh) in arcminutes."""
+    res = _run_node("frame", _FRAME_DESK_CASES)
+    got = [(r["pct"], r["fits"]) for r in res]
+    assert got == [(140, False), (70, True), (1279, False), (100, True),
+                   (0, True)], got
+
+
+# ================================================== E4 statusOf vs vis[]
+def test_desktop_status_of_matches_visibility_predicate():
+    """statusOf must say "Blocked" wherever the vis[] predicate blocks - the
+    sky-mode ceil_top ceiling included. The old statusOf ignored ceil_top, so a
+    balcony/overhang object showed "Observable" in the targets table while the
+    very same sample was counted blocked."""
+    cases = [
+        {"alt": 40, "ceil": -90, "ceilTop": None, "minAlt": 25},   # clear
+        {"alt": 50, "ceil": -90, "ceilTop": 30, "minAlt": 25},     # above ceiling
+        {"alt": 30, "ceil": -90, "ceilTop": 30, "minAlt": 25},     # exactly at
+        {"alt": 30.1, "ceil": -90, "ceilTop": 30, "minAlt": 25},   # just above
+        {"alt": 29.9, "ceil": -90, "ceilTop": 30, "minAlt": 25},   # just below
+        {"alt": 10, "ceil": 15, "ceilTop": None, "minAlt": 25},    # horizon obs
+        {"alt": -5, "ceil": -90, "ceilTop": None, "minAlt": 25},   # below horizon
+        {"alt": 20, "ceil": -90, "ceilTop": None, "minAlt": 25},   # too low
+        {"alt": 25, "ceil": -90, "ceilTop": None, "minAlt": 25},   # at min alt
+    ]
+    codes = [r["code"] for r in _run_node("status", cases)]
+    assert codes == ["vis", "blk", "blk", "blk", "vis",
+                     "blk", "hor", "low", "vis"], codes
+
+
+# ================================================== E5 min-altitude rule
+def test_min_alt_rule_identical_desktop_web():
+    """The authoritative threshold: explicit min_useful_alt wins, else
+    17 + 2*bortle. Desktop derive.js::effectiveMinAlt and web
+    horizon.js::effectiveMinAlt must agree on every state (the desktop used to
+    freeze the boot value, the web re-derived live)."""
+    cases = [
+        {"bortle": 1, "explicit": False}, {"bortle": 4, "explicit": False},
+        {"bortle": 7, "explicit": False}, {"bortle": 9, "explicit": False},
+        {"bortle": 1, "explicit": True, "value": 20},
+        {"bortle": 7, "explicit": True, "value": 30},
+        {"bortle": 7, "explicit": True, "value": 5},   # boundary clamp case
+    ]
+    res = _run_node("minalt", cases)
+    for c, r in zip(cases, res):
+        assert r["desk"] == r["web"], (c, r)
+    assert [r["desk"] for r in res] == [19, 25, 31, 35, 20, 30, 5]
+
+
+# ================================================== E7 filter advice model
+def test_filter_advice_model_identical():
+    """Emission objects need narrowband (Ha OR OIII); a broadband-only object
+    only warns when the user owns narrowband but no broadband. The web used a
+    different type map and only ever showed an ownership badge - the model must
+    agree with the desktop's filterAdvice."""
+    cases = [
+        {"otype": "nebula", "bb": True, "ha": False, "oiii": True},
+        {"otype": "nebula", "bb": False, "ha": False, "oiii": False},
+        {"otype": "planetary", "bb": False, "ha": True, "oiii": False},
+        {"otype": "supernova_remnant", "bb": False, "ha": False, "oiii": False},
+        {"otype": "galaxy", "bb": False, "ha": True, "oiii": False},
+        {"otype": "galaxy", "bb": True, "ha": True, "oiii": False},
+        {"otype": "galaxy", "bb": False, "ha": False, "oiii": False},
+        {"otype": "open_cluster", "bb": True, "ha": False, "oiii": False},
+        {"otype": "star_cloud", "bb": False, "ha": False, "oiii": False},
+        {"otype": "asterism", "bb": False, "ha": False, "oiii": False},
+        {"otype": "unknown", "bb": False, "ha": False, "oiii": False},
+    ]
+    res = _run_node("advice", cases)
+    for c, r in zip(cases, res):
+        assert r["desk"] == r["web"], (c, r)
+    # absolute sanity on the shared model
+    assert res[0]["web"] == {"ok": True, "text": "narrowband \u2713"}
+    assert res[1]["web"] == {"ok": False, "text": "narrowband"}
+    assert res[4]["web"] == {"ok": False, "text": "broadband \u2717"}
+    assert res[5]["web"] is None and res[6]["web"] is None
+
+
+# ================================================== E8 keyboard scrub steps
+def test_scrub_step_constants_identical():
+    """Plain arrow = 6 min (one night-grid sample), Shift = 60 min - the web
+    had 60/10, the desktop 6/60, and the web comment claimed desktop parity."""
+    res = _run_node("shortcut", [{}])
+    assert res["desk"] == [6, 60], res
+    assert res["web"] == [6, 60], res
+
+
+# ================================================== 11.2 shared web scoring loop
+_NIGHTSTATS_CASES = [
+    # circumpolar object: clear every 6-min sample of the 2 h grid
+    {"obj": {"ra_hours": 0, "dec_deg": 89}, "jd0": 2461294.315972222,
+     "jd1": 2461294.3993055554, "step": 6 / 1440, "minAlt": 25,
+     "lat": 52.5, "lon": 13.4},
+    # never rises at this latitude
+    {"obj": {"ra_hours": 0, "dec_deg": -89}, "jd0": 2461294.315972222,
+     "jd1": 2461294.3993055554, "step": 6 / 1440, "minAlt": 25,
+     "lat": 52.5, "lon": 13.4},
+    # rises but never reaches the min altitude: above-horizon samples are
+    # "blocked" but not "visible"
+    {"obj": {"ra_hours": 0, "dec_deg": -30}, "jd0": 2461294.315972222,
+     "jd1": 2461294.3993055554, "step": 6 / 1440, "minAlt": 25,
+     "lat": 52.5, "lon": 13.4},
+    # moon-aware: full moon, broadband base -> every visible sample penalized
+    # by bortleMoonFactor(5) = 0.64 (moon at alt 30 az 180 keeps the separation
+    # inside the 120' threshold for this geometry, so the penalty is exactly
+    # 1 - 0.95*0.64 = 0.392 on every sample)
+    {"obj": {"ra_hours": 0, "dec_deg": 89}, "jd0": 2461294.315972222,
+     "jd1": 2461294.3993055554, "step": 6 / 1440, "minAlt": 25,
+     "lat": 52.5, "lon": 13.4,
+     "ctx": {"moonAware": True, "illum": 1, "moonAgeDays": 14.76,
+             "filterType": "lrgb", "typeF": 1, "bortleF": 0.64,
+             "moonAlt": [30] * 21, "moonAz": [180] * 21}},
+    # a 60 deg obstruction profile blocks the whole circumpolar track
+    {"obj": {"ra_hours": 0, "dec_deg": 89}, "jd0": 2461294.315972222,
+     "jd1": 2461294.3993055554, "step": 6 / 1440, "minAlt": 25,
+     "lat": 52.5, "lon": 13.4,
+     "pano": {"paintMode": "obstacle", "fov": 360, "azOffset": 0,
+              "profile": [60] * 720}},
+]
+
+
+def test_web_night_stats_absolute_values():
+    """The ONE shared scoring loop (web/nightrank.js) behind Tonight, the
+    catalog % column and the detail modal. Absolute values pin the loop; the
+    E6 gate depends on visN - a target never clear during the night has
+    visN == 0 and must not rank in "Best targets tonight"."""
+    res = _run_node("nightstats", _NIGHTSTATS_CASES)
+    c = res[0]
+    assert (c["visN"], c["pct"], c["bestRun"], c["blocked"]) == (21, 100, 21, 0)
+    assert c["bestStart"] == _NIGHTSTATS_CASES[0]["jd0"]
+    never = res[1]
+    assert (never["visN"], never["pct"], never["bestRun"]) == (0, 0, 0)
+    low = res[2]
+    assert (low["visN"], low["blocked"], low["blockedPct"]) == (0, 7, 33)
+    moon = res[3]
+    assert moon["visN"] == 21 and moon["pct"] == 100
+    assert moon["sMoon"] == pytest.approx(0.392 * moon["sClassic"], abs=0.01)
+    assert moon["sClassic"] > 0
+    blocked = res[4]
+    assert (blocked["visN"], blocked["blocked"], blocked["blockedPct"]) == \
+        (0, 21, 100)
+
+
+# ================================================== 11.1 moon illum/age/JD
+def test_web_moon_illumination_age_julian_day_parity_with_python():
+    """moonIllumination/moonAge/julianDay were never parity-pinned (the
+    harness shipped only sun/moon ra/dec). The PYTHON side is now anchored
+    absolutely (tests/test_astro.py: published 2026-08-12/28 phase instants +
+    elongation derived from the ERFA-pinned positions), so this loop proves the
+    web engine matches the reference rather than merely agreeing with a twin."""
+    cases = _cases()
+    got = _run_node("web", cases)
+    for case, res in zip(cases, got):
+        assert res["illum"] == pytest.approx(
+            astro.moon_illumination(case["jd"]), abs=1e-9), case
+        assert res["age"] == pytest.approx(
+            astro.moon_age(case["jd"]), abs=1e-9), case
+        # julianDay(dateFromJD(jd)) round-trips to the same instant
+        assert res["jd_rt"] == pytest.approx(case["jd"], abs=1e-7), case
+
+
+def test_web_detail_visibility_predicate_cannot_drift():
+    """The web detail modal keeps its own sample loop (its 120-sample grid over
+    sunset-1h..sunrise+1h is deliberately different from the 6-min dusk..dawn
+    grid), but its per-sample visibility rule must stay the ONE shared
+    predicate - nightrank.js::sampleVisible(), i.e.
+    alt >= minAlt && alt > ceil && alt < (ceilTop ?? 90.5) - which nightStats
+    (Tonight + catalog) already uses. This is a text-level pin on purpose:
+    a silently edited inline copy (e.g. dropping the ceilTop ceiling) must fail
+    here, while switching the detail loop to call sampleVisible() keeps it
+    green."""
+    app_js = (ROOT / "web" / "app.js").read_text(encoding="utf-8")
+    shared = (ROOT / "web" / "nightrank.js").read_text(encoding="utf-8")
+    inline = "alt >= minAlt && alt > ceil.ceil && alt < (ceil.ceilTop ?? 90.5)"
+    assert inline in app_js or "sampleVisible(" in app_js, \
+        "the detail loop's visibility predicate changed - it must stay " \
+        "identical to nightrank.js::sampleVisible()"
+    assert "alt >= minAlt && alt > ceil && alt < (ceilTop ?? 90.5)" in shared, \
+        "nightrank.js::sampleVisible() changed - re-check the detail loop"

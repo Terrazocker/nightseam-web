@@ -8,11 +8,12 @@
  *   • Settings — sites, rigs, custom targets, backup/restore (webstore.js)
  * All sky math runs client-side (astro.js, Meeus algorithms).
  */
-import * as E from './astro.js?v=4';
-import * as Hor from './horizon.js?v=13';
+import * as E from './astro.js?v=5';
+import * as Hor from './horizon.js?v=14';
 import * as WS from './webstore.js?v=5';
 import { initDragWindows } from './dragwin.js?v=1';
-import { fmtSize, sizeArcmin } from './format.js?v=1';
+import { fmtSize, sizeArcmin, framePct } from './format.js?v=2';
+import { nightStats } from './nightrank.js?v=1';
 
 const TYPE_COLORS = {
   galaxy: '#ffd166',
@@ -137,17 +138,8 @@ function dateKey(d) { return `${d.getFullYear()}-${String(d.getMonth() + 1).padS
 /* visible-% cache shared between Tonight and Catalog (key: date|minAlt|pano|obj) */
 const obsCache = new Map();
 function computeObs(obj, jd0, jd1, step, minAlt, pano, lat, lon) {
-  let visN = 0, blocked = 0;
-  const ra = obj.ra_hours * 15;
-  const n = Math.max(2, Math.round((jd1 - jd0) / step));
-  for (let i = 0; i <= n; i++) {
-    const jd = jd0 + i * step;
-    const [alt, az] = E.altaz(ra, obj.dec_deg, jd, lat, lon);
-    const ceil = pano ? Hor.ceilFor(pano, az) : { ceil: Hor.NO_BLOCK, ceilTop: null };
-    if (alt >= minAlt && alt > ceil.ceil && alt < (ceil.ceilTop ?? 90.5)) visN++;
-    else if (alt > 0) blocked++;
-  }
-  return { pct: Math.round(100 * visN / (n + 1)), blk: Math.round(100 * blocked / (n + 1)) };
+  const st = nightStats(obj, jd0, jd1, step, minAlt, pano, lat, lon);
+  return { pct: st.pct, blk: st.blockedPct };
 }
 /* ONE definition of the night window behind every visibility number, so the
    catalog % column and the Tonight ranking can never disagree with each other
@@ -169,13 +161,15 @@ function nightWindow() {
   const { lat, lon } = S.site;
   const info = E.nightInfo(nightAnchor(), lat, lon, siteNoon(nightAnchor()));
   const d = (S.date && S.date instanceof Date) ? S.date : WS.effToday();
-  // pickDarkWindow applies the polar-day fallback (20:00 -> 04:00) itself, the
-  // same one app/planning.py uses
-  const { dusk, dawn } = E.pickDarkWindow(info, d);
+  // pickDarkWindow applies the polar-day/polar-twilight fallback (fixed
+  // 20:00 -> 04:00 in the SITE's zone) itself, the same one app/planning.py
+  // uses - anchored at the site's local noon so a site in another timezone
+  // gets ITS fallback hours, never the browser's
+  const w = E.pickDarkWindow(info, d, siteNoon(nightAnchor()));
   return {
-    jd0: E.julianDay(dusk), jd1: E.julianDay(dawn),
+    jd0: E.julianDay(w.dusk), jd1: E.julianDay(w.dawn),
     step: NIGHT_STEP_MIN / 1440,
-    startT: dusk, endT: dawn, info,
+    startT: w.dusk, endT: w.dawn, level: w.level, info,
   };
 }
 function obsNightGrid() {
@@ -226,22 +220,21 @@ function activeRig() {
   return RIGS.find((r) => r.id === id) || null;
 }
 
-/** Frame coverage % for an object with the active rig (fov vs object size). */
+/** Frame coverage % for an object with the active rig - object span as a
+ *  percentage of the frame (the desktop's definition, see web/format.js). */
 function rigFramePct(o) {
   const rig = activeRig();
   if (!rig || !(rig.fov_w > 0)) return null;
-  const size = sizeArcmin(o.size_am);
-  if (size == null || size <= 0) return null;
-  return Math.max(0, Math.min(100, Math.round(100 * (rig.fov_w * 60) / size)));
+  return framePct(sizeArcmin(o.size_am), rig.fov_w * 60);
 }
 
-/** Which filter the object wants, if owned. */
-function filterOwned(o) {
-  const p = Hor.getPrefs();
-  const want = { nebula: 'OIII', supernova_remnant: 'Ha', star_cloud: 'L', planetary: 'OIII' }[o.otype];
-  if (!want) return null;
-  const own = want === 'L' ? p.fltBb : want === 'Ha' ? p.fltHa : p.fltOiii;
-  return own ? want : null;
+/** Filter recommendation badge - the same model as the desktop's
+ *  filterAdvice (web/horizon.js): recommends narrowband for emission objects,
+ *  warns about missing broadband, nothing otherwise. */
+function filterAdviceBadge(o) {
+  const a = Hor.filterAdvice(o.otype);
+  if (!a) return '';
+  return `<span class="f-own ${a.ok ? 'ok' : 'warn'}" title="filter recommendation">${esc(a.text)}</span>`;
 }
 
 /* ---- busy indicator (desktop parity) ---- */
@@ -523,7 +516,6 @@ function renderTonight(silent) {
     if (token !== tonightToken || S.view !== 'tonight') return; // superseded / view switched
     const { lat, lon } = S.site;
     const win = nightWindow();
-    const info = win.info;
     // The selected observing time is the source of truth, exactly like the
     // desktop's scrubbed S.tIdx: "visible now" means "visible at the selected
     // time", and the topbar/sky scrub re-renders this view (see the sky:time
@@ -579,45 +571,24 @@ function renderTonight(silent) {
       (o) => o.vmag != null && (!o._adv || o.vmag <= 9));
     const rows = [];
     for (const o of candidates) {
-      let maxAlt = -90, transitJd = jd0, bestRun = 0, bestStart = jd0;
-      let cur = 0, curStart = jd0, visN = 0, blocked = 0;
-      let sClassic = 0, sMoon = 0;
-      const ra = o.ra_hours * 15;
       const tf = tfOf(o);
-      for (let i = 0; i <= n; i++) {
-        const jd = jd0 + i * step;
-        const [alt, az] = E.altaz(ra, o.dec_deg, jd, lat, lon);
-        if (alt > maxAlt) { maxAlt = alt; transitJd = jd; }
-        const ceil = pano ? Hor.ceilFor(pano, az) : { ceil: Hor.NO_BLOCK, ceilTop: null };
-        const vis = alt >= minAlt && alt > ceil.ceil && alt < (ceil.ceilTop ?? 90.5);
-        if (vis) {
-          visN++;
-          let w = Math.sin(Math.max(0, Math.min(90, alt)) * Math.PI / 180);
-          sClassic += w;
-          if (moonAware && moonAlt[i] > 0) {
-            const sep = E.sepDeg(alt, az, moonAlt[i], moonAz[i]);
-            const glow = E.effectiveMoonGlow(illum, sep, filterType, moonAge);
-            w *= E.moonPenalty(glow, tf, bortleF);
-          }
-          sMoon += w;
-          if (cur === 0) curStart = jd;
-          cur++;
-          if (cur > bestRun) { bestRun = cur; bestStart = curStart; }
-        } else {
-          if (alt > 0) blocked++;
-          cur = 0;
-        }
-      }
-      const [altNow, azNow] = E.altaz(ra, o.dec_deg, jdSel, lat, lon);
+      // one shared scoring loop (web/nightrank.js) - also feeds the catalog
+      // % column via computeObs, so the two views can never disagree again
+      const st = nightStats(o, jd0, jd1, step, minAlt, pano, lat, lon, {
+        moonAlt, moonAz, illum, moonAgeDays: moonAge, filterType,
+        moonAware, typeF: tf, bortleF,
+      });
+      const [altNow, azNow] = E.altaz(o.ra_hours * 15, o.dec_deg, jdSel, lat, lon);
       const ceilNow = pano ? Hor.ceilFor(pano, azNow) : { ceil: Hor.NO_BLOCK, ceilTop: null };
       const visNow = altNow >= minAlt && altNow > ceilNow.ceil && altNow < (ceilNow.ceilTop ?? 90.5);
-      const obsPct = Math.round(100 * visN / (n + 1));
-      const blockedPct = Math.round(100 * blocked / (n + 1));
       const pop = popularityFactor(o);
       // popularity is a silent TIEBREAKER (like the desktop): the pure
       // visibility score decides, popularity only separates equal scores
-      const score = Math.round((moonAware ? sMoon : sClassic) * 10) / 100;
-      rows.push({ o, maxAlt, altNow, visNow, score, bestRun, bestStart, transitJd, visN, obsPct, blockedPct, pop });
+      const score = Math.round((moonAware ? st.sMoon : st.sClassic) * 10) / 100;
+      rows.push({ o, maxAlt: st.maxAlt, altNow, visNow, score,
+                  bestRun: st.bestRun, bestStart: st.bestStart,
+                  transitJd: st.transitJd, visN: st.visN,
+                  obsPct: st.pct, blockedPct: st.blockedPct, pop });
     }
     rows.sort((a, b) => (b.score - a.score) || (b.pop - a.pop));
     // share the computed visibility with the catalog column
@@ -625,14 +596,26 @@ function renderTonight(silent) {
       const g = { minAlt, pano, lat, lon, jd0, jd1, step };
       for (const r of rows) obsCache.set(obsKey(g, r.o.id), { pct: r.obsPct, blk: r.blockedPct });
     }
-    const top = rows.slice(0, 16);
+    // "Best targets tonight" = the best-scoring targets that clear the
+    // visibility rules AT LEAST ONCE during this night (visN counts clear
+    // samples inside the dark window). A target below the horizon at the
+    // scrubbed time still ranks if it clears later tonight; one that never
+    // clears all night must not top the list - the desktop's "Best targets"
+    // applies the same night-window criterion (statusOf == vis).
+    const top = rows.filter((r) => r.visN > 0).slice(0, 16);
     const visibleAll = rows.filter((r) => r.visNow);
     const nowVisible = visibleAll.slice().sort((a, b) => b.altNow - a.altNow).slice(0, 8);
     const risingLater = rows.filter((r) => !r.visNow && r.maxAlt > 0)
       .sort((a, b) => a.transitJd - b.transitJd).slice(0, 8);
 
-    const darkStart = info.astroDusk, darkEnd = info.astroDawn;
-    const darkH = darkStart && darkEnd ? Math.round(((darkEnd - darkStart) / 3600000 + (darkEnd < darkStart ? 24 : 0)) * 10) / 10 : null;
+    // The "Dark time" card shows the SAME window the ranking and % visibility
+    // are computed on (win = the picked twilight level) - never a different
+    // twilight pair. At nautical/civil latitudes the astronomical pair is
+    // empty, and the old card said "no full dark night" while scoring ran on
+    // the nautical/civil window (desktop parity: its card uses N.dusk/N.dawn).
+    const darkStart = win.startT, darkEnd = win.endT;
+    const darkH = Math.round(((darkEnd - darkStart) / 3600000 + (darkEnd < darkStart ? 24 : 0)) * 10) / 10;
+    const darkLabel = ({ astronomical: 'astronomical night', nautical: 'nautical night', civil: 'civil night', fallback: 'fixed window (no full darkness)' }[win.level] || 'night');
     const visibleCount = visibleAll.length;   // the real count, not the top-8 list
 
     const pickItem = (r) => {
@@ -641,10 +624,10 @@ function renderTonight(silent) {
       const win = r.bestRun > 0
         ? `clear ${fmtClock(E.dateFromJD(r.bestStart))} – ${fmtClock(E.dateFromJD(r.bestStart + r.bestRun * step))}`
         : 'no clear window';
-      const fOwn = filterOwned(o);
+      const fOwn = filterAdviceBadge(o);
       return `<li data-id="${esc(o.id)}">
         <span class="dot" style="background:${typeColor(o)}"></span>
-        <span><span class="p-name">${esc(o.primary_name)}</span>${tags ? `<span class="p-tags">${esc(tags)}</span>` : ''}${fOwn ? `<span class="f-own" title="filter owned">${esc(fOwn)}</span>` : ''}</span>
+        <span><span class="p-name">${esc(o.primary_name)}</span>${tags ? `<span class="p-tags">${esc(tags)}</span>` : ''}${fOwn}</span>
         <span class="p-right">
           <b>${r.maxAlt.toFixed(0)}°</b>
           <span class="p-vis">${r.visN ? `${r.obsPct}% of night · ${fmtDur(r.visN * step * 1440)} visible` : 'not clear tonight'}</span>${win}</span>
@@ -655,8 +638,8 @@ function renderTonight(silent) {
       <div class="grid3">
         <div class="card">
           <h3>Dark time</h3>
-          <div class="big">${darkH != null ? darkH + ' h' : '—'}</div>
-          <div class="sub">astronomical night<br>${darkStart ? fmtClock(darkStart) + ' – ' + fmtClock(darkEnd) : 'no full dark night'}</div>
+          <div class="big">${darkH} h</div>
+          <div class="sub">${darkLabel}<br>${fmtClock(darkStart)} – ${fmtClock(darkEnd)}</div>
         </div>
         <div class="card">
           <h3>Moon</h3>
@@ -1216,16 +1199,16 @@ function renderCatalog() {
         <tbody>
           ${slice.map((o) => {
             const tags = [o.messier, o.ngcic].filter(Boolean).join(' · ');
-            const fOwn = filterOwned(o);
+            const fOwn = filterAdviceBadge(o);
             const fp = showFrame ? rigFramePct(o) : null;
             return `<tr data-id="${esc(o.id)}">
-              <td><span class="tname">${esc(o.primary_name)}</span> ${tags ? `<span class="tags">${esc(tags)}</span>` : ''}${fOwn ? `<span class="f-own" title="filter owned">${esc(fOwn)}</span>` : ''}</td>
+              <td><span class="tname">${esc(o.primary_name)}</span> ${tags ? `<span class="tags">${esc(tags)}</span>` : ''}${fOwn}</td>
               <td class="num">${o.vmag != null ? o.vmag.toFixed(1) : '—'}</td>
               <td class="num pct" data-objid="${escAttr(o.id)}">${cachedPctText(o.id)}</td>
               <td><span class="tag-dot" style="color:${typeColor(o)}">●</span> ${esc(TYPE_LABELS[o.otype] || o.otype || "")}</td>
               <td>${esc(o.constellation)}</td>
               <td class="num">${esc(fmtSizeU(o.size_am))}</td>
-              ${showFrame ? `<td class="frame">${fp == null ? '—' : fp >= 100 ? '<span class="fit">fits</span>' : fp + '%'}</td>` : ''}
+              ${showFrame ? `<td class="frame">${fp == null ? '—' : fp <= 100 ? '<span class="fit">fits</span>' : `<span title="too large for one frame: needs ~${(fp / 100).toFixed(1)} frames">${fp}%</span>`}</td>` : ''}
               <td class="num">${E.formatRA(o.ra_hours)}</td>
               <td class="num">${E.formatDec(o.dec_deg)}</td>
             </tr>`;
@@ -1452,7 +1435,7 @@ function openDetail(id) {
   // context, and counting that wider span made the modal's "% of night" and
   // "best window" disagree with the table (and with the desktop, which clips to
   // dusk..dawn for exactly the same reason).
-  const darkWin = E.pickDarkWindow(info, nightAnchor());
+  const darkWin = E.pickDarkWindow(info, nightAnchor(), siteNoon(nightAnchor()));
   const jdDusk = E.julianDay(darkWin.dusk), jdDawn = E.julianDay(darkWin.dawn);
   const inNight = samples.map((s) => s.t >= jdDusk && s.t <= jdDawn);
 
@@ -2509,9 +2492,11 @@ async function boot() {
       location.hash = '#' + next;
       return;
     }
-    // arrows scrub the night on every view (desktop parity), not only on Sky View
+    // arrows scrub the night on every view (desktop parity - same steps:
+    // plain = one 6-min fine step, Shift = the 60-min coarse step; pinned by
+    // the "shortcut" engine of tests/js/astro_parity.mjs)
     if (ev.key === 'ArrowLeft' || ev.key === 'ArrowRight') {
-      const mins = ev.shiftKey ? 10 : 60;
+      const mins = ev.shiftKey ? E.SCRUB_SHIFT_STEP_MIN : E.SCRUB_STEP_MIN;
       S.skyTime = new Date(S.skyTime.getTime() + (ev.key === 'ArrowRight' ? mins : -mins) * 60000);
       window.dispatchEvent(new CustomEvent('sky:time'));
       if (S.view === 'sky') draw();
