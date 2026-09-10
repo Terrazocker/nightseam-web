@@ -1,6 +1,6 @@
 /*
- * AstroPilot Web — astronomy engine.
- * Faithful JS port of AstroPilot's pure-Python engine
+ * NightSeam Web — astronomy engine.
+ * Faithful JS port of NightSeam's pure-Python engine
  * (app/astro.py + planning.py + nightcalc.py concepts).
  * Algorithms: Meeus, "Astronomical Algorithms" (2nd ed.):
  *  solar coords ch.25 (~0.01 deg), lunar ch.47 truncated (~0.3 deg),

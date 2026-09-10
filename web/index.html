@@ -3,12 +3,12 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>AstroPilot Web — night-planning in your browser</title>
-<meta name="description" content="AstroPilot Web: tonight's best deep-sky targets, live polar sky map and per-object altitude charts — computed entirely in your browser. Catalog: Messier + OpenNGC (12,116 objects).">
+<title>NightSeam Web — night-planning in your browser</title>
+<meta name="description" content="NightSeam Web: tonight's best deep-sky targets, live polar sky map and per-object altitude charts — computed entirely in your browser. Catalog: Messier + OpenNGC (12,116 objects).">
 <script>
 /* apply the saved theme before first paint (synchronous, no server).
    Glass is the default look; "Classic" is the older flat blue look. */
-(function(){try{var t=localStorage.getItem('apweb_theme')||'dome';document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
+(function(){try{var t=localStorage.getItem('nightseam_theme')||'dome';document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 </script>
 <link rel="icon" type="image/png" href="app.png">
 <link rel="stylesheet" href="style.css?v=7">
@@ -16,13 +16,13 @@
 </head>
 <body>
 
-<noscript><p style="margin:10px 22px;padding:10px 14px;border:1px solid var(--line);border-radius:10px;color:var(--muted);font-size:13px">AstroPilot Web needs JavaScript — all planning math runs in your browser.</p></noscript>
+<noscript><p style="margin:10px 22px;padding:10px 14px;border:1px solid var(--line);border-radius:10px;color:var(--muted);font-size:13px">NightSeam Web needs JavaScript — all planning math runs in your browser.</p></noscript>
 
 <header class="topbar">
-  <div class="brand" title="AstroPilot Web" role="button" tabindex="0">
-    <img class="brand-ico" src="app.png" alt="AstroPilot" width="34" height="34">
+  <div class="brand" title="NightSeam Web" role="button" tabindex="0">
+    <img class="brand-ico" src="app.png" alt="NightSeam" width="34" height="34">
     <div>
-      <h1>AstroPilot <em>Web</em></h1>
+      <h1>NightSeam <em>Web</em></h1>
       <p class="tagline">night-planning, computed in your browser</p>
     </div>
   </div>
@@ -180,7 +180,7 @@
         </div>
         <div class="menu-section">
           <h4>About</h4>
-          <p class="hint">AstroPilot <span id="aboutVersion" class="mono">…</span> &mdash; deep-sky night planning.<br>
+          <p class="hint">NightSeam <span id="aboutVersion" class="mono">…</span> &mdash; deep-sky night planning.<br>
           MIT licensed. Catalog: <a href="https://github.com/mattiaverga/OpenNGC" target="_blank" rel="noopener">OpenNGC</a> (CC BY-SA 4.0). Images: <a href="https://commons.wikimedia.org/" target="_blank" rel="noopener">Wikimedia Commons</a>. Weather: <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a>.<br>
           Runs 100% client-side &mdash; your data stays in this browser.</p>
         </div>
@@ -206,12 +206,12 @@
 </main>
 
 <footer class="foot">
-  <p>AstroPilot Web — browser port of AstroPilot. Catalog: Messier + OpenNGC (12,116 objects) · <a href="https://github.com/mattiaverga/OpenNGC" target="_blank" rel="noopener" style="color:var(--muted)">OpenNGC</a> <a href="https://creativecommons.org/licenses/by-sa/4.0/" target="_blank" rel="noopener" style="color:var(--muted)">CC BY-SA 4.0</a> · images: <a href="https://commons.wikimedia.org/" target="_blank" rel="noopener" style="color:var(--muted)">Wikimedia Commons</a> · weather: <a href="https://open-meteo.com" target="_blank" rel="noopener" style="color:var(--muted)">Open-Meteo</a>. Runs 100% client-side — no server involved. <span class="foot-ver" id="foot-ver">…</span></p>
+  <p>NightSeam Web — browser port of NightSeam. Catalog: Messier + OpenNGC (12,116 objects) · <a href="https://github.com/mattiaverga/OpenNGC" target="_blank" rel="noopener" style="color:var(--muted)">OpenNGC</a> <a href="https://creativecommons.org/licenses/by-sa/4.0/" target="_blank" rel="noopener" style="color:var(--muted)">CC BY-SA 4.0</a> · images: <a href="https://commons.wikimedia.org/" target="_blank" rel="noopener" style="color:var(--muted)">Wikimedia Commons</a> · weather: <a href="https://open-meteo.com" target="_blank" rel="noopener" style="color:var(--muted)">Open-Meteo</a>. Runs 100% client-side — no server involved. <span class="foot-ver" id="foot-ver">…</span></p>
 </footer>
 
 <div class="modal-wrap" id="modal" hidden></div>
 <div class="tooltip" id="tooltip" hidden></div>
 
-<script type="module" src="app.js?v=21"></script>
+<script type="module" src="app.js?v=22"></script>
 </body>
 </html>

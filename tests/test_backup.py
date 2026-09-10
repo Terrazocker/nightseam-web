@@ -17,7 +17,7 @@ from app.database import Database
 
 @pytest.fixture()
 def db(tmp_path, monkeypatch):
-    d = Database(tmp_path / "astropilot.db")
+    d = Database(tmp_path / "nightseam.db")
     d.set_setting("image_dir", str(tmp_path / "archive"))
     monkeypatch.setattr("app.backup.data_dir", lambda: tmp_path / "data")
     return d
@@ -136,10 +136,10 @@ def test_import_traversal_paths_are_dropped(db, tmp_path):
     """A crafted zip with ../ file entries must not escape the pano dir."""
     pdir = tmp_path / "data" / "panos"
     pdir.mkdir(parents=True)
-    setup = {"app": "AstroPilot", "sites": [], "rigs": [], "panoramas": [
+    setup = {"app": "NightSeam", "sites": [], "rigs": [], "panoramas": [
         {"id": "pX", "name": "evil", "file": "../escape.jpg"}],
         "customs": [], "images": []}
-    blob = _zip_with("AstroPilot", setup, files={"panos/../escape.jpg": b"x"})
+    blob = _zip_with("NightSeam", setup, files={"panos/../escape.jpg": b"x"})
     summary = apply_import_zip(db, blob)
     assert summary["pano_images"] == 0
     assert not (tmp_path / "escape.jpg").exists()

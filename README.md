@@ -1,10 +1,10 @@
-# AstroPilot
+# NightSeam
 
 A one-click desktop app for planning deep-sky astrophotography sessions around
 obstacles in your backyard (trees, houses, ...) - plus a full image-catalog
 mode that organizes your captured FITS frames.
 
-AstroPilot runs as a small local web server and opens its UI in your default
+NightSeam runs as a small local web server and opens its UI in your default
 browser (or a native window). It ships with **no external runtime
 dependencies** on the target machine and works fully offline except for
 optional object example images (fetched from Wikipedia and cached locally).
@@ -12,8 +12,8 @@ optional object example images (fetched from Wikipedia and cached locally).
 There is also a **web version** — the same night-planning core, running 100%
 in your browser with no server:
 
-- **Web app:** <https://pitop.net/astro/>
-- **Landing page / downloads:** <https://pitop.net/>
+- **Web app:** <https://nightseam.de/astro/>
+- **Landing page / downloads:** <https://nightseam.de/>
 
 ## License
 
@@ -41,7 +41,7 @@ Two modes, switched with the top-right button:
   atmospheric refraction and precession.
 - **Panorama horizon masking** - import a 360-degree panorama photo taken from
   your telescope spot, calibrate it (azimuth rotation + elevation range) and
-  simply paint over everything that blocks the sky. AstroPilot converts your
+  simply paint over everything that blocks the sky. NightSeam converts your
   painting into an obstruction-height profile per azimuth degree; a sky-paint
   mode can also mask the area *above* a visible band.
 - **Altitude graphs** - per object: altitude over the course of the night with
@@ -88,8 +88,8 @@ Two modes, switched with the top-right button:
 
 ### Packaged executable
 
-1. Download the latest release from <https://pitop.net/download.html>.
-2. Double-click `AstroPilot.exe`.
+1. Download the latest release from <https://nightseam.de/download.html>.
+2. Double-click `NightSeam.exe`.
 3. Your browser (or the app window) opens `http://127.0.0.1:<port>`
    automatically.
 4. First start: the wizard asks for your observing location (gear icon ->
@@ -100,7 +100,7 @@ Two modes, switched with the top-right button:
    import your light frames.
 
 The app checks once per start whether a newer version is available on
-pitop.net and shows a toast if so; nothing is transmitted beyond the version
+nightseam.de and shows a toast if so; nothing is transmitted beyond the version
 request itself.
 
 All user data lives next to the exe in `data\` (SQLite DB + panorama images +
@@ -118,7 +118,7 @@ without requests (`--idle-exit-hours 0` disables that).
     powershell -ExecutionPolicy Bypass -File build.ps1
 
 Creates an isolated `.venv-build`, installs dependencies and produces
-`dist\AstroPilot.exe`.
+`dist\NightSeam.exe`.
 
 ## Taking a usable panorama
 
@@ -144,7 +144,7 @@ choose "More info" -> "Run anyway".
 
 ### Command line switches
 
-    AstroPilot.exe                native app window (default)
+    NightSeam.exe                native app window (default)
     --browser                     open in a regular browser tab instead
     --no-browser                  headless, no UI
     --port N                      fixed port (default 8407)

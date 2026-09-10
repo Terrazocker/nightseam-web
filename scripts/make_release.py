@@ -1,6 +1,6 @@
 """Build the public release package for the desktop app.
 
-Run AFTER build.ps1 (which produced dist\\AstroPilot.exe with the baked
+Run AFTER build.ps1 (which produced dist\\NightSeam.exe with the baked
 version), from the repo root:
 
     python scripts/make_release.py
@@ -8,13 +8,13 @@ version), from the repo root:
 Stages a CLEAN package (exe + LICENSE + NOTICE — never the
 developer's own dist\\data) into dist/release/ and writes:
 
-  dist/release/AstroPilot-<version>.zip     the distributable
+  dist/release/NightSeam-<version>.zip     the distributable
   dist/release/version.json                  version + url + sha256
-  dist/release/ap-version.js                 JSONP "window.__AP_RELEASE=..."
+  dist/release/ns-version.js                 JSONP "window.__NS_RELEASE=..."
 
 The website serves release/ content under /downloads/; the landing page
 reads version.json (same origin) and the desktop app's update checker loads
-ap-version.js (script tag — CORS-free).
+ns-version.js (script tag — CORS-free).
 """
 import hashlib
 import json
@@ -26,9 +26,10 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 DIST = ROOT / "dist"
-EXE = DIST / "AstroPilot.exe"
+EXE = DIST / "NightSeam.exe"
 STAGE = DIST / "release"
-ZIP_NAME_PREFIX = "AstroPilot-"
+ZIP_NAME_PREFIX = "NightSeam-"
+RELEASE_JS = "ns-version.js"
 
 DOCS = ["LICENSE", "NOTICE"]
 
@@ -53,7 +54,7 @@ def main():
     STAGE.mkdir(parents=True)
 
     # copy the executable + docs
-    shutil.copy2(EXE, STAGE / "AstroPilot.exe")
+    shutil.copy2(EXE, STAGE / "NightSeam.exe")
     for doc in DOCS:
         src = ROOT / doc
         if src.is_file():
@@ -70,7 +71,7 @@ def main():
 
     # stable name for the landing page's no-JS fallback link (the versioned zip
     # alone cannot be linked from static HTML)
-    shutil.copy2(zip_path, STAGE / "AstroPilot-latest.zip")
+    shutil.copy2(zip_path, STAGE / "NightSeam-latest.zip")
 
     sha = hashlib.sha256(zip_path.read_bytes()).hexdigest()
     size = zip_path.stat().st_size
@@ -80,9 +81,9 @@ def main():
         json.dumps({"version": version, "url": url, "sha256": sha,
                     "size": size}, indent=2) + "\n", encoding="utf-8")
 
-    (STAGE / "ap-version.js").write_text(
-        "window.__AP_RELEASE=" + json.dumps({"version": version, "url": url}) +
-        ";\n", encoding="utf-8")
+    payload = json.dumps({"version": version, "url": url})
+    (STAGE / RELEASE_JS).write_text(
+        f"window.__NS_RELEASE={payload};\n", encoding="utf-8")
 
     print(f"release: {zip_path} ({size/1e6:.1f} MB)")
     print(f"version: {version}")

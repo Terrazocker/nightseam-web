@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>AstroPilot — DSO Planner</title>
+<title>NightSeam — DSO Planner</title>
 <link rel="icon" href="/favicon.ico">
 <script>
 /* apply the saved theme before first paint (local sync fetch, ~1 ms).
@@ -24,7 +24,7 @@ if(x.status===200){var t=JSON.parse(x.responseText).theme;if(t)document.document
       <path d="M12 2.81 L13.59 9.85 L20.63 11.44 L13.59 13.03 L12 20.06 L10.41 13.03 L3.38 11.44 L10.41 9.85 Z" fill="#ffd166" stroke="#d6a03c" stroke-width="0.5" stroke-linejoin="round"/>
       <path d="M18.38 4.12 L18.93 6.38 L21.19 6.94 L18.93 7.49 L18.38 9.75 L17.82 7.49 L15.56 6.94 L17.82 6.38 Z" fill="#e9eefa"/>
     </svg>
-    <span>Astro<em>Pilot</em></span>
+    <span>Night<em>Seam</em></span>
   </div>
 
   <div id="plannerControls" class="controls">
@@ -204,9 +204,9 @@ if(x.status===200){var t=JSON.parse(x.responseText).theme;if(t)document.document
         </div>
         <div class="menu-section">
           <h4>About</h4>
-          <p class="hint">AstroPilot <span id="aboutVersion" class="mono"></span> &mdash; deep-sky night planning.<br>
+          <p class="hint">NightSeam <span id="aboutVersion" class="mono"></span> &mdash; deep-sky night planning.<br>
           MIT licensed. Catalog: <a href="https://github.com/mattiaverga/OpenNGC" target="_blank" rel="noopener">OpenNGC</a> (CC BY-SA 4.0). Images: <a href="https://commons.wikimedia.org/" target="_blank" rel="noopener">Wikimedia Commons</a>. Weather: <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a>.<br>
-          <a href="https://pitop.net/" target="_blank" rel="noopener">pitop.net</a> &mdash; website &amp; web version</p>
+          <a href="https://nightseam.de/" target="_blank" rel="noopener">nightseam.de</a> &mdash; website &amp; web version</p>
         </div>
       </div>
     </div>
@@ -600,7 +600,7 @@ if(x.status===200){var t=JSON.parse(x.responseText).theme;if(t)document.document
     <div id="mtab-backup" class="mtabpane hidden">
       <p class="hint">Exports locations, rigs, panorama masks and all preferences.
       Importing replaces the current setup (the catalog itself stays untouched).
-      A rolling database backup is kept as data\astropilot.db.backup.</p>
+      A rolling database backup is kept as data\nightseam.db.backup.</p>
       <div class="rowbtns">
         <a id="btnExport" class="btnlink" href="/api/export" download>Export setup (.zip)</a>
         <button id="btnImport">Import setup...</button>
@@ -649,7 +649,7 @@ if(x.status===200){var t=JSON.parse(x.responseText).theme;if(t)document.document
 <!-- ============ first-run wizard ============ -->
 <div id="wizardModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="wizTitle">
   <div class="modal-box">
-    <header><h2 id="wizTitle">Welcome to AstroPilot</h2></header>
+    <header><h2 id="wizTitle">Welcome to NightSeam</h2></header>
     <div id="wizBody"></div>
     <p id="wizErr" class="hint" style="color:var(--warn);margin:8px 0 0"></p>
     <div class="rowbtns" style="margin-top:14px">

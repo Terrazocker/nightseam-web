@@ -21,14 +21,17 @@ _TZ = 120
 
 @pytest.fixture()
 def db(tmp_path):
-    return Database(tmp_path / "astropilot.db")
+    return Database(tmp_path / "nightseam.db")
 
 
 @pytest.fixture()
 def client(db, tmp_path, monkeypatch):
     # pano uploads/replaces write to data_dir()/"panos" - point that at the tmp
-    # dir so a test run can never drop files into the repo's real data/ folder
-    monkeypatch.setattr("app.server.data_dir", lambda: tmp_path / "data")
+    # dir so a test run can never drop files into the repo's real data/ folder.
+    # The real data_dir() creates the panos sub-folder, so mirror that here.
+    data = tmp_path / "data"
+    (data / "panos").mkdir(parents=True)
+    monkeypatch.setattr("app.server.data_dir", lambda: data)
     with TestClient(create_app(db, prefetch=False)) as c:
         c.post("/api/settings", json={"image_dir": str(tmp_path / "archive")})
         yield c

@@ -58,7 +58,7 @@ def _read_member(zf: zipfile.ZipFile, name: str,
 def _export_zip_to(db: Database, target) -> int:
     """Write the setup ZIP to any writable file object; returns byte count."""
     setup = {
-        "app": "AstroPilot",
+        "app": "NightSeam",
         "version": APP_VERSION,
         "exported_at": datetime.now(UTC).isoformat(),
         "settings": db.all_settings(),
@@ -122,9 +122,9 @@ def apply_import_zip(db: Database, blob: bytes | Path) -> dict:
         setup = json.loads(_read_member(zf, "setup.json", 64 << 20)
                            .decode("utf-8"))
     except Exception as exc:  # noqa: BLE001
-        raise ValueError(f"Not a valid AstroPilot export: {exc}") from None
-    if setup.get("app") != "AstroPilot":
-        raise ValueError("This zip is not an AstroPilot setup export")
+        raise ValueError(f"Not a valid NightSeam export: {exc}") from None
+    if setup.get("app") != "NightSeam":
+        raise ValueError("This zip is not a NightSeam setup export")
 
     safety_path = db.path.with_suffix(".backup-auto.zip")
     safety = _write_safety_copy(db, safety_path)

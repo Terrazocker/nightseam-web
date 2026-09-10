@@ -1,5 +1,5 @@
 /*
- * AstroPilot Web — Horizon / panorama obstruction profiles.
+ * NightSeam Web — Horizon / panorama obstruction profiles.
  * Port of the original panorama feature (Plesk web port):
  *  • Photo (or blank sky) uploaded in-browser, never leaves the machine
  *  • Calibrate: azimuth at left edge, elevation at bottom/top, horizontal FOV
@@ -11,7 +11,7 @@
  *    unpainted columns in sky mode block fully (90), outside FOV follows mode
  *  • Persisted per browser in localStorage (per visiting site)
  */
-const LS_KEY = 'apweb_panos_v1';
+const LS_KEY = 'nightseam_panos_v1';
 export const NO_BLOCK = -90;
 export const BINS = 720;
 export const MASK_W = 720;
@@ -21,7 +21,7 @@ export const MASK_H = 360; // 0.25 deg per row of altitude
    The full-resolution photo is memory-only (it can exceed localStorage
    quota), but a downscaled JPEG copy is kept in IndexedDB so the painted
    horizon doesn't vanish after a reload — the user never has to re-upload. */
-const PANOIMG_DB = 'apweb-panoimg';
+const PANOIMG_DB = 'nightseam-panoimg';
 const PANOIMG_MAX_W = 1400;   // downscale width cap
 const PANOIMG_QUALITY = 0.78;
 
@@ -438,12 +438,12 @@ export function effectiveMinAlt() { return prefs.minAlt != null ? prefs.minAlt :
 export function setPrefs(patch) { prefs = { ...prefs, ...patch }; savePrefs(); }
 function loadPrefs() {
   try {
-    const raw = localStorage.getItem('apweb_prefs_v1');
+    const raw = localStorage.getItem('nightseam_prefs_v1');
     if (raw) return { bortle: 4, minAlt: null, moonAware: true, ...JSON.parse(raw) };
   } catch { /* ignore */ }
   return { bortle: 4, minAlt: null, moonAware: true };
 }
-function savePrefs() { try { localStorage.setItem('apweb_prefs_v1', JSON.stringify(prefs)); } catch { /* ignore */ } }
+function savePrefs() { try { localStorage.setItem('nightseam_prefs_v1', JSON.stringify(prefs)); } catch { /* ignore */ } }
 
 /** parse decimal accepting comma (German locale), like num() in the original. */
 export function num(s) {

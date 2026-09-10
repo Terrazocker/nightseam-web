@@ -1,10 +1,10 @@
 # AGENTS.md
 
-> **Repository status — CANONICAL.** This is the living AstroPilot project:
+> **Repository status — CANONICAL.** This is the living NightSeam project:
 > all commits, tags, web releases and deploys happen here.
 > `<archive>\Object-Astro` is a DEPRECATED archive (frozen at v0.4.1) —
 > treat it as read-only and never commit, tag or deploy there. The web
-> sub-version (`web/`, AstroPilot Web v0.5.0) is fully integrated in this
+> sub-version (`web/`, NightSeam Web v0.5.0) is fully integrated in this
 > repo with the same history and tags (`v0.4.2`, `v0.5.0`).
 
 > **Design — READ `DESIGN.md` before any UI work.** Glass (`dome`) is the
@@ -13,7 +13,7 @@
 > dome blocks in `web/` and `static/` are the reference implementation).
 > "Classic" is a flat fallback, not a second language.
 
-AstroPilot: a desktop DSO-planning app that runs a local FastAPI server and
+NightSeam: a desktop DSO-planning app that runs a local FastAPI server and
 serves a vanilla-JS UI. Pure-Python astronomy (Meeus algorithms) - no
 numpy/astropy, no JS build step, no npm. Works fully offline except optional
 Wikipedia example images. Two modes: Night Planner and Image Catalog (FITS
@@ -50,9 +50,9 @@ over the fuller commands below wherever they differ:
   Also `--browser` (tab instead of app window) and `--idle-exit-hours 0` (never exit on idle - the default is
   12 h, which kills a server an agent left running). Data is created under
   `data/` (gitignored) in the repo root. Port-8407 traps:
-  - A stale `dist\AstroPilot.exe` (frozen OLD code) can silently hold the
+  - A stale `dist\NightSeam.exe` (frozen OLD code) can silently hold the
     port; `python main.py` then hands off to it via `data/instance.json`
-    instead of starting. Before probing: kill AstroPilot.exe/python/chrome,
+    instead of starting. Before probing: kill NightSeam.exe/python/chrome,
     delete `data/instance.json`, then verify the listener's process NAME is
     python.exe (`Get-NetTCPConnection -LocalPort 8407` -> OwningProcess ->
     `Get-CimInstance Win32_Process`), not the exe. The handoff now also
@@ -62,7 +62,7 @@ over the fuller commands below wherever they differ:
     when both sockets set SO_REUSEADDR.
   - If 8407 is briefly taken at boot, `free_port()` silently picks a RANDOM
     port (written to instance.json) - the app runs, just not on 8407.
-- Tests: `python -m pytest tests/` - 135 tests, run in ~28 s (pure-function
+- Tests: `python -m pytest tests/` - 141 tests, run in ~32 s (pure-function
   tests are fast; `tests/test_api.py` spins up real `create_app()` instances
   via fastapi TestClient/httpx). Single test:
   `python -m pytest tests/test_astro.py -k name`. API tests use
@@ -73,7 +73,18 @@ over the fuller commands below wherever they differ:
   pytest uses for the basetemp) creates an owner-SID-only DACL that the
   sandbox's restricted token cannot re-read, so every tmp_path test errors
   with PermissionError - an environment artifact, NOT a code failure. Run
-  the suite with full access / in a normal shell: 135/135 pass (~28 s).
+  the suite with full access / in a normal shell: 141/141 pass (~32 s).
+  Careful with the `client` fixture: it must leave `data/panos` in place
+  under the tmp dir it patches in, because the pano upload route writes
+  there without mkdir'ing (the real `data_dir()` creates it). Without that
+  the three pano API tests only pass while a recycled `.pytest-tmp` happens
+  to still hold the folder.
+- Sandbox gotcha (cost me three attempts): a command whose stdout is piped
+  into another PowerShell command dies with "Zugriff verweigert" (named-pipe
+  EPERM), so `python -m pytest ... | Select-Object` never runs. Run the tool
+  bare, or have a small python wrapper write the log to a FILE **inside the
+  repo** (the platform temp dir is not writable for spawned processes) and
+  read that instead.
 - PowerShell quirk: heredocs / inline `python -c` with quotes break - write
   probe scripts to files (`C:\Users\<user>\AppData\Local\Temp\opencode\`) and
   run them.
@@ -100,11 +111,11 @@ over the fuller commands below wherever they differ:
   Also `python C:\Users\<user>\AppData\Local\Temp\opencode\check_esm.py`
   checks the ES-module graph (same job as check_js_imports, keep in sync).
 - Build exe: `powershell -ExecutionPolicy Bypass -File build.ps1` ->
-  `dist\AstroPilot.exe` (isolated `.venv-build`; kills running AstroPilot
+  `dist\NightSeam.exe` (isolated `.venv-build`; kills running NightSeam
   processes first). PyInstaller is only needed for building. The build bakes
   the current `git describe` version into a gitignored `app/_version_baked.py`
   and bundles `app/data` (the advanced catalog CSV) via `--add-data`. The
-  committed `AstroPilot.spec` is a PyInstaller artifact, not the source of
+  committed `NightSeam.spec` is a PyInstaller artifact, not the source of
   truth - build.ps1 drives everything via CLI flags. The bake uses
   `git describe --tags --always --dirty` and warns when the tree is dirty or
   HEAD is not exactly a tag, so a build from uncommitted work is labelled
@@ -117,7 +128,7 @@ over the fuller commands below wherever they differ:
   `app/_version_baked.py` from `git describe --tags --always --dirty` (e.g.
   `Set-Content app\_version_baked.py "BAKED_VERSION = '<ver>'"`) then
   `.\.venv-build\Scripts\python.exe -m PyInstaller --clean --noconfirm
-  --onefile --noconsole --name AstroPilot --icon assets\app.ico
+  --onefile --noconsole --name NightSeam --icon assets\app.ico
   --add-data "static;static" --add-data "app\data;app\data"
   --collect-all uvicorn --collect-all webview
   --hidden-import python_multipart main.py`. A direct PyInstaller run takes
@@ -128,7 +139,7 @@ over the fuller commands below wherever they differ:
 - `app/version.py` - from source the version is `git describe --tags --always`
   (leading `v` stripped); frozen exes use the baked value. Displayed in the
   bottom-right corner.
-- Commits are named `AstroPilot X.Y.Z` and tagged `vX.Y.Z` (e.g. `AstroPilot
+- Commits are named `NightSeam X.Y.Z` and tagged `vX.Y.Z` (e.g. `NightSeam
   0.1.7` / `v0.1.7`). Tag BEFORE rebuilding if you want the exe to show it.
 
 ## Architecture
@@ -295,7 +306,7 @@ over the fuller commands below wherever they differ:
   and the images library (rows + files, restored into the configured image
   dir); the import confirm dialog reflects that. Every import first writes a
   best-effort safety copy of the CURRENT setup to `<db>.backup-auto.zip`
-  next to the database (`data/astropilot.backup-auto.zip` in prod) - an
+  next to the database (`data/nightseam.backup-auto.zip` in prod) - an
   interrupted restore never destroys the pre-import data; the summary
   reports it as `auto_backup`. Uploads stream to disk in 1 MB chunks
   (`_drain_upload` in server.py: pano upload/replace write straight to the
@@ -376,21 +387,21 @@ over the fuller commands below wherever they differ:
 
 ## Web sub-version (web/)
 
-- `web/` is AstroPilot Web, a static in-browser planner: same Meeus engine
+- `web/` is NightSeam Web, a static in-browser planner: same Meeus engine
   (JS mirror `web/astro.js`), same catalog, and Tier-1 user data (sites,
   rigs, custom targets) mirrored from the SQLite tables into IndexedDB via
   `web/webstore.js`. It shares THIS repo's version line: commits
-  `AstroPilot X.Y.Z` and tags `vX.Y.Z` cover both the desktop app and the
+  `NightSeam X.Y.Z` and tags `vX.Y.Z` cover both the desktop app and the
   web. (The session journal/observations were removed from the web too.)
 - The web catalog is ALWAYS derived: `python web/build_web.py catalog` reads
-  `data/astropilot.db` (`objects` + `advanced_objects`, insertion order) and
+  `data/nightseam.db` (`objects` + `advanced_objects`, insertion order) and
   rewrites `web/catalog.json` — byte-identical to the committed file,
   verified by SHA. Never hand-edit catalog.json.
 - Release flow for the web: commit + tag, THEN
   `python web/build_web.py version` (writes gitignored `web/version.json`
   from `git describe`, same idea as `_version_baked.py` for the exe), THEN
   deploy. The web footer reads version.json; without it it shows "dev build".
-- Deploy (Plesk FTPS, pitop.net): the app is served ONLY at `/astro`
+- Deploy (Plesk FTPS, nightseam.de): the app is served ONLY at `/astro`
   (`web/ftps_deploy.py uploadtree web /astro`); the site root `/` is a
   landing page from `landing/` (index.html + style.css + app.png,
   `web/ftps_deploy.py uploadtree landing /`). Keep `/` free of app files —
@@ -411,9 +422,9 @@ over the fuller commands below wherever they differ:
   per file) and verify with `download` or `list`.
 - Public release artifacts live under `/downloads/` on the site
   (`dist/release/` content — see `scripts/make_release.py`): the desktop
-  zip, `AstroPilot-latest.zip` (stable name for the download page's no-JS
+  zip, `NightSeam-latest.zip` (stable name for the download page's no-JS
   fallback link), `version.json` (read by the landing page) and
-  `ap-version.js` (JSONP — read by the desktop app's startup update
+  `ns-version.js` (JSONP — read by the desktop app's startup update
   checker, since a localhost origin cannot fetch cross-origin JSON). Never
   upload the developer's `dist\data` — `make_release.py` stages a clean
   package. The release flow also runs `python scripts/build_changelog.py`
@@ -425,3 +436,37 @@ over the fuller commands below wherever they differ:
 - Custom targets keep the `u_*` id rule.
   Visibility scoring/keyboard shortcuts/timezone handling match the desktop
   semantics (per-site IANA timezone, DST-aware via Intl).
+
+## Renamed from AstroPilot (v0.5.12 -> NightSeam, site pitop.net -> nightseam.de)
+
+The project, the exe, the web app and the website were renamed. Git history,
+tags and past release zips keep the old name — history is NOT rewritten, so
+`v0.5.12` and earlier are AstroPilot releases; the first NightSeam release is
+the one tagged after this rename (commits from here on are `NightSeam X.Y.Z`).
+
+- Shipped names: exe/zip `NightSeam.exe` / `NightSeam-<version>.zip` /
+  `NightSeam-latest.zip`, spec `NightSeam.spec`, JSONP `ns-version.js`
+  (`window.__NS_RELEASE`), log `data/nightseam.log`, downloads
+  `nightseam-setup-*.zip` and `nightseam-library.csv|json`, default archive
+  folder `NightSeam Images`.
+- nightseam.de is a fresh origin on the SAME Plesk webspace
+  (<server-ip>), and pitop.net no longer serves the site at all (it
+  answers with the Plesk login page), so **nothing is kept for the old name —
+  there is no compatibility shim anywhere**: the web app's browser storage
+  keys were renamed (`nightseam-db-v1`, `nightseam_prefs_v1`,
+  `nightseam_site_v1`, `nightseam_theme`, `nightseam-panoimg`,
+  `nightseam-images`), the old-domain update chain is gone (`ap-version.js`
+  and `window.__AP_RELEASE` no longer exist, only `ns-version.js`),
+  `ASTROPILOT_ALLOW_HOST` is gone, and neither the database file nor the
+  export/backup ids are migrated or accepted in their old spelling.
+- Consequences of having no shims (deliberate, do not "fix" them):
+  - An install updated in place starts on a FRESH database - to keep old
+    data, rename `data/astropilot.db` to `data/nightseam.db` by hand
+    (a pre-rename exe pointed at the same folder would then start empty).
+  - Setup zips and web backup JSONs written before the rename are rejected
+    with a clear "not a NightSeam ..." error; re-export with the new build.
+  - Installs <= 0.5.12 cannot see updates (their update URL points at
+    pitop.net, which is dead).
+- NOT renamed (outside this repo / not worth breaking): the working
+  directory `<workspace>\AstroPilot-local`, the dev mirror `<workspace>\Astro-Web` and
+  the deploy path `/astro` — documentation must reference the real paths.

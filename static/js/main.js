@@ -56,7 +56,7 @@ async function loadState() {
   for (const o of S.catalog) S.meta[o.id] = o;
   S.panos = await api("/api/panoramas");
   const vt = $("#versionTag");
-  if (vt) vt.textContent = "AstroPilot v" + (S.cfg.version || "1.0.0");
+  if (vt) vt.textContent = "NightSeam v" + (S.cfg.version || "1.0.0");
   const av = $("#aboutVersion");
   if (av) av.textContent = "v" + (S.cfg.version || "1.0.0");
 

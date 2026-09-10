@@ -1,6 +1,6 @@
-# AstroPilot — audit and fix report
+# NightSeam — audit and fix report
 
-Baseline when the audit started: `master` @ `b992fad` (AstroPilot 0.5.11), 135 tests.
+Baseline when the audit started: `master` @ `b992fad` (NightSeam 0.5.11), 135 tests.
 This file started as the audit findings; it now records the fix status of every item.
 
 **All changes are in the working tree, uncommitted.** Nothing has been deployed — the
@@ -160,7 +160,7 @@ leaves an empty one behind).
 **G14. FIXED** — `build_adv_catalog.py` defaults to `data/NGC.csv` with a download hint, and
 `adv_popularity_data.py` names the generator that actually exists.
 **G15. FIXED.** The placeholders are gone: the imprint now names **TerraZa** with
-`terraza@proton.me` and states that AstroPilot is a free, non-commercial open-source project
+`terraza@proton.me` and states that NightSeam is a free, non-commercial open-source project
 (address/telephone intentionally omitted by the operator). `ftps_deploy.py` still refuses to
 publish any page containing template placeholders unless `--force` is passed.
 **G16. FIXED** — `remove` refuses the webspace root and requires `--yes`.
@@ -168,8 +168,8 @@ publish any page containing template placeholders unless `--force` is passed.
 can no longer write into the repo's `data/panos/`.
 **G18. FIXED** — popularity lookup normalises keys on both sides, so the live the popularity source
 values now match Messier objects ("M 42" ↔ "M42").
-**G19. FIXED** — `make_release.py` stages `AstroPilot-latest.zip` and the download page's
-no-JS fallback links to it (previously a bare `AstroPilot.exe` whose upload is undocumented).
+**G19. FIXED** — `make_release.py` stages `NightSeam-latest.zip` and the download page's
+no-JS fallback links to it (previously a bare `NightSeam.exe` whose upload is undocumented).
 
 ## Documentation
 
@@ -178,7 +178,7 @@ wall clock (`datetime.fromtimestamp`), with the corrected example.
 **H2. FIXED** — `web/astro.js`'s stale comments ("4-min steps over 48 h", `dayStart` as local
 midnight) corrected.
 AGENTS.md also documents the changed workflows: `--no-browser` handoff, `remove --yes`, the
-placeholder guard, the `AstroPilot-latest.zip` artifact and the changelog step.
+placeholder guard, the `NightSeam-latest.zip` artifact and the changelog step.
 
 ## Verified in a real browser (headless Chrome over CDP)
 
@@ -206,7 +206,7 @@ fetch), E10 (pointer-drag clamping) and E12 (needs a failing PUT).
 
 ## What is left for you
 
-1. **Commit/tag and redeploy** when you are happy: everything is uncommitted, and pitop.net
+1. **Commit/tag and redeploy** when you are happy: everything is uncommitted, and nightseam.de
    still serves the old landing pages, changelog and web bundle.
 2. The 56 `tmp_path` test errors remain an environment artifact; run
    `python -m pytest tests/` in a normal shell for the full 138-test pass (3 regression tests

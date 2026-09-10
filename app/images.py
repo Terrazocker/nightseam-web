@@ -24,7 +24,7 @@ import urllib.request
 from .paths import data_dir
 
 CACHE_DIR = data_dir() / "imgcache"
-UA = {"User-Agent": "AstroPilot/1.0 (amateur astronomy planner)"}
+UA = {"User-Agent": "NightSeam/1.0 (amateur astronomy planner)"}
 NEG_TTL = 24 * 3600          # negative cache: 1 day
 NEG_VERSION = 2              # bump to invalidate failure markers from older logic
 CACHE_VERSION = 2            # bump to invalidate stored IMAGES (e.g. wrongly

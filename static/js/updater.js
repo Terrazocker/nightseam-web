@@ -7,8 +7,8 @@
 import { S } from "./state.js";
 import { toast } from "./util.js";
 
-const REMOTE = "https://pitop.net/downloads/ap-version.js";
-const SITE = "https://pitop.net/#download";
+const REMOTE = "https://nightseam.de/downloads/ns-version.js";
+const SITE = "https://nightseam.de/#download";
 
 function cmpVersion(a, b) {
   const pa = String(a || "").split(".").map(n => parseInt(n, 10) || 0);
@@ -22,8 +22,8 @@ function cmpVersion(a, b) {
 export function checkForUpdates() {
   // give the UI a moment to settle first; never block startup
   setTimeout(() => {
-    if (typeof window.__AP_RELEASE !== "undefined") {
-      window.__AP_RELEASE = undefined; // stale from a previous check
+    if (typeof window.__NS_RELEASE !== "undefined") {
+      window.__NS_RELEASE = undefined; // stale from a previous check
     }
     try {
       const script = document.createElement("script");
@@ -32,12 +32,12 @@ export function checkForUpdates() {
       const finish = () => {
         if (done) return;
         done = true;
-        const rel = window.__AP_RELEASE;
+        const rel = window.__NS_RELEASE;
         if (!rel || !rel.version) return;
         const local = (S.cfg && S.cfg.version) || "0";
         if (cmpVersion(rel.version, local) > 0) {
           const box = toast(
-            `Update available: AstroPilot v${rel.version} — click for the download page.`,
+            `Update available: NightSeam v${rel.version} — click for the download page.`,
             "info", 20000);
           box.style.cursor = "pointer";
           box.addEventListener("click", () => {

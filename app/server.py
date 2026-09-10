@@ -178,7 +178,7 @@ def start_image_prefetch(db: Database) -> None:
     def worker():
         from . import images
         from .images import fetch_image
-        log = logging.getLogger("astropilot")
+        log = logging.getLogger("nightseam")
         time.sleep(5)                      # let the UI settle first
         objs = db.all_objects()
         done = 0
@@ -219,7 +219,7 @@ def start_image_prefetch(db: Database) -> None:
 # ------------------------------------------------------------------ factory
 
 def create_app(db: Database, *, prefetch: bool = True) -> FastAPI:
-    app = FastAPI(title="AstroPilot", version=APP_VERSION, docs_url=None,
+    app = FastAPI(title="NightSeam", version=APP_VERSION, docs_url=None,
                   redoc_url=None, openapi_url=None)
 
     # DNS-rebinding guard: the local API must only ever answer requests whose
@@ -227,10 +227,10 @@ def create_app(db: Database, *, prefetch: bool = True) -> FastAPI:
     # otherwise rebind a domain to 127.0.0.1 and have the visitor's browser
     # issue requests against the local server - and with no CORS enabled the
     # responses stay unreadable, which makes this the one real vector.
-    # Explicitly binding --host to something else + ASTROPILOT_ALLOW_HOST
+    # Explicitly binding --host to something else + NIGHTSEAM_ALLOW_HOST
     # extends the allowed set for power users.
     _ALLOWED_HOSTS = {"127.0.0.1", "localhost", "::1", "testserver"}
-    _extra_host = os.environ.get("ASTROPILOT_ALLOW_HOST", "").strip().lower()
+    _extra_host = os.environ.get("NIGHTSEAM_ALLOW_HOST", "").strip().lower()
     if _extra_host:
         _ALLOWED_HOSTS.add(_extra_host)
 
@@ -587,7 +587,7 @@ def create_app(db: Database, *, prefetch: bool = True) -> FastAPI:
             raise HTTPException(500, f"Export failed: {exc}") from None
         return FileResponse(
             spool, media_type="application/zip",
-            filename=f"astropilot-setup-{stamp}.zip",
+            filename=f"nightseam-setup-{stamp}.zip",
             background=BackgroundTask(spool.unlink, missing_ok=True))
 
     @app.post("/api/import")
@@ -786,7 +786,7 @@ def create_app(db: Database, *, prefetch: bool = True) -> FastAPI:
                 content=buf.getvalue().encode("utf-8-sig"),
                 media_type="text/csv",
                 headers={"Content-Disposition":
-                         'attachment; filename="astropilot-library.csv"'})
+                         'attachment; filename="nightseam-library.csv"'})
         if format == "json":
             objs = imglib.group_library(imgs, db.all_objects(advanced=True))
             return Response(
@@ -799,7 +799,7 @@ def create_app(db: Database, *, prefetch: bool = True) -> FastAPI:
                 }, indent=1).encode("utf-8"),
                 media_type="application/json",
                 headers={"Content-Disposition":
-                         'attachment; filename="astropilot-library.json"'})
+                         'attachment; filename="nightseam-library.json"'})
         raise HTTPException(400, "format must be csv or json")
 
     @app.get("/api/images/{img_id}/preview")

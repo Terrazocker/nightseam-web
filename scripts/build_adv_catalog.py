@@ -1,7 +1,7 @@
 """Generate app/data/openned.csv from the OpenNGC database (one-time dev task).
 
 Source: https://github.com/mattiaverga/OpenNGC (CC BY-SA 4.0) - the complete
-NGC/IC deep-sky catalog. Converts OpenNGC rows to AstroPilot's catalog schema
+NGC/IC deep-sky catalog. Converts OpenNGC rows to NightSeam's catalog schema
 and skips entries that duplicate the curated 197-object catalog.
 
 Run: python scripts/build_adv_catalog.py [path/to/NGC.csv]
@@ -105,7 +105,7 @@ def main():
     rows = build_rows()
     OUT.parent.mkdir(parents=True, exist_ok=True)
     with open(OUT, "w", encoding="utf-8", newline="") as f:
-        f.write("# AstroPilot advanced catalog - derived from OpenNGC "
+        f.write("# NightSeam advanced catalog - derived from OpenNGC "
                 "(https://github.com/mattiaverga/OpenNGC, CC BY-SA 4.0)\n")
         f.write("# Columns: id;primary_name;messier;ngcic;other;otype;"
                 "ra_hours;dec_deg;vmag;size_am;constellation;distance;"

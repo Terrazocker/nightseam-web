@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""AstroPilot Web build helpers — run from the AstroPilot repo root.
+"""NightSeam Web build helpers — run from the NightSeam repo root.
 
   python web/build_web.py version [--db PATH]   # write web/version.json (git describe)
   python web/build_web.py catalog [--db PATH]   # regenerate web/catalog.json from the DB
 
-The web app is a sub-version of AstroPilot: catalog.json is ALWAYS derived
-from data/astropilot.db (objects + advanced_objects), and version.json is
+The web app is a sub-version of NightSeam: catalog.json is ALWAYS derived
+from data/nightseam.db (objects + advanced_objects), and version.json is
 stamped from `git describe` right before a deploy (tag BEFORE running
 version, exactly like the desktop build bakes _version_baked.py).
 
@@ -18,9 +18,9 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent   # AstroPilot repo root
+ROOT = Path(__file__).resolve().parent.parent   # NightSeam repo root
 WEB = ROOT / "web"
-DEFAULT_DB = ROOT / "data" / "astropilot.db"
+DEFAULT_DB = ROOT / "data" / "nightseam.db"
 
 COLS = [
     "id", "primary_name", "messier", "ngcic", "other", "otype",
@@ -63,14 +63,14 @@ def cmd_version(db_path):
     WEB.mkdir(exist_ok=True)
     (WEB / "version.json").write_text(
         json.dumps(data, indent=2) + "\n", encoding="utf-8")
-    print(f"{WEB / 'version.json'}: AstroPilot Web {version} ({desc})")
+    print(f"{WEB / 'version.json'}: NightSeam Web {version} ({desc})")
 
 
 def cmd_catalog(db_path, out=None):
     if not Path(db_path).is_file():
         raise SystemExit(
             f"no database at {db_path}\n"
-            f"  data/astropilot.db is created and seeded on the app's first "
+            f"  data/nightseam.db is created and seeded on the app's first "
             f"start - run `python main.py` once, or pass --db PATH")
     con = sqlite3.connect(str(db_path))
     con.row_factory = sqlite3.Row

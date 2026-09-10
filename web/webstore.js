@@ -1,15 +1,16 @@
 /*
- * AstroPilot Web — storage & settings module.
- * Browser-side mirror of the local AstroPilot SQLite user tables:
+ * NightSeam Web — storage & settings module.
+ * Browser-side mirror of the local NightSeam SQLite user tables:
  *   sites   — {id, name, lat, lon, elev, tz}            (local: sites table)
  *   rigs    — {id, name, focal_mm, sensor_w, sensor_h, fov_w, fov_h}  (rigs)
  *   targets — custom objects, id "u_*"                   (custom_objects)
  * Plus: per-site timezone helpers (DST-aware, Intl), backup/restore of all
  * user data as JSON, and the version stamp (version.json, git describe).
- * IndexedDB database: "apweb-db-v1".
+ * IndexedDB database: "nightseam-db-v1". Renaming the storage keys was free:
+ * the app moved to nightseam.de, so every visitor starts on a fresh origin.
  */
 
-const DB_NAME = 'apweb-db-v1';
+const DB_NAME = 'nightseam-db-v1';
 const DB_VER = 1;
 const STORES = ['targets', 'sites', 'rigs', 'meta'];
 let _db = null;
@@ -234,7 +235,7 @@ export async function collectBackup(prefs, panos) {
     all('sites'), all('rigs'), all('targets'),
   ]);
   return {
-    app: 'astropilot-web',
+    app: 'nightseam-web',
     exportedAt: new Date().toISOString(),
     prefs: prefs || {},
     panos: panos || { panos: [], activeId: null },
@@ -247,7 +248,9 @@ export async function collectBackup(prefs, panos) {
 /** Write a previously exported backup into storage.
  *  Returns { prefs, panos } for the caller to apply to localStorage. */
 export async function restoreBackup(data) {
-  if (!data || data.app !== 'astropilot-web') throw new Error('not an AstroPilot Web backup');
+  if (!data || data.app !== 'nightseam-web') {
+    throw new Error('not a NightSeam Web backup');
+  }
   await Promise.all(STORES.filter((s) => s !== 'meta').map((s) => clearStore(s)));
   const jobs = [];
   for (const s of (data.sites || [])) { if (s && s.id) jobs.push(set('sites', s.id, s)); }

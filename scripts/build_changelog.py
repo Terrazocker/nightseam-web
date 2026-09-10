@@ -16,6 +16,7 @@ ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "landing" / "changelog.json"
 
 CURATED = {
+    "0.6.0": "AstroPilot is now NightSeam: new name, and the website has moved to nightseam.de. Planning and the image library work exactly as before. If you replace an older installation in place, rename data/astropilot.db to data/nightseam.db to keep your sites and captures.",
     "0.5.12": "Reliability release: a failed backup import can no longer wipe your data, planning now resolves the correct night at every location (timezone fix), safer panorama handling, and many small fixes in both apps.",
     "0.5.11": "Targets are ranked with community popularity as a silent tiebreaker, and moon-aware scoring now accounts for the Moon's phase, your filters and your sky brightness (Bortle class).",
     "0.5.10": "The web setup wizard is centred correctly, more controls carry proper accessibility labels, and the library and panorama handling got small fixes.",

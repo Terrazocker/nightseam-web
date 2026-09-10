@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Minimal FTPS deploy helper for the Plesk webspace (<server-ip> / pitop.net).
+"""Minimal FTPS deploy helper for the Plesk webspace (nightseam.de).
 
 Reads credentials from ftp.env (same directory by default; override with
 `--env <path>` — the file itself is never committed), uses explicit FTPS

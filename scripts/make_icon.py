@@ -1,4 +1,4 @@
-"""Generate the AstroPilot application icon (assets/app.ico) and web favicon."""
+"""Generate the NightSeam application icon (assets/app.ico) and web favicon."""
 
 import math
 import random

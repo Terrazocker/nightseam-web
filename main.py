@@ -1,4 +1,4 @@
-"""AstroPilot entry point.
+"""NightSeam entry point.
 
 Starts the local web server and opens the UI in the default browser.
 """
@@ -24,7 +24,7 @@ from app.version import app_version
 
 def setup_logging(console: bool):
     from logging.handlers import RotatingFileHandler
-    handlers = [RotatingFileHandler(paths.logs_dir() / "astropilot.log",
+    handlers = [RotatingFileHandler(paths.logs_dir() / "nightseam.log",
                                     maxBytes=1_000_000, backupCount=2,
                                     encoding="utf-8")]
     if console and sys.stdout is not None:
@@ -32,7 +32,7 @@ def setup_logging(console: bool):
     logging.basicConfig(level=logging.INFO,
                         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
                         handlers=handlers)
-    return logging.getLogger("astropilot")
+    return logging.getLogger("nightseam")
 
 
 def ensure_stdio():
@@ -51,7 +51,7 @@ def _instance_file() -> Path:
 
 
 def existing_instance_url() -> str | None:
-    """URL of a live AstroPilot instance (recorded in data/instance.json),
+    """URL of a live NightSeam instance (recorded in data/instance.json),
     or None. Stale entries are removed."""
     f = _instance_file()
     try:
@@ -149,14 +149,14 @@ class JsApi:
 def run_native_window(url: str) -> bool:
     """Open a real desktop window via pywebview (Edge WebView2).
     Blocks until the window is closed. Returns False if unavailable."""
-    log = logging.getLogger("astropilot")
+    log = logging.getLogger("nightseam")
     try:
         import webview  # pywebview
     except Exception as exc:  # noqa: BLE001
         log.info("pywebview not available (%s) - using browser fallback", exc)
         return False
     try:
-        webview.create_window("AstroPilot", url, width=1440, height=920,
+        webview.create_window("NightSeam", url, width=1440, height=920,
                               min_size=(1000, 640), background_color="#0b0e14",
                               js_api=JsApi())
         webview.start()          # blocks until the window is closed
@@ -189,7 +189,7 @@ def launch_app_window(url: str) -> bool:
                 subprocess.Popen([exe, f"--app={url}", "--window-size=1440,920"],
                                  stdout=subprocess.DEVNULL,
                                  stderr=subprocess.DEVNULL)
-                logging.getLogger("astropilot").info("opened app window via %s",
+                logging.getLogger("nightseam").info("opened app window via %s",
                                                      os.path.basename(exe))
                 return True
             except OSError:
@@ -198,9 +198,9 @@ def launch_app_window(url: str) -> bool:
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="AstroPilot - DSO planning tool")
+    ap = argparse.ArgumentParser(description="NightSeam - DSO planning tool")
     ap.add_argument("--version", action="version",
-                    version=f"AstroPilot {app_version()}")
+                    version=f"NightSeam {app_version()}")
     ap.add_argument("--port", type=int, default=8407)
     ap.add_argument("--host", default="127.0.0.1")
     ap.add_argument("--browser", action="store_true",
@@ -221,7 +221,7 @@ def main() -> int:
     # truncate an in-flight ingest and tear the rolling .backup copy
     old_url = existing_instance_url()
     if old_url:
-        log.info("AstroPilot already running at %s - handing off.", old_url)
+        log.info("NightSeam already running at %s - handing off.", old_url)
         if args.no_browser:
             return 0                     # headless launch: nothing to open
         if args.browser:
@@ -232,7 +232,7 @@ def main() -> int:
                     webbrowser.open(old_url)
         return 0
 
-    db = Database(paths.data_dir() / "astropilot.db")
+    db = Database(paths.data_dir() / "nightseam.db")
     app = create_app(db)
 
     port = free_port(args.port, args.host)
@@ -259,7 +259,7 @@ def main() -> int:
         log.error("Server failed to start on %s", url)
         return 1
 
-    log.info("AstroPilot running at %s", url)
+    log.info("NightSeam running at %s", url)
     write_instance_file(port)
 
     idle_secs = args.idle_exit_hours * 3600.0
@@ -291,11 +291,11 @@ def wait_for_exit(server, idle_secs: float) -> None:
         while server.should_exit is False:
             time.sleep(1.0)
             if _shutdown_requested():
-                logging.getLogger("astropilot").info(
+                logging.getLogger("nightseam").info(
                     "Shutdown requested via /api/shutdown.")
                 break
             if idle_secs > 0 and time.time() - _last_request_ts() > idle_secs:
-                logging.getLogger("astropilot").info("Idle timeout reached.")
+                logging.getLogger("nightseam").info("Idle timeout reached.")
                 break
     except KeyboardInterrupt:
         pass

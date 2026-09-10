@@ -1,5 +1,5 @@
 /*
- * AstroPilot Web — draggable popups for the Glass (dome) theme.
+ * NightSeam Web — draggable popups for the Glass (dome) theme.
  * Port of the desktop app's dragwin.js: in the Glass theme the detail /
  * settings modal and the menu sheet become movable windows.
  *

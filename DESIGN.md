@@ -1,4 +1,4 @@
-# AstroPilot Design Guide — the Glass language
+# NightSeam Design Guide — the Glass language
 
 **Read this before implementing ANY UI change.** The Glass theme (`dome`) is
 the project's design direction and its default look in the web app. New UI

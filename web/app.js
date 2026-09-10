@@ -1,6 +1,6 @@
 /*
- * AstroPilot Web — static in-browser night-planning app.
- * Port of AstroPilot (<archive>\Object-Astro) core features:
+ * NightSeam Web — static in-browser night-planning app.
+ * Port of NightSeam (<archive>\Object-Astro) core features:
  *   • Tonight  — dark time, moon phase, ranked best targets
  *   • Sky map  — live polar all-dome chart with sun/moon/all catalog objects
  *   • Catalog  — search/sort across 12,116 objects (Messier + OpenNGC)
@@ -9,8 +9,8 @@
  * All sky math runs client-side (astro.js, Meeus algorithms).
  */
 import * as E from './astro.js?v=4';
-import * as Hor from './horizon.js?v=11';
-import * as WS from './webstore.js?v=1';
+import * as Hor from './horizon.js?v=12';
+import * as WS from './webstore.js?v=2';
 import { initDragWindows } from './dragwin.js?v=1';
 
 const TYPE_COLORS = {
@@ -36,7 +36,7 @@ let _catQDeb = null;
 /* ------------------------------ state ------------------------------ */
 
 /** Legacy single-site key — migrated into the sites store on first run. */
-const LS_KEY = 'apweb_site_v1';
+const LS_KEY = 'nightseam_site_v1';
 function legacySite() {
   try {
     const raw = localStorage.getItem(LS_KEY);
@@ -244,7 +244,7 @@ function busy(on, text) {
 }
 
 /* ---- theme (desktop parity) ---- */
-const THEME_KEY = 'apweb_theme';
+const THEME_KEY = 'nightseam_theme';
 /** Commit a theme choice (user action): apply attribute + persist.
  *  Glass ('dome') is the default look; 'classic' is the flat blue one.
  *  The key is always persisted (its ABSENCE means "use the default =
@@ -374,7 +374,7 @@ function wxRenderPanel() {
 function idbOpen() {
   return new Promise((resolve, reject) => {
     try {
-      const rq = indexedDB.open('apweb-images', 1);
+      const rq = indexedDB.open('nightseam-images', 1);
       rq.onupgradeneeded = () => { rq.result.createObjectStore('thumbs'); };
       rq.onsuccess = () => resolve(rq.result);
       rq.onerror = () => reject(rq.error);
@@ -1855,7 +1855,7 @@ async function renderSettings() {
   });
   $('#set-export').addEventListener('click', async () => {
     const backup = await WS.collectBackup(Hor.getPrefs(), Hor.exportPanos());
-    WS.downloadText(`astropilot-web-backup-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify(backup, null, 1));
+    WS.downloadText(`nightseam-web-backup-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify(backup, null, 1));
   });
   $('#set-import').addEventListener('change', (ev) => {
     const f = ev.target.files && ev.target.files[0];
@@ -2038,7 +2038,7 @@ function welcomeFlow() {
     modal.innerHTML = `
       <div class="modal welcome" role="dialog" aria-modal="true" aria-labelledby="m-wel-title">
         <div class="modal-head">
-          <h2 id="m-wel-title">👋 Welcome to AstroPilot Web</h2>
+          <h2 id="m-wel-title">👋 Welcome to NightSeam Web</h2>
         </div>
         <p class="sub">Where will you observe? You can add more sites any time via Setup in the top bar.</p>
         <div class="set-form">
@@ -2140,7 +2140,7 @@ async function boot() {
   applyEdge();
   const ver = await WS.loadVersion();
   const fv = $('#foot-ver');
-  if (fv) fv.textContent = ver ? `AstroPilot Web ${ver.version}` : 'dev build';
+  if (fv) fv.textContent = ver ? `NightSeam Web ${ver.version}` : 'dev build';
   const av = $('#aboutVersion');
   if (av) av.textContent = ver ? `${ver.version}` : 'dev build';
   splashText(`catalog ready · ${CAT.length.toLocaleString()} objects · site “${S.site.label}”`);

@@ -18,9 +18,9 @@ function wizErr(msg) {
 
 const STEPS = [
   {
-    title: "Welcome to AstroPilot",
+    title: "Welcome to NightSeam",
     body: () => `
-      <p>AstroPilot plans deep-sky imaging sessions around <b>your</b> sky:</p>
+      <p>NightSeam plans deep-sky imaging sessions around <b>your</b> sky:</p>
       <ul style="margin:8px 0 0 18px;line-height:1.7">
         <li>197 curated targets &mdash; plus your own custom objects</li>
         <li>a painted horizon mask from a phone panorama</li>
@@ -77,7 +77,7 @@ const STEPS = [
   {
     title: "Where should your captures live?",
     body: () => `
-      <p>AstroPilot can catalog the images you have already taken. When you
+      <p>NightSeam can catalog the images you have already taken. When you
       import .fit / .fits files they are <b>copied</b> into an archive folder
       on this computer &mdash; your originals never move.</p>
       <form id="wizForm" class="formrow" style="flex-direction:column;align-items:stretch">
@@ -98,7 +98,7 @@ const STEPS = [
     },
   },
   {
-    title: "Teach AstroPilot your horizon",
+    title: "Teach NightSeam your horizon",
     body: () => `
       <p>The most powerful feature: show it which parts of your sky are blocked
       by trees or houses.</p>

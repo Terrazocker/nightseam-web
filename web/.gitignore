@@ -3,6 +3,7 @@ ftp.env
 
 # Dev / runtime junk
 node_modules/
+nightseam-cdp-*/
 apweb-cdp-*/
 *.log
 
