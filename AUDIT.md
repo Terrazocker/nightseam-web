@@ -1,6 +1,12 @@
 # NightSeam — audit and fix report
 
-Baseline when the audit started: `master` @ `b992fad` (NightSeam 0.5.11), 135 tests.
+> The project was called **AstroPilot** while this audit ran (releases up to
+> 0.5.12); it was renamed to **NightSeam** for the 0.6.0 release, so names and
+> file paths below were updated to the current spelling. Version numbers and
+> the test count (135) are the state at audit time, not today's (141).
+
+Baseline when the audit started: `master` @ `b992fad` (AstroPilot 0.5.11 — now
+spelled NightSeam), 135 tests.
 This file started as the audit findings; it now records the fix status of every item.
 
 **All changes are in the working tree, uncommitted.** Nothing has been deployed — the

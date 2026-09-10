@@ -1,5 +1,7 @@
 # NightSeam
 
+*Formerly AstroPilot — renamed in 0.6.0, now at <https://nightseam.de>.*
+
 A one-click desktop app for planning deep-sky astrophotography sessions around
 obstacles in your backyard (trees, houses, ...) - plus a full image-catalog
 mode that organizes your captured FITS frames.

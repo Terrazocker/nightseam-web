@@ -410,9 +410,11 @@ over the fuller commands below wherever they differ:
   refused outright). uploadtree/uploadmany additionally refuse to publish
   pages that still contain template placeholders (landing/impressum.html)
   unless `--force` is passed. Credentials live OUTSIDE the repo: pass
-  `--env <path>` pointing at ftp.env (never committed). Cloudflare serves
-  the remote site and injects a script into delivered index.html —
-  hash-verify only after stripping that block.
+  `--env <path>` pointing at ftp.env (never committed). Cloudflare sat in
+  front of the OLD domain, where it injected a script into delivered
+  index.html; nightseam.de currently resolves straight to the Plesk host
+  (<server-ip>), so a downloaded file should hash-match the local one —
+  only strip an injected block if a proxy is put in front again.
   FTP gotchas: the `upload` command's remote name is FTP-ROOT-relative in
   practice, so ALWAYS pass the full path (`upload web/app.js /astro/app.js`,
   `upload dist/release/version.json /downloads/version.json`) - a bare name
@@ -430,6 +432,28 @@ over the fuller commands below wherever they differ:
   package. The release flow also runs `python scripts/build_changelog.py`
   (it warns loudly when a released tag has no curated summary) so the
   download page's "What's new" cannot silently go stale again.
+- **Release order matters** (getting it wrong publishes a version named
+  `0.6.0-dirty`): commit + tag FIRST, then `scripts/make_release.py` and
+  `web/build_web.py version` **while HEAD is exactly at the tag and the
+  tree is clean** — both call `git describe --dirty`, so ANY uncommitted
+  change (including the changelog below) leaks into the published version.
+  Run `scripts/build_changelog.py` LAST: it rewrites the TRACKED
+  `landing/changelog.json`, so commit that as its own follow-up commit. That
+  is why the deployed tree sits after the tag (`v0.6.0` -> changelog commit),
+  exactly as `v0.5.12` did. Adding a curated entry for a release is part of
+  shipping it — otherwise the download page silently has nothing to show.
+  Deploy credentials live outside the repo: `--env <workspace>\Astro-Web\ftp.env`.
+- `uploadtree`/`uploadmany` never upload `.gitignore`, `build_web.py`,
+  `ftps_deploy.py`, `whale/`, `dev/`, `node_modules/`, `__pycache__/` or any
+  `*.pyc` (the `SKIP` set plus the `.pyc` check in `web/ftps_deploy.py`).
+  Before 0.6.0 a stray `/astro/__pycache__` did get published once — keep
+  that list current when tooling is added next to the app.
+- Web asset cache-busting is manual and per module: `web/index.html` carries
+  `app.js?v=N` and `web/app.js` carries a `?v=` on each import
+  (`astro.js`, `horizon.js`, `webstore.js`, `dragwin.js`). Bump the token of
+  every module whose BEHAVIOUR changed (comment-only edits do not need it) or
+  returning visitors keep the old file. Current: `app.js?v=22`,
+  `horizon.js?v=12`, `webstore.js?v=2`, `astro.js?v=4`, `dragwin.js?v=1`.
 - Sync from the dev mirror: robocopy `<workspace>\Astro-Web` -> `web/` (exclude
   `.git` and `ftp.env`), then commit here. `web/.gitignore` covers the dev
   mirror leftovers (`whale/`, `dev/`).
@@ -441,8 +465,9 @@ over the fuller commands below wherever they differ:
 
 The project, the exe, the web app and the website were renamed. Git history,
 tags and past release zips keep the old name — history is NOT rewritten, so
-`v0.5.12` and earlier are AstroPilot releases; the first NightSeam release is
-the one tagged after this rename (commits from here on are `NightSeam X.Y.Z`).
+`v0.5.12` and earlier are AstroPilot releases. **`v0.6.0` (2026-09-10) is the
+first NightSeam release** and the first one deployed to nightseam.de; commits
+from `NightSeam 0.6.0` on are named `NightSeam X.Y.Z`.
 
 - Shipped names: exe/zip `NightSeam.exe` / `NightSeam-<version>.zip` /
   `NightSeam-latest.zip`, spec `NightSeam.spec`, JSONP `ns-version.js`
@@ -463,6 +488,7 @@ the one tagged after this rename (commits from here on are `NightSeam X.Y.Z`).
   - An install updated in place starts on a FRESH database - to keep old
     data, rename `data/astropilot.db` to `data/nightseam.db` by hand
     (a pre-rename exe pointed at the same folder would then start empty).
+    Done once for the developer's own frozen app in `dist\data`.
   - Setup zips and web backup JSONs written before the rename are rejected
     with a clear "not a NightSeam ..." error; re-export with the new build.
   - Installs <= 0.5.12 cannot see updates (their update URL points at
