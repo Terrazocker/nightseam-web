@@ -89,7 +89,7 @@ tests - do not regress them:
 - **Stale async work stays silent**: a superseded night load neither repaints,
   nor clears the busy chip, nor shows an error toast (`tests/js/night_race.mjs`).
 - **JS syntax is checked**: `python scripts/check_js_syntax.py` (wired into
-  `check_js.py`) parses all 25 shipped modules with `node --check` via temporary
+  `check_js.py`) parses all 26 shipped modules with `node --check` via temporary
   `.mjs` copies; it skips cleanly without node. It exists because a duplicate
   `const` once reached the tree unseen.
 - **Encoding is checked**: `scripts/check_encoding.py` (wired into `check_js.py`,
@@ -108,7 +108,7 @@ tests - do not regress them:
 - **Tests never touch the user profile**: `tests/conftest.py` redirects
   `paths.default_archive_dir()` into `logs/` for every test - a test that forgot
   to set `image_dir` used to write into the real `~/Documents/NightSeam Images`.
-- **Current test count: 466** (`python -m pytest tests/ -q`, full access).
+- **Current test count: 467** (`python -m pytest tests/ -q`, full access).
 
 ## Context discipline (read before starting work)
 
@@ -153,7 +153,7 @@ over the fuller commands below wherever they differ:
     when both sockets set SO_REUSEADDR.
   - If 8407 is briefly taken at boot, `free_port()` silently picks a RANDOM
     port (written to instance.json) - the app runs, just not on 8407.
-- Tests: `python -m pytest tests/` - 466 tests, run in ~75 s (pure-function
+- Tests: `python -m pytest tests/` - 467 tests, run in ~75 s (pure-function
   tests are fast; `tests/test_api.py` spins up real `create_app()` instances
   via fastapi TestClient/httpx). Single test:
   `python -m pytest tests/test_astro.py -k name`. API tests use
@@ -164,7 +164,7 @@ over the fuller commands below wherever they differ:
   pytest uses for the basetemp) creates an owner-SID-only DACL that the
   sandbox's restricted token cannot re-read, so every tmp_path test errors
   with PermissionError - an environment artifact, NOT a code failure. Run
-  the suite with full access / in a normal shell: 466/466 pass (~75 s).
+  the suite with full access / in a normal shell: 467/467 pass (~75 s).
   Careful with the `client` fixture: it must leave `data/panos` in place
   under the tmp dir it patches in, because the pano upload route writes
   there without mkdir'ing (the real `data_dir()` creates it). Without that
@@ -589,9 +589,9 @@ over the fuller commands below wherever they differ:
   `app.js?v=N` and `web/app.js` carries a `?v=` on each import
   (`astro.js`, `horizon.js`, `webstore.js`, `dragwin.js`). Bump the token of
   every module whose BEHAVIOUR changed (comment-only edits do not need it) or
-  returning visitors keep the old file. Current: `app.js?v=28`,
+  returning visitors keep the old file. Current: `app.js?v=29`,
   `horizon.js?v=13`, `webstore.js?v=5`, `astro.js?v=4`, `dragwin.js?v=1`,
-  plus `style.css?v=11` / `themes.css?v=2` in `web/index.html`.
+  `format.js?v=1`, plus `style.css?v=11` / `themes.css?v=2` in `web/index.html`.
   **A token bump is also the cure for a browser that cached a BAD pairing**: an
   `app.js` that calls a module member the cached dependency does not have stays
   broken across plain reloads, because the query string in the import specifier
@@ -659,6 +659,20 @@ over the fuller commands below wherever they differ:
   returning visitor unless `style.css`'s `?v=` is bumped in the SAME commit,
   and "it works" must be verified at a WIDE viewport — 1280/1440 looked
   perfect while 2560 was dead.
+- **Catalog sizes render like the desktop** (web): `web/format.js` is the web
+  twin of `static/js/util.js::fmtSize` — `size_am` is ARCMINUTES, split on
+  `x`/`×` and printed in ONE user-chosen unit (arcmin/arcsec/deg), empty → `—`.
+  `app.js` carried its own copy that reformatted only `NxM` and echoed
+  everything else verbatim: the 961 single-axis entries (Hyades `330`,
+  Pleiades `110`, Ring Nebula `1.4`) lost their unit and ignored the unit
+  setting, and `sizeArcmin()` returned null, which left the Frame % column
+  empty for them. A lone value is a DIAMETER (desktop
+  `derive.js::frameCoverage` treats it the same). Pinned by
+  `tests/test_js_parity.py::test_web_size_column_matches_desktop` via the
+  `size` engine of `tests/js/astro_parity.mjs` — add a case there whenever
+  either formatter changes. Still a web-side simplification: `rigFramePct`
+  compares the larger axis against `fov_w` only, while the desktop takes the
+  worse of both axes.
 - **State after the v0.6.9 release (2026-09-10) - read before the next
   release**: 0.6.9 shipped BOTH sides (desktop exe + web app) and
   `web/version.json` is baked at that tag, so `/astro` reports 0.6.9. TWO
