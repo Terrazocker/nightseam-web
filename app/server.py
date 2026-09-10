@@ -19,17 +19,39 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from .backup import apply_import_zip, build_export_zip
+from .backup import _export_zip_to, apply_import_zip, build_export_zip
 from .database import Database, new_id
 from .fits import parse_dec_deg, parse_ra_hours
+from .imglib import name_key
 from .ingest import ingest_one, obj_slug, reindex_library, rename_archive_folder
 from .nightcalc import PROFILE_BINS, compute_night, object_detail
 from .paths import data_dir, static_dir
 from .version import app_version
 
+from starlette.background import BackgroundTask
+
 APP_VERSION = app_version()
 
-_state = {"last_request": time.time()}
+_state = {"last_request": time.time(), "shutdown": False}
+
+
+def _same_origin_request(request) -> bool:
+    """False for browser requests that provably come from another origin.
+
+    A local port is not protected by CORS for "simple" requests, so without
+    this check any website the user visits could call /api/shutdown or another
+    state-changing endpoint. `Sec-Fetch-Site` is sent by current browsers and
+    `Origin` accompanies cross-origin requests; non-browser clients (PowerShell,
+    curl, TestClient) send neither and stay allowed."""
+    site = (request.headers.get("sec-fetch-site") or "").strip().lower()
+    if site and site not in ("same-origin", "none"):
+        return False
+    origin = (request.headers.get("origin") or "").strip()
+    if origin and origin != "null":
+        host = (request.headers.get("host") or "").strip().lower()
+        if origin.rstrip("/").lower() not in (f"http://{host}", f"https://{host}"):
+            return False
+    return True
 
 
 async def _drain_upload(file: UploadFile, dest: Path, limit: int,
@@ -218,6 +240,9 @@ def create_app(db: Database, *, prefetch: bool = True) -> FastAPI:
         hostname = host.rsplit(":", 1)[0].strip("[]").lower() if ":" in host else host.lower()
         if hostname not in _ALLOWED_HOSTS:
             return JSONResponse({"detail": "forbidden host"}, status_code=403)
+        if not _same_origin_request(request):
+            return JSONResponse({"detail": "cross-site request rejected"},
+                                status_code=403)
         return await call_next(request)
 
     @app.middleware("http")
@@ -493,7 +518,9 @@ def create_app(db: Database, *, prefetch: bool = True) -> FastAPI:
         if ext not in ("jpg", "jpeg", "png", "webp"):
             raise HTTPException(400, "Use JPG, PNG or WebP")
         fname = f"{pid}.{ext}"
-        tmp = data_dir() / "panos" / f".{pid}.upload.tmp"
+        # per-request temp name: two concurrent replaces for the same panorama
+        # must not interleave writes on one shared file
+        tmp = data_dir() / "panos" / f".{pid}.{uuid.uuid4().hex}.upload.tmp"
         try:
             await _drain_upload(file, tmp, 60 * 1024 * 1024, "Image")
             out = data_dir() / "panos" / fname
@@ -503,7 +530,10 @@ def create_app(db: Database, *, prefetch: bool = True) -> FastAPI:
                 old.unlink(missing_ok=True)
         finally:
             tmp.unlink(missing_ok=True)
-        fields: dict = {"file": fname, "strokes": [], "profile": []}
+        # a cropped/replaced image invalidates the whole painted mask: the
+        # sky-mode profile_top would otherwise keep blocking above the old band
+        fields: dict = {"file": fname, "strokes": [], "profile": [],
+                        "profile_top": [], "paint_mode": "obstacle"}
         if az_offset is not None:
             fields["az_offset"] = float(az_offset)
         if fov is not None:
@@ -542,12 +572,23 @@ def create_app(db: Database, *, prefetch: bool = True) -> FastAPI:
 
     @app.get("/api/export")
     def api_export():
+        """Stream the setup ZIP from a spool file next to the database.
+
+        The image library can be many GB, so the archive is never assembled in
+        RAM: it is written to disk and streamed, then removed in the background
+        (the import side already works this way)."""
         stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M")
-        return Response(
-            content=build_export_zip(db),
-            media_type="application/zip",
-            headers={"Content-Disposition":
-                     f'attachment; filename="astropilot-setup-{stamp}.zip"'})
+        spool = db.path.parent / f".export-{uuid.uuid4().hex}.zip"
+        try:
+            with open(spool, "wb") as fh:
+                _export_zip_to(db, fh)
+        except Exception as exc:  # noqa: BLE001
+            spool.unlink(missing_ok=True)
+            raise HTTPException(500, f"Export failed: {exc}") from None
+        return FileResponse(
+            spool, media_type="application/zip",
+            filename=f"astropilot-setup-{stamp}.zip",
+            background=BackgroundTask(spool.unlink, missing_ok=True))
 
     @app.post("/api/import")
     async def api_import(file: UploadFile = File(...)):
@@ -707,10 +748,17 @@ def create_app(db: Database, *, prefetch: bool = True) -> FastAPI:
                 "supernova_remnant", "star_cloud", "asterism"):
             raise HTTPException(400, f"unknown type: {otype}")
         rows = [i for i in db.images()
-                if not i["object_id"] and i["object_name"] == name]
+                if not i["object_id"]
+                and name_key(i["object_name"]) == name_key(name)]
         if not rows:
             raise HTTPException(404, "Object not found in library")
-        rename_archive_folder(Path(db.image_dir()), name, new_name)
+        if not rename_archive_folder(Path(db.image_dir()), name, new_name):
+            # the folder could not be moved (files open in another program):
+            # leave the stored paths alone rather than pointing them at a
+            # folder that does not exist
+            raise HTTPException(
+                500, "Could not move the archive folder - close any program "
+                     "using those files and try again")
         db.rename_images(name, new_name, otype, obj_slug(new_name))
         return {"ok": True, "name": new_name, "otype": otype}
 
@@ -777,7 +825,24 @@ def create_app(db: Database, *, prefetch: bool = True) -> FastAPI:
     @app.get("/api/shutdown")
     @app.post("/api/shutdown")
     def api_shutdown():
-        os._exit(0)
+        """Ask the app to exit.
+
+        Cross-site callers are rejected by the guard middleware (a page on
+        another origin can otherwise reach a local port with a no-cors
+        request). The flag lets main.py's loop shut down gracefully - closing
+        the server and clearing data/instance.json; the timer is the fallback
+        for native-window mode, where nothing polls the flag."""
+        _state["shutdown"] = True
+
+        def _hard_exit():
+            try:
+                (data_dir() / "instance.json").unlink(missing_ok=True)
+            except OSError:
+                pass
+            os._exit(0)
+
+        threading.Timer(1.5, _hard_exit).start()
+        return {"ok": True}
 
     # ---------------- static files ----------------
 

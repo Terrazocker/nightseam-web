@@ -21,6 +21,13 @@ def _norm(s: str) -> str:
     return re.sub(r"\s+", "", str(s or "").lower())
 
 
+def name_key(s: str) -> str:
+    """Canonical key for matching unresolved-object names (whitespace removed,
+    lowercased). Library grouping and rename/delete lookups share this, so they
+    can never disagree about which rows belong to one object."""
+    return _norm(s)
+
+
 def normalize_catalog(catalog: list[dict]) -> list[dict]:
     """Map catalog rows to one shape whether they come from the database
     (primary_name / size_am) or catalog_data.rows() (primary / size)."""
@@ -215,7 +222,7 @@ def group_library(images: list[dict], catalog: list[dict]) -> list[dict]:
     by_key: dict[str, dict] = {}
     for im in images:
         oid = im.get("object_id")
-        key = oid or ("u:" + _norm(im.get("object_name") or "").lower() or "?")
+        key = oid or ("u:" + name_key(im.get("object_name") or ""))
         g = by_key.setdefault(key, {
             "object_id": oid,
             "name": None,

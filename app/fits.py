@@ -3,7 +3,19 @@
 Enough to ingest astrophotography captures: OBJECT, EXPTIME, DATE-OBS,
 FILTER, OBJCTRA/OBJCTDEC (plus RA/DEC), TELESCOP/INSTRUME. FITS headers are
 ASCII 80-character records inside 2880-byte blocks, so no astropy/numpy is
-needed; image data is only touched for library preview thumbnails.
+needed; image data is only touched by preview_png*() (tests and the
+/api/images/{id}/preview endpoint, not the library UI).
+
+Compressed FITS is deliberately out of scope - nothing here decompresses.
+read_fits_header() requires `SIMPLE` at byte 0, so an fpack `.fits.fz` yields
+only its empty stub primary: the original image keywords and the
+ZNAXIS*/ZBITPIX geometry live in the SECOND HDU header (BINTABLE carrying
+ZIMAGE = T), which this reader never reaches. Ingest and reindex take only
+.fit/.fits (see app/ingest.py), so .fz/.fits.gz never enter the archive.
+Handling the header case means walking HDUs; pixel access would additionally
+need a RICE (or GZIP) tile decoder - and a whole-file .gz defeats the
+per-sample seeks in preview_png_file(), since gzip re-inflates from the
+start on every seek.
 """
 
 from __future__ import annotations

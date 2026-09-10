@@ -107,11 +107,15 @@ Pano.init = function () {
     }
   });
   document.addEventListener("keydown", e => {
-    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z" &&
-        !$("#tab-horizon").classList.contains("hidden")) {
-      undoPaint();
-      e.preventDefault();
-    }
+    if (!(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== "z") return;
+    // tab panes are toggled with .active, never with .hidden
+    if (!$("#tab-horizon").classList.contains("active")) return;
+    const t = e.target;
+    const tag = ((t && t.tagName) || "").toLowerCase();
+    if (tag === "input" || tag === "textarea" || tag === "select" ||
+        (t && t.isContentEditable)) return;      // keep native text undo
+    undoPaint();
+    e.preventDefault();
   });
 
   if (S.panos.length) select(S.panos.find(p=>p.active) || S.panos[0]);
@@ -247,6 +251,9 @@ function renderList() {
 async function select(rec) {
   Pano.cur = rec;
   Pano.crop = null;
+  // undo history belongs to ONE panorama: without this, undoing after a switch
+  // wrote the previous panorama's strokes into this one and auto-saved them
+  Pano.undo = [];
   updateModeButtons();
   $("#calibBox").classList.remove("hidden");
   $("#azOffset").value = rec.az_offset ?? 0;
@@ -691,18 +698,24 @@ function scheduleSave(delay = 900) {
   Pano.saveTimer = setTimeout(async () => {
     if (!Pano.cur) return;
     recomputeProfile();
-    await api("/api/panorama/" + Pano.cur.id, { method: "PUT",
-      headers: {"Content-Type":"application/json"},
-      body: JSON.stringify({
-        az_offset: +$("#azOffset").value,
-        alt_bottom: +$("#altBottom").value,
-        alt_top: +$("#altTop").value,
-        fov: +$("#fovAz").value,
-        strokes: Pano.cur.strokes,
-        profile: Pano.cur.profile,
-        profile_top: Pano.cur.profile_top || [],
-        paint_mode: paintMode(),
-      })}).catch(() => {});
+    let saved = true;
+    try {
+      await api("/api/panorama/" + Pano.cur.id, { method: "PUT",
+        headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({
+          az_offset: +$("#azOffset").value,
+          alt_bottom: +$("#altBottom").value,
+          alt_top: +$("#altTop").value,
+          fov: +$("#fovAz").value,
+          strokes: Pano.cur.strokes,
+          profile: Pano.cur.profile,
+          profile_top: Pano.cur.profile_top || [],
+          paint_mode: paintMode(),
+        })});
+    } catch {
+      saved = false;      // api() already toasted; keep the local painting
+    }
+    if (!saved) return;
     S.panos = await api("/api/panoramas");
     const upd = S.panos.find(p => p.id === Pano.cur.id);
     if (upd) Pano.cur = upd;

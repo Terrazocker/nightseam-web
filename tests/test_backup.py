@@ -146,6 +146,46 @@ def test_import_traversal_paths_are_dropped(db, tmp_path):
     assert not (pdir / ".." / "escape.jpg").exists()
 
 
+def test_failed_import_rolls_back_everything(db):
+    """A bundle that blows up mid-restore must leave the existing data intact.
+
+    Regression: the deletes stayed live on the shared connection and were
+    committed by the NEXT unrelated write, silently wiping the user's data."""
+    db.add_site("Home", 50.0, 7.8, 150)
+    db.set_setting("bortle", 4)
+    # sites[0] has no name -> NOT NULL constraint failure half way through
+    with pytest.raises(Exception):
+        db.import_bundle(settings={"theme": "dome"}, sites=[{}], rigs=[],
+                         panoramas=[], customs=[], images=[])
+    assert len(db.sites()) == 1                      # rolled back, not wiped
+    db.set_setting("edge_space", 180)                # a later, unrelated write
+    assert len(db.sites()) == 1                      # ... must not persist a wipe
+    assert db.setting("bortle") == 4
+
+
+def test_import_never_touches_observations(db, tmp_path):
+    """The legacy journal table is neither exported nor imported - and an
+    import must not delete rows it never carried (AGENTS.md: leave it alone)."""
+    db.add_site("Home", 50.0, 7.8, 150)
+    db.add_observation("m31", "2026-08-22", "old journal row")
+    assert len(db.observations()) == 1
+    blob = build_export_zip(db)
+    assert "observations" not in json.loads(
+        zipfile.ZipFile(io.BytesIO(blob)).read("setup.json"))
+    apply_import_zip(db, blob)
+    assert len(db.observations()) == 1               # survived the restore
+
+
+def test_import_rejects_malformed_bundle_shape(db):
+    """Non-dict settings / non-list collections are a 400-class error, not a
+    half-applied restore."""
+    db.add_site("Home", 50.0, 7.8, 150)
+    with pytest.raises(ValueError):
+        db.import_bundle(settings=[], sites=[], rigs=[], panoramas=[],
+                         customs=[], images=[])
+    assert len(db.sites()) == 1
+
+
 def _zip_with(app_name: str, setup: dict, files: dict | None = None) -> bytes:
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:

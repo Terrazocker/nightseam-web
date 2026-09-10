@@ -4,13 +4,14 @@ export const $  = s => document.querySelector(s);
 export const $$ = s => Array.from(document.querySelectorAll(s));
 
 export async function api(path, opts) {
-  const o = opts || {};
+  const { timeout = 30000, ...o } = opts || {};
   // a hung local request must not wedge the UI forever; the night loader
-  // passes its own abort signal and is exempt
+  // passes its own abort signal and is exempt, and long operations (a backup
+  // import of a multi-GB library) opt out with `timeout: 0`
   let timeoutCtl = null, timer = null;
-  if (!o.signal) {
+  if (!o.signal && timeout > 0) {
     timeoutCtl = new AbortController();
-    timer = setTimeout(() => timeoutCtl.abort(), 30000);
+    timer = setTimeout(() => timeoutCtl.abort(), timeout);
   }
   let r;
   try {
@@ -78,18 +79,23 @@ export const todayLocal = () => new Date().toLocaleDateString("sv", tzOpts());
 export const fmtDT = iso => iso ? parseUTC(iso).toLocaleString("sv",
   {year:"numeric", month:"2-digit", day:"2-digit", hour:"2-digit", minute:"2-digit", ...tzOpts()}) : "\u2014";
 
-/* UTC offset (minutes west) in effect at local noon of YYYY-MM-DD */
+/* UTC offset in minutes EAST of UTC, in effect at local noon of YYYY-MM-DD.
+   This is the API's convention - app/planning.local_utc() computes
+   `local - tz_min` - and it is the OPPOSITE sign of Date#getTimezoneOffset()
+   (which is minutes WEST): for Berlin it returns +120, for Los Angeles -420. */
 export function tzOffAt(dateStr) {
   const [y, m, d] = (dateStr || "").split("-").map(Number);
-  if (!y || !m || !d) return new Date().getTimezoneOffset();
+  if (!y || !m || !d) return -new Date().getTimezoneOffset();
   const z = effZone();
-  if (!z) return new Date(y, m - 1, d, 12).getTimezoneOffset();
+  if (!z) return -new Date(y, m - 1, d, 12).getTimezoneOffset();
   let ms = Date.UTC(y, m - 1, d, 12);
   for (let i = 0; i < 3; i++) {
     ms = Date.UTC(y, m - 1, d, 12) - zoneOffsetMin(z, ms) * 60000;
   }
-  return zoneOffsetMin(z, ms);
+  return -zoneOffsetMin(z, ms);
 }
+/* Offset in minutes WEST of UTC (the Date#getTimezoneOffset convention) for
+   `zone` at instant `ms`. */
 function zoneOffsetMin(z, ms) {
   const parts = new Intl.DateTimeFormat("en-US",
     { timeZone: z, hour12: false, timeZoneName: "shortOffset" })

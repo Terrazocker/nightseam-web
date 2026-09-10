@@ -67,6 +67,11 @@ def cmd_version(db_path):
 
 
 def cmd_catalog(db_path, out=None):
+    if not Path(db_path).is_file():
+        raise SystemExit(
+            f"no database at {db_path}\n"
+            f"  data/astropilot.db is created and seeded on the app's first "
+            f"start - run `python main.py` once, or pass --db PATH")
     con = sqlite3.connect(str(db_path))
     con.row_factory = sqlite3.Row
     out_rows = []

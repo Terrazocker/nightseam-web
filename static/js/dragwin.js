@@ -11,6 +11,19 @@ export function enableDraggablePopups() {
   const isDomeTheme = () =>
     document.documentElement.getAttribute("data-theme") === "dome";
 
+  /* Clamp an inline position so the popup stays grabbable: at least 120 px of
+     it visible horizontally, and its header row (40 px) reachable vertically.
+     Uses the element's real size, so a wide modal cannot be parked almost
+     entirely off-screen. */
+  function clampPos(el, x, y) {
+    const w = el.offsetWidth;
+    const minX = Math.min(0, 120 - w);
+    const maxX = Math.max(minX, window.innerWidth - 120);
+    const minY = 4, maxY = Math.max(minY, window.innerHeight - 40);
+    return [Math.max(minX, Math.min(maxX, x)),
+            Math.max(minY, Math.min(maxY, y))];
+  }
+
   /* ---- generic drag controller ---- */
   function attachDrag(el, shouldStart) {
     let dragging = false;
@@ -41,16 +54,7 @@ export function enableDraggablePopups() {
 
     const move = (e) => {
       if (!dragging) return;
-      const w = el.offsetWidth, h = el.offsetHeight;
-      let x = e.clientX - offX;
-      let y = e.clientY - offY;
-      // keep the popup reachable: header must stay on screen
-      const minX = Math.min(8, window.innerWidth - 120);
-      const maxX = window.innerWidth - 120;
-      const minY = 4;
-      const maxY = window.innerHeight - 40;
-      x = Math.max(minX, Math.min(maxX, x));
-      y = Math.max(minY, Math.min(maxY, y));
+      const [x, y] = clampPos(el, e.clientX - offX, e.clientY - offY);
       el.style.left = x + "px";
       el.style.top = y + "px";
       e.preventDefault();
@@ -92,6 +96,18 @@ export function enableDraggablePopups() {
       !e.target.closest("button, input, select, a, textarea, label")
     );
   }
+
+  /* shrinking/maximising the window must not strand a dragged popup
+     off-screen with no handle left to grab */
+  window.addEventListener("resize", () => {
+    document.querySelectorAll("#menuPanel, .modal .modal-box").forEach((el) => {
+      if (!el.style.left) return;            // never dragged - CSS still owns it
+      const [x, y] = clampPos(el, parseFloat(el.style.left) || 0,
+                              parseFloat(el.style.top) || 0);
+      el.style.left = x + "px";
+      el.style.top = y + "px";
+    });
+  });
 }
 
 /* wire-up hook for main.js */

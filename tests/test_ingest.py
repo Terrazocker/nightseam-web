@@ -21,6 +21,30 @@ def test_obj_slug_empty_falls_back():
 
 # ---------------------------------------------------------------- classify_frame
 
+def test_classify_frame_single_words():
+    assert classify_frame("Light") == "light"
+    assert classify_frame("dark") == "dark"
+    assert classify_frame("FLAT") == "flat"
+    assert classify_frame("bias") == "bias"
+
+
+def test_classify_frame_multi_word_spellings():
+    # MaxIm DL / CCDSoft / SBIG write these; they used to land in lights/
+    assert classify_frame("Dark Frame") == "dark"
+    assert classify_frame("Flat Field") == "flat"
+    assert classify_frame("Bias Frame") == "bias"
+    assert classify_frame("Light Frame") == "light"
+    assert classify_frame("Sky Flat") == "flat"
+
+
+def test_classify_frame_unknown_defaults_to_light():
+    assert classify_frame(None) == "light"
+    assert classify_frame("") == "light"
+    assert classify_frame("calibration?") == "light"
+
+
+# ---------------------------------------------------------------- classify_frame
+
 def test_classify_known_types():
     assert classify_frame("light") == "light"
     assert classify_frame("LIGHT") == "light"

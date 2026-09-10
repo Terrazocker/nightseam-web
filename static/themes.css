@@ -255,7 +255,7 @@ html[data-theme="dome"] #tabs-cat {
   top: 76px; /* bar bottom (14 + 54) + 8px gap - never overlaps the bar */
   left: 50%;
   transform: translateX(-50%);
-  z-index: 56;
+  z-index: 50;
   background: color-mix(in srgb, var(--panel) 65%, transparent);
   backdrop-filter: blur(12px) saturate(130%);
   -webkit-backdrop-filter: blur(12px) saturate(130%);
@@ -607,7 +607,7 @@ html[data-theme="dome"] .weatherwrap .popover {
     0 24px 80px rgba(0,0,0,0.5),
     0 0 60px rgba(143,123,255,0.08),
     inset 0 1px 0 rgba(255,255,255,0.08);
-  z-index: 95;
+  z-index: 60;
 }
 
 /* Menu sections */
@@ -803,7 +803,7 @@ html[data-theme="dome"] #nightInfo {
   max-width: 78vw;
   white-space: nowrap;
   text-align: center;
-  z-index: 56;
+  z-index: 50;
   font-size: 11.5px;
 }
 html[data-theme="dome"] .archinfo {
@@ -1071,8 +1071,8 @@ html[data-theme="dome"] body.catmode .brand em {
       Never override .hidden class. All controls remain visible and
       reachable.
    
-  18. z-index map: topbar=55, tabs=56, menu sheet=95 (within allowed
-      range 55-95), modals=40, toasts=300, versionTag=5.
+  18. z-index map (matches DESIGN.md section 9): topbar=55, tabs=50,
+      popover/sheet=60, modals=40, toasts=300, versionTag=5.
    
   19. Decorative pseudo-elements (stars, aurora) are pointer-events:none
       and z-index:0, so they don't interfere with interaction.

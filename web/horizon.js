@@ -125,11 +125,31 @@ export function exportPanos() {
   };
 }
 
-/** Replace all panoramas from a backup snapshot. Returns true on success. */
+/** Replace all panoramas from a backup snapshot. Returns true on success.
+ *  Imported records are validated and completed here: a snapshot from an older
+ *  version (or a hand-edited file) may lack fov/profile/paintMode, and every
+ *  consumer downstream assumes those exist. */
 export function importPanos(data) {
   if (!data || !Array.isArray(data.panos)) return false;
+  const blank = () => new Array(BINS).fill(NO_BLOCK);
+  const num = (v, dflt) => (Number.isFinite(Number(v)) ? Number(v) : dflt);
   db = {
-    panos: data.panos.map((p) => ({ ...p, _img: null, hasImage: !!p.hasImage })),
+    panos: data.panos.map((p) => ({
+      id: p.id,
+      name: p.name || 'Panorama',
+      azOffset: num(p.azOffset, 0),
+      altBottom: num(p.altBottom, 0),
+      altTop: num(p.altTop, 60),
+      fov: num(p.fov, 360) > 0 ? num(p.fov, 360) : 360,
+      paintMode: p.paintMode === 'sky' ? 'sky' : 'obstacle',
+      strokes: Array.isArray(p.strokes) ? p.strokes : [],
+      profile: (Array.isArray(p.profile) && p.profile.length === BINS)
+        ? p.profile : blank(),
+      profileTop: (Array.isArray(p.profileTop) && p.profileTop.length === BINS)
+        ? p.profileTop : blank(),
+      _img: null,
+      hasImage: !!p.hasImage,
+    })),
     activeId: data.activeId || null,
   };
   if (!db.activeId && db.panos.length) db.activeId = db.panos[0].id;
@@ -225,15 +245,30 @@ export function computeProfile(p) {
  * Outside the calibrated FOV: obstacle mode = unblocked, sky mode = blocked.
  */
 export function ceilFor(p, azDeg) {
-  const d = ((azDeg - p.azOffset) % 360 + 360) % 360;
-  if (d > p.fov) {
+  // Guard the record: an imported or legacy panorama without a well-formed
+  // profile must degrade to "nothing blocks" (as the desktop and the server
+  // do), never to `undefined` - `alt > undefined` is false, which would hide
+  // every object in the sky.
+  const prof = (p && Array.isArray(p.profile) && p.profile.length === BINS)
+    ? p.profile : null;
+  const tops = (p && Array.isArray(p.profileTop) && p.profileTop.length === BINS)
+    ? p.profileTop : null;
+  if (!prof) {
+    return (p && p.paintMode === 'sky')
+      ? { ceil: 90, ceilTop: null }
+      : { ceil: NO_BLOCK, ceilTop: null };
+  }
+  const fov = Number(p.fov) > 0 ? Number(p.fov) : 360;
+  const azOff = Number(p.azOffset) || 0;
+  const d = ((azDeg - azOff) % 360 + 360) % 360;
+  if (d > fov) {
     return p.paintMode === 'sky' ? { ceil: 90, ceilTop: null } : { ceil: NO_BLOCK, ceilTop: null };
   }
-  const col = Math.min(BINS - 1, Math.floor((d / p.fov) * BINS));
+  const col = Math.min(BINS - 1, Math.floor((d / fov) * BINS));
   if (p.paintMode === 'sky') {
-    return { ceil: p.profile[col], ceilTop: p.profileTop[col] > NO_BLOCK + 0.5 ? p.profileTop[col] : null };
+    return { ceil: prof[col], ceilTop: (tops && tops[col] > NO_BLOCK + 0.5) ? tops[col] : null };
   }
-  return { ceil: p.profile[col], ceilTop: null };
+  return { ceil: prof[col], ceilTop: null };
 }
 
 /* --------------------------- editor UI --------------------------- */

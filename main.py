@@ -84,10 +84,28 @@ def clear_instance_file() -> None:
         pass
 
 
+def port_in_use(host: str, port: int) -> bool:
+    """True when something is already listening on host:port.
+
+    A bind() probe cannot answer this on Windows: with SO_REUSEADDR (which
+    uvicorn also sets) a second bind succeeds even while another process is
+    listening. An actual connect() is unambiguous."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.settimeout(0.35)
+        try:
+            s.connect((host, port))
+            return True
+        except OSError:
+            return False
+
+
 def free_port(preferred: int, host: str) -> int:
     def usable(p):
+        if port_in_use(host, p):
+            return False
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            # deliberately NO SO_REUSEADDR: binding must fail when the port is
+            # taken, otherwise the probe reports a busy port as free
             try:
                 s.bind((host, p))
                 return True
@@ -198,18 +216,21 @@ def main() -> int:
     ensure_stdio()
     log = setup_logging(args.console)
 
-    # hand off to an already-running instance instead of shadowing it
-    if not args.no_browser:
-        old_url = existing_instance_url()
-        if old_url:
-            log.info("AstroPilot already running at %s - handing off.", old_url)
-            if args.browser:
-                webbrowser.open(old_url)
-            else:
-                if not run_native_window(old_url):
-                    if not launch_app_window(old_url):
-                        webbrowser.open(old_url)
-            return 0
+    # hand off to an already-running instance instead of shadowing it: two
+    # instances would share one SQLite file and one archive folder, which can
+    # truncate an in-flight ingest and tear the rolling .backup copy
+    old_url = existing_instance_url()
+    if old_url:
+        log.info("AstroPilot already running at %s - handing off.", old_url)
+        if args.no_browser:
+            return 0                     # headless launch: nothing to open
+        if args.browser:
+            webbrowser.open(old_url)
+        else:
+            if not run_native_window(old_url):
+                if not launch_app_window(old_url):
+                    webbrowser.open(old_url)
+        return 0
 
     db = Database(paths.data_dir() / "astropilot.db")
     app = create_app(db)
@@ -269,11 +290,20 @@ def wait_for_exit(server, idle_secs: float) -> None:
     try:
         while server.should_exit is False:
             time.sleep(1.0)
+            if _shutdown_requested():
+                logging.getLogger("astropilot").info(
+                    "Shutdown requested via /api/shutdown.")
+                break
             if idle_secs > 0 and time.time() - _last_request_ts() > idle_secs:
                 logging.getLogger("astropilot").info("Idle timeout reached.")
                 break
     except KeyboardInterrupt:
         pass
+
+
+def _shutdown_requested() -> bool:
+    from app import server as srv
+    return bool(srv._state.get("shutdown"))
 
 
 def _last_request_ts() -> float:

@@ -31,7 +31,11 @@ ingest + library), switched via the top-right button or the brand name.
     instead of starting. Before probing: kill AstroPilot.exe/python/chrome,
     delete `data/instance.json`, then verify the listener's process NAME is
     python.exe (`Get-NetTCPConnection -LocalPort 8407` -> OwningProcess ->
-    `Get-CimInstance Win32_Process`), not the exe.
+    `Get-CimInstance Win32_Process`), not the exe. The handoff now also
+    applies to `--no-browser` (it exits 0 instead of starting a SECOND
+    instance on the same DB/archive), and `free_port()` probes with
+    `connect()` - a plain bind probe cannot see a live listener on Windows
+    when both sockets set SO_REUSEADDR.
   - If 8407 is briefly taken at boot, `free_port()` silently picks a RANDOM
     port (written to instance.json) - the app runs, just not on 8407.
 - Tests: `python -m pytest tests/` - 135 tests, run in ~28 s (pure-function
@@ -61,10 +65,13 @@ ingest + library), switched via the top-right button or the brand name.
   workspace (e.g. `theme-preview\.a11y-prof`); a relative or temp-dir path
   fails with "requires a non-default data directory" / lock-file errors.
 - No Python linter/formatter configured. The JS "lint" is three scripts that
-  must pass after touching `static/`; `python scripts/check_js.py` runs all
-  three and exits non-zero on hard failures (recommended one-command check):
+  must pass after touching `static/` OR `web/`; `python scripts/check_js.py`
+  runs all three and exits non-zero on hard failures (recommended one-command
+  check). Both JS graphs are covered - namespace and bare side-effect imports
+  included (a wrong path there kills the module graph just like a bad named
+  import), and `export let/var/class` counts as an export:
   - `python scripts/check_js_imports.py` - broken relative ES-module imports and named imports missing from the target's exports (hard failures)
-  - `python scripts/check_dom_ids.py` - `$('#id')` references missing from `index.html` (its "important" id list must be updated when controls are removed)
+  - `python scripts/check_dom_ids.py` - `$('#id')` references missing from that app's `index.html` (desktop and web separately)
   - `python scripts/check_js_defs.py` - heuristic; exit code is always 0, review candidates manually
   Also `python C:\Users\<user>\AppData\Local\Temp\opencode\check_esm.py`
   checks the ES-module graph (same job as check_js_imports, keep in sync).
@@ -135,6 +142,16 @@ ingest + library), switched via the top-right button or the brand name.
   unsigned, 16/32-bit signed, -32/-64 floats. `parse_ra_hours` /
   `parse_dec_deg` are the SINGLE source for coordinate parsing -
   `app/server.py` imports them from here; never re-implement elsewhere.
+  Compressed FITS is unsupported by design - nothing decompresses it.
+  `read_fits_header()` needs `SIMPLE` at byte 0 and reads the PRIMARY HDU
+  only, but an fpack `.fits.fz` has an empty stub primary: the original
+  OBJECT/DATE-OBS/EXPTIME/FILTER and the `ZNAXIS*`/`ZBITPIX` geometry sit in
+  the SECOND HDU header (`BINTABLE` + `ZIMAGE = T`), out of its reach.
+  Ingest and reindex also accept only `.fit`/`.fits` (`app/ingest.py`), so
+  `.fz`/`.fits.gz` never enter the archive. Cheapest future step is walking
+  HDU headers (no decompression); pixels would need a RICE tile decoder, and
+  a whole-file `.gz` defeats `preview_png_file()`'s per-sample seeks (gzip
+  re-inflates from the start on every seek).
 - Popularity (The popularity source): `catalog_data.POPULARITY` (193/197 curated) and
   `app/adv_popularity_data.py` `ADV_POPULARITY` (7,408 advanced) are
   community scores used as a SILENT TIEBREAKER in ranking (visibility score
@@ -202,10 +219,12 @@ ingest + library), switched via the top-right button or the brand name.
   capture night (`YYYY-MM-DD_HHMM` start time, or `undated`) - frames
   whose DATE-OBS are < 12 h apart share one folder (midnight runs count
   once), so different nights get different folders with their own four frame
-  sub-folders (created on first ingest). Session-folder digits are the UTC
-  wall-clock of the session start; the UI renders session times in the
-  effective zone, so a session starting 23:14 UTC shows `01:14` (+2) in the
-  library while its folder reads `2026-08-22_2314` - that is expected. The
+  sub-folders (created on first ingest). Session-folder digits are the
+  MACHINE-LOCAL wall clock of the session start (`ingest.session_folder_name`
+  uses `datetime.fromtimestamp`), so on a UTC+2 machine a session starting
+  23:14 UTC is stored as `2026-08-23_0114` while the library renders the same
+  instant as `01:14` in the effective zone - folder date and displayed date can
+  therefore differ by one day, and that is expected. The
   sub-folder comes from the FITS
   IMAGETYP header at ingest (`app/ingest.py classify_frame()`); unknown
   types land in `lights`. The ingest endpoint takes an optional `frame` form
@@ -351,8 +370,11 @@ ingest + library), switched via the top-right button or the brand name.
   (`web/ftps_deploy.py uploadtree web /astro`); the site root `/` is a
   landing page from `landing/` (index.html + style.css + app.png,
   `web/ftps_deploy.py uploadtree landing /`). Keep `/` free of app files —
-  stale ones are removed with `web/ftps_deploy.py remove <remote-path>`
-  (file or recursive dir). Credentials live OUTSIDE the repo: pass
+  stale ones are removed with `web/ftps_deploy.py remove <remote-path> --yes`
+  (file or recursive dir; `--yes` is mandatory and the webspace root is
+  refused outright). uploadtree/uploadmany additionally refuse to publish
+  pages that still contain template placeholders (landing/impressum.html)
+  unless `--force` is passed. Credentials live OUTSIDE the repo: pass
   `--env <path>` pointing at ftp.env (never committed). Cloudflare serves
   the remote site and injects a script into delivered index.html —
   hash-verify only after stripping that block.
@@ -365,10 +387,14 @@ ingest + library), switched via the top-right button or the brand name.
   per file) and verify with `download` or `list`.
 - Public release artifacts live under `/downloads/` on the site
   (`dist/release/` content — see `scripts/make_release.py`): the desktop
-  zip, `version.json` (read by the landing page) and `ap-version.js`
-  (JSONP — read by the desktop app's startup update checker, since a
-  localhost origin cannot fetch cross-origin JSON). Never upload the
-  developer's `dist\data` — `make_release.py` stages a clean package.
+  zip, `AstroPilot-latest.zip` (stable name for the download page's no-JS
+  fallback link), `version.json` (read by the landing page) and
+  `ap-version.js` (JSONP — read by the desktop app's startup update
+  checker, since a localhost origin cannot fetch cross-origin JSON). Never
+  upload the developer's `dist\data` — `make_release.py` stages a clean
+  package. The release flow also runs `python scripts/build_changelog.py`
+  (it warns loudly when a released tag has no curated summary) so the
+  download page's "What's new" cannot silently go stale again.
 - Sync from the dev mirror: robocopy `<workspace>\Astro-Web` -> `web/` (exclude
   `.git` and `ftp.env`), then commit here. `web/.gitignore` covers the dev
   mirror leftovers (`whale/`, `dev/`).

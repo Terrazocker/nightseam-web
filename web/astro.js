@@ -296,10 +296,14 @@ export function sunCrossings(scanStartUTC, lat, lon, thresholdDeg) {
  *  Returns { sunset, civilDusk, nauticalDusk, astroDusk, astroDawn, nauticalDawn, civilDawn, sunrise }
  *  each Date|null, plus dayStart (scan window start). */
 export function nightInfo(localDate, lat, lon) {
-  // Scan window: local midnight of the target date (noon - 12 h) for 48 h —
-  // always contains exactly the target evening and the following morning.
+  // Scan window: LOCAL midnight of the target date (local noon - 12 h) for 48 h
+  // - always contains exactly the target evening and the following morning.
+  // `new Date(y, m, d, 12)` already carries the browser's zone, so subtracting
+  // getTimezoneOffset() here cancelled it and anchored the window at UTC
+  // midnight instead - which shifted the whole night by a day for every site
+  // outside roughly UTC-4..+2.
   const localNoon = new Date(localDate.getFullYear(), localDate.getMonth(), localDate.getDate(), 12, 0, 0);
-  const scanStart = new Date(localNoon.getTime() - localNoon.getTimezoneOffset() * 60000 - 12 * 3600000);
+  const scanStart = new Date(localNoon.getTime() - 12 * 3600000);
   const g = (thr) => sunCrossings(scanStart, lat, lon, thr);
   const zero = g(0), civil = g(-6), naut = g(-12), astro = g(-18);
   return {
@@ -332,7 +336,7 @@ export function objectTrack(raDeg, decDeg, jd0, jd1, lat, lon, stepMin = 4) {
 export function objectDayInfo(raDeg, decDeg, dayStartUTC, lat, lon) {
   const jdMidnight = julianDay(dayStartUTC);
   const jd0 = jdMidnight - 0.5;
-  const N = 720; // 4-min steps over 48 h
+  const N = 720; // 2-min steps over 24 h
   let prev = null, maxAlt = -90, maxJd = jdMidnight;
   let rise = null, set = null;
   for (let i = 0; i <= N; i++) {

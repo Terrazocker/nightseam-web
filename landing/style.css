@@ -158,7 +158,6 @@ header, main, footer { position: relative; z-index: 1; }
   max-width: 620px;
   margin: 0 auto 34px;
 }
-.hero-sub .graded { color: var(--gold); font-weight: 600; font-family: var(--font-mono); }
 .hero-actions { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; }
 .cta {
   display: inline-block;

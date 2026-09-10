@@ -116,10 +116,13 @@ function filterType() {
   return "lrgb";
 }
 
-/* Phase-dependent minimum moon distance (Lorentzian).
-   At new moon: minDist = base (60–120°).
-   At full moon: minDist → ∞ (nothing is safe).
-   The 0.333 constant controls how sharply the threshold rises near full. */
+/* Phase-dependent minimum moon distance (Lorentzian, symmetric about full moon).
+   The threshold is LARGEST at full moon (= BASE) and smallest at new moon
+   (= BASE/3.25); objects closer than the threshold take the full illumination
+   penalty, and beyond it the glow decays over 180°. `moonAgeDays` is the folded
+   age the server ships (0 = new ... ~14.76 = full), so `frac` spans 0-0.5 - the
+   symmetry means a full 0-29.53 age would give the same result.
+   The 0.333 constant controls how sharply the threshold rises toward full. */
 function moonMinDist(filterType, moonAgeDays) {
   const BASE = { narrowband: 60, oiii: 90, lrgb: 120 }[filterType] || 120;
   const frac = moonAgeDays / 29.53;           // 0 = new, 0.5 = full
@@ -135,11 +138,13 @@ function effectiveMoonGlow(illum, sep, filterType, moonAgeDays) {
   return illum * distFactor;
 }
 
-/* Bortle scaling — darker skies reduce the moon penalty more. Non-linear:
-   bortle 1–3 (dark sites) get a much bigger break than 6–8 (suburban). */
+/* Bortle scaling - darker skies reduce the moon penalty more. The curve is
+   CONTINUOUS at the bortle 3/4 junction (0.40 either side of it): before, one
+   slider step changed the penalty by ~67 %, more than any other step.
+   Range: 0.30 (bortle 1) ... 0.40 (3) ... 1.12 (9). */
 function bortleMoonFactor(bortle) {
-  if (bortle <= 3) return 0.25 + 0.05 * bortle;   // 0.40–0.55 (dark)
-  return 0.55 + 0.12 * (bortle - 3);              // 0.55–1.31 (suburban→city)
+  if (bortle <= 3) return 0.25 + 0.05 * bortle;   // 0.30-0.40 (dark sites)
+  return 0.40 + 0.12 * (bortle - 3);              // 0.52-1.12 (suburban->city)
 }
 
 export function recomputeNightDerived() {
@@ -151,7 +156,7 @@ export function recomputeNightDerived() {
   const illum = N.moon_illum || 0;
   const bortle = (S.cfg && S.cfg.bortle) || 4;
   const fType = filterType();
-  const moonAge = N.moon_age_days || 0;  // 0–29.53, 0 = new, ~14.76 = full
+  const moonAge = N.moon_age_days || 0;  // 0-14.76 (folded), 0 = new, ~14.76 = full
   const bortleF = bortleMoonFactor(bortle);
 
   for (const o of N.objects) {

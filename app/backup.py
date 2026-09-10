@@ -30,6 +30,31 @@ def _safe_join(root: Path, rel: str) -> Path | None:
     return p
 
 
+MAX_MEMBER_BYTES = 1 << 30          # 1 GiB per zip member (same cap as ingest)
+
+
+def _read_member(zf: zipfile.ZipFile, name: str,
+                 limit: int = MAX_MEMBER_BYTES) -> bytes:
+    """Read one zip member with a hard size cap.
+
+    `zipfile.read()` materialises a member whole, so one crafted member (a
+    deflate bomb) could exhaust RAM even though the upload itself is capped.
+    Raises ValueError when the member is too large."""
+    info = zf.getinfo(name)          # KeyError -> caller skips the member
+    if info.file_size > limit:
+        raise ValueError(f"zip member too large: {name}")
+    out = bytearray()
+    with zf.open(info) as src:
+        while True:
+            chunk = src.read(1 << 20)
+            if not chunk:
+                break
+            out += chunk
+            if len(out) > limit:
+                raise ValueError(f"zip member too large: {name}")
+    return bytes(out)
+
+
 def _export_zip_to(db: Database, target) -> int:
     """Write the setup ZIP to any writable file object; returns byte count."""
     setup = {
@@ -94,7 +119,8 @@ def apply_import_zip(db: Database, blob: bytes | Path) -> dict:
     try:
         zf = zipfile.ZipFile(io.BytesIO(blob) if isinstance(blob, bytes)
                              else blob)
-        setup = json.loads(zf.read("setup.json").decode("utf-8"))
+        setup = json.loads(_read_member(zf, "setup.json", 64 << 20)
+                           .decode("utf-8"))
     except Exception as exc:  # noqa: BLE001
         raise ValueError(f"Not a valid AstroPilot export: {exc}") from None
     if setup.get("app") != "AstroPilot":
@@ -119,7 +145,7 @@ def apply_import_zip(db: Database, blob: bytes | Path) -> dict:
         if not name or _safe_join(data_dir() / "panos", name) is None:
             continue
         try:
-            data = zf.read(f"panos/{name}")
+            data = _read_member(zf, f"panos/{name}")
         except KeyError:
             continue
         (data_dir() / "panos" / name).write_bytes(data)
@@ -133,7 +159,7 @@ def apply_import_zip(db: Database, blob: bytes | Path) -> dict:
         if not rel or _safe_join(image_dir, rel) is None:
             continue
         try:
-            data = zf.read(f"library/{rel}")
+            data = _read_member(zf, f"library/{rel}")
         except KeyError:
             continue
         target = _safe_join(image_dir, rel)

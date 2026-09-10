@@ -509,17 +509,25 @@ class Database:
 
     def rename_images(self, old_name: str, new_name: str, otype: str | None,
                       new_folder: str):
-        """Rename an unresolved object group (name, type and stored paths)."""
+        """Rename an unresolved object group (name, type and stored paths).
+
+        Matching is whitespace/case-insensitive, mirroring the library grouping
+        (`imglib.name_key`), so one rename cannot leave sibling spellings behind
+        pointing at a folder that was moved away."""
+        from .imglib import name_key          # local import: keeps the
+        target = name_key(old_name)           # module import graph acyclic
         with self.lock:
             cur = self.conn.cursor()
-            cur.execute(
-                "UPDATE images SET object_name=?, otype=? "
-                "WHERE object_id IS NULL AND object_name=?",
-                (new_name, otype, old_name))
-            for r in cur.execute(
-                    "SELECT id, file FROM images "
-                    "WHERE object_id IS NULL AND object_name=?",
-                    (new_name,)).fetchall():
+            rows = [dict(r) for r in cur.execute(
+                "SELECT id, file, object_name FROM images "
+                "WHERE object_id IS NULL").fetchall()]
+            ids = [r["id"] for r in rows if name_key(r["object_name"]) == target]
+            for i in ids:
+                cur.execute("UPDATE images SET object_name=?, otype=? WHERE id=?",
+                            (new_name, otype, i))
+            for r in rows:
+                if r["id"] not in ids:
+                    continue
                 parts = r["file"].split("/", 1)
                 if len(parts) == 2 and parts[0] != new_folder:
                     cur.execute("UPDATE images SET file=? WHERE id=?",
@@ -609,81 +617,97 @@ class Database:
                       panoramas: list, customs: list | None = None,
                       images: list | None = None,
                       observations: list | None = None) -> None:
-        """Replace all user data with an imported bundle (catalog untouched)."""
+        """Replace all user data with an imported bundle (catalog untouched).
+
+        The replace runs inside ONE transaction and rolls back on any failure:
+        the DELETEs would otherwise stay live on this long-lived connection and
+        be committed by the next unrelated write, silently wiping the user's
+        data after a failed import.
+
+        The legacy `observations` table is deliberately NOT cleared - it is kept
+        for schema compatibility and is no longer exported or imported.
+        """
         customs = customs or []
         images = images or []
         observations = observations or []
+        if not isinstance(settings, dict) or not all(
+                isinstance(x, list)
+                for x in (sites, rigs, panoramas, customs, images)):
+            raise ValueError("malformed setup bundle")
         with self.lock:
             cur = self.conn.cursor()
-            cur.execute("DELETE FROM sites")
-            cur.execute("DELETE FROM rigs")
-            cur.execute("DELETE FROM panoramas")
-            cur.execute("DELETE FROM settings")
-            cur.execute("DELETE FROM custom_objects")
-            cur.execute("DELETE FROM images")
-            cur.execute("DELETE FROM observations")
-            for s in sites:
-                cur.execute(
-                    "INSERT INTO sites(id,name,lat,lon,elev) VALUES(?,?,?,?,?)",
-                    (s.get("id"), s.get("name"), s.get("lat"),
-                     s.get("lon"), s.get("elev", 0)))
-            for r in rigs:
-                cur.execute(
-                    "INSERT INTO rigs(id,name,focal_mm,sensor_w,sensor_h,fov_w,fov_h) "
-                    "VALUES(?,?,?,?,?,?,?)",
-                    (r.get("id"), r.get("name"), r.get("focal_mm"),
-                     r.get("sensor_w"), r.get("sensor_h"),
-                     r.get("fov_w"), r.get("fov_h")))
-            for p in panoramas:
-                cur.execute(
-                    "INSERT INTO panoramas(id,name,file,az_offset,alt_bottom,"
-                    "alt_top,strokes,profile,profile_top,active,fov,paint_mode) "
-                    "VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
-                    (p.get("id"), p.get("name"), p.get("file"),
-                     p.get("az_offset", 0), p.get("alt_bottom", 0),
-                     p.get("alt_top", 45), json.dumps(p.get("strokes", [])),
-                     json.dumps(p.get("profile", [])),
-                     json.dumps(p.get("profile_top", [])),
-                     1 if p.get("active") else 0, p.get("fov", 360),
-                     p.get("paint_mode", "obstacle")))
-            for c in customs:
-                cur.execute(
-                    "INSERT OR REPLACE INTO custom_objects"
-                    "(id,primary_name,otype,ra_hours,dec_deg,vmag,size_am,"
-                    "constellation,blurb,search) VALUES(?,?,?,?,?,?,?,?,?,?)",
-                    (c.get("id"), c.get("primary_name"),
-                     c.get("otype", "galaxy"), c.get("ra_hours"),
-                     c.get("dec_deg"), c.get("vmag"),
-                     c.get("size_am") or "", c.get("constellation") or "",
-                     c.get("blurb") or "",
-                     " | ".join(filter(None, [
-                         str(c.get("primary_name", "")).lower(),
-                         str(c.get("otype", "")).lower(), "custom",
-                         str(c.get("id", ""))]))))
-            for im in images:
-                cur.execute(
-                    "INSERT OR REPLACE INTO images"
-                    "(id,file,orig_name,object_id,object_name,otype,ra_hours,"
-                    "dec_deg,exposure,date_obs,filter,telescope,imagetyp,"
-                    "ingested_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                    (im.get("id"), im.get("file"), im.get("orig_name", ""),
-                     im.get("object_id"), im.get("object_name", ""),
-                     im.get("otype"), im.get("ra_hours"), im.get("dec_deg"),
-                     im.get("exposure"), im.get("date_obs"),
-                     im.get("filter"), im.get("telescope"),
-                     im.get("imagetyp"), im.get("ingested_at", "")))
-            for ob in observations:
-                cur.execute(
-                    "INSERT OR REPLACE INTO observations"
-                    "(id,object_id,date_obs,notes,created_at) "
-                    "VALUES(?,?,?,?,?)",
-                    (ob.get("id"), ob.get("object_id"), ob.get("date_obs"),
-                     ob.get("notes") or "", ob.get("created_at", "")))
-            for k, v in settings.items():
-                cur.execute(
-                    "INSERT INTO settings(key,value) VALUES(?,?)",
-                    (k, json.dumps(v)))
-            self.conn.commit()
+            try:
+                cur.execute("DELETE FROM sites")
+                cur.execute("DELETE FROM rigs")
+                cur.execute("DELETE FROM panoramas")
+                cur.execute("DELETE FROM settings")
+                cur.execute("DELETE FROM custom_objects")
+                cur.execute("DELETE FROM images")
+                for s in sites:
+                    cur.execute(
+                        "INSERT INTO sites(id,name,lat,lon,elev) VALUES(?,?,?,?,?)",
+                        (s.get("id"), s.get("name"), s.get("lat"),
+                         s.get("lon"), s.get("elev", 0)))
+                for r in rigs:
+                    cur.execute(
+                        "INSERT INTO rigs(id,name,focal_mm,sensor_w,sensor_h,fov_w,fov_h) "
+                        "VALUES(?,?,?,?,?,?,?)",
+                        (r.get("id"), r.get("name"), r.get("focal_mm"),
+                         r.get("sensor_w"), r.get("sensor_h"),
+                         r.get("fov_w"), r.get("fov_h")))
+                for p in panoramas:
+                    cur.execute(
+                        "INSERT INTO panoramas(id,name,file,az_offset,alt_bottom,"
+                        "alt_top,strokes,profile,profile_top,active,fov,paint_mode) "
+                        "VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+                        (p.get("id"), p.get("name"), p.get("file"),
+                         p.get("az_offset", 0), p.get("alt_bottom", 0),
+                         p.get("alt_top", 45), json.dumps(p.get("strokes", [])),
+                         json.dumps(p.get("profile", [])),
+                         json.dumps(p.get("profile_top", [])),
+                         1 if p.get("active") else 0, p.get("fov", 360),
+                         p.get("paint_mode", "obstacle")))
+                for c in customs:
+                    cur.execute(
+                        "INSERT OR REPLACE INTO custom_objects"
+                        "(id,primary_name,otype,ra_hours,dec_deg,vmag,size_am,"
+                        "constellation,blurb,search) VALUES(?,?,?,?,?,?,?,?,?,?)",
+                        (c.get("id"), c.get("primary_name"),
+                         c.get("otype", "galaxy"), c.get("ra_hours"),
+                         c.get("dec_deg"), c.get("vmag"),
+                         c.get("size_am") or "", c.get("constellation") or "",
+                         c.get("blurb") or "",
+                         " | ".join(filter(None, [
+                             str(c.get("primary_name", "")).lower(),
+                             str(c.get("otype", "")).lower(), "custom",
+                             str(c.get("id", ""))]))))
+                for im in images:
+                    cur.execute(
+                        "INSERT OR REPLACE INTO images"
+                        "(id,file,orig_name,object_id,object_name,otype,ra_hours,"
+                        "dec_deg,exposure,date_obs,filter,telescope,imagetyp,"
+                        "ingested_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                        (im.get("id"), im.get("file"), im.get("orig_name", ""),
+                         im.get("object_id"), im.get("object_name", ""),
+                         im.get("otype"), im.get("ra_hours"), im.get("dec_deg"),
+                         im.get("exposure"), im.get("date_obs"),
+                         im.get("filter"), im.get("telescope"),
+                         im.get("imagetyp"), im.get("ingested_at", "")))
+                for ob in observations:
+                    cur.execute(
+                        "INSERT OR REPLACE INTO observations"
+                        "(id,object_id,date_obs,notes,created_at) "
+                        "VALUES(?,?,?,?,?)",
+                        (ob.get("id"), ob.get("object_id"), ob.get("date_obs"),
+                         ob.get("notes") or "", ob.get("created_at", "")))
+                for k, v in settings.items():
+                    cur.execute(
+                        "INSERT INTO settings(key,value) VALUES(?,?)",
+                        (k, json.dumps(v)))
+                self.conn.commit()
+            except Exception:
+                self.conn.rollback()
+                raise
 
 
 def _csv_adv_count(csv_path: Path) -> int:

@@ -34,7 +34,10 @@ DOCS = ["LICENSE", "NOTICE"]
 
 
 def describe():
-    out = subprocess.run(["git", "describe", "--tags", "--always"],
+    # --dirty, like build.ps1's bake: a release built from uncommitted work must
+    # not claim a clean tag, or the zip/version.json would disagree with the
+    # version the exe inside actually reports
+    out = subprocess.run(["git", "describe", "--tags", "--always", "--dirty"],
                          cwd=str(ROOT), capture_output=True, text=True).stdout.strip()
     return out.lstrip("v") or "0.0.0"
 
@@ -64,6 +67,10 @@ def main():
             if f.name == zip_name:
                 continue
             zf.write(f, arcname=f.name)
+
+    # stable name for the landing page's no-JS fallback link (the versioned zip
+    # alone cannot be linked from static HTML)
+    shutil.copy2(zip_path, STAGE / "AstroPilot-latest.zip")
 
     sha = hashlib.sha256(zip_path.read_bytes()).hexdigest()
     size = zip_path.stat().st_size

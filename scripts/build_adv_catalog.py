@@ -4,7 +4,7 @@ Source: https://github.com/mattiaverga/OpenNGC (CC BY-SA 4.0) - the complete
 NGC/IC deep-sky catalog. Converts OpenNGC rows to AstroPilot's catalog schema
 and skips entries that duplicate the curated 197-object catalog.
 
-Run: python scripts/build_adv_catalog.py
+Run: python scripts/build_adv_catalog.py [path/to/NGC.csv]
 """
 
 import csv
@@ -13,8 +13,15 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-SRC = Path(sys.argv[1] if len(sys.argv) > 1
-           else r"C:\Users\<user>\AppData\Local\Temp\opencode\NGC.csv")
+# NGC.csv is not bundled (CC BY-SA download, ~2.8 MB): fetch it from
+# https://github.com/mattiaverga/OpenNGC and pass the path - or drop it at
+# data/NGC.csv (gitignored) and run the script with no argument.
+SRC = Path(sys.argv[1]) if len(sys.argv) > 1 else ROOT / "data" / "NGC.csv"
+if not SRC.is_file():
+    raise SystemExit(
+        f"OpenNGC source not found: {SRC}\n"
+        f"  download NGC.csv from https://github.com/mattiaverga/OpenNGC\n"
+        f"  and pass it as the first argument (or place it at data/NGC.csv)")
 OUT = ROOT / "app" / "data" / "openned.csv"
 
 sys.path.insert(0, str(ROOT))

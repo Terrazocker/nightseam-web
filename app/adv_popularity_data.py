@@ -1,6 +1,7 @@
 """Auto-generated the popularity source popularity scores for advanced catalog objects.
 Matched from popularity-source.invalid/targets/targets_popularity.json.
-Do not hand-edit - regenerate via scripts/build_adv_popularity.py."""
+Do not hand-edit - regenerate with scripts/match_popularity.py, which prints
+the ADV_POPULARITY block to stdout."""
 ADV_POPULARITY = {
     'ic10': 380,
     'ic100': 1,

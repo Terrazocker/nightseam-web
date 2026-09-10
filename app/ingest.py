@@ -7,6 +7,7 @@ or disk.
 
 from __future__ import annotations
 
+import logging
 import re
 from datetime import UTC, datetime
 from pathlib import Path
@@ -14,6 +15,8 @@ from pathlib import Path
 from . import fits as fitsio
 from . import imglib
 from .database import Database
+
+log = logging.getLogger(__name__)
 
 MAX_INGEST_BYTES = 1 << 30          # 1 GiB per file
 HEADER_READ = 1_500_000             # fits._MAX_BLOCKS blocks ~= 1.47 MB
@@ -31,15 +34,18 @@ FRAME_DIRS = {v: k for k, v in FRAME_TYPES.items()}   # subfolder -> type
 
 
 def classify_frame(imagetyp: str | None) -> str:
-    """Normalize a FITS IMAGETYP value into 'light'/'bias'/'dark'/'flat'."""
-    t = str(imagetyp or "").strip().lower()
-    if t in ("light", "l", "science", ""):
+    """Normalize a FITS IMAGETYP value into 'light'/'bias'/'dark'/'flat'.
+
+    Handles the multi-word spellings capture software writes ("Dark Frame",
+    "Flat Field", "Bias Frame") as well as the single-word ones."""
+    t = re.sub(r"[^a-z]", "", str(imagetyp or "").lower())
+    if t in ("", "l", "science") or t.startswith("light"):
         return "light"
-    if t in ("bias", "zero"):
+    if t.startswith(("bias", "zero")):
         return "bias"
-    if t in ("dark",):
+    if t.startswith("dark"):
         return "dark"
-    if t in ("flat", "flatfield", "skyflat"):
+    if t.startswith("flat") or t.startswith("skyflat"):
         return "flat"
     return "light"          # unknown types default to lights
 
@@ -147,7 +153,13 @@ async def ingest_one(db: Database, catalog: list[dict], archive: Path,
         return {"file": name, "ok": False,
                 "error": f"cannot write to archive folder {archive}"}
 
-    stored = await _stream_to(archive, target, f, header)
+    try:
+        stored = await _stream_to(archive, target, f, header)
+    except OSError as exc:
+        target.unlink(missing_ok=True)
+        log.warning("ingest: cannot write %s: %s", target, exc)
+        return {"file": name, "ok": False,
+                "error": f"could not write to the archive: {exc.strerror or exc}"}
     if stored is None:
         target.unlink(missing_ok=True)
         return {"file": name, "ok": False,
@@ -172,32 +184,33 @@ async def ingest_one(db: Database, catalog: list[dict], archive: Path,
 
 async def _stream_to(archive: Path, target: Path, f, first_chunk: bytes) -> str | None:
     """Write first_chunk + the rest of `f` to target, enforcing the size cap.
-    Returns the stored path relative to the archive root, or None if the
-    file exceeds MAX_INGEST_BYTES."""
+    Returns the stored path relative to the archive root, or None if the file
+    exceeds MAX_INGEST_BYTES. An OSError (disk full, permissions, locked file)
+    propagates, so the caller can report the real cause instead of blaming the
+    size cap."""
     total = len(first_chunk)
-    try:
-        with open(target, "wb") as out:
-            out.write(first_chunk)
-            while True:
-                chunk = await f.read(_COPY_CHUNK)
-                if not chunk:
-                    break
-                total += len(chunk)
-                if total > MAX_INGEST_BYTES:
-                    return None
-                out.write(chunk)
-    except OSError:
-        return None
+    with open(target, "wb") as out:
+        out.write(first_chunk)
+        while True:
+            chunk = await f.read(_COPY_CHUNK)
+            if not chunk:
+                break
+            total += len(chunk)
+            if total > MAX_INGEST_BYTES:
+                return None
+            out.write(chunk)
     return str(target.relative_to(archive)).replace("\\", "/")
 
 
-def rename_archive_folder(archive: Path, old_name: str, new_name: str) -> None:
+def rename_archive_folder(archive: Path, old_name: str, new_name: str) -> bool:
     """Move <archive>/<old slug> to <archive>/<new slug>, merging if the new
-    folder already exists. Failures are silent - the DB rename still works."""
+    folder already exists. Returns False when the move could not be completed -
+    the caller must then NOT rewrite the stored paths, or every frame of the
+    group would point at a folder that does not exist."""
     old = archive / obj_slug(old_name)
     new = archive / obj_slug(new_name)
     if old == new or not old.is_dir():
-        return
+        return True
     try:
         if new.exists():
             for f in old.rglob("*"):
@@ -212,8 +225,10 @@ def rename_archive_folder(archive: Path, old_name: str, new_name: str) -> None:
             old.rmdir()
         else:
             old.rename(new)
-    except OSError:
-        pass
+    except OSError as exc:
+        log.warning("rename: could not move %s -> %s: %s", old, new, exc)
+        return False
+    return True
 
 
 def _norm_rel(rel) -> str:
@@ -250,9 +265,17 @@ def reindex_library(db: Database, archive: Path) -> dict:
             continue
 
         parts = rel.parts
-        folder_frame = parts[-2] if len(parts) >= 3 and parts[-2] in FRAME_DIRS else None
-        folder_name = (parts[-3] if len(parts) >= 3 and parts[-2] in FRAME_DIRS
-                       else parts[-2] if len(parts) >= 2 else None)
+        frame_dir = (parts[-2] if len(parts) >= 2 and parts[-2] in FRAME_DIRS
+                     else None)
+        folder_frame = frame_dir
+        # The OBJECT is the folder above the session, never the session folder
+        # itself: <archive>/<Object>/<session>/<frame>/f.fit -> parts[-4], and
+        # for the older <archive>/<Object>/<frame>/f.fit layout -> parts[-3].
+        if frame_dir is not None:
+            folder_name = (parts[-4] if len(parts) >= 4
+                           else parts[-3] if len(parts) >= 3 else None)
+        else:
+            folder_name = parts[-2] if len(parts) >= 2 else None
         try:
             with open(f, "rb") as fh:
                 hdr = fitsio.read_fits_header(fh.read(HEADER_READ))

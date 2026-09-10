@@ -13,7 +13,10 @@ Usage:
   python ftps_deploy.py download <remote-name> <local-file> [--env PATH]
   python ftps_deploy.py uploadmany <local-dir> <remote-dir> [--env PATH]   # flat files
   python ftps_deploy.py uploadtree <local-dir> <remote-dir> [--env PATH]   # recursive
-  python ftps_deploy.py remove <remote-path> [--env PATH]                  # file or dir tree
+  python ftps_deploy.py remove <remote-path> --yes [--env PATH]   # needs --yes
+
+uploadmany/uploadtree refuse to publish .html files that still contain template
+placeholders (e.g. landing/impressum.html) - pass --force to override.
 """
 import pathlib
 import sys
@@ -75,6 +78,34 @@ def mkd_tree(ftp, remote):
             pass  # already exists
 
 
+PLACEHOLDER_MARKERS = ("[Dein Name]", "[Straße", "[PLZ", "name@example.com")
+
+
+def check_placeholders(local, force: bool) -> None:
+    """Refuse to publish pages that still carry template placeholders.
+
+    landing/impressum.html ships placeholders until the operator fills in their
+    real legal details; uploading it as-is publishes a false provider notice."""
+    if force:
+        return
+    bad = []
+    for p in pathlib.Path(local).rglob("*.html"):
+        try:
+            text = p.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        if any(m in text for m in PLACEHOLDER_MARKERS):
+            bad.append(str(p))
+    if bad:
+        print("refusing to upload pages with unfilled placeholders:",
+              file=sys.stderr)
+        for b in bad:
+            print(f"  {b}", file=sys.stderr)
+        print("fill in the real details (landing/impressum.html) or pass "
+              "--force to publish anyway", file=sys.stderr)
+        sys.exit(2)
+
+
 def remove_remote(ftp, path):
     """Delete a remote file, or a directory and everything under it."""
     try:
@@ -124,6 +155,7 @@ def main():
             print(f"created {argv[1]}")
         elif cmd == "uploadmany":
             local, remote = argv[1], argv[2].rstrip("/")
+            check_placeholders(local, "--force" in argv)
             files = sorted(pathlib.Path(local).iterdir())
             for f in files:
                 if not f.is_file() or skip(f.name):
@@ -133,6 +165,7 @@ def main():
                 print(f"uploaded {f.name} -> {remote}/{f.name}")
         elif cmd == "uploadtree":
             local, remote = pathlib.Path(argv[1]), argv[2].rstrip("/")
+            check_placeholders(local, "--force" in argv)
             mkd_tree(ftp, remote)
             items = sorted(local.iterdir())
             for item in items:
@@ -150,7 +183,21 @@ def main():
                         ftp.storbinary(f"STOR {remote}/{item.name}", fh)
                     print(f"uploaded {item.name} -> {remote}/{item.name}")
         elif cmd == "remove":
-            remove_remote(ftp, argv[1])
+            target = (argv[1] if len(argv) > 1 else "").strip()
+            # recursive delete with no undo: refuse the webspace root outright
+            # and require an explicit --yes for everything else
+            if target in ("", "/", ".", "./", ".."):
+                print("refusing to remove the webspace root", file=sys.stderr)
+                sys.exit(2)
+            if "--yes" not in argv:
+                print(f"about to delete '{target}' (a directory is removed "
+                      f"with everything under it).", file=sys.stderr)
+                print("nothing was deleted - re-run with --yes to confirm:",
+                      file=sys.stderr)
+                print(f"  python web/ftps_deploy.py remove {target} --yes",
+                      file=sys.stderr)
+                sys.exit(2)
+            remove_remote(ftp, target)
         else:
             print(f"unknown command: {cmd}", file=sys.stderr)
             sys.exit(2)

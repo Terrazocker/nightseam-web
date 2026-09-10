@@ -19,7 +19,7 @@
 <noscript><p style="margin:10px 22px;padding:10px 14px;border:1px solid var(--line);border-radius:10px;color:var(--muted);font-size:13px">AstroPilot Web needs JavaScript — all planning math runs in your browser.</p></noscript>
 
 <header class="topbar">
-  <div class="brand" title="AstroPilot Web">
+  <div class="brand" title="AstroPilot Web" role="button" tabindex="0">
     <img class="brand-ico" src="app.png" alt="AstroPilot" width="34" height="34">
     <div>
       <h1>AstroPilot <em>Web</em></h1>
@@ -84,7 +84,7 @@
         </div>
         <div class="menu-section">
           <h4>Layout</h4>
-          <label class="inline">Free space per side <span id="edgeSpaceVal" class="mono">14&nbsp;px</span></label>
+          <label class="inline" for="edgeSpace">Free space per side <span id="edgeSpaceVal" class="mono">14&nbsp;px</span></label>
           <input type="range" id="edgeSpace" min="0" max="200" step="4" value="14" style="width:100%">
           <p class="hint">Lower fills big screens, raise centers content on wide monitors.</p>
         </div>

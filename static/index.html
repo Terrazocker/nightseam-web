@@ -6,8 +6,11 @@
 <title>AstroPilot — DSO Planner</title>
 <link rel="icon" href="/favicon.ico">
 <script>
-/* apply the saved theme before first paint (local sync fetch, ~1 ms) */
-(function(){try{var x=new XMLHttpRequest();x.open("GET","/api/state",false);x.timeout=1500;x.send();
+/* apply the saved theme before first paint (local sync fetch, ~1 ms).
+   No x.timeout here: the XHR spec forbids a timeout on a synchronous request,
+   and setting one throws before send() - which silently disabled this whole
+   block and caused a first-paint flash of the default theme. */
+(function(){try{var x=new XMLHttpRequest();x.open("GET","/api/state",false);x.send();
 if(x.status===200){var t=JSON.parse(x.responseText).theme;if(t)document.documentElement.setAttribute("data-theme",t);}
 }catch(e){}})();
 </script>

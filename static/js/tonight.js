@@ -11,12 +11,18 @@ export function bindTonight() {
     const card = e.target.closest(".pick");
     if (card && card.dataset.id) openDetail(card.dataset.id);
   });
+  // the cards are keyboard-operable too (role=button in cardHTML)
+  document.addEventListener("keydown", e => {
+    if (e.key !== "Enter" && e.key !== " ") return;
+    const card = e.target.closest && e.target.closest(".pick");
+    if (card && card.dataset.id) { e.preventDefault(); openDetail(card.dataset.id); }
+  });
 }
 
 function cardHTML({o, m}) {
   const st = statusOf(o, S.tIdx);
   const pop = popularityFactor(m);
-  return `<div class="pick ${st.code==="blk"?"blocked":st.code==="low"||st.code==="hor"?"low":""}" data-id="${m.id}">
+  return `<div class="pick ${st.code==="blk"?"blocked":st.code==="low"||st.code==="hor"?"low":""}" data-id="${m.id}" role="button" tabindex="0">
     <img class="pick-thumb" loading="lazy" src="/api/object/${m.id}/image?thumb=1&v=${IMG_VER}"
       onerror="this.onerror=null;this.style.visibility='hidden'">
     <div class="pick-body">

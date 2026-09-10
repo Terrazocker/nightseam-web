@@ -1,5 +1,30 @@
 [
  {
+  "version": "0.5.11",
+  "date": "2026-09-02",
+  "summary": "Targets are ranked with community popularity as a silent tiebreaker, and moon-aware scoring now accounts for the Moon's phase, your filters and your sky brightness (Bortle class)."
+ },
+ {
+  "version": "0.5.10",
+  "date": "2026-08-31",
+  "summary": "The web setup wizard is centred correctly, more controls carry proper accessibility labels, and the library and panorama handling got small fixes."
+ },
+ {
+  "version": "0.5.9",
+  "date": "2026-08-31",
+  "summary": "Better keyboard and screen-reader support (dialog roles, focus traps, labelled search), smoother handling of very large imports, and internal cleanups."
+ },
+ {
+  "version": "0.5.8",
+  "date": "2026-08-31",
+  "summary": "Safer backup import (a safety copy is written before anything is replaced), streamed uploads that no longer need the whole session in memory, and small web fixes."
+ },
+ {
+  "version": "0.5.7",
+  "date": "2026-08-30",
+  "summary": "The session journal was removed from both versions \u2014 planning and the image library are unchanged, but observed marks and journal notes are gone."
+ },
+ {
   "version": "0.5.6",
   "date": "2026-08-30",
   "summary": "Horizon photos now survive reloading the page, and the \u201cfree space\u201d layout setting works on any screen."

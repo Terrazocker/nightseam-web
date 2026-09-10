@@ -66,9 +66,6 @@ function applyActiveSite(site) {
     sel.innerHTML = SITES.map((s) => `<option value="${esc(s.id)}"${s.id === site.id ? ' selected' : ''}>${esc(s.name)}</option>`).join('');
     sel.value = site.id;
   }
-  const ii = $('#in-lat'); if (ii) ii.value = site.lat;
-  const io = $('#in-lon'); if (io) io.value = site.lon;
-  const sn = $('#site-note'); if (sn) sn.textContent = site.name;
 }
 
 let CAT = null;                 // array of catalog objects
@@ -90,11 +87,20 @@ const typeColor = (o) => TYPE_COLORS[o.otype] || '#9fb4d8';
 
 /* Hidden popularity scoring — log-scale normalization of the popularity source data.
    M42 (165k) → ~1.0, dim object (100) → ~0.3, no data → 0. */
-let _popMap = null;
+let _popMap = null;   // normalized-name -> score, from the live the popularity source fetch
+
+/* the popularity source keys Messier objects with a space ("M 42") while the catalog
+   stores "M42", so both sides are normalized before lookup - otherwise the
+   live values were never found and the baked fallback silently won. */
+const popKey = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9]/g, "");
 async function loadPopularity() {
   try {
     const r = await fetch('https://popularity-source.invalid/');
-    if (r.ok) _popMap = await r.json();
+    if (r.ok) {
+      const raw = await r.json();
+      _popMap = {};
+      for (const [k, v] of Object.entries(raw)) _popMap[popKey(k)] = v;
+    }
   } catch (_) { /* offline or blocked — scoring still works without it */ }
 }
 function popularityOf(o) {
@@ -103,7 +109,7 @@ function popularityOf(o) {
   if (_popMap) {
     const keys = [o.messier, o.ngcic, o.primary_name].filter(Boolean);
     for (const k of keys) {
-      const v = _popMap[k];
+      const v = _popMap[popKey(k)];
       if (v) return v;
     }
   }
@@ -155,7 +161,9 @@ function obsNightGrid() {
 }
 function obsKey(g, oid) {
   if (obsCache.size > 250000) obsCache.clear(); // guard against stale-site growth
-  return `${dateKey(WS.effToday())}|${g.minAlt.toFixed(2)}|${g.pano ? g.pano.id : '-'}|${g.lat.toFixed(2)}|${g.lon.toFixed(2)}|${oid}`;
+  // the ANCHOR date (topbar "night of", else today at the site) - NOT today:
+  // otherwise changing the date re-served the previous night's percentages
+  return `${dateKey(nightAnchor())}|${g.minAlt.toFixed(2)}|${g.pano ? g.pano.id : '-'}|${g.lat.toFixed(2)}|${g.lon.toFixed(2)}|${oid}`;
 }
 function escAttr(s) { return String(s).replace(/[^a-zA-Z0-9_-]/g, (c) => '\\' + c); }
 function cachedPctText(oid) {
@@ -434,6 +442,9 @@ async function loadWikiThumb(o, imgEl, phEl) {
     clearTimeout(to);
   }
   function showBlob(blob) {
+    // a slow fetch for an earlier object must not revoke the URL of the image
+    // that is on screen now - once the modal moved on, its element is detached
+    if (!imgEl.isConnected) return;
     if (currentObjUrl) URL.revokeObjectURL(currentObjUrl);
     currentObjUrl = URL.createObjectURL(blob);
     imgEl.src = currentObjUrl;
@@ -453,13 +464,8 @@ function hideSplash() {
 
 function route() {
   const h = location.hash || '#tonight';
-  if (h.startsWith('#obj:')) {
-    S.view = 'catalog';
-    openDetailSafe(h.slice(5));
-  } else {
-    S.view = h.slice(1);
-    if (!['tonight', 'sky', 'catalog', 'horizon'].includes(S.view)) S.view = 'tonight';
-  }
+  S.view = h.slice(1);
+  if (!['tonight', 'sky', 'catalog', 'horizon'].includes(S.view)) S.view = 'tonight';
   document.querySelectorAll('#tabs a').forEach((a) => a.classList.toggle('active', a.dataset.v === S.view));
   if (S.view === 'tonight') renderTonight();
   else if (S.view === 'sky') renderSky();
@@ -504,7 +510,7 @@ function renderTonight(silent) {
   }
   // defer heavy math so the UI paints first
   setTimeout(() => {
-    if (token !== tonightToken) return; // superseded by a newer render
+    if (token !== tonightToken || S.view !== 'tonight') return; // superseded / view switched
     const { lat, lon } = S.site;
     const info = E.nightInfo(nightAnchor(), lat, lon);
     const jdNow = E.julianDay(new Date());
@@ -522,9 +528,22 @@ function renderTonight(silent) {
     const prefs = Hor.getPrefs();
     const minAlt = Hor.effectiveMinAlt();
     const moonAware = prefs.moonAware;
-    const bortleF = 0.4 + 0.15 * prefs.bortle;
     const typeF = (o) => ({ nebula: 1.6, supernova_remnant: 1.6, planetary: 1.3, star_cloud: 1.1, galaxy: 0.8, open_cluster: 0.55, globular: 0.5, asterism: 0.55 }[o.otype] || 1.0);
     const illum = E.moonIllumination(jdNow);
+    /* Moon-aware model shared with the desktop (static/js/derive.js): the safe
+       separation grows with the Moon's phase (largest at full moon, smallest at
+       new), and the Bortle curve is continuous at the 3/4 junction. The web has
+       no filter settings yet, so the broadband base (120 deg) applies unless
+       prefs ever gain them. */
+    const F = prefs.filters || {};
+    const filterType = F.narrowband_oiii ? 'oiii' : F.narrowband_ha ? 'narrowband' : 'lrgb';
+    const moonAge = E.moonAge((jd0 + jd1) / 2);
+    const moonMinDist = (() => {
+      const BASE = { narrowband: 60, oiii: 90, lrgb: 120 }[filterType] || 120;
+      return BASE / (1 + Math.pow((0.5 - moonAge / 29.53) / 0.333, 2));
+    })();
+    const bortleF = prefs.bortle <= 3 ? 0.25 + 0.05 * prefs.bortle
+                                      : 0.40 + 0.12 * (prefs.bortle - 3);
     // moon track over the night grid (computed once)
     const moonAlt = [], moonAz = [];
     for (let i = 0; i <= n; i++) {
@@ -554,7 +573,7 @@ function renderTonight(silent) {
           sClassic += w;
           if (moonAware && moonAlt[i] > 0) {
             const sep = E.sepDeg(alt, az, moonAlt[i], moonAz[i]);
-            const glow = illum * (1 - Math.min(1, sep / 180));
+            const glow = illum * Math.max(0, 1 - Math.max(0, sep - moonMinDist) / 180);
             w *= Math.max(0.05, 1 - 0.95 * glow * tf * bortleF);
           }
           sMoon += w;
@@ -584,13 +603,14 @@ function renderTonight(silent) {
       for (const r of rows) obsCache.set(obsKey(g, r.o.id), { pct: r.obsPct, blk: r.blockedPct });
     }
     const top = rows.slice(0, 16);
-    const nowVisible = rows.filter((r) => r.visNow).sort((a, b) => b.altNow - a.altNow).slice(0, 8);
+    const visibleAll = rows.filter((r) => r.visNow);
+    const nowVisible = visibleAll.slice().sort((a, b) => b.altNow - a.altNow).slice(0, 8);
     const risingLater = rows.filter((r) => !r.visNow && r.maxAlt > 0)
       .sort((a, b) => a.transitJd - b.transitJd).slice(0, 8);
 
     const darkStart = info.astroDusk, darkEnd = info.astroDawn;
     const darkH = darkStart && darkEnd ? Math.round(((darkEnd - darkStart) / 3600000 + (darkEnd < darkStart ? 24 : 0)) * 10) / 10 : null;
-    const visibleCount = nowVisible.length;
+    const visibleCount = visibleAll.length;   // the real count, not the top-8 list
 
     const pickItem = (r) => {
       const o = r.o;
@@ -643,7 +663,7 @@ function renderTonight(silent) {
         </li>`).join('') : '<li style="cursor:default">everything already up or setting</li>'}</ul></div>
       </div>
       <p class="cat-count" style="margin-top:10px;text-align:center">night of ${dateKey(nightAnchor())} · ${esc(S.site.label || `${S.site.lat.toFixed(2)}, ${S.site.lon.toFixed(2)}`)} · horizon: ${pano ? esc(pano.name) : 'none'} · popularity-aware ranking · click any target for details</p>`;
-    if (token !== tonightToken) return; // superseded while computing
+    if (token !== tonightToken || S.view !== 'tonight') return; // superseded / view switched
     box.innerHTML = html;
     box.querySelectorAll('.pick li[data-id]').forEach((li) => li.addEventListener('click', () => openDetail(li.dataset.id)));
     hideSplash();
@@ -1059,19 +1079,24 @@ function renderSky() {
     timeEl.value = dtoLocalInput(S.skyTime);
   };
   syncControls();
+  // every control here also announces the change, so the always-visible topbar
+  // scrub (bound to 'sky:time') never keeps showing a stale time
+  const announceTime = () => window.dispatchEvent(new CustomEvent('sky:time'));
   slider.addEventListener('input', () => {
     S.skyTime = new Date(rangeStart().getTime() + Number(slider.value) * 60000);
     syncControls();
     draw();
+    announceTime();
   });
   timeEl.addEventListener('input', () => {
     const v = timeEl.value;
-    if (v) { S.skyTime = WS.wallToUtc(new Date(v)); syncControls(); draw(); }
+    if (v) { S.skyTime = WS.wallToUtc(new Date(v)); syncControls(); draw(); announceTime(); }
   });
   $('#sky-now').addEventListener('click', () => {
     S.skyTime = new Date();
     syncControls();
     draw();
+    announceTime();
   });
 
   if (skyTimeHandler) window.removeEventListener('sky:time', skyTimeHandler);
@@ -1080,10 +1105,18 @@ function renderSky() {
 
   sizeCanvas();
   draw();
-  window.addEventListener('resize', () => { if (S.view === 'sky') { sizeCanvas(); draw(); } });
+  // ONE resize listener for the app's lifetime: re-adding an anonymous one on
+  // every render leaked handlers, and stale ones then drew on detached canvases
+  if (skyResizeHandler) window.removeEventListener('resize', skyResizeHandler);
+  skyResizeHandler = () => {
+    if (S.view !== 'sky') return;
+    try { sizeCanvas(); draw(); } catch { /* view switched away */ }
+  };
+  window.addEventListener('resize', skyResizeHandler);
 }
 
 let skyTimeHandler = null;
+let skyResizeHandler = null;
 
 /* ----------------------------- catalog ----------------------------- */
 
@@ -1140,6 +1173,9 @@ function renderCatalog() {
   const th = (key, label, num = false) =>
     `<th class="${num ? 'num' : ''}" data-k="${key}">${label}${S.cat.sort === key ? (S.cat.up ? ' ▲' : ' ▼') : ''}</th>`;
 
+  // focus/caret in the search box must survive the re-render below
+  const qHadFocus = !!document.activeElement && document.activeElement.id === 'cat-q';
+  const qCaret = qHadFocus ? document.activeElement.selectionStart : null;
   box.innerHTML = `
     <div class="cat-bar">
       <input type="search" id="cat-q" aria-label="Search the catalog" placeholder="Search: name, M 31, NGC 7000, galaxy, Cyg…" value="${esc(S.cat.q)}">
@@ -1199,6 +1235,10 @@ function renderCatalog() {
   $('#pg-prev').addEventListener('click', () => { if (S.cat.page > 0) { S.cat.page--; renderCatalog(); } });
   $('#pg-next').addEventListener('click', () => { if (S.cat.page < pages - 1) { S.cat.page++; renderCatalog(); } });
   $('#cat-con').addEventListener('change', (ev) => { S.cat.con = ev.target.value; S.cat.page = 0; renderCatalog(); });
+  if (qHadFocus) {                       // typing must not be interrupted
+    const inp = $('#cat-q');
+    if (inp) { inp.focus(); if (qCaret != null) inp.setSelectionRange(qCaret, qCaret); }
+  }
   fillPctCells(slice);
   if (S.cat.sort === 'pct') warmPct(list);
 }
@@ -1226,7 +1266,9 @@ function warmPct(list) {
     else {
       if (status) status.textContent = '';
       busy(false);
-      renderCatalog();
+      // only repaint if the catalog is still the visible view - otherwise this
+      // stale chunk overwrote whatever the user had switched to
+      if (S.view === 'catalog') renderCatalog();
     }
   };
   tick();
@@ -1254,8 +1296,6 @@ function fillPctCells(objs) {
 }
 
 /* ------------------------------ detail ----------------------------- */
-
-function openDetailSafe(id) { if (byId.has(id)) openDetail(id); else route(); }
 
 function openDetail(id) {
   const o = byId.get(id);
@@ -2147,7 +2187,9 @@ async function boot() {
         const [y, m, d] = v.split('-').map(Number);
         S.date = new Date(y, m - 1, d, 12, 0, 0);
       } else {
-        S.date = null;
+        // clearing the field means "today at the site" - S.date must never be
+        // null, because object detail and the grid fallbacks dereference it
+        S.date = WS.effToday();
       }
       refreshView();
     });
@@ -2312,9 +2354,18 @@ async function boot() {
 
   initDragWindows();
 
-  // click the brand logo to return to the main page (the site root)
+  // click the brand logo to return to the main page (the site root) - it
+  // carries role="button" tabindex="0", so Enter/Space must work too
   const brand = document.querySelector('.brand');
-  if (brand) brand.addEventListener('click', () => { location.href = '/'; });
+  if (brand) {
+    brand.addEventListener('click', () => { location.href = '/'; });
+    brand.addEventListener('keydown', (ev) => {
+      if (ev.key === 'Enter' || ev.key === ' ') {
+        ev.preventDefault();
+        location.href = '/';
+      }
+    });
+  }
 
   window.addEventListener('hashchange', () => { route(); });
   // keyboard shortcuts: n = cycle tabs; on sky view ←/→ scrub the night (Shift = 10 min)
@@ -2330,10 +2381,12 @@ async function boot() {
       location.hash = '#' + next;
       return;
     }
-    if (S.view === 'sky' && (ev.key === 'ArrowLeft' || ev.key === 'ArrowRight')) {
+    // arrows scrub the night on every view (desktop parity), not only on Sky View
+    if (ev.key === 'ArrowLeft' || ev.key === 'ArrowRight') {
       const mins = ev.shiftKey ? 10 : 60;
       S.skyTime = new Date(S.skyTime.getTime() + (ev.key === 'ArrowRight' ? mins : -mins) * 60000);
       window.dispatchEvent(new CustomEvent('sky:time'));
+      if (S.view === 'sky') draw();
       ev.preventDefault();
     }
   });

@@ -152,7 +152,7 @@ export function renderTargets(fromPager = false) {
     return `<tr data-id="${m.id}">
       <td>${thumbHTML(m.id)}</td>
       <td class="objcell"><button class="starbtn${fav?" on":""}" data-fav="${m.id}" title="mark for session">&#9733;</button><b>${esc(m.primary_name)}</b><span>${esc(desigLine(m))}${m.constellation?" \u00B7 "+esc(constName(m.constellation)):""}</span></td>
-      <td><span class="typebadge" style="color:${TYPE_COLOR[m.otype]};border-color:${TYPE_COLOR[m.otype]}55">${TYPE_LABEL[m.otype]||m.otype}</span>${adv ? " " + adv.pill : ""}</td>
+      <td><span class="typebadge" style="color:${TYPE_COLOR[m.otype] || "#9ca5b5"};border-color:${(TYPE_COLOR[m.otype] || "#9ca5b5")}55">${esc(TYPE_LABEL[m.otype]||m.otype)}</span>${adv ? " " + adv.pill : ""}</td>
       <td>${m.vmag!=null?m.vmag.toFixed(1):"&mdash;"}</td>
       <td>${fmtSize(m.size_am, unit)}</td>
       <td class="col-opt">${coverageCell(cov)}</td>

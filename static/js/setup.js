@@ -165,7 +165,8 @@ export function bindSetup() {
     const fd = new FormData();
     fd.append("file", f);
     try {
-      const res = await api("/api/import", { method:"POST", body:fd });
+      // restoring a multi-GB library can take minutes: no client timeout
+      const res = await api("/api/import", { method:"POST", body:fd, timeout: 0 });
       const safety = res.auto_backup
         ? " Your previous data was kept in a safety copy next to the database."
         : "";

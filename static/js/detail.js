@@ -60,6 +60,8 @@ export async function openDetail(id) {
     console.error(err);
     return;
   }
+  if (S.currentId !== id) return;   // another object was opened while loading:
+                                    // never paint this one's data under its title
   renderDetailMeta(m, DETAIL);
   drawAltChart();
 }
@@ -74,7 +76,7 @@ function renderDetailMeta(m, d) {
         `</span> <small>${esc(activeRigName())}</small>`
       : "\u2014";
   const rows = [
-    ["Type", TYPE_LABEL[m.otype] || m.otype],
+    ["Type", esc(TYPE_LABEL[m.otype] || m.otype)],
     ["Filters", adv ? `<span class="fbadge ${adv.cls}">${adv.text}</span>` : "no special filter needed"],
     ["Magnitude", m.vmag != null ? m.vmag.toFixed(1) + " mag" : "\u2014"],
     ["Size", fmtSize(m.size_am, (S.cfg && S.cfg.size_unit) || "arcmin")],

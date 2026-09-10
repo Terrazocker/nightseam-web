@@ -1,6 +1,7 @@
 /* Image Archive mode: mode switching, FITS import, library table */
 
-import { $, $$, esc, api, toast, setBusy, fmtSize, fmtDT, TYPE_LABEL } from "./util.js";
+import { $, $$, esc, api, toast, setBusy, fmtSize, fmtDT, TYPE_LABEL,
+         bindKeyboardClick } from "./util.js";
 import { S } from "./state.js";
 import { renderSkyMap } from "./skymap.js";
 
@@ -210,7 +211,7 @@ export function renderLibrary() {
     return String(a.name || "").localeCompare(String(b.name || ""));
   });
   box.innerHTML = objs.map(o => {
-    const type = o.otype ? TYPE_LABEL[o.otype] || o.otype : "unknown";
+    const type = o.otype ? esc(TYPE_LABEL[o.otype] || o.otype) : "unknown";
     const editable = !o.object_id;
     const key = esc(o.name || "");
     return `<tr class="librow" data-lib="${key}">
@@ -307,9 +308,7 @@ export function bindArchive() {
   _bound = true;
 
   $("#brand").addEventListener("click", toggleMode);
-  $("#brand").addEventListener("keydown", e => {
-    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleMode(); }
-  });
+  bindKeyboardClick($("#brand"), toggleMode);
   $("#btnMode").addEventListener("click", toggleMode);
 
   // archive folder

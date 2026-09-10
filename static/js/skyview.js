@@ -120,8 +120,16 @@ export function bindSky() {
   // object-type color legend (click a chip to grey that type out)
   const lg = $("#typeLegend");
   if (lg) {
+    // the chips are click-only in the markup: give them a keyboard path
+    lg.addEventListener("keydown", e => {
+      if (e.key !== "Enter" && e.key !== " ") return;
+      const chip = e.target.closest("[data-type]");
+      if (!chip) return;
+      e.preventDefault();
+      chip.click();
+    });
     lg.innerHTML = Object.keys(TYPE_COLOR).map(t =>
-      `<span class="lgchip${S.disabledTypes.has(t) ? " off" : ""}" data-type="${t}" style="--c:${TYPE_COLOR[t]}"><i></i>${TYPE_LABEL[t] || t}</span>`
+      `<span class="lgchip${S.disabledTypes.has(t) ? " off" : ""}" data-type="${t}" role="button" tabindex="0" style="--c:${TYPE_COLOR[t]}"><i></i>${TYPE_LABEL[t] || t}</span>`
     ).join("") +
     `<span class="lgchip" style="--c:#ffd700"><i></i>&#9733; session target</span>`;
     lg.addEventListener("click", e => {

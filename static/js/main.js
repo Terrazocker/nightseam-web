@@ -119,7 +119,6 @@ async function init() {
   bindSky();
   bindArchive();
   bindSkyMap();
-  bindWeather();
   initFocusTrap();
 
   // keyboard shortcuts: arrows scrub the night, n cycles the tabs.
@@ -147,6 +146,9 @@ async function init() {
   });
 
   await loadState();
+  // bindWeather reads S.cfg.weather_auto, so it must run AFTER loadState -
+  // otherwise "always load on startup" was always read as false
+  bindWeather();
   await loadNight();
   Pano.init();
   applyArchiveUI();
