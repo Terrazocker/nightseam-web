@@ -9,7 +9,7 @@
  * All sky math runs client-side (astro.js, Meeus algorithms).
  */
 import * as E from './astro.js?v=7';
-import * as Hor from './horizon.js?v=20';
+import * as Hor from './horizon.js?v=21';
 import * as WS from './webstore.js?v=6';
 import { initDragWindows } from './dragwin.js?v=1';
 import { fmtSize, sizeArcmin, framePct, magVisible, skyClampZoom,
@@ -922,11 +922,10 @@ function renderSky() {
         const r = R * (1 - Math.max(0, Math.min(90, altDeg)) / 90);
         return [cx + r * Math.sin(a), cy - r * Math.cos(a)];
       };
-      const ceilPts = [], topPts = [];
+      const ceilPts = [];
       for (let az = 0; az <= 360; az += 2) {
-        const { ceil, ceilTop } = Hor.ceilFor(pano, az);
-        ceilPts.push(radiusFor(az, ceil > Hor.NO_BLOCK + 0.5 ? ceil : 0));
-        if (ceilTop != null) topPts.push(radiusFor(az, ceilTop));
+        const { ceil } = Hor.ceilFor(pano, az);
+        ceilPts.push(radiusFor(az, ceil > Hor.NO_BLOCK + 0.5 ? Math.min(ceil, 90) : 0));
       }
       ctx.fillStyle = 'rgba(255, 80, 80, .15)';
       ctx.strokeStyle = 'rgba(255, 80, 80, .85)';
@@ -940,13 +939,23 @@ function renderSky() {
       ctx.closePath();
       ctx.fill();
       ctx.stroke();
-      // sky mode: blocked ABOVE the visible band = the disc inside the ceiling-top curve
-      if (pano.paintMode === 'sky' && topPts.length > 2) {
+      // sky mode: blocked ABOVE the visible band = the sector between the
+      // overhang curve and the zenith, drawn per CONTIGUOUS azimuth run so a
+      // gap (unpainted / open-above 90.5) is never bridged by a straight chord.
+      if (pano.paintMode === 'sky') {
         ctx.fillStyle = 'rgba(255, 209, 102, .12)';
-        ctx.beginPath();
-        topPts.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
-        ctx.closePath();
-        ctx.fill();
+        for (const run of Hor.overhangRuns(pano, 2)) {
+          ctx.beginPath();
+          let first = true;
+          for (let az = run.a0; az <= run.a1; az += 2) {
+            const { ceilTop } = Hor.ceilFor(pano, az);
+            const [x, y] = radiusFor(az, Math.min(ceilTop, 90));
+            if (first) { ctx.moveTo(x, y); first = false; } else { ctx.lineTo(x, y); }
+          }
+          ctx.lineTo(cx, cy);   // close through the zenith
+          ctx.closePath();
+          ctx.fill();
+        }
       }
     }
 

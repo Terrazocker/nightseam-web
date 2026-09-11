@@ -525,6 +525,27 @@ export function ceilFor(p, azDeg) {
   return { ceil: prof[col], ceilTop: null };
 }
 
+/** Contiguous azimuth runs (deg, [a0,a1] inclusive) where a sky-mode OVERHANG
+ *  exists - i.e. the painted band has a real top edge BELOW the zenith, so the
+ *  sky above it is blocked. Columns whose band is open above (the 90.5 sentinel)
+ *  or unpainted (fully blocked) carry NO overhang: including them in one polygon
+ *  is what made the sky chart bridge a gap with a straight chord. */
+export function overhangRuns(p, step = 2) {
+  const runs = [];
+  let run = null;
+  for (let az = 0; az < 360; az += step) {   // 360 == 0, not a separate sample
+    const { ceilTop } = ceilFor(p, az);
+    const has = ceilTop != null && ceilTop < 89.5;
+    if (has) {
+      if (!run) { run = { a0: az, a1: az }; runs.push(run); }
+      else run.a1 = az;
+    } else {
+      run = null;
+    }
+  }
+  return runs;
+}
+
 /* ---------------- editor session: history + view (pure) ----------------
  *
  * History stores JSON snapshots of the EDITABLE state (strokes + calibration +
@@ -809,7 +830,7 @@ function haziEditorHTML(p) {
     </div>
     <p class="sub ed-hint" style="margin-top:8px">
       cursor: <output id="ed-pos" class="mono">az \u2014 \u00B7 alt \u2014</output>
-      \u00B7 wheel = zoom \u00B7 middle-drag or Space+drag = pan \u00B7 right-click = erase
+      \u00B7 wheel = zoom \u00B7 middle-drag or Space+drag = pan \u00B7 hold right-click = erase
     </p>
     <div class="cal-grid" style="margin-top:10px">
       <label>Az @ left
@@ -936,6 +957,7 @@ function wireEditor(box, p, onChanged) {
   const boxEl = $('#pano-box', box);
 
   let eraser = false;
+  let gestureErase = false;   // right-button drag erases for the whole gesture
   let painting = false;
   let panning = false;
   let spaceDown = false;
@@ -1212,9 +1234,9 @@ function wireEditor(box, p, onChanged) {
     const sy = (ev.clientY - r.top) / r.height * MASK_H;
     return editorScreenToBase(MASK_W, MASK_H, view.zoom, view.fx, view.fy, sx, sy);
   };
-  const strokeAt = (x, y) => {
+  const strokeAt = (x, y, forceErase = false) => {
     const r = Number($('#ed-brush', box).value);
-    p.strokes.push({ m: eraser ? 'e' : 'b', x, y, r });
+    p.strokes.push({ m: (forceErase || eraser) ? 'e' : 'b', x, y, r });
     rebuildMaskNow();
     overlay();
   };
@@ -1241,8 +1263,20 @@ function wireEditor(box, p, onChanged) {
       ev.preventDefault();
       return;
     }
+    if (ev.button === 2) {
+      // hold the right button to erase continuously (one history entry for the
+      // whole gesture); the context menu is suppressed below
+      painting = true;
+      gestureErase = true;
+      cvs.setPointerCapture(ev.pointerId);
+      const [x, y] = toCanvas(ev);
+      strokeAt(x, y, true);
+      ev.preventDefault();
+      return;
+    }
     if (ev.button !== 0) return;
     painting = true;
+    gestureErase = false;
     cvs.setPointerCapture(ev.pointerId);
     const [x, y] = toCanvas(ev);
     strokeAt(x, y);
@@ -1264,7 +1298,7 @@ function wireEditor(box, p, onChanged) {
     }
     if (!painting) return;
     const [x, y] = toCanvas(ev);
-    strokeAt(x, y);
+    strokeAt(x, y, gestureErase);
   });
   const endPan = () => {
     if (!panning) return;
@@ -1280,15 +1314,11 @@ function wireEditor(box, p, onChanged) {
     endPan();
     if (!painting) return;
     painting = false;
+    gestureErase = false;
     commit();               // one history entry per gesture; persists only on Save
   });
   cvs.addEventListener('contextmenu', (ev) => {
-    ev.preventDefault();
-    eraser = true;
-    const [x, y] = toCanvas(ev);
-    strokeAt(x, y);
-    eraser = false;
-    commit();
+    ev.preventDefault();    // the right-button drag (above) already erased
   });
 
   function zoomTo(z, ax, ay) {

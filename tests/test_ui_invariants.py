@@ -251,3 +251,24 @@ def test_web_action_rows_are_not_full_width():
         "the horizons create row must use the auto-width action-row"
     assert 'class="btn primary" for="pano-file"' in js, \
         "the upload control must stay a label-button (auto-width)"
+
+
+def test_web_hold_right_click_erases_and_sky_chart_has_no_chord():
+    """0.6.13 follow-up: a held right-button drag must erase for the WHOLE
+    gesture (one history entry), not a single contextmenu dab; and the sky
+    chart must draw the sky-mode blocked-above region per contiguous overhang
+    run so a gap is never bridged by a straight chord."""
+    js = _read("web", "horizon.js")
+    assert "ev.button === 2" in js, "the right-button paint gesture is gone"
+    assert "strokeAt(x, y, true)" in js, "the right-button gesture must erase"
+    assert "gestureErase" in js and "strokeAt(x, y, gestureErase)" in js, \
+        "pointermove must continue the right-button erase gesture"
+    assert "if (ev.button !== 0) return;" in js
+    assert "already erased" in js, \
+        "contextmenu must not perform a separate one-shot erase"
+    assert "export function overhangRuns" in js, "overhangRuns helper missing"
+    app = _read("web", "app.js")
+    assert "Hor.overhangRuns(pano, 2)" in app, \
+        "the sky chart must draw blocked-above per contiguous overhang run"
+    assert "topPts" not in app, \
+        "the old single top polygon (chord across gaps) must be gone"

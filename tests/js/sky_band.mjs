@@ -155,5 +155,27 @@ for (const c of parCases) {
   if (JSON.stringify(a) !== JSON.stringify(b)) fail("web/desktop profileSegments vertices differ");
 }
 
+/* ---- 6. sky-CHART overhang runs (no chord across a gap) ---- */
+const overhangAll = pano({ profile: fill(0, BINS, 0), profileTop: fill(0, BINS, 40) });
+const openAll = pano({ profile: fill(0, BINS, 0), profileTop: fill(0, BINS, 90.5) });
+const halfOverhang = pano({ profile: fill(0, BINS, 0),
+                            profileTop: fill(0, 360, 40) });
+const twoBands = pano({
+  profile: new Array(BINS).fill(0),
+  profileTop: fill(0, 180, 40).map((v, i) => (i >= 400 && i < 580 ? 40 : (i >= 180 ? 90.5 : v))),
+});
+if (H.overhangRuns(overhangAll, 2).length !== 1) fail("overhangAll should be one run");
+if (H.overhangRuns(openAll, 2).length !== 0) fail("open-above (90.5) must have NO overhang");
+const half = H.overhangRuns(halfOverhang, 2);
+if (half.length !== 1 || half[0].a0 !== 0 || half[0].a1 !== 178) {
+  fail(`halfOverhang run = ${JSON.stringify(half)}`);
+}
+const two = H.overhangRuns(twoBands, 2);
+if (two.length !== 2 || two[0].a0 !== 0 || two[0].a1 !== 88
+    || two[1].a0 !== 200 || two[1].a1 !== 288) {
+  fail(`twoBands runs = ${JSON.stringify(two)}`);
+}
+if (H.overhangRuns(fullyBlocked, 2).length !== 0) fail("fully blocked has no overhang");
+
 console.log(ok ? "sky-band contract held" : "sky-band contract FAILED");
 process.exit(ok ? 0 : 1);
