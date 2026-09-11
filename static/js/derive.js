@@ -4,7 +4,8 @@ import { S } from "./state.js";
 import { parseUTC, clamp, fmtHM } from "./util.js";
 import { statusOf as coreStatusOf, effectiveMinAlt as coreMinAlt,
          moonSensitivity, effectiveMoonGlow, moonPenalty, bortleMoonFactor,
-         popularityFactor as corePopularityFactor, scrubWindowMs }
+         popularityFactor as corePopularityFactor, scrubWindowMs,
+         scrubBounds, scrubClamp, sepDeg }
   from "./core.js";
 
 /* keyboard scrub steps in minutes - shared with the web (web/astro.js) and
@@ -18,6 +19,8 @@ export const SCRUB_SHIFT_STEP_MIN = 60;
    Mirrors web/astro.js::aboveHorizon ("abovehorizon" engine of
    tests/js/astro_parity.mjs). */
 export { aboveHorizon } from "./core.js";
+
+export { scrubBounds, scrubClamp } from "./core.js";
 
 /* All-sky chart magnitude limit and "square" chart zoom - shared in core/
    (Phase 2, concept 1), pinned by the "mag" / "skyzoom" engines of
@@ -103,25 +106,6 @@ function indexRangeFor(startISO, endISO) {
     if (parseUTC(tl.times_iso[i]) <= parseUTC(endISO)) { i1 = i; break; }
   }
   return [i0, Math.max(i0, i1)];
-}
-
-/** Scrub-range policy - SHARED with the web (web/astro.js) and pinned by the
- *  "scrubwindow" engine of tests/js/astro_parity.mjs. `viewFullDay` false =>
- *  the planner's night window (dusk..dawn, the picked twilight level or the
- *  site-zoned 20:00-04:00 polar fallback); true => the full payload grid
- *  (dusk-1h..dawn+1h). Inputs/outputs are epoch milliseconds. */
-export function scrubBounds(viewFullDay, nightStart, nightEnd, fullStart, fullEnd) {
-  if (!viewFullDay && nightStart != null && nightEnd != null && nightEnd > nightStart) {
-    return { start: nightStart, end: nightEnd };
-  }
-  return { start: fullStart, end: fullEnd };
-}
-
-/** Clamp an instant into a scrub range (the selected time must stay inside). */
-export function scrubClamp(t, start, end) {
-  if (t < start) return start;
-  if (t > end) return end;
-  return t;
 }
 
 /** Grid index bounds [lo, hi] the scrub may select: the WHOLE night, from the
@@ -286,14 +270,8 @@ export function recomputeNightDerived() {
 }
 
 
-/* great-circle separation between two (alt, az) points in degrees */
-function sepDeg(alt1, az1, alt2, az2) {
-  const p1 = alt1 * Math.PI / 180, p2 = alt2 * Math.PI / 180;
-  const dra = (az1 - az2) * Math.PI / 180;
-  return Math.acos(Math.max(-1, Math.min(1,
-      Math.sin(p1) * Math.sin(p2) + Math.cos(p1) * Math.cos(p2) * Math.cos(dra))))
-      * 180 / Math.PI;
-}
+/* great-circle separation is shared in core/ (Phase 2, concept 9) */
+
 
 export function moonAt(dateObj) {
   if (!S.night) return null;

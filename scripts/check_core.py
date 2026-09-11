@@ -48,6 +48,7 @@ MOVED = (
     "altazFrameApply", "sunRaDec", "moonRaDec", "moonIllumination",
     "moonAge",
     "sunAlt", "sunCrossings", "nightInfo", "pickDarkWindow",
+    "scrubBounds", "scrubClamp", "sepDeg", "nightStats",
 )
 FORBIDDEN = (
     r"\bdocument\s*\.", r"\bwindow\s*\.", r"\blocalStorage\b",

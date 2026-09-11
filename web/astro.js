@@ -15,27 +15,6 @@ export const R2D = 180 / Math.PI;
 export const SCRUB_STEP_MIN = 6;
 export const SCRUB_SHIFT_STEP_MIN = 60;
 
-/* Scrub-range policy - SHARED with the desktop (static/js/derive.js) and pinned
-   by the "scrubwindow" engine of tests/js/astro_parity.mjs. `viewFullDay` false
-   => the planner's night window (dusk..dawn: the picked twilight level, or the
-   site-zoned 20:00-04:00 polar fallback); true => the app's full span (web: the
-   24 h noon->noon day; desktop: its payload grid). Inputs/outputs are epoch
-   milliseconds; a missing night window degrades to the full span. */
-export function scrubBounds(viewFullDay, nightStart, nightEnd, fullStart, fullEnd) {
-  if (!viewFullDay && nightStart != null && nightEnd != null && nightEnd > nightStart) {
-    return { start: nightStart, end: nightEnd };
-  }
-  return { start: fullStart, end: fullEnd };
-}
-
-/** Clamp an instant into a scrub range - the selected time must never sit
- *  outside the window when "View full day" is switched off (e.g. 1 pm). */
-export function scrubClamp(t, start, end) {
-  if (t < start) return start;
-  if (t > end) return end;
-  return t;
-}
-
 const ASEC2DEG = 1 / 3600;
 const J2000 = 2451545.0;
 const MS_PER_DAY = 86400000;
@@ -49,13 +28,15 @@ import {
   refractionDeg, altaz,
   sunRaDec, moonRaDec, moonIllumination, moonAge, sunAlt,
   sunCrossings, nightInfo, pickDarkWindow, scrubWindowMs,
-} from './core.js?v=12';
+  scrubBounds, scrubClamp, sepDeg,
+} from './core.js?v=13';
 
 export {
   julianDay, dateFromJD, gmstDeg, precessJ2000ToDate, precessDateToJ2000,
   refractionDeg, altaz,
   sunRaDec, moonRaDec, moonIllumination, moonAge, sunAlt,
   sunCrossings, nightInfo, pickDarkWindow, scrubWindowMs,
+  scrubBounds, scrubClamp, sepDeg,
 };
 
 /**
@@ -68,7 +49,7 @@ export {
  * target) is a different question and does NOT belong here.
  */
 /** Apparent-altitude visibility predicate - shared in core/ (Phase 2). */
-export { aboveHorizon } from './core.js?v=12';
+export { aboveHorizon } from './core.js?v=13';
 
 /** Sun/moon elongation angle in degrees and phase label. */
 export function moonPhase(jd) {
@@ -117,7 +98,7 @@ export function moonAltAz(jd, lat, lon) {
 export {
   MOON_TYPE_FACTOR, moonSensitivity, moonMinDist,
   effectiveMoonGlow, moonPenalty, bortleMoonFactor,
-} from './core.js?v=12';
+} from './core.js?v=13';
 
 /** Sample an object's altitude over [jd0, jd1] at stepMin minutes. */
 export function objectTrack(raDeg, decDeg, jd0, jd1, lat, lon, stepMin = 4) {
@@ -162,14 +143,6 @@ export function objectDayInfo(raDeg, decDeg, dayStartUTC, lat, lon) {
 }
 
 /* ---------------------------- formatting ---------------------------- */
-
-/** Great-circle separation between two (alt, az) points in degrees. */
-export function sepDeg(alt1Deg, az1Deg, alt2Deg, az2Deg) {
-  const p1 = D2R * alt1Deg, p2 = D2R * alt2Deg;
-  const dra = D2R * (az1Deg - az2Deg);
-  return Math.acos(Math.max(-1, Math.min(1,
-    Math.sin(p1) * Math.sin(p2) + Math.cos(p1) * Math.cos(p2) * Math.cos(dra)))) * R2D;
-}
 
 /** Great-circle separation between two (ra, dec) J2000 points in degrees. */
 export function sepRaDec(ra1Deg, dec1Deg, ra2Deg, dec2Deg) {

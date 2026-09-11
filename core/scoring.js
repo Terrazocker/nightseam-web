@@ -8,6 +8,10 @@
  * tracks only). No DOM, storage, network or build tokens.
  */
 
+import { altaz, sepDeg } from './astro.js';
+import { NO_BLOCK, ceilFor } from './horizon.js';
+import { sampleVisible } from './visibility.js';
+
 /* how badly an object type suffers under moonlight (nebulae worst, clusters
    least) */
 export const MOON_TYPE_FACTOR = {
@@ -54,4 +58,61 @@ export function bortleMoonFactor(bortle) {
 export function popularityFactor(pop) {
   if (!pop) return 0;
   return Math.min(1, 0.3 + 0.7 * Math.log10(pop) / 5.2);
+}
+
+/** Per-object statistics over the grid [jd0, jd1] at `step` (step is a
+ *  fraction of a day, e.g. 6/1440). The grid is the dark window (dusk..dawn),
+ *  exactly like the desktop's clipped loop - twilight margins must never be
+ *  counted, or "% of night" and the clear window disagree with the desktop.
+ *  The desktop's equivalent single loop lives in static/js/derive.js
+ *  (recomputeNightDerived); the detail modal has its own sunset-anchored
+ *  120-sample loop by design but shares the same per-sample predicate.
+ *
+ *  ctx: {
+ *    moonAlt, moonAz   per-sample moon track on the SAME grid (optional; the
+ *                      moon penalty is applied per sample only when the moon
+ *                      is above the horizon, like derive.js)
+ *    illum, moonAgeDays, filterType, moonAware, typeF, bortleF
+ *  }
+ *
+ *  Returns { n, maxAlt, transitJd, visN, blocked, bestRun, bestStart,
+ *            sClassic, sMoon, pct, blockedPct } where bestRun/bestStart are
+ *  the longest clear run as a HALF-OPEN sample range [start, start+run) and
+ *  pct = round(100 * visN / (n+1)), the desktop's obs_pct formula. */
+export function nightStats(obj, jd0, jd1, step, minAlt, pano, lat, lon, ctx = {}) {
+  const ra = obj.ra_hours * 15;
+  const n = Math.max(2, Math.round((jd1 - jd0) / step));
+  let maxAlt = -90, transitJd = jd0, bestRun = 0, bestStart = jd0;
+  let cur = 0, curStart = jd0, visN = 0, blocked = 0, sClassic = 0, sMoon = 0;
+  for (let i = 0; i <= n; i++) {
+    const jd = jd0 + i * step;
+    const [alt, az] = altaz(ra, obj.dec_deg, jd, lat, lon);
+    if (alt > maxAlt) { maxAlt = alt; transitJd = jd; }
+    const ceil = pano ? ceilFor(pano, az) : { ceil: NO_BLOCK, ceilTop: null };
+    const vis = sampleVisible(alt, minAlt, ceil.ceil, ceil.ceilTop);
+    if (vis) {
+      visN++;
+      let w = Math.sin(Math.max(0, Math.min(90, alt)) * Math.PI / 180);
+      sClassic += w;
+      const ma = ctx.moonAlt ? ctx.moonAlt[i] : 0;
+      if (ctx.moonAware && ctx.moonAlt && ma > 0) {
+        const sep = sepDeg(alt, az, ma, ctx.moonAz[i]);
+        const glow = effectiveMoonGlow(ctx.illum, sep, ctx.filterType, ctx.moonAgeDays);
+        w *= moonPenalty(glow, ctx.typeF, ctx.bortleF);
+      }
+      sMoon += w;
+      if (cur === 0) curStart = jd;
+      cur++;
+      if (cur > bestRun) { bestRun = cur; bestStart = curStart; }
+    } else {
+      if (alt > 0) blocked++;
+      cur = 0;
+    }
+  }
+  return {
+    n, maxAlt, transitJd, visN, blocked, bestRun, bestStart,
+    sClassic, sMoon,
+    pct: Math.round(100 * visN / (n + 1)),
+    blockedPct: Math.round(100 * blocked / (n + 1)),
+  };
 }

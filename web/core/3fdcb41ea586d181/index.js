@@ -34,11 +34,12 @@ export {
 export {
   julianDay, dateFromJD, gmstDeg, precessJ2000ToDate, precessDateToJ2000,
   refractionDeg, altaz, altazFrame, altazFrameApply,
-  sunRaDec, moonRaDec, moonIllumination, moonAge, sunAlt,
+  sunRaDec, moonRaDec, moonIllumination, moonAge, sunAlt, sepDeg,
 } from './astro.js';
 
 export {
   sunCrossings, nightInfo, pickDarkWindow, scrubWindowMs,
+  scrubBounds, scrubClamp,
 } from './planning.js';
 
 export {
@@ -47,5 +48,5 @@ export {
 
 export {
   MOON_TYPE_FACTOR, moonSensitivity, moonMinDist, effectiveMoonGlow,
-  moonPenalty, bortleMoonFactor, popularityFactor,
+  moonPenalty, bortleMoonFactor, popularityFactor, nightStats,
 } from './scoring.js';

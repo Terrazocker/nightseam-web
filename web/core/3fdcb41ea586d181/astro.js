@@ -263,3 +263,11 @@ export function sunAlt(jd, lat, lon) {
   const [ra, dec] = sunRaDec(jd);
   return altaz(ra, dec, jd, lat, lon)[0];
 }
+
+/** Great-circle separation between two (alt, az) points in degrees. */
+export function sepDeg(alt1Deg, az1Deg, alt2Deg, az2Deg) {
+  const p1 = D2R * alt1Deg, p2 = D2R * alt2Deg;
+  const dra = D2R * (az1Deg - az2Deg);
+  return Math.acos(Math.max(-1, Math.min(1,
+    Math.sin(p1) * Math.sin(p2) + Math.cos(p1) * Math.cos(p2) * Math.cos(dra)))) * R2D;
+}

@@ -139,3 +139,23 @@ export function scrubWindowMs(win) {
   return { startMs: anchor + 8 * 3600000, endMs: anchor + 16 * 3600000,
            source: "fallback" };
 }
+
+/** Scrub-range width policy: `viewFullDay` false => the night window (already
+ *  chosen by scrubWindowMs/the caller; dusk..dawn or the polar fallback); true
+ *  => the app's full span (web: the 24 h noon->noon day; desktop: its payload
+ *  grid). Inputs/outputs are epoch milliseconds; a missing/short night window
+ *  degrades to the full span. */
+export function scrubBounds(viewFullDay, nightStart, nightEnd, fullStart, fullEnd) {
+  if (!viewFullDay && nightStart != null && nightEnd != null && nightEnd > nightStart) {
+    return { start: nightStart, end: nightEnd };
+  }
+  return { start: fullStart, end: fullEnd };
+}
+
+/** Clamp an instant into a scrub range - the selected time must never sit
+ *  outside the window when "View full day" is switched off (e.g. 1 pm). */
+export function scrubClamp(t, start, end) {
+  if (t < start) return start;
+  if (t > end) return end;
+  return t;
+}
