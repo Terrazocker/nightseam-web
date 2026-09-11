@@ -1,5 +1,10 @@
 [
  {
+  "version": "0.6.18",
+  "date": "2026-09-11",
+  "summary": "Planning is now computed on your machine. The desktop app plans with the same shared engine as the web planner: object positions, twilight windows, the Sun and Moon, visibility percentages, clear windows and scores are calculated locally when you change the date or site, and preference changes (minimum altitude, Bortle class, moon-aware ranking, filters) update instantly without recalculating the night. Every displayed number is the same as before - behind the scenes the sky position is now precessed once per night instead of at every sample, a change far below anything shown. Your local server remains as an automatic fallback, and the interface is unchanged."
+ },
+ {
   "version": "0.6.17",
   "date": "2026-09-11",
   "summary": "Shared-core release. The desktop app and the web planner now compute every planning number with one shared engine, so the two can no longer drift apart. Three visible corrections come with it: object-type names and colours are identical in both apps (the desktop adopts the web palette); a grazing polar-night day can no longer report a sunrise without a sunset (Tromso in January showed a \"sunrise\" 29 minutes before its own sunset); and the night slider and the altitude chart now use the dark window whenever the sunset-to-sunrise pair is degenerate, instead of building an inverted range. Ordinary nights, DST transitions and southern-hemisphere nights are unchanged. Python still computes the desktop's planning payload."
