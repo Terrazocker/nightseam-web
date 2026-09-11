@@ -61,8 +61,14 @@ def compute_night(db: Database, lat: float, lon: float, elev_m: int,
     dusk, dawn = win["dusk"], win["dawn"]
     t_start, t_end = win["t_start"], win["t_end"]
 
-    win_start = max(dusk - timedelta(hours=1), t_start)
-    win_end = min(dawn + timedelta(hours=1), t_end)
+    # Full 24 h site-zoned grid (local noon -> next local noon) at 6 min,
+    # matching the web's full-day span exactly. This is what makes the desktop
+    # "View full day" toggle real: the grid now reaches from before sunset to
+    # after sunrise, while the SCORING window still clips to dusk..dawn
+    # (derive.js::nightIndexRange) and the chart margins live on the detail
+    # endpoint. The old dusk-1h..dawn+1h grid could not represent sunset..sunrise.
+    win_start = t_start
+    win_end = t_start + timedelta(hours=24)
     step = timedelta(minutes=6)
     times: list[datetime] = []
     t = win_start

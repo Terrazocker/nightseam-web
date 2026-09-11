@@ -540,7 +540,7 @@ function drawCalibGrid(ctx, W, H) {
 /* contiguous visible segments of one profile (seam jumps lift the pen).
    skipAbove hides bins at or above a ceiling value - used for the top edge
    of sky-mode bands, where no-ceiling columns carry the 90.5 sentinel. */
-function profileSegments(prof, W, H, ab, at, azOff, fov, skipAbove = 90.5) {
+export function profileSegments(prof, W, H, ab, at, azOff, fov, skipAbove = 90.5) {
   const segments = [];
   let seg = null;
   let prevX = null;

@@ -205,8 +205,62 @@ def test_polar_day_compute_night_pins_the_fallback_window(db):
     assert len(night["sun_alt"]) == len(night["moon_alt"]) == n
     assert night["objects"], "a polar night must still plan objects"
     assert all(len(o["alt"]) == n for o in night["objects"])
-    # the fallback window is not a silent "whole day" scan
-    assert n < 24 * 60 / 6
+    # COPY 0.6.13: the payload grid is now the full 24 h site-zoned day
+    # (local noon -> next noon) at 6 min, in every latitude case - the fallback
+    # is the SCORING window (dusk..dawn), not a shorter grid. This is what makes
+    # the desktop "View full day" toggle real.
+    assert n == 24 * 60 / 6 + 1 == 241
+    from app.planning import local_utc  # noqa: PLC0415
+    t0 = _dt.fromisoformat(night["timeline"]["t0"])
+    tlast = _dt.fromisoformat(night["timeline"]["times_iso"][-1])
+    assert t0 == local_utc(2026, 6, 21, 120, 12)     # site-zoned local noon
+    assert (tlast - t0).total_seconds() == 24 * 3600
+
+
+def test_night_payload_grid_is_a_full_24h_site_zoned_day(db):
+    """COPY 0.6.13 (ITEM A): the /api/night grid is a true 24 h local-noon ->
+    next-noon window at the 6-min step, at every latitude - this is the range
+    the desktop "View full day" toggle maps to. The SCORING window is still the
+    twilight-level dusk..dawn, clipped client-side (derive.js::nightIndexRange),
+    and always lies inside this grid."""
+    from datetime import datetime as _dt
+
+    from app.nightcalc import compute_night
+    from app.planning import local_utc
+    for lat, lon, date, tz in ((52.52, 13.4, "2026-01-15", 60),
+                               (52.52, 13.4, "2026-06-21", 120),
+                               (-33.87, 151.21, "2026-01-15", 660),
+                               (78.22, 15.63, "2026-06-21", 120)):
+        night = compute_night(db, lat, lon, 0, date, tz, [])
+        tl = night["timeline"]
+        assert tl["n"] == 241 and tl["step_min"] == 6
+        y, m, d = (int(x) for x in date.split("-"))
+        t0 = _dt.fromisoformat(tl["t0"])
+        tN = _dt.fromisoformat(tl["times_iso"][-1])
+        assert t0 == local_utc(y, m, d, tz, 12)      # site-zoned local noon
+        assert (tN - t0).total_seconds() == 24 * 3600
+        dusk = _dt.fromisoformat(night["dusk"])
+        dawn = _dt.fromisoformat(night["dawn"])
+        assert t0 <= dusk <= tN and t0 <= dawn <= tN
+        assert len(night["sun_alt"]) == len(night["moon_alt"]) == tl["n"]
+        assert all(len(o["alt"]) == tl["n"] for o in night["objects"])
+
+
+def test_night_payload_size_and_compute_time_stay_bounded(db):
+    """Regression guard for the 24 h grid (ITEM A): the standard payload must
+    stay under ~1.5 MiB and compute well under ~1.5 s on the curated catalog,
+    so a bigger grid or an accidental O(n^2) is noticed instead of shipping."""
+    import json
+    import time
+
+    from app.nightcalc import compute_night
+    t0 = time.perf_counter()
+    night = compute_night(db, 52.52, 13.4, 0, "2026-01-15", 60, [])
+    dt = time.perf_counter() - t0
+    size = len(json.dumps(night))
+    assert night["timeline"]["n"] == 241
+    assert size < 1_500_000, f"night payload grew to {size / 1024:.0f} KiB"
+    assert dt < 1.5, f"compute_night took {dt:.2f}s"
 
 
 def test_object_detail(client):

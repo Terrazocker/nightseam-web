@@ -367,6 +367,93 @@ export function profileFromMask(p, mask) {
   return { prof, top };
 }
 
+/** Contiguous edge segments of one profile, for the preview - SHARED with the
+ *  desktop (static/js/pano.js::profileSegments) and pinned by the
+ *  "profileedges" engine. A bin is skipped (pen lifted) outside the FOV, below
+ *  the chart bottom, or at/above `skipAbove` (the sky-mode 90.5 "no ceiling"
+ *  sentinel); a wrap at the 360 deg seam also lifts the pen instead of drawing
+ *  across the image, so the fill can never self-intersect or smear. */
+export function profileSegments(prof, W, H, ab, at, azOff, fov, skipAbove = 90.5) {
+  const segs = [];
+  let seg = null, prevX = null;
+  const span = at - ab || 1;
+  for (let i = 0; i < BINS; i++) {
+    const e = Number(prof[i]);
+    const rel = (((i * 0.5 - azOff) % 360) + 360) % 360;
+    if (!Number.isFinite(e) || rel > fov || e <= ab - 5 || e >= skipAbove) {
+      seg = null; prevX = null; continue;
+    }
+    const x = rel / fov * W;
+    if (seg && prevX != null && x < prevX - W * 0.5) seg = null;
+    const y = H * (1 - (Math.min(Math.max(e, ab), at) - ab) / span);
+    if (!seg) { seg = []; segs.push(seg); }
+    seg.push([x, y]);
+    prevX = x;
+  }
+  return segs;
+}
+
+/** The visible-sky band per azimuth column, in ALTITUDE, plus its complement.
+ *  Obstacle mode: visible = (ceiling, zenith]; blocked = [altBottom, ceiling].
+ *  Sky mode: visible = the painted band [profile, profileTop] (an open-above
+ *  90.5 sentinel extends to the zenith); unpainted columns are fully blocked.
+ *  Per column, visible U blocked == [altBottom, zenith] and visible n blocked
+ *  == {} - the visible mask is the EXACT complement of the blocked mask. */
+export function visibleSkyBands(p, altBottom = null, zenith = 90) {
+  const ab = Number.isFinite(altBottom) ? altBottom : Number(p.altBottom);
+  const mk = (vis, blocked) => ({
+    vis: vis && vis[1] > vis[0] ? vis : null,
+    blocked: blocked.filter(([a, b]) => b > a),
+  });
+  const out = [];
+  for (let col = 0; col < BINS; col++) {
+    const e = p.profile[col];
+    if (p.paintMode === 'sky') {
+      if (e != null && e > NO_BLOCK + 0.5 && e < zenith) {
+        const t = p.profileTop[col];
+        const hi = (t != null && t > NO_BLOCK + 0.5 && t !== 90.5)
+          ? Math.min(t, zenith) : zenith;   // 90.5 = open to the zenith
+        out.push(mk([e, hi], [[ab, e], [hi, zenith]]));
+      } else {
+        out.push(mk(null, [[ab, zenith]]));  // unpainted sky column = blocked
+      }
+    } else {
+      const ceil = (e != null && e > NO_BLOCK + 0.5) ? e : ab;
+      const lo = Math.max(ab, ceil);
+      out.push(mk([lo, zenith], [[ab, lo]]));
+    }
+  }
+  return out;
+}
+
+/** Closed polygon(s) of the VISIBLE band for the preview (sky mode only),
+ *  split at the FOV edge, blocked columns and the 360 deg seam so no polygon
+ *  spans across the chart. Returns [x,y] vertex lists (bottom edge left->right,
+ *  then top edge right->left). Obstacle mode has no fill -> []. */
+export function skyBandPolygons(p, W, H, ab, at, azOff, fov) {
+  const bands = visibleSkyBands(p, ab);
+  const span = at - ab || 1;
+  const yOf = (alt) => H * (1 - (Math.min(Math.max(alt, ab), at) - ab) / span);
+  const polys = [];
+  let run = null, prevX = null;
+  for (let col = 0; col < BINS; col++) {
+    const rel = (((col * 0.5 - azOff) % 360) + 360) % 360;
+    const vis = bands[col].vis;
+    if (!vis || rel > fov) { run = null; prevX = null; continue; }
+    const x = rel / fov * W;
+    if (run && prevX != null && x < prevX - W * 0.5) run = null;   // 360 seam
+    if (!run) { run = []; polys.push(run); }
+    run.push([x, yOf(vis[1]), yOf(vis[0])]);
+    prevX = x;
+  }
+  return polys.map((r) => {
+    const pts = [];
+    for (const [x, , by] of r) pts.push([x, by]);
+    for (let k = r.length - 1; k >= 0; k--) pts.push([r[k][0], r[k][1]]);
+    return pts;
+  });
+}
+
 /** Recompute profile/profileTop (720 bins) from the current strokes.
  *
  *  Canonical invariant: strokes WIN when present; when there are NO strokes the
@@ -583,7 +670,7 @@ export function renderHorizon(box, onChanged) {
       <ul class="pick" id="pano-list">${db.panos.length ? db.panos.map(panoRow).join('') : '<li style="cursor:default">no horizon stored yet</li>'}</ul>
       <div style="margin-top:12px">
         <label>Name <input id="pano-name" type="text" value="backyard" style="width:120px"></label>
-        <div class="btnrow" style="margin-top:8px">
+        <div class="btnrow action-row" style="margin-top:12px">
           <label class="btn primary" for="pano-file" style="text-align:center" title="choose a photo">📷 Upload photo</label>
           <button class="btn" id="pano-blank">Blank sky</button>
         </div>
@@ -1019,32 +1106,27 @@ function wireEditor(box, p, onChanged) {
     profCtx.fillRect(0, 0, W, H);
     const lo = Math.min(p.altBottom, 0);
     const hi = Math.max(p.altTop, 10);
-    const span = Math.max(1, hi - lo);
-    const yOf = (alt) => 52 - ((alt - lo) / span) * 52;
+    // preview geometry: the SAME shared transform as the desktop (one x per
+    // 720 bins across the full width), so the sky band is the exact complement
+    // of the blocked region and never self-intersects or wraps the seam.
+    const azOff = 0, fov = 360;
     if (paintMode() === 'obstacle') {
+      const segs = profileSegments(p.profile, W, H, lo, hi, azOff, fov, 90.5);
       profCtx.strokeStyle = '#ff6b6b';
       profCtx.lineWidth = 2;
       profCtx.beginPath();
-      let started = false;
-      for (let i = 0; i <= BINS; i += 2) {
-        const ceil = p.profile[Math.min(BINS - 1, i)];
-        const y = yOf(ceil > NO_BLOCK + 0.5 ? ceil : -90);
-        if (!started) { profCtx.moveTo(i / 2, y); started = true; } else profCtx.lineTo(i / 2, y);
+      for (const s of segs) {
+        s.forEach(([x, y], k) => (k ? profCtx.lineTo(x, y) : profCtx.moveTo(x, y)));
       }
       profCtx.stroke();
     } else {
       profCtx.fillStyle = 'rgba(120,230,140,.35)';
-      profCtx.beginPath();
-      for (let i = 0; i <= BINS; i += 2) {
-        const c = p.profile[Math.min(BINS - 1, i)];
-        profCtx.lineTo(i / 2, yOf(c > NO_BLOCK + 0.5 ? c : 90));
+      for (const pts of skyBandPolygons(p, W, H, lo, hi, azOff, fov)) {
+        profCtx.beginPath();
+        pts.forEach(([x, y], k) => (k ? profCtx.lineTo(x, y) : profCtx.moveTo(x, y)));
+        profCtx.closePath();
+        profCtx.fill();
       }
-      for (let i = BINS; i >= 0; i -= 2) {
-        const t = p.profileTop[Math.min(BINS - 1, i)];
-        profCtx.lineTo(i / 2, yOf(t > NO_BLOCK + 0.5 ? t : 90));
-      }
-      profCtx.closePath();
-      profCtx.fill();
     }
     profCtx.fillStyle = 'rgba(127,151,184,.8)';
     profCtx.font = '9px system-ui';

@@ -69,17 +69,25 @@ Image Catalog (FITS ingest + library). `README.md` has the feature list.
   / web `nightInfo`); the site-zoned 20:00-04:00 fallback applies only when
   there is no sunset. This is a SEPARATE concept from the SCORING window
   (twilight-level dusk..dawn), which is UNCHANGED. `viewFullDay` ON widens the
-  scrub to the app's full span (web: 24 h noon->noon; desktop: the whole
-  payload grid, dusk-1h..dawn+1h). Note the desktop payload grid is narrower
-  than sunset..sunrise, so the desktop default clamps to the grid. ONE shared
+  scrub to the app's full span: the SAME 24 h site-zoned local noon->noon grid
+  in BOTH apps (desktop `/api/night` ships it; web computes it). ONE shared
   policy `scrubBounds`/`scrubClamp` in `web/astro.js` + `static/js/derive.js`,
   pinned at both states by the `scrubwindow` engine of `tests/test_js_parity.py`
   (+ absolute scenarios: astronomical/nautical/civil/polar/DST/both
-  hemispheres). Toggling re-derives live and clamps the selected time to the
-  nearest in-range instant. Desktop `derive.js::indexRangeFor` backs BOTH
+  hemispheres) and by the `scrubgrid` engine against the real desktop 24 h
+  grid. Toggling re-derives live and clamps the selected time to the nearest
+  in-range instant. Desktop `derive.js::indexRangeFor` backs BOTH
   `nightIndexRange` (scoring, dusk..dawn) and `scrubWindowRange` (scrub,
   sunset..sunrise); web `app.js::scrubRange` maps `nightInfo`'s
   sunset/sunrise to the slider. Never define a second window.
+- **Desktop payload grid is a full 24 h site-zoned day** (0.6.13, ITEM A):
+  `nightcalc.compute_night` samples local noon -> next local noon at 6 min
+  (241 samples), so the desktop `View full day` toggle is real and matches the
+  web exactly. This is bounded and measured: standard payload ~0.9 MiB /
+  ~0.23 s, advanced ~2.4 MiB / ~0.32 s at 52 N; guarded by
+  `tests/test_api.py::test_night_payload_size_and_compute_time_stay_bounded`
+  and the grid-bounds test. The scoring clip (dusk..dawn) and the detail
+  endpoint's own chart margins are unchanged.
 
 **Charts and units**
 - Magnitude limit is ONE rule `magVisible(vmag,limit,maxLimit)` in `derive.js` +
@@ -133,6 +141,23 @@ Image Catalog (FITS ingest + library). `README.md` has the feature list.
   (`profileFromMask`) persisting once per stroke/save, not per pointer sample.
   Guides use `xOfAz`/`rowOfAlt` - the SAME transform as `ceilFor`
   (`tests/js/pano_geom.mjs`).
+- **Sky-band rendering (0.6.13, ITEM C):** the visible-sky region is the EXACT
+  complement of the blocked region - per column `visible U blocked ==
+  [altBottom, zenith]` and `visible n blocked == {}`
+  (`web/horizon.js::visibleSkyBands`). The `90.5` sentinel means OPEN TO THE
+  ZENITH (clamped to 90), unpainted sky columns are fully blocked, and the
+  profile preview is drawn as full-width, seam-split polygons that never
+  self-intersect (`skyBandPolygons`; the old fill used `x=i/2` = half width and
+  one polygon that bridged blocked gaps). The edge geometry `profileSegments`
+  is SHARED with the desktop (`static/js/pano.js`) and pinned to identical
+  vertices, with the whole complement/regression contract, by
+  `tests/js/sky_band.mjs`.
+- **Action-button sizing (ITEM B):** action buttons are auto-width and grouped
+  (`.btnrow` = flex+wrap+gap; `.action-row .btn { flex: 0 0 auto }`) - never a
+  lone full-width action. A `.btnrow label` rule must exclude label-buttons
+  (`label:not(.btn)`), or a "Upload photo"/"Import backup" `label.btn` becomes a
+  full-width flex block. Pinned by
+  `tests/test_ui_invariants.py::test_web_action_rows_are_not_full_width`.
 - Web backup is TRUTHFUL: `horizon.js::exportPanosWithImages()` embeds the
   compressed panorama photo and sets `hasImage` from the bytes actually
   included, so `hasImage === true` after a restore means the image really exists.
@@ -214,7 +239,7 @@ Image Catalog (FITS ingest + library). `README.md` has the feature list.
     `Get-CimInstance Win32_Process`).
   - If 8407 is briefly taken at boot, `free_port()` silently picks a RANDOM port
     (written to `instance.json`).
-- Tests: `python -m pytest tests/` (526). Single test:
+- Tests: `python -m pytest tests/` (531). Single test:
   `python -m pytest tests/test_astro.py -k name`. API tests use
   `create_app(db, prefetch=False)` (no image-cache thread). The `client` fixture
   must leave `data/panos` in the tmp dir it patches in.
@@ -222,7 +247,7 @@ Image Catalog (FITS ingest + library). `README.md` has the feature list.
     `pytest.ini`) can acquire an owner-SID-only DACL, so every `tmp_path` test
     errors at fixture cleanup - an environment artifact, not a failure. Workaround
     (no escalation needed): `python -m pytest tests/ -q --basetemp
-    C:\Users\<user>\AppData\Local\Temp\opencode\pt -p no:cacheprovider` -> 526/526.
+    C:\Users\<user>\AppData\Local\Temp\opencode\pt -p no:cacheprovider` -> 531/531.
 - JS checks (run after touching `static/` OR `web/`): `python scripts/check_js.py`
   runs all of them and exits non-zero on hard failures:
   - `check_js_imports.py` - broken relative ES-module imports / missing named exports
@@ -330,9 +355,9 @@ Image Catalog (FITS ingest + library). `README.md` has the feature list.
   `scripts/check_catalog_token.py`, wired into `scripts/check_js.py`, and pinned
   by `tests/test_cache_tokens.py` (mutation-tested). Do NOT add
   `{cache:'no-store'}` - the file must stay cacheable.
-  Current: `app.js?v=36` (index.html) / `CATALOG_TOKEN = '2'`, `astro.js?v=7`,
-  `horizon.js?v=19`, `format.js?v=3`, `nightrank.js?v=4`, `webstore.js?v=6`,
-  `dragwin.js?v=1`, `style.css?v=14`, `themes.css?v=4`.
+  Current: `app.js?v=37` (index.html) / `CATALOG_TOKEN = '2'`, `astro.js?v=7`,
+  `horizon.js?v=20`, `format.js?v=3`, `nightrank.js?v=4`, `webstore.js?v=6`,
+  `dragwin.js?v=1`, `style.css?v=15`, `themes.css?v=4`.
 - **Never publish `index.html` before the modules it names.** Deploys are not
   atomic and the page carries the tokens; `ftps_deploy.py::upload_order()` sorts
   HTML last (`index.html` very last), pinned by `tests/test_deploy_order.py`. Keep

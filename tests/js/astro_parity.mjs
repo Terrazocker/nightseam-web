@@ -18,7 +18,7 @@ const engine = process.argv[2];
 if (!["desktop", "web", "window", "darkwindow", "pick", "crosszone",
      "scoring", "ceil", "size", "status", "frame", "advice", "minalt",
      "shortcut", "nightstats", "mag", "skyzoom", "abovehorizon",
-     "scrubwindow"].includes(engine)) {
+     "scrubwindow", "scrubgrid"].includes(engine)) {
   console.error("usage: node astro_parity.mjs <engine>");
   process.exit(2);
 }
@@ -359,6 +359,23 @@ if (engine === "size") {
   process.stdout.write(JSON.stringify(cases.map((c) => ({
     desk: one(desk, c), web: one(web, c),
   }))));
+} else if (engine === "scrubgrid") {
+  /* ITEM A: the REAL desktop 24 h grid. Given the timeline + crossings Python
+   * computed, return the SCRUB index range (sunset..sunrise, or the whole grid
+   * with view_full_day) and the SCORING index range (dusk..dawn) that
+   * static/js/derive.js selects. */
+  const { S } = await import(new URL("../../static/js/state.js", import.meta.url).href);
+  const D = await import(new URL("../../static/js/derive.js", import.meta.url).href);
+  process.stdout.write(JSON.stringify(cases.map((c) => {
+    S.night = {
+      timeline: { times_iso: c.times, n: c.times.length, step_min: c.step },
+      dusk: c.dusk, dawn: c.dawn, sunset: c.sunset, sunrise: c.sunrise,
+    };
+    S.cfg = { view_full_day: !!c.viewFullDay };
+    const [lo, hi] = D.scrubWindowRange();
+    const [sl, sh] = D.nightIndexRange();
+    return { lo, hi, scoringLo: sl, scoringHi: sh };
+  })));
 } else {
   const out = cases.map((c) => {
     const r = {};

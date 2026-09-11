@@ -1103,3 +1103,51 @@ def test_scrub_window_follows_the_planner_and_matches_between_apps():
         # the night range back on while at 1 pm lands on sunrise (or sunset)
         if not c["viewFullDay"]:
             assert it["clamps"][3] == n0 and it["clamps"][4] == n1, (c["name"], it)
+
+
+# ================================================== desktop 24 h grid (ITEM A)
+def test_desktop_scrub_grid_maps_the_real_24h_payload():
+    """ITEM A: on the REAL desktop 24 h grid (site-zoned local noon -> +24 h at
+    the 6-min step), the desktop's scrubWindowRange() selects sunset..sunrise,
+    and the WHOLE grid with view_full_day; nightIndexRange() (SCORING) still
+    selects the twilight-level dusk..dawn in both states. Every scenario at both
+    toggle states, and the grid endpoints are the exact samples bracketing the
+    requested crossings."""
+    from app import planning
+    cases, expected = [], []
+    for name, lat, lon, d, tz, level in _SCRUB_SCENARIOS:
+        nw = planning.night_window(d.year, d.month, d.day, tz, lat, lon)
+        start = nw["t_start"]
+        times = [start + timedelta(minutes=6 * i) for i in range(241)]
+        assert times[-1] - times[0] == timedelta(hours=24)
+        iso = [t.isoformat() for t in times]
+
+        def first_ge(target):
+            return next((i for i, t in enumerate(times) if t >= target), len(times) - 1)
+
+        def last_le(target):
+            return next((i for i in range(len(times) - 1, -1, -1) if times[i] <= target), 0)
+
+        s_set, s_rise = nw["sunset"], nw["sunrise"]
+        if s_set is None or s_rise is None:
+            assert name == "polar fallback", name
+            s_set, s_rise = nw["dusk"], nw["dawn"]
+        exp_lo, exp_hi = first_ge(s_set), last_le(s_rise)
+        slo, shi = first_ge(nw["dusk"]), last_le(nw["dawn"])
+        base = {"times": iso, "step": 6,
+                "dusk": nw["dusk"].isoformat(), "dawn": nw["dawn"].isoformat(),
+                "sunset": nw["sunset"].isoformat() if nw["sunset"] else None,
+                "sunrise": nw["sunrise"].isoformat() if nw["sunrise"] else None}
+        for vfd in (False, True):
+            cases.append(dict(base, viewFullDay=vfd))
+            expected.append((exp_lo, exp_hi, slo, shi, vfd))
+
+    res = _run_node("scrubgrid", cases)
+    assert len(res) == len(cases)
+    for c, r, (elo, ehi, slo, shi, vfd) in zip(cases, res, expected):
+        if vfd:
+            assert (r["lo"], r["hi"]) == (0, 240), r
+        else:
+            assert (r["lo"], r["hi"]) == (elo, ehi), (c["sunset"], c["sunrise"], r)
+        assert (r["scoringLo"], r["scoringHi"]) == (slo, shi), r
+        assert r["lo"] <= r["hi"]

@@ -9,7 +9,7 @@
  * All sky math runs client-side (astro.js, Meeus algorithms).
  */
 import * as E from './astro.js?v=7';
-import * as Hor from './horizon.js?v=19';
+import * as Hor from './horizon.js?v=20';
 import * as WS from './webstore.js?v=6';
 import { initDragWindows } from './dragwin.js?v=1';
 import { fmtSize, sizeArcmin, framePct, magVisible, skyClampZoom,
@@ -1893,7 +1893,7 @@ async function renderSettings() {
         <div class="card">
           <h3>Backup &amp; transfer</h3>
           <p class="sub">A backup covers sites, rigs, custom targets, horizon profiles and settings — the browser equivalent of the desktop app's ZIP export/import.</p>
-          <div class="btnrow" style="margin-top:10px">
+          <div class="btnrow action-row" style="margin-top:10px">
             <button class="btn primary" id="set-export">⬇ Export backup (JSON)</button>
             <label class="btn" for="set-import" style="text-align:center">⬆ Import backup</label>
             <input type="file" id="set-import" accept="application/json,.json" class="vhidden">

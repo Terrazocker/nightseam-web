@@ -85,3 +85,13 @@ def test_web_panorama_editor_history_and_view():
     round-trip, focus clamping, DPR-independent geometry)."""
     out = run_node_harness("pano_ui.mjs")
     assert "pano ui contract held" in out
+
+
+def test_web_sky_band_complement_geometry():
+    """ITEM C (0.6.13): the visible-sky band is the exact complement of the
+    blocked band - open-above (90.5) extends to the zenith, unpainted columns
+    are fully blocked, the preview covers the full width, splits at the blocked
+    gaps and never self-intersects; and the shared edge geometry yields
+    identical vertices on web + desktop."""
+    out = run_node_harness("sky_band.mjs")
+    assert "sky-band contract held" in out

@@ -355,7 +355,15 @@ a.wiki { color: var(--accent); }
 .tooltip b { color: var(--accent); }
 
 /* ---------- horizon editor ---------- */
-.btnrow label { font-size: 12px; color: var(--muted); display: flex; align-items: center; gap: 6px; }
+/* Action rows: real gaps + wrap. Buttons share width (deliberate) EXCEPT in an
+   .action-row, where each action is auto-width - a lone full-width action is
+   the bug this prevents. The label rule must NOT match a label used AS a button
+   (e.g. "Upload photo" / "Import backup"), or it becomes a full-width flex
+   block while its sibling stays content-width. */
+.btnrow { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.action-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.action-row .btn { flex: 0 0 auto; }
+.btnrow label:not(.btn) { font-size: 12px; color: var(--muted); display: flex; align-items: center; gap: 6px; }
 .btnrow input[type="text"], .btnrow select, .pref-row select, .pref-row input[type="text"] {
   background: var(--panel); border: 1px solid var(--line); color: var(--txt);
   border-radius: 8px; padding: 6px 8px; font-size: 12.5px; max-width: 100px;

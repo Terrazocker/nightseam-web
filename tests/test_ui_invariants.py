@@ -231,3 +231,23 @@ def test_progressive_disclosure_keeps_advanced_controls_in_the_menu():
         assert m and int(m.group(1)) >= 120, (
             f"{tree}: the min-altitude slider needs a longer responsive track "
             f"(>=120px base clamp), got {m.group(0) if m else None!r}")
+
+
+def test_web_action_rows_are_not_full_width():
+    """ITEM B (0.6.13): an action button used AS a label must not become a
+    full-width flex block. `.btnrow label { display:flex }` stretched the
+    "Upload photo" label-button across the whole horizons panel while
+    "Blank sky" stayed content-width. Pin the scoped rule, the auto-width
+    action-row, and the horizons row using it."""
+    css = _read("web", "style.css")
+    assert ".btnrow label:not(.btn)" in css, \
+        "the .btnrow label rule must exclude label-buttons (class=btn)"
+    assert re.search(r"\.btnrow label \{", css) is None, \
+        "an unscoped .btnrow label rule stretches label-buttons"
+    assert ".action-row .btn { flex: 0 0 auto; }" in css, \
+        "action-row buttons must be auto-width, not stretched"
+    js = _read("web", "horizon.js")
+    assert 'class="btnrow action-row"' in js, \
+        "the horizons create row must use the auto-width action-row"
+    assert 'class="btn primary" for="pano-file"' in js, \
+        "the upload control must stay a label-button (auto-width)"
