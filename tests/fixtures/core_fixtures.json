@@ -1,6 +1,6 @@
 {
  "manifest": {
-  "oracle": "v0.6.16-7-g042bceb",
+  "oracle": "v0.6.16-11-gf942f3f",
   "oracle_tag": "v0.6.16",
   "oracle_note": "Python astronomy/planning unchanged since v0.6.16 (Phase 2 concepts 1-5 touched JS/core only)",
   "command": "python scripts/gen_core_fixtures.py",

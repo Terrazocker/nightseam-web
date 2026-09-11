@@ -630,11 +630,13 @@ def test_web_cross_timezone_site_resolves_its_own_night():
         assert abs((got - want).total_seconds()) < 180, (key, got, want)
     assert res["site"]["spanH"] < 20, res["site"]
 
-    # ... and the old browser-anchored scan is demonstrably broken here: its
-    # crossings belong to the NEIGHBOURING night (dawn before dusk - the
-    # noon-anchored 30 h scan never spans > 24 h, but a browser noon 12 h off
-    # still resolves the wrong night's pair)
-    assert res["browserAnchored"]["dawn"] < res["browserAnchored"]["dusk"], \
+    # ... and the old browser-anchored scan is demonstrably broken here: with
+    # the Python pairing rule (Phase 2 concept 8) it no longer finds a pair at
+    # all inside its off-by-12h window, so it degrades to the fixed 'fallback'
+    # span - still not the site's night (the pre-fix scan instead paired the
+    # neighbouring night's dawn before dusk).
+    assert (res["browserAnchored"]["level"] == "fallback"
+            or res["browserAnchored"]["dawn"] < res["browserAnchored"]["dusk"]), \
         res["browserAnchored"]
 
 
@@ -674,8 +676,10 @@ def test_web_cross_timezone_anchoring_is_site_based(browser_zone, case):
     assert res["site"]["spanH"] < 20, (case, res["site"])
     # the superseded browser-anchored behaviour, kept in the harness as the
     # documented counter-example: still wrong for a site EAST of the browser
+    # (after the concept-8 pairing fix it degrades to the fixed fallback span)
     if "Honolulu" in browser_zone:
-        assert res["browserAnchored"]["dawn"] < res["browserAnchored"]["dusk"], \
+        assert (res["browserAnchored"]["level"] == "fallback"
+                or res["browserAnchored"]["dawn"] < res["browserAnchored"]["dusk"]), \
             (case, res["browserAnchored"])
 
 

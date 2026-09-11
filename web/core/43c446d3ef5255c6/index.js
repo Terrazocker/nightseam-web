@@ -34,8 +34,12 @@ export {
 export {
   julianDay, dateFromJD, gmstDeg, precessJ2000ToDate, precessDateToJ2000,
   refractionDeg, altaz, altazFrame, altazFrameApply,
-  sunRaDec, moonRaDec, moonIllumination, moonAge,
+  sunRaDec, moonRaDec, moonIllumination, moonAge, sunAlt,
 } from './astro.js';
+
+export {
+  sunCrossings, nightInfo, pickDarkWindow,
+} from './planning.js';
 
 export {
   aboveHorizon, sampleVisible, statusOf, effectiveMinAlt,

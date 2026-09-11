@@ -253,3 +253,13 @@ export function moonAge(jd) {
   const psi = Math.acos(Math.max(-1, Math.min(1, cosElong)));
   return SYNODIC_MONTH * psi / (2 * Math.PI);
 }
+
+/* ------------------------------------------------------------------
+ * night / planning helpers (scan-based like the Python original)
+ * ------------------------------------------------------------------ */
+
+/** Sun apparent (refracted) altitude in degrees. */
+export function sunAlt(jd, lat, lon) {
+  const [ra, dec] = sunRaDec(jd);
+  return altaz(ra, dec, jd, lat, lon)[0];
+}

@@ -47,6 +47,7 @@ MOVED = (
     "precessDateToJ2000", "refractionDeg", "altaz", "altazFrame",
     "altazFrameApply", "sunRaDec", "moonRaDec", "moonIllumination",
     "moonAge",
+    "sunAlt", "sunCrossings", "nightInfo", "pickDarkWindow",
 )
 FORBIDDEN = (
     r"\bdocument\s*\.", r"\bwindow\s*\.", r"\blocalStorage\b",

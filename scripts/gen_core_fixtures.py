@@ -34,6 +34,12 @@ SITES = [
 ]
 DATES = ["2026-01-15", "2026-03-20", "2026-06-21",
          "2026-09-23", "2026-11-01", "2026-12-21"]
+# Grazing polar-night case, kept deliberately: Tromso 2026-01-15 has exactly
+# one 0-degree up/down pair (2026-01-16 ~10:39Z ascent, ~11:08Z descent), so
+# the oracle reports sunset = 11:08Z with sunrise = null - an ascent BEFORE
+# the only descent is not tonight's sunrise. The core pairing must ignore
+# pre-dusk ascents; the twilight fixture fails here otherwise.
+GRAZING_CASE = ("tromso", "2026-01-15")
 # minutes EAST in effect at local noon, per (site, date) - what the client sends
 TZ_MIN = {
     "berlin": {"2026-01-15": 60, "2026-03-20": 60, "2026-06-21": 120,
