@@ -29,7 +29,7 @@ import {
   sunRaDec, moonRaDec, moonIllumination, moonAge, sunAlt,
   sunCrossings, nightInfo, pickDarkWindow, scrubWindowMs,
   scrubBounds, scrubClamp, sepDeg,
-} from './core.js?v=13';
+} from './core.js?v=14';
 
 export {
   julianDay, dateFromJD, gmstDeg, precessJ2000ToDate, precessDateToJ2000,
@@ -49,7 +49,7 @@ export {
  * target) is a different question and does NOT belong here.
  */
 /** Apparent-altitude visibility predicate - shared in core/ (Phase 2). */
-export { aboveHorizon } from './core.js?v=13';
+export { aboveHorizon } from './core.js?v=14';
 
 /** Sun/moon elongation angle in degrees and phase label. */
 export function moonPhase(jd) {
@@ -98,7 +98,7 @@ export function moonAltAz(jd, lat, lon) {
 export {
   MOON_TYPE_FACTOR, moonSensitivity, moonMinDist,
   effectiveMoonGlow, moonPenalty, bortleMoonFactor,
-} from './core.js?v=13';
+} from './core.js?v=14';
 
 /** Sample an object's altitude over [jd0, jd1] at stepMin minutes. */
 export function objectTrack(raDeg, decDeg, jd0, jd1, lat, lon, stepMin = 4) {
