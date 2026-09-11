@@ -122,7 +122,10 @@ def test_popularity_still_breaks_ties():
     assert "(b.score - a.score) || (b.pop - a.pop)" in web
     assert "d !== 0 ? d : popularityFactor(b.m) - popularityFactor(a.m)" in desk
     assert "function popularityFactor(o)" in web                 # web/app.js is the app entry, no exports
-    assert "export function popularityFactor" in _read("static", "js", "derive.js")
+    assert "corePopularityFactor(popularityOf(o))" in web        # ...delegating to the shared core curve
+    derive = _read("static", "js", "derive.js")
+    assert "export function popularityFactor(m)" in derive       # desktop keeps the meta-object signature
+    assert "corePopularityFactor(m && m.popularity)" in derive   # ...and delegates to core
 
 
 def test_attribute_hidden_panels_restore_display_none():

@@ -34,3 +34,8 @@ export {
 export {
   aboveHorizon, sampleVisible, statusOf, effectiveMinAlt,
 } from './visibility.js';
+
+export {
+  MOON_TYPE_FACTOR, moonSensitivity, moonMinDist, effectiveMoonGlow,
+  moonPenalty, bortleMoonFactor, popularityFactor,
+} from './scoring.js';

@@ -2,7 +2,9 @@
 
 import { S } from "./state.js";
 import { parseUTC, clamp, fmtHM } from "./util.js";
-import { statusOf as coreStatusOf, effectiveMinAlt as coreMinAlt }
+import { statusOf as coreStatusOf, effectiveMinAlt as coreMinAlt,
+         moonSensitivity, effectiveMoonGlow, moonPenalty, bortleMoonFactor,
+         popularityFactor as corePopularityFactor }
   from "./core.js";
 
 /* keyboard scrub steps in minutes - shared with the web (web/astro.js) and
@@ -23,6 +25,14 @@ export { aboveHorizon } from "./core.js";
 export {
   magVisible, SKY_ZOOM_MIN, SKY_ZOOM_MAX, skyClampZoom, skyViewMatrix,
   skyScreenToBase, skyClampFocus,
+} from "./core.js";
+
+/* Moon-aware scoring curves and the silent popularity tiebreaker - shared in
+   core/ (Phase 2, concept 5), pinned by the "scoring" engine of
+   tests/js/astro_parity.mjs. Re-exported so existing importers keep working. */
+export {
+  MOON_TYPE_FACTOR, moonSensitivity, moonMinDist,
+  effectiveMoonGlow, moonPenalty, bortleMoonFactor,
 } from "./core.js";
 
 /* Longest run of true flags as a HALF-OPEN range [start, end) - the same
@@ -201,46 +211,7 @@ function filterType() {
   return "lrgb";
 }
 
-/* Phase-dependent minimum moon distance (Lorentzian, symmetric about full moon).
-   The threshold is LARGEST at full moon (= BASE) and smallest at new moon
-   (= BASE/3.25); objects closer than the threshold take the full illumination
-   penalty, and beyond it the glow decays over 180°. `moonAgeDays` is the folded
-   age the server ships (0 = new ... ~14.76 = full), so `frac` spans 0-0.5 - the
-   symmetry means a full 0-29.53 age would give the same result.
-   The 0.333 constant controls how sharply the threshold rises toward full.
 
-   EXPORTED TOGETHER WITH THE WEB TWIN (web/astro.js): tests/test_js_parity.py
-   compares both implementations on one input grid, so the two apps cannot drift
-   apart again the way they did when the web scored over a civil window with
-   the wrong moon illumination. */
-export function moonMinDist(filterType, moonAgeDays) {
-  const BASE = { narrowband: 60, oiii: 90, lrgb: 120 }[filterType] || 120;
-  const frac = moonAgeDays / 29.53;           // 0 = new, 0.5 = full
-  return BASE / (1 + Math.pow((0.5 - frac) / 0.333, 2));
-}
-
-/* Effective moon illumination for scoring: raw illumination attenuated by
-   angular separation AND filter-specific distance tolerance. */
-export function effectiveMoonGlow(illum, sep, filterType, moonAgeDays) {
-  const minD = moonMinDist(filterType, moonAgeDays);
-  const distDeg = Math.max(0, sep - minD);   // excess beyond safe distance
-  const distFactor = Math.max(0, 1 - distDeg / 180);
-  return illum * distFactor;
-}
-
-/* Multiplier applied to a sample's altitude weight under moonlight. */
-export function moonPenalty(glow, typeF, bortleF) {
-  return Math.max(0.05, 1 - 0.95 * glow * typeF * bortleF);
-}
-
-/* Bortle scaling - darker skies reduce the moon penalty more. The curve is
-   CONTINUOUS at the bortle 3/4 junction (0.40 either side of it): before, one
-   slider step changed the penalty by ~67 %, more than any other step.
-   Range: 0.30 (bortle 1) ... 0.40 (3) ... 1.12 (9). */
-export function bortleMoonFactor(bortle) {
-  if (bortle <= 3) return 0.25 + 0.05 * bortle;   // 0.30-0.40 (dark sites)
-  return 0.40 + 0.12 * (bortle - 3);              // 0.52-1.12 (suburban->city)
-}
 
 export function recomputeNightDerived() {
   const N = S.night;
@@ -296,17 +267,6 @@ export function recomputeNightDerived() {
   }
 }
 
-/* how badly an object type suffers under moonlight: faint extended nebulae
-   wash out, while star clusters and bright galaxies keep their cores.
-   Shared with the web twin - tests/test_js_parity.py compares both. */
-export const MOON_TYPE_FACTOR = {
-  nebula: 1.6, supernova_remnant: 1.6, planetary: 1.3,
-  star_cloud: 1.1, galaxy: 0.8, open_cluster: 0.55, globular: 0.5,
-  asterism: 0.55,
-};
-export function moonSensitivity(otype) {
-  return MOON_TYPE_FACTOR[otype] || 1.0;
-}
 
 /* great-circle separation between two (alt, az) points in degrees */
 function sepDeg(alt1, az1, alt2, az2) {
@@ -430,10 +390,11 @@ export function objScore(o) {
    Used as a silent tiebreaker — two objects with the same moon-aware
    score get differentiated by how popular they are with imagers.
    The score lives in the catalog as m.popularity (set during seed). */
-/* Log-scale normalization: M42 (165k) → ~1.0, dim object (100) → ~0.3 */
+/* Log-scale normalization: M42 (165k) → ~1.0, dim object (100) → ~0.3.
+   Desktop callers pass the catalog meta object, so this shell resolves
+   m.popularity and delegates to the pure core curve (number -> 0..1). */
 export function popularityFactor(m) {
-  if (!m || !m.popularity) return 0;
-  return Math.min(1, 0.3 + 0.7 * Math.log10(m.popularity) / 5.2);
+  return corePopularityFactor(m && m.popularity);
 }
 
 export function filterAdvice(m) {

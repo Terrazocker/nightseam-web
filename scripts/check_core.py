@@ -41,6 +41,8 @@ MOVED = (
     "searchBlob", "isCustomId",
     "offsetEastMin", "zoneOffsetAtLocalNoon", "wallFromUtcMs", "utcFromWallMs",
     "aboveHorizon", "sampleVisible", "statusOf", "effectiveMinAlt",
+    "moonSensitivity", "moonMinDist", "effectiveMoonGlow", "moonPenalty",
+    "bortleMoonFactor",
 )
 FORBIDDEN = (
     r"\bdocument\s*\.", r"\bwindow\s*\.", r"\blocalStorage\b",

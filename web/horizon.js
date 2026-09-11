@@ -21,7 +21,7 @@ import {
   skyBandPolygons, computeProfile, clearMask, ceilFor, bandTopFor,
   overhangRuns, assumedOpenRuns, assumedOpenHatchPolys,
   effectiveMinAlt as coreMinAlt,
-} from './core.js?v=7';
+} from './core.js?v=8';
 
 export {
   NO_BLOCK, BINS, MASK_W, MASK_H,

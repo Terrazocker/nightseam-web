@@ -159,7 +159,7 @@ export function altaz(raDeg, decDeg, jd, latDeg, lonDeg, refract = true) {
  * target) is a different question and does NOT belong here.
  */
 /** Apparent-altitude visibility predicate - shared in core/ (Phase 2). */
-export { aboveHorizon } from './core.js?v=7';
+export { aboveHorizon } from './core.js?v=8';
 
 /** Geometric solar position -> RA/Dec in J2000 equivalents (Meeus ch.25). */
 export function sunRaDec(jd) {
@@ -416,44 +416,13 @@ export function pickDarkWindow(info, dayDate, localNoon) {
    and fail if they ever drift apart again - the web used to apply the moon
    penalty with the wrong illumination and a civil twilight window. */
 
-/* how badly an object type suffers under moonlight (nebulae worst, clusters
-   least) */
-export const MOON_TYPE_FACTOR = {
-  nebula: 1.6, supernova_remnant: 1.6, planetary: 1.3,
-  star_cloud: 1.1, galaxy: 0.8, open_cluster: 0.55, globular: 0.5,
-  asterism: 0.55,
-};
-export function moonSensitivity(otype) {
-  return MOON_TYPE_FACTOR[otype] || 1.0;
-}
-
-/** Phase-dependent minimum moon distance (Lorentzian, symmetric about full
- *  moon): LARGEST at full (= BASE), smallest at new (= BASE/3.25).
- *  `moonAgeDays` is the folded age (0 = new ... ~14.76 = full). */
-export function moonMinDist(filterType, moonAgeDays) {
-  const BASE = { narrowband: 60, oiii: 90, lrgb: 120 }[filterType] || 120;
-  const frac = moonAgeDays / 29.53;
-  return BASE / (1 + Math.pow((0.5 - frac) / 0.333, 2));
-}
-
-/** Illumination attenuated by separation and the filter's distance tolerance. */
-export function effectiveMoonGlow(illum, sep, filterType, moonAgeDays) {
-  const minD = moonMinDist(filterType, moonAgeDays);
-  const distDeg = Math.max(0, sep - minD);
-  return illum * Math.max(0, 1 - distDeg / 180);
-}
-
-/** Multiplier applied to a sample's altitude weight under moonlight. */
-export function moonPenalty(glow, typeF, bortleF) {
-  return Math.max(0.05, 1 - 0.95 * glow * typeF * bortleF);
-}
-
-/** Bortle scaling - darker skies reduce the moon penalty more; continuous at
- *  the 3/4 junction (0.30 at bortle 1 ... 1.12 at bortle 9). */
-export function bortleMoonFactor(bortle) {
-  if (bortle <= 3) return 0.25 + 0.05 * bortle;
-  return 0.40 + 0.12 * (bortle - 3);
-}
+/* The curves themselves are shared in core/ (Phase 2, concept 5) - both
+   shells re-export them so tests/test_js_parity.py can still feed one input
+   grid to both implementations. */
+export {
+  MOON_TYPE_FACTOR, moonSensitivity, moonMinDist,
+  effectiveMoonGlow, moonPenalty, bortleMoonFactor,
+} from './core.js?v=8';
 
 /** Sample an object's altitude over [jd0, jd1] at stepMin minutes. */
 export function objectTrack(raDeg, decDeg, jd0, jd1, lat, lon, stepMin = 4) {
