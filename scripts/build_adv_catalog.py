@@ -17,16 +17,23 @@ ROOT = Path(__file__).resolve().parents[1]
 # https://github.com/mattiaverga/OpenNGC and pass the path - or drop it at
 # data/NGC.csv (gitignored) and run the script with no argument.
 SRC = Path(sys.argv[1]) if len(sys.argv) > 1 else ROOT / "data" / "NGC.csv"
-if not SRC.is_file():
-    raise SystemExit(
-        f"OpenNGC source not found: {SRC}\n"
-        f"  download NGC.csv from https://github.com/mattiaverga/OpenNGC\n"
-        f"  and pass it as the first argument (or place it at data/NGC.csv)")
 OUT = ROOT / "app" / "data" / "openned.csv"
 
 sys.path.insert(0, str(ROOT))
 from app.catalog_data import rows as curated_rows
 from app.fits import parse_ra_hours, parse_dec_deg
+
+
+def _load_source() -> list[dict]:
+    """Read the OpenNGC CSV (checked at call time, not import time, so the
+    pure helpers below stay importable in tests without the source present)."""
+    if not SRC.is_file():
+        raise SystemExit(
+            f"OpenNGC source not found: {SRC}\n"
+            f"  download NGC.csv from https://github.com/mattiaverga/OpenNGC\n"
+            f"  and pass it as the first argument (or place it at data/NGC.csv)")
+    with open(SRC, encoding="utf-8") as f:
+        return list(csv.DictReader(f, delimiter=";"))
 
 TYPE_MAP = {
     "G": "galaxy", "GPair": "galaxy", "GTrpl": "galaxy", "GGroup": "galaxy",
@@ -44,18 +51,68 @@ def fmt_desig(name: str) -> str:
     return f"{m.group(1)} {int(m.group(2))}" if m else name
 
 
-def build_rows():
-    with open(SRC, encoding="utf-8") as f:
-        raw = list(csv.DictReader(f, delimiter=";"))
+def _desig_keys(text: str) -> set[str]:
+    """Normalized id keys covered by a curated designation.
 
-    # curated designations to avoid duplicates in advanced mode
+    Handles a single designation ('NGC 224' -> ngc224), slash pairs
+    ('NGC 650/651' -> ngc650, ngc651) and numeric ranges
+    ('NGC 2237-2246' -> ngc2237 .. ngc2246). Expanding the range to EVERY
+    member number is essential: the old code only took the first '/' segment,
+    so a range like 'NGC 7317-7320' never matched the advanced member row
+    'ngc7317' and that collision leaked into the shipped catalog (two rows
+    sharing one id)."""
+    keys: set[str] = set()
+    m = re.match(r"^([A-Za-z]+)\s*(.*)$", (text or "").strip())
+    if not m:
+        return keys
+    base_prefix = m.group(1).lower()
+    for part in re.split(r"[/,]", m.group(2)):
+        part = part.strip()
+        if not part:
+            continue
+        mm = re.match(r"^(\d+)\s*(?:-\s*(\d+))?$", part)
+        if mm:                                   # '650/651' carries the prefix
+            prefix, start = base_prefix, int(mm.group(1))
+            end = int(mm.group(2)) if mm.group(2) else start
+        else:                                    # a full designation, e.g. 'M31'
+            full = re.match(r"^([A-Za-z]+)\s*(\d+)\s*(?:-\s*(\d+))?$", part)
+            if not full:
+                continue
+            prefix, start = full.group(1).lower(), int(full.group(2))
+            end = int(full.group(3)) if full.group(3) else start
+        if end < start or end - start > 5000:    # refuse broken/absurd ranges
+            end = start
+        for n in range(start, end + 1):
+            keys.add(f"{prefix}{n}")
+    return keys
+
+
+def _assert_global_unique(advanced: list[dict]) -> None:
+    """Fail loudly if the resulting catalog has duplicate ids.
+
+    Uniqueness must hold across curated + advanced TOGETHER, not merely within
+    each source: a `build_web.py catalog` / desktop UNION that repeats an id
+    makes the web `byId` map and `db.get_object()` disagree about which object
+    an id names. Raise instead of shipping that."""
+    from collections import Counter
+    ids = [r["id"] for r in curated_rows()] + [r["id"] for r in advanced]
+    dupes = sorted(k for k, v in Counter(ids).items() if v > 1)
+    if dupes:
+        raise SystemExit(
+            f"catalog id collision across curated+advanced: {dupes}\n"
+            f"  expand the curated designation in _desig_keys() or skip the "
+            f"advanced duplicate - do not ship two rows with one id")
+
+
+def build_rows():
+    raw = _load_source()
+
+    # every designation (incl. every number inside a curated range) that the
+    # curated catalog already covers, so advanced members do not duplicate it
     curated_keys = set()
     for r in curated_rows():
-        for k in (r["messier"], r["ngcic"]):
-            if k:
-                curated_keys.add(re.sub(r"\s+", "", k.lower()))
-            if r["ngcic"]:
-                curated_keys.add(re.sub(r"\s+", "", r["ngcic"].split("/")[0].lower()))
+        curated_keys |= _desig_keys(r["messier"] or "")
+        curated_keys |= _desig_keys(r["ngcic"] or "")
 
     out = []
     seen = set()
@@ -103,6 +160,7 @@ def build_rows():
 
 def main():
     rows = build_rows()
+    _assert_global_unique(rows)
     OUT.parent.mkdir(parents=True, exist_ok=True)
     with open(OUT, "w", encoding="utf-8", newline="") as f:
         f.write("# NightSeam advanced catalog - derived from OpenNGC "

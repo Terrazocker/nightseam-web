@@ -66,8 +66,10 @@ async function loadState() {
   applyCfgToUI();
   $("#dateInput").value = todayLocal();   // zone-aware local date
 
-  // first-run: guided setup instead of a bare locations dialog
-  if (!S.cfg.sites.length && !S.cfg.wizard_done) {
+  // No site means the planner cannot run (`/api/night` 400s), so (re)open the
+  // guided setup even when wizard_done is already set - otherwise skipping the
+  // location step left a permanent 0-site dead-end with no way back in.
+  if (!S.cfg.sites.length) {
     const w = await import("./wizard.js");
     w.openWizard();
   }

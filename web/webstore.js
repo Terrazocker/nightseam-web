@@ -265,13 +265,23 @@ export async function loadVersion() {
 
 /* --------------------------- backup / restore --------------------------- */
 
-export async function collectBackup(prefs, panos) {
+/** The authoritative theme value (the localStorage key the boot script reads). */
+export function currentTheme() {
+  try { return localStorage.getItem('nightseam_theme') === 'classic' ? 'classic' : 'dome'; }
+  catch { return 'dome'; }
+}
+
+export async function collectBackup(prefs, panos, theme) {
   const [sites, rigs, targets] = await Promise.all([
     all('sites'), all('rigs'), all('targets'),
   ]);
   return {
     app: 'nightseam-web',
+    version: 2,
     exportedAt: new Date().toISOString(),
+    // the theme is stored in its own localStorage key (not in prefs) - back up
+    // the key the boot script actually reads, so a restore can re-apply it
+    theme: (theme === 'classic' || theme === 'dome') ? theme : currentTheme(),
     prefs: prefs || {},
     panos: panos || { panos: [], activeId: null },
     sites: sites.map((r) => r.val),
@@ -305,14 +315,13 @@ function cleanRecord(r, { numbers = [], strings = [] } = {}) {
   return out;
 }
 
-/** Write a previously exported backup into storage.
- *  Returns { prefs, panos } for the caller to apply to localStorage. */
-export async function restoreBackup(data) {
+/** Validate a backup into staged records WITHOUT touching storage.
+ *  Throws on a malformed / foreign backup, so nothing is destroyed before the
+ *  whole bundle is known to be usable. Pure (no I/O): unit-testable. */
+export function stageBackup(data) {
   if (!data || data.app !== 'nightseam-web') {
     throw new Error('not a NightSeam Web backup');
   }
-  await Promise.all(STORES.filter((s) => s !== 'meta').map((s) => clearStore(s)));
-  const jobs = [];
   const siteOf = (s) => cleanRecord(s, {
     numbers: ['lat', 'lon', 'elev'],
     strings: ['name', 'tz', 'notes'],
@@ -325,20 +334,57 @@ export async function restoreBackup(data) {
     numbers: ['ra_hours', 'dec_deg', 'vmag'],
     strings: ['primary_name', 'otype', 'size_am', 'constellation', 'blurb'],
   });
-  for (const s of (data.sites || [])) {
-    const rec = siteOf(s); if (rec) jobs.push(set('sites', rec.id, rec));
-  }
-  for (const r of (data.rigs || [])) {
-    const rec = rigOf(r); if (rec) jobs.push(set('rigs', rec.id, rec));
-  }
-  for (const t of (data.targets || [])) {
-    const rec = targetOf(t); if (rec) jobs.push(set('targets', rec.id, rec));
-  }
-  await Promise.all(jobs);
   return {
+    sites: (Array.isArray(data.sites) ? data.sites : []).map(siteOf).filter(Boolean),
+    rigs: (Array.isArray(data.rigs) ? data.rigs : []).map(rigOf).filter(Boolean),
+    targets: (Array.isArray(data.targets) ? data.targets : []).map(targetOf).filter(Boolean),
     prefs: (data.prefs && typeof data.prefs === 'object') ? data.prefs : null,
     panos: (data.panos && typeof data.panos === 'object') ? data.panos : null,
+    // must match currentTheme(); ignore an unknown/legacy value rather than
+    // writing junk into the theme key
+    theme: (data.theme === 'classic' || data.theme === 'dome') ? data.theme : null,
   };
+}
+
+/** Write the staged site/rig/target records, clearing the other records first.
+ *  Throws if ANY individual write fails (storage full / unavailable), so a
+ *  caller can roll back instead of silently losing records. */
+export async function writeStaged(staged) {
+  await Promise.all(STORES.filter((s) => s !== 'meta').map((s) => clearStore(s)));
+  const jobs = [];
+  for (const rec of staged.sites) jobs.push(set('sites', rec.id, rec));
+  for (const rec of staged.rigs) jobs.push(set('rigs', rec.id, rec));
+  for (const rec of staged.targets) jobs.push(set('targets', rec.id, rec));
+  const results = await Promise.all(jobs);
+  if (results.some((ok) => ok === false)) {
+    throw new Error('could not write all records (storage full or unavailable)');
+  }
+}
+
+/** The last pre-restore safety snapshot, or null. */
+export function lastSafetySnapshot() { return get('meta', 'safety'); }
+
+/** Replace the browser's site/rig/target records from a validated backup.
+ *
+ *  `current` is a full snapshot of the CURRENT state. It is persisted to the
+ *  `meta`/`safety` slot BEFORE any destructive write and re-applied if a write
+ *  fails, so a failed restore never leaves a half-destroyed installation.
+ *  Returns the staged records (including prefs/panos/theme) for the caller to
+ *  apply to localStorage / IndexedDB. */
+export async function restoreBackup(data, current) {
+  const staged = stageBackup(data);          // validate FIRST - no writes yet
+  if (current) {
+    try { await set('meta', 'safety', current); } catch { /* best effort */ }
+  }
+  try {
+    await writeStaged(staged);
+  } catch (err) {
+    if (current) {
+      try { await writeStaged(stageBackup(current)); } catch { /* keep original error */ }
+    }
+    throw err;
+  }
+  return staged;
 }
 
 export function downloadText(filename, text) {

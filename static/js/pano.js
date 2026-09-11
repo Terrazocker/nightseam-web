@@ -251,6 +251,10 @@ function renderList() {
 async function select(rec) {
   Pano.cur = rec;
   Pano.crop = null;
+  // a pending auto-save belongs to the PREVIOUS panorama (its scheduleSave
+  // captured Pano.cur); cancel it so a delayed save cannot write the old
+  // strokes/profile into the record we are switching to
+  if (Pano.saveTimer) { clearTimeout(Pano.saveTimer); Pano.saveTimer = null; }
   // undo history belongs to ONE panorama: without this, undoing after a switch
   // wrote the previous panorama's strokes into this one and auto-saved them
   Pano.undo = [];
@@ -622,6 +626,24 @@ function drawProfileLine(ctx, W, H) {
 function recomputeProfile() {
   if (!Pano.cur) return;
   const sky = paintMode() === "sky";
+  // Invariant (mirrors web/horizon.js::computeProfile): strokes win when
+  // present; with NO strokes the stored profile is authoritative. Deriving an
+  // empty profile from an empty mask would silently remove a horizon we cannot
+  // re-derive, so a stroke-less imported panorama must not be blanked just by
+  // saving. clearMask()/setPaintMode() blank the profile explicitly first
+  // (profile=[]), which the length check below turns into a canonical blank.
+  if (!Pano.cur.strokes || Pano.cur.strokes.length === 0) {
+    if (!Array.isArray(Pano.cur.profile) || Pano.cur.profile.length !== NBIN) {
+      Pano.cur.profile = new Array(NBIN).fill(sky ? 90 : -90);
+    }
+    if (!Array.isArray(Pano.cur.profile_top)
+        || (sky && Pano.cur.profile_top.length !== NBIN)) {
+      Pano.cur.profile_top = sky ? new Array(NBIN).fill(90) : [];
+    }
+    invalidateMask();
+    render();
+    return;
+  }
   const W2 = NBIN, H2 = 180;
   const cv = document.createElement("canvas");
   cv.width = W2; cv.height = H2;

@@ -924,6 +924,31 @@ def test_panorama_activate_deactivate(client):
         client.delete(f"/api/panorama/{pid}")
 
 
+def test_activating_a_panorama_deactivates_the_previous(client):
+    """Exactly one panorama may be active at a time.
+
+    `PUT /api/panorama/{pid}` with active=true used to leave earlier rows
+    active; `active_panorama()` returns the newest of them, so `/api/state` and
+    `/api/night` could disagree about which horizon governs planning."""
+    ids = [client.post("/api/panorama",
+                       files={"file": (f"{n}.jpg", b"x", "image/jpeg")}).json()["id"]
+           for n in ("pa", "pb")]
+    try:
+        client.put(f"/api/panorama/{ids[0]}", json={"active": True})
+        client.put(f"/api/panorama/{ids[1]}", json={"active": True})
+        rows = client.get("/api/panoramas").json()
+        active = [r["id"] for r in rows if r["active"]]
+        assert active == [ids[1]], active
+        assert client.get("/api/state").json()["active_pano_id"] == ids[1]
+        # and the settings route equally keeps a single active row
+        client.post("/api/settings", json={"active_pano_id": ids[0]})
+        rows = client.get("/api/panoramas").json()
+        assert [r["id"] for r in rows if r["active"]] == [ids[0]]
+    finally:
+        for i in ids:
+            client.delete(f"/api/panorama/{i}")
+
+
 def test_night_ceil_top_band(client):
     """A sky-mode panorama with a top ceiling ships ceil_top tracks."""
     r = client.post("/api/panorama",

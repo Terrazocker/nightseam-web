@@ -88,6 +88,26 @@ def test_export_import_roundtrip(db, tmp_path):
     assert new_img.read_bytes() == b"FITSDATA"
 
 
+def test_import_clears_stale_import_history(db, tmp_path):
+    """The 'Recent imports' history describes the library the restore replaces,
+    so a restore must clear it. Rows surviving a restore would point at
+    pre-restore object/session folders and show a misleading history."""
+    def batch(object_name):
+        return {"created_at": "2026-08-22T23:20:00", "object_id": None,
+                "object_name": object_name, "slug": object_name.lower(),
+                "session": "2026-08-22_2314", "frame": "light", "n_files": 4,
+                "total_exposure": 1200.0, "first_obs": "2026-08-22T23:14:05",
+                "image_dir": "/x"}
+
+    blob = build_export_zip(db)
+    db2 = Database(tmp_path / "other.db")
+    db2.set_setting("image_dir", str(tmp_path / "archive"))
+    db2.add_import_batch(batch("Old Target"))
+    assert len(db2.import_batches()) == 1
+    apply_import_zip(db2, blob)
+    assert db2.import_batches() == []
+
+
 def test_import_from_path_file(db, tmp_path):
     """The server spools uploads to a temp FILE and imports from the path -
     the Path branch of apply_import_zip must behave like the bytes branch."""

@@ -376,11 +376,7 @@ def create_app(db: Database, *, prefetch: bool = True) -> FastAPI:
         if body.active_site_id is not None:
             db.set_setting("active_site_id", body.active_site_id)
         if body.active_pano_id is not None:
-            for p in db.panoramas():
-                if p["active"] and p["id"] != body.active_pano_id:
-                    db.update_panorama(p["id"], active=False)
-            db.set_setting("active_pano_id", body.active_pano_id)
-            db.update_panorama(body.active_pano_id, active=True)
+            db.set_active_panorama(body.active_pano_id)
         if body.min_useful_alt is not None:
             db.set_setting("min_useful_alt", body.min_useful_alt)
         if body.moon_aware is not None:
@@ -644,12 +640,13 @@ def create_app(db: Database, *, prefetch: bool = True) -> FastAPI:
         _check_profile(body.profile, "profile")
         _check_profile(body.profile_top, "profile_top")
         fields = {k: v for k, v in body.model_dump().items() if v is not None}
+        fields.pop("active", None)      # activation is handled atomically below
         if fields:
             db.update_panorama(pid, **fields)
-        # explicit active flag: True makes this pano the active one; False
-        # deactivates it (clears the global pointer). None = not mentioned.
+        # explicit active flag: True makes THIS pano the only active one; False
+        # clears the global pointer. None = not mentioned.
         if body.active is not None:
-            db.set_setting("active_pano_id", pid if body.active else None)
+            db.set_active_panorama(pid if body.active else None)
         return {"ok": True}
 
     @app.delete("/api/panorama/{pid}")

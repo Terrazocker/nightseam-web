@@ -231,39 +231,45 @@ class Database:
 
     def seed_advanced_catalog(self):
         """Bulk-load the bundled OpenNGC-derived catalog (app/data/openned.csv)
-        into advanced_objects. Insert-only; safe to run on every start."""
+        into advanced_objects, then enforce global catalog identity. Insert-only;
+        safe to run on every start."""
         import csv as csvmod
         from .paths import resource_dir
         csv_path = resource_dir() / "app" / "data" / "openned.csv"
-        if not csv_path.exists():
-            return
-        expected = _csv_adv_count(csv_path)
-        if self.advanced_count() >= expected:
-            return
         cols = ("id", "primary_name", "messier", "ngcic", "other", "otype",
                 "ra_hours", "dec_deg", "vmag", "size_am", "constellation",
                 "distance", "wiki", "blurb", "search")
-        rows = []
-        with open(csv_path, encoding="utf-8") as f:
-            for line in f:
-                if line.startswith("#"):
-                    continue
-                vals = line.rstrip("\n").split(";")
-                if len(vals) != len(cols):
-                    continue
-                d = dict(zip(cols, vals))
-                try:
-                    d["ra_hours"] = float(d["ra_hours"]) if d["ra_hours"] else None
-                    d["dec_deg"] = float(d["dec_deg"]) if d["dec_deg"] else None
-                    d["vmag"] = float(d["vmag"]) if d["vmag"] else None
-                except ValueError:
-                    continue          # malformed row - skip, don't crash boot
-                rows.append(tuple(d[c] for c in cols))
+        if csv_path.exists() and self.advanced_count() < _csv_adv_count(csv_path):
+            rows = []
+            with open(csv_path, encoding="utf-8") as f:
+                for line in f:
+                    if line.startswith("#"):
+                        continue
+                    vals = line.rstrip("\n").split(";")
+                    if len(vals) != len(cols):
+                        continue
+                    d = dict(zip(cols, vals))
+                    try:
+                        d["ra_hours"] = float(d["ra_hours"]) if d["ra_hours"] else None
+                        d["dec_deg"] = float(d["dec_deg"]) if d["dec_deg"] else None
+                        d["vmag"] = float(d["vmag"]) if d["vmag"] else None
+                    except ValueError:
+                        continue      # malformed row - skip, don't crash boot
+                    rows.append(tuple(d[c] for c in cols))
+            with self.lock:
+                self.conn.executemany(
+                    "INSERT OR IGNORE INTO advanced_objects "
+                    f"({','.join(cols)}) VALUES ({','.join('?' * len(cols))})",
+                    rows)
+                self.conn.commit()
+        # Catalog identity is GLOBAL: an advanced row may never share an id with
+        # the curated catalog. The CSV is fixed, but a DB seeded before the fix
+        # (or via an older build) still carries the old member rows, and the
+        # UPDATE/seed above is skipped once the count matches - so clean up on
+        # EVERY start. These are seed tables, never user data.
         with self.lock:
-            self.conn.executemany(
-                "INSERT OR IGNORE INTO advanced_objects "
-                f"({','.join(cols)}) VALUES ({','.join('?' * len(cols))})",
-                rows)
+            self.conn.execute(
+                "DELETE FROM advanced_objects WHERE id IN (SELECT id FROM objects)")
             self.conn.commit()
 
     def apply_popularity(self) -> int:
@@ -418,6 +424,24 @@ class Database:
             if p["active"]:
                 return p
         return None
+
+    def set_active_panorama(self, pid: str | None) -> None:
+        """Make `pid` the ONLY active panorama (or none when pid is None).
+
+        One transaction / one commit: activating a panorama through
+        `PUT /api/panorama/{pid}` used to leave earlier rows active, and
+        `active_panorama()` returns the newest of them, so `/api/state` and
+        `/api/night` could disagree about which horizon governs planning."""
+        with self.lock:
+            self.conn.execute("UPDATE panoramas SET active=0")
+            if pid is not None:
+                self.conn.execute(
+                    "UPDATE panoramas SET active=1 WHERE id=?", (pid,))
+            self.conn.execute(
+                "INSERT INTO settings(key,value) VALUES('active_pano_id',?) "
+                "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                (json.dumps(pid),))
+            self.conn.commit()
 
     def add_panorama(self, pid: str, name: str, filename: str) -> str:
         with self.lock:
@@ -634,6 +658,12 @@ class Database:
         The legacy `observations` table is deliberately NOT cleared - it is kept
         for schema compatibility and is no longer exported or imported.
 
+        `import_batches` (the "Recent imports" history) IS cleared: it is
+        per-install bookkeeping for the library that this restore replaces, so
+        keeping rows that point at pre-restore object/session folders would be a
+        misleading, inconsistent state. The pre-import history is preserved in
+        the `<db>.backup-auto.zip` safety copy.
+
         File paths inside the bundle are UNTRUSTED: every `panoramas[].file` /
         `images[].file` goes through `paths.safe_rel`, which rejects absolute,
         drive/UNC and `..` paths. A record with such a value is dropped instead
@@ -657,6 +687,8 @@ class Database:
                 cur.execute("DELETE FROM settings")
                 cur.execute("DELETE FROM custom_objects")
                 cur.execute("DELETE FROM images")
+                # history refers to the library this restore replaces
+                cur.execute("DELETE FROM import_batches")
                 for s in sites:
                     cur.execute(
                         "INSERT INTO sites(id,name,lat,lon,elev) VALUES(?,?,?,?,?)",
