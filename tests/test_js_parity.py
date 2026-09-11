@@ -1006,20 +1006,20 @@ def test_web_detail_visibility_predicate_cannot_drift():
     """The web detail modal keeps its own sample loop (its 120-sample grid over
     sunset-1h..sunrise+1h is deliberately different from the 6-min dusk..dawn
     grid), but its per-sample visibility rule must stay the ONE shared
-    predicate - nightrank.js::sampleVisible(), i.e.
-    alt >= minAlt && alt > ceil && alt < (ceilTop ?? 90.5) - which nightStats
-    (Tonight + catalog) already uses. This is a text-level pin on purpose:
-    a silently edited inline copy (e.g. dropping the ceilTop ceiling) must fail
-    here, while switching the detail loop to call sampleVisible() keeps it
-    green."""
+    predicate - now core/visibility.js::sampleVisible(), i.e.
+    alt >= minAlt && alt > ceil && alt < (ceilTop ?? 90.5) - which both shells
+    call (nightrank re-exports it; the detail loop calls it directly). This is
+    a text-level pin on purpose: a silently edited inline copy (e.g. dropping
+    the ceilTop ceiling) must fail here."""
     app_js = (ROOT / "web" / "app.js").read_text(encoding="utf-8")
-    shared = (ROOT / "web" / "nightrank.js").read_text(encoding="utf-8")
+    shared = (ROOT / "core" / "visibility.js").read_text(encoding="utf-8")
     inline = "alt >= minAlt && alt > ceil.ceil && alt < (ceil.ceilTop ?? 90.5)"
-    assert inline in app_js or "sampleVisible(" in app_js, \
-        "the detail loop's visibility predicate changed - it must stay " \
-        "identical to nightrank.js::sampleVisible()"
+    assert inline not in app_js, \
+        "the detail loop rebuilt its own predicate instead of calling " \
+        "core/visibility.js::sampleVisible()"
+    assert "sampleVisible(" in app_js
     assert "alt >= minAlt && alt > ceil && alt < (ceilTop ?? 90.5)" in shared, \
-        "nightrank.js::sampleVisible() changed - re-check the detail loop"
+        "core/visibility.js::sampleVisible() changed - re-check the detail loop"
 
 
 # ================================================== scrub-range policy

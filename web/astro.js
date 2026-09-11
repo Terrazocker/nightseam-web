@@ -158,9 +158,8 @@ export function altaz(raDeg, decDeg, jd, latDeg, lonDeg, refract = true) {
  * refraction. “Relevant to the night” (e.g. the Moon phase that scores a
  * target) is a different question and does NOT belong here.
  */
-export function aboveHorizon(apparentAltDeg) {
-  return Number.isFinite(apparentAltDeg) && apparentAltDeg > 0;
-}
+/** Apparent-altitude visibility predicate - shared in core/ (Phase 2). */
+export { aboveHorizon } from './core.js?v=7';
 
 /** Geometric solar position -> RA/Dec in J2000 equivalents (Meeus ch.25). */
 export function sunRaDec(jd) {

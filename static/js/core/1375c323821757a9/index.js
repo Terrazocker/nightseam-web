@@ -30,3 +30,7 @@ export {
 export {
   offsetEastMin, zoneOffsetAtLocalNoon, wallFromUtcMs, utcFromWallMs,
 } from './time.js';
+
+export {
+  aboveHorizon, sampleVisible, statusOf, effectiveMinAlt,
+} from './visibility.js';

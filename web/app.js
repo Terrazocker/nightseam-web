@@ -9,14 +9,14 @@
  * All sky math runs client-side (astro.js, Meeus algorithms).
  */
 import * as E from './astro.js?v=7';
-import * as Hor from './horizon.js?v=29';
-import * as WS from './webstore.js?v=8';
+import * as Hor from './horizon.js?v=30';
+import * as WS from './webstore.js?v=9';
 import { initDragWindows } from './dragwin.js?v=1';
 import { fmtSize, sizeArcmin, framePct, magVisible, skyClampZoom,
-         skyViewMatrix, skyScreenToBase, skyClampFocus } from './format.js?v=6';
-import { nightStats } from './nightrank.js?v=4';
+         skyViewMatrix, skyScreenToBase, skyClampFocus } from './format.js?v=7';
+import { nightStats, sampleVisible } from './nightrank.js?v=4';
 import { TYPE_LABELS, TYPE_COLORS, searchBlob as coreSearchBlob }
-  from './core.js?v=6';
+  from './core.js?v=7';
 
 // Cache-bust token for the ~4 MB data file web/catalog.json. It is NOT a JS
 // module, so it cannot carry a ?v= in an import: this named token IS its
@@ -623,7 +623,7 @@ function renderTonight(silent) {
       });
       const [altNow, azNow] = E.altaz(o.ra_hours * 15, o.dec_deg, jdSel, lat, lon);
       const ceilNow = pano ? Hor.ceilFor(pano, azNow) : { ceil: Hor.NO_BLOCK, ceilTop: null };
-      const visNow = altNow >= minAlt && altNow > ceilNow.ceil && altNow < (ceilNow.ceilTop ?? 90.5);
+      const visNow = sampleVisible(altNow, minAlt, ceilNow.ceil, ceilNow.ceilTop);
       const pop = popularityFactor(o);
       // popularity is a silent TIEBREAKER (like the desktop): the pure
       // visibility score decides, popularity only separates equal scores
@@ -1538,7 +1538,7 @@ function openDetail(id) {
     const jdt = jd0 + (i / steps) * (jd1 - jd0);
     const [alt, az] = E.altaz(o.ra_hours * 15, o.dec_deg, jdt, lat, lon);
     const ceil = pano ? Hor.ceilFor(pano, az) : { ceil: Hor.NO_BLOCK, ceilTop: null };
-    const vis = alt >= minAlt && alt > ceil.ceil && alt < (ceil.ceilTop ?? 90.5);
+    const vis = sampleVisible(alt, minAlt, ceil.ceil, ceil.ceilTop);
     const mAlt = E.moonAltAz(jdt, lat, lon)[0];
     samples.push({
       t: jdt, alt, az, ceil,

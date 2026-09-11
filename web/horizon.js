@@ -20,7 +20,8 @@ import {
   normalizeProfileBins, WORLD_BINS, profileSegments, visibleSkyBands,
   skyBandPolygons, computeProfile, clearMask, ceilFor, bandTopFor,
   overhangRuns, assumedOpenRuns, assumedOpenHatchPolys,
-} from './core.js?v=6';
+  effectiveMinAlt as coreMinAlt,
+} from './core.js?v=7';
 
 export {
   NO_BLOCK, BINS, MASK_W, MASK_H,
@@ -671,7 +672,7 @@ const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '
 /* prefs — shared with app.js via module state */
 let prefs = loadPrefs();
 export function getPrefs() { return prefs; }
-export function effectiveMinAlt() { return prefs.minAlt != null ? prefs.minAlt : 17 + 2 * prefs.bortle; }
+export const effectiveMinAlt = () => coreMinAlt(prefs.bortle, prefs.minAlt);
 export function setPrefs(patch) { prefs = { ...prefs, ...patch }; savePrefs(); }
 function loadPrefs() {
   try {

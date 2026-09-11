@@ -13,14 +13,10 @@
  * tests/js/astro_parity.mjs.
  */
 import * as E from './astro.js?v=7';
-import { NO_BLOCK, ceilFor } from './horizon.js?v=29';
+import { NO_BLOCK, ceilFor } from './horizon.js?v=30';
+import { sampleVisible } from './core.js?v=7';
 
-/** The one visibility predicate: above the min altitude AND above the
- *  obstruction ceiling AND below the sky-mode ceiling (ceilTop; absent = no
- *  upper limit, like the 90.5 sentinel the desktop uses). */
-export function sampleVisible(alt, minAlt, ceil, ceilTop) {
-  return alt >= minAlt && alt > ceil && alt < (ceilTop ?? 90.5);
-}
+export { sampleVisible };
 
 /** Per-object statistics over the grid [jd0, jd1] at `step` (step is a
  *  fraction of a day, e.g. 6/1440). The grid is the dark window (dusk..dawn),

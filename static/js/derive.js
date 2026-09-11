@@ -2,6 +2,8 @@
 
 import { S } from "./state.js";
 import { parseUTC, clamp, fmtHM } from "./util.js";
+import { statusOf as coreStatusOf, effectiveMinAlt as coreMinAlt }
+  from "./core.js";
 
 /* keyboard scrub steps in minutes - shared with the web (web/astro.js) and
    pinned by tests/test_js_parity.py: a plain arrow key is the fine step (one
@@ -9,15 +11,11 @@ import { parseUTC, clamp, fmtHM } from "./util.js";
 export const SCRUB_STEP_MIN = 6;
 export const SCRUB_SHIFT_STEP_MIN = 60;
 
-/* Selected-time sky visibility for the all-sky chart: a body (Sun, Moon or a
-   catalog object) is a visible sky object only while its APPARENT altitude is
-   above the horizon. Mirrors web/astro.js::aboveHorizon (pinned by the
-   "abovehorizon" engine of tests/js/astro_parity.mjs). The chart's Sun/Moon
-   used to be drawn down to a fixed -6 deg (civil-twilight) floor, so they
-   appeared below the horizon near dusk/dawn; the astronomy is the only rule. */
-export function aboveHorizon(apparentAltDeg) {
-  return Number.isFinite(apparentAltDeg) && apparentAltDeg > 0;
-}
+/* Selected-time sky visibility, per-sample status and the min-alt rule are
+   shared in core/ (Phase 2, concept 4); this shell supplies the live S.minAlt.
+   Mirrors web/astro.js::aboveHorizon ("abovehorizon" engine of
+   tests/js/astro_parity.mjs). */
+export { aboveHorizon } from "./core.js";
 
 /* All-sky chart magnitude limit and "square" chart zoom - shared in core/
    (Phase 2, concept 1), pinned by the "mag" / "skyzoom" engines of
@@ -349,17 +347,7 @@ export function moonUpDownText() {
 
 /* ---------------- per-object helpers ---------------- */
 
-export function statusOf(o, i) {
-  const alt = o.alt[i], ceil = o.ceil[i], min = S.minAlt;
-  // mirror the visibility predicate (o.vis): a sky-mode upper ceiling
-  // (ceil_top) blocks ABOVE the band, exactly like a horizon obstruction
-  // blocks below it - status must never say "Observable" where vis[] says no
-  const top = o.ceil_top ? o.ceil_top[i] : 90.5;
-  if (alt <= 0)       return { code: "hor", text: "Below horizon" };
-  if (alt <= ceil || alt >= top) return { code: "blk", text: "Blocked" };
-  if (alt < min)      return { code: "low", text: "Too low" };
-  return                 { code: "vis", text: "Observable" };
-}
+export const statusOf = (o, i) => coreStatusOf(o, i, S.minAlt);
 
 /* The authoritative minimum-altitude rule (shared with the server and the
    web): an explicitly stored min_useful_alt wins; otherwise the Bortle-derived
@@ -367,11 +355,9 @@ export function statusOf(o, i) {
    ships the resolved value PLUS the explicit flag (api_state), so the client
    can re-derive the threshold live when Bortle changes instead of freezing it
    at boot (the web has always done this in horizon.js::effectiveMinAlt). */
-export function effectiveMinAlt(cfg) {
-  if (cfg && cfg.min_useful_alt_explicit && cfg.min_useful_alt != null)
-    return cfg.min_useful_alt;
-  return 17 + 2 * ((cfg && cfg.bortle) || 4);
-}
+export const effectiveMinAlt = (cfg) => coreMinAlt(
+  cfg && cfg.bortle,
+  cfg && cfg.min_useful_alt_explicit ? cfg.min_useful_alt : null);
 
 export function windowText(o) {
   const tl = S.night.timeline;
