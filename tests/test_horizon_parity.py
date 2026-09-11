@@ -101,3 +101,33 @@ def test_sky_mode_outside_the_painted_band_still_blocks():
         # web: fully blocked; Python: the profile value itself (NO_BLOCK) - the
         # shared rule is "not visible", which the client expresses as 90 deg
         assert res["ceil"] in (90.0,) or res["ceil"] == pytest.approx(NO_BLOCK, abs=0.51)
+
+
+@pytest.mark.parametrize("az", [90.0, 95.0, 180.0, 269.0, 270.0, 45.0, 300.0])
+def test_partial_fov_world_bins_match_python(az):
+    """D1: core profiles are WORLD-AZIMUTH bins, so the JS ceiling lookup must
+    match Python for arbitrary fov/azOffset - not just the old fov=360/offset=0
+    coincidence. The web used to store FOV-relative columns and shifted every
+    value on rotated or partial panoramas."""
+    prof = [20.0 if 90.0 <= i * 0.5 < 270.0 else NO_BLOCK
+            for i in range(PROFILE_BINS)]              # wall over world az 90..270
+    res = _run_node("ceil", [{"mode": "obstacle", "profile": prof,
+                              "profileTop": [], "az": az,
+                              "fov": 180, "azOffset": 90}])[0]
+    want = ceil_lookup(prof)(az)
+    assert res["ceil"] == pytest.approx(want, abs=0.51), (az, res, want)
+
+
+@pytest.mark.parametrize("az", [90.0, 135.0, 269.0])
+def test_partial_fov_sky_top_matches_python(az):
+    """D1 sky mode: the painted band 10..40 over world az 90..270 with
+    block-above on must expose the same ceiling in both engines."""
+    prof = [10.0 if 90.0 <= i * 0.5 < 270.0 else 90.0
+            for i in range(PROFILE_BINS)]
+    top = [40.0 if 90.0 <= i * 0.5 < 270.0 else 90.0
+           for i in range(PROFILE_BINS)]
+    res = _run_node("ceil", [{"mode": "sky", "profile": prof, "profileTop": top,
+                              "az": az, "fov": 180, "azOffset": 90,
+                              "blockAbove": True}])[0]
+    assert res["ceil"] == pytest.approx(ceil_lookup(prof)(az), abs=0.51), (az, res)
+    assert res["ceilTop"] == pytest.approx(ceil_lookup(top)(az), abs=0.51), (az, res)

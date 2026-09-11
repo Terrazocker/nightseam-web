@@ -176,6 +176,31 @@ Image Catalog (FITS ingest + library). `README.md` has the feature list.
   A held right-button drag erases continuously as ONE gesture (`gestureErase`)
   instead of a single `contextmenu` dab; `contextmenu` only suppresses the
   menu.
+- **Shared core (Phase 1, 0.6.16):** the panorama/horizon geometry lives ONCE in
+  `core/horizon.js` (pure ES module - no DOM, storage, network or build tokens)
+  and is baked by `scripts/build_core.py` to content-hashed
+  `web/core/<hash>/` + `static/js/core/<hash>/` with explicit-export stubs
+  `web/core.js` / `static/js/core.js`. `scripts/check_core.py` (wired into
+  `check_js.py` and `check_release.py`) fails on any drift, stale hash dir,
+  stub/token mismatch, impure identifier in `core/`, or a moved concept
+  re-implemented outside `core/`. NEVER edit the baked trees or the stubs by
+  hand - edit `core/` and re-run `python scripts/build_core.py`; a core change
+  bumps the stub token, and every `./core.js?v=N` importer must match it in the
+  same commit (`tests/test_core_drift.py` proves each mutation fails).
+- **D1 - world-azimuth profile bins:** `core/horizon.js` stores bin
+  `i = azimuth i*0.5 deg`, exactly like `app/nightcalc.py::ceil_lookup` and the
+  desktop editor. The web editor's FOV-relative mask converts through
+  `normalizeProfileBins()` at the storage boundary (`load`, `normalizePanos`);
+  records carry `profileBins: 'world'` and a stroke-derived profile is already
+  world. The representative mask column is `floor(rel*720/fov)`, which keeps
+  `fov=360/azOffset=0` an exact identity. Pinned by `tests/js/core_d1.mjs`
+  (mutation-proven in `tests/test_d1_contract.py`) and the partial-FOV cases of
+  `tests/test_horizon_parity.py`.
+- **D2 - rig FOV is arcminutes:** `web/webstore.js::fovArcmin` returns arcmin
+  (one unit with the desktop/server `fov_w`); `fovDeg` is display-only. Rigs
+  saved before 0.6.16 hold degrees and convert once in `getRigs` via the
+  `fov_unit !== 'arcmin'` marker - never persist a rig without
+  `fov_unit: 'arcmin'`.
 - Web `app.js::clampSkyTime()` also runs at boot and on every `refreshView()`
   (site/date change), so loading during the day starts the scrub at the first
   allowed instant (the window start) instead of showing a daylight
@@ -267,7 +292,7 @@ Image Catalog (FITS ingest + library). `README.md` has the feature list.
     `Get-CimInstance Win32_Process`).
   - If 8407 is briefly taken at boot, `free_port()` silently picks a RANDOM port
     (written to `instance.json`).
-- Tests: `python -m pytest tests/` (536). Single test:
+- Tests: `python -m pytest tests/` (552). Single test:
   `python -m pytest tests/test_astro.py -k name`. API tests use
   `create_app(db, prefetch=False)` (no image-cache thread). The `client` fixture
   must leave `data/panos` in the tmp dir it patches in.
@@ -275,14 +300,17 @@ Image Catalog (FITS ingest + library). `README.md` has the feature list.
     `pytest.ini`) can acquire an owner-SID-only DACL, so every `tmp_path` test
     errors at fixture cleanup - an environment artifact, not a failure. Workaround
     (no escalation needed): `python -m pytest tests/ -q --basetemp
-    C:\Users\<user>\AppData\Local\Temp\opencode\pt -p no:cacheprovider` -> 536/536.
+    C:\Users\<user>\AppData\Local\Temp\opencode\pt -p no:cacheprovider` -> 552/552.
 - JS checks (run after touching `static/` OR `web/`): `python scripts/check_js.py`
   runs all of them and exits non-zero on hard failures:
   - `check_js_imports.py` - broken relative ES-module imports / missing named exports
   - `check_dom_ids.py` - `$('#id')` missing from that app's `index.html`
-  - `check_js_syntax.py` - `node --check` on all 27 shipped modules (via temp `.mjs`)
+  - `check_js_syntax.py` - `node --check` on every shipped module (static/js, web/
+    and the core source + baked trees) via temp `.mjs`
   - `check_encoding.py` - the encoding guard above
   - `check_catalog_token.py` - `web/catalog.json` + `catalog.manifest.json` pair with `CATALOG_TOKEN` in `web/app.js`
+  - `check_core.py` - baked core drift, stub/token pairing and the core purity +
+    moved-concept guards (see "Shared core" invariant)
   - `check_js_defs.py` - heuristic, always exits 0
 - Build exe: `powershell -ExecutionPolicy Bypass -File build.ps1` ->
   `dist\NightSeam.exe` (isolated `.venv-build`; kills running NightSeam first).
@@ -383,9 +411,10 @@ Image Catalog (FITS ingest + library). `README.md` has the feature list.
   `scripts/check_catalog_token.py`, wired into `scripts/check_js.py`, and pinned
   by `tests/test_cache_tokens.py` (mutation-tested). Do NOT add
   `{cache:'no-store'}` - the file must stay cacheable.
-  Current: `app.js?v=42` (index.html) / `CATALOG_TOKEN = '2'`, `astro.js?v=7`,
-  `horizon.js?v=24`, `format.js?v=3`, `nightrank.js?v=4`, `webstore.js?v=6`,
-  `dragwin.js?v=1`, `style.css?v=16`, `themes.css?v=4`.
+  Current: `app.js?v=44` (index.html) / `CATALOG_TOKEN = '2'`, `astro.js?v=7`,
+  `horizon.js?v=26`, `format.js?v=3`, `nightrank.js?v=4`, `webstore.js?v=7`,
+  `dragwin.js?v=1`, `style.css?v=16`, `themes.css?v=4`; the core stub is
+  `web/core.js?v=3` (bump = re-bake, enforced by `scripts/check_core.py`).
 - **Never publish `index.html` before the modules it names.** Deploys are not
   atomic and the page carries the tokens; `ftps_deploy.py::upload_order()` sorts
   HTML last (`index.html` very last), pinned by `tests/test_deploy_order.py`. Keep
@@ -418,6 +447,10 @@ Image Catalog (FITS ingest + library). `README.md` has the feature list.
   must resolve to real files. Shared helpers (`$`, `$$`, `api()`, `esc`,
   `applyEdgeSpace`) come from `js/util.js`. `js/derive.js` computes
   visibility/score client-side so min-altitude changes never refetch.
+- `core/` - the single implementation of the shared panorama/horizon geometry
+  (Phase 1); baked to `web/core/<hash>/` and `static/js/core/<hash>/` plus the
+  stable explicit-export stubs. Pure ES modules only - no DOM, storage, network
+  or build tokens (`scripts/check_core.py` enforces this and the source guard).
 
 ## Advanced mode (12,000+ objects)
 

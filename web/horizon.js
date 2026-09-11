@@ -17,10 +17,10 @@
 import {
   NO_BLOCK, BINS, MASK_W, MASK_H,
   rebuildMask, wrapsFor, altOf, rowOfAlt, xOfAz, azOfX, profileFromMask,
-  profileSegments, visibleSkyBands, skyBandPolygons, computeProfile,
-  clearMask, ceilFor, bandTopFor, overhangRuns, assumedOpenRuns,
-  assumedOpenHatchPolys,
-} from './core.js?v=1';
+  normalizeProfileBins, WORLD_BINS, profileSegments, visibleSkyBands,
+  skyBandPolygons, computeProfile, clearMask, ceilFor, bandTopFor,
+  overhangRuns, assumedOpenRuns, assumedOpenHatchPolys,
+} from './core.js?v=3';
 
 export {
   NO_BLOCK, BINS, MASK_W, MASK_H,
@@ -107,7 +107,12 @@ function load() {
     const raw = localStorage.getItem(LS_KEY);
     if (raw) {
       const d = JSON.parse(raw);
-      if (Array.isArray(d.panos)) return d;
+      if (Array.isArray(d.panos)) {
+        // D1 adapter: stored profiles used to be FOV-relative mask columns;
+        // convert once to the canonical world-azimuth bins (idempotent).
+        d.panos.forEach(normalizeProfileBins);
+        return d;
+      }
     }
   } catch { /* ignore */ }
   return { panos: [], activeId: null };
@@ -227,6 +232,7 @@ export function normalizePanos(data) {
       rec.profile = prof;
       rec.profileTop = top;
     }
+    normalizeProfileBins(rec);   // D1: legacy FOV-relative -> world bins
     if (image) rec.image = image;
     return rec;
   });
@@ -278,6 +284,7 @@ export function newPano(name) {
     hasImage: false,
     profile: new Array(BINS).fill(NO_BLOCK),
     profileTop: new Array(BINS).fill(NO_BLOCK),
+    profileBins: WORLD_BINS,
   };
   db.panos.push(p);
   if (!db.activeId) { db.activeId = id; }

@@ -74,8 +74,10 @@ def test_mutations_fail_the_guard(tmp_path):
     # restore, token mismatch (d)
     shutil.copy(ROOT / "web" / "core.js", stub)
     shell = guard.WEB_DIR / "horizon.js"
-    shell.write_text(shell.read_text(encoding="utf-8").replace("?v=1", "?v=99"),
-                     encoding="utf-8")
+    import re
+    text = shell.read_text(encoding="utf-8")
+    assert re.search(r"\?v=\d+", text), "the shell must carry a core token"
+    shell.write_text(re.sub(r"\?v=\d+", "?v=99", text), encoding="utf-8")
     assert guard.scan(), "a token mismatch must FAIL the guard"
 
     # restore, moved concept re-implemented in a shell (e)

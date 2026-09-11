@@ -9,8 +9,8 @@
  * All sky math runs client-side (astro.js, Meeus algorithms).
  */
 import * as E from './astro.js?v=7';
-import * as Hor from './horizon.js?v=25';
-import * as WS from './webstore.js?v=6';
+import * as Hor from './horizon.js?v=26';
+import * as WS from './webstore.js?v=7';
 import { initDragWindows } from './dragwin.js?v=1';
 import { fmtSize, sizeArcmin, framePct, magVisible, skyClampZoom,
          skyViewMatrix, skyScreenToBase, skyClampFocus } from './format.js?v=3';
@@ -281,7 +281,7 @@ function activeRig() {
 function rigFramePct(o) {
   const rig = activeRig();
   if (!rig || !(rig.fov_w > 0)) return null;
-  return framePct(sizeArcmin(o.size_am), rig.fov_w * 60);
+  return framePct(sizeArcmin(o.size_am), rig.fov_w);
 }
 
 /** Filter recommendation badge - the same model as the desktop's
@@ -2177,7 +2177,7 @@ function showRigPicker() {
   showForm(null);                                  // custom form stays hidden
   panel.hidden = false;
   box.innerHTML = WS.DEFAULT_RIGS.map((p, i) => {
-    const fw = WS.fovFrom(p.focal_mm, p.sensor_w), fh = WS.fovFrom(p.focal_mm, p.sensor_h);
+    const fw = WS.fovDeg(p.focal_mm, p.sensor_w), fh = WS.fovDeg(p.focal_mm, p.sensor_h);
     const fov = fw != null && fh != null ? `${fw.toFixed(2)}° × ${fh.toFixed(2)}°` : '';
     return `<li data-preset="${i}">
       <span class="p-name">${esc(p.name)}</span>
@@ -2191,7 +2191,8 @@ function showRigPicker() {
     await WS.saveRigRec({
       id: 'r' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
       name: p.name, focal_mm: p.focal_mm, sensor_w: p.sensor_w, sensor_h: p.sensor_h,
-      fov_w: WS.fovFrom(p.focal_mm, p.sensor_w), fov_h: WS.fovFrom(p.focal_mm, p.sensor_h),
+      fov_w: WS.fovArcmin(p.focal_mm, p.sensor_w), fov_h: WS.fovArcmin(p.focal_mm, p.sensor_h),
+      fov_unit: 'arcmin',
     });
     await renderSettings();                        // keeps the Rigs tab open
   }));
@@ -2214,7 +2215,7 @@ function fovPreview() {
   const h = Hor.num($('#sf-rig-sh').value);
   const el = $('#sf-rig-fov');
   if (el) {
-    const fw = WS.fovFrom(f, w), fh = WS.fovFrom(f, h);
+    const fw = WS.fovDeg(f, w), fh = WS.fovDeg(f, h);
     el.textContent = fw != null && fh != null ? `field of view ≈ ${fw.toFixed(2)}° × ${fh.toFixed(2)}°` : 'field of view appears once focal length + sensor size are set';
   }
 }
@@ -2232,9 +2233,10 @@ async function saveRigForm() {
     sensor_w: Number.isFinite(sw) && sw > 0 ? sw : null,
     sensor_h: Number.isFinite(sh) && sh > 0 ? sh : null,
     fov_w: null, fov_h: null,
+    fov_unit: 'arcmin',
   };
-  rec.fov_w = WS.fovFrom(rec.focal_mm, rec.sensor_w);
-  rec.fov_h = WS.fovFrom(rec.focal_mm, rec.sensor_h);
+  rec.fov_w = WS.fovArcmin(rec.focal_mm, rec.sensor_w);
+  rec.fov_h = WS.fovArcmin(rec.focal_mm, rec.sensor_h);
   await WS.saveRigRec(rec);
   renderSettings();
 }

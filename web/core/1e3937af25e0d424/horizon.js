@@ -14,8 +14,22 @@
 
 export const NO_BLOCK = -90;
 export const BINS = 720;
+export const BIN_DEG = 0.5;
 export const MASK_W = 720;
 export const MASK_H = 360; // 0.25 deg per row of altitude
+
+/** Canonical bin space marker. D1: core profiles are WORLD-AZIMUTH bins
+ *  (bin i = azimuth i * 0.5 deg), matching Python `ceil_lookup`, the server
+ *  payload path and the desktop editor. The web editor's mask is FOV-relative,
+ *  so legacy/imported FOV-relative records are converted once by
+ *  `normalizeProfileBins()` at the storage boundary. */
+export const WORLD_BINS = 'world';
+
+/** World azimuth (deg, any sign) -> canonical bin index. */
+const worldBin = (azDeg) => {
+  const a = ((azDeg % 360) + 360) % 360;
+  return Math.min(BINS - 1, Math.floor(a / BIN_DEG));
+};
 
 /** Rebuild the binary mask (Uint8Array MASK_W*MASK_H) from the stroke list.
  *  `wrap` connects the azimuth seam of a full 360 deg panorama by also painting
@@ -73,33 +87,76 @@ export function azOfX(p, x) {
 /** Seam wrap applies only to a full 360 deg panorama. */
 export const wrapsFor = (p) => Number(p.fov) >= 359.5;
 
-/** Obstruction profile from a mask WITHOUT mutating or persisting - shared by
- *  computeProfile() and the live overlay (which must not rebuild the mask or
- *  hit storage on every pointer sample). */
+/** Obstruction profile from a mask - shared by computeProfile() and the live
+ *  overlay (which must not rebuild the mask or hit storage per pointer sample).
+ *
+ *  D1: the mask is FOV-relative (column 0 = azOffset); the produced profile is
+ *  WORLD-AZIMUTH, exactly like the desktop editor and the Python server. Each
+ *  world bin i takes the mask column at the azimuth of its centre
+ *  (`rel = i*0.5 - azOffset`), so the 720-mask-column vs 0.5-deg-bin
+ *  oversampling cannot disagree with the desktop representative. Bins outside
+ *  the calibrated FOV keep the mode sentinel (sky = 90 blocked, obstacle =
+ *  NO_BLOCK). Marks the record's bin space so the adapter never converts it
+ *  twice. */
 export function profileFromMask(p, mask) {
-  const prof = new Array(BINS).fill(NO_BLOCK);
+  const fov = Number(p.fov) > 0 ? Number(p.fov) : 360;
+  const azOff = Number(p.azOffset) || 0;
+  const sky = p.paintMode === 'sky';
+  const prof = new Array(BINS).fill(sky ? 90 : NO_BLOCK);
   const top = new Array(BINS).fill(NO_BLOCK);
-  for (let col = 0; col < BINS; col++) {
+  for (let i = 0; i < BINS; i++) {
+    const rel = (((i * BIN_DEG - azOff) % 360) + 360) % 360;
+    if (rel > fov) continue;                 // outside the calibrated FOV
+    const col = Math.min(BINS - 1, Math.floor(rel * BINS / fov));
     let minRow = -1, maxRow = -1;
     for (let row = 0; row < MASK_H; row++) {
       if (mask[row * MASK_W + col]) { if (minRow < 0) minRow = row; maxRow = row; }
     }
-    if (minRow >= 0) {
-      if (p.paintMode === 'obstacle') {
-        prof[col] = altOf(p, minRow);        // top of the painted mask
-      } else {
-        prof[col] = altOf(p, maxRow);        // sky mode: bottom edge of painted band
-        // Painted to (near) the frame top = open sky above: 90.5 is the "no
-        // upper ceiling" sentinel (desktop parity) - without it, everything
-        // above a band that reaches altTop was wrongly treated as blocked.
-        const eTop = altOf(p, minRow);
-        top[col] = eTop >= p.altTop - 4 ? 90.5 : eTop;
-      }
-    } else if (p.paintMode === 'sky') {
-      prof[col] = 90;                        // unpainted column = fully blocked
+    if (minRow < 0) continue;                // unpainted: sky column stays blocked
+    if (sky) {
+      prof[i] = altOf(p, maxRow);            // sky mode: bottom edge of painted band
+      // Painted to (near) the frame top = open sky above: 90.5 is the "no
+      // upper ceiling" sentinel (desktop parity) - without it, everything
+      // above a band that reaches altTop was wrongly treated as blocked.
+      const eTop = altOf(p, minRow);
+      top[i] = eTop >= p.altTop - 4 ? 90.5 : eTop;
+    } else {
+      prof[i] = altOf(p, minRow);            // top of the painted mask
     }
   }
+  p.profileBins = WORLD_BINS;
   return { prof, top };
+}
+
+/** Convert a legacy FOV-relative profile (one bin per mask column) to the
+ *  canonical world-azimuth bins, in place. Idempotent: records already marked
+ *  `profileBins === WORLD_BINS` pass through untouched; a stroke-derived
+ *  profile is already world (profileFromMask marks it). Uses the desktop
+ *  representative column (`col = floor(rel/fov*720)`), so a converted record
+ *  is byte-equivalent to what the desktop editor recomputes from the same
+ *  mask. Bins outside the calibrated FOV get the mode sentinel. */
+export function normalizeProfileBins(p) {
+  if (!p || p.profileBins === WORLD_BINS) return p;
+  const prof = (Array.isArray(p.profile) && p.profile.length === BINS) ? p.profile : null;
+  const tops = (Array.isArray(p.profileTop) && p.profileTop.length === BINS) ? p.profileTop : null;
+  const sky = p.paintMode === 'sky';
+  const fov = Number(p.fov) > 0 ? Number(p.fov) : 360;
+  const azOff = Number(p.azOffset) || 0;
+  const wprof = new Array(BINS).fill(sky ? 90 : NO_BLOCK);
+  const wtop = new Array(BINS).fill(NO_BLOCK);
+  if (prof) {
+    for (let i = 0; i < BINS; i++) {
+      const rel = (((i * BIN_DEG - azOff) % 360) + 360) % 360;
+      if (rel > fov) continue;
+      const col = Math.min(BINS - 1, Math.floor(rel * BINS / fov));
+      wprof[i] = prof[col];
+      if (tops) wtop[i] = tops[col];
+    }
+  }
+  p.profile = wprof;
+  p.profileTop = wtop;
+  p.profileBins = WORLD_BINS;
+  return p;
 }
 
 /** Contiguous edge segments of one profile, for the preview - SHARED with the
@@ -227,6 +284,7 @@ export function clearMask(p) {
   p.strokes = [];
   p.profile = new Array(BINS).fill(p.paintMode === 'sky' ? 90 : NO_BLOCK);
   p.profileTop = new Array(BINS).fill(NO_BLOCK);
+  p.profileBins = WORLD_BINS;
   return p.profile;
 }
 
@@ -256,7 +314,7 @@ export function ceilFor(p, azDeg) {
   if (d > fov) {
     return p.paintMode === 'sky' ? { ceil: 90, ceilTop: null } : { ceil: NO_BLOCK, ceilTop: null };
   }
-  const col = Math.min(BINS - 1, Math.floor((d / fov) * BINS));
+  const col = worldBin(azDeg);   // D1: world-azimuth bins (Python ceil_lookup)
   if (p.paintMode === 'sky') {
     // DEFAULT: everything ABOVE the painted band is free sky (open above), so
     // the band top is NOT a ceiling. Only when the user explicitly opts into
@@ -279,7 +337,7 @@ export function bandTopFor(p, azDeg) {
   const azOff = Number(p.azOffset) || 0;
   const d = ((azDeg - azOff) % 360 + 360) % 360;
   if (d > fov) return null;
-  const col = Math.min(BINS - 1, Math.floor((d / fov) * BINS));
+  const col = worldBin(azDeg);   // D1: world-azimuth bins
   const t = tops[col];
   return (t != null && t > NO_BLOCK + 0.5) ? t : null;
 }
@@ -321,7 +379,7 @@ export function assumedOpenRuns(p, step = 2) {
     const d = ((az - azOff) % 360 + 360) % 360;
     let has = false;
     if (d <= fov) {
-      const col = Math.min(BINS - 1, Math.floor((d / fov) * BINS));
+      const col = worldBin(az);   // D1: world-azimuth bins
       const b = prof[col], t = tops[col];
       has = b > NO_BLOCK + 0.5 && b < 90 && t > NO_BLOCK + 0.5 && t < 89.5;
     }

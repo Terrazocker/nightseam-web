@@ -120,7 +120,18 @@ export function deleteSiteRec(id) {
 
 export async function getRigs() {
   const rows = await all('rigs');
-  return rows.map((r) => r.val).sort((a, b) => String(a.name).localeCompare(String(b.name)));
+  const rigs = rows.map((r) => r.val);
+  for (const r of rigs) {
+    // D2 adapter: rigs stored before the unit normalization held DEGREES;
+    // convert to arcmin once per load (in memory) and mark the record so the
+    // next save persists arcmin and the conversion never runs twice.
+    if (r && r.fov_w != null && r.fov_unit !== 'arcmin') {
+      r.fov_w = Number(r.fov_w) * 60;
+      if (r.fov_h != null) r.fov_h = Number(r.fov_h) * 60;
+      r.fov_unit = 'arcmin';
+    }
+  }
+  return rigs.sort((a, b) => String(a.name).localeCompare(String(b.name)));
 }
 
 export function saveRigRec(rig) { return set('rigs', rig.id, rig); }
@@ -161,10 +172,17 @@ export async function removeSeededRigs() {
   return gone;
 }
 
-/** Field-of-view from focal length + sensor size (mirrors the local app). */
-export function fovFrom(focalMm, sensorMm) {
+/** Field-of-view in ARCMINUTES from focal length + sensor size - the SAME unit
+ *  as the desktop/server rig `fov_w`/`fov_h` (D2: one unit across the wire). */
+export function fovArcmin(focalMm, sensorMm) {
   if (!(focalMm > 0) || !(sensorMm > 0)) return null;
-  return 2 * Math.atan(sensorMm / (2 * focalMm)) * 180 / Math.PI;
+  return 2 * Math.atan(sensorMm / (2 * focalMm)) * 180 / Math.PI * 60;
+}
+
+/** Field of view in degrees - DISPLAY ONLY (picker and form preview). */
+export function fovDeg(focalMm, sensorMm) {
+  const am = fovArcmin(focalMm, sensorMm);
+  return am == null ? null : am / 60;
 }
 
 /* --------------------------- custom targets --------------------------- */

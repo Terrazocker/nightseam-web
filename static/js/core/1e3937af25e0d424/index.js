@@ -9,9 +9,10 @@
  */
 
 export {
-  NO_BLOCK, BINS, MASK_W, MASK_H,
+  NO_BLOCK, BINS, BIN_DEG, MASK_W, MASK_H, WORLD_BINS,
   rebuildMask, altOf, rowOfAlt, xOfAz, azOfX, wrapsFor,
-  profileFromMask, profileSegments, visibleSkyBands, skyBandPolygons,
+  profileFromMask, normalizeProfileBins, profileSegments,
+  visibleSkyBands, skyBandPolygons,
   computeProfile, clearMask, ceilFor, bandTopFor,
   overhangRuns, assumedOpenRuns, assumedOpenHatchPolys,
 } from './horizon.js';
