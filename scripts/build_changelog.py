@@ -30,6 +30,9 @@ ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "landing" / "changelog.json"
 
 CURATED = {
+    # 0.6.11 is a correctness + chart-tools release: Sun/Moon visibility, the
+    # web magnitude slider, desktop zoom parity and the web panorama editor.
+    "0.6.11": "Bug-fix and chart-tools release. On the all-sky chart the Sun and Moon could appear in the sky while they were really below the horizon - both apps now draw them only while they are actually up at the selected time. The web chart gains the desktop's magnitude slider (hide objects fainter than a chosen limit), the desktop chart's wheel-zoom now opens the same full rectangular window as the web, and the web panorama editor gains alignment guides (azimuth, altitude and horizon lines), joins a 360-degree panorama seamlessly at the edges, and fixes sky-mask \"open above\" handling and the compass labels on partial panoramas. Web cache tokens were bumped so the updated files reach returning visitors.",
     # 0.6.10 is a desktop+web consistency release: the eight confirmed
     # desktop/web parity differences from the 0.6.9 audit are fixed.
     "0.6.10": "Consistency release: the desktop app and the web planner now agree everywhere. The night window is identical in both apps at every latitude - including polar twilight, where the web could pick the wrong night - the Dark time card shows the twilight level actually used for scoring, the minimum altitude follows the Bortle class immediately, and \"Best targets tonight\" only lists targets that really clear the sky during the night. Frame coverage and filter advice now read the same in both apps, and the arrow-key time step is 6/60 minutes in both.",

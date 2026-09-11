@@ -191,29 +191,65 @@ export function updatePano(p) {
   save();
 }
 
-/** Rebuild the binary mask (Uint8Array MASK_W*MASK_H) from the stroke list. */
-export function rebuildMask(strokes) {
+/** Rebuild the binary mask (Uint8Array MASK_W*MASK_H) from the stroke list.
+ *  `wrap` connects the azimuth seam of a full 360 deg panorama by also painting
+ *  each dab shifted one mask width left/right (the out-of-range parts clip to
+ *  the normal bounds) - desktop parity, otherwise a stroke straddling the left
+ *  edge leaves a gap at the right edge. */
+export function rebuildMask(strokes, wrap = false) {
   const mask = new Uint8Array(MASK_W * MASK_H);
   for (const s of strokes) {
     const val = s.m === 'b' ? 255 : 0;
-    const x0 = Math.max(0, Math.floor(s.x - s.r));
-    const x1 = Math.min(MASK_W - 1, Math.ceil(s.x + s.r));
-    for (let cx = x0; cx <= x1; cx++) {
-      const dx = cx - s.x;
-      const dy = Math.sqrt(Math.max(0, s.r * s.r - dx * dx));
-      const y0 = Math.max(0, Math.floor(s.y - dy));
-      const y1 = Math.min(MASK_H - 1, Math.ceil(s.y + dy));
-      for (let cy = y0; cy <= y1; cy++) mask[cy * MASK_W + cx] = val;
+    const xs = wrap ? [s.x - MASK_W, s.x, s.x + MASK_W] : [s.x];
+    for (const sx of xs) {
+      const x0 = Math.max(0, Math.floor(sx - s.r));
+      const x1 = Math.min(MASK_W - 1, Math.ceil(sx + s.r));
+      for (let cx = x0; cx <= x1; cx++) {
+        const dx = cx - sx;
+        const dy = Math.sqrt(Math.max(0, s.r * s.r - dx * dx));
+        const y0 = Math.max(0, Math.floor(s.y - dy));
+        const y1 = Math.min(MASK_H - 1, Math.ceil(s.y + dy));
+        for (let cy = y0; cy <= y1; cy++) mask[cy * MASK_W + cx] = val;
+      }
     }
   }
   return mask;
 }
 
-const altOf = (p, row) => p.altTop - (row / (MASK_H - 1)) * (p.altTop - p.altBottom);
+/** Mask row -> apparent altitude (image y=0 = altTop, y=MASK_H-1 = altBottom). */
+export const altOf = (p, row) => p.altTop - (row / (MASK_H - 1)) * (p.altTop - p.altBottom);
 
-/** Recompute profile/profileTop (720 bins) from the current strokes. */
-export function computeProfile(p) {
-  const mask = rebuildMask(p.strokes);
+/** Altitude -> mask row: the exact inverse of altOf (may fall outside the
+ *  image; callers clip). Guides use THIS so a line is never visually centered
+ *  but mathematically offset. */
+export const rowOfAlt = (p, alt) => {
+  const span = p.altTop - p.altBottom;
+  return Math.abs(span) < 1e-9 ? 0 : ((p.altTop - alt) / span) * (MASK_H - 1);
+};
+
+/** Azimuth -> mask x, the SAME FOV-relative mapping ceilFor() uses
+ *  (d = az - azOffset, wrapped; x = d/fov * MASK_W). Outside the calibrated
+ *  FOV the result falls outside 0..MASK_W. */
+export function xOfAz(p, azDeg) {
+  const fov = Number(p.fov) > 0 ? Number(p.fov) : 360;
+  const azOff = Number(p.azOffset) || 0;
+  const d = ((azDeg - azOff) % 360 + 360) % 360;
+  return (d / fov) * MASK_W;
+}
+
+/** Mask x -> azimuth, the inverse of xOfAz (wrapped to 0..360). */
+export function azOfX(p, x) {
+  const fov = Number(p.fov) > 0 ? Number(p.fov) : 360;
+  const azOff = Number(p.azOffset) || 0;
+  return (((azOff + (x / MASK_W) * fov) % 360) + 360) % 360;
+}
+
+const wrapsFor = (p) => Number(p.fov) >= 359.5;
+
+/** Obstruction profile from a mask WITHOUT mutating or persisting - shared by
+ *  computeProfile() and the live overlay (which must not rebuild the mask or
+ *  hit localStorage on every pointer sample). */
+export function profileFromMask(p, mask) {
   const prof = new Array(BINS).fill(NO_BLOCK);
   const top = new Array(BINS).fill(NO_BLOCK);
   for (let col = 0; col < BINS; col++) {
@@ -226,12 +262,23 @@ export function computeProfile(p) {
         prof[col] = altOf(p, minRow);        // top of the painted mask
       } else {
         prof[col] = altOf(p, maxRow);        // sky mode: bottom edge of painted band
-        top[col] = altOf(p, minRow);         // top edge (overhang)
+        // Painted to (near) the frame top = open sky above: 90.5 is the "no
+        // upper ceiling" sentinel (desktop parity) - without it, everything
+        // above a band that reaches altTop was wrongly treated as blocked.
+        const eTop = altOf(p, minRow);
+        top[col] = eTop >= p.altTop - 4 ? 90.5 : eTop;
       }
     } else if (p.paintMode === 'sky') {
       prof[col] = 90;                        // unpainted column = fully blocked
     }
   }
+  return { prof, top };
+}
+
+/** Recompute profile/profileTop (720 bins) from the current strokes. */
+export function computeProfile(p) {
+  const mask = rebuildMask(p.strokes, wrapsFor(p));
+  const { prof, top } = profileFromMask(p, mask);
   p.profile = prof;
   p.profileTop = top;
   save();
@@ -403,6 +450,7 @@ function haziEditorHTML(p) {
       <button class="btn" id="ed-undo" title="undo last stroke (Ctrl+Z)">↩ Undo</button>
       <button class="btn" id="ed-clear">Clear</button>
     </div>
+    <p class="sub" style="margin-top:6px">cursor: <output id="ed-pos" class="mono">az — · alt —</output></p>
     <div class="cal-grid" style="margin-top:10px">
       <label>Az @ left
         <input id="ed-az" type="range" min="0" max="360" step="5" value="${p.azOffset}">
@@ -483,7 +531,7 @@ function wireEditor(box, p, onChanged) {
   const boxEl = $('#pano-box', box);
   let eraser = false;
   let baseCanvas = null; // pristine image base, so erasing really removes paint
-  let mask = rebuildMask(p.strokes);
+  let mask = rebuildMask(p.strokes, wrapsFor(p));
 
   const paintMode = () => p.paintMode;
   const maskColor = () => (paintMode() === 'obstacle' ? 'rgba(255,80,80,.5)' : 'rgba(120,230,140,.55)');
@@ -542,21 +590,76 @@ function wireEditor(box, p, onChanged) {
       }
     }
     ctx.putImageData(img, 0, 0);
-    // calibration hints (N/E/S/W at appropriate x)
-    ctx.fillStyle = 'rgba(219,233,255,.85)';
-    ctx.font = '11px system-ui';
-    ctx.textAlign = 'left';
-    for (const az of [0, 90, 180, 270]) {
-      const x = (az - p.azOffset + 360) % 360;
-      if (x <= p.fov && paintMode() === 'obstacle') {
-        ctx.fillText(['N', 'E', 'S', 'W'][az / 90], (x / 360) * MASK_W + 2, 14);
-      }
-    }
+    drawGuides();
     drawProfile();
   }
 
+  /** Vertical/horizontal alignment guides, drawn with the SAME transform as the
+   *  calibration and profile (xOfAz / rowOfAlt), so a line that looks centered
+   *  is centered. Azimuth majors every 90 deg (N/E/S/W), minors every 30 deg;
+   *  altitude every 15 deg with the alt=0 horizon baseline emphasized; on a
+   *  partial panorama the centre azimuth is marked. */
+  function drawGuides() {
+    ctx.save();
+    ctx.textBaseline = 'alphabetic';
+    // altitude guides (horizontal)
+    ctx.textAlign = 'left';
+    ctx.font = '10px system-ui';
+    const ab = Number(p.altBottom), at = Number(p.altTop);
+    for (let alt = Math.ceil(ab / 15) * 15; alt <= at + 1e-6; alt += 15) {
+      const y = rowOfAlt(p, alt);
+      if (y < 6 || y > MASK_H - 2) continue;
+      const base = Math.abs(alt) < 1e-6;
+      ctx.strokeStyle = base ? 'rgba(123,241,168,.6)' : 'rgba(124,196,255,.16)';
+      ctx.lineWidth = base ? 1.4 : 1;
+      ctx.setLineDash(base ? [7, 5] : []);
+      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(MASK_W, y); ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = base ? 'rgba(123,241,168,.9)' : 'rgba(200,214,240,.7)';
+      ctx.fillText((alt > 0 ? '+' : '') + alt + '\u00B0', 3, y - 3);
+    }
+    // azimuth guides (vertical), FOV-relative like ceilFor()
+    ctx.textAlign = 'center';
+    const fov = Number(p.fov) || 360;
+    const azOff = Number(p.azOffset) || 0;
+    for (let a = Math.ceil(azOff / 30) * 30; a <= azOff + fov + 1e-6; a += 30) {
+      const x = xOfAz(p, a);
+      if (x < -1 || x > MASK_W + 1) continue;
+      const cardA = ((a % 360) + 360) % 360;
+      const major = cardA % 90 === 0;
+      ctx.strokeStyle = major ? 'rgba(255,209,102,.6)' : 'rgba(255,209,102,.22)';
+      ctx.lineWidth = major ? 1.3 : 1;
+      ctx.setLineDash(major ? [] : [3, 4]);
+      ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, MASK_H); ctx.stroke();
+      ctx.setLineDash([]);
+      const lab = major ? ['N', 'E', 'S', 'W'][cardA / 90] : cardA + '\u00B0';
+      ctx.fillStyle = major ? '#ffd166' : 'rgba(255,209,102,.75)';
+      ctx.font = major ? 'bold 11px system-ui' : '10px system-ui';
+      ctx.fillText(lab, x, 13);
+    }
+    // partial panorama: mark the centre azimuth (the front of the view)
+    if (fov < 359.5) {
+      const xc = xOfAz(p, azOff + fov / 2);
+      if (xc >= 0 && xc <= MASK_W) {
+        ctx.strokeStyle = 'rgba(255,255,255,.5)';
+        ctx.lineWidth = 1;
+        ctx.setLineDash([2, 3]);
+        ctx.beginPath(); ctx.moveTo(xc, 0); ctx.lineTo(xc, MASK_H); ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.fillStyle = 'rgba(255,255,255,.8)';
+        ctx.font = '10px system-ui';
+        ctx.fillText('center', xc, MASK_H - 4);
+      }
+    }
+    ctx.restore();
+  }
+
   function drawProfile() {
-    computeProfile(p);
+    // profile from the ALREADY-BUILT mask (no rebuild, no localStorage write on
+    // every pointer sample). Persisted in computeProfile() on stroke end/save.
+    const { prof, top } = profileFromMask(p, mask);
+    p.profile = prof;
+    p.profileTop = top;
     profCtx.clearRect(0, 0, 720, 56);
     profCtx.fillStyle = '#081022';
     profCtx.fillRect(0, 0, 720, 56);
@@ -605,7 +708,7 @@ function wireEditor(box, p, onChanged) {
   const strokeAt = (x, y) => {
     const r = Number($('#ed-brush', box).value);
     p.strokes.push({ m: eraser ? 'e' : 'b', x, y, r });
-    mask = rebuildMask(p.strokes);
+    mask = rebuildMask(p.strokes, wrapsFor(p));
     overlay();
   };
   cvs.addEventListener('pointerdown', (ev) => {
@@ -615,23 +718,36 @@ function wireEditor(box, p, onChanged) {
     strokeAt(x, y);
     ev.preventDefault();
   });
+  const updateReadout = (ev) => {
+    const el = $('#ed-pos', box);
+    if (!el) return;
+    const [x, y] = toCanvas(ev);
+    el.textContent = `az ${azOfX(p, x).toFixed(0)}\u00B0 \u00B7 alt ${altOf(p, y).toFixed(1)}\u00B0`;
+  };
   cvs.addEventListener('pointermove', (ev) => {
+    updateReadout(ev);
     if (!painting) return;
     const [x, y] = toCanvas(ev);
     strokeAt(x, y);
   });
-  cvs.addEventListener('pointerup', (ev) => { painting = false; });
-  cvs.addEventListener('contextmenu', (ev) => { ev.preventDefault(); eraser = true; const [x, y] = toCanvas(ev); strokeAt(x, y); eraser = false; });
+  cvs.addEventListener('pointerleave', () => { const el = $('#ed-pos', box); if (el) el.textContent = 'az \u2014 \u00B7 alt \u2014'; });
+  cvs.addEventListener('pointerdown', updateReadout);
+  cvs.addEventListener('pointerup', (ev) => {
+    if (!painting) return;
+    painting = false;
+    computeProfile(p);       // persist once per stroke, not per pointer sample
+  });
+  cvs.addEventListener('contextmenu', (ev) => { ev.preventDefault(); eraser = true; const [x, y] = toCanvas(ev); strokeAt(x, y); eraser = false; computeProfile(p); });
   $('#ed-eraser', box).addEventListener('click', (ev) => { eraser = !eraser; ev.target.classList.toggle('on', eraser); });
-  $('#ed-undo', box).addEventListener('click', () => { if (p.strokes.length) { p.strokes.pop(); mask = rebuildMask(p.strokes); overlay(); } });
-  $('#ed-clear', box).addEventListener('click', () => { p.strokes = []; mask = rebuildMask(p.strokes); overlay(); });
+  $('#ed-undo', box).addEventListener('click', () => { if (p.strokes.length) { p.strokes.pop(); mask = rebuildMask(p.strokes, wrapsFor(p)); overlay(); computeProfile(p); } });
+  $('#ed-clear', box).addEventListener('click', () => { p.strokes = []; mask = rebuildMask(p.strokes, wrapsFor(p)); overlay(); computeProfile(p); });
   if (undoHandler) document.removeEventListener('keydown', undoHandler);
   undoHandler = (ev) => {
     if (!(ev.ctrlKey || ev.metaKey) || ev.key.toLowerCase() !== 'z') return;
     if (!document.querySelector('#pano-canvas')) return;
     if (!box.contains(document.activeElement)) return;
     ev.preventDefault();
-    if (p.strokes.length) { p.strokes.pop(); mask = rebuildMask(p.strokes); overlay(); }
+    if (p.strokes.length) { p.strokes.pop(); mask = rebuildMask(p.strokes, wrapsFor(p)); overlay(); computeProfile(p); }
   };
   document.addEventListener('keydown', undoHandler);
 
@@ -649,11 +765,13 @@ function wireEditor(box, p, onChanged) {
     $('#ed-ab-v', box).textContent = p.altBottom + '°';
     $('#ed-at-v', box).textContent = p.altTop + '°';
     $('#ed-fov-v', box).textContent = p.fov + '°';
+    mask = rebuildMask(p.strokes, wrapsFor(p));   // fov change toggles seam wrap
     updatePano(p);
     overlay();
+    computeProfile(p);
   };
   ['ed-az', 'ed-ab', 'ed-at', 'ed-fov'].forEach((id) => $('#' + id, box).addEventListener('input', cal));
-  $('#ed-mode', box).addEventListener('change', (ev) => { p.paintMode = ev.target.value; updatePano(p); overlay(); });
+  $('#ed-mode', box).addEventListener('change', (ev) => { p.paintMode = ev.target.value; overlay(); computeProfile(p); });
 
   $('#ed-save', box).addEventListener('click', () => {
     computeProfile(p);

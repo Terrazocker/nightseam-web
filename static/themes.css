@@ -378,9 +378,10 @@ html[data-theme="dome"] .chart-side .menu-section h4 {
   color: var(--dim);
   margin-bottom: 8px;
 }
-/* Sky map: keep the eyepiece-circle, drop the glow box */
+/* Sky map: square viewport (rounded rect, like the web) so wheel-zoom shows
+   the full rectangular window instead of a circular clip; drop the glow box */
 html[data-theme="dome"] #skyCanvas {
-  border-radius: 50%;   /* restored circular eyepiece (base value) */
+  border-radius: var(--r-md);   /* square/rect viewport, matching web canvas#sky */
   border: 1px solid rgba(255,255,255,0.06);
   box-shadow: none;
 }

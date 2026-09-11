@@ -16,7 +16,7 @@ import os
 import re
 import shutil
 import subprocess
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -119,6 +119,186 @@ def test_web_sun_and_moon_parity_with_python():
         mra, mdec = astro.moon_ra_dec(case["jd"])
         assert res["moon_ra"] == pytest.approx(mra, abs=1e-9), case
         assert res["moon_dec"] == pytest.approx(mdec, abs=1e-9), case
+        # the COMPOSED selected-time altitude (the map's visibility input) must
+        # match too; the old chart passed ra*15, which only showed up here
+        want_salt, _ = astro.altaz(sra, sdec, case["jd"], case["lat"], case["lon"])
+        want_malt, _ = astro.altaz(mra, mdec, case["jd"], case["lat"], case["lon"])
+        assert res["sun_alt"] == pytest.approx(want_salt, abs=1e-9), case
+        assert res["moon_alt"] == pytest.approx(want_malt, abs=1e-9), case
+
+
+def _sun_moon_case(dt_utc, lat, lon):
+    return {"jd": astro.julian_day(dt_utc), "ra": 0.0, "dec": 0.0,
+            "lat": lat, "lon": lon}
+
+
+def test_web_sun_visibility_is_astronomical_not_clock_based():
+    """Sun must be a visible sky object ONLY while above the horizon at the
+    selected time - day, night, polar day/night and around a crossing.
+
+    The original map bug: web/app.js passed `sunRa * 15` (sunRaDec returns
+    DEGREES) to altaz, so the Sun sat high in the sky all night. This pins the
+    true altitude and the visible/invisible decision at each state."""
+    berlin = (52.52, 13.40)
+    svalbard = (78.22, 15.65)
+    cases = [
+        # (utc, site, expect_sun_above)
+        (datetime(2026, 6, 21, 10, 0, tzinfo=timezone.utc), berlin, True),   # local noon
+        (datetime(2026, 9, 21, 22, 0, tzinfo=timezone.utc), berlin, False),  # after sunset, deep night
+        (datetime(2026, 9, 22, 4, 0, tzinfo=timezone.utc), berlin, False),   # before sunrise
+        (datetime(2026, 6, 21, 22, 0, tzinfo=timezone.utc), svalbard, True), # polar day (midnight sun)
+        (datetime(2026, 12, 21, 11, 0, tzinfo=timezone.utc), svalbard, False),  # polar night (noon)
+    ]
+    node_cases = [_sun_moon_case(dt, lat, lon) for dt, (lat, lon), _ in cases]
+    for (dt, (lat, lon), expect), case, res in zip(cases, node_cases, _run_node("web", node_cases)):
+        want, _ = astro.altaz(*astro.sun_ra_dec(case["jd"]), case["jd"], lat, lon)
+        assert res["sun_alt"] == pytest.approx(want, abs=1e-9), (dt, lat, lon)
+        assert (res["sun_alt"] > 0) is expect, (dt, lat, lon, res["sun_alt"])
+        if expect:
+            assert res["sun_alt"] > 2, (dt, lat, lon, res["sun_alt"])
+        else:
+            assert res["sun_alt"] < -2, (dt, lat, lon, res["sun_alt"])
+
+
+def test_web_sun_below_horizon_at_night_reproduces_the_original_bug():
+    """The regression in one assertion: on an August night the Sun is ~-22 deg
+    (invisible); the OLD `ra*15` composition reports it around +45 deg, which
+    is exactly what the map drew (verified before the fix)."""
+    jd = astro.julian_day(datetime(2026, 8, 12, 22, 0))
+    lat, lon = 52.52, 13.40
+    res = _run_node("web", [{"jd": jd, "ra": 0.0, "dec": 0.0, "lat": lat, "lon": lon}])[0]
+    assert res["sun_alt"] < -5
+    sra, sdec = astro.sun_ra_dec(jd)
+    buggy = astro.altaz(sra * 15, sdec, jd, lat, lon)[0]
+    assert buggy > 0, "the old ra*15 composition should have put the Sun up"
+
+
+def test_web_sun_and_moon_visibility_over_a_full_day():
+    """Integration sweep: sample a full day at 10-min steps. The web Sun/Moon
+    altitudes must match Python everywhere, and the Sun must actually cross the
+    horizon twice (rise + set) - exercising just-before/just-after sunset and
+    the crossing without hard-coding a time of day."""
+    lat, lon = 52.52, 13.40
+    start = datetime(2026, 9, 21, 0, 0)
+    cases = [{"jd": astro.julian_day(start + timedelta(minutes=10 * i)),
+              "ra": 0.0, "dec": 0.0, "lat": lat, "lon": lon} for i in range(145)]
+    res = _run_node("web", cases)
+    assert len(res) == len(cases)
+    flips = 0
+    prev_up = None
+    for case, r in zip(cases, res):
+        want_s, _ = astro.altaz(*astro.sun_ra_dec(case["jd"]),
+                                case["jd"], lat, lon)
+        want_m, _ = astro.altaz(*astro.moon_ra_dec(case["jd"]),
+                                case["jd"], lat, lon)
+        assert r["sun_alt"] == pytest.approx(want_s, abs=1e-9), case
+        assert r["moon_alt"] == pytest.approx(want_m, abs=1e-9), case
+        up = r["sun_alt"] > 0
+        if prev_up is not None and up != prev_up:
+            flips += 1
+        prev_up = up
+    assert flips == 2, f"the Sun should rise and set exactly once, got {flips}"
+
+
+def test_web_moon_visibility_is_astronomical():
+    """Moon: above/below the horizon, a daytime Moon, and a polar site - the
+    visible/invisible decision must follow the true altitude in every case."""
+    berlin = (52.52, 13.40)
+    svalbard = (78.22, 15.65)
+    cases = [_sun_moon_case(dt, lat, lon) for dt, (lat, lon) in [
+        (datetime(2026, 9, 21, 22, 0, tzinfo=timezone.utc), berlin),
+        (datetime(2026, 9, 22, 2, 0, tzinfo=timezone.utc), berlin),
+        (datetime(2026, 9, 21, 10, 0, tzinfo=timezone.utc), berlin),
+        (datetime(2026, 9, 21, 14, 0, tzinfo=timezone.utc), svalbard),
+        (datetime(2026, 12, 21, 12, 0, tzinfo=timezone.utc), svalbard),
+    ]]
+    above = below = 0
+    for case, res in zip(cases, _run_node("web", cases)):
+        mra, mdec = astro.moon_ra_dec(case["jd"])
+        want, _ = astro.altaz(mra, mdec, case["jd"], case["lat"], case["lon"])
+        assert res["moon_alt"] == pytest.approx(want, abs=1e-9), case
+        if res["moon_alt"] > 0:
+            above += 1
+        else:
+            below += 1
+    assert above >= 1 and below >= 1, "the Moon rule must discriminate above/below"
+
+
+def test_above_horizon_rule_identical_and_astronomical():
+    """The ONE selected-time visibility predicate (web/astro.js vs
+    derive.js::aboveHorizon): apparent altitude > 0, nothing else. -6 deg (the
+    old desktop chart floor) is explicitly NOT visible."""
+    alts = [-90, -18.5, -6, -0.01, 0, 0.01, 5, 45, 89.9]
+    res = _run_node("abovehorizon", [{"alt": a} for a in alts])
+    for a, r in zip(alts, res):
+        assert r["desktop"] is r["web"], (a, r)
+        assert r["desktop"] is (a > 0), (a, r)
+    assert _run_node("abovehorizon", [{"alt": -6}])[0]["desktop"] is False
+
+
+def test_desktop_and_web_magnitude_rule_identical():
+    """The chart magnitude limit is ONE rule (derive.js::magVisible =
+    web/format.js::magVisible): a known magnitude shows at <= limit, an object
+    without a magnitude shows only at the slider maximum."""
+    cases = []
+    for vmag in [None, 0, 4.9, 5, 10, 10.5, 14, 20]:
+        for limit in [0, 5, 10, 14, 20]:
+            for mx in [14, 20]:
+                cases.append({"vmag": vmag, "limit": limit, "max": mx})
+    for c, r in zip(cases, _run_node("mag", cases)):
+        assert r["desktop"] is r["web"], c
+    # absolute anchors
+    assert _run_node("mag", [
+        {"vmag": 5, "limit": 10, "max": 14},
+        {"vmag": 12, "limit": 10, "max": 14},
+        {"vmag": None, "limit": 10, "max": 14},
+        {"vmag": None, "limit": 14, "max": 14},
+        {"vmag": 10, "limit": 10, "max": 14},
+        {"vmag": 10.5, "limit": 10, "max": 14},
+    ]) == [
+        {"vmag": 5, "limit": 10, "max": 14, "desktop": True, "web": True},
+        {"vmag": 12, "limit": 10, "max": 14, "desktop": False, "web": False},
+        {"vmag": None, "limit": 10, "max": 14, "desktop": False, "web": False},
+        {"vmag": None, "limit": 14, "max": 14, "desktop": True, "web": True},
+        {"vmag": 10, "limit": 10, "max": 14, "desktop": True, "web": True},
+        {"vmag": 10.5, "limit": 10, "max": 14, "desktop": False, "web": False},
+    ]
+
+
+@pytest.mark.parametrize("W,H", [(800, 800), (1600, 800), (800, 1600), (2560, 1440)])
+def test_desktop_and_web_square_zoom_math_identical(W, H):
+    """The "square zoom" geometry is identical in both apps and is a uniform
+    (equal-axis) scale about a focus point: matrix.a == matrix.d, the disc
+    centre maps to the canvas centre, screen<->base round-trips, and zoom/focus
+    are clamped. Wide and tall viewports included - the desktop must stay
+    usable at any aspect ratio."""
+    cases = []
+    for zoom in [1, 2.5, 8, 12, 0.5]:
+        for fx, fy in [(None, None), (W / 2 + 40, H / 2 - 60)]:
+            cases.append({"zoom": zoom, "W": W, "H": H, "fx": fx, "fy": fy,
+                          "sx": 0, "sy": 0})
+            cases.append({"zoom": zoom, "W": W, "H": H, "fx": fx, "fy": fy,
+                          "sx": W * 0.3, "sy": H * 0.7})
+    for c, r in zip(cases, _run_node("skyzoom", cases)):
+        d, w = r["desktop"], r["web"]
+        assert d == w, c
+        z = d["zoom"]
+        assert z == pytest.approx(min(8, max(1, c["zoom"]))), c
+        # uniform scale on both axes (no distortion)
+        assert d["matrix"]["a"] == d["matrix"]["d"]
+        # the focus point maps to the canvas centre
+        cx = (c["fx"] if c["fx"] is not None else W / 2)
+        cy = (c["fy"] if c["fy"] is not None else H / 2)
+        assert d["matrix"]["a"] * cx + d["matrix"]["e"] == pytest.approx(W / 2, abs=1e-9)
+        assert d["matrix"]["d"] * cy + d["matrix"]["f"] == pytest.approx(H / 2, abs=1e-9)
+        # screen -> base round-trips through the matrix
+        bx, by = d["base"]
+        assert d["matrix"]["a"] * bx + d["matrix"]["e"] == pytest.approx(c["sx"], abs=1e-9)
+        assert d["matrix"]["d"] * by + d["matrix"]["f"] == pytest.approx(c["sy"], abs=1e-9)
+    assert _run_node("skyzoom", [{"zoom": 1, "W": W, "H": H, "fx": None, "fy": None,
+                                  "sx": W / 2, "sy": H / 2}])[0]["desktop"]["zoom"] == 1
+    assert _run_node("skyzoom", [{"zoom": 99, "W": W, "H": H, "fx": None, "fy": None,
+                                  "sx": 0, "sy": 0}])[0]["desktop"]["zoom"] == 8
 
 
 # ------------------------------------------------------- clear-window contract

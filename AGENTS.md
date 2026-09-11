@@ -1,801 +1,382 @@
 # AGENTS.md
 
-> **Repository status — CANONICAL.** This is the living NightSeam project:
-> all commits, tags, web releases and deploys happen here.
-> `<archive>\Object-Astro` is a DEPRECATED archive (frozen at v0.4.1) —
-> treat it as read-only and never commit, tag or deploy there. The web
-> sub-version (`web/`, NightSeam Web v0.5.0) is fully integrated in this
-> repo with the same history and tags (`v0.4.2`, `v0.5.0`).
+> **Canonical repo.** All commits, tags, web releases and deploys happen here.
+> `<archive>\Object-Astro` is a DEPRECATED archive (frozen at v0.4.1) - treat
+> it as read-only, never commit/tag/deploy there. The `web/` sub-version shares
+> this repo's history and tags.
 
-> **Design — READ `DESIGN.md` before any UI work.** Glass (`dome`) is the
-> project's design language and the web default. Every UI change must follow
-> its tokens, glass surfaces, typography and structural rules (themes.css
-> dome blocks in `web/` and `static/` are the reference implementation).
-> "Classic" is a flat fallback, not a second language.
+> **Design: read `DESIGN.md` before ANY UI work.** Glass (`dome`) is the design
+> language and the web default; follow its tokens and the `themes.css` dome
+> blocks in `web/` and `static/`. "Classic" is a flat fallback, not a second
+> language.
 
-NightSeam: a desktop DSO-planning app that runs a local FastAPI server and
-serves a vanilla-JS UI. Pure-Python astronomy (Meeus algorithms) - no
-numpy/astropy, no JS build step, no npm. Works fully offline except optional
-Wikipedia example images. Two modes: Night Planner and Image Catalog (FITS
-ingest + library), switched via the top-right button or the brand name.
+NightSeam: a desktop DSO-planning app - a local FastAPI server plus a vanilla-JS
+UI, pure-Python Meeus astronomy (no numpy/astropy), no JS bundler/npm. Works
+fully offline except optional Wikipedia images. Two modes: Night Planner and
+Image Catalog (FITS ingest + library). `README.md` has the feature list.
 
-## Remediation 0.6.9 — invariants added (read before touching these areas)
+## Invariants (pinned by tests - do not regress)
 
-The audit `AUDIT-0.6.8-handover.md` and the fix record `REMEDIATION-0.6.9.md`
-cover the 2026-09-10/11 remediation session. These invariants are pinned by
-tests - do not regress them:
+**Untrusted paths and imports**
+- Every path from stored/imported JSON goes through `paths.safe_rel()` (before
+  storing) and `paths.safe_join()` (before opening); any record id interpolated
+  into a file name goes through `paths.safe_token()`. `import_bundle` drops
+  panorama records whose id is not a plain token. A crafted setup ZIP used to be
+  an arbitrary-file-read primitive (`tests/test_paths.py`, `test_backup.py`,
+  `test_api.py`).
+- `apply_import_zip` never honors the bundle's `settings.image_dir`; it
+  re-injects the LOCAL configured archive and reports `image_dir_ignored`.
+- Tests never touch the user profile: `tests/conftest.py` redirects
+  `paths.default_archive_dir()` into `logs/`.
 
-- **Untrusted paths**: every path from stored/imported JSON goes through
-  `paths.safe_rel()` (before storing) and `paths.safe_join()` (before opening).
-  A crafted setup ZIP used to be an arbitrary-file-read primitive through
-  `/api/panorama/{id}/image`. Tests: `tests/test_paths.py`, `test_backup.py`,
-  `test_api.py`.
-- **Precession**: `app/astro.py::_precess` is Meeus ch. 21 eq. 21.4 with the
-  middle rotation about **Y**; `static/js/astro.js` and `web/astro.js` mirror it.
-  Correctness is pinned by published values in `tests/test_astro.py` - NOT by a
-  round-trip test, which is exactly why the old wrong matrix survived. Three-engine
-  parity lives in `tests/test_js_parity.py` + `tests/js/astro_parity.mjs`.
-- **Clear window**: `longest_run`/`longestRunJS` return a HALF-OPEN
-  `[start, end)` whose `end` may equal the grid length. Never index
-  `times_iso[end]`; resolve it with `windowEndISO()` (`static/js/derive.js`).
-  `/api/object/{oid}` ships `step_min` for that.
-- **Night load**: after every `await` in `static/js/night.js`, re-check
-  `ctl === _nightCtl` before touching state, UI or the busy chip
-  (`tests/js/night_race.mjs` drives the real module).
-- **Scoring parity**: the moon/Bortle curves are exported by BOTH
-  `static/js/derive.js` and `web/astro.js` and compared numerically by
-  `tests/test_js_parity.py`. The web scores over the same window as the desktop
-  (`pickDarkWindow()` mirrors `app/planning.py`: astronomical -> nautical ->
-  civil -> sunset, polar fallback 20:00-04:00) on a 6-minute grid and uses the
-  PLANNED night's moon (midpoint), never "now".
-- **Web night anchoring**: `nightInfo(localDate, lat, lon, localNoon)` - pass the
-  SITE's local noon (`siteNoon()` in `web/app.js`, via `webstore.wallToUtc`), or
-  a site in another timezone resolves the wrong night (measured: a >24 h "night"
-  either side of the browser's zone).
-- **Release**: `scripts/check_release.py` must pass before staging;
-  `build.ps1` refuses a dirty/off-tag bake unless `-AllowDirty` and no longer
-  falls back to `dev`. **The manual `Set-Content app\_version_baked.py` bake
-  described below is a red flag, not a workaround** - it is how the live 0.6.0
-  exe came to claim a clean tag it never had.
-- **Changelog**: `python scripts/build_changelog.py --check` exits non-zero for
-  tags since the newest curated entry; the older "cannot silently go stale" claim
-  only holds while that check runs in the release path. 0.6.1-0.6.8 are now
-  curated (they were WEB-only releases - no exe was published - and each entry
-  says so); `check_release.py` requires the entry for the tag being released.
-
-### Review-pass corrections (same session) — also pinned
-
-- **Ids are path inputs too**: `paths.safe_token()` guards any record id that is
-  interpolated into a file name (`/api/panorama/{pid}/image` builds
-  `f"{pid}.{ext}"`); `import_bundle` drops panorama records whose *id* is not a
-  plain token, and every pid route resolves through `_pano_or_404`. `safe_rel`
-  additionally rejects segments Windows would rewrite (trailing dot/space,
-  all-dots, device names) and `safe_join` refuses the root itself.
-- **The import never controls the archive ROOT**: `apply_import_zip` ignores
-  `settings.image_dir` from the bundle, re-injects the LOCAL configured archive
-  (the settings replace wipes the table, so dropping the key would reset it to
-  `~/Documents/...`) and reports `image_dir_ignored`. Untrusted `image_dir` was
-  an arbitrary-write/read primitive.
-- **One dark window for every number**: the clear window, `% of night` and the
-  score are measured inside `dusk..dawn` on BOTH sides - `static/js/derive.js`
-  clips them (the payload grid carries twilight margins for the charts) and
-  `nightcalc.object_detail` clips its 4-min window the same way. Tests:
-  `tests/js/derive_window.mjs` (harness) and `tests/test_js_parity.py`.
-- **Selected time is the source of truth** (web): the Tonight view computes
-  "visible" at `S.skyTime` and re-renders (debounced) on the topbar/sky scrub -
-  the desktop equivalent is `S.tIdx`. No magnitude gate on curated objects;
-  advanced candidates are capped at mag 9 in the web for responsiveness
-  (documented, intentional).
-- **Stale async work stays silent**: a superseded night load neither repaints,
-  nor clears the busy chip, nor shows an error toast (`tests/js/night_race.mjs`).
-- **JS syntax is checked**: `python scripts/check_js_syntax.py` (wired into
-  `check_js.py`) parses all 26 shipped modules with `node --check` via temporary
-  `.mjs` copies; it skips cleanly without node. It exists because a duplicate
-  `const` once reached the tree unseen.
-- **Encoding is checked**: `scripts/check_encoding.py` (wired into `check_js.py`,
-  pinned by `tests/test_encoding.py`) rejects non-UTF8 files, UTF-8 BOMs, C1
-  control characters and cp1252 mojibake clusters in shipped text. 0.6.9
-  committed `web/app.js` + `web/horizon.js` after a tool had read them as cp1252
-  and written them back as UTF-8: every em dash, degree sign and emoji shipped as
-  its three-glyph mojibake cluster and the LIVE web app showed garble in the
-  catalog type/size columns, the rig picker and the horizon editor. The
-  ASCII-only character stream stayed byte-identical, so no other check - and no
-  test - could see it. Repaired in `d34c3f5` (tokens bumped, `/astro` redeployed).
-- **Release validation is two-sided**: `scripts/check_release.py` verifies the
-  staged zip's real sha256/size against `version.json`, the zip's exe against the
-  staged exe, `ns-version.js`'s url, the changelog schema, and the git-describe
-  grammar (a fabricated `-dirty-dirty` fails even with `--allow-dirty`).
-- **Tests never touch the user profile**: `tests/conftest.py` redirects
-  `paths.default_archive_dir()` into `logs/` for every test - a test that forgot
-  to set `image_dir` used to write into the real `~/Documents/NightSeam Images`.
-- **Current test count: 490** (`python -m pytest tests/ -q`, full access).
-
-### Desktop/web parity remediation — also pinned (E1–E8)
-
-- **Twilight scan anchoring**: `web/astro.js` `nightInfo`/`sunCrossings` scan
-  from the SITE's local noon + 30 h like `planning.py` — never browser
-  midnight + 48 h. A midnight anchor reported the PREVIOUS night's dusk at
-  twilight-edge latitudes (59.5 N, 2026-06-21 resolved as 2026-06-20T22:35Z).
-  `pickDarkWindow` falls back ONLY to the fixed 20:00 -> 04:00 window in the
-  site's zone; sunset/sunrise are never the window. Tests:
-  `test_web_twilight_choice_rule` (timestamps, not just the level) and
-  `test_web_dark_window_matches_planning_across_levels` (polar day, polar
-  twilight, civil/nautical/astronomical, cross-zone site).
-- **Dark time card**: shows the picked level's window and label
-  (`win.startT/endT/level`), never the astronomical pair alone.
-- **Frame coverage**: OBJECT span / frame (object/field) everywhere; >100%
-  = does not fit ("needs ~N frames"). Web `format.js::framePct`; desktop
-  `frameCoverage` takes the worse of both axes (documented simplification: the
-  web compares the larger axis against `fov_w` only).
-- **`statusOf` mirrors `vis[]`**: `alt >= ceil_top` is Blocked (sky-mode
-  ceiling), not Observable.
-- **Min-alt rule**: explicit `min_useful_alt` wins, else `17 + 2*bortle`.
+**Astronomy / planner**
+- `app/astro.py::_precess` is Meeus ch.21 eq.21.4 with the middle rotation about
+  **Y**; `static/js/astro.js` and `web/astro.js` mirror it. Correctness is pinned
+  by published values in `tests/test_astro.py`, NOT a round-trip. Three-engine
+  parity: `tests/test_js_parity.py` + `tests/js/astro_parity.mjs`.
+- Sun/Moon chart visibility is astronomical, not a clock: drawn only while the
+  APPARENT (refracted) altitude is `> 0`, the one `aboveHorizon()` in BOTH
+  `web/astro.js` and `static/js/derive.js`. `sunRaDec`/`moonRaDec` return RA in
+  DEGREES (like `app/astro.py`); `web/app.js` must use `sunAltAz()`/`moonAltAz()`
+  and NEVER `sunRaDec`/`moonRaDec`
+  (`tests/test_ui_invariants.py::test_web_sun_moon_use_the_altaz_wrappers`). Old
+  bugs: web chart passed `sunRaDec() * 15` (degrees as hours) so the Sun sat high
+  all night; desktop drew Sun/Moon down to `-6 deg`.
+- Clear window: `longest_run`/`longestRunJS` return a HALF-OPEN `[start,end)`
+  whose `end` may equal the grid length. Never index `times_iso[end]`; resolve it
+  with `windowEndISO()`. `/api/object/{oid}` ships `step_min`.
+- Every "night" number (clear window, `% of night`, score) is measured inside
+  `dusk..dawn` on BOTH sides; the payload grid carries twilight margins for the
+  charts only. `static/js/derive.js` clips them and `nightcalc.object_detail`
+  clips its 4-min window the same way (`tests/js/derive_window.mjs`).
+- Twilight scan is anchored at the SITE's local noon + 30 h, never browser
+  midnight + 48 h. `nightInfo(localDate,lat,lon,localNoon)` needs the site's noon
+  (`siteNoon()`, via `webstore.wallToUtc`) or a cross-timezone site resolves the
+  wrong night. `pickDarkWindow` falls back ONLY to a fixed 20:00-04:00 window in
+  the site zone; sunset/sunrise are never the window.
+- Min-alt rule: explicit `min_useful_alt` wins, else `17 + 2*bortle`.
   `server.py::_effective_min_alt` is the one server rule (`/api/state` ships
-  `min_useful_alt_explicit`; the detail endpoint used to hardcode 25.0);
-  desktop `derive.js::effectiveMinAlt` re-derives live on a Bortle change, web
-  `horizon.js::effectiveMinAlt` already did.
-- **Best targets tonight** (web): only rows with `visN > 0` (clear at least
-  once in the dark window); ranking unchanged. The web's 6-min scoring loop
-  lives once in `web/nightrank.js::nightStats` (Tonight + catalog % column);
-  the detail modal keeps its own sunset-anchored grid but uses the same
-  visibility predicate (`sampleVisible`).
-- **Filter advice**: one model — narrowband for nebula/SNR/planetary,
-  broadband warning when only NB is owned — desktop `derive.js::filterAdvice`
-  and web `horizon.js::filterAdvice` (pinned identical).
-- **Keyboard scrub**: Arrow = 6 min (one grid sample), Shift = 60 min in BOTH
-  apps (`SCRUB_STEP_MIN` / `SCRUB_SHIFT_STEP_MIN`).
-- **Harness**: new engines `status`, `frame`, `advice`, `minalt`, `shortcut`,
-  `nightstats`; node subprocesses decode UTF-8 explicitly (the Windows cp1252
-  default mangled the check/cross glyphs and made equal-but-wrong strings
-  compare equal); `moonIllumination`/`moonAge`/`julianDay` are now
-  parity-pinned, with absolute anchors from published 2026-08-12/28 phase
-  instants and the ERFA-pinned positions.
+  `min_useful_alt_explicit`); desktop `derive.js::effectiveMinAlt` re-derives live
+  on a Bortle change (web `horizon.js::effectiveMinAlt` already did).
+- Moon/Bortle scoring curves are exported by BOTH `derive.js` and `web/astro.js`
+  and compared numerically; the web scores the same window as the desktop on a
+  6-min grid and uses the PLANNED night's moon (midpoint), never "now".
+- Selected time is the source of truth: desktop `S.tIdx`, web `S.skyTime`. "Best
+  targets tonight" (web) lists only rows with `visN > 0`. Keyboard scrub is 6 min,
+  Shift 60 min in BOTH apps (`SCRUB_STEP_MIN`/`SCRUB_SHIFT_STEP_MIN`).
 
-## Context discipline (read before starting work)
+**Charts and units**
+- Magnitude limit is ONE rule `magVisible(vmag,limit,maxLimit)` in `derive.js` +
+  `web/format.js` (`mag` engine): a known magnitude shows at `vmag <= limit`; a
+  no-magnitude object only at the slider maximum. It filters EVERY object, curated
+  included (8 of 197 curated are fainter than the default 10 and hidden, exactly
+  like desktop `#skyMag`); Sun/Moon, field stars, constellations, the min-alt ring
+  and all scoring/ranking are untouched. Web twin `S.skyMag` (default 10, max 14 /
+  20 in advanced mode), session-only, one `draw()` per input.
+- "Square" zoom is ONE geometry in `derive.js` + `web/format.js` (`skyzoom`
+  engine): `skyClampZoom` (1..8), `skyViewMatrix`, `skyScreenToBase`,
+  `skyClampFocus`. The disc lives in a SQUARE W x H space; the visible window is
+  the RECTANGLE `W/zoom x H/zoom` with ONE uniform scalar on both axes. The
+  desktop canvas must NOT carry a `border-radius: 50%` clip - it hid that window.
+- Panorama profiles are exactly 720 bins (0.5 deg/az), `NO_BLOCK = -90`. Sky mode
+  inverts the mask: `profile` = band BOTTOM, `profile_top` = band TOP; unpainted
+  sky columns block fully (90); outside the FOV follows the mode. The web editor
+  (`web/horizon.js`) emits the `90.5` "open above" sentinel when the painted band
+  reaches within 4 deg of `altTop`, wraps the 360-deg seam in
+  `rebuildMask(strokes, wrap)`, and derives the profile in memory
+  (`profileFromMask`) persisting once per stroke/save, not per pointer sample.
+  Guides use `xOfAz`/`rowOfAlt` - the SAME transform as `ceilFor`
+  (`tests/js/pano_geom.mjs`).
 
-The transcript is the budget. These rules measurably cut it - this section wins
-over the fuller commands below wherever they differ:
+**Async**
+- After every `await` in `static/js/night.js`, re-check `ctl === _nightCtl`
+  before touching state, UI or the busy chip. A superseded night load stays
+  silent (`tests/js/night_race.mjs`).
 
-- **Batch edits to this file.** Every edit re-injects all of AGENTS.md (~25 KB).
-  Collect documentation changes and apply them in ONE write, at the end if you can.
-- **Run tests cheaply:** `python -m pytest tests/ -q --tb=no`, and only the modules
-  that matter (`python -m pytest tests/test_astro.py tests/test_planning.py -q`).
-  The full suite prints ~14 KB of sandbox `PermissionError`s that say nothing new -
-  run it once, at the end of the work.
-- **Never dump output into chat:** no build/tool logs, no whole files, no raw grep
-  matches. Use `read` with `offset`/`limit`, read tails, or counts
-  (`Select-String -Quiet`, `Measure-Object`) instead - a count costs one line, a
-  dump costs thousands.
-- **Delegate bulk reading:** anything touching 2-3+ files goes to a subagent with a
-  self-contained prompt and an explicit "return a digest, not the files".
-- **Write findings to files** (`AUDIT.md`-style) and reference the path in chat
-  instead of pasting content.
-- **`/compact` at phase boundaries** - when one task ships and the next starts -
-  and start a new session per deliverable rather than letting the meter fill.
-  (`/compact` condenses older history on demand, keeps recent turns, and consumes
-  no model turn.)
+**Release integrity** (see also "Versioning and release")
+- `scripts/check_release.py` must pass before staging; `build.ps1` refuses a
+  dirty/off-tag bake unless `-AllowDirty`. NEVER hand-bake
+  `app/_version_baked.py` to fake a clean tag - that is how 0.6.0 shipped
+  claiming a tag it never had.
+- `python scripts/build_changelog.py --check` exits non-zero for tags since the
+  newest curated entry; every released tag needs a curated entry.
+- `scripts/check_encoding.py` (wired into `check_js.py`) rejects non-UTF8, UTF-8
+  BOMs, C1 controls and cp1252 mojibake clusters in shipped text. A PowerShell
+  `Get-Content`/`Set-Content` round-trip WILL cp1252-mangle non-ASCII files
+  (em dashes, degree signs, emoji) with no other check noticing - run the guard
+  after any text rewrite.
+
+## Context discipline (the transcript is the budget)
+
+- **Run the full suite once, at the end:** `python -m pytest tests/ -q --tb=no`,
+  and only the modules that matter while iterating
+  (`python -m pytest tests/test_astro.py tests/test_planning.py -q`).
+- **Never dump output into chat:** no build/tool logs, no whole files, no raw
+  grep matches. Use `read` with `offset`/`limit`, read tails, or counts
+  (`Select-String -Quiet`, `Measure-Object`).
+- **Delegate bulk reading:** anything touching 2-3+ files goes to a subagent with
+  a self-contained prompt and an explicit "return a digest, not the files".
+- **Write findings to files** (`AUDIT.md`-style) and reference the path in chat.
+- **`/compact` at phase boundaries** and start a new session per deliverable.
+- When editing this file, collect changes and apply them in ONE write (each edit
+  re-injects the whole file).
 
 ## Commands
 
 - Run from source: `python main.py` (default port 8407; `--console` for logs,
-  `--no-browser` for headless, `--port N`, `--version` prints the version).
-  Also `--browser` (tab instead of app window) and `--idle-exit-hours 0` (never exit on idle - the default is
-  12 h, which kills a server an agent left running). Data is created under
-  `data/` (gitignored) in the repo root. Port-8407 traps:
-  - A stale `dist\NightSeam.exe` (frozen OLD code) can silently hold the
-    port; `python main.py` then hands off to it via `data/instance.json`
-    instead of starting. Before probing: kill NightSeam.exe/python/chrome,
-    delete `data/instance.json`, then verify the listener's process NAME is
-    python.exe (`Get-NetTCPConnection -LocalPort 8407` -> OwningProcess ->
-    `Get-CimInstance Win32_Process`), not the exe. The handoff now also
-    applies to `--no-browser` (it exits 0 instead of starting a SECOND
-    instance on the same DB/archive), and `free_port()` probes with
-    `connect()` - a plain bind probe cannot see a live listener on Windows
-    when both sockets set SO_REUSEADDR.
-  - If 8407 is briefly taken at boot, `free_port()` silently picks a RANDOM
-    port (written to instance.json) - the app runs, just not on 8407.
-- Tests: `python -m pytest tests/` - 467 tests, run in ~75 s (pure-function
-  tests are fast; `tests/test_api.py` spins up real `create_app()` instances
-  via fastapi TestClient/httpx). Single test:
+  `--no-browser` headless exits on the single-instance handoff, `--port N`,
+  `--version` prints the version, `--browser` tab instead of app window,
+  `--idle-exit-hours 0` to never idle-exit - the default 12 h kills a server an
+  agent left running). Data lives in `data/` (gitignored).
+  - **Port-8407 trap:** a stale `dist\NightSeam.exe` (old frozen code) can hold
+    the port; `python main.py` then hands off via `data/instance.json` instead of
+    starting. Kill NightSeam.exe/python/chrome, delete `data/instance.json`, then
+    confirm the listener's process NAME is `python.exe`
+    (`Get-NetTCPConnection -LocalPort 8407` -> OwningProcess ->
+    `Get-CimInstance Win32_Process`).
+  - If 8407 is briefly taken at boot, `free_port()` silently picks a RANDOM port
+    (written to `instance.json`).
+- Tests: `python -m pytest tests/` (502). Single test:
   `python -m pytest tests/test_astro.py -k name`. API tests use
-  `create_app(db, prefetch=False)` so no image-cache thread hits the network;
-  the archive is pointed at a tmp dir per test. A broken Windows temp-dir ACL
-  means pytest runs use a repo-local `.pytest-tmp` base (see `pytest.ini`).
-  Under the DSH file sandbox, Python 3.14's `os.mkdir(mode=0o700)` (which
-  pytest uses for the basetemp) creates an owner-SID-only DACL that the
-  sandbox's restricted token cannot re-read, so every tmp_path test errors
-  with PermissionError - an environment artifact, NOT a code failure. Run
-  the suite with full access / in a normal shell: 467/467 pass (~75 s).
-  Careful with the `client` fixture: it must leave `data/panos` in place
-  under the tmp dir it patches in, because the pano upload route writes
-  there without mkdir'ing (the real `data_dir()` creates it). Without that
-  the three pano API tests only pass while a recycled `.pytest-tmp` happens
-  to still hold the folder.
-- Sandbox gotcha (cost me three attempts): a command whose stdout is piped
-  into another PowerShell command dies with "Zugriff verweigert" (named-pipe
-  EPERM), so `python -m pytest ... | Select-Object` never runs - same for
-  `git log ... | Select-Object` (git itself is fine, the PIPE dies). Run the
-  tool bare, or have a small python wrapper write the log to a FILE **inside
-  the repo** (the platform temp dir is not writable for spawned processes) and
-  read that instead.
-- Any tool that shells out with `capture_output=True` / piped stdio dies the
-  same way. Concretely: `python web/build_web.py version` fails with
-  `PermissionError: [WinError 5]` from `_winapi.CreatePipe` (it pipes
-  `git describe`). It is a release step, so run that ONE command with full
-  access - or bake `web/version.json` by hand in the same shape
-  (`{"version","describe","built"}`, `version = describe.lstrip("v")`,
-  `built` = ISO-8601 UTC, seconds).
-- `git commit` / `git tag` work from the sandboxed shell, but git's background
-  auto-maintenance then complains "cannot create standard input pipe for
-  pack-objects: Permission denied" / "task 'geometric-repack' failed". That is
-  noise, not a failed commit - confirm with `git log -1` / `git describe`.
-  It ALSO puts a Windows message box on the USER's desktop: a commit spawns a
-  DETACHED `git maintenance run --auto` child, that child cannot initialise
-  under the restricted token and dies as `git.exe - Application Error ...
-  (0xc0000142)` (= STATUS_DLL_INIT_FAILED) - the `git` we call is fine, only
-  that spawn is, so the dialog is harmless and no work is at risk. The trigger
-  is a DEFAULT, not config: `maintenance.auto` is true with nothing set
-  (`git config --get maintenance.auto` exits 1, no `maintenance.repo`
-  registration exists, yet a commit runs the task). This repo therefore carries
-  `maintenance.auto=false` + `gc.auto=0` in its LOCAL config - repo config is
-  invisible to `git status`, so it costs no release window. Undo with
-  `git config --unset maintenance.auto`; to keep background maintenance
-  instead, set `maintenance.autoDetach=false` (it then fails in-process and
-  only prints the pipe noise). Never run `git gc` from the sandboxed shell -
-  same pipe denial; the store is healthy without it
-  (`git fsck --connectivity-only` = only the usual dangling objects, 3 packs,
-  0 loose, 22 MB).
-- PowerShell quirk: heredocs / inline `python -c` with quotes break - write
-  probe scripts to files (`C:\Users\<user>\AppData\Local\Temp\opencode\`) and
-  run them.
-- Live UI verification uses CDP (headless Chrome on port 9222, profile
-  `chrome-prof2`/`chrome-prof3` in the temp dir): Chrome now needs
-  `--remote-allow-origins=*` (else websocket 403); pass
-  `Network.setCacheDisabled` + a `?v=` query or the page serves stale files;
-  `S` (state.js) is NOT global - probe the DOM/API, not `S.*`; patch
-  `window.alert` instead of accepting dialogs; kill chrome between runs
-  (instances accumulate on 9222). Chrome CANNOT launch under the DSH
-  sandbox's restricted token (crashpad/mojo pipe creation is denied) - run
-  it with full access, and give the profile an ABSOLUTE path inside the
-  workspace (e.g. `theme-preview\.a11y-prof`); a relative or temp-dir path
-  fails with "requires a non-default data directory" / lock-file errors.
-- **Chrome may refuse to run here even escalated - do not burn turns on it.**
-  On 2026-09-10 `chrome --headless=new --dump-dom` (plus `--no-sandbox
-  --disable-crash-reporter`, fresh `--user-data-dir` inside the workspace,
-  tried via `&` and via `Start-Process -Wait -PassThru`) returned exit 0 with
-  ZERO bytes even for `data:text/html,<h1>HI</h1>`, under the restricted token
-  and after a `danger-full-access` escalation was approved. Verify UI work
-  without a browser instead:
-  - `node --check` for syntax (Node 24 is installed): copy the file to
-    `*.mjs` first, otherwise `import` is not legal to parse.
-  - structure of a JS-built template: extract `modal.innerHTML = \`...\``,
-    blank out every `${...}` (count nested braces), then stack-walk the tags
-    with `html.parser`. Pick the RIGHT occurrence - several modals assign
-    `modal.innerHTML`; the Setup dialog is the match whose next ~300 chars
-    contain `modal settings`.
-  - the DEPLOYED web app: FTP is ground truth - `ftps_deploy.py download
-    /astro/<file> <tmp>` + `Get-FileHash` against the local file, plus
-    `web_fetch` on `/astro/version.json` and `/astro/index.html` as the public
-    end-to-end check. (For 0.6.1 all five changed files matched byte-for-byte.)
-- No Python linter/formatter configured. The JS "lint" is three scripts that
-  must pass after touching `static/` OR `web/` (plus the encoding guard below);
-  `python scripts/check_js.py` runs all of them and exits non-zero on hard
-  failures (recommended one-command check). Both JS graphs are covered - namespace and bare side-effect imports
-  included (a wrong path there kills the module graph just like a bad named
-  import), and `export let/var/class` counts as an export:
-  - `python scripts/check_js_imports.py` - broken relative ES-module imports and named imports missing from the target's exports (hard failures)
-  - `python scripts/check_dom_ids.py` - `$('#id')` references missing from that app's `index.html` (desktop and web separately)
-  - `python scripts/check_js_defs.py` - heuristic; exit code is always 0, review candidates manually
-  Also `python C:\Users\<user>\AppData\Local\Temp\opencode\check_esm.py`
-  checks the ES-module graph (same job as check_js_imports, keep in sync).
+  `create_app(db, prefetch=False)` (no image-cache thread). The `client` fixture
+  must leave `data/panos` in the tmp dir it patches in.
+  - **WinError 5 in this sandbox:** the repo-local `.pytest-tmp` (see
+    `pytest.ini`) can acquire an owner-SID-only DACL, so every `tmp_path` test
+    errors at fixture cleanup - an environment artifact, not a failure. Workaround
+    (no escalation needed): `python -m pytest tests/ -q --basetemp
+    C:\Users\<user>\AppData\Local\Temp\opencode\pt -p no:cacheprovider` -> 502/502.
+- JS checks (run after touching `static/` OR `web/`): `python scripts/check_js.py`
+  runs all of them and exits non-zero on hard failures:
+  - `check_js_imports.py` - broken relative ES-module imports / missing named exports
+  - `check_dom_ids.py` - `$('#id')` missing from that app's `index.html`
+  - `check_js_syntax.py` - `node --check` on all 27 shipped modules (via temp `.mjs`)
+  - `check_encoding.py` - the encoding guard above
+  - `check_js_defs.py` - heuristic, always exits 0
 - Build exe: `powershell -ExecutionPolicy Bypass -File build.ps1` ->
-  `dist\NightSeam.exe` (isolated `.venv-build`; kills running NightSeam
-  processes first). PyInstaller is only needed for building. The build bakes
-  the current `git describe` version into a gitignored `app/_version_baked.py`
-  and bundles `app/data` (the advanced catalog CSV) via `--add-data`. The
-  committed `NightSeam.spec` is a PyInstaller artifact, not the source of
-  truth - build.ps1 drives everything via CLI flags. The bake uses
-  `git describe --tags --always --dirty` and warns when the tree is dirty or
-  HEAD is not exactly a tag, so a build from uncommitted work is labelled
-  `<version>-dirty` instead of silently claiming a clean tag. The build never
-  touches `dist\data` - the frozen app's user data (db, imgcache) next to the
-  exe survives rebuilds.
-  Note: the `pip install` phases at the top of build.ps1 can HANG for many
-  minutes with no network. `.venv-build` is complete after the first build,
-  so when pip stalls, kill it and run the rest manually: bake
-  `app/_version_baked.py` from `git describe --tags --always --dirty` (e.g.
-  `Set-Content app\_version_baked.py "BAKED_VERSION = '<ver>'"`) then
-  `.\.venv-build\Scripts\python.exe -m PyInstaller --clean --noconfirm
-  --onefile --noconsole --name NightSeam --icon assets\app.ico
-  --add-data "static;static" --add-data "app\data;app\data"
-  --collect-all uvicorn --collect-all webview
-  --hidden-import python_multipart main.py`. A direct PyInstaller run takes
-  ~90 s; the whole build.ps1 normally takes ~8 min.
+  `dist\NightSeam.exe` (isolated `.venv-build`; kills running NightSeam first).
+  `build.ps1` drives PyInstaller via CLI flags (the committed `NightSeam.spec` is
+  an artifact, not the source of truth), bakes `git describe` into gitignored
+  `app/_version_baked.py`, and never touches `dist\data` (user db/imgcache next to
+  the exe survive rebuilds). The leading `pip install` phases can HANG with no
+  network; after the first build `.venv-build` is complete, so kill pip and run
+  PyInstaller directly (see the command in git history / `build.ps1`). ~90 s
+  direct, ~8 min full.
+- Deploy (Plesk FTPS, nightseam.de): app only at `/astro`
+  (`python web/ftps_deploy.py uploadtree web /astro`); landing at `/`
+  (`uploadtree landing /`). Credentials are OUTSIDE the repo: `--env` points at
+  `ftp.env` (`<workspace>\Astro-Web\ftp.env`). FTPS works from the sandbox without
+  escalation (reads outside the workspace are allowed).
+  - FTP gotchas: the `upload` remote name is FTP-ROOT-relative - ALWAYS pass the
+    full path (`upload web/app.js /astro/app.js`, `upload
+    dist/release/version.json /downloads/version.json`); a bare name lands in `/`.
+    ProFTPD kills a reused connection after ~2 transfers, so `uploadtree` often
+    stalls mid-tree - upload the rest individually (one fresh connection/file) and
+    verify with `download`/`list`.
+  - `uploadtree` never uploads `.gitignore`, `build_web.py`, `ftps_deploy.py`,
+    `whale/`, `dev/`, `node_modules/`, `__pycache__/` or `*.pyc`. Never upload
+    `dist\data`.
+  - `ftps_deploy.py remove <remote-path> --yes` deletes stale files/dirs from `/`
+    (`--yes` mandatory; the webspace root is refused). uploadtree/uploadmany
+    refuse to publish pages that still contain template placeholders
+    (`landing/impressum.html`) unless `--force`.
+- Sandbox shell gotchas (cost real attempts):
+  - Piping one command's stdout into another PowerShell command dies with
+    "Zugriff verweigert" (named-pipe EPERM): `... | Select-Object` never runs, for
+    python and git alike. Run the tool bare, or have a Python wrapper write to a
+    FILE inside the repo and read that.
+  - Any tool that shells out with `capture_output=True`/piped stdio dies the same
+    way. Concretely `python web/build_web.py version` fails from
+    `_winapi.CreatePipe` - a release step, run that one with full access, or bake
+    `web/version.json` by hand (`{"version","describe","built"}`,
+    `version = describe.lstrip("v")`, `built` = ISO-8601 UTC).
+  - Heredocs / inline `python -c` with quotes break - write probe scripts to
+    `C:\Users\<user>\AppData\Local\Temp\opencode\` and run them.
+- `git commit`/`git tag` work, but git's background auto-maintenance then prints
+  pack-objects pipe errors AND pops a harmless Windows dialog on the user's
+  desktop (a detached `git maintenance run --auto` child cannot init under the
+  restricted token). This repo's LOCAL config sets `maintenance.auto=false` +
+  `gc.auto=0` to stop it (invisible to `git status`, costs no release window).
+  Never run `git gc` from the sandboxed shell.
+- **No browser here.** Headless Chrome/Edge have returned exit 0 with ZERO bytes
+  even escalated - do not burn turns on it. Verify UI work without a browser:
+  `node --check` on a `.mjs` copy for syntax; stack-walk a JS-built template with
+  `html.parser` (blank `${...}` first) for structure; the DEPLOYED app via FTP
+  download + `Get-FileHash` against the local file, plus an HTTP fetch of
+  `/astro/version.json` and `/astro/index.html`. If CDP is available, Chrome needs
+  `--remote-allow-origins=*`, `Network.setCacheDisabled` + a `?v=` query, an
+  absolute `--user-data-dir` inside the workspace, and `S` (state.js) is not
+  global - probe the DOM/API.
 
-## Versioning
+## Versioning and release
 
 - `app/version.py` - from source the version is `git describe --tags --always`
-  (leading `v` stripped); frozen exes use the baked value. Displayed in the
-  bottom-right corner.
-- Commits are named `NightSeam X.Y.Z` and tagged `vX.Y.Z` (e.g. `NightSeam
-  0.1.7` / `v0.1.7`). Tag BEFORE rebuilding if you want the exe to show it.
+  (leading `v` stripped); frozen exes use the baked value.
+- Commits are named `NightSeam X.Y.Z`, tagged `vX.Y.Z` (e.g. `NightSeam 0.6.10` /
+  `v0.6.10`). Tag BEFORE rebuilding so the exe shows it.
+- **Release order matters** (getting it wrong publishes a version named
+  `0.6.0-dirty`): commit + tag FIRST, then `scripts/make_release.py` and
+  `web/build_web.py version` **while HEAD is exactly at the tag and the tree is
+  clean** (both call `git describe --dirty`, so any uncommitted change - including
+  the changelog - leaks into the exe/zip/`version.json`). Run
+  `scripts/build_changelog.py` LAST; it rewrites the TRACKED `landing/changelog.json`,
+  so commit that as its own follow-up commit after the tag. `check_release.py`
+  then verifies the staged zip sha256/size vs `version.json`, the zip's exe vs the
+  staged exe, `ns-version.js`, the changelog schema, and the git-describe grammar.
+- Public artifacts under `/downloads/` (`dist/release/` content):
+  `NightSeam-<version>.zip`, `NightSeam-latest.zip` (stable link),
+  `version.json` (landing page) and `ns-version.js` (JSONP for the desktop update
+  checker, since a localhost origin cannot fetch cross-origin JSON).
+- **Web cache-busting is manual, per module.** `web/index.html` carries
+  `app.js?v=N`; `web/app.js` carries a `?v=` on each import. Bump the token of
+  every module whose BEHAVIOUR changed (comment-only edits do not) in the SAME
+  commit as the change, and bump BOTH the entry point and the dependency. Current:
+  `app.js?v=31`, `astro.js?v=6`, `horizon.js?v=15`, `format.js?v=3`,
+  `nightrank.js?v=2`, `webstore.js?v=5`, `dragwin.js?v=1`, `style.css?v=11`,
+  `themes.css?v=2`.
+- **Never publish `index.html` before the modules it names.** Deploys are not
+  atomic and the page carries the tokens; `ftps_deploy.py::upload_order()` sorts
+  HTML last (`index.html` very last), pinned by `tests/test_deploy_order.py`. Keep
+  that order when uploading by hand.
+- `web/version.json` is gitignored and baked from the tag: a plain
+  `uploadtree web /astro` after a code change keeps advertising the old version -
+  re-bake on every deploy.
 
 ## Architecture
 
-- `main.py` - entrypoint. Starts uvicorn in a daemon thread, opens the UI in a
-  pywebview window (browser app-mode fallback). Single-instance handoff via
-  `data/instance.json`; exits after 12 h idle by default. A `JsApi` class is
-  passed to the pywebview window (`window.pywebview.api`) exposing a native
-  folder picker - browser mode has no bridge.
+- `main.py` - entrypoint: uvicorn in a daemon thread, UI in a pywebview window
+  (browser app-mode fallback). Single-instance handoff via `data/instance.json`;
+  a `JsApi` class exposes a native folder picker to `window.pywebview.api`.
 - `app/server.py` - `create_app(db)` FastAPI factory with all `/api/*` routes
-  (docs endpoints disabled; `prefetch=False` skips the image-cache thread,
-  used by tests). Computation and helpers live in separate modules:
-  `app/nightcalc.py` (`compute_night()`, `object_detail()`, `ceil_lookup()`,
-  `longest_run()` - the 6-min/4-min time grids, sun/moon tracks and
-  rounding rules), `app/ingest.py` (streaming FITS ingest with a 1 GiB cap),
-  `app/backup.py` (export/import ZIP: settings, sites, rigs, panoramas,
-  custom targets, and the images library incl. files).
-- `app/astro.py` - pure-Python astronomy engine (J2000 precession, sidereal
-  time, Saemundsson refraction, Meeus sun/moon series). Golden-value tests
-  live in `tests/test_astro.py`. Its JS mirror `static/js/astro.js` is used
-  to synthesize tracks for advanced-mode objects in the browser.
-- `app/planning.py` - night-window/twilight search, the single source of truth
-  for both /api/night and /api/object/{oid}. Never reimplement twilight logic
-  elsewhere.
+  (docs disabled; `prefetch=False` skips the image-cache thread). Computation
+  lives in `app/nightcalc.py` (`compute_night()`, `object_detail()`,
+  `ceil_lookup()`, `longest_run()` - the 6-min/4-min grids, sun/moon tracks),
+  `app/ingest.py` (streaming FITS ingest, 1 GiB cap), `app/backup.py`
+  (export/import ZIP).
+- `app/astro.py` - pure-Python astronomy (golden values in `tests/test_astro.py`).
+  `app/planning.py` - night-window/twilight search, the SINGLE source of truth for
+  `/api/night` and `/api/object/{oid}`; never reimplement twilight logic.
 - `app/database.py` - SQLite, schema created on init, catalog seeded from
-  `catalog_data.py`. `new_id()` generates custom-object ids (`u_*`).
-  `advanced_objects` table is bulk-seeded from `app/data/openned.csv`
-  (OpenNGC-derived, CC BY-SA 4.0; regenerate via
-  `scripts/build_adv_catalog.py`).
-- `app/fits.py` - hand-written FITS parser (no astropy): header keywords,
-  RA/Dec/date parsers, designation-token extraction for object matching, and
-  `preview_png_file()` - a strided, pure-stdlib grayscale PNG thumbnail of
-  the image data (currently used only by tests; the UI dropped frame
-  thumbnails). BITPIX 8 is
-  unsigned, 16/32-bit signed, -32/-64 floats. `parse_ra_hours` /
-  `parse_dec_deg` are the SINGLE source for coordinate parsing -
-  `app/server.py` imports them from here; never re-implement elsewhere.
-  Compressed FITS is unsupported by design - nothing decompresses it.
-  `read_fits_header()` needs `SIMPLE` at byte 0 and reads the PRIMARY HDU
-  only, but an fpack `.fits.fz` has an empty stub primary: the original
-  OBJECT/DATE-OBS/EXPTIME/FILTER and the `ZNAXIS*`/`ZBITPIX` geometry sit in
-  the SECOND HDU header (`BINTABLE` + `ZIMAGE = T`), out of its reach.
-  Ingest and reindex also accept only `.fit`/`.fits` (`app/ingest.py`), so
-  `.fz`/`.fits.gz` never enter the archive. Cheapest future step is walking
-  HDU headers (no decompression); pixels would need a RICE tile decoder, and
-  a whole-file `.gz` defeats `preview_png_file()`'s per-sample seeks (gzip
-  re-inflates from the start on every seek).
-- Popularity (The popularity source): `catalog_data.POPULARITY` (193/197 curated) and
-  `app/adv_popularity_data.py` `ADV_POPULARITY` (7,408 advanced) are
-  community scores used as a SILENT TIEBREAKER in ranking (visibility score
-  decides, popularity separates equals) - see `popularityFactor()` in
-  `static/js/derive.js` (log-scale, ~0.3-1.0) and the web's `popularityOf()`
-  in `web/app.js` (live fetch with baked-catalog fallback). `objects` and
-  `advanced_objects` carry the scores via `Database.apply_popularity()`
-  (runs every start; `advanced_objects` column is additive). `build_web.py`
-  bakes popularity into `web/catalog.json`. Grade tiers were REMOVED.
-  The matcher regenerator is `scripts/match_popularity.py` (fetches
-  popularity-source.invalid, caches to `data/popularity_snapshot.json` - gitignored);
-  root-level match/debug scripts from the original match pass are
-  gitignored scratch. Moon-age-aware scoring: `astro.moon_age()` /
-  `web/astro.js` `moonAge()`, shipped as `moon_age_days` in /api/night;
-  `derive.js` applies phase-dependent min-moon-distance (Lorentzian),
-  filter-aware + bortle-scaled.
-- `app/imglib.py` - catalog resolution, library grouping (per-frame-type and
-  per-filter integration rollups), session math.
-- `app/paths.py` - source vs PyInstaller-frozen path resolution; when frozen,
-  writable `data/`/`logs/` sit next to the exe, `static/` comes from
-  `_MEIPASS`.
-- `app/images.py` - Wikipedia/Wikidata/DSS2 image fetch chain with on-disk
-  cache in `data/imgcache` and a circuit breaker for offline use.
-- `static/` - ES modules loaded directly via `<script type="module">`; no
-  bundler, imports must resolve to real files on disk. Shared helpers
-  (`$`, `$$`, `api()`, `esc`, `applyEdgeSpace`) come from `js/util.js`.
-  `js/derive.js` computes visibility/score client-side so changing min-altitude
-  never refetches. `js/archive.js` (catalog mode) and `js/skymap.js` (static
-  RA/Dec chart) implement the Image Catalog side.
+  `catalog_data.py`; `advanced_objects` bulk-seeded from `app/data/openned.csv`
+  (OpenNGC, CC BY-SA 4.0). `app/fits.py` - hand-written FITS parser; `parse_ra_hours`
+  / `parse_dec_deg` are the single coordinate parsers (imported by `server.py`).
+  `app/imglib.py`, `app/paths.py` (source vs frozen), `app/images.py`
+  (Wikipedia/Wikidata/DSS2 chain with on-disk cache + offline breaker).
+- `static/` - ES modules loaded via `<script type="module">`, no bundler; imports
+  must resolve to real files. Shared helpers (`$`, `$$`, `api()`, `esc`,
+  `applyEdgeSpace`) come from `js/util.js`. `js/derive.js` computes
+  visibility/score client-side so min-altitude changes never refetch.
 
 ## Advanced mode (12,000+ objects)
 
-- Toggled in the hamburger menu (`adv_mode` setting); changing it reloads the
-  page. Standard mode stays the curated 197 objects and is unchanged.
-- `/api/night?adv=1` ships advanced objects as METADATA ONLY (id/ra/dec/mag/
-  type, no tracks) - the payload stays ~1.5 MB. `synthesizeAdvancedTracks()`
-  in `derive.js` computes alt/az/ceil tracks in the browser using
-  `static/js/astro.js` (precession once per object at the grid midpoint,
-  sidereal time once per SAMPLE via `altazFrame`; the pass yields to the
-  event loop every 256 objects so the 12k-object load never freezes the UI).
-- Never add track arrays for the full advanced catalog to the night payload;
-  that is what the client-side synthesis exists for.
-- Advanced rows carry a `_adv` marker from `db.all_objects(advanced=True)`;
-  `api_catalog` strips it. Image-ingest resolution and the library use the
-  FULL catalog (advanced included) regardless of mode.
+- Toggled in the hamburger menu (`adv_mode`); changing it reloads the page.
+  Standard mode is the curated 197 objects.
+- `/api/night?adv=1` ships advanced objects as METADATA ONLY (no tracks);
+  `synthesizeAdvancedTracks()` in `derive.js` computes tracks in the browser via
+  `static/js/astro.js` (precession once/object at the grid midpoint, sidereal time
+  once/sample via `altazFrame`, yields every 256 objects). Never add track arrays
+  for the full advanced catalog to the night payload.
+- Advanced rows carry `_adv` (stripped by `api_catalog`); image-ingest resolution
+  and the library use the FULL catalog regardless of mode.
 
-## Data & gotchas
+## Data and gotchas
 
-- User databases outlive the code - schema changes MUST be additive: new
-  columns go in as try/ALTER/except in `Database.__init__`, new tables into
-  `SCHEMA`; never drop or re-shape existing columns (see the comment in
-  `app/database.py`).
-- Panorama obstruction profiles are exactly 720 bins (0.5 deg per azimuth);
-  `NO_BLOCK = -90.0`. An empty/short profile means nothing blocks. Panoramas
-  carry a `paint_mode` ('obstacle' default | 'sky'): sky mode inverts the
-  mask - the profile is the BOTTOM edge of the painted visible sky band and
-  `profile_top` (a second 720-bin array, empty in obstacle mode) is its TOP
-  edge, so everything below AND above the painted band is blocked (e.g. a
-  balcony out of frame); unpainted columns block fully (90 deg); outside the
-  FOV follows the mode. The band ceiling ships as `ceil_top` per object from
-  /api/night and /api/object only when the active pano has a `profile_top`.
-- Archive layout is
-  `<image_dir>/<Object>/<session>/<lights|darks|flats|bias>/<file>.fit`
-  (originals are copied, never moved). The `<session>` folder is the
-  capture night (`YYYY-MM-DD_HHMM` start time, or `undated`) - frames
-  whose DATE-OBS are < 12 h apart share one folder (midnight runs count
-  once), so different nights get different folders with their own four frame
-  sub-folders (created on first ingest). Session-folder digits are the
-  MACHINE-LOCAL wall clock of the session start (`ingest.session_folder_name`
-  uses `datetime.fromtimestamp`), so on a UTC+2 machine a session starting
-  23:14 UTC is stored as `2026-08-23_0114` while the library renders the same
-  instant as `01:14` in the effective zone - folder date and displayed date can
-  therefore differ by one day, and that is expected. The
-  sub-folder comes from the FITS
-  IMAGETYP header at ingest (`app/ingest.py classify_frame()`); unknown
-  types land in `lights`. The ingest endpoint takes an optional `frame` form
-  field that forces the target type (used by the per-session +darks/+flats/
-  +bias buttons in the "Recent imports" list).
-  Older files at the object-folder root still work.
-  `POST /api/library/reindex` (button in the import pane) scans the archive
-  on disk and records .fit/.fits files not yet in the DB (dedup on the
-  normalized relative path; frame type from the sub-folder when present,
-  else IMAGETYP; object from header + folder-name fallback) - for manual
-  copies and restored backups.
-- Import history: `import_batches` table; `/api/images/ingest` records one
-  batch per (object, session, frame) group (`GET /api/library/imports`,
-  newest first). The client uploads in chunks of 8 and sends a `run_id`
-  (UUID) per import action; `db.merge_import_batch()` merges chunk rows on
-  (run_id, slug, session, frame), so one upload of a whole session stays ONE
-  history item. The ingest endpoint also takes a `session` form field
-  (sanitized with `_SESSION_NAME_RE`) that forces the archive sub-folder -
-  used by the per-import +darks/+flats/+bias buttons in the "Recent
-  imports" list. The `session` value must be the BARE folder name
-  (`2026-08-22_2000`), NOT `slug/session` - a slash fails the regex and the
-  upload silently falls back to the automatic session.
-  `POST /api/library/open_folder` ({rel}) opens a folder
-  inside the archive in the OS file explorer (`os.startfile`, Windows).
-  Ingest streams header-first with a 1 GiB cap (`app/ingest.py`). Library
-  groups carry per-type and per-filter rollups (`imglib.group_library`);
-  the FITS preview PNG machinery (`fits.preview_png_file`,
-  `/api/images/{id}/preview`) is currently only exercised by tests - the
-  library UI no longer shows frame thumbnails.
-- Session journal was REMOVED (desktop + web) — no `/api/object/{oid}/observed`
-  endpoints, no journal UI, no observed marks/filters. The `observations`
-  table still exists in the DB (schema is additive-only) and is no longer
-  exported/imported; leave it untouched.
-- `/api/object/{oid}/image?thumb=1` is the cache-only thumbnail variant used
-  by the targets table, tonight view and detail placeholder (never hits the
-  network, so a 250-row page is instant even offline); the detail view's
-  background image upgrade uses the full Wikipedia/DSS chain (8 s abort).
-  NEVER point a list/repeated view at the full-chain endpoint - a handful of
-  pending full-chain requests starve the browser's 6-connections-per-host
-  limit and wedge unrelated local API calls (the "wizard stuck busy" bug).
-- `/api/library/edit` renames/retypes only unresolved objects (`object_id IS
-  NULL`); it moves the archive folder on disk and rewrites stored paths.
-- Export/import ZIP covers settings, sites, rigs, panoramas, custom targets,
-  and the images library (rows + files, restored into the configured image
-  dir); the import confirm dialog reflects that. Every import first writes a
-  best-effort safety copy of the CURRENT setup to `<db>.backup-auto.zip`
-  next to the database (`data/nightseam.backup-auto.zip` in prod) - an
-  interrupted restore never destroys the pre-import data; the summary
-  reports it as `auto_backup`. Uploads stream to disk in 1 MB chunks
-  (`_drain_upload` in server.py: pano upload/replace write straight to the
-  pano dir, `/api/import` spools to a temp file next to the db) and the
-  safety copy streams zip entries directly to disk, so multi-GB libraries
-  never double-buffer in RAM; `apply_import_zip` accepts bytes or a Path.
-- Numeric inputs accept comma OR dot decimals everywhere (German locale):
-  `num()` in `util.js` parses both; typable numerics are text+`inputmode`.
-  `api()` in util.js adds a 30 s timeout unless the caller passes its own
-  abort signal (the night loader does).
-- The first-run wizard (`js/wizard.js`) is hardened: replay pre-fills and
-  EDITS the active site (PUT, never duplicates), typed values survive
-  Back/Next, forms never submit/reload, Skip is hidden only on the
-  mandatory site step without a site, and a 20 s guard unsticks a hung
-  validate. Errors show inline - never assert a wizard "works" by happy-path
-  alone.
-- Sessions: frames of one object whose `date_obs` are < 12 h apart form one
-  session (midnight runs count once); undated frames form one trailing
-  session.
-- `edge_space` setting (px per side) controls tab content width
-  (`100vw - 2*edge`); exposed as a slider in the top-right hamburger menu.
-- Themes: `static/themes.css` holds all alternate looks as pure token
-  overrides of `style.css`'s `:root` variables (plus per-theme character
-  rules), switched via `<html data-theme="...">`. A picker lives in the
-  hamburger menu ("Appearance"); the choice persists as the `theme`
-  setting. An inline head script fetch of `/api/state` applies the saved
-  theme before first paint (one sync XHR, ~1 ms, local only). Themes:
-  "" default, `dome` Glass (the chosen direction: CSS starfield,
-  floating glass bar + attached pill tab dock + telemetry chip +
-  centered sheet menu, draggable popups via `js/dragwin.js`). Earlier
-  themes (obs/log/deep/atlas/etch/instruments/deck/cockpit/dispatch)
-  were removed; a
-  saved `theme` setting naming a removed theme falls back to the
-  default look. To add a theme, copy one block in
-  themes.css and add a `.theme-btn` in `index.html` - no JS changes
-  needed beyond the button's `data-theme` value.
-- Structural themes are pure CSS: one shared HTML skeleton, so layout
-  identity comes from position:fixed rails/docks/drawers, flex order and
-  transforms - never from moving IDs or touching JS. When writing such a
-  theme: never override the `.hidden` class, never set `display` on
-  `#tabs-cat` (app toggles it via `body.catmode`, same for
-  `#plannerControls`/`#tabs`/`#nightInfo`), keep every control visible
-  and clickable, offset `main`/`body` so pinned chrome never covers
-  content, stay below z-index 100 (toasts = 300, popover = 60,
-  modal = 40, #versionTag = 5).
-- A11y invariants (desktop + web): every modal opens with
-  `role="dialog" aria-modal="true" aria-labelledby=<h2 id>`; a delegated
-  Tab focus trap lives in `util.js` (`initFocusTrap`, wired at boot) and
-  keeps focus inside the open dialog. Keep that pattern when adding
-  modals. Search inputs carry an accessible name (`<label>` or
-  `aria-label`); click-only controls (like `#brand`) get
-  `role="button" tabindex="0"` + an Enter/Space handler (`bindKeyboardClick`).
-- `bortle` setting (1-9, hamburger menu) shifts the default min-altitude
-  (`17 + 2*bortle`, only when no explicit min alt is stored) and scales the
-  moon-aware scoring penalty. Moon-aware scoring uses the angular separation
-  between target and Moon plus a per-type sensitivity (nebulae/SNR suffer
-  most, clusters least) - see `MOON_TYPE_FACTOR` and `sepDeg()` in
-  `derive.js`.
-- Keyboard shortcuts: ArrowLeft/Right scrub the night (6 min per step,
-  Shift = 60 min — the same steps as the web), `n`
-  cycles the tabs (skipped while typing or with a modal open).
-- Timezones: all server payload times are UTC; the client sends
-  `tz_offset_min` computed AT the selected date (`tzOffAt()` in util.js -
-  DST-aware, so planning a winter night in summer is not shifted), and
-  renders via `fmtT()`/`zoneHour()` which apply the effective zone per
-  instant. The effective zone is the `timezone` setting (IANA name, stored
-  empty = machine local; hidden in the hamburger menu unless advanced mode
-  is on) or the machine zone. (The session journal is gone; no journal
-  entries exist anymore.)
-- `/api/library/export?format=csv|json` downloads the library.
-- The targets filter bar has a constellation select (`fConst`).
+- **User databases outlive the code** - schema changes MUST be additive (new
+  columns via try/ALTER/except in `Database.__init__`, new tables into `SCHEMA`);
+  never drop or re-shape existing columns.
+- Archive layout: `<image_dir>/<Object>/<session>/<lights|darks|flats|bias>/<file>.fit`
+  (originals copied, never moved). The session folder is the capture night
+  (`YYYY-MM-DD_HHMM` or `undated`); frames with DATE-OBS < 12 h apart share one
+  folder. Session digits are the MACHINE-LOCAL wall clock (`datetime.fromtimestamp`),
+  so they can differ by a day from the displayed zone - expected. The sub-folder
+  comes from FITS IMAGETYP (`classify_frame()`), unknown -> `lights`; ingest
+  accepts `.fit`/`.fits` only (no `.fz`/`.gz`). `POST /api/library/reindex` scans
+  the archive for files not yet in the DB.
+- Import history: `import_batches`, one row per (object, session, frame); the
+  client sends a `run_id` per action and `merge_import_batch()` merges chunks. The
+  ingest `session` field must be the BARE folder name (`2026-08-22_2000`), not
+  `slug/session`. `/api/library/edit` renames/retypes only unresolved objects and
+  moves the folder on disk. `/api/library/open_folder`, `/api/library/export?format=csv|json`.
+- Export/import ZIP covers settings, sites, rigs, panoramas, custom targets and the
+  images library; every import first writes a best-effort safety copy to
+  `<db>.backup-auto.zip` (`auto_backup`). Uploads stream to disk in 1 MB chunks.
+- `/api/object/{oid}/image?thumb=1` is cache-only (never network) - use it for
+  lists/repeated views; the full Wikipedia/DSS chain only for the detail view
+  (8 s abort). Pointing a list at the full chain starves the browser's
+  6-connections-per-host limit and wedges local API calls ("wizard stuck busy").
+- The session journal/observations were REMOVED (desktop + web): no observed
+  endpoints/UI/marks. The `observations` table remains (additive schema) and is not
+  exported/imported - leave it untouched.
+- Numeric inputs accept comma OR dot decimals (`num()` in `util.js`,
+  text+`inputmode`). `api()` adds a 30 s timeout unless the caller passes an abort
+  signal (the night loader does).
+- The first-run wizard (`js/wizard.js`) is hardened: replay edits the active site
+  (PUT), typed values survive Back/Next, forms never submit/reload, a 20 s guard
+  unsticks a hung validate. Errors show inline.
+- `bortle` (1-9) shifts the default min-alt (`17 + 2*bortle`, only without an
+  explicit min alt) and scales moon scoring. Keyboard: ArrowLeft/Right scrub
+  (6 min; Shift 60), `n` cycles tabs. `edge_space` sets tab width
+  (`calc(100vw - 2*var(--edge-space))`).
+- Themes: `themes.css` are token overrides of `style.css`'s `:root`, switched via
+  `<html data-theme>`. One shared HTML skeleton - structural themes use
+  position:fixed/flex/transforms, never moved IDs or JS. Keep z-index below 100
+  (toasts 300, popover 60, modal 40, #versionTag 5); never override `.hidden` or
+  set `display` on the app-toggled `#tabs-cat`/`#plannerControls`/`#tabs`/`#nightInfo`.
+- A11y: every modal opens with `role="dialog" aria-modal="true"
+  aria-labelledby=<h2 id>`; the delegated Tab focus trap is `util.js::initFocusTrap`
+  (wired at boot). Search inputs have an accessible name; click-only controls
+  (`#brand`) get `role="button" tabindex="0"` + Enter/Space.
+- Timezones: all server payload times are UTC; the client sends `tz_offset_min`
+  computed AT the selected date (`tzOffAt()`, DST-aware) and renders via
+  `fmtT()`/`zoneHour()` with the effective zone (the `timezone` setting, or machine
+  local). Custom targets are deleted only via the `u_` id prefix.
 - A background `img-prefetch` thread starts on every app start and hits the
-  network; the server itself is otherwise local-only.
-- Custom targets are deleted via a `u_` id-prefix check - ids without it are
-  catalog entries and can't be removed through the API.
-- Never commit `data/` contents (db, panos, imgcache) or `logs/`; only
-  `data/panos/.gitkeep` is tracked. `app/_version_baked.py` and
-  `.pytest-tmp/` are gitignored.
+  network; the server is otherwise local-only.
+- Never commit `data/` (db, panos, imgcache) or `logs/`; only
+  `data/panos/.gitkeep` is tracked. `app/_version_baked.py`, `web/version.json`
+  and `.pytest-tmp/` are gitignored.
 
-## Web sub-version (web/)
+## Web app (`web/`)
 
-- `web/` is NightSeam Web, a static in-browser planner: same Meeus engine
-  (JS mirror `web/astro.js`), same catalog, and Tier-1 user data (sites,
-  rigs, custom targets) mirrored from the SQLite tables into IndexedDB via
-  `web/webstore.js`. It shares THIS repo's version line: commits
-  `NightSeam X.Y.Z` and tags `vX.Y.Z` cover both the desktop app and the
-  web. (The session journal/observations were removed from the web too.)
-- The web catalog is ALWAYS derived: `python web/build_web.py catalog` reads
-  `data/nightseam.db` (`objects` + `advanced_objects`, insertion order) and
-  rewrites `web/catalog.json` — byte-identical to the committed file,
-  verified by SHA. Never hand-edit catalog.json.
-- Release flow for the web: commit + tag, THEN
-  `python web/build_web.py version` (writes gitignored `web/version.json`
-  from `git describe`, same idea as `_version_baked.py` for the exe), THEN
-  deploy. The web footer reads version.json; without it it shows "dev build".
-- Deploy (Plesk FTPS, nightseam.de): the app is served ONLY at `/astro`
-  (`web/ftps_deploy.py uploadtree web /astro`); the site root `/` is a
-  landing page from `landing/` (index.html + style.css + app.png,
-  `web/ftps_deploy.py uploadtree landing /`). Keep `/` free of app files —
-  stale ones are removed with `web/ftps_deploy.py remove <remote-path> --yes`
-  (file or recursive dir; `--yes` is mandatory and the webspace root is
-  refused outright). uploadtree/uploadmany additionally refuse to publish
-  pages that still contain template placeholders (landing/impressum.html)
-  unless `--force` is passed. Credentials live OUTSIDE the repo: pass
-  `--env <path>` pointing at ftp.env (never committed). Cloudflare sat in
-  front of the OLD domain, where it injected a script into delivered
-  index.html; nightseam.de currently resolves straight to the Plesk host
-  (<server-ip>), so a downloaded file should hash-match the local one —
-  only strip an injected block if a proxy is put in front again.
-  FTP gotchas: the `upload` command's remote name is FTP-ROOT-relative in
-  practice, so ALWAYS pass the full path (`upload web/app.js /astro/app.js`,
-  `upload dist/release/version.json /downloads/version.json`) - a bare name
-  silently lands in `/`. Also, ProFTPD kills a reused control connection
-  after ~2 transfers, so `uploadtree` often stalls mid-tree; when it does,
-  upload the remaining/changed files individually (one fresh connection
-  per file) and verify with `download` or `list`.
-- Public release artifacts live under `/downloads/` on the site
-  (`dist/release/` content — see `scripts/make_release.py`): the desktop
-  zip, `NightSeam-latest.zip` (stable name for the download page's no-JS
-  fallback link), `version.json` (read by the landing page) and
-  `ns-version.js` (JSONP — read by the desktop app's startup update
-  checker, since a localhost origin cannot fetch cross-origin JSON). Never
-  upload the developer's `dist\data` — `make_release.py` stages a clean
-  package. The release flow also runs `python scripts/build_changelog.py`
-  (it warns loudly when a released tag has no curated summary) so the
-  download page's "What's new" cannot silently go stale again.
-- **Release order matters** (getting it wrong publishes a version named
-  `0.6.0-dirty`): commit + tag FIRST, then `scripts/make_release.py` and
-  `web/build_web.py version` **while HEAD is exactly at the tag and the
-  tree is clean** — both call `git describe --dirty`, so ANY uncommitted
-  change (including the changelog below) leaks into the published version.
-  Run `scripts/build_changelog.py` LAST: it rewrites the TRACKED
-  `landing/changelog.json`, so commit that as its own follow-up commit. That
-  is why the deployed tree sits after the tag (`v0.6.0` -> changelog commit),
-  exactly as `v0.5.12` did. Adding a curated entry for a release is part of
-  shipping it — otherwise the download page silently has nothing to show.
-  Deploy credentials live outside the repo: `--env <workspace>\Astro-Web\ftp.env`.
-- `uploadtree`/`uploadmany` never upload `.gitignore`, `build_web.py`,
-  `ftps_deploy.py`, `whale/`, `dev/`, `node_modules/`, `__pycache__/` or any
-  `*.pyc` (the `SKIP` set plus the `.pyc` check in `web/ftps_deploy.py`).
-  Before 0.6.0 a stray `/astro/__pycache__` did get published once — keep
-  that list current when tooling is added next to the app.
-- Web asset cache-busting is manual and per module: `web/index.html` carries
-  `app.js?v=N` and `web/app.js` carries a `?v=` on each import
-  (`astro.js`, `horizon.js`, `webstore.js`, `dragwin.js`). Bump the token of
-  every module whose BEHAVIOUR changed (comment-only edits do not need it) or
-  returning visitors keep the old file. Current: `app.js?v=30`,
-  `horizon.js?v=14`, `webstore.js?v=5`, `astro.js?v=5`, `dragwin.js?v=1`,
-  `format.js?v=2`, `nightrank.js?v=1`, plus `style.css?v=11` /
-  `themes.css?v=2` in `web/index.html`.
-  **A token bump is also the cure for a browser that cached a BAD pairing**: an
-  `app.js` that calls a module member the cached dependency does not have stays
-  broken across plain reloads, because the query string in the import specifier
-  is part of the module URL. Bump BOTH the entry point and the dependency.
-- **Never publish `index.html` before the modules it names.** A deploy is not
-  atomic, and the page carries the `?v=` tokens: uploading it early pairs a
-  fresh entry point with stale modules for everyone who loads mid-deploy - that
-  is exactly how 0.6.1 shipped `TypeError: WS.seedDefaultRigs is not a
-  function` (alphabetical `uploadtree` order put `app.js` first and
-  `webstore.js`, after the ~250-file `img/` tree, last). `ftps_deploy.py` now
-  sorts with `upload_order()` (HTML last, `index.html` very last) and
-  `tests/test_deploy_order.py` pins it. When uploading changed files by hand,
-  keep that order: dependencies first, `index.html` last.
-- **Setup dialog (web) = tabs**, the same four sections as the desktop's
-  Setup dialog (Sites / Rigs / Targets / Backup). `showMTab()` maps
-  `data-mtab` → `#mtab-*` panes and `SETTINGS_TAB` keeps the open tab across
-  the full re-render that every save/delete triggers; a new section is one
-  `.tab` button plus one `.mtabpane`. The web's old "Content margin" slider
-  was dropped from the dialog (layout lives in the hamburger menu only).
-- **Rig presets are a PICKER, never defaults - a fresh setup is EMPTY**
-  (ZWO Seestar S50/S30/S30 Pro, DwarfLab DWARF 3 / mini / II; sensor = the
-  imaging sensor's active area, FOV from focal length). Setup → Rigs →
-  "＋ Add rig" shows the telescope list plus "Custom rig…", which reveals the
-  usual name/focal/sensor form; the desktop does exactly the same
-  (`#btnAddRig` → `#rigPicker`, `renderRigPicker()` in `static/js/setup.js`,
-  fed by `rig_presets` in /api/state). Desktop data: `app/rig_presets.py`
-  (`DEFAULT_RIGS` + `presets_payload()`); the old `POST /api/rigs/presets` and
-  its bulk button are GONE. Web twin: `DEFAULT_RIGS` in `web/webstore.js`,
-  rendered by `showRigPicker()` - change both lists;
-  `tests/test_rig_presets.py` pins `rig_presets.fov_arcmin` to
-  `server.fov_arcmin`. 0.6.1/0.6.2 DID auto-seed: `remove_seeded_once(db)`
-  (called from `create_app`) and `WS.removeSeededRigs()` (web boot) delete
-  those leftovers ONCE and only when a rig still matches a preset exactly - an
-  edited or renamed rig is user data and stays. A preset the user adds later is
-  never removed again (`rigs_preset_cleaned` setting / `rigsPresetCleaned` pref).
-  The framing SELECTOR (`#rigSelect`) sits in the TOPBAR right next to the Site
-  control in BOTH apps - 0.6.7 moved it out of the hamburger menu, and
-  `tests/test_ui_invariants.py` fails if it creeps back in. Width is capped by
-  `#rigSelect` (web `style.css`) and `.controls #rigSelect` (desktop).
-- **Popularity is INVISIBLE in the UI (both apps) - never render the number and
-  never offer it as a criterion.** Gone: the ✨ marker (`.p-flash`), the web
-  catalog's sortable "Popularity" column (+ its sort branch), the detail
-  dialog's "Popularity … (The popularity source)" row, the "popularity-aware ranking"
-  footer phrase, the web's "Popular" filter chip (`CHIP_LABELS`/`CHIP_FILTERS`
-  in `web/app.js`; with it gone, `popularityOf()`'s only remaining caller is
-  `popularityFactor()`), and the desktop's `Sort: popularity` option
-  (`static/index.html` plus its comparator in `js/targets.js`). What stays is
-  scoring only: `popularityFactor()` as the ranking TIEBREAKER inside the
-  "imaging quality" sort (visibility decides, popularity separates equals -
-  desktop `derive.js`/`targets.js`, web `app.js`), plus the background
-  The popularity source fetch with the baked `catalog.json` fallback.
-  `tests/test_ui_invariants.py` pins all of this - including that the
-  tiebreaker itself is still in place.
-- "Free space per side" (web): `main` uses
-  `max-width: min(100%, max(320px, calc(100% - 2 * var(--edge, 14px))))` and
-  NO other px cap, so the slider takes that many px off EACH side at EVERY
-  screen size (desktop parity: `static/style.css` `.tabpane` is
-  `calc(100vw - 2 * var(--edge-space))`; `applyEdge()` writes `--edge`, slider
-  range 0–300). A cap INSIDE that `min()` silently DEFEATS the slider: the
-  1500px "maximum reading width" that sat there made the control inert below
-  edge 210 on a 1920px screen and dead outright from ~2100px up — the 2560px
-  owner saw exactly "free space per side does nothing" (fixed 2026-09-10,
-  pinned by `tests/test_ui_invariants.py::test_web_content_width_is_edge_driven`).
-  Two traps around this one control: a CSS-only fix "does nothing" for a
-  returning visitor unless `style.css`'s `?v=` is bumped in the SAME commit,
-  and "it works" must be verified at a WIDE viewport — 1280/1440 looked
-  perfect while 2560 was dead.
-- **Catalog sizes render like the desktop** (web): `web/format.js` is the web
-  twin of `static/js/util.js::fmtSize` — `size_am` is ARCMINUTES, split on
-  `x`/`×` and printed in ONE user-chosen unit (arcmin/arcsec/deg), empty → `—`.
-  `app.js` carried its own copy that reformatted only `NxM` and echoed
-  everything else verbatim: the 961 single-axis entries (Hyades `330`,
-  Pleiades `110`, Ring Nebula `1.4`) lost their unit and ignored the unit
-  setting, and `sizeArcmin()` returned null, which left the Frame % column
-  empty for them. A lone value is a DIAMETER (desktop
-  `derive.js::frameCoverage` treats it the same). Pinned by
-  `tests/test_js_parity.py::test_web_size_column_matches_desktop` via the
-  `size` engine of `tests/js/astro_parity.mjs` — add a case there whenever
-  either formatter changes. Still a web-side simplification: `rigFramePct`
-  compares the larger axis against `fov_w` only, while the desktop takes the
-  worse of both axes.
-- **State after the v0.6.9 release (2026-09-10) - read before the next
-  release**: 0.6.9 shipped BOTH sides (desktop exe + web app) and
-  `web/version.json` is baked at that tag, so `/astro` reports 0.6.9. TWO
-  commits sit on top of the tag - the docs/changelog commit and `d34c3f5`,
-  which repaired the cp1252-mangled `web/app.js` + `web/horizon.js` and was
-  REDEPLOYED to `/astro` with bumped tokens (see the encoding bullet above) -
-  so the next release is tagged `v0.6.10`, with `web/version.json` re-baked at
-  it. The
-  0.6.2-0.6.8 arc: 0.6.2 hotfixed the 0.6.1 mid-deploy breakage, 0.6.3 hid the
-  popularity stat, 0.6.4 made the rig presets a picker (empty default), 0.6.5
-  removed the last popularity affordances (chip + desktop sort mode), 0.6.6
-  fixed the `hidden` ATTRIBUTE panels an author `display` kept visible
-  (`.set-form { display: grid }` beat the UA's `[hidden]` rule, so the sites /
-  rigs / custom-target forms rendered before "Add rig" was pressed - restore
-  rules now live in `web/style.css`, hide new things with the `.hidden` CLASS),
-  0.6.7 moved the framing `#rigSelect` from the hamburger menu into the topbar
-  next to Site in both apps (0.6.8 only bumped `style.css?v=9` -> `v=10`, which
-  should have gone into 0.6.7 with the CSS - a good reminder to bump the token
-  in the SAME commit as the CSS edit).
-  The DESKTOP 0.6.0 gap is CLOSED: `v0.6.9` built and published the exe
-  (`dist\NightSeam.exe`, `dist\release\*`, `/downloads/*` incl.
-  `ns-version.js`) with the curated changelog entry, in the order `build.ps1` ->
-  `scripts/make_release.py` -> upload `dist/release/*` to `/downloads/` ->
-  `build_changelog.py` -> commit `landing/changelog.json` separately. Keep that
-  order: `git describe --dirty` is what the exe, the zip name and
-  `/downloads/version.json` report, so any uncommitted change at bake time
-  leaks into the published version.
-  **Process lesson:** write the session notes BEFORE tagging while a release is
-  still pending - the 0.6.1 notes landed as a post-tag commit and cost exactly
-  that clean window.
-- `web/version.json` is gitignored and baked from the tag: after a later web
-  change, a plain `uploadtree web /astro` keeps advertising the old version
-  until a new tag + `build_web.py version` run, so re-bake on every deploy.
-- FTPS works from the sandbox WITHOUT escalation - reading the out-of-repo
-  `--env <workspace>\Astro-Web\ftp.env` is allowed (reads outside the workspace are
-  fine, only writes are restricted). For 0.6.1 `uploadtree web /astro` pushed
-  the whole tree in one pass; the documented ProFTPD stall did not occur.
-- **The dev mirror `<workspace>\Astro-Web` is now BEHIND this repo** - the 0.6.1 web
-  work was done here, not there. The robocopy below runs mirror -> repo, so
-  running it unchanged would REVERT that work: copy the changed files into the
-  mirror first, or skip the sync.
-- Sync from the dev mirror: robocopy `<workspace>\Astro-Web` -> `web/` (exclude
-  `.git` and `ftp.env`), then commit here. `web/.gitignore` covers the dev
-  mirror leftovers (`whale/`, `dev/`).
-- Custom targets keep the `u_*` id rule.
-  Visibility scoring/keyboard shortcuts/timezone handling match the desktop
-  semantics (per-site IANA timezone, DST-aware via Intl).
+- NightSeam Web is a static in-browser planner: same engine (`web/astro.js`),
+  same catalog, Tier-1 user data (sites, rigs, custom targets) mirrored from the
+  SQLite tables into IndexedDB via `web/webstore.js`. It shares this repo's
+  version line.
+- The catalog is ALWAYS derived: `python web/build_web.py catalog` reads
+  `data/nightseam.db` and rewrites `web/catalog.json` byte-identically. Never
+  hand-edit it.
+- Popularity (The popularity source) is a SILENT ranking tiebreaker only (visibility decides,
+  popularity separates equals) and is INVISIBLE in the UI:
+  `tests/test_ui_invariants.py` fails if the number or a "Popular" criterion
+  (column/chip/sort/detail row) reappears in either app.
+- Rig presets are a PICKER, not defaults - a fresh setup is EMPTY. Both lists must
+  change together: `app/rig_presets.py::DEFAULT_RIGS` and `web/webstore.js::DEFAULT_RIGS`
+  (`tests/test_rig_presets.py`). The framing `#rigSelect` lives in the TOPBAR next
+  to Site in BOTH apps (`test_ui_invariants.py` fails if it returns to the menu).
+- Setup dialog = tabs (Sites/Rigs/Targets/Backup); `showMTab()` maps
+  `data-mtab` -> `#mtab-*` panes and `SETTINGS_TAB` survives the full re-render.
+  Hide panels with the `.hidden` CLASS, not the `hidden` attribute (an author
+  `display` beats the UA rule).
+- Catalog sizes render like the desktop: `web/format.js` is the twin of
+  `util.js::fmtSize` (`size_am` in ARCMINUTES, one user unit, lone value =
+  diameter), pinned by the `size` engine; still a simplification: `rigFramePct`
+  compares the larger axis against `fov_w` only.
+- "Free space per side" (web): `main` is
+  `max-width: min(100%, max(320px, calc(100% - 2 * var(--edge,14px))))` with NO
+  other px cap - a cap inside the `min()` silently defeats the slider. A CSS-only
+  fix "does nothing" for a returning visitor unless `style.css`'s `?v=` is bumped
+  in the same commit, and verify it at a WIDE viewport (`test_ui_invariants.py`).
+- Catalog/type/emoji formatting is a known encoding-mojibake hotspot - run
+  `check_encoding.py`.
+- The dev mirror `<workspace>\Astro-Web` is BEHIND this repo; the robocopy sync runs
+  mirror -> repo, so copy changed files into the mirror first or skip it.
 
-## Renamed from AstroPilot (v0.5.12 -> NightSeam, site pitop.net -> nightseam.de)
+## History: renamed from AstroPilot
 
-The project, the exe, the web app and the website were renamed. Git history,
-tags and past release zips keep the old name — history is NOT rewritten, so
-`v0.5.12` and earlier are AstroPilot releases. **`v0.6.0` (2026-09-10) is the
-first NightSeam release** and the first one deployed to nightseam.de; commits
-from `NightSeam 0.6.0` on are named `NightSeam X.Y.Z`.
-
-- Shipped names: exe/zip `NightSeam.exe` / `NightSeam-<version>.zip` /
-  `NightSeam-latest.zip`, spec `NightSeam.spec`, JSONP `ns-version.js`
-  (`window.__NS_RELEASE`), log `data/nightseam.log`, downloads
-  `nightseam-setup-*.zip` and `nightseam-library.csv|json`, default archive
-  folder `NightSeam Images`.
-- nightseam.de is a fresh origin on the SAME Plesk webspace
-  (<server-ip>), and pitop.net no longer serves the site at all (it
-  answers with the Plesk login page), so **nothing is kept for the old name —
-  there is no compatibility shim anywhere**: the web app's browser storage
-  keys were renamed (`nightseam-db-v1`, `nightseam_prefs_v1`,
-  `nightseam_site_v1`, `nightseam_theme`, `nightseam-panoimg`,
-  `nightseam-images`), the old-domain update chain is gone (`ap-version.js`
-  and `window.__AP_RELEASE` no longer exist, only `ns-version.js`),
-  `ASTROPILOT_ALLOW_HOST` is gone, and neither the database file nor the
-  export/backup ids are migrated or accepted in their old spelling.
-- Consequences of having no shims (deliberate, do not "fix" them):
-  - An install updated in place starts on a FRESH database - to keep old
-    data, rename `data/astropilot.db` to `data/nightseam.db` by hand
-    (a pre-rename exe pointed at the same folder would then start empty).
-    Done once for the developer's own frozen app in `dist\data`.
-  - Setup zips and web backup JSONs written before the rename are rejected
-    with a clear "not a NightSeam ..." error; re-export with the new build.
-  - Installs <= 0.5.12 cannot see updates (their update URL points at
-    pitop.net, which is dead).
-- NOT renamed (outside this repo / not worth breaking): the working
-  directory `<workspace>\AstroPilot-local`, the dev mirror `<workspace>\Astro-Web` and
-  the deploy path `/astro` — documentation must reference the real paths.
+`v0.5.12` and earlier are AstroPilot; `v0.6.0` (2026-09-10) is the first
+NightSeam release. There is NO compatibility shim (deliberate, do not "fix"):
+an in-place update starts on a FRESH database (rename `data/astropilot.db` to
+`data/nightseam.db` by hand to keep old data); pre-rename setup zips/backups are
+rejected; installs <= 0.5.12 cannot see updates; browser storage keys are
+`nightseam-*`; only `ns-version.js` exists. Do NOT rename the working directory
+`<workspace>\AstroPilot-local`, the dev mirror `<workspace>\Astro-Web`, or the deploy path
+`/astro`.

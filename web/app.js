@@ -8,12 +8,13 @@
  *   • Settings — sites, rigs, custom targets, backup/restore (webstore.js)
  * All sky math runs client-side (astro.js, Meeus algorithms).
  */
-import * as E from './astro.js?v=5';
-import * as Hor from './horizon.js?v=14';
+import * as E from './astro.js?v=6';
+import * as Hor from './horizon.js?v=15';
 import * as WS from './webstore.js?v=5';
 import { initDragWindows } from './dragwin.js?v=1';
-import { fmtSize, sizeArcmin, framePct } from './format.js?v=2';
-import { nightStats } from './nightrank.js?v=1';
+import { fmtSize, sizeArcmin, framePct, magVisible, skyClampZoom,
+         skyViewMatrix, skyScreenToBase, skyClampFocus } from './format.js?v=3';
+import { nightStats } from './nightrank.js?v=2';
 
 const TYPE_COLORS = {
   galaxy: '#ffd166',
@@ -77,6 +78,7 @@ const S = {
   site: { lat: 52.52, lon: 13.4, label: 'Berlin (default)' },
   date: new Date(),
   skyTime: new Date(),
+  skyMag: 10,                     // all-sky chart magnitude limit (desktop #skyMag twin)
   playing: false,
   view: 'tonight',
   detailId: null,
@@ -552,12 +554,12 @@ function renderTonight(silent) {
     const filterType = prefs.fltOiii ? 'oiii' : prefs.fltHa ? 'narrowband' : 'lrgb';
     const moonAge = E.moonAge(jdMid);
     const bortleF = E.bortleMoonFactor(prefs.bortle);
-    // moon track over the night grid (computed once)
+    // moon track over the night grid (computed once); moonAltAz owns the
+    // degree composition so it can never be mistaken for hours
     const moonAlt = [], moonAz = [];
     for (let i = 0; i <= n; i++) {
       const jd = jd0 + i * step;
-      const [mr, md] = E.moonRaDec(jd);
-      const [ma, maz] = E.altaz(mr * 15, md, jd, lat, lon);
+      const [ma, maz] = E.moonAltAz(jd, lat, lon);
       moonAlt.push(ma); moonAz.push(maz);
     }
 
@@ -691,17 +693,13 @@ function skyResetView() {
   if (SKYV.onReset) SKYV.onReset();
 }
 
-/** screen (css px within the canvas) -> base chart coords */
-function skyScreenToBase(W, sx, sy) {
-  const fx = SKYV.fx == null ? W / 2 : SKYV.fx;
-  const fy = SKYV.fy == null ? W / 2 : SKYV.fy;
-  return [fx + (sx - W / 2) / SKYV.zoom, fy + (sy - W / 2) / SKYV.zoom];
+/** screen (css px within the canvas) -> base chart coords (shared twin) */
+function skyBase(W, sx, sy) {
+  return skyScreenToBase(SKYV.zoom, W, W, SKYV.fx, SKYV.fy, sx, sy);
 }
 
-function skyClampFocus(W) {
-  const Rlim = W / 2 - 22;
-  if (SKYV.fx != null) SKYV.fx = Math.max(W / 2 - Rlim, Math.min(W / 2 + Rlim, SKYV.fx));
-  if (SKYV.fy != null) SKYV.fy = Math.max(W / 2 - Rlim, Math.min(W / 2 + Rlim, SKYV.fy));
+function skyClamp(W) {
+  [SKYV.fx, SKYV.fy] = skyClampFocus(W, W, SKYV.fx, SKYV.fy);
 }
 
 /** Start of the 24 h scrub window that CONTAINS the given time: the most
@@ -745,6 +743,8 @@ function dtoLocalInput(d) {
 
 function renderSky() {
   const box = $('#view');
+  const magMax = advMode() ? 20 : 14;   // desktop setup.js parity (14; 20 in advanced)
+  const base = activeCatalog();
   box.innerHTML = `
     <div class="sky-wrap">
       <div class="sky-canvas-box card"><canvas id="sky"></canvas></div>
@@ -760,6 +760,13 @@ function renderSky() {
             <button class="btn" id="sky-reset" title="double-click the chart also resets">↺ Reset view</button>
           </div>
           <p class="sub" style="margin-top:10px">slider spans noon → next noon, site time</p>
+        </div>
+        <div class="card">
+          <h3>Chart</h3>
+          <label>Mag ≤ <output id="sky-mag-val">${S.skyMag.toFixed(1)}</output>
+            <input type="range" id="sky-mag" min="0" max="${magMax}" step="0.5" value="${S.skyMag}">
+          </label>
+          <p class="sub" style="margin-top:8px">dims objects fainter than the limit; at the faintest setting objects without a measured magnitude appear too</p>
         </div>
         <div class="card">
           <h3>Legend</h3>
@@ -779,12 +786,18 @@ function renderSky() {
   const ctx = cvs.getContext('2d');
   const tip = $('#tooltip');
 
-  const base = activeCatalog();
-  const candidates = [
-    ...base.filter((o) => !o._adv),
-    ...base.filter((o) => o._adv && o.vmag != null && o.vmag <= 9.5)
+  /* Curve objects / advanced pool by the shared magnitude rule (desktop parity):
+     EVERY object, curated included, is filtered by magnitude - at the default
+     limit 10 the handful of curated objects fainter than 10 are hidden, exactly
+     as the desktop #skyMag does. Objects with no measured magnitude show only at
+     the slider maximum. Advanced objects are additionally capped at 1400 by
+     brightness for responsiveness. */
+  const computeCandidates = () => [
+    ...base.filter((o) => !o._adv && magVisible(o.vmag, S.skyMag, magMax)),
+    ...base.filter((o) => o._adv && o.vmag != null && magVisible(o.vmag, S.skyMag, magMax))
       .sort((a, b) => (a.vmag ?? 99) - (b.vmag ?? 99)).slice(0, 1400),
   ];
+  let candidates = computeCandidates();
 
   let _dpr = 1;
   function sizeCanvas() {
@@ -798,11 +811,8 @@ function renderSky() {
    *  under the canvas centre), so the visible window is a RECTANGLE of the
    *  chart, exactly like the uranometria sky map. */
   function applyView(W) {
-    const fx = SKYV.fx == null ? W / 2 : SKYV.fx;
-    const fy = SKYV.fy == null ? W / 2 : SKYV.fy;
-    ctx.setTransform(_dpr * SKYV.zoom, 0, 0, _dpr * SKYV.zoom,
-                     _dpr * (W / 2 - fx * SKYV.zoom),
-                     _dpr * (W / 2 - fy * SKYV.zoom));
+    const m = skyViewMatrix(SKYV.zoom, W, W, SKYV.fx, SKYV.fy);
+    ctx.setTransform(_dpr * m.a, 0, 0, _dpr * m.d, _dpr * m.e, _dpr * m.f);
   }
 
   function draw() {
@@ -813,7 +823,7 @@ function renderSky() {
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, cvs.width, cvs.height);
     applyView(W);
-    skyClampFocus(W);
+    skyClamp(W);
 
     // grid
     ctx.strokeStyle = 'rgba(124, 196, 255, .16)';
@@ -890,30 +900,34 @@ function renderSky() {
     const jd = E.julianDay(S.skyTime);
     const { lat, lon } = S.site;
 
-    const [sunRa, sunDec] = E.sunRaDec(jd);
-    const [moonRa, moonDec] = E.moonRaDec(jd);
+    const [sunAlt, sunAz] = E.sunAltAz(jd, lat, lon);
+    const [moonAlt, moonAz] = E.moonAltAz(jd, lat, lon);
 
-    const plot = (ra, dec, drawF) => {
-      const [alt, az] = E.altaz(ra, dec, jd, lat, lon);
-      if (alt <= 0) return null;
+    const plotAltAz = (alt, az, drawF) => {
+      // selected-time visibility: apparent altitude above the horizon only
+      if (!E.aboveHorizon(alt)) return null;
       const a = E.D2R * az;
       const r = R * (1 - alt / 90);
       const x = cx + r * Math.sin(a), y = cy - r * Math.cos(a);
       drawF(x, y, alt, az);
       return { x, y };
     };
+    const plot = (ra, dec, drawF) => {
+      const [alt, az] = E.altaz(ra, dec, jd, lat, lon);
+      return plotAltAz(alt, az, drawF);
+    };
 
     skyItems = [];
 
     // sun and moon
-    plot(sunRa * 15, sunDec, (x, y) => {
+    plotAltAz(sunAlt, sunAz, (x, y) => {
       ctx.shadowColor = '#ffd166'; ctx.shadowBlur = 22;
       ctx.fillStyle = '#ffd166';
       ctx.beginPath(); ctx.arc(x, y, 9, 0, Math.PI * 2); ctx.fill();
       ctx.shadowBlur = 0;
       skyItems.push({ x, y, id: 'SUN', label: 'Sun' });
     });
-    plot(moonRa * 15, moonDec, (x, y) => {
+    plotAltAz(moonAlt, moonAz, (x, y) => {
       ctx.shadowColor = '#e6e9ff'; ctx.shadowBlur = 16;
       ctx.fillStyle = '#e6e9ff';
       ctx.beginPath(); ctx.arc(x, y, 7, 0, Math.PI * 2); ctx.fill();
@@ -975,7 +989,7 @@ function renderSky() {
   /* screen px -> base chart coords (zoom-aware hit-testing) */
   const toBase = (ev) => {
     const [sx, sy] = posEl(ev);
-    return skyScreenToBase(cvs.clientWidth || 1, sx, sy);
+    return skyBase(cvs.clientWidth || 1, sx, sy);
   };
 
   cvs.addEventListener('mousemove', (ev) => {
@@ -1016,16 +1030,16 @@ function renderSky() {
     ev.preventDefault();
     const W = cvs.clientWidth || 1;
     const [sx, sy] = posEl(ev);
-    const [bx, by] = skyScreenToBase(W, sx, sy);
+    const [bx, by] = skyBase(W, sx, sy);
     const factor = ev.deltaY < 0 ? 1.25 : 0.8;
-    const nz = Math.max(1, Math.min(8, SKYV.zoom * factor));
+    const nz = skyClampZoom(SKYV.zoom * factor);
     if (nz === SKYV.zoom) return;
     SKYV.zoom = nz;
     if (SKYV.zoom > 1) {
       // keep the point under the cursor fixed while zooming
       SKYV.fx = bx - (sx - W / 2) / SKYV.zoom;
       SKYV.fy = by - (sy - W / 2) / SKYV.zoom;
-      skyClampFocus(W);
+      skyClamp(W);
     } else { SKYV.fx = null; SKYV.fy = null; }
     draw();
   }, { passive: false });
@@ -1051,7 +1065,7 @@ function renderSky() {
       if (SKYV.drag.moved) {
         SKYV.fx = SKYV.drag.fx - dx / SKYV.zoom;
         SKYV.fy = SKYV.drag.fy - dy / SKYV.zoom;
-        skyClampFocus(rect.width);
+        skyClamp(rect.width);
         draw();
       }
       return;
@@ -1103,6 +1117,16 @@ function renderSky() {
     syncControls();
     draw();
     announceTime();
+  });
+  // magnitude limit: re-filter the candidate pool, then one redraw (no re-render,
+  // no refetch) - the desktop #skyMag slider behaves the same way
+  const magEl = $('#sky-mag');
+  const magVal = $('#sky-mag-val');
+  magEl.addEventListener('input', () => {
+    S.skyMag = Number(magEl.value);
+    magVal.textContent = S.skyMag.toFixed(1);
+    candidates = computeCandidates();
+    draw();
   });
 
   if (skyTimeHandler) window.removeEventListener('sky:time', skyTimeHandler);
@@ -1317,15 +1341,13 @@ function openDetail(id) {
   const dayInfo = E.objectDayInfo(o.ra_hours * 15, o.dec_deg, localMidnight, lat, lon);
 
   // Moon distance now + at tonight's peak (proximity awareness, like the smart-scope apps)
-  const [moonRa, moonDec] = E.moonRaDec(jd);
-  const [moonAltNow, moonAzNow] = E.altaz(moonRa * 15, moonDec, jd, lat, lon);
+  const [moonAltNow, moonAzNow] = E.moonAltAz(jd, lat, lon);
   const sepNow = E.sepDeg(altNow, azNow, moonAltNow, moonAzNow);
   const illumNow = E.moonIllumination ? E.moonIllumination(jd) : 0;
   let sepPeak = null;
   const peakJd = E.julianDay(dayInfo.transit instanceof Date ? dayInfo.transit : jd);
   try {
-    const [mr2, md2] = E.moonRaDec(peakJd);
-    const [ma2, maz2] = E.altaz(mr2 * 15, md2, peakJd, lat, lon);
+    const [ma2, maz2] = E.moonAltAz(peakJd, lat, lon);
     const [pa, paz] = E.altaz(o.ra_hours * 15, o.dec_deg, peakJd, lat, lon);
     sepPeak = E.sepDeg(pa, paz, ma2, maz2);
   } catch { /* e.g. transit not a Date — keep null */ }
@@ -1417,8 +1439,7 @@ function openDetail(id) {
     const [alt, az] = E.altaz(o.ra_hours * 15, o.dec_deg, jdt, lat, lon);
     const ceil = pano ? Hor.ceilFor(pano, az) : { ceil: Hor.NO_BLOCK, ceilTop: null };
     const vis = alt >= minAlt && alt > ceil.ceil && alt < (ceil.ceilTop ?? 90.5);
-    const [mr, md] = E.moonRaDec(jdt);
-    const mAlt = E.altaz(mr * 15, md, jdt, lat, lon)[0];
+    const mAlt = E.moonAltAz(jdt, lat, lon)[0];
     samples.push({
       t: jdt, alt, az, ceil,
       vis,

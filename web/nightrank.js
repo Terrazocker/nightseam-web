@@ -12,8 +12,8 @@
  * this file until it does). Pinned by the "nightstats" engine of
  * tests/js/astro_parity.mjs.
  */
-import * as E from './astro.js?v=5';
-import { NO_BLOCK, ceilFor } from './horizon.js?v=14';
+import * as E from './astro.js?v=6';
+import { NO_BLOCK, ceilFor } from './horizon.js?v=15';
 
 /** The one visibility predicate: above the min altitude AND above the
  *  obstruction ceiling AND below the sky-mode ceiling (ceilTop; absent = no

@@ -6,6 +6,11 @@
  * is imported by app.js and by tests/js/astro_parity.mjs ("size" engine), so the
  * two can never drift apart again.
  *
+ * It also carries the two chart helpers that must match the desktop exactly:
+ * the magnitude-limit rule (`magVisible`, twin of derive.js, "mag" engine) and
+ * the "square" zoom geometry (`skyClampZoom`/`skyViewMatrix`/`skyScreenToBase`/
+ * `skyClampFocus`, twin of derive.js, "skyzoom" engine).
+ *
  * Why it is a module at all: app.js used to reformat only "NxM" strings and echo
  * everything else verbatim, so the 961 single-axis catalog entries (Hyades 330,
  * Pleiades 110, Ring Nebula 1.4, ...) rendered as a bare number - no unit, and
@@ -49,4 +54,43 @@ export function sizeArcmin(s) {
 export function framePct(sizeAm, fovWArcmin) {
   if (sizeAm == null || sizeAm <= 0 || !(fovWArcmin > 0)) return null;
   return Math.round(100 * sizeAm / fovWArcmin);
+}
+
+/* Chart helpers shared with the desktop (static/js/derive.js) and pinned by the
+   "mag" / "skyzoom" engines of tests/js/astro_parity.mjs. */
+
+/** All-sky chart magnitude limit - desktop twin (derive.js::magVisible). An
+ *  object with a magnitude shows when vmag <= limit; one WITHOUT a magnitude
+ *  shows only at the slider's maximum. */
+export function magVisible(vmag, limit, maxLimit) {
+  return vmag != null ? vmag <= limit : limit >= maxLimit;
+}
+
+/** "Square" zoom - desktop twin (derive.js::skyClampZoom/skyViewMatrix/...).
+ *  The disc lives in a square W x H space; zoom is one uniform scalar on both
+ *  axes about a focus point, so the visible window is a rectangle W/zoom x
+ *  H/zoom. `fx`/`fy` null = centered. */
+export const SKY_ZOOM_MIN = 1;
+export const SKY_ZOOM_MAX = 8;
+
+export function skyClampZoom(z) {
+  return Math.max(SKY_ZOOM_MIN, Math.min(SKY_ZOOM_MAX, z));
+}
+
+export function skyViewMatrix(zoom, W, H, fx, fy) {
+  const cx = fx == null ? W / 2 : fx;
+  const cy = fy == null ? H / 2 : fy;
+  return { a: zoom, d: zoom, e: W / 2 - cx * zoom, f: H / 2 - cy * zoom };
+}
+
+export function skyScreenToBase(zoom, W, H, fx, fy, sx, sy) {
+  const cx = fx == null ? W / 2 : fx;
+  const cy = fy == null ? H / 2 : fy;
+  return [cx + (sx - W / 2) / zoom, cy + (sy - H / 2) / zoom];
+}
+
+export function skyClampFocus(W, H, fx, fy) {
+  const Rlim = Math.min(W, H) / 2 - 22;
+  const at = (v, c) => (v == null ? null : Math.max(c - Rlim, Math.min(c + Rlim, v)));
+  return [at(fx, W / 2), at(fy, H / 2)];
 }

@@ -17,7 +17,7 @@
 const engine = process.argv[2];
 if (!["desktop", "web", "window", "darkwindow", "pick", "crosszone",
      "scoring", "ceil", "size", "status", "frame", "advice", "minalt",
-     "shortcut", "nightstats"].includes(engine)) {
+     "shortcut", "nightstats", "mag", "skyzoom", "abovehorizon"].includes(engine)) {
   console.error("usage: node astro_parity.mjs <engine>");
   process.exit(2);
 }
@@ -73,6 +73,45 @@ if (engine === "size") {
     const desktop = deskUtil.fmtSize(s, unit);
     return { size: s, unit, web, desktop, ok: web === desktop };
   })));
+} else if (engine === "mag") {
+  // magnitude-limit rule: desktop derive.js::magVisible vs web format.js
+  const [desk, webFmt] = await Promise.all([
+    import(new URL("../../static/js/derive.js", import.meta.url).href),
+    import(new URL("../../web/format.js", import.meta.url).href),
+  ]);
+  process.stdout.write(JSON.stringify(cases.map((c) => ({
+    vmag: c.vmag, limit: c.limit, max: c.max,
+    desktop: desk.magVisible(c.vmag, c.limit, c.max),
+    web: webFmt.magVisible(c.vmag, c.limit, c.max),
+  }))));
+} else if (engine === "abovehorizon") {
+  // selected-time visibility rule: desktop derive.js vs web astro.js
+  const [desk, web] = await Promise.all([
+    import(new URL("../../static/js/derive.js", import.meta.url).href),
+    import(new URL("../../web/astro.js", import.meta.url).href),
+  ]);
+  process.stdout.write(JSON.stringify(cases.map((c) => ({
+    alt: c.alt,
+    desktop: desk.aboveHorizon(c.alt),
+    web: web.aboveHorizon(c.alt),
+  }))));
+} else if (engine === "skyzoom") {
+  // square-zoom geometry: desktop derive.js vs web format.js. Case:
+  // {zoom, W, H, fx, fy, sx, sy} - fx/fy null = centered.
+  const [desk, webFmt] = await Promise.all([
+    import(new URL("../../static/js/derive.js", import.meta.url).href),
+    import(new URL("../../web/format.js", import.meta.url).href),
+  ]);
+  const one = (m, c) => ({
+    matrix: m.skyViewMatrix(c.zoom, c.W, c.H, c.fx, c.fy),
+    base: m.skyScreenToBase(c.zoom, c.W, c.H, c.fx, c.fy, c.sx, c.sy),
+    focus: m.skyClampFocus(c.W, c.H, c.fx, c.fy),
+    zoom: m.skyClampZoom(c.zoom),
+  });
+  process.stdout.write(JSON.stringify(cases.map((c) => ({
+    W: c.W, H: c.H, zoom: c.zoom,
+    desktop: one(desk, c), web: one(webFmt, c),
+  }))));
 } else if (engine === "pick") {
   // unit-test the twilight-preference rule (cascade + polar fallback) with
   // synthetic night info; TZ=UTC makes the fallback times comparable with
@@ -324,6 +363,10 @@ if (engine === "size") {
       const [mra, mdec] = mod.moonRaDec(c.jd);
       r.moon_ra = mra;
       r.moon_dec = mdec;
+      // Selected-time sky altitude via the SAME wrappers app.js uses - the
+      // chart used to pass ra*15 (degrees as hours), which only shows up here.
+      r.sun_alt = mod.sunAltAz(c.jd, c.lat, c.lon)[0];
+      r.moon_alt = mod.moonAltAz(c.jd, c.lat, c.lon)[0];
       // 11.1: moon illumination/age + julianDay round-trip parity
       r.illum = mod.moonIllumination(c.jd);
       r.age = mod.moonAge(c.jd);

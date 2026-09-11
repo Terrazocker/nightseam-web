@@ -127,6 +127,19 @@ export function altaz(raDeg, decDeg, jd, latDeg, lonDeg, refract = true) {
   return [alt * R2D, az];
 }
 
+/**
+ * Selected-time sky visibility: a body (star, planet, the Sun or the Moon) is
+ * a VISIBLE sky object only while its APPARENT (refracted) altitude is above
+ * the horizon. This is deliberately astronomical, never a clock/“is it night”
+ * shortcut: during polar day the Sun is up at midnight, during polar night it
+ * is down at noon, and a body just below the rim can be lifted above it by
+ * refraction. “Relevant to the night” (e.g. the Moon phase that scores a
+ * target) is a different question and does NOT belong here.
+ */
+export function aboveHorizon(apparentAltDeg) {
+  return Number.isFinite(apparentAltDeg) && apparentAltDeg > 0;
+}
+
 /** Geometric solar position -> RA/Dec in J2000 equivalents (Meeus ch.25). */
 export function sunRaDec(jd) {
   const n = jd - J2000;
@@ -244,6 +257,24 @@ export function moonPhase(jd) {
 export function sunAlt(jd, lat, lon) {
   const [ra, dec] = sunRaDec(jd);
   return altaz(ra, dec, jd, lat, lon)[0];
+}
+
+/**
+ * Sun/Moon apparent altitude+azimuth at a selected time. sunRaDec/moonRaDec
+ * return RA already in DEGREES, exactly like app/astro.py's sun_ra_dec /
+ * moon_ra_dec, and altaz() takes degrees - these wrappers exist so a caller can
+ * never again treat the result as hours (the chart used `ra * 15`, which put the
+ * Sun high in the sky all night). Use these everywhere the chart, scoring or the
+ * detail panel needs a Sun/Moon position.
+ */
+export function sunAltAz(jd, lat, lon) {
+  const [ra, dec] = sunRaDec(jd);
+  return altaz(ra, dec, jd, lat, lon);
+}
+
+export function moonAltAz(jd, lat, lon) {
+  const [ra, dec] = moonRaDec(jd);
+  return altaz(ra, dec, jd, lat, lon);
 }
 
 /**

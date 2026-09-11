@@ -3,7 +3,9 @@
 import { $, clamp, esc, TYPE_COLOR, TYPE_LABEL } from "./util.js";
 import { S } from "./state.js";
 import { statusOf, desigLine, activeProfile, activeTopProfile,
-         shortName } from "./derive.js";
+         shortName, aboveHorizon, magVisible,
+         skyClampZoom, skyViewMatrix, skyScreenToBase,
+         skyClampFocus } from "./derive.js";
 import { openDetail } from "./detail.js";
 import { passesFilters } from "./targets.js";
 import { CONSTELLATIONS, FIELD_STARS } from "./skydata.js";
@@ -22,24 +24,17 @@ export function resetSkyView() {
 }
 
 function applyView(ctx, dpr, W, H) {
-  const fx = SKY_FX == null ? W / 2 : SKY_FX;
-  const fy = SKY_FY == null ? H / 2 : SKY_FY;
-  ctx.setTransform(dpr * SKY_ZOOM, 0, 0, dpr * SKY_ZOOM,
-                   dpr * (W / 2 - fx * SKY_ZOOM),
-                   dpr * (H / 2 - fy * SKY_ZOOM));
+  const m = skyViewMatrix(SKY_ZOOM, W, H, SKY_FX, SKY_FY);
+  ctx.setTransform(dpr * m.a, 0, 0, dpr * m.d, dpr * m.e, dpr * m.f);
 }
 
 /* css px (relative to canvas) -> base chart coords */
 function screenToBase(sx, sy, W, H) {
-  const fx = SKY_FX == null ? W / 2 : SKY_FX;
-  const fy = SKY_FY == null ? H / 2 : SKY_FY;
-  return [fx + (sx - W / 2) / SKY_ZOOM, fy + (sy - H / 2) / SKY_ZOOM];
+  return skyScreenToBase(SKY_ZOOM, W, H, SKY_FX, SKY_FY, sx, sy);
 }
 
 function clampFocus(W, H) {
-  const Rlim = Math.min(W, H) / 2;
-  if (SKY_FX != null) SKY_FX = Math.max(W/2 - Rlim, Math.min(W/2 + Rlim, SKY_FX));
-  if (SKY_FY != null) SKY_FY = Math.max(H/2 - Rlim, Math.min(H/2 + Rlim, SKY_FY));
+  [SKY_FX, SKY_FY] = skyClampFocus(W, H, SKY_FX, SKY_FY);
 }
 
 export function bindSky() {
@@ -94,7 +89,7 @@ export function bindSky() {
     const lx = e.clientX - rect.left, ly = e.clientY - rect.top;
     const [bx, by] = screenToBase(lx, ly, rect.width, rect.height);
     const factor = e.deltaY < 0 ? 1.25 : 0.8;
-    SKY_ZOOM = clamp(SKY_ZOOM * factor, 1, 10);
+    SKY_ZOOM = skyClampZoom(SKY_ZOOM * factor);
     if (SKY_ZOOM > 1) {
       // keep the point under the cursor fixed while zooming
       SKY_FX = bx - (lx - rect.width/2) / SKY_ZOOM;
@@ -406,7 +401,9 @@ export function renderSky() {
 
   // objects (dots) + collected label candidates, decluttered afterwards
   const labels = $("#showLabels").checked;
-  const magLimit = +(($("#skyMag")||{}).value ?? 14);
+  const magEl = $("#skyMag") || {};
+  const magLimit = +(magEl.value ?? 14);
+  const magMax = +(magEl.max ?? 14);
   const bigCatalog = S.night.objects.length > 3000;   // advanced mode
   const labelMagMax = bigCatalog ? 8.5 : 99;          // label bright ones only
   const favs = new Set(S.cfg.favorites || []);
@@ -419,9 +416,8 @@ export function renderSky() {
     const showAll = ($("#showAll")||{}).checked !== false;
     if (!isHover && !showAll && !passesFilters(m, o)) continue;
     if (!isHover && S.disabledTypes.has(m.otype)) continue;  // legend off
-    if (m.vmag != null && m.vmag > magLimit) continue;
-    // objects with no measured magnitude only appear at the show-all end
-    if (m.vmag == null && magLimit < +($("#skyMag")||{}).max) continue;
+    // magnitude limit (shared rule with the web chart)
+    if (!isHover && !magVisible(m.vmag, magLimit, magMax)) continue;
     const alt=o.alt[S.tIdx], az=o.az[S.tIdx];
     if (alt<-3) continue;
     const [x,y]=azToXY(cx,cy,R,az,alt);
@@ -489,7 +485,9 @@ function sunAzAtIndex(i){
 function drawSunMoon(ctx,cx,cy,R){
   const sa=S.night.sun_alt[S.tIdx];
   const ma=S.night.moon_alt[S.tIdx];
-  if(sa>-6){
+  // selected-time visibility: apparent altitude above the horizon (same rule
+  // as the web chart and as the catalog dots below) - never a -6 floor
+  if(aboveHorizon(sa)){
     const [x,y]=azToXY(cx,cy,R,sunAzAtIndex(S.tIdx),sa);
     ctx.fillStyle="#ffd166";
     ctx.beginPath();ctx.arc(x,y,7,0,7);ctx.fill();
@@ -498,7 +496,7 @@ function drawSunMoon(ctx,cx,cy,R){
     ctx.fillStyle="#8a763a";ctx.font="10px Segoe UI";ctx.textAlign="center";
     ctx.fillText("Sun",x,y+22);ctx.textAlign="left";
   }
-  if(ma>-6){
+  if(aboveHorizon(ma)){
     const [x,y]=azToXY(cx,cy,R,moonAzAtIndex(S.tIdx),ma);
     ctx.fillStyle="#e8ecf5";
     ctx.beginPath();ctx.arc(x,y,6.5,0,7);ctx.fill();

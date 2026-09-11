@@ -37,6 +37,21 @@ def test_web_catalog_never_renders_popularity():
         assert forbidden not in js, f"web/app.js still shows popularity: {forbidden!r}"
 
 
+def test_web_sun_moon_use_the_altaz_wrappers():
+    """The chart's Sun/Moon positions must come from web/astro.js::sunAltAz /
+    moonAltAz, which own the degree composition (sunRaDec/moonRaDec already
+    return DEGREES, like app/astro.py). The original map bug was web/app.js
+    calling `sunRaDec()` then multiplying by 15 (degrees treated as hours), so
+    app.js must not touch the raw RA/Dec helpers at all - else a `* 15` can
+    reappear with no test able to see it (the parity harness only exercises
+    astro.js)."""
+    js = _read("web", "app.js")
+    assert "sunAltAz(" in js and "moonAltAz(" in js
+    for forbidden in ("sunRaDec(", "moonRaDec("):
+        assert forbidden not in js, (
+            f"web/app.js uses {forbidden}; use sunAltAz/moonAltAz instead")
+
+
 def test_web_chip_row_has_no_popular_chip():
     js = _read("web", "app.js")
     assert "popularityOf(o) >= 10000" not in js      # the old chip filter
