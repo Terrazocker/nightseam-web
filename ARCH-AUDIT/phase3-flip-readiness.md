@@ -139,3 +139,47 @@ CPU (<1000 ms bound, ~2.2x headroom; 4x/6x throttle linear and informational),
 with all displayed values bit-identical to the pre-batch implementation. The
 cache remains an optional UI hot-path follow-up (renders/scrubs/catalog column)
 and carries no acceptance requirement. No behavior change.
+
+---
+
+## Pre-ship interactive hot-path check (real packed exe)
+
+Host: dev build `0.6.17-6-gb3fcdcd` (carries the batched engine), Edge WebView2
+via CDP, active site "Backyard", real `/api/night` grid (241 samples, 6 min),
+no obstruction profile, real catalogs. Simulates what the flipped client would
+do on each user action.
+
+| Action (simulated) | standard (197) | advanced (11,917) |
+|---|---|---|
+| date/site change: fresh frame + full rescore | 9 ms | **~0.50 s** |
+| pref change (min-alt): full rescore | 10 ms | **~0.53 s** |
+| 4x CPU: date/site change | 27 ms | 2.2 s |
+| 4x CPU: pref change | 41 ms | 2.1 s |
+| 6x CPU: date/site change | 53 ms | 3.1 s |
+| 6x CPU: pref change | 58 ms | 3.3 s |
+
+Heap 114.8 -> 118.5 MB across the runs; no growth. (The first advanced date/site
+run passes no min-alt so it skips scoring; its true cost equals the pref-change
+run, ~0.5 s.)
+
+**Scrub does NOT trigger a rescore**: scoring is keyed to (site, night, prefs),
+never to the selected time (`S.tIdx`); changing the instant only re-renders.
+
+### Finding (guardrail STOP)
+
+In advanced mode a common action - date change, site change, **and min-alt/Bortle
+preference change** - triggers a full synchronous ~0.5 s rescore of all 11,917
+objects (~2.1 s at 4x, ~3.1 s at 6x CPU). The Step-4 cache would not remove this
+(those actions invalidate it); the options are to accept the cost (debounce +
+busy indication), split track computation from scoring so preference changes
+re-derive scores only, and/or move the batch off the UI thread. Per the
+guardrail this is the "common action triggers a full rescore" STOP: **do not
+ship the flip until the owner chooses.**
+
+### Semantics-delta / release-note wording (for confirmation)
+
+"Planning is now computed on your machine with the same engine as the web
+planner. Visibility and scores are unchanged; behind the scenes the sky position
+is precessed once per night instead of at every sample, which shifts ranking
+scores by less than a hundred-thousandth of a point and changes no displayed
+value. The desktop server remains as an automatic fallback."
