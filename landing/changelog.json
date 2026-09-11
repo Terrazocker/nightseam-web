@@ -1,5 +1,10 @@
 [
  {
+  "version": "0.6.13",
+  "date": "2026-09-11",
+  "summary": "Editing and reliability release. The web panorama editor was rebuilt for precise work: a grouped two-row toolbar with the view controls on the image, gesture-level undo/redo, a confirmed and undoable Clear, a Revert, a clear saved/unsaved indicator, sharp HiDPI rendering, zoom and pan, denser alignment guides, and a live azimuth/altitude readout. Painting the visible sky now assumes the sky ABOVE your band is open (hatched with a legend entry) unless you tick \"block above band\", and holding the right mouse button erases continuously. The night scrub now spans sunset to sunrise by default, with a \"View full day\" option that restores a full 24 hours in BOTH apps - the desktop now has a real full-day grid too - and the minimum-altitude slider is longer in the top bar. The object list no longer has two entries sharing one id, web backups are truthful and roll back a failed restore, the desktop no longer dead-ends if you skip choosing a site, and only one panorama is active at a time."
+ },
+ {
   "version": "0.6.11",
   "date": "2026-09-11",
   "summary": "Bug-fix and chart-tools release. On the all-sky chart the Sun and Moon could appear in the sky while they were really below the horizon - both apps now draw them only while they are actually up at the selected time. The web chart gains the desktop's magnitude slider (hide objects fainter than a chosen limit), the desktop chart's wheel-zoom now opens the same full rectangular window as the web, and the web panorama editor gains alignment guides (azimuth, altitude and horizon lines), joins a 360-degree panorama seamlessly at the edges, and fixes sky-mask \"open above\" handling and the compass labels on partial panoramas. Web cache tokens were bumped so the updated files reach returning visitors."
