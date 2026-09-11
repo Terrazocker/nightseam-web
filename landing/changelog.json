@@ -5,16 +5,6 @@
   "summary": "Shared-core release. The desktop app and the web planner now compute every planning number with one shared engine, so the two can no longer drift apart. Three visible corrections come with it: object-type names and colours are identical in both apps (the desktop adopts the web palette); a grazing polar-night day can no longer report a sunrise without a sunset (Tromso in January showed a \"sunrise\" 29 minutes before its own sunset); and the night slider and the altitude chart now use the dark window whenever the sunset-to-sunrise pair is degenerate, instead of building an inverted range. Ordinary nights, DST transitions and southern-hemisphere nights are unchanged. Python still computes the desktop's planning payload."
  },
  {
-  "version": "0.6.16",
-  "date": "2026-09-11",
-  "summary": "Shared-core release. The panorama and horizon geometry now lives in one place, baked into both the desktop app and the web planner, so the two apps can no longer drift apart. This fixes partial and rotated panoramas: the painted horizon profile is stored in the same world-azimuth coordinates the desktop and the server have always used, so the blocked directions are correct whatever calibration you use (a full 360 panorama with no offset is unchanged). Telescope fields of view are also stored in arcminutes on the web, the same unit as the desktop, and existing rigs are converted automatically."
- },
- {
-  "version": "0.6.15",
-  "date": "2026-09-11",
-  "summary": "Follow-up patch. The web panorama editor's profile preview now hatches the assumed-open area above the painted band in the same coordinates as the band itself, so the hatch stays aligned on panoramas whose calibration is rotated or only covers part of the sky. Both the desktop and the web sky views now shade the blocked horizon with the same red as the \"blocked by horizon\" legend entry, and a malformed imported panorama no longer interrupts the chart lookup."
- },
- {
   "version": "0.6.14",
   "date": "2026-09-11",
   "summary": "Desktop patch release. The sky view is corrected: in \"paint visible sky\" mode the chart no longer draws a spurious centre ring or radial connector, never strokes the band outline, and hatches the area above the painted band instead of shading it as blocked. The same horizon legend now appears in the desktop and the web (\"blocked by horizon\" and \"above band: open (assumed)\"), and the web editor's profile preview hatches that assumed-open area too. This build also carries the immediately preceding sky-band fixes: painting the visible sky assumes the sky above the band is open unless you tick \"block above band\", and View full day is a real 24-hour toggle in both apps."

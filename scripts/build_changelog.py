@@ -34,13 +34,6 @@ CURATED = {
     # three user-visible corrections it surfaced (catalog palette, polar
     # sunrise pairing, degenerate scrub ranges).
     "0.6.17": "Shared-core release. The desktop app and the web planner now compute every planning number with one shared engine, so the two can no longer drift apart. Three visible corrections come with it: object-type names and colours are identical in both apps (the desktop adopts the web palette); a grazing polar-night day can no longer report a sunrise without a sunset (Tromso in January showed a \"sunrise\" 29 minutes before its own sunset); and the night slider and the altitude chart now use the dark window whenever the sunset-to-sunrise pair is degenerate, instead of building an inverted range. Ordinary nights, DST transitions and southern-hemisphere nights are unchanged. Python still computes the desktop's planning payload.",
-    # 0.6.16 extracts the shared panorama/horizon geometry into the baked core
-    # and fixes the web's profile coordinates (D1) + rig FOV unit (D2).
-    "0.6.16": "Shared-core release. The panorama and horizon geometry now lives in one place, baked into both the desktop app and the web planner, so the two apps can no longer drift apart. This fixes partial and rotated panoramas: the painted horizon profile is stored in the same world-azimuth coordinates the desktop and the server have always used, so the blocked directions are correct whatever calibration you use (a full 360 panorama with no offset is unchanged). Telescope fields of view are also stored in arcminutes on the web, the same unit as the desktop, and existing rigs are converted automatically.",
-    # 0.6.15 is the 0.6.14 follow-up patch: the web editor's profile preview
-    # hatches the assumed-open band in bin space (no shift on rotated/partial
-    # panoramas), and both sky views shade with the legend's red.
-    "0.6.15": "Follow-up patch. The web panorama editor's profile preview now hatches the assumed-open area above the painted band in the same coordinates as the band itself, so the hatch stays aligned on panoramas whose calibration is rotated or only covers part of the sky. Both the desktop and the web sky views now shade the blocked horizon with the same red as the \"blocked by horizon\" legend entry, and a malformed imported panorama no longer interrupts the chart lookup.",
     # 0.6.14 is the desktop sky-view patch: the sky-mode chart artifacts are
     # gone, the horizon legend/hatch now match the web, and the assumed-open
     # tail of the 0.6.13 sky-band work is finished.
