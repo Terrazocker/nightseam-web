@@ -288,7 +288,7 @@ export function renderSky() {
     ctx.lineTo(...azToXY(cx,cy,R,360,0));
     for (let az=360; az>=0; az-=2) ctx.lineTo(...azToXY(cx,cy,R,az,0));
     ctx.closePath();
-    ctx.fillStyle="rgba(255,93,93,.18)";
+    ctx.fillStyle="rgba(255,107,107,.18)";
     ctx.fill();
 
     // solid boundary line: obstacle mode only. In sky mode the fully
@@ -300,7 +300,7 @@ export function renderSky() {
         const [x,y] = azToXY(cx,cy,R,az,clamp(elevAt(az),-2,89));
         az===0 ? ctx.moveTo(x,y) : ctx.lineTo(x,y);
       }
-      ctx.strokeStyle="rgba(255,93,93,.75)"; ctx.lineWidth=1.4;
+      ctx.strokeStyle="rgba(255,107,107,.75)"; ctx.lineWidth=1.4;
       ctx.stroke();
     }
   }
@@ -317,7 +317,7 @@ export function renderSky() {
       return raw > 0.25 && raw < 88 ? Math.min(89, raw) : NaN;
     };
 
-    ctx.fillStyle = "rgba(255,93,93,.18)";
+    ctx.fillStyle = "rgba(255,107,107,.18)";
     let run = false;
     for (let az = 0; az <= 360; az += 1) {
       const v = topVal(az);
@@ -345,7 +345,7 @@ export function renderSky() {
       pen ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
       pen = true;
     }
-    ctx.strokeStyle = "rgba(255,93,93,.75)"; ctx.lineWidth = 1.4;
+    ctx.strokeStyle = "rgba(255,107,107,.75)"; ctx.lineWidth = 1.4;
     ctx.stroke();
     ctx.setLineDash([]);
   }

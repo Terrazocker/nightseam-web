@@ -198,5 +198,54 @@ if (H.assumedOpenRuns(fullyBlocked, 2).length !== 0) fail("fully blocked: no ass
 if (H.bandTopFor(overhangAll, 180) !== 40) fail("bandTopFor should return the painted top");
 if (H.bandTopFor(fullyBlocked, 180) !== null) fail("bandTopFor unpainted should be null");
 
+/* ---- 7. preview hatch polygons are built in BIN space ----
+ * Regression: the first web implementation plotted x = 2 * world azimuth, which
+ * only coincides with the bin index at azOffset 0 / fov 360; a partial-FOV or
+ * rotated calibration shifted/cropped the hatched area (probe: azOffset 90,
+ * fov 180 hatched x 180..540 instead of 0..719). */
+const hatchPart = pano({ azOffset: 90, fov: 180,
+                         profile: fill(0, BINS, 5), profileTop: fill(0, BINS, 40) });
+const hp = H.assumedOpenHatchPolys(hatchPart, 720, 56, 0, 90);
+if (hp.length !== 1) {
+  fail(`partial hatch should be one polygon, got ${hp.length}`);
+} else {
+  const xs = hp[0].map((q) => q[0]);
+  if (Math.abs(Math.min(...xs)) > 1e-6 || Math.abs(Math.max(...xs) - 719) > 1e-6) {
+    fail(`partial hatch x range ${Math.min(...xs)}..${Math.max(...xs)}, want 0..719`);
+  }
+}
+const hatchShift = pano({ azOffset: 90, fov: 360,
+                          profile: fill(0, BINS, 5), profileTop: fill(0, 360, 40) });
+for (let i = 360; i < BINS; i++) hatchShift.profileTop[i] = 20;
+const hs = H.assumedOpenHatchPolys(hatchShift, 720, 56, 0, 90);
+if (hs.length !== 1) {
+  fail(`rotated hatch should be one polygon, got ${hs.length}`);
+} else {
+  const poly = hs[0];
+  if (Math.abs(poly[0][0]) > 1e-6) fail(`hatch col0 x=${poly[0][0]}`);
+  if (Math.abs(poly[359][0] - 359) > 1e-6) fail(`hatch col359 x=${poly[359][0]}`);
+  const y40 = 56 * (1 - 40 / 90), y20 = 56 * (1 - 20 / 90);
+  if (Math.abs(poly[0][1] - y40) > 1e-6) fail(`hatch y at col0=${poly[0][1]}`);
+  if (Math.abs(poly[500][1] - y20) > 1e-6) fail(`hatch y at col500=${poly[500][1]}`);
+  if (poly[poly.length - 2][1] !== 0 || poly[poly.length - 1][1] !== 0) {
+    fail("hatch must close through the chart top");
+  }
+}
+if (H.assumedOpenHatchPolys(fullyBlocked, 720, 56, 0, 90).length !== 0) {
+  fail("fully blocked pano must not hatch");
+}
+if (H.assumedOpenHatchPolys(capped, 720, 56, 0, 90).length !== 0) {
+  fail("block-above pano must be shaded, not assumed-open");
+}
+const topBand = pano({ profile: fill(0, BINS, 5), profileTop: fill(0, BINS, 90.5) });
+if (H.assumedOpenHatchPolys(topBand, 720, 56, 0, 90).length !== 0) {
+  fail("band painted to the top must not hatch");
+}
+/* malformed records must degrade to [] (never throw) */
+if (H.assumedOpenRuns({ paintMode: "sky" }, 2).length !== 0) fail("assumedOpenRuns malformed");
+if (H.assumedOpenHatchPolys({ paintMode: "sky" }, 720, 56, 0, 90).length !== 0) {
+  fail("assumedOpenHatchPolys malformed");
+}
+
 console.log(ok ? "sky-band contract held" : "sky-band contract FAILED");
 process.exit(ok ? 0 : 1);

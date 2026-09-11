@@ -152,9 +152,11 @@ Image Catalog (FITS ingest + library). `README.md` has the feature list.
   still means open to the zenith, and unpainted sky columns are fully blocked.
   The profile preview is drawn as full-width, seam-split polygons that never
   self-intersect (`skyBandPolygons`; the old fill used `x=i/2` = half width and
-  one polygon that bridged blocked gaps). The edge geometry `profileSegments`
-  is SHARED with the desktop (`static/js/pano.js`) and pinned to identical
-  vertices, with the whole complement/regression contract, by
+  one polygon that bridged blocked gaps). The assumed-open hatch polygons are
+  built in BIN space (`assumedOpenHatchPolys` - never `2 * azimuth`, which
+  shifted the hatch whenever `azOffset != 0` or `fov < 360`). The edge geometry
+  `profileSegments` is SHARED with the desktop (`static/js/pano.js`) and pinned
+  to identical vertices, with the whole complement/regression contract, by
   `tests/js/sky_band.mjs`. Scoring: `ceilFor` returns `ceilTop = null` unless
   `blockAbove`, and `server.py` passes `profile_top` to `compute_night` /
   `object_detail` only when the pano's `block_above` is set.
@@ -169,9 +171,11 @@ Image Catalog (FITS ingest + library). `README.md` has the feature list.
   centre ring + radial connector); the outline is obstacle-mode only in BOTH
   apps (`activePaintMode() !== "sky"` / `paintMode() === "obstacle"`). Both Sky
   Views carry the SAME horizon legend: red `#ff6b6b` "blocked by horizon" +
-  hatched `rgba(210,225,255,.55)` "above band: open (assumed)". A held
-  right-button drag erases continuously as ONE gesture (`gestureErase`) instead
-  of a single `contextmenu` dab; `contextmenu` only suppresses the menu.
+  hatched `rgba(210,225,255,.55)` "above band: open (assumed)"; the chart
+  shading and hatches use that same red (`rgba(255,107,107,...)`) in BOTH apps.
+  A held right-button drag erases continuously as ONE gesture (`gestureErase`)
+  instead of a single `contextmenu` dab; `contextmenu` only suppresses the
+  menu.
 - Web `app.js::clampSkyTime()` also runs at boot and on every `refreshView()`
   (site/date change), so loading during the day starts the scrub at the first
   allowed instant (the window start) instead of showing a daylight
@@ -379,8 +383,8 @@ Image Catalog (FITS ingest + library). `README.md` has the feature list.
   `scripts/check_catalog_token.py`, wired into `scripts/check_js.py`, and pinned
   by `tests/test_cache_tokens.py` (mutation-tested). Do NOT add
   `{cache:'no-store'}` - the file must stay cacheable.
-  Current: `app.js?v=41` (index.html) / `CATALOG_TOKEN = '2'`, `astro.js?v=7`,
-  `horizon.js?v=23`, `format.js?v=3`, `nightrank.js?v=4`, `webstore.js?v=6`,
+  Current: `app.js?v=42` (index.html) / `CATALOG_TOKEN = '2'`, `astro.js?v=7`,
+  `horizon.js?v=24`, `format.js?v=3`, `nightrank.js?v=4`, `webstore.js?v=6`,
   `dragwin.js?v=1`, `style.css?v=16`, `themes.css?v=4`.
 - **Never publish `index.html` before the modules it names.** Deploys are not
   atomic and the page carries the tokens; `ftps_deploy.py::upload_order()` sorts

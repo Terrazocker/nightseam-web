@@ -578,6 +578,9 @@ export function overhangRuns(p, step = 2) {
  *  top below the zenith). Used to hatch that area + explain it in the legend. */
 export function assumedOpenRuns(p, step = 2) {
   if (!p || p.paintMode !== 'sky' || p.blockAbove) return [];
+  const prof = (Array.isArray(p.profile) && p.profile.length === BINS) ? p.profile : null;
+  const tops = (Array.isArray(p.profileTop) && p.profileTop.length === BINS) ? p.profileTop : null;
+  if (!prof || !tops) return [];
   const fov = Number(p.fov) > 0 ? Number(p.fov) : 360;
   const azOff = Number(p.azOffset) || 0;
   const runs = [];
@@ -587,7 +590,7 @@ export function assumedOpenRuns(p, step = 2) {
     let has = false;
     if (d <= fov) {
       const col = Math.min(BINS - 1, Math.floor((d / fov) * BINS));
-      const b = p.profile[col], t = p.profileTop[col];
+      const b = prof[col], t = tops[col];
       has = b > NO_BLOCK + 0.5 && b < 90 && t > NO_BLOCK + 0.5 && t < 89.5;
     }
     if (has) {
@@ -598,6 +601,36 @@ export function assumedOpenRuns(p, step = 2) {
     }
   }
   return runs;
+}
+
+/** Closed polygon(s) of the assumed-open area ABOVE the painted band for the
+ *  profile preview - one per contiguous run of band columns. The preview maps
+ *  the BIN INDEX straight to x (full 720 bins across the width), so the hatch
+ *  must be built in bin space too: using a world azimuth with `az * 2` only
+ *  coincides at azOffset 0 / fov 360 and shifts the region otherwise. Returns
+ *  [] unless sky mode with open-above (no blockAbove) is in effect. */
+export function assumedOpenHatchPolys(p, W, H, ab, at) {
+  if (!p || p.paintMode !== 'sky' || p.blockAbove) return [];
+  const prof = (Array.isArray(p.profile) && p.profile.length === BINS) ? p.profile : null;
+  const tops = (Array.isArray(p.profileTop) && p.profileTop.length === BINS) ? p.profileTop : null;
+  if (!prof || !tops) return [];
+  const span = Math.max(1, at - ab);
+  const yOf = (alt) => H * (1 - (Math.min(Math.max(alt, ab), at) - ab) / span);
+  const polys = [];
+  let run = null;
+  for (let col = 0; col < BINS; col++) {
+    const b = prof[col], t = tops[col];
+    const has = b > NO_BLOCK + 0.5 && b < 90 && t > NO_BLOCK + 0.5 && t < 89.5;
+    if (!has) { run = null; continue; }
+    if (!run) { run = []; polys.push(run); }
+    run.push([(col / BINS) * W, yOf(t)]);
+  }
+  return polys.map((r) => {
+    const pts = [...r];
+    pts.push([r[r.length - 1][0], 0]);
+    pts.push([r[0][0], 0]);
+    return pts;
+  });
 }
 
 /* ---------------- editor session: history + view (pure) ----------------
@@ -1205,29 +1238,20 @@ function wireEditor(box, p, onChanged) {
         profCtx.fill();
       }
       // hatch the assumed-open part above the painted band (parity with the
-      // desktop mask view and the sky chart): bandTop..altTop, per run
+      // desktop mask view and the sky chart). The polygons are built in BIN
+      // space - the same full-width transform as the band fill above.
       if (!p.blockAbove) {
-        const span = Math.max(1, hi - lo);
-        const yOf = (alt) => H * (1 - (Math.min(Math.max(alt, lo), hi) - lo) / span);
         profCtx.save();
         profCtx.strokeStyle = 'rgba(210,225,255,.28)';
         profCtx.lineWidth = 1;
-        for (const run of assumedOpenRuns(p, 1)) {
-          const pts = [];
-          for (let az = run.a0; az <= run.a1; az += 1) {
-            const t = bandTopFor(p, az);
-            if (t == null) continue;
-            pts.push([az * 2, yOf(t)]);       // preview x = bin index
-          }
-          if (pts.length < 2) continue;
+        for (const pts of assumedOpenHatchPolys(p, W, H, lo, hi)) {
           profCtx.save();
           profCtx.beginPath();
           pts.forEach(([x, y], k) => (k ? profCtx.lineTo(x, y) : profCtx.moveTo(x, y)));
-          profCtx.lineTo(pts[pts.length - 1][0], 0);
-          profCtx.lineTo(pts[0][0], 0);
           profCtx.closePath();
           profCtx.clip();
-          const minX = pts[0][0], maxX = pts[pts.length - 1][0];
+          const xs = pts.map((q) => q[0]);
+          const minX = Math.min(...xs), maxX = Math.max(...xs);
           const diag = (maxX - minX) + H;
           for (let o = -diag; o < diag; o += 9) {
             profCtx.beginPath();

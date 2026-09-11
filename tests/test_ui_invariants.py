@@ -332,8 +332,15 @@ def test_horizon_legend_and_outline_are_identical_across_apps():
     assert "rgba(210, 225, 255, .55)" in _read("web", "style.css")
     assert "rgba(210, 225, 255, .55)" in _read("static", "style.css")
     assert "activePaintMode() !== \"sky\"" in _read("static", "js", "skyview.js")
-    assert "assumedOpenRuns(p, 1)" in _read("web", "horizon.js"), \
-        "the web editor preview must hatch the assumed-open band"
+    assert "assumedOpenHatchPolys(p, W, H, lo, hi)" in _read("web", "horizon.js"), \
+        "the web editor preview must hatch the assumed-open band in bin space"
+    # the chart shading is the legend's red in BOTH apps (no third red)
+    sky = _read("static", "js", "skyview.js")
+    assert "rgba(255,107,107,.18)" in sky and "rgba(255,107,107,.75)" in sky
+    assert "255,93,93" not in sky, "desktop sky view kept the old red"
+    app = _read("web", "app.js")
+    assert "rgba(255, 107, 107, .15)" in app and "rgba(255, 107, 107, .85)" in app
+    assert "255, 80, 80" not in app, "web sky view kept the old red"
 
 
 def test_web_sky_mode_is_one_obstruction_colour_and_scrub_time_is_clamped():

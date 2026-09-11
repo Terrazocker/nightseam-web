@@ -9,7 +9,7 @@
  * All sky math runs client-side (astro.js, Meeus algorithms).
  */
 import * as E from './astro.js?v=7';
-import * as Hor from './horizon.js?v=23';
+import * as Hor from './horizon.js?v=24';
 import * as WS from './webstore.js?v=6';
 import { initDragWindows } from './dragwin.js?v=1';
 import { fmtSize, sizeArcmin, framePct, magVisible, skyClampZoom,
@@ -933,8 +933,8 @@ function renderSky() {
         const { ceil } = Hor.ceilFor(pano, az);
         ceilPts.push(radiusFor(az, ceil > Hor.NO_BLOCK + 0.5 ? Math.min(ceil, 90) : 0));
       }
-      ctx.fillStyle = 'rgba(255, 80, 80, .15)';
-      ctx.strokeStyle = 'rgba(255, 80, 80, .85)';
+      ctx.fillStyle = 'rgba(255, 107, 107, .15)';
+      ctx.strokeStyle = 'rgba(255, 107, 107, .85)';
       ctx.lineWidth = 1.4;
       ctx.beginPath();
       ceilPts.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
@@ -979,8 +979,8 @@ function renderSky() {
       };
       if (pano.paintMode === 'sky') {
         if (pano.blockAbove) {
-          ctx.fillStyle = 'rgba(255, 80, 80, .15)';
-          ctx.strokeStyle = 'rgba(255, 80, 80, .85)';
+          ctx.fillStyle = 'rgba(255, 107, 107, .15)';
+          ctx.strokeStyle = 'rgba(255, 107, 107, .85)';
           ctx.lineWidth = 1.4;
           for (const run of Hor.overhangRuns(pano, 2)) {
             const pts = [];
