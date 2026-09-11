@@ -207,3 +207,51 @@ still recompute tracks (~0.46 s at 1x); the flip UI must paint a busy frame
 before the synchronous compute and debounce/cancel superseded changes, and the
 filed follow-up release carries an async (worker or time-sliced, cancellable)
 compute before Phase C. Parity: `tests/test_scoring_parity.py` 2 passed.
+
+## Authority flip implemented (`918004c` + `ea5e128`)
+
+### Consumer inventory (every planning path)
+
+| Consumer | 0.6.17 source | Flipped path |
+|---|---|---|
+| Night planner (topbar, night info, Tonight, targets table, sky view, scrub range) | `GET /api/night` tracks/windows | `planning_client.js::buildClientNight` -> core `computeNightTracks` + `nightInfo`/`pickDarkWindow`/`altaz`; same payload shape, `_clientTracks` |
+| Object detail modal + altitude chart | `GET /api/object/{oid}` | `buildClientDetail` -> core tracks + the server's exact vis/ceil/best rules and `format_ra`/`format_dec` strings |
+| Catalog `%` column, clear windows, scores | client `derive.js` (already local) | unchanged scoring, now fed by client tracks; pref change = `recomputeNightDerived` only (tracks cached to site/date/catalog/profile) |
+| Advanced mode (12k) | `?adv=1` metadata + `synthesizeAdvancedTracks` | full client tracks via core for curated + advanced; synthesis skipped via `_clientTracks` |
+| Sun/Moon chart, scrub, moon text | payload arrays | client `sunRaDec`/`moonRaDec` + `altaz` (the same wrappers the web invariant requires) |
+| Image endpoints / library | not planning | untouched |
+
+Flag: `planning_client_compute` (server settings + `/api/state`, desktop-only,
+default ON). Any client-build failure logs `[night]/[detail] client planning
+failed; falling back to the server path` and uses the retained route; the
+`__NS_PLAN_FORCE_FAIL` smoke hook proves it. UI: one painted frame
+(`requestAnimationFrame` twice) before the synchronous compute; the existing
+300 ms debounce + `ctl !== _nightCtl` checks cover superseded loads.
+
+### Verification (real packed host `0.6.17-12-g918004c` + `ea5e128` changes)
+
+- Payload parity, 4 fixtures (Backyard/Tromso x 2026-01-15 / 2026-06-21):
+  timeline, sunset/sunrise/dusk/dawn, twilight level, moon illum/age, object
+  ids/order, `ceil`, `max_alt`, `max_i` all EXACT; alt/az max 0.1 deg
+  (single-sample rounding ties), sun/moon 0; Tromso polar day = server
+  `fallback` level on both.
+- Detail parity, 7 fixtures incl. both sites + clear window (`best [19,125]`):
+  `vis` differences 0, best/max_alt/max_time/twilight exact, `ra_hms`/`dec_dms`
+  byte-equal to Python's `format_ra`/`format_dec`.
+- Partial/rotated pano (FOV 180 @ azOffset 45): obstacle, sky+block-above and
+  sky-open-above - `ceil`/`ceil_top`/detail `vis`/`best` exact in all three.
+- Display goldens (full `#nightInfo`/`#topPicks`/`#targetRows` innerText,
+  client vs server): equal for Backyard winter, Backyard midsummer, Tromso
+  polar day and advanced mode. Forced fallback: fallback taken, warning
+  logged, DOM byte-equal to the client golden.
+- Shadow comparison re-run: 189,908 samples, 0 divergences.
+- Real-host timings after catalog caching (1x/4x/6x):
+  standard load 33/58/82 ms, pref rescore 3.5/23/20 ms;
+  advanced load 593/2440/4312 ms, pref rescore 125/475/1256 ms.
+  0.6.17 pre-flip: advanced date/site 483/2206/3129 ms, pref change ~531 ms.
+  Date/site is ~20% slower at 1x (server path retained as fallback); preference
+  changes are ~4x faster (the interactive hot path). The async worker follow-up
+  (filed) is the planned fix for the remaining advanced-load cost.
+- Tests: full suite green, `night_race.mjs` now drives the runtime-fallback
+  path incl. the paint frame; `test_api` pins the flag default/toggle; the UI
+  invariant pins client-first + fallback in both consumers.
