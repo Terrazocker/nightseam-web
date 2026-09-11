@@ -22,8 +22,8 @@ def _mod():
 
 def test_current_release_version_has_curated_entry():
     m = _mod()
-    assert m.check("0.6.12") is True
-    assert m.check("v0.6.12") is True          # leading v tolerated
+    assert m.check("0.6.11") is True
+    assert m.check("v0.6.11") is True          # leading v tolerated
 
 
 def test_unknown_version_fails_the_gate():
@@ -35,7 +35,7 @@ def test_unknown_version_fails_the_gate():
 
 def test_main_exit_codes(monkeypatch):
     m = _mod()
-    monkeypatch.setattr(sys, "argv", ["pre_tag_check.py", "0.6.12"])
+    monkeypatch.setattr(sys, "argv", ["pre_tag_check.py", "0.6.11"])
     assert m.main() == 0
     monkeypatch.setattr(sys, "argv", ["pre_tag_check.py", "9.9.9"])
     assert m.main() == 1

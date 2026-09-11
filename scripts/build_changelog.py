@@ -30,10 +30,6 @@ ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "landing" / "changelog.json"
 
 CURATED = {
-    # 0.6.12 is a data-integrity + panorama-editor release: catalog ids are now
-    # globally unique, web backups are truthful and safe to restore, the desktop
-    # is more robust, and the web panorama editor was redesigned.
-    "0.6.12": "Reliability and editing release. The object list no longer has two entries sharing one id (the Rosette Nebula and Stephan's Quintet and their member galaxies are now unambiguous in both the desktop app and the web planner). Backups are truthful: web panorama photos are included or the record honestly reports none, the theme and settings restore, and a failed restore rolls back instead of leaving a half-restored setup. The desktop no longer dead-ends if you skip choosing a site, exactly one panorama is active at a time, and switching horizons can no longer save the wrong one. The web panorama editor was rebuilt for precise work: gesture-level undo/redo, a confirmed and undoable Clear, a Revert to the last saved horizon, a clear saved/unsaved indicator, sharp HiDPI rendering, zoom and pan, denser alignment guides, and a live azimuth/altitude readout. The web catalog is now cache-busted so returning visitors actually get the fix.",
     # 0.6.11 is a correctness + chart-tools release: Sun/Moon visibility, the
     # web magnitude slider, desktop zoom parity and the web panorama editor.
     "0.6.11": "Bug-fix and chart-tools release. On the all-sky chart the Sun and Moon could appear in the sky while they were really below the horizon - both apps now draw them only while they are actually up at the selected time. The web chart gains the desktop's magnitude slider (hide objects fainter than a chosen limit), the desktop chart's wheel-zoom now opens the same full rectangular window as the web, and the web panorama editor gains alignment guides (azimuth, altitude and horizon lines), joins a 360-degree panorama seamlessly at the edges, and fixes sky-mask \"open above\" handling and the compass labels on partial panoramas. Web cache tokens were bumped so the updated files reach returning visitors.",
