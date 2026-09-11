@@ -41,6 +41,10 @@ globalThis.document = {
 };
 globalThis.window = globalThis;
 globalThis.CustomEvent = globalThis.CustomEvent || class { constructor(t) { this.type = t; } };
+// authority flip: the harness drives the RETAINED SERVER PATH (client build
+// throws at its first line), which is exactly the runtime-fallback flow -
+// including the paint frame before the synchronous compute attempt.
+globalThis.window.__NS_PLAN_FORCE_FAIL = true;
 
 // ------------------------------------------------------------- stub fetch
 const pending = [];
@@ -75,7 +79,8 @@ function payload(day, nAdv, nSamples = 6) {
 
 const { S } = await import(new URL("static/js/state.js", ROOT).href);
 const night = await import(new URL("static/js/night.js", ROOT).href);
-S.cfg = { adv_mode: true, min_useful_alt: 25, moon_aware: false };
+S.cfg = { adv_mode: true, min_useful_alt: 25, moon_aware: false,
+          planning_client_compute: true };
 S.panos = [];
 
 const failures = [];
@@ -86,6 +91,7 @@ const payloadB = payload("11", 4);
 
 night.loadNight();                            // schedules doLoadNight(0)
 await tick();
+await tick();                                 // paint frame, then the fallback fetch
 if (pending.length !== 1) failures.push(`expected 1 pending fetch, got ${pending.length}`);
 pending.shift()(jsonResponse(payloadA));      // A's response lands
 await tick();                                 // A is now inside the synthesis
@@ -93,6 +99,7 @@ if (S.night) failures.push("A committed before its synthesis finished");
 
 night.loadNight();                            // the user changes the date: load B
 await tick();
+await tick();                                 // paint frame, then the fallback fetch
 for (let i = 0; i < 5 && pending.length < 1; i++) await tick();
 if (pending.length !== 1) failures.push(`expected B's fetch, got ${pending.length}`);
 pending.shift()(jsonResponse(payloadB));
@@ -112,6 +119,7 @@ if (elements["#busy"].hidden !== true) {
 const payloadC = payload("12", 2);
 night.loadNight();
 await tick();
+await tick();                                 // paint frame, then the fallback fetch
 pending.shift()(jsonResponse(payloadC));
 for (let i = 0; i < 20; i++) await tick();
 if (S.night !== payloadC) failures.push("a current load failed to commit");

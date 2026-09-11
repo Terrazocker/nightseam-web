@@ -28,6 +28,21 @@ const DETAIL_STEP_MIN = 4;
 const TRACK_CHUNK = 2000;         // flat tracks are converted+released per chunk
 
 let _cache = { key: null, payload: null };
+let _catCache = { adv: null, list: null };
+
+/* The catalog is metadata only: reuse the boot copy (main.js::S.catalog) or the
+   previous fetch - a date/site change must not re-download ~4 MB. */
+async function catalogFor(adv) {
+  if (_catCache.adv === adv && _catCache.list) return _catCache.list;
+  if (Array.isArray(S.catalog) && S.catalog.length &&
+      !!(S.cfg && S.cfg.adv_mode) === adv) {
+    _catCache = { adv, list: S.catalog };
+    return S.catalog;
+  }
+  const list = await api("/api/catalog" + (adv ? "?adv=1" : ""));
+  _catCache = { adv, list };
+  return list;
+}
 
 /** Drop the cached tracks (tests / explicit invalidation). */
 export function invalidatePlanCache() { _cache = { key: null, payload: null }; }
@@ -107,7 +122,7 @@ export async function buildClientNight({ date, siteId, tzMin }) {
   const moonIllum = Math.round(moonIllumination(midJd) * 100) / 100;
   const moonAgeDays = Math.round(moonAge(midJd) * 100) / 100;
 
-  const catalog = await api("/api/catalog" + (adv ? "?adv=1" : ""));
+  const catalog = await catalogFor(adv);
   const topProf = activeTopProfile();
   const ceilAt = lookup(pano);
   const topAt = lookup(topProf);
@@ -123,17 +138,17 @@ export async function buildClientNight({ date, siteId, tzMin }) {
       const base = k * count;
       const alts = new Array(count), azs = new Array(count), ceils = new Array(count);
       const tops = topProf ? new Array(count) : null;
-      let maxI = 0;
+      let maxI = 0, maxRaw = -Infinity;
       for (let i = 0; i < count; i++) {
         const a = tracks.alt[base + i], z = tracks.az[base + i];
         alts[i] = r1(a); azs[i] = r1(z); ceils[i] = r1(ceilAt(z));
         if (tops) tops[i] = r1(topAt(z));
-        if (alts[i] > alts[maxI]) maxI = i;
+        if (a > maxRaw) { maxRaw = a; maxI = i; }   // raw argmax (server)
       }
       const rec = {
         id: o.id,
         alt: alts, az: azs, ceil: ceils,
-        max_alt: alts[maxI], max_i: maxI,
+        max_alt: r1(maxRaw), max_i: maxI,
       };
       if (o._adv) {
         rec.adv = true;
@@ -188,7 +203,7 @@ function fmtDec(decDeg) {
 
 /** Client detail payload; throws on unknown/malformed ids so detail.js falls
  *  back to the retained server route. */
-export async function buildClientDetail(oid, { date, tzMin, minAlt }) {
+export async function buildClientDetail(oid, { date, tzMin, minAlt, siteId }) {
   if (window.__NS_PLAN_FORCE_FAIL) {
     throw new Error("forced client-planning failure (smoke hook)");
   }
@@ -196,7 +211,7 @@ export async function buildClientDetail(oid, { date, tzMin, minAlt }) {
   if (!meta || meta.ra_hours == null || meta.dec_deg == null) {
     throw new Error("object metadata unavailable");
   }
-  const site = await siteFor(S.activeSiteId);
+  const site = await siteFor(siteId != null ? siteId : S.activeSiteId);
   const { noonMs, w } = clientWindows(date, tzMin, site.lat, site.lon);
   const t0 = Math.max(w.dusk.getTime() - 75 * 60000, noonMs);
   const t1 = Math.min(w.dawn.getTime() + 45 * 60000, noonMs + 24 * 3600000);

@@ -60,7 +60,8 @@ export async function openDetail(id) {
   if (!S.cfg || S.cfg.planning_client_compute !== false) {
     try {
       d = await buildClientDetail(id, { date: $("#dateInput").value,
-        tzMin: tzOffAt($("#dateInput").value), minAlt: S.minAlt });
+        tzMin: tzOffAt($("#dateInput").value), minAlt: S.minAlt,
+        siteId: S.activeSiteId });
     } catch (err) {
       console.warn("[detail] client planning failed; falling back to the " +
                    "server path:", err);
