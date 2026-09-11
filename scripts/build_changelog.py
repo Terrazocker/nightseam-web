@@ -30,6 +30,10 @@ ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "landing" / "changelog.json"
 
 CURATED = {
+    # 0.6.14 is the desktop sky-view patch: the sky-mode chart artifacts are
+    # gone, the horizon legend/hatch now match the web, and the assumed-open
+    # tail of the 0.6.13 sky-band work is finished.
+    "0.6.14": "Desktop patch release. The sky view is corrected: in \"paint visible sky\" mode the chart no longer draws a spurious centre ring or radial connector, never strokes the band outline, and hatches the area above the painted band instead of shading it as blocked. The same horizon legend now appears in the desktop and the web (\"blocked by horizon\" and \"above band: open (assumed)\"), and the web editor's profile preview hatches that assumed-open area too. This build also carries the immediately preceding sky-band fixes: painting the visible sky assumes the sky above the band is open unless you tick \"block above band\", and View full day is a real 24-hour toggle in both apps.",
     # 0.6.13 is the panorama-editor + reliability release: the web editor was
     # rebuilt (toolbar, history, HiDPI, zoom), sky mode assumes open above, the
     # scrub spans the whole night with a real full-day toggle in both apps, and
