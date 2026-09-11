@@ -320,6 +320,22 @@ def test_desktop_sky_view_respects_block_above_and_hatches_open_above():
     assert 'id="skyPanoLegend"' in _read("static", "index.html")
 
 
+def test_horizon_legend_and_outline_are_identical_across_apps():
+    """Convergence pass: the Sky View horizon legend uses the SAME wording,
+    colour and hatch stripes in both apps, sky mode never strokes the outline,
+    and both editors' assumed-open areas are hatched."""
+    for src, tree in ((_read("web", "app.js"), "web"),
+                      (_read("static", "js", "skyview.js"), "static")):
+        assert "blocked by horizon" in src, tree
+        assert "above band: open (assumed)" in src, tree
+        assert "#ff6b6b" in src, tree
+    assert "rgba(210, 225, 255, .55)" in _read("web", "style.css")
+    assert "rgba(210, 225, 255, .55)" in _read("static", "style.css")
+    assert "activePaintMode() !== \"sky\"" in _read("static", "js", "skyview.js")
+    assert "assumedOpenRuns(p, 1)" in _read("web", "horizon.js"), \
+        "the web editor preview must hatch the assumed-open band"
+
+
 def test_web_sky_mode_is_one_obstruction_colour_and_scrub_time_is_clamped():
     """0.6.13 follow-up: sky-band shading must be ONE obstruction colour (the
     sky view = the obstruction view inverted; no unexplained second/yellow

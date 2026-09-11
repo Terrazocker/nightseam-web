@@ -406,7 +406,7 @@ export function renderSky() {
     const blocked = !!activeProfile();
     const openAbove = mode === "sky" && !!activeBandTop() && !activeTopProfile();
     pl.innerHTML =
-      (blocked ? '<span class="lgchip" style="--c:#ff5d5d"><i></i>blocked by horizon</span>' : "") +
+      (blocked ? '<span class="lgchip" style="--c:#ff6b6b"><i></i>blocked by horizon</span>' : "") +
       (openAbove ? '<span class="lgchip hatch"><i></i>above band: open (assumed)</span>' : "");
   }
 

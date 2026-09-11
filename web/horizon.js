@@ -1204,6 +1204,41 @@ function wireEditor(box, p, onChanged) {
         profCtx.closePath();
         profCtx.fill();
       }
+      // hatch the assumed-open part above the painted band (parity with the
+      // desktop mask view and the sky chart): bandTop..altTop, per run
+      if (!p.blockAbove) {
+        const span = Math.max(1, hi - lo);
+        const yOf = (alt) => H * (1 - (Math.min(Math.max(alt, lo), hi) - lo) / span);
+        profCtx.save();
+        profCtx.strokeStyle = 'rgba(210,225,255,.28)';
+        profCtx.lineWidth = 1;
+        for (const run of assumedOpenRuns(p, 1)) {
+          const pts = [];
+          for (let az = run.a0; az <= run.a1; az += 1) {
+            const t = bandTopFor(p, az);
+            if (t == null) continue;
+            pts.push([az * 2, yOf(t)]);       // preview x = bin index
+          }
+          if (pts.length < 2) continue;
+          profCtx.save();
+          profCtx.beginPath();
+          pts.forEach(([x, y], k) => (k ? profCtx.lineTo(x, y) : profCtx.moveTo(x, y)));
+          profCtx.lineTo(pts[pts.length - 1][0], 0);
+          profCtx.lineTo(pts[0][0], 0);
+          profCtx.closePath();
+          profCtx.clip();
+          const minX = pts[0][0], maxX = pts[pts.length - 1][0];
+          const diag = (maxX - minX) + H;
+          for (let o = -diag; o < diag; o += 9) {
+            profCtx.beginPath();
+            profCtx.moveTo(minX + o, H);
+            profCtx.lineTo(minX + o + diag, 0);
+            profCtx.stroke();
+          }
+          profCtx.restore();
+        }
+        profCtx.restore();
+      }
     }
     profCtx.fillStyle = 'rgba(127,151,184,.8)';
     profCtx.font = '9px system-ui';
