@@ -78,6 +78,14 @@ def test_web_backup_integrity():
     assert "web backup integrity held" in out
 
 
+def test_scrub_window_degeneracy_policy():
+    """The scrub/detail range must be strictly increasing for every twilight
+    geometry, including the Tromso 2026-01-15 grazing polar night where the
+    sunset/sunrise pair is degenerate (sunset after the next dawn)."""
+    out = run_node_harness("scrub_degenerate.mjs")
+    assert "scrub degeneracy policy held" in out
+
+
 def test_web_panorama_editor_history_and_view():
     """The panorama editor's pure UI logic (web/horizon.js): undo/redo history
     with a bounded stack and redo invalidation, the dirty/saved baseline, and

@@ -64,22 +64,26 @@ Image Catalog (FITS ingest + library). `README.md` has the feature list.
 - Selected time is the source of truth: desktop `S.tIdx`, web `S.skyTime`. "Best
   targets tonight" (web) lists only rows with `visN > 0`. Keyboard scrub is 6 min,
   Shift 60 min in BOTH apps (`SCRUB_STEP_MIN`/`SCRUB_SHIFT_STEP_MIN`).
-- **Scrub window (0.6.13):** the scrub's default range is the WHOLE night,
-  sunset..sunrise from the planner's own sun-crossings (`planning.night_window`
-  / web `nightInfo`); the site-zoned 20:00-04:00 fallback applies only when
-  there is no sunset. This is a SEPARATE concept from the SCORING window
-  (twilight-level dusk..dawn), which is UNCHANGED. `viewFullDay` ON widens the
-  scrub to the app's full span: the SAME 24 h site-zoned local noon->noon grid
-  in BOTH apps (desktop `/api/night` ships it; web computes it). ONE shared
-  policy `scrubBounds`/`scrubClamp` in `web/astro.js` + `static/js/derive.js`,
-  pinned at both states by the `scrubwindow` engine of `tests/test_js_parity.py`
-  (+ absolute scenarios: astronomical/nautical/civil/polar/DST/both
-  hemispheres) and by the `scrubgrid` engine against the real desktop 24 h
-  grid. Toggling re-derives live and clamps the selected time to the nearest
-  in-range instant. Desktop `derive.js::indexRangeFor` backs BOTH
-  `nightIndexRange` (scoring, dusk..dawn) and `scrubWindowRange` (scrub,
-  sunset..sunrise); web `app.js::scrubRange` maps `nightInfo`'s
-  sunset/sunrise to the slider. Never define a second window.
+- **Scrub window (0.6.13; degeneracy policy 0.6.17):** the scrub's default range
+  is the WHOLE night, from the planner's own sunset..sunrise sun-crossings
+  (`planning.night_window` / web `nightInfo`) ONLY when that pair is coherent -
+  strictly ordered AND the sunset precedes the next dawn. A grazing polar day
+  can "set" around local noon AFTER the dark window (Tromso 2026-01-15: sunset
+  11:08Z, dawn 05:12Z), and the old per-app fallbacks built inverted ranges
+  there. Otherwise the range is the twilight-level dusk..dawn; only when that
+  is missing does the site-zoned 20:00-04:00 fallback apply. This is a SEPARATE
+  concept from the SCORING window (twilight-level dusk..dawn), which is
+  UNCHANGED. ONE shared policy `scrubWindowMs` in `core/planning.js` is called
+  by BOTH shells (web `app.js::scrubRange` + detail chart; desktop
+  `derive.js::scrubWindowRange`), on top of the shared
+  `scrubBounds`/`scrubClamp`; pinned by `tests/js/scrub_degenerate.mjs`,
+  `tests/js/derive_window.mjs` and the `scrubwindow`/`scrubgrid` engines.
+  `viewFullDay` ON widens the scrub to the app's full span: the SAME 24 h
+  site-zoned local noon->noon grid in BOTH apps (desktop `/api/night` ships it;
+  web computes it). Toggling re-derives live and clamps the selected time to
+  the nearest in-range instant. Desktop `derive.js::indexRangeFor` backs BOTH
+  `nightIndexRange` (scoring, dusk..dawn) and `scrubWindowRange` (scrub).
+  Never define a second window.
 - **Desktop payload grid is a full 24 h site-zoned day** (0.6.13, ITEM A):
   `nightcalc.compute_night` samples local noon -> next local noon at 6 min
   (241 samples), so the desktop `View full day` toggle is real and matches the

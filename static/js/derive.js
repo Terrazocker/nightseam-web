@@ -4,7 +4,7 @@ import { S } from "./state.js";
 import { parseUTC, clamp, fmtHM } from "./util.js";
 import { statusOf as coreStatusOf, effectiveMinAlt as coreMinAlt,
          moonSensitivity, effectiveMoonGlow, moonPenalty, bortleMoonFactor,
-         popularityFactor as corePopularityFactor }
+         popularityFactor as corePopularityFactor, scrubWindowMs }
   from "./core.js";
 
 /* keyboard scrub steps in minutes - shared with the web (web/astro.js) and
@@ -124,17 +124,35 @@ export function scrubClamp(t, start, end) {
   return t;
 }
 
-/** Grid index bounds [lo, hi] the scrub may select: the WHOLE night,
- *  sunset..sunrise (the planner's sun-crossings; dusk..dawn when the payload
- *  has no sunset, polar fallback), by default; the whole payload grid with
- *  view_full_day. SCORING still clips to dusk..dawn via nightIndexRange(). */
+/** Grid index bounds [lo, hi] the scrub may select: the WHOLE night, from the
+ *  sunset..sunrise pair when it is coherent (core/planning.js::scrubWindowMs),
+ *  else dusk..dawn, else the site-zoned 20:00-04:00 fallback; the whole payload
+ *  grid with view_full_day. SCORING still clips to dusk..dawn via
+ *  nightIndexRange(). */
 export function scrubWindowRange() {
   const tl = S.night && S.night.timeline;
   if (!tl) return [0, 0];
   if (S.cfg && S.cfg.view_full_day) return [0, tl.n - 1];
-  const start = S.night.sunset || S.night.dusk;
-  const end = S.night.sunrise || S.night.dawn;
-  return indexRangeFor(start, end);
+  const s = scrubWindowMs({
+    sunsetMs: isoMs(S.night.sunset),
+    sunriseMs: isoMs(S.night.sunrise),
+    duskMs: isoMs(S.night.dusk),
+    dawnMs: isoMs(S.night.dawn),
+    noonMs: siteNoonMs(),
+  });
+  return indexRangeFor(msISO(s.startMs), msISO(s.endMs));
+}
+
+/* payload ISO (no Z) -> epoch ms; epoch ms -> the payload's ISO shape */
+function isoMs(iso) { return iso ? parseUTC(iso).getTime() : null; }
+function msISO(ms) { return new Date(ms).toISOString().slice(0, 19); }
+
+/* the SITE's local noon from the payload (date_local + tz_offset_min) */
+function siteNoonMs() {
+  const n = S.night;
+  const [y, m, d] = String(n.date_local || '').split('-').map(Number);
+  if (!y || !m || !d) return null;
+  return Date.UTC(y, m - 1, d, 12) - (n.tz_offset_min || 0) * 60000;
 }
 
 /* ---------------- advanced catalog: synthesize tracks client-side -------- */

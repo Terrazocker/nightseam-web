@@ -13,8 +13,8 @@
  * tests/js/astro_parity.mjs.
  */
 import * as E from './astro.js?v=7';
-import { NO_BLOCK, ceilFor } from './horizon.js?v=34';
-import { sampleVisible } from './core.js?v=11';
+import { NO_BLOCK, ceilFor } from './horizon.js?v=35';
+import { sampleVisible } from './core.js?v=12';
 
 export { sampleVisible };
 

@@ -10,7 +10,7 @@
    Builds a synthetic payload (no DB, no network) and asserts the invariant.
 */
 const { S } = await import(new URL("../../static/js/state.js", import.meta.url).href);
-const { recomputeNightDerived } = await import(new URL("../../static/js/derive.js", import.meta.url).href);
+const { recomputeNightDerived, scrubWindowRange } = await import(new URL("../../static/js/derive.js", import.meta.url).href);
 
 const STEP = 6;
 const N = 40;                       // 4 h of samples
@@ -78,6 +78,45 @@ if (below.obs_pct !== 0) failures.push(`below: obs_pct=${below.obs_pct} expected
 const want = Math.round(20 * Math.sin(60 * Math.PI / 180) * 10) / 100;
 if (Math.abs(always.score - want) > 0.02) {
   failures.push(`always: score=${always.score} expected ~${want} (20 dark samples)`);
+}
+
+/* --- scrub/chart degeneracy policy (Phase 2 Patch 2) ----------------------
+   Tromso 2026-01-15 payload: sunset 2026-01-16T11:08:44 (AFTER the next dawn
+   05:12:08), sunrise null - the pre-fix desktop built start=sunset -> end=dawn,
+   an inverted range. The shared policy must fall back to dusk..dawn. A normal
+   night must keep using the sunset..sunrise pair. */
+const scrubTimes = [];
+{
+  const start = Date.UTC(2026, 0, 15, 15, 30), end = Date.UTC(2026, 0, 16, 8, 0);
+  for (let t = start; t <= end; t += 6 * 60000) {
+    scrubTimes.push(new Date(t).toISOString().slice(0, 19));
+  }
+}
+const scrubTimeline = { t0: scrubTimes[0], step_min: 6, n: scrubTimes.length,
+                        times_iso: scrubTimes };
+const idxAfter = (iso) => scrubTimes.findIndex((t) => t >= iso);
+const idxBefore = (iso) => {
+  for (let i = scrubTimes.length - 1; i >= 0; i--) if (scrubTimes[i] <= iso) return i;
+  return -1;
+};
+
+S.night = { timeline: scrubTimeline, date_local: "2026-01-15", tz_offset_min: 60,
+            sunset: "2026-01-16T11:08:44", sunrise: null,
+            dusk: "2026-01-15T16:34:14", dawn: "2026-01-16T05:12:08" };
+S.cfg = { view_full_day: false };
+const [tlo, thi] = scrubWindowRange();
+const wantTlo = idxAfter("2026-01-15T16:34:14"), wantThi = idxBefore("2026-01-16T05:12:08");
+if (tlo !== wantTlo || thi !== wantThi) {
+  failures.push(`tromso scrub range [${tlo},${thi}] expected [${wantTlo},${wantThi}]`);
+}
+
+S.night = { timeline: scrubTimeline, date_local: "2026-01-15", tz_offset_min: 60,
+            sunset: "2026-01-15T16:00:00", sunrise: "2026-01-16T07:30:00",
+            dusk: "2026-01-15T17:30:00", dawn: "2026-01-16T06:00:00" };
+const [nlo, nhi] = scrubWindowRange();
+const wantNlo = idxAfter("2026-01-15T16:00:00"), wantNhi = idxBefore("2026-01-16T07:30:00");
+if (nlo !== wantNlo || nhi !== wantNhi) {
+  failures.push(`normal scrub range [${nlo},${nhi}] expected [${wantNlo},${wantNhi}]`);
 }
 
 if (failures.length) {

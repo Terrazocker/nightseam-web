@@ -38,7 +38,7 @@ export {
 } from './astro.js';
 
 export {
-  sunCrossings, nightInfo, pickDarkWindow,
+  sunCrossings, nightInfo, pickDarkWindow, scrubWindowMs,
 } from './planning.js';
 
 export {

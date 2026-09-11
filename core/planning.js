@@ -114,3 +114,28 @@ export function pickDarkWindow(info, dayDate, localNoon) {
     level: level || "fallback",
   };
 }
+
+/** Choose the sunset->sunrise-derived range used by the scrub slider and the
+ *  detail chart. The pair is used ONLY when it is strictly ordered AND the
+ *  sunset precedes the next dawn: a grazing polar day can "set" around local
+ *  noon AFTER the dark window has ended (Tromso 2026-01-15 - sunset 11:08Z,
+ *  dawn 05:12Z), and using it built an inverted range in both apps.
+ *  Otherwise: dusk -> dawn; when those are missing, the site-zoned
+ *  20:00-04:00 fallback (localNoon + 8 h / + 16 h).
+ *
+ *  All inputs are epoch milliseconds (null = absent); `noonMs` must be the
+ *  SITE's local-noon instant so the fallback lands on the site's wall clock.
+ *  Returns { startMs, endMs, source } with startMs < endMs always. */
+export function scrubWindowMs(win) {
+  const { sunsetMs, sunriseMs, duskMs, dawnMs, noonMs } = win || {};
+  if (sunsetMs != null && sunriseMs != null && sunsetMs < sunriseMs
+      && (dawnMs == null || sunsetMs < dawnMs)) {
+    return { startMs: sunsetMs, endMs: sunriseMs, source: "sun" };
+  }
+  if (duskMs != null && dawnMs != null && duskMs < dawnMs) {
+    return { startMs: duskMs, endMs: dawnMs, source: "twilight" };
+  }
+  const anchor = noonMs != null ? noonMs : 0;
+  return { startMs: anchor + 8 * 3600000, endMs: anchor + 16 * 3600000,
+           source: "fallback" };
+}

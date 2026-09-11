@@ -9,15 +9,15 @@
  * All sky math runs client-side (astro.js, Meeus algorithms).
  */
 import * as E from './astro.js?v=7';
-import * as Hor from './horizon.js?v=34';
-import * as WS from './webstore.js?v=13';
+import * as Hor from './horizon.js?v=35';
+import * as WS from './webstore.js?v=14';
 import { initDragWindows } from './dragwin.js?v=1';
 import { fmtSize, sizeArcmin, framePct, magVisible, skyClampZoom,
-         skyViewMatrix, skyScreenToBase, skyClampFocus } from './format.js?v=11';
+         skyViewMatrix, skyScreenToBase, skyClampFocus } from './format.js?v=12';
 import { nightStats, sampleVisible } from './nightrank.js?v=4';
 import { TYPE_LABELS, TYPE_COLORS, searchBlob as coreSearchBlob }
-  from './core.js?v=11';
-import { popularityFactor as corePopularityFactor } from './core.js?v=11';
+  from './core.js?v=12';
+import { popularityFactor as corePopularityFactor } from './core.js?v=12';
 
 // Cache-bust token for the ~4 MB data file web/catalog.json. It is NOT a JS
 // module, so it cannot carry a ?v= in an import: this named token IS its
@@ -185,22 +185,31 @@ function cachedNightWindow() {
   return _winMemo.val;
 }
 
-/** The active scrub span [start, end) in UTC. Off = the WHOLE night,
- *  sunset..sunrise from the planner's own sun-crossings (site-zoned
- *  20:00-04:00 fallback when there is no sunset); On = the 24 h noon->noon
- *  day. SCORING is unaffected - it stays on nightWindow() (dusk..dawn).
- *  scrubBounds is SHARED with the desktop so both apps follow ONE policy. */
+/** The active scrub span [start, end) in UTC. Off = the WHOLE night from the
+ *  planner's own sun-crossings when the sunset/sunrise pair is coherent, else
+ *  the dark window (dusk..dawn), else the site-zoned 20:00-04:00 fallback; On
+ *  = the 24 h noon->noon day. SCORING is unaffected - it stays on
+ *  nightWindow() (dusk..dawn). scrubWindowMs/scrubBounds are SHARED with the
+ *  desktop so both apps follow ONE policy. */
 function scrubRange() {
   const fullStart = skyAnchor(S.skyTime);
   const fullEnd = new Date(fullStart.getTime() + 24 * 3600000);
   const w = cachedNightWindow();
-  const nStart = (w.info && w.info.sunset) || w.startT;
-  const nEnd = (w.info && w.info.sunrise) || w.endT;
+  const info = w.info || {};
+  const pick = (a, b, c) => a || b || c || null;
+  const s = E.scrubWindowMs({
+    sunsetMs: info.sunset ? info.sunset.getTime() : null,
+    sunriseMs: info.sunrise ? info.sunrise.getTime() : null,
+    duskMs: ms(pick(info.astroDusk, info.nauticalDusk, info.civilDusk)),
+    dawnMs: ms(pick(info.astroDawn, info.nauticalDawn, info.civilDawn)),
+    noonMs: siteNoon(nightAnchor()).getTime(),
+  });
   const b = E.scrubBounds(!!Hor.getPrefs().viewFullDay,
-    nStart ? nStart.getTime() : null, nEnd ? nEnd.getTime() : null,
+    s.startMs, s.endMs,
     fullStart.getTime(), fullEnd.getTime());
   return { start: new Date(b.start), end: new Date(b.end) };
 }
+function ms(d) { return d instanceof Date && !isNaN(d) ? d.getTime() : null; }
 
 /** Keep the selected time inside the active scrub range (used when the range
  *  shrinks under it, and at boot / on a site or date change): a daytime load
@@ -1525,8 +1534,19 @@ function openDetail(id) {
   });
 
   // ---- altitude chart ----
-  const startT = info.sunset || WS.wallToUtc(new Date(S.date.getFullYear(), S.date.getMonth(), S.date.getDate(), 19, 0));
-  const endT = info.sunrise || WS.wallToUtc(new Date(S.date.getFullYear(), S.date.getMonth(), S.date.getDate() + 1, 6, 0));
+  // The span follows the SAME degeneracy policy as the scrub (shared in core):
+  // sunset..sunrise only when that pair is coherent, else dusk..dawn, else the
+  // site-zoned fallback; the chart adds one hour of context on each side.
+  const pickW = (a, b, c) => a || b || c || null;
+  const chartWin = E.scrubWindowMs({
+    sunsetMs: info.sunset ? info.sunset.getTime() : null,
+    sunriseMs: info.sunrise ? info.sunrise.getTime() : null,
+    duskMs: ms(pickW(info.astroDusk, info.nauticalDusk, info.civilDusk)),
+    dawnMs: ms(pickW(info.astroDawn, info.nauticalDawn, info.civilDawn)),
+    noonMs: siteNoon(nightAnchor()).getTime(),
+  });
+  const startT = new Date(chartWin.startMs);
+  const endT = new Date(chartWin.endMs);
   const t0 = new Date(startT.getTime() - 60 * 60000);
   const t1 = new Date(endT.getTime() + 60 * 60000);
   const jd0 = E.julianDay(t0), jd1 = E.julianDay(t1);

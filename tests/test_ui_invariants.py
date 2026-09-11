@@ -366,6 +366,23 @@ def test_catalog_type_palette_is_shared_and_web_canonical():
     assert "const TYPE_LABELS = {" not in app, "web kept a private label copy"
 
 
+def test_scrub_and_chart_ranges_use_the_shared_degeneracy_policy():
+    """Phase 2 (Patch 2): every sunset->sunrise-derived range goes through
+    core/planning.js::scrubWindowMs - sunset..sunrise only when that pair is
+    coherent, else dusk..dawn, else the site-zoned fallback. Both shells must
+    delegate; the old direct pair selections are gone."""
+    core = _read("core", "planning.js")
+    assert "export function scrubWindowMs" in core
+    app = _read("web", "app.js")
+    assert "E.scrubWindowMs(" in app
+    assert "info.sunset || WS.wallToUtc" not in app, \
+        "the detail chart kept its old pair selection"
+    derive = _read("static", "js", "derive.js")
+    assert "scrubWindowMs(" in derive
+    assert "S.night.sunset || S.night.dusk" not in derive, \
+        "the desktop scrub kept its old pair selection"
+
+
 def test_web_sky_mode_is_one_obstruction_colour_and_scrub_time_is_clamped():
     """0.6.13 follow-up: sky-band shading must be ONE obstruction colour (the
     sky view = the obstruction view inverted; no unexplained second/yellow
