@@ -1,5 +1,10 @@
 [
  {
+  "version": "0.6.14",
+  "date": "2026-09-11",
+  "summary": "Desktop patch release. The sky view is corrected: in \"paint visible sky\" mode the chart no longer draws a spurious centre ring or radial connector, never strokes the band outline, and hatches the area above the painted band instead of shading it as blocked. The same horizon legend now appears in the desktop and the web (\"blocked by horizon\" and \"above band: open (assumed)\"), and the web editor's profile preview hatches that assumed-open area too. This build also carries the immediately preceding sky-band fixes: painting the visible sky assumes the sky above the band is open unless you tick \"block above band\", and View full day is a real 24-hour toggle in both apps."
+ },
+ {
   "version": "0.6.13",
   "date": "2026-09-11",
   "summary": "Editing and reliability release. The web panorama editor was rebuilt for precise work: a grouped two-row toolbar with the view controls on the image, gesture-level undo/redo, a confirmed and undoable Clear, a Revert, a clear saved/unsaved indicator, sharp HiDPI rendering, zoom and pan, denser alignment guides, and a live azimuth/altitude readout. Painting the visible sky now assumes the sky ABOVE your band is open (hatched with a legend entry) unless you tick \"block above band\", and holding the right mouse button erases continuously. The night scrub now spans sunset to sunrise by default, with a \"View full day\" option that restores a full 24 hours in BOTH apps - the desktop now has a real full-day grid too - and the minimum-altitude slider is longer in the top bar. The object list no longer has two entries sharing one id, web backups are truthful and roll back a failed restore, the desktop no longer dead-ends if you skip choosing a site, and only one panorama is active at a time."
