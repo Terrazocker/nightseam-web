@@ -183,3 +183,27 @@ planner. Visibility and scores are unchanged; behind the scenes the sky position
 is precessed once per night instead of at every sample, which shifts ranking
 scores by less than a hundred-thousandth of a point and changes no displayed
 value. The desktop server remains as an automatic fallback."
+
+### Split result (`d564fcc`) - guardrail round 1, real packed host
+
+Track computation is now separate from scoring
+(`core/scoring.js::computeNightTracks` / `scoreNightTracks`; `nightStatsBatch`
+composes them, bit-identical - pinned by `tests/js/scoring_parity.mjs` including
+the split path). Tracks are keyed to (site, night, catalog, horizon profile);
+preference changes (min-alt, Bortle, moonAware, filters, mag cap) rescore only.
+
+| Action | standard (197) | advanced (11,917) |
+|---|---|---|
+| tracks (site/night/catalog/profile change) | 8.3 ms | 460.8 ms |
+| preference change (rescore only) | 0.9 ms | **33 ms** |
+| 4x CPU: preference change | 7.4 ms | 133.9 ms |
+| 6x CPU: preference change | 3.9 ms | 199.5 ms |
+| 4x CPU: tracks | 48.4 ms | 2051.9 ms |
+| 6x CPU: tracks | 56.4 ms | 3381.5 ms |
+
+Preference changes are now effectively instant in advanced mode (~33 ms vs the
+~530 ms full rescore measured before). Date/site or catalog/profile changes
+still recompute tracks (~0.46 s at 1x); the flip UI must paint a busy frame
+before the synchronous compute and debounce/cancel superseded changes, and the
+filed follow-up release carries an async (worker or time-sliced, cancellable)
+compute before Phase C. Parity: `tests/test_scoring_parity.py` 2 passed.
