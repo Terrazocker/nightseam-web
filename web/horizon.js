@@ -224,6 +224,9 @@ export function normalizePanos(data) {
       strokes,
       profile: (Array.isArray(p.profile) && p.profile.length === BINS) ? p.profile : blank(),
       profileTop: (Array.isArray(p.profileTop) && p.profileTop.length === BINS) ? p.profileTop : blank(),
+      // carry the bin-space marker: a CURRENT backup restores untouched, a
+      // legacy (FOV-relative) one converts exactly once below
+      profileBins: p.profileBins,
       _img: null,
       hasImage: !!image,
     };

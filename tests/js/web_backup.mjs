@@ -213,5 +213,53 @@ assert(afterFail.length === safety.sites.length,
 assert(afterFail.some((r) => r.val.id === 's1') && !afterFail.some((r) => r.val.id === 's-new'),
   'rollback must restore the pre-restore records');
 
+/* 8. Phase-1 migrations: legacy FOV-relative panos and degree rigs ------- */
+// A pre-0.6.16 web panorama stored 720 FOV-relative mask columns. With
+// fov=180, azOffset=90 a wall across the WHOLE mask must migrate to the world
+// bins of az 90..270 and block exactly those directions.
+const legacyProf = new Array(720).fill(-90);
+const legacyTop = new Array(720).fill(-90);
+for (let i = 0; i < 720; i++) legacyProf[i] = 20;      // wall over the whole FOV
+const legacyPano = panoRec({ fov: 180, azOffset: 90, profile: legacyProf,
+                             profileTop: legacyTop, profileBins: undefined });
+const migrated = H.normalizePanos({ panos: [legacyPano] }).panos[0];
+assert(migrated.profileBins === 'world', 'legacy profile must migrate to world bins');
+// independent expectation: desktop representative column per world bin
+const wantWorld = (i) => {
+  const rel = ((i * 0.5 - 90) % 360 + 360) % 360;
+  return rel <= 180 ? legacyProf[Math.min(719, Math.floor(rel * 720 / 180))] : -90;
+};
+for (const i of [0, 179, 180, 359, 360, 539, 540, 719]) {
+  assert(migrated.profile[i] === wantWorld(i),
+    `migrated bin ${i} = ${migrated.profile[i]}, want ${wantWorld(i)}`);
+}
+assert(H.ceilFor(migrated, 100).ceil === 20, 'blocked direction inside the FOV');
+assert(H.ceilFor(migrated, 269).ceil === 20, 'blocked direction at the FOV edge');
+assert(H.ceilFor(migrated, 45).ceil === H.NO_BLOCK, 'outside the FOV stays unblocked');
+const remigrated = H.normalizePanos({ panos: [migrated] }).panos[0];
+assert(remigrated.profileBins === 'world', 'a current record keeps its bin marker');
+for (const i of [0, 180, 360, 540, 719]) {
+  assert(remigrated.profile[i] === migrated.profile[i],
+    `normalizing a CURRENT record must not re-convert (bin ${i})`);
+}
+
+// A pre-0.6.16 rig stored fov_w/fov_h in DEGREES; getRigs converts once.
+await WS.saveRigRec({ id: 'r-legacy', name: 'Legacy', focal_mm: 250,
+                      sensor_w: 5.57, sensor_h: 3.13,
+                      fov_w: WS.fovDeg(250, 5.57), fov_h: WS.fovDeg(250, 3.13) });
+const legacyRig = (await WS.getRigs()).find((r) => r.id === 'r-legacy');
+assert(legacyRig && legacyRig.fov_unit === 'arcmin', 'legacy rig must be marked arcmin');
+assert(Math.abs(legacyRig.fov_w - WS.fovArcmin(250, 5.57)) < 1e-6,
+  'legacy degree fov must convert to the same arcmin');
+assert(Math.abs(legacyRig.fov_h - WS.fovArcmin(250, 3.13)) < 1e-6,
+  'legacy degree fov_h must convert to the same arcmin');
+await WS.saveRigRec({ id: 'r-new', name: 'New', focal_mm: 500,
+                      sensor_w: 5.57, sensor_h: 3.13,
+                      fov_w: WS.fovArcmin(500, 5.57), fov_h: WS.fovArcmin(500, 3.13),
+                      fov_unit: 'arcmin' });
+const newRig = (await WS.getRigs()).find((r) => r.id === 'r-new');
+assert(newRig && Math.abs(newRig.fov_w - WS.fovArcmin(500, 5.57)) < 1e-6,
+  'an arcmin rig must not be converted again');
+
 console.log(ok ? 'web backup integrity held' : 'web backup integrity FAILED');
 process.exit(ok ? 0 : 1);
