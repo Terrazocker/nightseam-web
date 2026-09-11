@@ -503,6 +503,12 @@ table.std td, table.std th { padding: 6px 8px; border-bottom: 1px solid var(--bo
 .lgchip.off { opacity: .3; }
 .lgchip i { width: 8px; height: 8px; border-radius: 50%; background: var(--c);
   display: inline-block; }
+.lgchip.hatch i {
+  border-radius: 2px;
+  background: repeating-linear-gradient(45deg,
+    rgba(210, 225, 255, .65) 0 2px, transparent 2px 4px);
+  border: 1px solid var(--line);
+}
 
 /* targets table pager */
 .pager { display: flex; align-items: center; gap: 10px; justify-content: center;

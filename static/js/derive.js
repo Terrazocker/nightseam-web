@@ -459,6 +459,13 @@ export function activeBandTop() {
       ? act.profile_top : null;
 }
 
+/** Paint mode of the active panorama ('obstacle' | 'sky'), or null when none. */
+export function activePaintMode() {
+  const act = S.panos.find(p => p.active) ||
+              S.panos.find(p => p.id === (S.cfg && S.cfg.active_pano_id));
+  return act ? (act.paint_mode === "sky" ? "sky" : "obstacle") : null;
+}
+
 /* ---------------- scoring & filters ---------------- */
 
 export function objScore(o) {

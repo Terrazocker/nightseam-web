@@ -3,7 +3,7 @@
 import { $, clamp, esc, TYPE_COLOR, TYPE_LABEL } from "./util.js";
 import { S } from "./state.js";
 import { statusOf, desigLine, activeProfile, activeTopProfile, activeBandTop,
-         shortName, aboveHorizon, magVisible,
+         activePaintMode, shortName, aboveHorizon, magVisible,
          skyClampZoom, skyViewMatrix, skyScreenToBase,
          skyClampFocus } from "./derive.js";
 import { openDetail } from "./detail.js";
@@ -294,7 +294,7 @@ export function renderSky() {
     // solid boundary line: obstacle mode only. In sky mode the fully
     // blocked columns sit at 89 deg and would draw a spurious inner
     // circle with radial connectors (a "triangle") instead of a clean edge.
-    if (!activeTopProfile()) {
+    if (activePaintMode() !== "sky") {
       ctx.beginPath();
       for (let az=0; az<=360; az+=1) {
         const [x,y] = azToXY(cx,cy,R,az,clamp(elevAt(az),-2,89));
@@ -396,6 +396,18 @@ export function renderSky() {
       }
     }
     flush();
+  }
+
+  // horizon legend: explain the obstruction shading and, in sky mode, that the
+  // area above the painted band is only open because of the assumption
+  const pl = $("#skyPanoLegend");
+  if (pl) {
+    const mode = activePaintMode();
+    const blocked = !!activeProfile();
+    const openAbove = mode === "sky" && !!activeBandTop() && !activeTopProfile();
+    pl.innerHTML =
+      (blocked ? '<span class="lgchip" style="--c:#ff5d5d"><i></i>blocked by horizon</span>' : "") +
+      (openAbove ? '<span class="lgchip hatch"><i></i>above band: open (assumed)</span>' : "");
   }
 
   // min-altitude band: the area below the min-useful-alt slider is treated

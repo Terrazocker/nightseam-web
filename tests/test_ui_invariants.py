@@ -313,6 +313,11 @@ def test_desktop_sky_view_respects_block_above_and_hatches_open_above():
     assert "activeBandTop" in sky, "sky view must read the raw band top"
     assert "hatchPoly" in sky, "the assumed-open area must be hatched on the desktop"
     assert "open above" in sky
+    assert "activePaintMode() !== \"sky\"" in sky, \
+        "sky mode must not stroke the fully-blocked 89-deg ring"
+    assert "skyPanoLegend" in sky and "blocked by horizon" in sky
+    assert "above band: open (assumed)" in sky
+    assert 'id="skyPanoLegend"' in _read("static", "index.html")
 
 
 def test_web_sky_mode_is_one_obstruction_colour_and_scrub_time_is_clamped():
