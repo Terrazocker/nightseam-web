@@ -30,6 +30,10 @@ ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "landing" / "changelog.json"
 
 CURATED = {
+    # 0.6.18 is the authority flip: the desktop plans entirely with the shared
+    # core (client-side tracks + scoring), the server payload stays as the
+    # runtime fallback. One flagged feature, no interface change.
+    "0.6.18": "Planning is now computed on your machine. The desktop app plans with the same shared engine as the web planner: object positions, twilight windows, the Sun and Moon, visibility percentages, clear windows and scores are calculated locally when you change the date or site, and preference changes (minimum altitude, Bortle class, moon-aware ranking, filters) update instantly without recalculating the night. Every displayed number is the same as before - behind the scenes the sky position is now precessed once per night instead of at every sample, a change far below anything shown. Your local server remains as an automatic fallback, and the interface is unchanged.",
     # 0.6.17 completes the shared-core extraction (Phase 2) and carries the
     # three user-visible corrections it surfaced (catalog palette, polar
     # sunrise pairing, degenerate scrub ranges).
