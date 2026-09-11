@@ -19,48 +19,13 @@ export function aboveHorizon(apparentAltDeg) {
   return Number.isFinite(apparentAltDeg) && apparentAltDeg > 0;
 }
 
-/* All-sky chart magnitude limit - the ONE rule behind the desktop "#skyMag"
-   slider and the web chart's equivalent control, pinned by the "mag" engine of
-   tests/js/astro_parity.mjs (static/js/derive.js vs web/format.js):
-     - an object WITH a measured magnitude is shown when vmag <= limit;
-     - an object WITHOUT a magnitude (vmag == null) is shown only at the
-       slider's maximum ("show everything"), never below it.
-   Sun/Moon, field stars, constellations and the min-alt band are unaffected. */
-export function magVisible(vmag, limit, maxLimit) {
-  return vmag != null ? vmag <= limit : limit >= maxLimit;
-}
-
-/* "Square" chart zoom - the geometry behind the desktop sky chart's wheel zoom,
-   mirrored by web/format.js (pinned by the "skyzoom" engine of
-   tests/js/astro_parity.mjs). The all-sky disc is drawn in a square coordinate
-   space W x H (the canvas box is aspect-ratio 1); zoom is ONE uniform scalar on
-   both axes (equal angular scale, no distortion) about a focus point, so the
-   visible window is a rectangle W/zoom x H/zoom over the disc. `fx`/`fy` are
-   null at zoom 1 (view centered). */
-export const SKY_ZOOM_MIN = 1;
-export const SKY_ZOOM_MAX = 8;
-
-export function skyClampZoom(z) {
-  return Math.max(SKY_ZOOM_MIN, Math.min(SKY_ZOOM_MAX, z));
-}
-
-export function skyViewMatrix(zoom, W, H, fx, fy) {
-  const cx = fx == null ? W / 2 : fx;
-  const cy = fy == null ? H / 2 : fy;
-  return { a: zoom, d: zoom, e: W / 2 - cx * zoom, f: H / 2 - cy * zoom };
-}
-
-export function skyScreenToBase(zoom, W, H, fx, fy, sx, sy) {
-  const cx = fx == null ? W / 2 : fx;
-  const cy = fy == null ? H / 2 : fy;
-  return [cx + (sx - W / 2) / zoom, cy + (sy - H / 2) / zoom];
-}
-
-export function skyClampFocus(W, H, fx, fy) {
-  const Rlim = Math.min(W, H) / 2 - 22;
-  const at = (v, c) => (v == null ? null : Math.max(c - Rlim, Math.min(c + Rlim, v)));
-  return [at(fx, W / 2), at(fy, H / 2)];
-}
+/* All-sky chart magnitude limit and "square" chart zoom - shared in core/
+   (Phase 2, concept 1), pinned by the "mag" / "skyzoom" engines of
+   tests/js/astro_parity.mjs. Re-exported so skyview.js keeps its imports. */
+export {
+  magVisible, SKY_ZOOM_MIN, SKY_ZOOM_MAX, skyClampZoom, skyViewMatrix,
+  skyScreenToBase, skyClampFocus,
+} from "./core.js";
 
 /* Longest run of true flags as a HALF-OPEN range [start, end) - the same
    contract as app/nightcalc.py's longest_run(): `end` is the first sample

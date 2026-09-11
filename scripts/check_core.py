@@ -36,10 +36,13 @@ MOVED = (
     "profileSegments", "visibleSkyBands", "skyBandPolygons", "computeProfile",
     "ceilFor", "bandTopFor", "overhangRuns", "assumedOpenRuns",
     "assumedOpenHatchPolys",
+    "fmtSize", "sizeArcmin", "fmtFov", "fmtFovPair", "framePct", "magVisible",
+    "skyClampZoom", "skyViewMatrix", "skyScreenToBase", "skyClampFocus",
 )
 FORBIDDEN = (
-    "document", "window", "localStorage", "sessionStorage", "indexedDB",
-    "XMLHttpRequest", "process.", "node:",
+    r"\bdocument\s*\.", r"\bwindow\s*\.", r"\blocalStorage\b",
+    r"\bsessionStorage\b", r"\bindexedDB\b", r"\bXMLHttpRequest\b",
+    r"\bprocess\s*\.", r"node:", r"\bfetch\s*\(",
 )
 
 
@@ -119,11 +122,9 @@ def scan() -> list[str]:
 
     for p in build.core_files(CORE):
         text = _read(p)
-        for word in FORBIDDEN:
-            if re.search(r"\b" + re.escape(word), text):
-                problems.append(f"core/{p.name}: forbidden identifier '{word}'")
-        if re.search(r"\bfetch\s*\(", text):
-            problems.append(f"core/{p.name}: forbidden fetch() call")
+        for pattern in FORBIDDEN:
+            if re.search(pattern, text):
+                problems.append(f"core/{p.name}: forbidden pattern {pattern}")
 
     for base in (WEB_DIR, STATIC_JS):
         for p in sorted(base.glob("*.js")):

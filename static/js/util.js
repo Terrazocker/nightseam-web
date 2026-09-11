@@ -1,5 +1,7 @@
 /* shared helpers, formatting and notifications */
 
+import { fmtSize as coreFmtSize } from "./core.js";
+
 export const $  = s => document.querySelector(s);
 export const $$ = s => Array.from(document.querySelectorAll(s));
 
@@ -158,25 +160,12 @@ export function phaseName(k) {
   return "Full";
 }
 
-/* catalog sizes are arcminutes; displayed in ONE user-chosen unit */
-export function fmtSize(s, sizeUnit = "arcmin") {
-  if (!s) return "\u2014";
-  const parts = String(s).split(/[x\u00D7]/).map(parseFloat).filter(v => !isNaN(v));
-  if (!parts.length) return esc(s);
-  const f = v => {
-    if (sizeUnit === "deg")   return parseFloat((v/60).toFixed(2)) + "\u00B0";
-    if (sizeUnit === "arcsec") return Math.round(v*60) + "\u2033";
-    return parseFloat(v.toFixed(1)) + "\u2032";
-  };
-  return parts.map(f).join("\u00D7");
-}
+/* catalog sizes are arcminutes; displayed in ONE user-chosen unit.
+   Phase 2: the formatting lives in core/; this shell only injects its HTML
+   escaper, so a non-numeric fallback string is escaped exactly as before. */
+export const fmtSize = (s, sizeUnit = "arcmin") => coreFmtSize(s, sizeUnit, esc);
 
-export function fmtFov(am) {
-  return `${parseFloat(am.toFixed(1))}\u2032 (${parseFloat((am/60).toFixed(2))}\u00B0)`;
-}
-export function fmtFovPair(fov_w, fov_h) {
-  return `${fmtFov(fov_w)} \u00D7 ${fmtFov(fov_h)}`;
-}
+export { fmtFov, fmtFovPair } from "./core.js";
 
 /* ---------------- notifications & busy state ---------------- */
 export function toast(msg, type = "err", timeout = 7000) {

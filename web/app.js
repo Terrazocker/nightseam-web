@@ -9,11 +9,11 @@
  * All sky math runs client-side (astro.js, Meeus algorithms).
  */
 import * as E from './astro.js?v=7';
-import * as Hor from './horizon.js?v=26';
+import * as Hor from './horizon.js?v=27';
 import * as WS from './webstore.js?v=7';
 import { initDragWindows } from './dragwin.js?v=1';
 import { fmtSize, sizeArcmin, framePct, magVisible, skyClampZoom,
-         skyViewMatrix, skyScreenToBase, skyClampFocus } from './format.js?v=3';
+         skyViewMatrix, skyScreenToBase, skyClampFocus } from './format.js?v=4';
 import { nightStats } from './nightrank.js?v=4';
 
 // Cache-bust token for the ~4 MB data file web/catalog.json. It is NOT a JS

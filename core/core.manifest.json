@@ -1,8 +1,9 @@
 {
-  "hash": "1e3937af25e0d424",
-  "token": 3,
+  "hash": "c553c794b3da7a73",
+  "token": 4,
   "files": {
+    "format.js": "b04f2d369d22f497dd879a81f4f70453eb5fc740e4a8a47d3047786cfcb855fc",
     "horizon.js": "e9f545b78648ecac58a28f44a6d6778a951612026833edcf5ebbea6f262a0159",
-    "index.js": "13d52d33de45c890ecda4ae6f6a85936cfeab604b6144f782fb39730f51c9e2e"
+    "index.js": "42d8d2d38ea3adda4e844315645c423c560a083d71e7e75325abc3bdb5c04f6d"
   }
 }

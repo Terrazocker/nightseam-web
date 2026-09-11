@@ -20,7 +20,7 @@ import {
   normalizeProfileBins, WORLD_BINS, profileSegments, visibleSkyBands,
   skyBandPolygons, computeProfile, clearMask, ceilFor, bandTopFor,
   overhangRuns, assumedOpenRuns, assumedOpenHatchPolys,
-} from './core.js?v=3';
+} from './core.js?v=4';
 
 export {
   NO_BLOCK, BINS, MASK_W, MASK_H,

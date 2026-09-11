@@ -64,12 +64,13 @@ def named_imports(clause: str) -> list[str]:
     """Named bindings from an import clause ('{a, b as c}'), [] otherwise.
 
     A namespace (`* as X`) or default (`X`) import has no name that must exist
-    as an export, so it only needs the path check."""
+    as an export, so it only needs the path check. For `X as Y` the exported
+    name is X (the first piece), not the local alias."""
     clause = clause.strip()
     if not clause.startswith("{"):
         return []
     inner = clause[1:].split("}", 1)[0]
-    return [n.strip().split(" as ")[-1].strip()
+    return [n.strip().split(" as ")[0].strip()
             for n in inner.split(",") if n.strip()]
 
 
