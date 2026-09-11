@@ -444,6 +444,17 @@ export { activeProfile, activeTopProfile };
 function activeTopProfile() {
   const act = S.panos.find(p => p.active) ||
               S.panos.find(p => p.id === (S.cfg && S.cfg.active_pano_id));
+  // the painted band top caps the sky ONLY with the explicit block-above
+  // opt-in; by default everything above the band is free sky (open above)
+  return (act && act.block_above && act.profile_top && act.profile_top.length)
+      ? act.profile_top : null;
+}
+
+/** Raw painted band top (ignores block_above) - used to HATCH the assumed-open
+ *  area above the band when open-above is in effect. */
+export function activeBandTop() {
+  const act = S.panos.find(p => p.active) ||
+              S.panos.find(p => p.id === (S.cfg && S.cfg.active_pano_id));
   return act && act.profile_top && act.profile_top.length
       ? act.profile_top : null;
 }

@@ -301,6 +301,20 @@ def test_sky_band_defaults_to_open_above_with_an_opt_in():
     assert "block_above" in _read("app", "server.py")
 
 
+def test_desktop_sky_view_respects_block_above_and_hatches_open_above():
+    """Desktop parity for the sky band: the sky view must treat the band top as
+    a ceiling only with block_above, and hatch (never shade) the assumed-open
+    area above the band by default."""
+    derive = _read("static", "js", "derive.js")
+    assert "act.block_above && act.profile_top" in derive, \
+        "activeTopProfile must require block_above"
+    assert "export function activeBandTop" in derive, "raw band top helper missing"
+    sky = _read("static", "js", "skyview.js")
+    assert "activeBandTop" in sky, "sky view must read the raw band top"
+    assert "hatchPoly" in sky, "the assumed-open area must be hatched on the desktop"
+    assert "open above" in sky
+
+
 def test_web_sky_mode_is_one_obstruction_colour_and_scrub_time_is_clamped():
     """0.6.13 follow-up: sky-band shading must be ONE obstruction colour (the
     sky view = the obstruction view inverted; no unexplained second/yellow

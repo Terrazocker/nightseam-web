@@ -2,7 +2,7 @@
 
 import { $, clamp, esc, TYPE_COLOR, TYPE_LABEL } from "./util.js";
 import { S } from "./state.js";
-import { statusOf, desigLine, activeProfile, activeTopProfile,
+import { statusOf, desigLine, activeProfile, activeTopProfile, activeBandTop,
          shortName, aboveHorizon, magVisible,
          skyClampZoom, skyViewMatrix, skyScreenToBase,
          skyClampFocus } from "./derive.js";
@@ -348,6 +348,54 @@ export function renderSky() {
     ctx.strokeStyle = "rgba(255,93,93,.75)"; ctx.lineWidth = 1.4;
     ctx.stroke();
     ctx.setLineDash([]);
+  }
+
+  // sky mode, DEFAULT open above: HATCH the area above the painted band (it is
+  // free only because of the open-above assumption) - never shade it as
+  // blocked, so the sky view reads as the obstruction view inverted.
+  const rawTop = activeBandTop();
+  if (rawTop && rawTop.length === 720 && !profTop) {
+    const rawVal = az => {
+      const raw = rawTop[Math.floor(((az % 360) + 360) % 360 / 0.5)] ?? 90;
+      return raw > 0.25 && raw < 88 ? Math.min(89, raw) : NaN;
+    };
+    const hatchPoly = (pts) => {
+      ctx.save();
+      ctx.beginPath();
+      pts.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
+      ctx.closePath();
+      ctx.clip();
+      let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+      for (const [x, y] of pts) {
+        minX = Math.min(minX, x); maxX = Math.max(maxX, x);
+        minY = Math.min(minY, y); maxY = Math.max(maxY, y);
+      }
+      const diag = (maxX - minX) + (maxY - minY);
+      ctx.strokeStyle = "rgba(210,225,255,.28)";
+      ctx.lineWidth = 1;
+      for (let o = -diag; o < diag; o += 9) {
+        ctx.beginPath();
+        ctx.moveTo(minX + o, minY);
+        ctx.lineTo(minX + o + diag, minY + diag);
+        ctx.stroke();
+      }
+      ctx.restore();
+    };
+    let runPts = null;
+    const flush = () => {
+      if (runPts && runPts.length > 1) { runPts.push([cx, cy]); hatchPoly(runPts); }
+      runPts = null;
+    };
+    for (let az = 0; az <= 360; az += 1) {
+      const v = rawVal(az);
+      if (v >= 0) {
+        if (!runPts) runPts = [];
+        runPts.push(azToXY(cx, cy, R, az, clamp(v, -2, 89)));
+      } else {
+        flush();
+      }
+    }
+    flush();
   }
 
   // min-altitude band: the area below the min-useful-alt slider is treated
