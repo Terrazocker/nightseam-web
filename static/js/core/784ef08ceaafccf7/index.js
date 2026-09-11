@@ -49,4 +49,5 @@ export {
 export {
   MOON_TYPE_FACTOR, moonSensitivity, moonMinDist, effectiveMoonGlow,
   moonPenalty, bortleMoonFactor, popularityFactor, nightStats, nightStatsBatch,
+  computeNightTracks, scoreNightTracks,
 } from './scoring.js';

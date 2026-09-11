@@ -58,39 +58,16 @@ export function popularityFactor(pop) {
   return Math.min(1, 0.3 + 0.7 * Math.log10(pop) / 5.2);
 }
 
-/** Per-object statistics over the grid [jd0, jd1] at `step` (step is a
- *  fraction of a day, e.g. 6/1440). The grid is the dark window (dusk..dawn),
- *  exactly like the desktop's clipped loop - twilight margins must never be
- *  counted, or "% of night" and the clear window disagree with the desktop.
- *
- *  BATCHED (Phase 3b, owner-authorized): alt/az are computed from ONE sidereal
- *  frame per (site, night) and ONE precession per object at the grid midpoint -
- *  the same semantics the desktop's advanced synthesis has always used
- *  (`static/js/derive.js::synthesizeAdvancedTracks`). Every DISPLAYED value
- *  (visN, pct, blockedPct, bestRun/bestStart, transit index) is identical to
- *  the former per-sample-precession loop; only the continuous score doubles
- *  shift in the last bits (<= ~1.1e-5 on the accumulated sum, precession over
- *  one night ~7.8e-6 deg). Documented for the release notes.
- *
- *  ctx: {
- *    moonAlt, moonAz   per-sample moon track on the SAME grid (optional; the
- *                      moon penalty is applied per sample only when the moon
- *                      is above the horizon, like derive.js)
- *    illum, moonAgeDays, filterType, moonAware, typeF, bortleF
- *  }
- *
- *  Returns an array parallel to `objects` of
- *  { n, maxAlt, transitJd, visN, blocked, bestRun, bestStart, sClassic, sMoon,
- *    pct, blockedPct } with bestRun/bestStart the longest clear run as a
- *    HALF-OPEN sample range [start, start+run) and pct = round(100*visN/(n+1)),
- *    the desktop's obs_pct formula. */
-export function nightStatsBatch(objects, jd0, jd1, step, minAlt, pano, lat, lon, ctx = {}) {
+/** Per-object apparent alt/az tracks for ONE (site, night): the sidereal frame
+ *  is shared and each object is precessed once at the grid midpoint. Flat
+ *  typed arrays - alt[k*count + i], az[k*count + i] for object k, sample i -
+ *  so the expensive astronomy can be computed once and REUSED by preference
+ *  changes (min-alt/Bortle) without recomputation. */
+export function computeNightTracks(objects, jd0, jd1, step, lat, lon) {
   const n = Math.max(2, Math.round((jd1 - jd0) / step));
   const count = n + 1;
   const latR = lat * Math.PI / 180;
   const sinp = Math.sin(latR), cosp = Math.cos(latR);
-
-  // object-independent per-sample work, computed once per (site, night)
   const jds = new Float64Array(count);
   const lstArr = new Float64Array(count);
   for (let i = 0; i < count; i++) {
@@ -100,6 +77,39 @@ export function nightStatsBatch(objects, jd0, jd1, step, minAlt, pano, lat, lon,
     if (lst < 0) lst += 360;
     lstArr[i] = lst;
   }
+  const alt = new Float64Array(objects.length * count);
+  const az = new Float64Array(objects.length * count);
+  const mid = Math.floor(count / 2);
+  for (let k = 0; k < objects.length; k++) {
+    const o = objects[k];
+    const [ra, dec] = precessJ2000ToDate(o.ra_hours * 15, o.dec_deg, jds[mid]);
+    const dR = dec * Math.PI / 180;
+    const sind = Math.sin(dR), cosd = Math.cos(dR);
+    const base = k * count;
+    for (let i = 0; i < count; i++) {
+      let ha = (lstArr[i] - ra) % 360;
+      if (ha > 180) ha -= 360;
+      const h = ha * Math.PI / 180;
+      const cosh = Math.cos(h), sinh = Math.sin(h);
+      const sinAlt = sind * sinp + cosd * cosp * cosh;
+      let a = Math.asin(Math.max(-1, Math.min(1, sinAlt)));
+      const east = -cosd * sinh;
+      const north = sind * cosp - cosd * sinp * cosh;
+      let z = Math.atan2(east, north) * 180 / Math.PI % 360;
+      if (z < 0) z += 360;
+      alt[base + i] = a * 180 / Math.PI + refractionDeg(a * 180 / Math.PI);
+      az[base + i] = z;
+    }
+  }
+  return { n, count, alt, az };
+}
+
+/** Score precomputed tracks. This is the PREFERENCE-CHANGE path: a min-alt or
+ *  Bortle change only calls this (no astronomy, no frame rebuild). `tracks`
+ *  comes from computeNightTracks(); `step`/`jd0` reconstruct the sample times
+ *  exactly as they were built. */
+export function scoreNightTracks(tracks, objects, jd0, step, minAlt, pano, ctx = {}) {
+  const { n, count, alt: altArr, az: azArr } = tracks;
 
   // horizon profile as flat typed arrays; the ceiling is inlined bit-for-bit
   // with core/horizon.js::ceilFor (world-azimuth bins, FOV gate, blockAbove)
@@ -122,29 +132,13 @@ export function nightStatsBatch(objects, jd0, jd1, step, minAlt, pano, lat, lon,
 
   const out = new Array(objects.length);
   for (let k = 0; k < objects.length; k++) {
-    const o = objects[k];
-    // precess once per object at the grid midpoint (desktop synth semantics)
-    const mid = Math.floor(count / 2);
-    const [ra, dec] = precessJ2000ToDate(o.ra_hours * 15, o.dec_deg, jds[mid]);
-    const dR = dec * Math.PI / 180;
-    const sind = Math.sin(dR), cosd = Math.cos(dR);
-
+    const base = k * count;
     let maxAlt = -90, transitJd = jd0, bestRun = 0, bestStart = jd0;
     let cur = 0, curStart = jd0, visN = 0, blocked = 0, sClassic = 0, sMoon = 0;
     for (let i = 0; i < count; i++) {
-      const jd = jds[i];
-      // inlined altazFrameApply (no per-sample array allocation)
-      let ha = (lstArr[i] - ra) % 360;
-      if (ha > 180) ha -= 360;
-      const h = ha * Math.PI / 180;
-      const cosh = Math.cos(h), sinh = Math.sin(h);
-      const sinAlt = sind * sinp + cosd * cosp * cosh;
-      let alt = Math.asin(Math.max(-1, Math.min(1, sinAlt)));
-      const east = -cosd * sinh;
-      const north = sind * cosp - cosd * sinp * cosh;
-      let az = Math.atan2(east, north) * 180 / Math.PI % 360;
-      if (az < 0) az += 360;
-      alt = alt * 180 / Math.PI + refractionDeg(alt * 180 / Math.PI);
+      const alt = altArr[base + i];
+      const az = azArr[base + i];
+      const jd = jd0 + i * step;
 
       if (alt > maxAlt) { maxAlt = alt; transitJd = jd; }
 
@@ -188,6 +182,13 @@ export function nightStatsBatch(objects, jd0, jd1, step, minAlt, pano, lat, lon,
     };
   }
   return out;
+}
+
+/** One-shot form: tracks + scoring for one (site, night, prefs). Identical
+ *  output to scoring the precomputed tracks separately. */
+export function nightStatsBatch(objects, jd0, jd1, step, minAlt, pano, lat, lon, ctx = {}) {
+  return scoreNightTracks(computeNightTracks(objects, jd0, jd1, step, lat, lon),
+                          objects, jd0, step, minAlt, pano, ctx);
 }
 
 /** Single-object form of nightStatsBatch (same implementation, no twin). */

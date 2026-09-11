@@ -41,6 +41,17 @@ for (const c of g.cases) {
   }
   const got = C.nightStatsBatch(objs, g.jd0, g.jd0 + g.n * g.step, g.step,
                                 c.minAlt, null, c.lat, c.lon, ctx);
+  // the split path must be bit-identical to the one-shot form
+  const tracks = C.computeNightTracks(objs, g.jd0, g.jd0 + g.n * g.step, g.step, c.lat, c.lon);
+  const viaTracks = C.scoreNightTracks(tracks, objs, g.jd0, g.step, c.minAlt, null, ctx);
+  for (const f of ["n", "maxAlt", "transitJd", "visN", "blocked", "bestRun",
+                   "bestStart", "sClassic", "sMoon", "pct", "blockedPct"]) {
+    for (let k = 0; k < got.length; k++) {
+      if (!Object.is(got[k][f], viaTracks[k][f])) {
+        fail(`${c.name}[${k}] split mismatch on ${f}`);
+      }
+    }
+  }
   for (let k = 0; k < got.length; k++) {
     const a = c.stats[k], b = got[k];
     for (const f of DISPLAY) if (a[f] !== b[f]) {
