@@ -129,3 +129,13 @@ note**). Shadow comparison re-run: still 0 divergences over 189,908 samples.
    `/api/night`; `app/astro.py`/`planning.py` stay until then.
 5. Rollback tag: `v0.6.17` (last server-authoritative release); rollback =
    reinstall its exe/ZIP, data schema unchanged.
+
+## Owner sign-off - Step 4 result cache skipped (full-CPU-only acceptance)
+
+The owner accepted the full-CPU-only result: no per-object result cache keyed
+on (site, night, prefs hash) is required for the flip. Basis: the batched engine
+measures **454 ms cold / 447 ms warm for all 11,917 advanced objects** at full
+CPU (<1000 ms bound, ~2.2x headroom; 4x/6x throttle linear and informational),
+with all displayed values bit-identical to the pre-batch implementation. The
+cache remains an optional UI hot-path follow-up (renders/scrubs/catalog column)
+and carries no acceptance requirement. No behavior change.
