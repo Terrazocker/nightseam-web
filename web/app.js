@@ -219,8 +219,11 @@ function scrubRange() {
 }
 
 /** Keep the selected time inside the active scrub range (used when the range
- *  shrinks under it - e.g. turning "View full day" off while at 1 pm). */
+ *  shrinks under it, and at boot / on a site or date change): a daytime load
+ *  (e.g. 14:32) lands on the first allowed instant - the window start - instead
+ *  of showing "visible at 14:32", which is outside every planning window. */
 function clampSkyTime() {
+  if (!S.site) return null;
   const r = scrubRange();
   S.skyTime = new Date(E.scrubClamp(S.skyTime.getTime(), r.start.getTime(), r.end.getTime()));
   return r;
@@ -939,11 +942,15 @@ function renderSky() {
       ctx.closePath();
       ctx.fill();
       ctx.stroke();
-      // sky mode: blocked ABOVE the visible band = the sector between the
-      // overhang curve and the zenith, drawn per CONTIGUOUS azimuth run so a
-      // gap (unpainted / open-above 90.5) is never bridged by a straight chord.
+      // sky mode: the whole blocked region is ONE color (the same obstruction
+      // red) - below the band AND above it (the overhang) - so the sky-band
+      // view reads as the obstruction view inverted, clear = visible sky. The
+      // overhang is drawn per CONTIGUOUS azimuth run so a gap (unpainted /
+      // open-above 90.5) is never bridged by a straight chord.
       if (pano.paintMode === 'sky') {
-        ctx.fillStyle = 'rgba(255, 209, 102, .12)';
+        ctx.fillStyle = 'rgba(255, 80, 80, .15)';
+        ctx.strokeStyle = 'rgba(255, 80, 80, .85)';
+        ctx.lineWidth = 1.4;
         for (const run of Hor.overhangRuns(pano, 2)) {
           ctx.beginPath();
           let first = true;
@@ -955,6 +962,7 @@ function renderSky() {
           ctx.lineTo(cx, cy);   // close through the zenith
           ctx.closePath();
           ctx.fill();
+          ctx.stroke();
         }
       }
     }
@@ -1742,6 +1750,10 @@ function applyEdge() {
 }
 
 function refreshView() {
+  // a site/date change can move the scrub window out from under the selected
+  // time - pull it back in BEFORE rendering so the heading never shows a
+  // daylight instant outside the window
+  clampSkyTime();
   // Tonight recomputes SILENTLY here: pref/filter changes keep the current
   // cards on screen and swap in fresh ones when done (no blank frame).
   if (S.view === 'tonight') renderTonight(true);
@@ -2670,6 +2682,9 @@ async function boot() {
     }
   });
 
+  // seed the scrub inside the window: loading during the day must not show a
+  // daylight "visible at" time (it starts at the first allowed instant)
+  clampSkyTime();
   route();
 }
 

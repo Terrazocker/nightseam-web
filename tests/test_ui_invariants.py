@@ -272,3 +272,19 @@ def test_web_hold_right_click_erases_and_sky_chart_has_no_chord():
         "the sky chart must draw blocked-above per contiguous overhang run"
     assert "topPts" not in app, \
         "the old single top polygon (chord across gaps) must be gone"
+
+
+def test_web_sky_mode_is_one_obstruction_colour_and_scrub_time_is_clamped():
+    """0.6.13 follow-up: sky-band shading must be ONE obstruction colour (the
+    sky view = the obstruction view inverted; no unexplained second/yellow
+    region), and the selected scrub time must be pulled into the window at
+    boot / on a site or date change so a daytime load never shows a daylight
+    "visible at" instant."""
+    app = _read("web", "app.js")
+    assert "rgba(255, 209, 102, .12)" not in app, \
+        "sky mode must not paint a second (yellow) blocked colour"
+    assert "Hor.overhangRuns(pano, 2)" in app
+    assert app.count("clampSkyTime();") >= 3, \
+        "clamp the scrub time at boot, on refresh AND on the viewFullDay toggle"
+    assert "if (!S.site) return null;" in app, \
+        "clampSkyTime must guard before the active site is known"
