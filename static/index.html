@@ -360,10 +360,13 @@ if(x.status===200){var t=JSON.parse(x.responseText).theme;if(t)document.document
             <button id="modeSky" class="tool">Paint visible sky</button>
           </div>
           <p class="hint">Obstacle mode: paint over everything that blocks the sky.
-          Sky mode: paint the open sky band instead &mdash; everything not
-          painted, below AND above the band, is treated as blocked (e.g. a
-          balcony out of frame). Red line: obstruction below; dashed red line:
-          obstruction above.</p>
+          Sky mode: paint the open sky band instead &mdash; by default everything
+          ABOVE the painted band is assumed free (open) sky; tick "block above
+          band" if something above it really blocks (e.g. a balcony). Red line:
+          obstruction below; dashed red line: obstruction above.</p>
+          <div class="rowbtns">
+            <label class="inline" title="Treat everything above the painted band as blocked (an overhang / balcony). Off by default: the sky above the band is assumed free."><input type="checkbox" id="chkBlockAbove"> block above band</label>
+          </div>
           <div class="rowbtns">
             <button id="toolBrush" class="tool active">Brush</button>
             <button id="toolErase" class="tool">Eraser</button>

@@ -9,7 +9,7 @@
  * All sky math runs client-side (astro.js, Meeus algorithms).
  */
 import * as E from './astro.js?v=7';
-import * as Hor from './horizon.js?v=21';
+import * as Hor from './horizon.js?v=22';
 import * as WS from './webstore.js?v=6';
 import { initDragWindows } from './dragwin.js?v=1';
 import { fmtSize, sizeArcmin, framePct, magVisible, skyClampZoom,
@@ -830,6 +830,9 @@ function renderSky() {
             <li><span class="dot" style="background:#ffd166;border-radius:50%"></span>Sun</li>
             <li><span class="dot" style="background:#e6e9ff;border-radius:50%"></span>Moon</li>
             <li><span class="dot" style="background:transparent;border:2px dashed #7bf1a8;border-radius:50%"></span>min altitude</li>
+            ${Hor.activePano() ? '<li><span class="dot" style="background:#ff6b6b"></span>blocked by horizon</li>' : ''}
+            ${(Hor.activePano() && Hor.activePano().paintMode === 'sky' && !Hor.activePano().blockAbove)
+              ? '<li><span class="dot hatch"></span>above band: open (assumed)</li>' : ''}
             ${Object.entries(TYPE_COLORS).map(([t, c]) => `<li><span class="dot" style="background:${c}"></span>${TYPE_LABELS[t]}</li>`).join('')}
           </ul>
         </div>
@@ -941,28 +944,67 @@ function renderSky() {
       }
       ctx.closePath();
       ctx.fill();
+      // stroke ONLY the ceiling curve: stroking the closed polygon drew a
+      // radial chord at the az 0 seam (the reported "line to the north")
+      ctx.beginPath();
+      ceilPts.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
       ctx.stroke();
-      // sky mode: the whole blocked region is ONE color (the same obstruction
-      // red) - below the band AND above it (the overhang) - so the sky-band
-      // view reads as the obstruction view inverted, clear = visible sky. The
-      // overhang is drawn per CONTIGUOUS azimuth run so a gap (unpainted /
-      // open-above 90.5) is never bridged by a straight chord.
-      if (pano.paintMode === 'sky') {
-        ctx.fillStyle = 'rgba(255, 80, 80, .15)';
-        ctx.strokeStyle = 'rgba(255, 80, 80, .85)';
-        ctx.lineWidth = 1.4;
-        for (const run of Hor.overhangRuns(pano, 2)) {
+
+      // sky mode. DEFAULT: everything above the painted band is FREE (open
+      // above) - hinted with a hatch + legend, never shaded as blocked. Only
+      // with "block above band" is the overhang above the band painted as
+      // obstruction. Both are drawn per CONTIGUOUS azimuth run so a gap is
+      // never bridged by a straight chord.
+      const hatchSector = (pts) => {
+        ctx.save();
+        ctx.beginPath();
+        pts.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
+        ctx.closePath();
+        ctx.clip();
+        let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+        for (const [x, y] of pts) {
+          minX = Math.min(minX, x); maxX = Math.max(maxX, x);
+          minY = Math.min(minY, y); maxY = Math.max(maxY, y);
+        }
+        const diag = (maxX - minX) + (maxY - minY);
+        ctx.strokeStyle = 'rgba(210, 225, 255, .28)';
+        ctx.lineWidth = 1;
+        for (let o = -diag; o < diag; o += 9) {
           ctx.beginPath();
-          let first = true;
-          for (let az = run.a0; az <= run.a1; az += 2) {
-            const { ceilTop } = Hor.ceilFor(pano, az);
-            const [x, y] = radiusFor(az, Math.min(ceilTop, 90));
-            if (first) { ctx.moveTo(x, y); first = false; } else { ctx.lineTo(x, y); }
-          }
-          ctx.lineTo(cx, cy);   // close through the zenith
-          ctx.closePath();
-          ctx.fill();
+          ctx.moveTo(minX + o, minY);
+          ctx.lineTo(minX + o + diag, minY + diag);
           ctx.stroke();
+        }
+        ctx.restore();
+      };
+      if (pano.paintMode === 'sky') {
+        if (pano.blockAbove) {
+          ctx.fillStyle = 'rgba(255, 80, 80, .15)';
+          ctx.strokeStyle = 'rgba(255, 80, 80, .85)';
+          ctx.lineWidth = 1.4;
+          for (const run of Hor.overhangRuns(pano, 2)) {
+            const pts = [];
+            for (let az = run.a0; az <= run.a1; az += 2) {
+              const { ceilTop } = Hor.ceilFor(pano, az);
+              pts.push(radiusFor(az, Math.min(ceilTop, 90)));
+            }
+            pts.push([cx, cy]);   // close through the zenith
+            ctx.beginPath();
+            pts.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
+            ctx.closePath();
+            ctx.fill();
+            ctx.stroke();
+          }
+        } else {
+          for (const run of Hor.assumedOpenRuns(pano, 2)) {
+            const pts = [];
+            for (let az = run.a0; az <= run.a1; az += 2) {
+              const t = Hor.bandTopFor(pano, az);
+              pts.push(radiusFor(az, Math.min(t == null ? 90 : t, 90)));
+            }
+            pts.push([cx, cy]);   // close through the zenith
+            hatchSector(pts);
+          }
         }
       }
     }

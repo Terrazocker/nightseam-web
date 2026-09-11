@@ -274,6 +274,33 @@ def test_web_hold_right_click_erases_and_sky_chart_has_no_chord():
         "the old single top polygon (chord across gaps) must be gone"
 
 
+def test_sky_band_defaults_to_open_above_with_an_opt_in():
+    """0.6.13 follow-up: in sky mode everything ABOVE the painted band is free
+    sky by DEFAULT (open above). The band top caps visibility only with the
+    explicit "block above band" opt-in; the assumed-open area is hatched (not
+    shaded as a second colour), and the desktop exposes the same opt-in."""
+    js = _read("web", "horizon.js")
+    assert "blockAbove" in js
+    assert "export function overhangRuns" in js
+    assert "export function assumedOpenRuns" in js
+    assert "if (!p || p.paintMode !== 'sky' || !p.blockAbove) return [];" in js, \
+        "overhang runs must be empty unless block-above is on"
+    assert "p.blockAbove = !!ev.target.checked;" in js, \
+        "the editor toggle must set p.blockAbove"
+    app = _read("web", "app.js")
+    assert "Hor.assumedOpenRuns(pano, 2)" in app, \
+        "the assumed-open area must be hatched on the sky chart"
+    assert "hatchSector" in app
+    assert "above band: open (assumed)" in app, \
+        "the legend must explain the hatch"
+    assert "rgba(255, 209, 102, .12)" not in app, \
+        "no unexplained second (yellow) colour"
+    desktop = _read("static", "index.html")
+    assert 'id="chkBlockAbove"' in desktop, "desktop needs the same opt-in"
+    assert "block_above" in _read("app", "database.py")
+    assert "block_above" in _read("app", "server.py")
+
+
 def test_web_sky_mode_is_one_obstruction_colour_and_scrub_time_is_clamped():
     """0.6.13 follow-up: sky-band shading must be ONE obstruction colour (the
     sky view = the obstruction view inverted; no unexplained second/yellow

@@ -198,6 +198,9 @@ export function normalizePanos(data) {
       altTop: num(p.altTop, 60),
       fov: num(p.fov, 360) > 0 ? num(p.fov, 360) : 360,
       paintMode: p.paintMode === 'sky' ? 'sky' : 'obstacle',
+      // sky mode: TRUE when the user explicitly says "block above the band";
+      // default FALSE = everything above the painted band is free sky
+      blockAbove: !!p.blockAbove,
       strokes,
       profile: (Array.isArray(p.profile) && p.profile.length === BINS) ? p.profile : blank(),
       profileTop: (Array.isArray(p.profileTop) && p.profileTop.length === BINS) ? p.profileTop : blank(),
@@ -256,6 +259,7 @@ export function newPano(name) {
     id, name,
     azOffset: 0, altBottom: 0, altTop: 60, fov: 360,
     paintMode: 'obstacle',
+    blockAbove: false,
     strokes: [],
     hasImage: false,
     profile: new Array(BINS).fill(NO_BLOCK),
@@ -411,8 +415,10 @@ export function visibleSkyBands(p, altBottom = null, zenith = 90) {
     if (p.paintMode === 'sky') {
       if (e != null && e > NO_BLOCK + 0.5 && e < zenith) {
         const t = p.profileTop[col];
-        const hi = (t != null && t > NO_BLOCK + 0.5 && t !== 90.5)
-          ? Math.min(t, zenith) : zenith;   // 90.5 = open to the zenith
+        // the band top caps the visible sky ONLY with blockAbove; otherwise
+        // everything above the painted band is free (open above, default)
+        const hi = (p.blockAbove && t != null && t > NO_BLOCK + 0.5 && t !== 90.5)
+          ? Math.min(t, zenith) : zenith;
         out.push(mk([e, hi], [[ab, e], [hi, zenith]]));
       } else {
         out.push(mk(null, [[ab, zenith]]));  // unpainted sky column = blocked
@@ -520,22 +526,70 @@ export function ceilFor(p, azDeg) {
   }
   const col = Math.min(BINS - 1, Math.floor((d / fov) * BINS));
   if (p.paintMode === 'sky') {
-    return { ceil: prof[col], ceilTop: (tops && tops[col] > NO_BLOCK + 0.5) ? tops[col] : null };
+    // DEFAULT: everything ABOVE the painted band is free sky (open above), so
+    // the band top is NOT a ceiling. Only when the user explicitly opts into
+    // "block above the band" (p.blockAbove) does the painted top become a
+    // ceiling (an overhang/balcony). The 90.5 sentinel means open to the zenith.
+    const top = (p.blockAbove && tops && tops[col] > NO_BLOCK + 0.5) ? tops[col] : null;
+    return { ceil: prof[col], ceilTop: top };
   }
   return { ceil: prof[col], ceilTop: null };
 }
 
+/** Raw painted band TOP at an azimuth (sky mode), or null when the column is
+ *  outside the FOV / unpainted. Unlike ceilFor this ignores blockAbove, so the
+ *  chart can hatch the "assumed open above" area. */
+export function bandTopFor(p, azDeg) {
+  const prof = (p && Array.isArray(p.profile) && p.profile.length === BINS) ? p.profile : null;
+  const tops = (p && Array.isArray(p.profileTop) && p.profileTop.length === BINS) ? p.profileTop : null;
+  if (!prof || !tops) return null;
+  const fov = Number(p.fov) > 0 ? Number(p.fov) : 360;
+  const azOff = Number(p.azOffset) || 0;
+  const d = ((azDeg - azOff) % 360 + 360) % 360;
+  if (d > fov) return null;
+  const col = Math.min(BINS - 1, Math.floor((d / fov) * BINS));
+  const t = tops[col];
+  return (t != null && t > NO_BLOCK + 0.5) ? t : null;
+}
+
 /** Contiguous azimuth runs (deg, [a0,a1] inclusive) where a sky-mode OVERHANG
- *  exists - i.e. the painted band has a real top edge BELOW the zenith, so the
- *  sky above it is blocked. Columns whose band is open above (the 90.5 sentinel)
- *  or unpainted (fully blocked) carry NO overhang: including them in one polygon
- *  is what made the sky chart bridge a gap with a straight chord. */
+ *  exists - i.e. the user opted into "block above the band" AND the painted band
+ *  has a real top edge BELOW the zenith, so the sky above it is blocked. With
+ *  the default (everything above is free) there is no overhang -> []. */
 export function overhangRuns(p, step = 2) {
+  if (!p || p.paintMode !== 'sky' || !p.blockAbove) return [];
   const runs = [];
   let run = null;
   for (let az = 0; az < 360; az += step) {   // 360 == 0, not a separate sample
     const { ceilTop } = ceilFor(p, az);
     const has = ceilTop != null && ceilTop < 89.5;
+    if (has) {
+      if (!run) { run = { a0: az, a1: az }; runs.push(run); }
+      else run.a1 = az;
+    } else {
+      run = null;
+    }
+  }
+  return runs;
+}
+
+/** Contiguous azimuth runs where the region ABOVE the painted band is only
+ *  visible because of the default assumption (sky mode, NOT blockAbove, band
+ *  top below the zenith). Used to hatch that area + explain it in the legend. */
+export function assumedOpenRuns(p, step = 2) {
+  if (!p || p.paintMode !== 'sky' || p.blockAbove) return [];
+  const fov = Number(p.fov) > 0 ? Number(p.fov) : 360;
+  const azOff = Number(p.azOffset) || 0;
+  const runs = [];
+  let run = null;
+  for (let az = 0; az < 360; az += step) {
+    const d = ((az - azOff) % 360 + 360) % 360;
+    let has = false;
+    if (d <= fov) {
+      const col = Math.min(BINS - 1, Math.floor((d / fov) * BINS));
+      const b = p.profile[col], t = p.profileTop[col];
+      has = b > NO_BLOCK + 0.5 && b < 90 && t > NO_BLOCK + 0.5 && t < 89.5;
+    }
     if (has) {
       if (!run) { run = { a0: az, a1: az }; runs.push(run); }
       else run.a1 = az;
@@ -556,14 +610,14 @@ export function overhangRuns(p, step = 2) {
 export function snapshotPano(p) {
   return JSON.stringify({
     a: p.azOffset, b: p.altBottom, t: p.altTop, f: p.fov,
-    m: p.paintMode, s: p.strokes,
+    m: p.paintMode, s: p.strokes, o: p.blockAbove ? 1 : 0,
   });
 }
 
 export function applySnapshot(p, snap) {
   const o = JSON.parse(snap);
   p.azOffset = o.a; p.altBottom = o.b; p.altTop = o.t; p.fov = o.f;
-  p.paintMode = o.m; p.strokes = o.s;
+  p.paintMode = o.m; p.strokes = o.s; p.blockAbove = !!o.o;
   return p;
 }
 
@@ -810,6 +864,7 @@ function haziEditorHTML(p) {
             <input id="ed-brush" type="range" min="3" max="80" value="28" aria-label="Brush size">
           </label>
           <button class="btn" id="ed-eraser" title="Toggle eraser (or right-click)" aria-pressed="false">🧽 Eraser</button>
+          <label class="inline ed-blockabove" title="Treat everything ABOVE the painted band as blocked (an overhang / balcony). Off by default: the sky above the band is assumed free."><input type="checkbox" id="ed-block-above" ${p.blockAbove ? 'checked' : ''}> block above band</label>
         </div>
       </div>
       <div class="ed-row">
@@ -1388,6 +1443,14 @@ function wireEditor(box, p, onChanged) {
   $('#ed-mode', box).addEventListener('change', (ev) => {
     p.paintMode = ev.target.value;
     rebuildMaskNow();
+    overlay();
+    commit();
+  });
+  // "block above band": opt OUT of the default open-above assumption. Re-derives
+  // the profile ceiling immediately (and is undoable like any other edit).
+  $('#ed-block-above', box).addEventListener('change', (ev) => {
+    p.blockAbove = !!ev.target.checked;
+    renderStatus();
     overlay();
     commit();
   });

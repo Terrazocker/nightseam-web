@@ -67,15 +67,17 @@ def test_obstacle_mode_matches_python(az):
 @pytest.mark.parametrize("az", [0.0, 45.0, 179.5, 200.0, 359.0])
 def test_sky_mode_band_matches_python(az):
     prof, top = _sky_band()
+    # block_above opt-in: the painted top IS the ceiling -> parity with Python
     res = _run_node("ceil", [{"mode": "sky", "profile": prof, "profileTop": top,
-                              "az": az, "fov": 360, "azOffset": 0}])[0]
+                              "az": az, "fov": 360, "azOffset": 0,
+                              "blockAbove": True}])[0]
     assert res["ceil"] == pytest.approx(ceil_lookup(prof)(az), abs=0.51)
     want_top = ceil_lookup(top)(az)
-    if res["ceilTop"] is None:
-        # "open above" on the web side => Python must agree it is (near) open
-        assert want_top >= 89.0, (az, want_top)
-    else:
-        assert res["ceilTop"] == pytest.approx(want_top, abs=0.51), (az, res, want_top)
+    assert res["ceilTop"] == pytest.approx(want_top, abs=0.51), (az, res, want_top)
+    # DEFAULT (open above): the band top is ignored -> no upper ceiling
+    res0 = _run_node("ceil", [{"mode": "sky", "profile": prof, "profileTop": top,
+                               "az": az, "fov": 360, "azOffset": 0}])[0]
+    assert res0["ceilTop"] is None, (az, res0)
 
 
 def test_no_panorama_blocks_nothing_on_either_side():

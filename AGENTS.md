@@ -144,14 +144,20 @@ Image Catalog (FITS ingest + library). `README.md` has the feature list.
 - **Sky-band rendering (0.6.13, ITEM C):** the visible-sky region is the EXACT
   complement of the blocked region - per column `visible U blocked ==
   [altBottom, zenith]` and `visible n blocked == {}`
-  (`web/horizon.js::visibleSkyBands`). The `90.5` sentinel means OPEN TO THE
-  ZENITH (clamped to 90), unpainted sky columns are fully blocked, and the
-  profile preview is drawn as full-width, seam-split polygons that never
+  (`web/horizon.js::visibleSkyBands`). **DEFAULT: everything ABOVE the painted
+  band is FREE sky (open above)** - the band top caps visibility only with the
+  explicit `blockAbove` / desktop `block_above` opt-in ("block above band" in
+  each editor; a DB column, additive ALTER). The assumed-open area is HATCHED
+  (never shaded as a second colour) with a legend entry; the `90.5` sentinel
+  still means open to the zenith, and unpainted sky columns are fully blocked.
+  The profile preview is drawn as full-width, seam-split polygons that never
   self-intersect (`skyBandPolygons`; the old fill used `x=i/2` = half width and
   one polygon that bridged blocked gaps). The edge geometry `profileSegments`
   is SHARED with the desktop (`static/js/pano.js`) and pinned to identical
   vertices, with the whole complement/regression contract, by
-  `tests/js/sky_band.mjs`.
+  `tests/js/sky_band.mjs`. Scoring: `ceilFor` returns `ceilTop = null` unless
+  `blockAbove`, and `server.py` passes `profile_top` to `compute_night` /
+  `object_detail` only when the pano's `block_above` is set.
 - **Sky-chart silhouette + right-click erase (0.6.13 follow-up):** the polar Sky
   View draws the sky-mode blocked-above sector per CONTIGUOUS azimuth run
   (`horizon.js::overhangRuns`, which excludes the 90.5 open-above sentinel and
@@ -252,7 +258,7 @@ Image Catalog (FITS ingest + library). `README.md` has the feature list.
     `Get-CimInstance Win32_Process`).
   - If 8407 is briefly taken at boot, `free_port()` silently picks a RANDOM port
     (written to `instance.json`).
-- Tests: `python -m pytest tests/` (533). Single test:
+- Tests: `python -m pytest tests/` (534). Single test:
   `python -m pytest tests/test_astro.py -k name`. API tests use
   `create_app(db, prefetch=False)` (no image-cache thread). The `client` fixture
   must leave `data/panos` in the tmp dir it patches in.
@@ -260,7 +266,7 @@ Image Catalog (FITS ingest + library). `README.md` has the feature list.
     `pytest.ini`) can acquire an owner-SID-only DACL, so every `tmp_path` test
     errors at fixture cleanup - an environment artifact, not a failure. Workaround
     (no escalation needed): `python -m pytest tests/ -q --basetemp
-    C:\Users\<user>\AppData\Local\Temp\opencode\pt -p no:cacheprovider` -> 533/533.
+    C:\Users\<user>\AppData\Local\Temp\opencode\pt -p no:cacheprovider` -> 534/534.
 - JS checks (run after touching `static/` OR `web/`): `python scripts/check_js.py`
   runs all of them and exits non-zero on hard failures:
   - `check_js_imports.py` - broken relative ES-module imports / missing named exports
@@ -368,9 +374,9 @@ Image Catalog (FITS ingest + library). `README.md` has the feature list.
   `scripts/check_catalog_token.py`, wired into `scripts/check_js.py`, and pinned
   by `tests/test_cache_tokens.py` (mutation-tested). Do NOT add
   `{cache:'no-store'}` - the file must stay cacheable.
-  Current: `app.js?v=39` (index.html) / `CATALOG_TOKEN = '2'`, `astro.js?v=7`,
-  `horizon.js?v=21`, `format.js?v=3`, `nightrank.js?v=4`, `webstore.js?v=6`,
-  `dragwin.js?v=1`, `style.css?v=15`, `themes.css?v=4`.
+  Current: `app.js?v=40` (index.html) / `CATALOG_TOKEN = '2'`, `astro.js?v=7`,
+  `horizon.js?v=22`, `format.js?v=3`, `nightrank.js?v=4`, `webstore.js?v=6`,
+  `dragwin.js?v=1`, `style.css?v=16`, `themes.css?v=4`.
 - **Never publish `index.html` before the modules it names.** Deploys are not
   atomic and the page carries the tokens; `ftps_deploy.py::upload_order()` sorts
   HTML last (`index.html` very last), pinned by `tests/test_deploy_order.py`. Keep

@@ -42,6 +42,14 @@ Pano.init = function () {
   $("#btnClearMask").addEventListener("click", clearMask);
   $("#btnUndo").addEventListener("click", undoPaint);
   $("#chkLoupe").addEventListener("change", e => { Pano.loupeOn = e.target.checked; render(); });
+  // "block above band": opt OUT of the default open-above assumption
+  const ba = $("#chkBlockAbove");
+  if (ba) ba.addEventListener("change", e => {
+    if (!Pano.cur) return;
+    Pano.cur.block_above = !!e.target.checked;
+    render();
+    scheduleSave(0);
+  });
   $("#btnCalN").addEventListener("click", () => {
     if (!Pano.cur) return;
     Pano.calibrating = true;
@@ -268,6 +276,8 @@ async function select(rec) {
   $("#abVal").textContent = ($("#altBottom").value) + "\u00B0";
   $("#atVal").textContent = ($("#altTop").value) + "\u00B0";
   $("#fovVal").textContent = ($("#fovAz").value) + "\u00B0";
+  const ba = $("#chkBlockAbove");
+  if (ba) ba.checked = !!rec.block_above;
   Pano.img = new Image();
   Pano.img.onload = () => { $("#panoError").classList.add("hidden"); render(); };
   Pano.img.onerror = () => {
@@ -579,13 +589,18 @@ function drawProfileLine(ctx, W, H) {
   const azOff = +$("#azOffset").value || 0;
   const fov = +$("#fovAz").value || 360;
   const segs = profileSegments(prof, W, H, ab, at, azOff, fov);
-  const topSegs = Pano.cur.profile_top &&
-                  Pano.cur.profile_top.length === NBIN
-      ? profileSegments(Pano.cur.profile_top, W, H, ab, at, azOff, fov, 88)
+  const sky = paintMode() === "sky";
+  const blockAbove = sky && !!Pano.cur.block_above;
+  const tops = (Pano.cur.profile_top && Pano.cur.profile_top.length === NBIN)
+      ? Pano.cur.profile_top : null;
+  // the band top is a real ceiling ONLY with "block above band"; by default
+  // everything above the band is free sky (open above)
+  const topSegs = blockAbove && tops
+      ? profileSegments(tops, W, H, ab, at, azOff, fov, 88)
       : null;
 
   // blocked regions: below the obstruction line (and in sky mode also
-  // above the painted band's top edge)
+  // above the painted band's top edge when block-above is on)
   ctx.fillStyle = "rgba(255,93,93,.14)";
   for (const s of segs) {
     ctx.beginPath();
@@ -594,6 +609,31 @@ function drawProfileLine(ctx, W, H) {
     ctx.lineTo(s[s.length - 1][0], H);
     ctx.closePath();
     ctx.fill();
+  }
+  // sky mode, default open above: hatch the region ABOVE the painted band (it
+  // is only visible because of the open-above assumption)
+  if (sky && !blockAbove && tops) {
+    for (const s of profileSegments(tops, W, H, ab, at, azOff, fov, 88)) {
+      const xs = s.map(([x]) => x);
+      const minX = Math.min(...xs), maxX = Math.max(...xs);
+      ctx.save();
+      ctx.beginPath();
+      s.forEach(([x, y], k) => (k ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
+      ctx.lineTo(maxX, 0);
+      ctx.lineTo(minX, 0);
+      ctx.closePath();
+      ctx.clip();
+      ctx.strokeStyle = "rgba(210,225,255,.28)";
+      ctx.lineWidth = 1;
+      const diag = (maxX - minX) + H;
+      for (let o = -diag; o < diag; o += 9) {
+        ctx.beginPath();
+        ctx.moveTo(minX + o, H);
+        ctx.lineTo(minX + o + diag, 0);
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
   }
   if (topSegs) {
     for (const s of topSegs) {
@@ -733,6 +773,7 @@ function scheduleSave(delay = 900) {
           profile: Pano.cur.profile,
           profile_top: Pano.cur.profile_top || [],
           paint_mode: paintMode(),
+          block_above: !!Pano.cur.block_above,
         })});
     } catch {
       saved = false;      // api() already toasted; keep the local painting

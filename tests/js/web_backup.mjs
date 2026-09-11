@@ -122,6 +122,10 @@ assert(typeof withImg.panos[0].image === 'string', 'image should be preserved');
 const noImg = H.normalizePanos({ panos: [panoRec({ hasImage: true })] });
 assert(noImg.panos[0].hasImage === false, 'legacy hasImage without bytes must become false');
 assert(noImg.panos[0].image === undefined, 'no image field when absent');
+assert(H.normalizePanos({ panos: [panoRec({ blockAbove: true })] })
+  .panos[0].blockAbove === true, 'blockAbove must round-trip through normalizePanos');
+assert(H.normalizePanos({ panos: [panoRec()] }).panos[0].blockAbove === false,
+  'blockAbove defaults to false (open above)');
 
 /* 2. profile/strokes invariant ------------------------------------------ */
 const bogus = blank720();

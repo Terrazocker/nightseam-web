@@ -245,6 +245,7 @@ if (engine === "size") {
       paintMode: c.mode,
       profile: c.profile,
       profileTop: c.profileTop,
+      blockAbove: !!c.blockAbove,
       fov: c.fov == null ? 360 : c.fov,
       azOffset: c.azOffset || 0,
     };

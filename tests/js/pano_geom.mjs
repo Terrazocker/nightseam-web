@@ -119,17 +119,25 @@ if (seamP.profile[0] === H.NO_BLOCK || seamP.profile[719] === H.NO_BLOCK) {
   fail(`seam profile not continuous: col0=${seamP.profile[0]} col719=${seamP.profile[719]}`);
 }
 
-/* 6b. open-above must NOT become a blocking ceiling; a real ceiling must block */
+/* 6b. sky mode: OPEN ABOVE is the default; the band top is a ceiling only with
+   the explicit "block above band" opt-in. */
 const openSky = { ...base, paintMode: "sky", strokes: [{ m: "b", x: 360, y: 50, r: 200 }] };
 H.computeProfile(openSky);
 const cfOpen = H.ceilFor(openSky, 180);            // az 180 -> col ~360
-if (cfOpen.ceilTop !== 90.5) fail(`open-above ceilTop=${cfOpen.ceilTop}, want 90.5`);
-if (!(89 < (cfOpen.ceilTop ?? 90.5))) fail("open-above wrongly blocks the zenith");
-const realCeil = { ...base, paintMode: "sky", strokes: [{ m: "b", x: 360, y: 200, r: 20 }] };
+if (cfOpen.ceilTop !== null) fail(`default open-above ceilTop=${cfOpen.ceilTop}, want null`);
+if (cfOpen.ceil === H.NO_BLOCK) fail("a painted band must still set the lower ceiling");
+const blockSky = { ...openSky, blockAbove: true };
+H.computeProfile(blockSky);
+const cfBlock = H.ceilFor(blockSky, 180);
+if (cfBlock.ceilTop == null) fail("block-above band must expose its top as a ceiling");
+const realCeil = { ...base, paintMode: "sky", blockAbove: true,
+                   strokes: [{ m: "b", x: 360, y: 200, r: 20 }] };
 H.computeProfile(realCeil);
 const cfReal = H.ceilFor(realCeil, 180);
-if (cfReal.ceilTop === 90.5) fail("band below the frame top must keep a numeric ceiling");
-if (55 < (cfReal.ceilTop ?? 90.5)) fail("a real ceiling must block alt above it");
+if (cfReal.ceilTop === 90.5 || cfReal.ceilTop == null) {
+  fail("band below the frame top must keep a numeric ceiling");
+}
+if (55 < cfReal.ceilTop) fail("a real ceiling must block alt above it");
 
 /* 7. save/load round trip */
 const np = H.newPano("geom");

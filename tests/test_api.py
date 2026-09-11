@@ -1004,7 +1004,9 @@ def test_activating_a_panorama_deactivates_the_previous(client):
 
 
 def test_night_ceil_top_band(client):
-    """A sky-mode panorama with a top ceiling ships ceil_top tracks."""
+    """Sky mode: the band top is a ceiling ONLY with block_above; by default
+    everything above the painted band is free (open above) and ships no
+    ceil_top tracks."""
     r = client.post("/api/panorama",
                     files={"file": ("band.jpg", b"fake jpeg", "image/jpeg")})
     pid = r.json()["id"]
@@ -1026,6 +1028,17 @@ def test_night_ceil_top_band(client):
         assert client.post("/api/settings",
                            json={"active_pano_id": pid}).status_code == 200
         add_site(client)
+        # DEFAULT (block_above off): open above -> no upper ceiling anywhere
+        night = client.get("/api/night",
+                           params={"date": _DATE, "tz_offset_min": _TZ}).json()
+        assert all("ceil_top" not in o for o in night["objects"])
+        d0 = client.get("/api/object/m31",
+                        params={"date": _DATE, "tz_offset_min": _TZ}).json()
+        assert "ceil_top" not in d0
+
+        # opt in: block above the band -> the painted top ships as ceil_top
+        assert client.put(f"/api/panorama/{pid}",
+                          json={"block_above": True}).status_code == 200
         night = client.get("/api/night",
                            params={"date": _DATE, "tz_offset_min": _TZ}).json()
         for o in night["objects"][:5]:

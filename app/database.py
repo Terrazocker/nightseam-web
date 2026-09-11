@@ -67,7 +67,8 @@ CREATE TABLE IF NOT EXISTS panoramas (
     profile TEXT NOT NULL DEFAULT '[]',
     profile_top TEXT NOT NULL DEFAULT '[]',
     active INTEGER NOT NULL DEFAULT 1,
-    paint_mode TEXT NOT NULL DEFAULT 'obstacle'
+    paint_mode TEXT NOT NULL DEFAULT 'obstacle',
+    block_above INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS settings (
     key TEXT PRIMARY KEY,
@@ -163,6 +164,13 @@ class Database:
             self.conn.execute(
                 "ALTER TABLE panoramas ADD COLUMN profile_top "
                 "TEXT NOT NULL DEFAULT '[]'")
+        except sqlite3.OperationalError:
+            pass
+        try:  # migration: sky mode "block above the band" opt-in (default off:
+              # everything above the painted band is free sky)
+            self.conn.execute(
+                "ALTER TABLE panoramas ADD COLUMN block_above "
+                "INTEGER NOT NULL DEFAULT 0")
         except sqlite3.OperationalError:
             pass
         try:  # migration: import-run marker for merging chunked uploads
@@ -416,6 +424,7 @@ class Database:
                 d["strokes"] = json.loads(d["strokes"])
                 d["profile"] = json.loads(d["profile"])
                 d["profile_top"] = json.loads(d["profile_top"])
+                d["block_above"] = bool(d.get("block_above"))
                 out.append(d)
             return out
 
@@ -454,14 +463,14 @@ class Database:
     def update_panorama(self, pid: str, **fields):
         allowed = {"name", "file", "az_offset", "alt_bottom", "alt_top",
                    "strokes", "profile", "profile_top", "active", "fov",
-                   "paint_mode"}
+                   "paint_mode", "block_above"}
         sets, vals = [], []
         for k, v in fields.items():
             if k not in allowed:
                 continue
             if k in ("strokes", "profile", "profile_top"):
                 v = json.dumps(v)
-            if k == "active":
+            if k in ("active", "block_above"):
                 v = 1 if v else 0
             sets.append(f"{k}=?")
             vals.append(v)
@@ -711,15 +720,17 @@ class Database:
                         continue
                     cur.execute(
                         "INSERT INTO panoramas(id,name,file,az_offset,alt_bottom,"
-                        "alt_top,strokes,profile,profile_top,active,fov,paint_mode) "
-                        "VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+                        "alt_top,strokes,profile,profile_top,active,fov,paint_mode,"
+                        "block_above) "
+                        "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
                         (pid_ok, p.get("name"), rel,
                          p.get("az_offset", 0), p.get("alt_bottom", 0),
                          p.get("alt_top", 45), json.dumps(p.get("strokes", [])),
                          json.dumps(p.get("profile", [])),
                          json.dumps(p.get("profile_top", [])),
                          1 if p.get("active") else 0, p.get("fov", 360),
-                         p.get("paint_mode", "obstacle")))
+                         p.get("paint_mode", "obstacle"),
+                         1 if p.get("block_above") else 0))
                 for c in customs:
                     cur.execute(
                         "INSERT OR REPLACE INTO custom_objects"

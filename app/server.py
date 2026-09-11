@@ -155,6 +155,7 @@ class PanoramaUpdate(BaseModel):
     profile_top: Optional[list] = None
     active: Optional[bool] = None
     paint_mode: Optional[str] = None
+    block_above: Optional[bool] = None
 
 
 class LibraryEditIn(BaseModel):
@@ -348,7 +349,8 @@ def create_app(db: Database, *, prefetch: bool = True) -> FastAPI:
             "panoramas": [{"id": p["id"], "name": p["name"], "active": bool(p["active"]),
                            "az_offset": p["az_offset"], "alt_bottom": p["alt_bottom"],
                            "alt_top": p["alt_top"], "fov": p.get("fov", 360.0),
-                           "paint_mode": p.get("paint_mode") or "obstacle"} for p in panos],
+                           "paint_mode": p.get("paint_mode") or "obstacle",
+                           "block_above": bool(p.get("block_above"))} for p in panos],
             "active_pano_id": db.setting("active_pano_id"),
             "min_useful_alt": mua,
             "min_useful_alt_explicit": db.setting("min_useful_alt") is not None,
@@ -485,7 +487,10 @@ def create_app(db: Database, *, prefetch: bool = True) -> FastAPI:
         else:
             pano_row = db.active_panorama()
         profile = pano_row["profile"] if pano_row else []
-        profile_top = pano_row.get("profile_top") or [] if pano_row else []
+        # sky mode: the painted band top is a ceiling ONLY with block_above; by
+        # default everything above the band is free sky (open above)
+        profile_top = ((pano_row.get("profile_top") or [])
+                       if (pano_row and pano_row.get("block_above")) else [])
 
         try:
             result = compute_night(db, site_row["lat"], site_row["lon"],
@@ -512,7 +517,9 @@ def create_app(db: Database, *, prefetch: bool = True) -> FastAPI:
 
         pano_row = db.get_panorama(pano) if pano else db.active_panorama()
         profile = pano_row["profile"] if pano_row else []
-        profile_top = pano_row.get("profile_top") or [] if pano_row else []
+        # see api_night: profile_top only caps the sky when block_above is set
+        profile_top = ((pano_row.get("profile_top") or [])
+                       if (pano_row and pano_row.get("block_above")) else [])
         minalt_eff = float(minalt if minalt is not None
                            else _effective_min_alt(db))
 
@@ -627,7 +634,8 @@ def create_app(db: Database, *, prefetch: bool = True) -> FastAPI:
         # a cropped/replaced image invalidates the whole painted mask: the
         # sky-mode profile_top would otherwise keep blocking above the old band
         fields: dict = {"file": fname, "strokes": [], "profile": [],
-                        "profile_top": [], "paint_mode": "obstacle"}
+                        "profile_top": [], "paint_mode": "obstacle",
+                        "block_above": False}
         if az_offset is not None:
             fields["az_offset"] = float(az_offset)
         if fov is not None:

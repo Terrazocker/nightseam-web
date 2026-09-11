@@ -1,10 +1,12 @@
 /*
  * Sky-band ("paint visible sky") GEOMETRY checks.
  *
- * The visible-sky mask must be the exact complement of the blocked mask, the
- * 90.5 sentinel must mean "open to the zenith", and the preview fill must not
- * self-intersect or smear across the 360 deg seam. Also pins that the shared
- * edge geometry (profileSegments) yields IDENTICAL vertices on web + desktop.
+ * MODEL (0.6.13 follow-up): painting the visible sky band means "everything
+ * ABOVE the painted band is free" (open above) BY DEFAULT. The band top is a
+ * ceiling only with the explicit "block above band" opt-in (p.blockAbove).
+ * The visible region is the exact complement of the blocked region; the
+ * assumed-open area is hatched (not blocked). Also pins that the shared edge
+ * geometry (profileSegments) yields IDENTICAL vertices on web + desktop.
  * Prints one marker line; tests/test_js_behaviour.py asserts it.
  */
 globalThis.window = { addEventListener() {}, removeEventListener() {}, dispatchEvent() {} };
@@ -23,6 +25,7 @@ const fail = (m) => { ok = false; console.log("  FAIL:", m); };
 
 const pano = (over = {}) => ({
   azOffset: 0, altBottom: 0, altTop: 90, fov: 360, paintMode: "sky",
+  blockAbove: false,                       // default: open above
   profile: new Array(BINS).fill(90),
   profileTop: new Array(BINS).fill(-90),
   ...over,
@@ -57,7 +60,9 @@ const fullyOpen = pano({ profile: new Array(BINS).fill(0),
 const openAbove = pano({ profile: fill(0, BINS, 5),
                          profileTop: fill(0, BINS, 90.5) });
 const bandOnly = pano({ profile: fill(0, BINS, 10),
-                        profileTop: fill(0, BINS, 40) });
+                        profileTop: fill(0, BINS, 40) });      // default open above
+const capped = pano({ profile: fill(0, BINS, 10),
+                      profileTop: fill(0, BINS, 40), blockAbove: true });
 const fullyBlocked = pano({ profile: new Array(BINS).fill(90),
                             profileTop: new Array(BINS).fill(-90) });
 const mixed = pano({
@@ -65,17 +70,20 @@ const mixed = pano({
   profileTop: fill(0, 200, 40).map((v, i) => (i >= 300 && i < 500 ? 90.5 : v)),
 });
 for (const [p, name] of [[fullyOpen, "fullyOpen"], [openAbove, "openAbove"],
-                         [bandOnly, "bandOnly"], [fullyBlocked, "fullyBlocked"],
-                         [mixed, "mixed"]]) tileCheck(p, name);
+                         [bandOnly, "bandOnly"], [capped, "capped"],
+                         [fullyBlocked, "fullyBlocked"], [mixed, "mixed"]]) {
+  tileCheck(p, name);
+}
 
-/* ---- 2. absolute band anchors ---- */
+/* ---- 2. absolute band anchors (open above is the default) ---- */
 const visOf = (p, col) => H.visibleSkyBands(p, p.altBottom, 90)[col].vis;
 const eq = (a, b) => a && b && Math.abs(a[0] - b[0]) < 1e-9 && Math.abs(a[1] - b[1]) < 1e-9;
 if (!eq(visOf(fullyOpen, 0), [0, 90])) fail("fullyOpen band != [0,90]");
 if (!eq(visOf(openAbove, 100), [5, 90])) fail("openAbove (90.5 sentinel) != [5,90]");
-if (!eq(visOf(bandOnly, 100), [10, 40])) fail("bandOnly != [10,40]");
+if (!eq(visOf(bandOnly, 100), [10, 90])) fail("default band must be open above -> [10,90]");
+if (!eq(visOf(capped, 100), [10, 40])) fail("block-above band must cap at the top -> [10,40]");
 if (visOf(fullyBlocked, 100) !== null) fail("fullyBlocked must have no visible band");
-if (!eq(visOf(mixed, 190), [10, 40])) fail("mixed band != [10,40]");
+if (!eq(visOf(mixed, 190), [10, 90])) fail("mixed band != [10,90] (open above)");
 if (visOf(mixed, 250) !== null) fail("mixed blocked gap must be null");
 
 /* ---- 3. polygons: count + vertices + no self-intersection ---- */
@@ -116,7 +124,7 @@ if (Math.min(...ys) > 1e-6 || Math.max(...ys) < 55.9) {
  * and one single polygon for the whole profile, so a blocked gap was bridged by
  * a spurious fill. The new geometry is full-width and split per run. */
 function naiveSkyPolygon(p, lo, hi) {
-  const W = 720, span = Math.max(1, hi - lo);
+  const span = Math.max(1, hi - lo);
   const yOf = (alt) => 52 - ((alt - lo) / span) * 52;
   const pts = [];
   for (let i = 0; i <= BINS; i += 2) {
@@ -155,27 +163,40 @@ for (const c of parCases) {
   if (JSON.stringify(a) !== JSON.stringify(b)) fail("web/desktop profileSegments vertices differ");
 }
 
-/* ---- 6. sky-CHART overhang runs (no chord across a gap) ---- */
+/* ---- 6. DEFAULT open above: overhang runs + assumed-open runs ---- */
 const overhangAll = pano({ profile: fill(0, BINS, 0), profileTop: fill(0, BINS, 40) });
 const openAll = pano({ profile: fill(0, BINS, 0), profileTop: fill(0, BINS, 90.5) });
-const halfOverhang = pano({ profile: fill(0, BINS, 0),
-                            profileTop: fill(0, 360, 40) });
+const halfOverhang = pano({ profile: fill(0, BINS, 0), profileTop: fill(0, 360, 40) });
 const twoBands = pano({
   profile: new Array(BINS).fill(0),
   profileTop: fill(0, 180, 40).map((v, i) => (i >= 400 && i < 580 ? 40 : (i >= 180 ? 90.5 : v))),
 });
-if (H.overhangRuns(overhangAll, 2).length !== 1) fail("overhangAll should be one run");
+// DEFAULT: no overhang at all - the region above the band is free
+if (H.overhangRuns(overhangAll, 2).length !== 0) fail("default (open above) must have NO overhang");
 if (H.overhangRuns(openAll, 2).length !== 0) fail("open-above (90.5) must have NO overhang");
-const half = H.overhangRuns(halfOverhang, 2);
+if (H.overhangRuns(fullyBlocked, 2).length !== 0) fail("fully blocked has no overhang");
+// opt-in: block above band -> overhang runs
+const cappedAll = pano({ profile: fill(0, BINS, 0), profileTop: fill(0, BINS, 40), blockAbove: true });
+if (H.overhangRuns(cappedAll, 2).length !== 1) fail("blockAbove band should be one overhang run");
+const cappedHalf = pano({ profile: fill(0, BINS, 0), profileTop: fill(0, 360, 40), blockAbove: true });
+const half = H.overhangRuns(cappedHalf, 2);
 if (half.length !== 1 || half[0].a0 !== 0 || half[0].a1 !== 178) {
-  fail(`halfOverhang run = ${JSON.stringify(half)}`);
+  fail(`cappedHalf run = ${JSON.stringify(half)}`);
 }
-const two = H.overhangRuns(twoBands, 2);
+const cappedTwo = pano({ blockAbove: true, profile: new Array(BINS).fill(0),
+  profileTop: fill(0, 180, 40).map((v, i) => (i >= 400 && i < 580 ? 40 : (i >= 180 ? 90.5 : v))) });
+const two = H.overhangRuns(cappedTwo, 2);
 if (two.length !== 2 || two[0].a0 !== 0 || two[0].a1 !== 88
     || two[1].a0 !== 200 || two[1].a1 !== 288) {
-  fail(`twoBands runs = ${JSON.stringify(two)}`);
+  fail(`cappedTwo runs = ${JSON.stringify(two)}`);
 }
-if (H.overhangRuns(fullyBlocked, 2).length !== 0) fail("fully blocked has no overhang");
+// default: the assumed-open area above the band is the hatched region
+if (H.assumedOpenRuns(overhangAll, 2).length !== 1) fail("assumedOpen should be one run");
+if (H.assumedOpenRuns(cappedAll, 2).length !== 0) fail("block-above has no assumed-open run");
+if (H.assumedOpenRuns(openAll, 2).length !== 0) fail("band painted to the top: no assumed-open run");
+if (H.assumedOpenRuns(fullyBlocked, 2).length !== 0) fail("fully blocked: no assumed-open run");
+if (H.bandTopFor(overhangAll, 180) !== 40) fail("bandTopFor should return the painted top");
+if (H.bandTopFor(fullyBlocked, 180) !== null) fail("bandTopFor unpainted should be null");
 
 console.log(ok ? "sky-band contract held" : "sky-band contract FAILED");
 process.exit(ok ? 0 : 1);
