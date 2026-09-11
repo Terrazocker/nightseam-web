@@ -6,7 +6,12 @@
  * 20:00-04:00 fallback. Regression: Tromso 2026-01-15 (grazing polar night)
  * produced an inverted range in both apps. Prints one marker line.
  */
-const C = await import(new URL("../../core/planning.js", import.meta.url).href);
+import { pathToFileURL } from "node:url";
+import { resolve } from "node:path";
+
+const C = await import(process.argv[2]
+  ? pathToFileURL(resolve(process.argv[2])).href
+  : new URL("../../core/planning.js", import.meta.url).href);
 
 let ok = true;
 const fail = (m) => { ok = false; console.log("  FAIL:", m); };
