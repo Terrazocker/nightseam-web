@@ -1,11 +1,12 @@
 {
-  "hash": "008027e87dd2bd33",
-  "token": 8,
+  "hash": "d153d4d9f04decfb",
+  "token": 9,
   "files": {
+    "astro.js": "01d9b1bc863ebcd5d4de3a15059fa6b923803576805ac83d51e28e7e8f398def",
     "catalog.js": "9e2bec8901cfefcfdebfc9d4bd15d03416bbb95880f29abcc26afcfc5a3b988a",
     "format.js": "b04f2d369d22f497dd879a81f4f70453eb5fc740e4a8a47d3047786cfcb855fc",
     "horizon.js": "e9f545b78648ecac58a28f44a6d6778a951612026833edcf5ebbea6f262a0159",
-    "index.js": "e546dcf50079dcc21996b634fcfde7055abdecffb4fb41a740d771f0819d3951",
+    "index.js": "bea08d43df1438b15223bc6db65746ea3e18880e6f3bb3fd438b5c3faf78896f",
     "scoring.js": "d3402880d2f7ac484a97a3833cb6a6a8efd1a02bfc679256c085644a4655f03a",
     "time.js": "aaaf5681dc0591f9022d16f72447e3765a12799bbacd6c0e470b4f263a55c082",
     "visibility.js": "86dd7ca28432e1d2de9b4db0cfe2f0bc8c9b211db9b5e5a89bb020ff19de01b1"

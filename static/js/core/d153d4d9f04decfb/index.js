@@ -32,6 +32,11 @@ export {
 } from './time.js';
 
 export {
+  julianDay, dateFromJD, gmstDeg, precessJ2000ToDate, precessDateToJ2000,
+  refractionDeg, altaz, altazFrame, altazFrameApply,
+} from './astro.js';
+
+export {
   aboveHorizon, sampleVisible, statusOf, effectiveMinAlt,
 } from './visibility.js';
 

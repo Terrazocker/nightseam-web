@@ -9,6 +9,7 @@ import { statusOf, desigLine, activeProfile, activeTopProfile, activeBandTop,
 import { openDetail } from "./detail.js";
 import { passesFilters } from "./targets.js";
 import { CONSTELLATIONS, FIELD_STARS } from "./skydata.js";
+import { altaz as coreAltaz, julianDay as coreJulianDay } from "./core.js";
 
 let SKY_HOVER = null;
 let SKY_POINTS = [];
@@ -158,24 +159,11 @@ function activeSite() {
   return S.cfg.sites.find(s => s.id === S.cfg.active_site_id) || S.cfg.sites[0] || null;
 }
 
-function jdFromDate(d) { return d.getTime() / 86400000 + 2440587.5; }
-function gmstDeg(jd) {
-  let g = 280.46061837 + 360.98564736629 * (jd - 2451545);
-  g %= 360;
-  return g;
-}
-
-/* no refraction / precession needed - this is a decorative backdrop */
-function altAzFast(raH, decD, latD, lonD, jd) {
-  const d2r = Math.PI / 180;
-  const Hh = ((gmstDeg(jd) + lonD - raH * 15) % 360) * d2r;
-  const dd = decD * d2r, pp = latD * d2r;
-  const sinAlt = Math.sin(dd) * Math.sin(pp)
-               + Math.cos(dd) * Math.cos(pp) * Math.cos(Hh);
-  const az = Math.atan2(
-    -Math.cos(dd) * Math.sin(Hh),
-    Math.sin(dd) * Math.cos(pp) - Math.cos(dd) * Math.sin(pp) * Math.cos(Hh));
-  return [Math.asin(Math.max(-1, Math.min(1, sinAlt))) / d2r, az / d2r];
+/* Decorative backdrop projection: J2000 field stars plotted WITHOUT
+   refraction or precession (core altaz with both flags off) - the old local
+   gmstDeg/altAzFast copies were removed in Phase 2 concept 6. */
+function backdropAltAz(raH, decD, latD, lonD, jd) {
+  return coreAltaz(raH * 15, decD, jd, latD, lonD, false, false);
 }
 
 function drawSkyBackdrop(ctx, cx, cy, R) {
@@ -183,7 +171,7 @@ function drawSkyBackdrop(ctx, cx, cy, R) {
   if (!site || !S.night) return;
   const tl = S.night.timeline;
   const tIso = tl.times_iso[Math.min(S.tIdx, tl.n - 1)];
-  const jd = jdFromDate(new Date(tIso + "Z"));
+  const jd = coreJulianDay(new Date(tIso + "Z"));
 
   // keep everything inside the horizon circle — but ONLY at full zoom-out:
   // once zoomed, the viewport is a RECTANGLE over the chart (uranometria
@@ -197,7 +185,7 @@ function drawSkyBackdrop(ctx, cx, cy, R) {
   }
 
   const proj = (raH, decD) => {
-    const [a, z] = altAzFast(raH, decD, site.lat, site.lon, jd);
+    const [a, z] = backdropAltAz(raH, decD, site.lat, site.lon, jd);
     return { a, z };
   };
 

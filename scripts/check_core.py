@@ -43,6 +43,9 @@ MOVED = (
     "aboveHorizon", "sampleVisible", "statusOf", "effectiveMinAlt",
     "moonSensitivity", "moonMinDist", "effectiveMoonGlow", "moonPenalty",
     "bortleMoonFactor",
+    "julianDay", "dateFromJD", "gmstDeg", "precessJ2000ToDate",
+    "precessDateToJ2000", "refractionDeg", "altaz", "altazFrame",
+    "altazFrameApply",
 )
 FORBIDDEN = (
     r"\bdocument\s*\.", r"\bwindow\s*\.", r"\blocalStorage\b",
