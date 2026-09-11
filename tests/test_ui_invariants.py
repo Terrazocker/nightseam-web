@@ -397,3 +397,32 @@ def test_web_sky_mode_is_one_obstruction_colour_and_scrub_time_is_clamped():
         "clamp the scrub time at boot, on refresh AND on the viewFullDay toggle"
     assert "if (!S.site) return null;" in app, \
         "clampSkyTime must guard before the active site is known"
+
+
+def test_desktop_planning_flip_uses_core_with_server_fallback():
+    """Authority flip (0.6.18): the desktop builds /api/night AND
+    /api/object/{id} locally from the shared core, with the server call kept as
+    a runtime fallback. Neither consumer may be left half-flipped: both read
+    the flag, both try the client builder first, both log + fall back on
+    failure, and the tracks come from core computeNightTracks."""
+    pc = _read("static", "js", "planning_client.js")
+    assert "computeNightTracks" in pc
+    assert "from \"./core.js\"" in pc
+    night = _read("static", "js", "night.js")
+    assert "buildClientNight" in night
+    assert "planning_client_compute !== false" in night, \
+        "night.js must default the flag ON"
+    assert "/api/night?" in night, "the server path must stay reachable"
+    assert "falling back to the " in night, "a client failure must log + fall back"
+    assert "requestAnimationFrame" in night, \
+        "the busy chip must paint before the synchronous compute"
+    detail = _read("static", "js", "detail.js")
+    assert "buildClientDetail" in detail
+    assert "planning_client_compute !== false" in detail, \
+        "detail.js must default the flag ON"
+    assert "/api/object/" in detail, "the server detail route must stay reachable"
+    assert "falling back to the " in detail
+    server = _read("app", "server.py")
+    assert "\"planning_client_compute\"" in server
+    assert "db.setting(\"planning_client_compute\", True)" in server, \
+        "the flag must default ON in /api/state"

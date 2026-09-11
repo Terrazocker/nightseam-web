@@ -3,9 +3,19 @@
 import { $, api, setBusy, todayLocal, tzOffAt, toast } from "./util.js";
 import { S } from "./state.js";
 import { timeIndexFor, synthesizeAdvancedTracks, scrubWindowRange } from "./derive.js";
+import { buildClientNight } from "./planning_client.js";
 
 let _nightCtl = null;
 let _nightTimer = null;
+
+/* one painted frame so the busy chip is on screen before the synchronous
+   client compute starts (a microtask yield would not paint) */
+function nextPaint() {
+  return new Promise((resolve) => {
+    if (typeof requestAnimationFrame !== "function") { setTimeout(resolve, 0); return; }
+    requestAnimationFrame(() => requestAnimationFrame(resolve));
+  });
+}
 
 export function scheduleLoadNight(delay = 300) {
   clearTimeout(_nightTimer);
@@ -27,15 +37,36 @@ async function doLoadNight() {
     const q = new URLSearchParams({ date, tz_offset_min: tzOffAt(date) });
     if (sel.value) q.set("site", sel.value);   // empty string would 422
     if (S.cfg && S.cfg.adv_mode) q.set("adv", "1");
-    const N = await api("/api/night?" + q, { signal: ctl.signal, silent: true });
-    if (ctl !== _nightCtl) return;              // superseded meanwhile
+
+    // Authority flip: the desktop computes planning locally from the shared
+    // core (planning_client.js). The server path is retained and used when the
+    // flag is off OR the client build throws (runtime fallback, logged).
+    const useClient = !S.cfg || S.cfg.planning_client_compute !== false;
+    let N = null;
+    if (useClient) {
+      await nextPaint();                        // busy chip paints first
+      if (ctl !== _nightCtl) return;
+      try {
+        N = await buildClientNight({ date, siteId: sel.value, tzMin: tzOffAt(date) });
+      } catch (err) {
+        if (ctl !== _nightCtl) return;
+        console.warn("[night] client planning failed; falling back to the " +
+                     "server path:", err);
+        N = null;
+      }
+      if (ctl !== _nightCtl) return;
+    }
+    if (!N) {
+      N = await api("/api/night?" + q, { signal: ctl.signal, silent: true });
+      if (ctl !== _nightCtl) return;            // superseded meanwhile
+    }
 
     // The synthesis awaits for seconds in advanced mode, so the supersede check
     // has to be repeated AFTER it: without this, a load superseded while
     // synthesising still committed its payload below and repainted every view
     // with the previous date's data (and cleared busy while the newer load was
     // still in flight).
-    if (N.objects.some(o => o.adv)) {
+    if (!N._clientTracks && N.objects.some(o => o.adv)) {
       await synthesizeAdvancedTracks(N);
       if (ctl !== _nightCtl) return;            // superseded during synthesis
     }

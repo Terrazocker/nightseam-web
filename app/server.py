@@ -124,6 +124,7 @@ class SettingsIn(BaseModel):
     theme: Optional[str] = None
     weather_auto: Optional[bool] = None
     view_full_day: Optional[bool] = None
+    planning_client_compute: Optional[bool] = None
 
 
 class RigIn(BaseModel):
@@ -373,6 +374,11 @@ def create_app(db: Database, *, prefetch: bool = True) -> FastAPI:
             "theme": db.setting("theme", "") or "",
             "weather_auto": bool(db.setting("weather_auto", False)),
             "view_full_day": bool(db.setting("view_full_day", False)),
+            # authority flip (0.6.18): the desktop computes planning locally
+            # from the shared core; false forces the retained server path
+            # (runtime fallback, not a remote switch)
+            "planning_client_compute": bool(
+                db.setting("planning_client_compute", True)),
         }
 
     @app.post("/api/settings")
@@ -416,6 +422,9 @@ def create_app(db: Database, *, prefetch: bool = True) -> FastAPI:
             db.set_setting("weather_auto", bool(body.weather_auto))
         if body.view_full_day is not None:
             db.set_setting("view_full_day", bool(body.view_full_day))
+        if body.planning_client_compute is not None:
+            db.set_setting("planning_client_compute",
+                           bool(body.planning_client_compute))
         return {"ok": True}
 
     # ---------------- sites ----------------
