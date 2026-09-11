@@ -59,15 +59,14 @@ def tree_hash(root: Path | None = None) -> tuple[str, dict[str, str]]:
 
 
 def export_names(index_text: str) -> list[str]:
-    """Explicit export list from core/index.js (the stub mirrors it)."""
-    match = re.search(r"export\s*\{([^}]+)\}", index_text)
-    if not match:
-        return []
-    names = []
-    for part in match.group(1).split(","):
-        piece = part.strip().split(" as ")
-        if piece and piece[-1].strip():
-            names.append(piece[-1].strip())
+    """Explicit export list from every `export { ... }` block in core/index.js
+    (the stub mirrors it; order preserved, duplicates dropped)."""
+    names: list[str] = []
+    for match in re.finditer(r"export\s*\{([^}]+)\}", index_text):
+        for part in match.group(1).split(","):
+            piece = part.strip().split(" as ")
+            if piece and piece[-1].strip() and piece[-1].strip() not in names:
+                names.append(piece[-1].strip())
     return names
 
 
