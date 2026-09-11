@@ -66,6 +66,10 @@ async function runTracks(m) {
     if (tr.count !== count) throw new Error("grid mismatch " + tr.count);
     alt.set(tr.alt, start * count);
     az.set(tr.az, start * count);
+    // Yield to the worker event loop so a NEWER message can set latestGen and
+    // cancel the rest; without this the synchronous chunk loop would finish
+    // before any superseding message is ever delivered (spike finding).
+    await new Promise((r) => setTimeout(r, 0));
   }
   if (m.gen !== latestGen) return cancelled(m, t0);
 

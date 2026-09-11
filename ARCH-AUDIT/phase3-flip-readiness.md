@@ -255,3 +255,44 @@ failed; falling back to the server path` and uses the retained route; the
 - Tests: full suite green, `night_race.mjs` now drives the runtime-fallback
   path incl. the paint frame; `test_api` pins the flag default/toggle; the UI
   invariant pins client-first + fallback in both consumers.
+
+## 0.6.19 async spike (`planning_worker.js`, packed host)
+
+`static/js/planning_worker.js` module worker (`new Worker(..., {type:'module'})`)
+imports the baked core, fetches the catalog itself, receives
+`{gen, date, tzMin, lat, lon, adv}` and returns transferable flat tracks.
+Spike results in the packed exe (Backyard 2026-01-15, 241 samples):
+
+| Case | Worker compute | Main-thread long tasks |
+|---|---|---|
+| standard (197 objects) | 23.4 ms (wall 56.9 ms) | none |
+| advanced (12,114) | 962 ms (wall 963 ms) | none |
+
+- Module worker + core import + `/js/planning_worker.js` HTTP 200 from the
+  bundle: packaging is a non-issue. `check_js` covers it (58 files).
+- Transferables: `Float64Array` alt/az received zero-copy; advanced each
+  23,355,792 B (2,919,474 elements) = 46.7 MB total.
+- Cancellation: gen 10 (advanced) -> `cancelled` at the first chunk boundary
+  (76.7 ms), gen 11 (standard) completed. Persistent worker + generation
+  counter; no terminate.
+- SPIKE FINDING: the chunk loop must yield (`setTimeout(0)`) between chunks or
+  the synchronous compute finishes before a superseding message is delivered -
+  the first spike run showed gen 10 completing because there was no yield
+  point. Fixed and re-verified.
+- Memory while holding the advanced buffers: main heap +48.6 MB, process
+  WorkingSet 140.1 MB / private 102.1 MB. `performance.memory` is unavailable
+  inside WebView2 workers (null).
+
+### Tracks ownership decision: worker-owned + transferred duplicate
+
+The worker keeps the flat tracks (for `scoreNightTracks` on later pref
+changes) and transfers a copy to the main thread, which binds it into the
+per-object arrays every renderer consumes. Cost: one extra ~47 MB advanced
+copy (measured WorkingSet 140 MB total). Rejected: worker-only/per-render
+derived payloads (sky view, alt charts and tables read the full per-object
+arrays, so main needs them anyway) and SharedArrayBuffer (~47 MB saved but
+requires COOP/COEP headers on the local server - unjustified for a desktop
+app). No worker fallback needed; the sync client path + server route remain
+the fallback chain. Next session: chunked binding (~8 ms/frame), pref rescore
+in the worker (shared derived-field definition), async prefs path with the
+generation counter, cancellation DOM test, 0.6.19 release.
