@@ -30,6 +30,10 @@ ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "landing" / "changelog.json"
 
 CURATED = {
+    # 0.6.15 is the 0.6.14 follow-up patch: the web editor's profile preview
+    # hatches the assumed-open band in bin space (no shift on rotated/partial
+    # panoramas), and both sky views shade with the legend's red.
+    "0.6.15": "Follow-up patch. The web panorama editor's profile preview now hatches the assumed-open area above the painted band in the same coordinates as the band itself, so the hatch stays aligned on panoramas whose calibration is rotated or only covers part of the sky. Both the desktop and the web sky views now shade the blocked horizon with the same red as the \"blocked by horizon\" legend entry, and a malformed imported panorama no longer interrupts the chart lookup.",
     # 0.6.14 is the desktop sky-view patch: the sky-mode chart artifacts are
     # gone, the horizon legend/hatch now match the web, and the assumed-open
     # tail of the 0.6.13 sky-band work is finished.
