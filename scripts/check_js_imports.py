@@ -17,6 +17,9 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
 ROOTS = [REPO / "static", REPO / "web"]
+# core source + the two baked trees: the stable stubs re-export explicit names
+# from the hashed directories, and those named imports must resolve too.
+CORE_ROOTS = [REPO / "core", REPO / "web" / "core", REPO / "static" / "js" / "core"]
 
 # `import ... from "spec"` / `import "spec"` (namespace, named, default, bare)
 IMPORT_RE = re.compile(
@@ -37,6 +40,10 @@ def iter_js_files():
         jsdir = root / "js"
         if jsdir.is_dir():
             for p in sorted(jsdir.glob("*.js")):
+                yield p
+    for root in CORE_ROOTS:
+        if root.is_dir():
+            for p in sorted(root.rglob("*.js")):
                 yield p
 
 

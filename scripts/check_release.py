@@ -873,12 +873,29 @@ def evaluate(state: State, allow_dirty: bool = False,
 # --------------------------------------------------------------------------
 # command line
 # --------------------------------------------------------------------------
+def check_core_findings(root: Path = ROOT):
+    """Run scripts/check_core.py against the real repo (skipped for synthetic
+    roots used by tests). Keeps evaluate() pure while still blocking staging,
+    because build.ps1 bundles static/ and would ship a stale core bake."""
+    root = Path(root)
+    if root.resolve() != ROOT.resolve():
+        return []
+    script = root / "scripts" / "check_core.py"
+    if not script.is_file():
+        return []
+    spec = importlib.util.spec_from_file_location("check_core", script)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return [Finding(ERROR, "core", problem) for problem in mod.scan()]
+
+
 def run(allow_dirty: bool = False, include_stage: bool = True,
         root: Path = ROOT, stream=sys.stdout):
     """Collect, evaluate, print the report.  Returns the process exit code."""
     state = collect(root)
     findings = evaluate(state, allow_dirty=allow_dirty,
                         include_stage=include_stage)
+    findings += check_core_findings(root)
     describe = state.describe or "<git describe failed>"
     print(console_safe(f"NightSeam release check - {root}"), file=stream)
     print(console_safe(

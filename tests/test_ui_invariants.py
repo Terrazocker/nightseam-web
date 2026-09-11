@@ -266,7 +266,8 @@ def test_web_hold_right_click_erases_and_sky_chart_has_no_chord():
     assert "if (ev.button !== 0) return;" in js
     assert "already erased" in js, \
         "contextmenu must not perform a separate one-shot erase"
-    assert "export function overhangRuns" in js, "overhangRuns helper missing"
+    assert "export function overhangRuns" in _read("core", "horizon.js"), \
+        "overhangRuns helper missing from core"
     app = _read("web", "app.js")
     assert "Hor.overhangRuns(pano, 2)" in app, \
         "the sky chart must draw blocked-above per contiguous overhang run"
@@ -281,9 +282,10 @@ def test_sky_band_defaults_to_open_above_with_an_opt_in():
     shaded as a second colour), and the desktop exposes the same opt-in."""
     js = _read("web", "horizon.js")
     assert "blockAbove" in js
-    assert "export function overhangRuns" in js
-    assert "export function assumedOpenRuns" in js
-    assert "if (!p || p.paintMode !== 'sky' || !p.blockAbove) return [];" in js, \
+    core = _read("core", "horizon.js")
+    assert "export function overhangRuns" in core
+    assert "export function assumedOpenRuns" in core
+    assert "if (!p || p.paintMode !== 'sky' || !p.blockAbove) return [];" in core, \
         "overhang runs must be empty unless block-above is on"
     assert "p.blockAbove = !!ev.target.checked;" in js, \
         "the editor toggle must set p.blockAbove"

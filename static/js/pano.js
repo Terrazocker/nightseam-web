@@ -5,6 +5,9 @@
 import { $, clamp, esc, api, toast, num } from "./util.js";
 import { S } from "./state.js";
 import { loadNight } from "./night.js";
+import { profileSegments } from "./core.js";
+
+export { profileSegments };
 
 const NBIN = 720;
 
@@ -545,33 +548,6 @@ function drawCalibGrid(ctx, W, H) {
       ctx.fillText(CARD[cardA], x + 3, 14);
     }
   }
-}
-
-/* contiguous visible segments of one profile (seam jumps lift the pen).
-   skipAbove hides bins at or above a ceiling value - used for the top edge
-   of sky-mode bands, where no-ceiling columns carry the 90.5 sentinel. */
-export function profileSegments(prof, W, H, ab, at, azOff, fov, skipAbove = 90.5) {
-  const segments = [];
-  let seg = null;
-  let prevX = null;
-  for (let i = 0; i < NBIN; i++) {
-    const e = prof[i];
-    // bin i covers azimuth azOff + i*0.5deg -> its pixel position depends
-    // on the current calibration; outside the FOV there is nothing to draw
-    const rel = (((i * 0.5 - azOff) % 360) + 360) % 360;
-    if (rel > fov || e <= ab - 5 || e >= skipAbove) {
-      seg = null; prevX = null; continue;
-    }
-    const x = rel / fov * W;
-    // azimuth seam: consecutive bins can jump from the right edge back to
-    // the left edge - lift the pen instead of drawing across the image
-    if (seg && prevX != null && x < prevX - W * 0.5) seg = null;
-    const y = H * (1 - (clamp(e, ab, at) - ab) / (at - ab));
-    if (!seg) { seg = []; segments.push(seg); }
-    seg.push([x, y]);
-    prevX = x;
-  }
-  return segments;
 }
 
 function strokeSegments(ctx, segments) {
