@@ -1,5 +1,10 @@
 [
  {
+  "version": "0.6.19",
+  "date": "2026-09-12",
+  "summary": "Faster planning. The desktop app now calculates its night planning off the main thread: changing the date or site keeps the window responsive while a busy indicator works, rapid date/site or preference changes cancel the superseded calculation instead of blocking, and preference changes (minimum altitude, Bortle class, moon-aware ranking, filters) update almost instantly. Every displayed number is unchanged. If the background calculation cannot start or stops, the app falls back automatically to the previous in-app calculation and then to the local server, so planning never stops working. Two polish items are planned for a follow-up: chunking the list rendering on very slow machines and a memory hardening for very long sessions with the full 12,000-object catalog."
+ },
+ {
   "version": "0.6.18",
   "date": "2026-09-11",
   "summary": "Planning is now computed on your machine. The desktop app plans with the same shared engine as the web planner: object positions, twilight windows, the Sun and Moon, visibility percentages, clear windows and scores are calculated locally when you change the date or site, and preference changes (minimum altitude, Bortle class, moon-aware ranking, filters) update instantly without recalculating the night. Every displayed number is the same as before - behind the scenes the sky position is now precessed once per night instead of at every sample, a change far below anything shown. On slower or heavily throttled machines, changing the date or site with the full 12,000-object catalog enabled can take noticeably longer than in 0.6.17 (the app shows a busy indicator while it works); preference changes stay instant, and an asynchronous compute update is planned. Your local server remains as an automatic fallback, and the interface is unchanged."
