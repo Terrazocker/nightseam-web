@@ -296,7 +296,7 @@ Image Catalog (FITS ingest + library). `README.md` has the feature list.
     `Get-CimInstance Win32_Process`).
   - If 8407 is briefly taken at boot, `free_port()` silently picks a RANDOM port
     (written to `instance.json`).
-- Tests: `python -m pytest tests/` (552). Single test:
+- Tests: `python -m pytest tests/` (568). Single test:
   `python -m pytest tests/test_astro.py -k name`. API tests use
   `create_app(db, prefetch=False)` (no image-cache thread). The `client` fixture
   must leave `data/panos` in the tmp dir it patches in.
@@ -304,7 +304,7 @@ Image Catalog (FITS ingest + library). `README.md` has the feature list.
     `pytest.ini`) can acquire an owner-SID-only DACL, so every `tmp_path` test
     errors at fixture cleanup - an environment artifact, not a failure. Workaround
     (no escalation needed): `python -m pytest tests/ -q --basetemp
-    C:\Users\<user>\AppData\Local\Temp\opencode\pt -p no:cacheprovider` -> 552/552.
+    C:\Users\<user>\AppData\Local\Temp\opencode\pt -p no:cacheprovider` -> 568/568.
 - JS checks (run after touching `static/` OR `web/`): `python scripts/check_js.py`
   runs all of them and exits non-zero on hard failures:
   - `check_js_imports.py` - broken relative ES-module imports / missing named exports
@@ -415,10 +415,10 @@ Image Catalog (FITS ingest + library). `README.md` has the feature list.
   `scripts/check_catalog_token.py`, wired into `scripts/check_js.py`, and pinned
   by `tests/test_cache_tokens.py` (mutation-tested). Do NOT add
   `{cache:'no-store'}` - the file must stay cacheable.
-  Current: `app.js?v=44` (index.html) / `CATALOG_TOKEN = '2'`, `astro.js?v=7`,
-  `horizon.js?v=26`, `format.js?v=3`, `nightrank.js?v=4`, `webstore.js?v=7`,
+  Current: `app.js?v=54` (index.html) / `CATALOG_TOKEN = '2'`, `astro.js?v=7`,
+  `horizon.js?v=36`, `format.js?v=13`, `nightrank.js?v=4`, `webstore.js?v=15`,
   `dragwin.js?v=1`, `style.css?v=16`, `themes.css?v=4`; the core stub is
-  `web/core.js?v=3` (bump = re-bake, enforced by `scripts/check_core.py`).
+  `web/core.js?v=13` (bump = re-bake, enforced by `scripts/check_core.py`).
 - **Never publish `index.html` before the modules it names.** Deploys are not
   atomic and the page carries the tokens; `ftps_deploy.py::upload_order()` sorts
   HTML last (`index.html` very last), pinned by `tests/test_deploy_order.py`. Keep
@@ -451,10 +451,23 @@ Image Catalog (FITS ingest + library). `README.md` has the feature list.
   must resolve to real files. Shared helpers (`$`, `$$`, `api()`, `esc`,
   `applyEdgeSpace`) come from `js/util.js`. `js/derive.js` computes
   visibility/score client-side so min-altitude changes never refetch.
-- `core/` - the single implementation of the shared panorama/horizon geometry
-  (Phase 1); baked to `web/core/<hash>/` and `static/js/core/<hash>/` plus the
-  stable explicit-export stubs. Pure ES modules only - no DOM, storage, network
-  or build tokens (`scripts/check_core.py` enforces this and the source guard).
+- `core/` - the single implementation of the shared domain logic (Phases 1-2):
+  `horizon.js` (panorama/sky-band geometry), `astro.js` (JD/GMST/precession/
+  altaz, sun/moon), `planning.js` (twilight/night window + the shared
+  `scrubWindowMs` degeneracy policy + `scrubBounds`/`scrubClamp`),
+  `visibility.js` (predicates, min-alt rule), `scoring.js` (moon/bortle
+  curves, popularity, `nightStats`), `catalog.js` (type palette, ids, search),
+  `format.js` (sizes/FOV/zoom), `time.js` (IANA offsets). Baked by
+  `scripts/build_core.py` to `web/core/<hash>/` + `static/js/core/<hash>/`
+  with stable explicit-export stubs; `scripts/check_core.py` enforces
+  drift/token/purity and the moved-concept source guard. Canonical
+  representations: world-azimuth profile bins (`profileBins:'world'`), arcmin
+  FOV (`fov_unit:'arcmin'`), degrees/epoch-ms elsewhere. Python remains the
+  astronomy/planning ORACLE: `scripts/gen_core_fixtures.py` regenerates
+  `tests/fixtures/core_fixtures.json` (oracle revision + per-concept
+  tolerances), compared by `tests/test_core_fixtures.py`; parity/convergence
+  anchors are the other `tests/js/*.mjs` engines. Python astronomy is NOT to be
+  deleted - that is the authority-flip phase.
 
 ## Advanced mode (12,000+ objects)
 
