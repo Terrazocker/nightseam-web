@@ -59,6 +59,55 @@ def test_web_chip_row_has_no_popular_chip():
     assert "const CHIP_LABELS = { all: 'All', messier:" in js
 
 
+def test_web_panorama_editor_switch_flush_and_beforeunload():
+    """Switch-to-another-panorama must FLUSH the open editor's edits (they belong
+    to the original id) and never write them into the new selection; the web has
+    no pending save timer (the flush is synchronous). beforeunload is
+    warn-only/best-effort - it must not persist, so a hard close can be lossy
+    (the in-app navigation flush and the warning are the protection)."""
+    js = _read("web", "horizon.js")
+    assert "if (activeSession && activeSession.dirty()) activeSession.save();" in js
+    assert "flushHorizonEdits();          // never lose edits when switching" in js
+    assert "addEventListener('beforeunload'" in js
+    assert "ev.returnValue = ''" in js
+    assert "saveTimer" not in js          # web flush is synchronous, not a timer
+
+
+def test_web_panorama_editor_controls_and_no_blocking_dialogs():
+    """The redesigned web panorama editor exposes the full control set and never
+    uses a blocking browser alert/confirm (Clear uses an in-page dialog)."""
+    js = _read("web", "horizon.js")
+    for cid in ("ed-undo", "ed-redo", "ed-revert", "ed-clear", "ed-save",
+                "ed-zoom-in", "ed-zoom-out", "ed-fit", "ed-status", "ed-pos"):
+        assert f'id="{cid}"' in js, f"missing editor control #{cid}"
+    assert "alert(" not in js and "window.confirm(" not in js
+    for fn in ("snapshotPano", "historyUndo", "historyRedo", "editorClampZoom",
+               "editorScreenToBase", "horizonUnsaved", "flushHorizonEdits"):
+        assert f"export function {fn}" in js, fn
+
+
+def test_desktop_robustness_invariants():
+    """Zero-site recovery and pano-save safety are one-line-critical: a
+    substring assertion is enough to catch a revert.
+
+    - main.js must reopen the wizard whenever there are no sites (the old
+      `&& !wizard_done` guard left a permanent 0-site dead-end).
+    - pano.js select() must cancel a pending auto-save (it belongs to the
+      previous panorama) and must not blank a stored profile for a stroke-less
+      record.
+    - detail.js must escape the constellation and distance sinks."""
+    mainjs = _read("static", "js", "main.js")
+    assert "if (!S.cfg.sites.length) {" in mainjs
+    assert "!S.cfg.wizard_done" not in mainjs
+    pano = _read("static", "js", "pano.js")
+    assert "if (Pano.saveTimer) { clearTimeout(Pano.saveTimer); Pano.saveTimer = null; }" in pano
+    # recomputeProfile must keep a stroke-less record's stored profile
+    assert "if (!Pano.cur.strokes || Pano.cur.strokes.length === 0) {" in pano
+    detail = _read("static", "js", "detail.js")
+    assert "esc(constName(m.constellation))" in detail
+    assert "esc(m.distance)" in detail
+
+
 def test_desktop_has_no_popularity_sort_mode():
     html = _read("static", "index.html")
     js = _read("static", "js", "targets.js")

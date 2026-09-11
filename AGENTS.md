@@ -78,15 +78,53 @@ Image Catalog (FITS ingest + library). `README.md` has the feature list.
   `skyClampFocus`. The disc lives in a SQUARE W x H space; the visible window is
   the RECTANGLE `W/zoom x H/zoom` with ONE uniform scalar on both axes. The
   desktop canvas must NOT carry a `border-radius: 50%` clip - it hid that window.
+- Catalog identity is GLOBAL: an `id` must be unique across the curated `objects`
+  AND the advanced `advanced_objects` tables together, not just within each source.
+  `scripts/build_adv_catalog.py` expands a curated range designation
+  (`NGC 2237-2246`) to every member key and asserts global uniqueness before
+  writing; `tests/test_catalog_integrity.py` fails on any duplicate/unsafe id and
+  pins the `ngc2237`/`ngc7317` composites. Never hide a collision with a runtime
+  `Map`/lookup - fix the data.
+- Panorama profile/strokes invariant: strokes WIN when present (the profile is
+  derived from the mask); with NO strokes the stored `profile`/`profileTop` are
+  AUTHORITATIVE, so a stroke-less imported record is never blanked just by
+  opening/saving (`computeProfile` on the web, `recomputeProfile` on the desktop).
+  Deliberate clearing goes through `clearMask()`, the one place a stored profile
+  is discarded. A stroke-less profile must not be silently removed - that could
+  make a blocked target look observable.
+- Web panorama editor model (0.6.x redesign): edits are applied to planning
+  IMMEDIATELY (in-memory `activePano`) but persisted only on **Save** (or when
+  you leave the editor). History is JSON snapshots of the EDITABLE state
+  (strokes + calibration + paint mode) - `snapshotPano`/`historyCommit`/
+  `historyUndo`/`historyRedo` - with ONE entry per gesture (committed on pointer
+  up), a bounded stack (`HISTORY_LIMIT`), redo invalidated by a new edit, and
+  `historyDirty` clearing when the state returns to the `historyMarkSaved`
+  baseline. `flushHorizonEdits()` runs on panorama switch / create / navigating
+  away (never lose an edit); a `beforeunload` guard covers closing the tab while
+  dirty. Clear is confirmed via the in-page `confirmDialog` (never `alert`/
+  `confirm`) and is undoable; Revert restores the last saved state and is also
+  undoable. Zoom (`editorClampZoom`/`editorViewMatrix`/`editorScreenToBase`/
+  `editorClampFocus`) is PRESENTATION-ONLY (1..8, fits the mask rectangle) and
+  never touches stored geometry; the canvas is DPR-aware and `ResizeObserver`-
+  driven, drawing in the 720x360 logical space so guides, the cursor readout and
+  `ceilFor` share ONE transform. Pinned by `tests/js/pano_ui.mjs`.
 - Panorama profiles are exactly 720 bins (0.5 deg/az), `NO_BLOCK = -90`. Sky mode
   inverts the mask: `profile` = band BOTTOM, `profile_top` = band TOP; unpainted
-  sky columns block fully (90); outside the FOV follows the mode. The web editor
+  sky columns stay at 90; outside the FOV follows the mode. The web editor
   (`web/horizon.js`) emits the `90.5` "open above" sentinel when the painted band
   reaches within 4 deg of `altTop`, wraps the 360-deg seam in
   `rebuildMask(strokes, wrap)`, and derives the profile in memory
   (`profileFromMask`) persisting once per stroke/save, not per pointer sample.
   Guides use `xOfAz`/`rowOfAlt` - the SAME transform as `ceilFor`
   (`tests/js/pano_geom.mjs`).
+- Web backup is TRUTHFUL: `horizon.js::exportPanosWithImages()` embeds the
+  compressed panorama photo and sets `hasImage` from the bytes actually
+  included, so `hasImage === true` after a restore means the image really exists.
+  `collectBackup` carries the theme (its own `nightseam_theme` key) and a schema
+  `version`; `restoreBackup` stages/validates the whole bundle BEFORE any write
+  and rolls back to the `meta`/`safety` snapshot if a write fails. Pinned by
+  `tests/js/web_backup.mjs`. A desktop restore clears `import_batches` (history
+  of the replaced library).
 
 **Async**
 - After every `await` in `static/js/night.js`, re-check `ctl === _nightCtl`
@@ -136,7 +174,7 @@ Image Catalog (FITS ingest + library). `README.md` has the feature list.
     `Get-CimInstance Win32_Process`).
   - If 8407 is briefly taken at boot, `free_port()` silently picks a RANDOM port
     (written to `instance.json`).
-- Tests: `python -m pytest tests/` (502). Single test:
+- Tests: `python -m pytest tests/` (517). Single test:
   `python -m pytest tests/test_astro.py -k name`. API tests use
   `create_app(db, prefetch=False)` (no image-cache thread). The `client` fixture
   must leave `data/panos` in the tmp dir it patches in.
@@ -144,7 +182,7 @@ Image Catalog (FITS ingest + library). `README.md` has the feature list.
     `pytest.ini`) can acquire an owner-SID-only DACL, so every `tmp_path` test
     errors at fixture cleanup - an environment artifact, not a failure. Workaround
     (no escalation needed): `python -m pytest tests/ -q --basetemp
-    C:\Users\<user>\AppData\Local\Temp\opencode\pt -p no:cacheprovider` -> 502/502.
+    C:\Users\<user>\AppData\Local\Temp\opencode\pt -p no:cacheprovider` -> 517/517.
 - JS checks (run after touching `static/` OR `web/`): `python scripts/check_js.py`
   runs all of them and exits non-zero on hard failures:
   - `check_js_imports.py` - broken relative ES-module imports / missing named exports
@@ -214,25 +252,46 @@ Image Catalog (FITS ingest + library). `README.md` has the feature list.
 - Commits are named `NightSeam X.Y.Z`, tagged `vX.Y.Z` (e.g. `NightSeam 0.6.10` /
   `v0.6.10`). Tag BEFORE rebuilding so the exe shows it.
 - **Release order matters** (getting it wrong publishes a version named
-  `0.6.0-dirty`): commit + tag FIRST, then `scripts/make_release.py` and
-  `web/build_web.py version` **while HEAD is exactly at the tag and the tree is
-  clean** (both call `git describe --dirty`, so any uncommitted change - including
-  the changelog - leaks into the exe/zip/`version.json`). Run
-  `scripts/build_changelog.py` LAST; it rewrites the TRACKED `landing/changelog.json`,
-  so commit that as its own follow-up commit after the tag. `check_release.py`
-  then verifies the staged zip sha256/size vs `version.json`, the zip's exe vs the
-  staged exe, `ns-version.js`, the changelog schema, and the git-describe grammar.
+  `0.6.0-dirty`), in this exact order:
+  1. add the curated CURATED entry for `X.Y.Z` to `scripts/build_changelog.py`
+     and **commit it with the release** (it must live in the tagged commit).
+  2. **pre-tag gate:** `python scripts/pre_tag_check.py X.Y.Z` must exit 0
+     (fails if the CURATED entry is missing; also pinned by
+     `tests/test_pre_tag_check.py`). Do NOT tag until it passes.
+  3. `git tag vX.Y.Z` on the release commit.
+  4. `scripts/make_release.py` and `web/build_web.py version` **while HEAD is
+     exactly at the tag and the tree is clean** (both call `git describe
+     --dirty`, so any uncommitted change leaks into the exe/zip/`version.json`).
+  5. `scripts/check_release.py` must exit 0 with 0 errors.
+  6. browser smoke gate (see the sandbox notes), then upload.
+  7. `scripts/build_changelog.py` regenerates the TRACKED `landing/changelog.json`;
+     commit that as its own follow-up commit after the tag (**never move the tag**).
+  `check_release.py` verifies the staged zip sha256/size vs `version.json`, the
+  zip's exe vs the staged exe, `ns-version.js`, the changelog schema, and the
+  git-describe grammar. Tagging before step 1 is committed is a hard error: HEAD
+  then sits past the tag and `check_release.py` blocks staging.
 - Public artifacts under `/downloads/` (`dist/release/` content):
   `NightSeam-<version>.zip`, `NightSeam-latest.zip` (stable link),
   `version.json` (landing page) and `ns-version.js` (JSONP for the desktop update
   checker, since a localhost origin cannot fetch cross-origin JSON).
-- **Web cache-busting is manual, per module.** `web/index.html` carries
-  `app.js?v=N`; `web/app.js` carries a `?v=` on each import. Bump the token of
-  every module whose BEHAVIOUR changed (comment-only edits do not) in the SAME
-  commit as the change, and bump BOTH the entry point and the dependency. Current:
-  `app.js?v=31`, `astro.js?v=6`, `horizon.js?v=15`, `format.js?v=3`,
-  `nightrank.js?v=2`, `webstore.js?v=5`, `dragwin.js?v=1`, `style.css?v=11`,
-  `themes.css?v=2`.
+- **Web cache-busting is manual, per module AND for the catalog data file.**
+  `web/index.html` carries `app.js?v=N`; `web/app.js` carries a `?v=` on each
+  import. Bump the token of every module whose BEHAVIOUR changed (comment-only
+  edits do not) in the SAME commit as the change, and bump BOTH the entry point
+  and the dependency.
+  `web/catalog.json` is a ~4 MB DATA file, not a module, so it cannot carry a
+  `?v=` in an import: it is fetched through the ONE named token
+  `const CATALOG_TOKEN` in `web/app.js` (`fetch('catalog.json?v=' + CATALOG_TOKEN)`)
+  and `web/catalog.manifest.json` records the bytes for that token. **A change to
+  `web/catalog.json` MUST bump `CATALOG_TOKEN` + the manifest in the same commit**
+  (the 0.6.12 dedup was the first catalog change ever; a stale ~4 MB file would
+  otherwise hide it from returning visitors). Enforced by
+  `scripts/check_catalog_token.py`, wired into `scripts/check_js.py`, and pinned
+  by `tests/test_cache_tokens.py` (mutation-tested). Do NOT add
+  `{cache:'no-store'}` - the file must stay cacheable.
+  Current: `app.js?v=34` (index.html) / `CATALOG_TOKEN = '2'`, `astro.js?v=6`,
+  `horizon.js?v=17`, `format.js?v=3`, `nightrank.js?v=4`, `webstore.js?v=6`,
+  `dragwin.js?v=1`, `style.css?v=12`, `themes.css?v=2`.
 - **Never publish `index.html` before the modules it names.** Deploys are not
   atomic and the page carries the tokens; `ftps_deploy.py::upload_order()` sorts
   HTML last (`index.html` very last), pinned by `tests/test_deploy_order.py`. Keep

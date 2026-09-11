@@ -9,12 +9,20 @@
  * All sky math runs client-side (astro.js, Meeus algorithms).
  */
 import * as E from './astro.js?v=6';
-import * as Hor from './horizon.js?v=15';
-import * as WS from './webstore.js?v=5';
+import * as Hor from './horizon.js?v=17';
+import * as WS from './webstore.js?v=6';
 import { initDragWindows } from './dragwin.js?v=1';
 import { fmtSize, sizeArcmin, framePct, magVisible, skyClampZoom,
          skyViewMatrix, skyScreenToBase, skyClampFocus } from './format.js?v=3';
-import { nightStats } from './nightrank.js?v=2';
+import { nightStats } from './nightrank.js?v=4';
+
+// Cache-bust token for the ~4 MB data file web/catalog.json. It is NOT a JS
+// module, so it cannot carry a ?v= in an import: this named token IS its
+// invalidation mechanism (do NOT add {cache:'no-store'} - the file must stay
+// cacheable). Bump it in the SAME commit whenever web/catalog.json changes;
+// web/catalog.manifest.json records the bytes for the current token and
+// scripts/check_catalog_token.py enforces the pairing.
+const CATALOG_TOKEN = '2';
 
 const TYPE_COLORS = {
   galaxy: '#ffd166',
@@ -469,8 +477,10 @@ function hideSplash() {
 
 function route() {
   const h = location.hash || '#tonight';
-  S.view = h.slice(1);
-  if (!['tonight', 'sky', 'catalog', 'horizon'].includes(S.view)) S.view = 'tonight';
+  const view = ['tonight', 'sky', 'catalog', 'horizon'].includes(h.slice(1)) ? h.slice(1) : 'tonight';
+  // leaving the Horizon editor with unsaved edits: flush them (never lose them)
+  if (S.view === 'horizon' && view !== 'horizon' && Hor.horizonUnsaved()) Hor.flushHorizonEdits();
+  S.view = view;
   document.querySelectorAll('#tabs a').forEach((a) => a.classList.toggle('active', a.dataset.v === S.view));
   if (S.view === 'tonight') renderTonight();
   else if (S.view === 'sky') renderSky();
@@ -1942,13 +1952,34 @@ async function renderSettings() {
 
   // — backup / transfer —
   $('#set-export').addEventListener('click', async () => {
-    const backup = await WS.collectBackup(Hor.getPrefs(), Hor.exportPanos());
+    // truthful backup: panorama photos are embedded, hasImage matches the data
+    const backup = await WS.collectBackup(Hor.getPrefs(),
+      await Hor.exportPanosWithImages(), WS.currentTheme());
     WS.downloadText(`nightseam-web-backup-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify(backup, null, 1));
   });
+
+  // Apply a full web snapshot: records + panoramas + prefs + theme. Used for
+  // BOTH the incoming backup and the safety rollback, so the two paths cannot
+  // diverge. `current` is the pre-restore snapshot: restoreBackup persists it
+  // to meta/safety and rolls the records back if a write fails. A malformed
+  // bundle throws before anything is destroyed.
+  async function applyWebSnapshot(data, current) {
+    const staged = await WS.restoreBackup(data, current);  // sites / rigs / targets
+    const norm = Hor.normalizePanos(staged.panos);
+    if (staged.panos && !norm) throw new Error('malformed panorama section');
+    Hor.applyPanosSnapshot(norm || { panos: [], activeId: null });
+    if (staged.prefs) Hor.setPrefs(staged.prefs);
+    if (staged.theme) applyTheme(staged.theme);
+    return staged;
+  }
+
   $('#set-import').addEventListener('change', (ev) => {
     const f = ev.target.files && ev.target.files[0];
     ev.target.value = '';
     if (!f) return;
+    // the backup can embed panorama photos, so cap the file before reading it
+    // all into memory (a hand-crafted multi-GB file must not wedge the tab)
+    if (f.size > 200 * 1024 * 1024) { alert('Backup file is too large (200 MB max)'); return; }
     const rd = new FileReader();
     rd.onload = async () => {
       try {
@@ -1960,9 +1991,17 @@ async function renderSettings() {
           panos: (data.panos && data.panos.panos ? data.panos.panos : []).length,
         };
         if (!confirm(`Import backup?\nSites: ${counts.sites} · Rigs: ${counts.rigs} · Custom targets: ${counts.targets}\nHorizons: ${counts.panos}\n\nYour current browser data will be replaced.`)) return;
-        const applied = await WS.restoreBackup(data);
-        if (applied.prefs) Hor.setPrefs(applied.prefs);
-        if (applied.panos) Hor.importPanos(applied.panos);
+        // snapshot the CURRENT state (records + pano photos + prefs + theme)
+        // before replacing anything; restoreBackup persists it as the safety
+        // copy and rolls back if any write fails
+        const current = await WS.collectBackup(Hor.getPrefs(),
+          await Hor.exportPanosWithImages(), WS.currentTheme());
+        try {
+          await applyWebSnapshot(data, current);
+        } catch (err) {
+          try { await applyWebSnapshot(current, current); } catch { /* keep the original error */ }
+          throw err;
+        }
         applyEdge();
         await reinitUserData();
         closeModal(); refreshView();
@@ -2216,7 +2255,7 @@ async function boot() {
   S.detailResize = null;
   try {
     splashText('loading catalog…');
-    const res = await fetch('catalog.json');
+    const res = await fetch('catalog.json?v=' + CATALOG_TOKEN);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     CAT = await res.json();
     for (const o of CAT) byId.set(o.id, o);

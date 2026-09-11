@@ -29,6 +29,7 @@ def main() -> int:
     hard += _run("check_dom_ids")
     hard += _run("check_js_syntax")  # parses the modules (skips without node)
     hard += _run("check_encoding")   # UTF-8 / no cp1252 mojibake in shipped text
+    hard += _run("check_catalog_token")  # catalog.json cache-bust pairing
     _run("check_js_defs")            # heuristic - candidates only
     print("check_js:", "FAIL" if hard else "OK")
     return 1 if hard else 0
