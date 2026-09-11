@@ -9,14 +9,14 @@
  * All sky math runs client-side (astro.js, Meeus algorithms).
  */
 import * as E from './astro.js?v=7';
-import * as Hor from './horizon.js?v=28';
-import * as WS from './webstore.js?v=7';
+import * as Hor from './horizon.js?v=29';
+import * as WS from './webstore.js?v=8';
 import { initDragWindows } from './dragwin.js?v=1';
 import { fmtSize, sizeArcmin, framePct, magVisible, skyClampZoom,
-         skyViewMatrix, skyScreenToBase, skyClampFocus } from './format.js?v=5';
+         skyViewMatrix, skyScreenToBase, skyClampFocus } from './format.js?v=6';
 import { nightStats } from './nightrank.js?v=4';
 import { TYPE_LABELS, TYPE_COLORS, searchBlob as coreSearchBlob }
-  from './core.js?v=5';
+  from './core.js?v=6';
 
 // Cache-bust token for the ~4 MB data file web/catalog.json. It is NOT a JS
 // module, so it cannot carry a ?v= in an import: this named token IS its

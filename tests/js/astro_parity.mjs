@@ -18,7 +18,7 @@ const engine = process.argv[2];
 if (!["desktop", "web", "window", "darkwindow", "pick", "crosszone",
      "scoring", "ceil", "size", "status", "frame", "advice", "minalt",
      "shortcut", "nightstats", "mag", "skyzoom", "abovehorizon",
-     "scrubwindow", "scrubgrid"].includes(engine)) {
+     "scrubwindow", "scrubgrid", "timezone"].includes(engine)) {
   console.error("usage: node astro_parity.mjs <engine>");
   process.exit(2);
 }
@@ -253,6 +253,21 @@ if (engine === "size") {
     return { ceil: r.ceil, ceilTop: r.ceilTop };
   });
   process.stdout.write(JSON.stringify(out));
+} else if (engine === "timezone") {
+  /* Zone offsets from core/time.js. Case: {tz, ms} -> offset at an instant,
+   * {tz, date} -> offset at local noon of YYYY-MM-DD (minutes east of UTC), or
+   * {kind:"wall", tz, ms} -> wall<->UTC shift round trip (machine offset 0). */
+  const T = await import(new URL("../../core/time.js", import.meta.url).href);
+  process.stdout.write(JSON.stringify(cases.map((c) => {
+    if (c.kind === "wall") {
+      const off = T.offsetEastMin(c.tz, c.ms);
+      const wall = T.wallFromUtcMs(c.ms, off, 0);
+      return { wall, back: T.utcFromWallMs(wall, off, 0) };
+    }
+    return c.date != null
+      ? T.zoneOffsetAtLocalNoon(c.tz, c.date)
+      : T.offsetEastMin(c.tz, c.ms);
+  })));
 } else if (engine === "status") {
   /* E4: desktop derive.js statusOf must mirror the vis[] visibility predicate
    * (incl. the sky-mode ceil_top ceiling). Case: {alt, ceil, ceilTop, minAlt}.

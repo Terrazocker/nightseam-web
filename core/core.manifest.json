@@ -1,10 +1,11 @@
 {
-  "hash": "143af6f54834f82a",
-  "token": 5,
+  "hash": "52013fc66c4fb89c",
+  "token": 6,
   "files": {
     "catalog.js": "9e2bec8901cfefcfdebfc9d4bd15d03416bbb95880f29abcc26afcfc5a3b988a",
     "format.js": "b04f2d369d22f497dd879a81f4f70453eb5fc740e4a8a47d3047786cfcb855fc",
     "horizon.js": "e9f545b78648ecac58a28f44a6d6778a951612026833edcf5ebbea6f262a0159",
-    "index.js": "6e83d7c43f0a20b30e798aebfe1a0ed73ed039c9daa94c6dae9f768079c71984"
+    "index.js": "dd6269e9298d173f59ed5c5f19801062b74ff525431154dd58e9cb1ed0e7969d",
+    "time.js": "aaaf5681dc0591f9022d16f72447e3765a12799bbacd6c0e470b4f263a55c082"
   }
 }

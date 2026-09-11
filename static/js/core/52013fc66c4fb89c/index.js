@@ -26,3 +26,7 @@ export {
 export {
   TYPE_LABELS, TYPE_COLORS, isCustomId, searchBlob,
 } from './catalog.js';
+
+export {
+  offsetEastMin, zoneOffsetAtLocalNoon, wallFromUtcMs, utcFromWallMs,
+} from './time.js';

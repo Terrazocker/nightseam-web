@@ -10,6 +10,8 @@
  * the app moved to nightseam.de, so every visitor starts on a fresh origin.
  */
 
+import { offsetEastMin, wallFromUtcMs, utcFromWallMs } from './core.js?v=6';
+
 const DB_NAME = 'nightseam-db-v1';
 const DB_VER = 1;
 const STORES = ['targets', 'sites', 'rigs', 'meta'];
@@ -231,35 +233,24 @@ let activeTz = null; // IANA name of the active site, or null = browser local
 export function setActiveTz(tz) { activeTz = tz || null; }
 export function tz() { return activeTz; }
 
-/** UTC offset of `tz` (minutes east of UTC) at the instant `date`. DST-aware. */
+/** UTC offset of `tz` (minutes east of UTC) at the instant `date`. DST-aware.
+ *  Phase 2: the IANA lookup is shared in core/time.js. */
 export function tzOffMinAt(tzName, date) {
-  if (!tzName) return null;
-  try {
-    const parts = new Intl.DateTimeFormat('en-US', {
-      timeZone: tzName, timeZoneName: 'longOffset', hour12: false,
-    }).formatToParts(date);
-    const p = parts.find((x) => x.type === 'timeZoneName');
-    if (!p || !p.value) return null;
-    if (p.value === 'GMT' || p.value === 'UTC') return 0;
-    const m = p.value.match(/GMT([+-])(\d{1,2}):?(\d{2})?/);
-    if (!m) return null;
-    const sign = m[1] === '-' ? -1 : 1;
-    return sign * (Number(m[2]) * 60 + Number(m[3] || 0));
-  } catch { return null; }
+  return offsetEastMin(tzName, date.getTime());
 }
 
 /** A Date whose browser-local getters show the wall clock in the site timezone. */
 export function utcToWall(date) {
   const off = tzOffMinAt(activeTz, date);
   if (off == null) return date;
-  return new Date(date.getTime() + (off + date.getTimezoneOffset()) * 60000);
+  return new Date(wallFromUtcMs(date.getTime(), off, date.getTimezoneOffset()));
 }
 
 /** Inverse of utcToWall: interpret a wall-clock Date (site tz) as a UTC instant. */
 export function wallToUtc(date) {
   const off = tzOffMinAt(activeTz, date);
   if (off == null) return date;
-  return new Date(date.getTime() - (off + date.getTimezoneOffset()) * 60000);
+  return new Date(utcFromWallMs(date.getTime(), off, date.getTimezoneOffset()));
 }
 
 /** A Date whose calendar fields are the active site's date at noon —

@@ -39,6 +39,7 @@ MOVED = (
     "fmtSize", "sizeArcmin", "fmtFov", "fmtFovPair", "framePct", "magVisible",
     "skyClampZoom", "skyViewMatrix", "skyScreenToBase", "skyClampFocus",
     "searchBlob", "isCustomId",
+    "offsetEastMin", "zoneOffsetAtLocalNoon", "wallFromUtcMs", "utcFromWallMs",
 )
 FORBIDDEN = (
     r"\bdocument\s*\.", r"\bwindow\s*\.", r"\blocalStorage\b",
