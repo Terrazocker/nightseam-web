@@ -87,7 +87,7 @@ async function doLoadNight() {
     document.dispatchEvent(new CustomEvent("night:loaded"));
     if (ctl === _nightCtl) setBusy(false);      // only the current load clears it
   } catch (err) {
-    if (err.name === "AbortError") return;      // superseded
+    if (err.name === "AbortError" || err.name === "SupersededError") return; // superseded
     // A superseded load must not report its failure either: the newer request
     // is still in flight (or has already succeeded) and reports the real
     // problem itself - a stale toast only confuses the user.

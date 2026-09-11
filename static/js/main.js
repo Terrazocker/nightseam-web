@@ -18,6 +18,7 @@ import { Pano } from "./pano.js";
 import { bindArchive, applyArchiveUI, loadLibrary } from "./archive.js";
 import { bindSkyMap, renderSkyMap } from "./skymap.js";
 import { initDragWindows } from "./dragwin.js";
+import { requestPrefsDerived } from "./planning_client.js";
 
 /* ---------------- tabs ---------------- */
 function bindTabs() {
@@ -85,7 +86,9 @@ async function init() {
 
   // cross-view reactions
   document.addEventListener("night:loaded", () => {
-    recomputeNightDerived();
+    // a worker-built payload already carries the derived fields (bound during
+    // the load); the sync/server paths derive here as before
+    if (!S.night._derivedReady) recomputeNightDerived();
     renderAll();
   });
   document.addEventListener("time:changed", () => {
@@ -94,8 +97,11 @@ async function init() {
   document.addEventListener("favs:changed", () => {
     if ($("#tab-sky").classList.contains("active")) renderSky();
   });
-  document.addEventListener("prefs:changed", () => {
-    recomputeNightDerived();
+  document.addEventListener("prefs:changed", async () => {
+    // worker-side rescore on the retained tracks (async, cancellable); the
+    // synchronous definition remains the fallback and the single reference
+    const async_ok = await requestPrefsDerived();
+    if (!async_ok) recomputeNightDerived();
     renderTonight(); renderTargets(); renderSky();
     if (DETAIL_OPEN()) drawAltChart();
   });

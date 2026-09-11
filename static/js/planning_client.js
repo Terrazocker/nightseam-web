@@ -30,6 +30,64 @@ const TRACK_CHUNK = 2000;         // flat tracks are converted+released per chun
 let _cache = { key: null, payload: null };
 let _catCache = { adv: null, list: null };
 
+/* ---------------- worker (0.6.19): off-thread tracks + derived fields ------ */
+
+class SupersededError extends Error {
+  constructor() { super("superseded"); this.name = "SupersededError"; }
+}
+
+const BIND_MS = 8;                 // bind budget per frame (no long tasks)
+let _worker = null, _workerBroken = false;
+let _wgen = 0, _bindGen = 0, _dgen = 0;
+const _pending = new Map();
+
+function workerUsable() {
+  return typeof Worker === "function" && !window.__NS_WORKER_FORCE_FAIL && !_workerBroken;
+}
+
+function getWorker() {
+  if (_worker) return _worker;
+  _worker = new Worker("/js/planning_worker.js", { type: "module" });
+  _worker.onmessage = (ev) => {
+    const m = ev.data || {};
+    const p = _pending.get(m.gen);
+    if (!p) return;
+    _pending.delete(m.gen);
+    if (m.type === "error") p.reject(new Error("worker: " + m.error));
+    else if (m.type === "cancelled") p.reject(new SupersededError());
+    else p.resolve(m);
+  };
+  _worker.onerror = (e) => {
+    _workerBroken = true;
+    for (const [, p] of _pending) p.reject(new Error("worker error: " + (e.message || "?")));
+    _pending.clear();
+  };
+  return _worker;
+}
+
+function ask(msg) {
+  const w = getWorker();
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      _pending.delete(msg.gen);
+      _workerBroken = true;
+      if (_worker) { _worker.terminate(); _worker = null; }
+      reject(new Error("worker timeout"));
+    }, 120000);
+    _pending.set(msg.gen, {
+      resolve: (m) => { clearTimeout(timer); resolve(m); },
+      reject: (e) => { clearTimeout(timer); reject(e); },
+    });
+    try { w.postMessage(msg); } catch (e) {
+      clearTimeout(timer); _pending.delete(msg.gen); reject(e);
+    }
+  });
+}
+
+const frame = () => new Promise((r) =>
+  typeof requestAnimationFrame === "function" ? requestAnimationFrame(() => r())
+                                              : setTimeout(r, 0));
+
 /* The catalog is metadata only: reuse the boot copy (main.js::S.catalog) or the
    previous fetch - a date/site change must not re-download ~4 MB. */
 async function catalogFor(adv) {
@@ -84,9 +142,141 @@ function siteFor(siteId) {
   });
 }
 
+/** Worker-first night build; a worker failure falls back to the synchronous
+ *  client path (night.js in turn falls back to the server route on failure). */
+export async function buildClientNight(opts) {
+  if (workerUsable()) {
+    try {
+      return await buildWorkerNight(opts);
+    } catch (err) {
+      if (err && err.name === "SupersededError") throw err;
+      console.warn("[planning] worker failed; synchronous client path:", err);
+    }
+  }
+  return syncBuildClientNight(opts);
+}
+
+async function buildWorkerNight({ date, siteId, tzMin }) {
+  if (window.__NS_PLAN_FORCE_FAIL) {
+    throw new Error("forced client-planning failure (smoke hook)");
+  }
+  const site = await siteFor(siteId);
+  const adv = !!(S.cfg && S.cfg.adv_mode);
+  const pano = activeProfile();
+  const topProf = activeTopProfile();
+  const catalog = await catalogFor(adv);
+  const gen = ++_wgen;
+  _bindGen++;
+  const res = await ask({
+    gen, type: "night", date, tzMin, lat: site.lat, lon: site.lon,
+    elev: site.elev || 0, adv, profile: pano, topProfile: topProf,
+    prefs: { minAlt: S.minAlt, bortle: S.cfg && S.cfg.bortle,
+             moonAware: !!(S.cfg && S.cfg.moon_aware),
+             filters: S.cfg && S.cfg.filters },
+  });
+  return bindWorkerNight(res, catalog, pano, topProf);
+}
+
+/** Bind transferred flat tracks + packed derived fields into the per-object
+ *  arrays the UI expects, in BIND_MS slices so no frame blocks. */
+async function bindWorkerNight(res, catalog, pano, topProf) {
+  const gen = _bindGen;
+  const { n, count, alt, az, derived, meta } = res;
+  if (n !== catalog.length) {
+    throw new Error("catalog mismatch " + n + " vs " + catalog.length);
+  }
+  const ceilAt = lookup(pano), topAt = lookup(topProf);
+  const objects = new Array(n);
+  let start = 0;
+  while (start < n) {
+    const t0 = performance.now();
+    while (start < n && performance.now() - t0 < BIND_MS) {
+      const o = catalog[start], base = start * count;
+      const alts = new Array(count), azs = new Array(count), ceils = new Array(count);
+      const tops = topProf ? new Array(count) : null;
+      for (let i = 0; i < count; i++) {
+        alts[i] = alt[base + i]; azs[i] = az[base + i];
+        ceils[i] = r1(ceilAt(az[base + i]));
+        if (tops) tops[i] = r1(topAt(az[base + i]));
+      }
+      let maxI = 0;
+      for (let i = 1; i < count; i++) if (alts[i] > alts[maxI]) maxI = i;
+      const rec = { id: o.id, alt: alts, az: azs, ceil: ceils,
+                    max_alt: alts[maxI], max_i: maxI,
+                    vis: new Array(count), above: new Array(count) };
+      if (o._adv) {
+        rec.adv = true;
+        rec.ra_hours = o.ra_hours; rec.dec_deg = o.dec_deg;
+        rec.vmag = o.vmag; rec.otype = o.otype;
+        rec.popularity = o.popularity || 0;
+      }
+      if (tops) rec.ceil_top = tops;
+      for (let i = 0; i < count; i++) {
+        rec.vis[i] = !!derived.visBits[base + i];
+        rec.above[i] = !!derived.aboveBits[base + i];
+      }
+      applyDerivedNumbers(rec, derived, start);
+      objects[start] = rec;
+      start++;
+    }
+    if (gen !== _bindGen) throw new SupersededError();
+    await frame();
+  }
+  return Object.assign({ objects, _clientTracks: true, _derivedReady: true }, meta);
+}
+
+function applyDerivedNumbers(o, d, j) {
+  o.obs_pct = d.obsPct[j]; o.blocked_n = d.blockedN[j];
+  o.score = d.score[j]; o.score_moon = d.scoreMoon[j];
+  o.best = d.bS[j] < 0 ? null : [d.bS[j], d.bE[j]];
+  o.best_above = d.aS[j] < 0 ? null : [d.aS[j], d.aE[j]];
+}
+
+/** Preference-change rescore through the worker (uses its retained tracks);
+ *  returns false when the caller must run the synchronous fallback. */
+export async function requestPrefsDerived() {
+  if (!S.night || !S.night._derivedReady || !workerUsable()) return false;
+  const gen = ++_dgen;
+  try {
+    const res = await ask({
+      gen: ++_wgen, type: "prefs", minAlt: S.minAlt,
+      bortle: S.cfg && S.cfg.bortle,
+      moonAware: !!(S.cfg && S.cfg.moon_aware),
+      filters: S.cfg && S.cfg.filters,
+    });
+    if (gen !== _dgen) return true;         // superseded: discard, do not apply
+    await bindDerived(S.night.objects, res.derived);
+    return true;
+  } catch (err) {
+    if (err && err.name === "SupersededError") return true;
+    console.warn("[planning] worker prefs failed; synchronous path:", err);
+    return false;
+  }
+}
+
+async function bindDerived(objects, d) {
+  const gen = _dgen, n = objects.length, count = S.night.timeline.n;
+  let start = 0;
+  while (start < n) {
+    const t0 = performance.now();
+    while (start < n && performance.now() - t0 < BIND_MS) {
+      const o = objects[start];
+      o.vis = new Array(count); o.above = new Array(count);
+      for (let i = 0; i < count; i++) {
+        o.vis[i] = !!d.visBits[start * count + i];
+        o.above[i] = !!d.aboveBits[start * count + i];
+      }
+      applyDerivedNumbers(o, d, start);
+      start++;
+    }
+    if (gen !== _dgen) throw new SupersededError();
+    await frame();
+  }
+}
+
 /** Build the /api/night payload client-side. `siteId` is the siteSelect value;
  *  `date` is the wall date from #dateInput; tzMin the effective offset at it. */
-export async function buildClientNight({ date, siteId, tzMin }) {
+async function syncBuildClientNight({ date, siteId, tzMin }) {
   if (window.__NS_PLAN_FORCE_FAIL) {
     throw new Error("forced client-planning failure (smoke hook)");
   }
