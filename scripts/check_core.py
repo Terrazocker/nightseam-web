@@ -45,7 +45,8 @@ MOVED = (
     "bortleMoonFactor",
     "julianDay", "dateFromJD", "gmstDeg", "precessJ2000ToDate",
     "precessDateToJ2000", "refractionDeg", "altaz", "altazFrame",
-    "altazFrameApply",
+    "altazFrameApply", "sunRaDec", "moonRaDec", "moonIllumination",
+    "moonAge",
 )
 FORBIDDEN = (
     r"\bdocument\s*\.", r"\bwindow\s*\.", r"\blocalStorage\b",

@@ -157,3 +157,99 @@ export function altazFrameApply(frame, raDeg, decDeg, i) {
   alt = alt * R2D + refractionDeg(alt * R2D);
   return [alt, az];
 }
+
+/* ---------------------------------------------------------------- sun/moon
+ * Phase 2, concept 7: the solar/lunar series the web shell used to carry.
+ * Python app/astro.py is the oracle (Class P fixtures). */
+
+/** Geometric solar position -> RA/Dec in J2000 equivalents (Meeus ch.25). */
+export function sunRaDec(jd) {
+  const n = jd - J2000;
+  const l = (280.460 + 0.9856474 * n) % 360;
+  const g = D2R * ((357.528 + 0.9856003 * n) % 360);
+  const lam = D2R * ((l + 1.915 * Math.sin(g) + 0.020 * Math.sin(2 * g)) % 360);
+  const eps = D2R * (23.439 - 0.0000004 * n);
+
+  const x = Math.cos(lam);
+  const y = Math.cos(eps) * Math.sin(lam);
+  const z = Math.sin(eps) * Math.sin(lam);
+
+  let ra = (Math.atan2(y, x) * R2D) % 360;
+  if (ra < 0) ra += 360;
+  const dec = Math.asin(z) * R2D;
+
+  return precessDateToJ2000(ra, dec, jd);
+}
+
+/** Lunar RA/Dec (J2000-ish), truncated ELP/Meeus ch.47 (~0.3 deg). */
+export function moonRaDec(jd) {
+  const t = (jd - J2000) / 36525.0;
+
+  const lp = D2R * ((218.316 + 481267.8813 * t) % 360);
+  const dd = D2R * ((297.8502 + 445267.1115 * t) % 360);
+  const m = D2R * ((357.5291 + 35999.0503 * t) % 360);
+  const mp = D2R * ((134.9634 + 477198.8676 * t) % 360);
+  const f = D2R * ((93.2721 + 483202.0175 * t) % 360);
+
+  const lon = lp + D2R * (
+    + 6.289 * Math.sin(mp)
+    + 1.274 * Math.sin(2 * dd - mp)
+    + 0.658 * Math.sin(2 * dd)
+    + 0.214 * Math.sin(2 * mp)
+    - 0.186 * Math.sin(m)
+    - 0.114 * Math.sin(2 * f)
+    + 0.059 * Math.sin(2 * dd - 2 * mp)
+    + 0.057 * Math.sin(2 * dd - m - mp)
+    + 0.053 * Math.sin(2 * dd + mp)
+    - 0.046 * Math.sin(2 * dd - m)
+    - 0.041 * Math.sin(m - mp)
+    - 0.035 * Math.sin(dd)
+    - 0.031 * Math.sin(m + mp)
+  );
+  const lat = D2R * (
+    + 5.128 * Math.sin(f)
+    + 0.281 * Math.sin(mp + f)
+    - 0.278 * Math.sin(mp - f)
+    + 0.173 * Math.sin(2 * dd - f)
+    + 0.055 * Math.sin(2 * dd - mp + f)
+    - 0.046 * Math.sin(2 * dd - mp - f)
+    + 0.033 * Math.sin(2 * dd + f)
+  );
+
+  const eps = D2R * (23.4393 - 0.0130 * t);
+  const sl = Math.sin(lon), cl = Math.cos(lon);
+  const sb = Math.sin(lat), cb = Math.cos(lat);
+  const x = cb * cl;
+  const y = cb * sl * Math.cos(eps) - sb * Math.sin(eps);
+  const z = cb * sl * Math.sin(eps) + sb * Math.cos(eps);
+
+  let ra = (Math.atan2(y, x) * R2D) % 360;
+  if (ra < 0) ra += 360;
+  const dec = Math.asin(Math.max(-1, Math.min(1, z))) * R2D;
+
+  return precessDateToJ2000(ra, dec, jd);
+}
+
+/** Fractional illuminated disc (0..1). */
+export function moonIllumination(jd) {
+  const [raS, decS] = sunRaDec(jd);
+  const [raM, decM] = moonRaDec(jd);
+  const ras = D2R * raS, decs = D2R * decS;
+  const ram = D2R * raM, decm = D2R * decM;
+  const cosElong = Math.sin(decs) * Math.sin(decm) + Math.cos(decs) * Math.cos(decm) * Math.cos(ras - ram);
+  const psi = Math.acos(Math.max(-1, Math.min(1, cosElong)));
+  const k = (1 - Math.cos(psi)) / 2;
+  return Math.max(0, Math.min(1, k));
+}
+
+const SYNODIC_MONTH = 29.53058770576;
+/** Moon age in days (0 = new, ~14.76 = full). Derived from elongation. */
+export function moonAge(jd) {
+  const [raS, decS] = sunRaDec(jd);
+  const [raM, decM] = moonRaDec(jd);
+  const ras = D2R * raS, decs = D2R * decS;
+  const ram = D2R * raM, decm = D2R * decM;
+  const cosElong = Math.sin(decs) * Math.sin(decm) + Math.cos(decs) * Math.cos(decm) * Math.cos(ras - ram);
+  const psi = Math.acos(Math.max(-1, Math.min(1, cosElong)));
+  return SYNODIC_MONTH * psi / (2 * Math.PI);
+}
