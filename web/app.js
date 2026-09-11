@@ -9,7 +9,7 @@
  * All sky math runs client-side (astro.js, Meeus algorithms).
  */
 import * as E from './astro.js?v=7';
-import * as Hor from './horizon.js?v=18';
+import * as Hor from './horizon.js?v=19';
 import * as WS from './webstore.js?v=6';
 import { initDragWindows } from './dragwin.js?v=1';
 import { fmtSize, sizeArcmin, framePct, magVisible, skyClampZoom,
@@ -201,16 +201,19 @@ function cachedNightWindow() {
   return _winMemo.val;
 }
 
-/** The active scrub span [start, end) in UTC. Off = the planner's dark window
- *  (dusk..dawn: picked twilight level / site-zoned polar fallback); On = the
- *  24 h noon->noon day. scrubBounds is SHARED with the desktop so both apps
- *  follow ONE policy. */
+/** The active scrub span [start, end) in UTC. Off = the WHOLE night,
+ *  sunset..sunrise from the planner's own sun-crossings (site-zoned
+ *  20:00-04:00 fallback when there is no sunset); On = the 24 h noon->noon
+ *  day. SCORING is unaffected - it stays on nightWindow() (dusk..dawn).
+ *  scrubBounds is SHARED with the desktop so both apps follow ONE policy. */
 function scrubRange() {
   const fullStart = skyAnchor(S.skyTime);
   const fullEnd = new Date(fullStart.getTime() + 24 * 3600000);
   const w = cachedNightWindow();
+  const nStart = (w.info && w.info.sunset) || w.startT;
+  const nEnd = (w.info && w.info.sunrise) || w.endT;
   const b = E.scrubBounds(!!Hor.getPrefs().viewFullDay,
-    w.startT ? w.startT.getTime() : null, w.endT ? w.endT.getTime() : null,
+    nStart ? nStart.getTime() : null, nEnd ? nEnd.getTime() : null,
     fullStart.getTime(), fullEnd.getTime());
   return { start: new Date(b.start), end: new Date(b.end) };
 }
@@ -227,7 +230,7 @@ function clampSkyTime() {
 function rangeLabel() {
   return Hor.getPrefs().viewFullDay
     ? 'slider spans the full 24 h day, site time'
-    : 'slider spans the dark window (dusk\u2013dawn), site time';
+    : 'slider spans the night (sunset\u2013sunrise), site time';
 }
 
 function obsKey(g, oid) {

@@ -688,39 +688,39 @@ function hideSplash(box) {
 
 function haziEditorHTML(p) {
   return `
-    <div class="ed-toolbar">
-      <div class="ed-group ed-mode">
-        <select id="ed-mode" title="paint mode" aria-label="Paint mode">
-          <option value="obstacle" ${p.paintMode === 'obstacle' ? 'selected' : ''}>Obstacles (paint what blocks)</option>
-          <option value="sky" ${p.paintMode === 'sky' ? 'selected' : ''}>Sky band (paint visible sky)</option>
-        </select>
+    <div class="ed-tools">
+      <div class="ed-row">
+        <span class="ed-rowlabel">Paint</span>
+        <div class="ed-group ed-mode">
+          <select id="ed-mode" title="paint mode" aria-label="Paint mode">
+            <option value="obstacle" ${p.paintMode === 'obstacle' ? 'selected' : ''}>Obstacles (paint what blocks)</option>
+            <option value="sky" ${p.paintMode === 'sky' ? 'selected' : ''}>Sky band (paint visible sky)</option>
+          </select>
+        </div>
+        <div class="ed-group ed-paint">
+          <label class="ed-brush">Brush
+            <input id="ed-brush" type="range" min="3" max="80" value="28" aria-label="Brush size">
+          </label>
+          <button class="btn" id="ed-eraser" title="Toggle eraser (or right-click)" aria-pressed="false">🧽 Eraser</button>
+        </div>
       </div>
-      <div class="ed-group ed-paint">
-        <label class="ed-brush">Brush
-          <input id="ed-brush" type="range" min="3" max="80" value="28" aria-label="Brush size">
-        </label>
-        <button class="btn" id="ed-eraser" title="Toggle eraser (or right-click)" aria-pressed="false">🧽 Eraser</button>
-      </div>
-      <div class="ed-group ed-history">
-        <button class="btn" id="ed-undo" title="Undo (Ctrl+Z)" aria-label="Undo">↩ Undo</button>
-        <button class="btn" id="ed-redo" title="Redo (Ctrl+Shift+Z)" aria-label="Redo">↪ Redo</button>
-        <button class="btn" id="ed-revert" title="Discard changes and restore the last saved horizon (undoable)">⟲ Revert</button>
-      </div>
-      <div class="ed-group ed-destructive">
-        <button class="btn" id="ed-clear" title="Remove all paint (asks first; undoable)">Clear…</button>
-      </div>
-      <div class="ed-group ed-view">
-        <button class="btn" id="ed-zoom-out" title="Zoom out" aria-label="Zoom out">\u2212</button>
-        <span id="ed-zoom-label" class="mono">1.0\u00D7</span>
-        <button class="btn" id="ed-zoom-in" title="Zoom in" aria-label="Zoom in">+</button>
-        <button class="btn" id="ed-fit" title="Fit the whole panorama">Fit</button>
-      </div>
-      <div class="ed-group ed-status-group">
-        <span id="ed-status" class="ed-status" role="status" aria-live="polite">Saved</span>
-        <button class="btn primary" id="ed-save" title="Save this horizon">💾 Save</button>
+      <div class="ed-row">
+        <span class="ed-rowlabel">History</span>
+        <div class="ed-group ed-history">
+          <button class="btn" id="ed-undo" title="Undo (Ctrl+Z)" aria-label="Undo">↩ Undo</button>
+          <button class="btn" id="ed-redo" title="Redo (Ctrl+Shift+Z)" aria-label="Redo">↪ Redo</button>
+          <button class="btn" id="ed-revert" title="Discard changes and restore the last saved horizon (undoable)">⟲ Revert</button>
+        </div>
+        <div class="ed-group ed-destructive">
+          <button class="btn" id="ed-clear" title="Remove all paint (asks first; undoable)">Clear…</button>
+        </div>
+        <div class="ed-group ed-status-group">
+          <span id="ed-status" class="ed-status" role="status" aria-live="polite">Saved</span>
+          <button class="btn primary" id="ed-save" title="Save this horizon">💾 Save</button>
+        </div>
       </div>
     </div>
-    <p class="sub ed-hint" style="margin-top:6px">
+    <p class="sub ed-hint" style="margin-top:8px">
       cursor: <output id="ed-pos" class="mono">az \u2014 \u00B7 alt \u2014</output>
       \u00B7 wheel = zoom \u00B7 middle-drag or Space+drag = pan \u00B7 right-click = erase
     </p>
@@ -742,7 +742,15 @@ function haziEditorHTML(p) {
         <output id="ed-fov-v">${p.fov}\u00B0</output>
       </label>
     </div>
-    <div class="pano-canvas-box" id="pano-box"><canvas id="pano-canvas" width="720" height="360" tabindex="0" aria-label="Panorama horizon editor"></canvas></div>
+    <div class="pano-canvas-box" id="pano-box">
+      <canvas id="pano-canvas" width="720" height="360" tabindex="0" aria-label="Panorama horizon editor"></canvas>
+      <div class="ed-view-overlay" role="group" aria-label="View controls">
+        <button class="btn small" id="ed-zoom-out" title="Zoom out" aria-label="Zoom out">\u2212</button>
+        <span id="ed-zoom-label" class="mono">1.0\u00D7</span>
+        <button class="btn small" id="ed-zoom-in" title="Zoom in" aria-label="Zoom in">+</button>
+        <button class="btn small" id="ed-fit" title="Fit the whole panorama">Fit</button>
+      </div>
+    </div>
     <canvas id="pano-profile" width="720" height="56" aria-label="Obstruction profile preview"></canvas>
     <p class="sub" style="margin-top:6px">Guides: amber = azimuth (N/E/S/W), green dashed = horizon (alt 0), blue = altitude. Profile preview scales to your alt-bottom / alt-top range &middot; edits apply to planning immediately; press Save to keep them.</p>`;
 }

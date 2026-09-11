@@ -64,18 +64,22 @@ Image Catalog (FITS ingest + library). `README.md` has the feature list.
 - Selected time is the source of truth: desktop `S.tIdx`, web `S.skyTime`. "Best
   targets tonight" (web) lists only rows with `visN > 0`. Keyboard scrub is 6 min,
   Shift 60 min in BOTH apps (`SCRUB_STEP_MIN`/`SCRUB_SHIFT_STEP_MIN`).
-- **Scrub window (0.6.13):** the scrub spans ONLY the planner's dark window
-  (dusk..dawn: picked twilight level, or the site-zoned 20:00-04:00 polar
-  fallback) unless the `viewFullDay` preference is ON, which widens it to the
-  app's full span (web: 24 h noon->noon; desktop: the whole payload grid,
-  dusk-1h..dawn+1h). ONE shared policy `scrubBounds`/`scrubClamp` in
-  `web/astro.js` + `static/js/derive.js`, pinned at both states by the
-  `scrubwindow` engine of `tests/test_js_parity.py` (+ absolute scenarios:
-  astronomical/nautical/civil/polar/DST/both hemispheres). Toggling re-derives
-  live and clamps the selected time to the nearest in-range instant. Desktop
-  `derive.js::nightIndexRange`/`scrubWindowRange` select the grid indices; web
-  `app.js::scrubRange` maps `nightWindow()` to the slider. Never define a second
-  night window.
+- **Scrub window (0.6.13):** the scrub's default range is the WHOLE night,
+  sunset..sunrise from the planner's own sun-crossings (`planning.night_window`
+  / web `nightInfo`); the site-zoned 20:00-04:00 fallback applies only when
+  there is no sunset. This is a SEPARATE concept from the SCORING window
+  (twilight-level dusk..dawn), which is UNCHANGED. `viewFullDay` ON widens the
+  scrub to the app's full span (web: 24 h noon->noon; desktop: the whole
+  payload grid, dusk-1h..dawn+1h). Note the desktop payload grid is narrower
+  than sunset..sunrise, so the desktop default clamps to the grid. ONE shared
+  policy `scrubBounds`/`scrubClamp` in `web/astro.js` + `static/js/derive.js`,
+  pinned at both states by the `scrubwindow` engine of `tests/test_js_parity.py`
+  (+ absolute scenarios: astronomical/nautical/civil/polar/DST/both
+  hemispheres). Toggling re-derives live and clamps the selected time to the
+  nearest in-range instant. Desktop `derive.js::indexRangeFor` backs BOTH
+  `nightIndexRange` (scoring, dusk..dawn) and `scrubWindowRange` (scrub,
+  sunset..sunrise); web `app.js::scrubRange` maps `nightInfo`'s
+  sunset/sunrise to the slider. Never define a second window.
 
 **Charts and units**
 - Magnitude limit is ONE rule `magVisible(vmag,limit,maxLimit)` in `derive.js` +
@@ -164,19 +168,21 @@ Image Catalog (FITS ingest + library). `README.md` has the feature list.
   users lives in the hamburger menu with a safe/quiet default - it must not
   occupy the primary working UI. Common-case controls stay visible.
 - **Menu groups/labels (BOTH apps):** *Appearance* (theme); *Display* (free
-  space per side, **View full day**, min altitude, object size units);
-  *Advanced* (advanced catalog, timezone, moon-aware ranking, Bortle, equipment
-  filters); *Data* (Setup - sites/rigs/targets/backup); *About*.
+  space per side, **View full day**, object size units); *Advanced* (advanced
+  catalog, timezone, moon-aware ranking, Bortle, equipment filters); *Data*
+  (Setup - sites/rigs/targets/backup); *About*.
 - **Safe defaults:** options start quiet - `viewFullDay` defaults to **false**,
   advanced catalog mode off. Persist on change; a display preference must not
   require a reload.
-- **Migrated in 0.6.13:** the min-altitude slider and the Setup button left the
-  primary toolbar for Display/Data. The imaging `#rigSelect` deliberately STAYS
-  in the topbar next to Site (framing is a core workflow; pinned by
+- **Migrated in 0.6.13:** the Setup button left the primary toolbar for the
+  menu's *Data* group. The min-altitude slider is a COMMON control and stays in
+  the top bar (its track was lengthened, not relocated); the imaging
+  `#rigSelect` also stays next to Site (framing is core; pinned by
   `tests/test_ui_invariants.py::test_rig_selector_sits_in_the_topbar`).
   `tests/test_ui_invariants.py::test_progressive_disclosure_keeps_advanced_
-  controls_in_the_menu` fails if a migrated control returns to the primary UI,
-  if `viewFullDay` defaults ON, or if a group label disappears.
+  controls_in_the_menu` fails if Setup returns to the primary UI, if min-alt
+  leaves the top bar, if `viewFullDay` defaults ON, or if a group label
+  disappears.
 
 ## Context discipline (the transcript is the budget)
 
@@ -324,9 +330,9 @@ Image Catalog (FITS ingest + library). `README.md` has the feature list.
   `scripts/check_catalog_token.py`, wired into `scripts/check_js.py`, and pinned
   by `tests/test_cache_tokens.py` (mutation-tested). Do NOT add
   `{cache:'no-store'}` - the file must stay cacheable.
-  Current: `app.js?v=35` (index.html) / `CATALOG_TOKEN = '2'`, `astro.js?v=7`,
-  `horizon.js?v=18`, `format.js?v=3`, `nightrank.js?v=4`, `webstore.js?v=6`,
-  `dragwin.js?v=1`, `style.css?v=13`, `themes.css?v=3`.
+  Current: `app.js?v=36` (index.html) / `CATALOG_TOKEN = '2'`, `astro.js?v=7`,
+  `horizon.js?v=19`, `format.js?v=3`, `nightrank.js?v=4`, `webstore.js?v=6`,
+  `dragwin.js?v=1`, `style.css?v=14`, `themes.css?v=4`.
 - **Never publish `index.html` before the modules it names.** Deploys are not
   atomic and the page carries the tokens; `ftps_deploy.py::upload_order()` sorts
   HTML last (`index.html` very last), pinned by `tests/test_deploy_order.py`. Keep

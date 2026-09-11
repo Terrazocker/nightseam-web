@@ -113,17 +113,21 @@ export function curTimeISO() {
 }
 
 export function nightIndexRange() {
+  return indexRangeFor(S.night.dusk, S.night.dawn);
+}
+
+/** First/last grid indices inside [startISO, endISO]; the whole grid when a
+ *  bound is missing (polar day). Shared by the SCORING clip (dusk..dawn) and
+ *  the SCRUB range (sunset..sunrise) so they can never drift. */
+function indexRangeFor(startISO, endISO) {
   const tl = S.night.timeline;
   let i0 = 0, i1 = tl.n - 1;
-  // no astronomical night (polar summer) -> the whole grid is the window;
-  // without this guard parseUTC(null) yields Invalid Date and every
-  // comparison silently fails
-  if (!S.night.dusk || !S.night.dawn) return [i0, i1];
+  if (!startISO || !endISO) return [i0, i1];
   for (let i = 0; i < tl.n; i++) {
-    if (parseUTC(tl.times_iso[i]) >= parseUTC(S.night.dusk)) { i0 = i; break; }
+    if (parseUTC(tl.times_iso[i]) >= parseUTC(startISO)) { i0 = i; break; }
   }
   for (let i = tl.n - 1; i >= 0; i--) {
-    if (parseUTC(tl.times_iso[i]) <= parseUTC(S.night.dawn)) { i1 = i; break; }
+    if (parseUTC(tl.times_iso[i]) <= parseUTC(endISO)) { i1 = i; break; }
   }
   return [i0, Math.max(i0, i1)];
 }
@@ -147,13 +151,17 @@ export function scrubClamp(t, start, end) {
   return t;
 }
 
-/** Grid index bounds [lo, hi] the scrub may select: the night window by
- *  default, the whole payload grid when view_full_day is on. */
+/** Grid index bounds [lo, hi] the scrub may select: the WHOLE night,
+ *  sunset..sunrise (the planner's sun-crossings; dusk..dawn when the payload
+ *  has no sunset, polar fallback), by default; the whole payload grid with
+ *  view_full_day. SCORING still clips to dusk..dawn via nightIndexRange(). */
 export function scrubWindowRange() {
   const tl = S.night && S.night.timeline;
   if (!tl) return [0, 0];
   if (S.cfg && S.cfg.view_full_day) return [0, tl.n - 1];
-  return nightIndexRange();
+  const start = S.night.sunset || S.night.dusk;
+  const end = S.night.sunrise || S.night.dawn;
+  return indexRangeFor(start, end);
 }
 
 /* ---------------- advanced catalog: synthesize tracks client-side -------- */

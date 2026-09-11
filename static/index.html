@@ -37,6 +37,11 @@ if(x.status===200){var t=JSON.parse(x.responseText).theme;if(t)document.document
     <label>Night of
       <input type="date" id="dateInput">
     </label>
+    <label class="minalt" title="Minimum useful altitude for planning">
+      Min alt
+      <input type="range" id="minUsefulAlt" min="5" max="70" step="1" value="25" aria-label="Minimum useful altitude">
+      <span id="muaVal" class="mono">25&deg;</span>
+    </label>
 
     <div class="scrub">
       <span class="inline">&#9201;</span>
@@ -105,15 +110,9 @@ if(x.status===200){var t=JSON.parse(x.responseText).theme;if(t)document.document
           <p class="hint">Lower fills big screens, raise centers content on
           ultrawide monitors.</p>
           <label class="inline"><input type="checkbox" id="viewFullDay"> View full day</label>
-          <p class="hint">Scrub across the whole night-time span (dusk-1h to
-          dawn+1h). Off (default) keeps the scrub on the dark window the
-          planner scores on.</p>
-          <label class="inline minalt" title="Minimum useful altitude for planning">Min altitude <span id="muaVal" class="mono">25&deg;</span>
-            <input type="range" id="minUsefulAlt" min="5" max="70" step="1" value="25" aria-label="Minimum useful altitude">
-          </label>
-          <p class="hint">Objects must clear this altitude to count as
-          observable. Left untouched it follows the Bortle class (17 +
-          2&times;Bortle).</p>
+          <p class="hint">Scrub across the whole night-time span (the payload
+          grid, dusk-1h to dawn+1h). Off (default) keeps the scrub on the
+          night itself - sunset to sunrise.</p>
           <label class="inline">Object size units
             <select id="sizeUnit">
               <option value="arcmin">Arcminutes (&prime;)</option>

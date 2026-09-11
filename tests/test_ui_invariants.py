@@ -187,18 +187,19 @@ def test_web_content_width_is_edge_driven():
 
 
 def test_progressive_disclosure_keeps_advanced_controls_in_the_menu():
-    """ITEM 4 (0.6.13): special/advanced controls live in the hamburger menu
-    with a safe default; the primary toolbar carries only common-case controls.
-    Setup and the min-altitude slider were migrated out of the topbar into the
-    menu (Data / Display groups). The rig stays: test_rig_selector_sits_in_the_
-    topbar pins it, and framing is a core workflow (documented exception)."""
+    """ITEM 4 / CORRECTION 1 (0.6.13): special/advanced controls live in the
+    hamburger menu with a safe default; the primary toolbar carries only
+    common-case controls. ONLY Setup migrated out of the topbar (menu "Data");
+    the min-altitude slider is a COMMON control and stays in the top bar (its
+    track is longer, not relocated). The rig also stays:
+    test_rig_selector_sits_in_the_topbar pins it (framing is core)."""
     advanced = {
-        "web": ("tb-minalt", "btn-settings"),
-        "static": ("minUsefulAlt", "btnSites"),
+        "web": ("btn-settings",),
+        "static": ("btnSites",),
     }
     common = {
-        "web": ("tb-site", "rigSelect", "tb-date", "tb-scrub"),
-        "static": ("siteSelect", "rigSelect", "dateInput", "timeSlider"),
+        "web": ("tb-site", "rigSelect", "tb-date", "tb-minalt", "tb-scrub"),
+        "static": ("siteSelect", "rigSelect", "dateInput", "minUsefulAlt", "timeSlider"),
     }
     for tree in ("web", "static"):
         html = _read(tree, "index.html")
@@ -216,11 +217,17 @@ def test_progressive_disclosure_keeps_advanced_controls_in_the_menu():
             assert f'id="{cid}"' in menu, f"{tree}: #{cid} is not in the menu"
             assert f'id="{cid}"' not in head, \
                 f"{tree}: advanced #{cid} is still in the default primary UI"
-        # the primary toolbar keeps only the common-case controls
+        # the primary toolbar keeps the common-case controls (min-alt included)
         for cid in common[tree]:
             assert f'id="{cid}"' in head, f"{tree}: common #{cid} left the primary UI"
-        # the menu min-altitude track is full width (the "clearly longer" slider)
+        # min-alt is back in the top bar and its track is LONGER than the old
+        # 88/110 px (a responsive clamp), not a full-width menu slider
+        assert 'id="minUsefulAlt"' not in menu and 'id="tb-minalt"' not in menu, \
+            f"{tree}: the min-altitude slider must stay in the top bar"
         css = _read(tree, "style.css")
-        assert '.minalt input[type="range"] { width: 100%' in css or \
-            ".minalt input[type=range] { width: 100%" in css, \
-            f"{tree}: the min-altitude slider is no longer full width"
+        m = re.search(
+            r'\.minalt input\[type=[\'"]?range[\'"]?\]\s*\{[^}]*width:\s*clamp\((\d+)px',
+            css)
+        assert m and int(m.group(1)) >= 120, (
+            f"{tree}: the min-altitude slider needs a longer responsive track "
+            f"(>=120px base clamp), got {m.group(0) if m else None!r}")

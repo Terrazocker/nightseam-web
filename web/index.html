@@ -11,8 +11,8 @@
 (function(){try{var t=localStorage.getItem('nightseam_theme')||'dome';document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 </script>
 <link rel="icon" type="image/png" href="app.png">
-<link rel="stylesheet" href="style.css?v=13">
-<link rel="stylesheet" href="themes.css?v=3">
+<link rel="stylesheet" href="style.css?v=14">
+<link rel="stylesheet" href="themes.css?v=4">
 </head>
 <body>
 
@@ -34,6 +34,12 @@
     </label>
     <label class="nightof">Night of
       <input type="date" id="tb-date">
+    </label>
+    <label class="minalt" title="Minimum useful altitude for planning">
+      Min alt
+      <input type="range" id="tb-minalt" min="5" max="70" step="1" value="25">
+      <span id="tb-minalt-val" class="mono">25&deg;</span>
+      <span id="tb-note" class="note"></span>
     </label>
     <div class="scrub" title="Scrub the sky through its night — syncs Sky View">
       <input type="range" id="tb-scrub" min="0" max="1440" step="15" value="0">
@@ -84,12 +90,7 @@
           <input type="range" id="edgeSpace" min="0" max="300" step="2" value="14" style="width:100%">
           <p class="hint">Takes that much space away on each side of the content. 0 lets it fill the window, higher values center a narrower column.</p>
           <label class="inline"><input type="checkbox" id="viewFullDay"> View full day</label>
-          <p class="hint">Scrub across the whole 24&nbsp;h day. Off (default) keeps the scrub on the night the planner scores on &mdash; the dark window, dusk&ndash;dawn.</p>
-          <label class="inline minalt" title="Minimum useful altitude for planning">Min altitude <span id="tb-minalt-val" class="mono">25&deg;</span>
-            <input type="range" id="tb-minalt" min="5" max="70" step="1" value="25">
-            <span id="tb-note" class="note"></span>
-          </label>
-          <p class="hint">Objects must clear this altitude to count as observable. Left untouched it follows the Bortle class (17 + 2&times;Bortle).</p>
+          <p class="hint">Scrub across the whole 24&nbsp;h day. Off (default) keeps the scrub on the night itself &mdash; sunset to sunrise.</p>
           <label class="inline">Object size units
             <select id="sizeUnit">
               <option value="arcmin">Arcminutes (&prime;)</option>
@@ -207,6 +208,6 @@
 <div class="modal-wrap" id="modal" hidden></div>
 <div class="tooltip" id="tooltip" hidden></div>
 
-<script type="module" src="app.js?v=35"></script>
+<script type="module" src="app.js?v=36"></script>
 </body>
 </html>

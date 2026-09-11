@@ -53,8 +53,7 @@ body {
 /* the rig selector sits in the topbar next to Site (it used to hide in the
    hamburger menu) - long preset names must not stretch the bar */
 #rigSelect { max-width: 170px; }
-.minalt { flex-wrap: wrap; }
-.minalt input[type="range"] { width: 100%; flex: 1 1 100%; accent-color: var(--accent); margin: 0; }
+.minalt input[type="range"] { width: clamp(130px, 15vw, 180px); accent-color: var(--accent); margin: 0; }
 .minalt .mono { min-width: 40px; text-align: right; font-size: 11.5px; color: var(--txt); }
 .minalt .note { font-size: 10.5px; color: var(--muted); opacity: .8; }
 .scrub { display: inline-flex; align-items: center; gap: 6px; }
@@ -372,7 +371,7 @@ a.wiki { color: var(--accent); }
 #pano-list li { flex: 1 1 250px; margin: 0; }
 #pano-list .p-name { font-size: 13.5px; }
 #pano-list input[type="radio"] { accent-color: var(--accent); }
-.pano-canvas-box { margin-top: 10px; }
+.pano-canvas-box { margin-top: 10px; position: relative; }
 #pano-canvas {
   width: 100%; max-width: 135vh; margin: 0 auto;
   border: 1px solid var(--line); border-radius: 10px;
@@ -382,20 +381,39 @@ a.wiki { color: var(--accent); }
 #pano-canvas.panning { cursor: grabbing; }
 #pano-profile { width: 100%; border: 1px solid var(--line); border-radius: 8px; margin-top: 8px; display: block; background: #081022; }
 
-/* panorama editor toolbar - grouped (mode | paint | history | clear | view |
-   status) with separators; wraps instead of overflowing on narrow screens. */
-.ed-toolbar { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; max-width: 100%; }
-.ed-group { display: flex; align-items: center; gap: 6px; min-width: 0; }
-.ed-group + .ed-group { padding-left: 14px; border-left: 1px solid var(--line); }
+/* panorama editor toolbar: TWO roomy rows (Paint / History) as visible panel
+   containers instead of one inline row; the view controls (zoom - / x / + /
+   Fit) are a compact overlay on the canvas itself. Wraps at every width. */
+.ed-tools { display: flex; flex-direction: column; gap: 10px; max-width: 100%; }
+.ed-row {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px;
+  padding: 10px 12px; background: var(--panel);
+  border: 1px solid var(--line); border-radius: 12px;
+}
+.ed-rowlabel {
+  flex: 0 0 auto; min-width: 54px; font-size: 10px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 1.2px; color: var(--muted);
+}
+.ed-group { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .ed-group .btn { flex: 0 0 auto; }
 .ed-group select { max-width: 100%; }
-.ed-destructive { color: var(--bad, #ff8a8a); }
-.ed-brush { font-size: 12px; color: var(--muted); display: flex; align-items: center; gap: 6px; }
-.ed-brush input[type="range"] { width: 90px; max-width: 28vw; accent-color: var(--accent); }
+.ed-destructive { color: var(--bad, #ff8a8a); margin-left: 10px; }
+.ed-brush { font-size: 12px; color: var(--muted); display: flex; align-items: center; gap: 8px; }
+.ed-brush input[type="range"] { width: 160px; max-width: 40vw; accent-color: var(--accent); }
 .ed-status-group { margin-left: auto; }
 .ed-status { font-size: 12px; color: var(--muted); white-space: nowrap; }
 .ed-status.dirty { color: var(--amber, #ffd166); }
 .ed-status.failed { color: var(--bad, #ff8a8a); }
+.ed-view-overlay {
+  position: absolute; top: 8px; right: 8px; z-index: 2;
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 4px 6px; border-radius: 10px;
+  background: rgba(9, 16, 32, .78); border: 1px solid var(--line);
+  -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+  pointer-events: none;   /* only the buttons catch clicks, not the canvas */
+}
+.ed-view-overlay .btn { pointer-events: auto; }
+.ed-view-overlay #ed-zoom-label { min-width: 34px; text-align: center; font-size: 11px; }
 .ed-hint { font-size: 12px; }
 .btn:disabled { opacity: .45; cursor: default; }
 .ed-confirm {
@@ -413,9 +431,10 @@ a.wiki { color: var(--accent); }
 .ed-confirm-box .btnrow { justify-content: flex-end; }
 .ed-confirm-box .btn { flex: 0 0 auto; }
 @media (max-width: 640px) {
-  .ed-toolbar { gap: 6px 10px; }
-  .ed-group + .ed-group { padding-left: 8px; }
+  .ed-row { gap: 8px 10px; padding: 8px 10px; }
+  .ed-rowlabel { min-width: 100%; }
   .ed-group .btn { padding: 6px 8px; }
+  .ed-brush input[type="range"] { width: 120px; max-width: 46vw; }
   .ed-status-group { margin-left: 0; }
 }
 .pref-row { display: flex; justify-content: space-between; align-items: center; font-size: 13px; color: var(--muted); padding: 5px 0; gap: 10px; }

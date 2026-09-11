@@ -1043,25 +1043,36 @@ def _ms(dt):
 
 
 def test_scrub_window_follows_the_planner_and_matches_between_apps():
-    """ITEM 1: default scrub range == the planner's dark window (dusk..dawn,
-    picked twilight level / site-zoned 20:00-04:00 fallback); viewFullDay ON
-    => the full span. Checked for astronomical / nautical / civil / polar
-    fallback / midnight-crossing / DST / both hemispheres, at BOTH toggle
-    states, and desktop(derive.js) == web(astro.js) for every case. Probes
-    outside the range must clamp to the nearest edge (turning the night window
-    back on while sitting at 1 pm)."""
+    """CORRECTION 2 (0.6.13): the default scrub range is the WHOLE night,
+    sunset..sunrise from the planner's own sun-crossings - NOT the twilight-level
+    dark window (which stays the separate, unchanged SCORING window). The polar
+    fallback is the site-zoned 20:00-04:00 span. viewFullDay ON => the full span.
+    Checked for astronomical / nautical / civil / polar fallback /
+    midnight-crossing / DST / both hemispheres, at BOTH toggle states, and
+    desktop(derive.js) == web(astro.js) for every case. Probes outside the range
+    must clamp to the nearest edge (turning the night range back on while sitting
+    at 1 pm)."""
     from app import planning
     cases = []
     expected = []
     for name, lat, lon, d, tz, level in _SCRUB_SCENARIOS:
         nw = planning.night_window(d.year, d.month, d.day, tz, lat, lon)
         assert nw["level"] == level, (name, nw["level"])
-        night_start, night_end = _ms(nw["dusk"]), _ms(nw["dawn"])
-        # a deliberately WIDER "full day" span, never equal to the night window
+        # the scrub's night range is sunset..sunrise; the fallback (no crossing)
+        # is the planner's site-zoned 20:00-04:00 dusk/dawn
+        s_set, s_rise = nw["sunset"], nw["sunrise"]
+        if s_set is None or s_rise is None:
+            assert name == "polar fallback", name
+            s_set, s_rise = nw["dusk"], nw["dawn"]
+        else:
+            # it is genuinely the wider whole-night range, not the dark window
+            assert (s_set, s_rise) != (nw["dusk"], nw["dawn"]), name
+        night_start, night_end = _ms(s_set), _ms(s_rise)
+        # a deliberately WIDER "full day" span, never equal to the night range
         full_start = night_start - 6 * 3600_000
         full_end = night_end + 6 * 3600_000
         # probes: the exact edges, a mid-night instant, the full-span edges
-        # (outside the night window), and 1 h beyond each side
+        # (outside the night range), and 1 h beyond each side
         probes = [night_start, night_end, (night_start + night_end) // 2,
                   full_start, full_end, full_start - 3600_000,
                   full_end + 3600_000]
@@ -1083,12 +1094,12 @@ def test_scrub_window_follows_the_planner_and_matches_between_apps():
         if c["viewFullDay"]:
             assert (it["start"], it["end"]) == (f0, f1), (c["name"], it)
         else:
-            # exactly the planner's dusk/dawn - never sunset/sunrise or a
+            # exactly the planner's sunset..sunrise - never the dark window or a
             # second window definition
             assert (it["start"], it["end"]) == (n0, n1), (c["name"], it)
         for p, cl in zip(c["probes"], it["clamps"]):
             assert cl == min(max(p, it["start"]), it["end"]), (c["name"], p, cl)
         # explicit: an out-of-range instant clamps to the NEXT edge, so turning
-        # the night window back on while at 1 pm lands on dawn (or dusk)
+        # the night range back on while at 1 pm lands on sunrise (or sunset)
         if not c["viewFullDay"]:
             assert it["clamps"][3] == n0 and it["clamps"][4] == n1, (c["name"], it)
