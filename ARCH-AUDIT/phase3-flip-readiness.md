@@ -79,3 +79,53 @@ advanced planning experience.
 `altazFrame` once per object/sample, then score) - the batched tracks alone are
 399 ms, so the combined path should fit - and re-run the real-host benchmark.
 Recommendation until then: keep Python authoritative with the oracle fixtures.
+
+---
+
+## Phase 3b addendum - batched scoring (owner-authorized) - **GO**
+
+Owner authorized the batched semantics (precess once per object at the night
+midpoint + one sidereal frame per site/night - the desktop's existing advanced
+synthesis semantics). Implemented as `core/scoring.js::nightStatsBatch`
+(single-object `nightStats` delegates to it; one implementation). The profile
+first showed the safe plan cannot fit: 93% of the old loop was `altaz`, and
+only `gmst` + angle sharing (~<40% of it) was bit-identical - the safe ceiling
+was ~1.2-1.3 s.
+
+Real packed-exe WebView2 (Edge 152), full **11,917 advanced objects x 241
+samples, complete coverage**:
+
+| CPU | cold | warm | vis sum | heap peak |
+|---|---|---|---|---|
+| 1x | **454.4 ms** | 446.9 ms | 883,773 | 128.5 MB |
+| 4x throttle | 2003.6 ms | 2151.9 ms | 883,773 | 145.4 MB |
+| 6x throttle | 3455.9 ms | 3185.5 ms | 883,773 | 141.0 MB |
+
+Bound: <1000 ms advanced at full CPU - **PASS with ~2.2x headroom**; the
+throttled numbers are linear and informational. Peak heap during the batch is
+~+30 MB (the 11,917 result objects), released after the call; no growth across
+runs.
+
+Parity vs the pre-change goldens (`tests/js/scoring_parity.mjs` +
+`tests/fixtures/scoring_goldens.json`, mutation-tested in
+`tests/test_scoring_parity.py`): every displayed field (visN, blocked,
+bestRun/bestStart, pct, blockedPct) and the transit index **bit-identical** on
+697 objects x 2 cases (obstacle + moon-aware); `maxAlt` drift <= 5.6e-6 deg,
+`sClassic`/`sMoon` <= 1.1e-5 (the authorized precess-once delta; **release
+note**). Shadow comparison re-run: still 0 divergences over 189,908 samples.
+
+**Decision: GO** for the authority flip, under this plan:
+
+1. Flip behind a setting/flag (`planning_client_compute`), default OFF; the
+   server keeps producing `/api/night` for one release as the fallback.
+2. Presentation rounding preserved: `pct`/`blockedPct` are already rounded;
+   the desktop rounds `alt`/`ceil` to 0.1 for display exactly as the server
+   payload does; score doubles feed ranking only (drift <=1.1e-5, no displayed
+   change shown by the parity harness).
+3. Keep the Python<->core parity fixtures through the first flipped release;
+   retire them only after a full release with no divergence reports.
+4. Incremental Python deletion after the flip: payload track computation first
+   (nightcalc object tracks), then sun/moon/twilight helpers once nothing reads
+   `/api/night`; `app/astro.py`/`planning.py` stay until then.
+5. Rollback tag: `v0.6.17` (last server-authoritative release); rollback =
+   reinstall its exe/ZIP, data schema unchanged.
