@@ -30,6 +30,10 @@ ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "landing" / "changelog.json"
 
 CURATED = {
+    # 0.6.17 completes the shared-core extraction (Phase 2) and carries the
+    # three user-visible corrections it surfaced (catalog palette, polar
+    # sunrise pairing, degenerate scrub ranges).
+    "0.6.17": "Shared-core release. The desktop app and the web planner now compute every planning number with one shared engine, so the two can no longer drift apart. Three visible corrections come with it: object-type names and colours are identical in both apps (the desktop adopts the web palette); a grazing polar-night day can no longer report a sunrise without a sunset (Tromso in January showed a \"sunrise\" 29 minutes before its own sunset); and the night slider and the altitude chart now use the dark window whenever the sunset-to-sunrise pair is degenerate, instead of building an inverted range. Ordinary nights, DST transitions and southern-hemisphere nights are unchanged. Python still computes the desktop's planning payload.",
     # 0.6.16 extracts the shared panorama/horizon geometry into the baked core
     # and fixes the web's profile coordinates (D1) + rig FOV unit (D2).
     "0.6.16": "Shared-core release. The panorama and horizon geometry now lives in one place, baked into both the desktop app and the web planner, so the two apps can no longer drift apart. This fixes partial and rotated panoramas: the painted horizon profile is stored in the same world-azimuth coordinates the desktop and the server have always used, so the blocked directions are correct whatever calibration you use (a full 360 panorama with no offset is unchanged). Telescope fields of view are also stored in arcminutes on the web, the same unit as the desktop, and existing rigs are converted automatically.",
