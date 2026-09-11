@@ -247,20 +247,40 @@ def test_night_payload_grid_is_a_full_24h_site_zoned_day(db):
 
 
 def test_night_payload_size_and_compute_time_stay_bounded(db):
-    """Regression guard for the 24 h grid (ITEM A): the standard payload must
-    stay under ~1.5 MiB and compute well under ~1.5 s on the curated catalog,
-    so a bigger grid or an accidental O(n^2) is noticed instead of shipping."""
+    """Regression guard for the 24 h grid (ITEM A), STANDARD and ADVANCED
+    measured/bounded separately. Shipped measurements at 52 N on localhost:
+    standard ~0.95 MiB / ~0.23 s, advanced ~2.34 MiB / ~0.32 s. The size bounds
+    carry ~15-20%% headroom and the time bounds ~2.5-3x (shared CI can be slow);
+    a real regression (bigger grid, accidental O(n^2)) blows both."""
     import json
+    import statistics
     import time
 
     from app.nightcalc import compute_night
-    t0 = time.perf_counter()
-    night = compute_night(db, 52.52, 13.4, 0, "2026-01-15", 60, [])
-    dt = time.perf_counter() - t0
-    size = len(json.dumps(night))
-    assert night["timeline"]["n"] == 241
-    assert size < 1_500_000, f"night payload grew to {size / 1024:.0f} KiB"
-    assert dt < 1.5, f"compute_night took {dt:.2f}s"
+
+    def measure(adv):
+        times = []
+        night = None
+        for _ in range(3):
+            t0 = time.perf_counter()
+            night = compute_night(db, 52.52, 13.4, 0, "2026-01-15", 60,
+                                  [], None, adv)
+            times.append(time.perf_counter() - t0)
+        return night, len(json.dumps(night)), statistics.median(times)
+
+    std, std_size, std_dt = measure(False)
+    assert std["timeline"]["n"] == 241
+    assert not any(o.get("adv") for o in std["objects"]), \
+        "standard mode must ship tracks for the curated catalog only"
+    assert std_size < 1_150_000, f"standard payload grew to {std_size/1024:.0f} KiB"
+    assert std_dt < 0.6, f"standard compute_night took {std_dt:.2f}s"
+
+    adv, adv_size, adv_dt = measure(True)
+    assert adv["timeline"]["n"] == 241
+    assert any(o.get("adv") for o in adv["objects"]), \
+        "advanced mode must ship the metadata-only advanced catalog"
+    assert adv_size < 2_700_000, f"advanced payload grew to {adv_size/1024:.0f} KiB"
+    assert adv_dt < 1.0, f"advanced compute_night took {adv_dt:.2f}s"
 
 
 def test_object_detail(client):
