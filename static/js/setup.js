@@ -1,7 +1,7 @@
 /* Setup dialog: observing locations, imaging rigs, backup/transfer */
 
 import { $, esc, api, toast, fmtFovPair, watchCaps, applyEdgeSpace, num,
-         setDisplayZone, todayLocal } from "./util.js";
+         setDisplayZone, todayLocal, isCustomId } from "./util.js";
 import { S } from "./state.js";
 import { loadNight, scheduleLoadNight } from "./night.js";
 import { updateTimeLabel } from "./header.js";
@@ -226,7 +226,7 @@ async function refreshCatalogMeta() {
 function renderCustomList() {
   const box = $("#customList");
   if (!box) return;
-  const customs = S.catalog.filter(o => o.id.startsWith("u_"));
+  const customs = S.catalog.filter(o => isCustomId(o.id));
   if (!customs.length) { box.innerHTML = "<span>No custom targets yet.</span>"; return; }
   box.innerHTML = customs.map(o => `<div class="pano-item">
       <span class="nm">${esc(o.primary_name)}</span>

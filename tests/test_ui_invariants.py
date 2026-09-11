@@ -345,6 +345,24 @@ def test_horizon_legend_and_outline_are_identical_across_apps():
     assert "255, 80, 80" not in app, "web sky view kept the old red"
 
 
+def test_catalog_type_palette_is_shared_and_web_canonical():
+    """Owner decision (0.6.17): the WEB type labels/colors are canonical and
+    shared through core/; the desktop shell adopts them. Pinned so an edit to
+    one app's palette fails here instead of silently drifting."""
+    core = _read("core", "catalog.js")
+    for color in ("#ffd166", "#7cc4ff", "#9be0ff", "#7bf1a8", "#8fe3d9",
+                  "#ff8fa3", "#c9b8ff", "#e0e6ff"):
+        assert color in core, f"core palette lost {color}"
+    for label in ("Globular cluster", "Planetary nebula", "Supernova remnant"):
+        assert label in core, f"core labels lost {label}"
+    util = _read("static", "js", "util.js")
+    assert "TYPE_LABELS as TYPE_LABEL" in util and 'from "./core.js"' in util
+    app = _read("web", "app.js")
+    assert "TYPE_LABELS, TYPE_COLORS" in app and "from './core.js" in app
+    assert "const TYPE_COLORS = {" not in app, "web kept a private palette copy"
+    assert "const TYPE_LABELS = {" not in app, "web kept a private label copy"
+
+
 def test_web_sky_mode_is_one_obstruction_colour_and_scrub_time_is_clamped():
     """0.6.13 follow-up: sky-band shading must be ONE obstruction colour (the
     sky view = the obstruction view inverted; no unexplained second/yellow

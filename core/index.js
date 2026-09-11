@@ -22,3 +22,7 @@ export {
   SKY_ZOOM_MIN, SKY_ZOOM_MAX, skyClampZoom, skyViewMatrix,
   skyScreenToBase, skyClampFocus,
 } from './format.js';
+
+export {
+  TYPE_LABELS, TYPE_COLORS, isCustomId, searchBlob,
+} from './catalog.js';

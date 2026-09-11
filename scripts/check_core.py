@@ -38,6 +38,7 @@ MOVED = (
     "assumedOpenHatchPolys",
     "fmtSize", "sizeArcmin", "fmtFov", "fmtFovPair", "framePct", "magVisible",
     "skyClampZoom", "skyViewMatrix", "skyScreenToBase", "skyClampFocus",
+    "searchBlob", "isCustomId",
 )
 FORBIDDEN = (
     r"\bdocument\s*\.", r"\bwindow\s*\.", r"\blocalStorage\b",

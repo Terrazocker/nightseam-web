@@ -9,12 +9,14 @@
  * All sky math runs client-side (astro.js, Meeus algorithms).
  */
 import * as E from './astro.js?v=7';
-import * as Hor from './horizon.js?v=27';
+import * as Hor from './horizon.js?v=28';
 import * as WS from './webstore.js?v=7';
 import { initDragWindows } from './dragwin.js?v=1';
 import { fmtSize, sizeArcmin, framePct, magVisible, skyClampZoom,
-         skyViewMatrix, skyScreenToBase, skyClampFocus } from './format.js?v=4';
+         skyViewMatrix, skyScreenToBase, skyClampFocus } from './format.js?v=5';
 import { nightStats } from './nightrank.js?v=4';
+import { TYPE_LABELS, TYPE_COLORS, searchBlob as coreSearchBlob }
+  from './core.js?v=5';
 
 // Cache-bust token for the ~4 MB data file web/catalog.json. It is NOT a JS
 // module, so it cannot carry a ?v= in an import: this named token IS its
@@ -23,22 +25,6 @@ import { nightStats } from './nightrank.js?v=4';
 // web/catalog.manifest.json records the bytes for the current token and
 // scripts/check_catalog_token.py enforces the pairing.
 const CATALOG_TOKEN = '2';
-
-const TYPE_COLORS = {
-  galaxy: '#ffd166',
-  open_cluster: '#7cc4ff',
-  globular: '#9be0ff',
-  nebula: '#7bf1a8',
-  planetary: '#8fe3d9',
-  supernova_remnant: '#ff8fa3',
-  asterism: '#c9b8ff',
-  star_cloud: '#e0e6ff',
-};
-const TYPE_LABELS = {
-  galaxy: 'Galaxy', open_cluster: 'Open cluster', globular: 'Globular cluster',
-  nebula: 'Nebula', planetary: 'Planetary nebula', supernova_remnant: 'Supernova remnant',
-  asterism: 'Asterism', star_cloud: 'Star cloud',
-};
 
 /** Debounce timer for the catalog search box — re-renders at most every
  *  150 ms while typing instead of once per keystroke (12k-row filter). */
@@ -133,11 +119,10 @@ function popularityFactor(o) {
   return Math.min(1, 0.3 + 0.7 * Math.log10(pop) / 5.2);
 }
 
-function searchBlob(o) {
+function blobOf(o) {
   let b = searchCache.get(o);
   if (b === undefined) {
-    b = [o.id, o.primary_name, o.messier, o.ngcic, o.other, o.otype, o.constellation, o.blurb, o.distance]
-      .filter(Boolean).join(' ').toLowerCase();
+    b = coreSearchBlob(o);
     searchCache.set(o, b);
   }
   return b;
@@ -1283,7 +1268,7 @@ function filteredCatalog() {
   const q = f.q.trim().toLowerCase();
   let out = activeCatalog().filter((o) => CHIP_FILTERS[f.chip](o));
   if (f.con) out = out.filter((o) => o.constellation === f.con);
-  if (q) out = out.filter((o) => searchBlob(o).includes(q));
+  if (q) out = out.filter((o) => blobOf(o).includes(q));
   const col = f.sort;
   const pctG = obsNightGrid();
   out = [...out].sort((a, b) => {

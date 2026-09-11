@@ -117,16 +117,10 @@ export const num = v => {
   return n;
 };
 
-export const TYPE_LABEL = {
-  galaxy:"Galaxy", globular:"Globular", open_cluster:"Open cluster",
-  nebula:"Nebula", planetary:"Planetary", supernova_remnant:"SN remnant",
-  star_cloud:"Star cloud", asterism:"Asterism"
-};
-export const TYPE_COLOR = {
-  galaxy:"#ff9e64", globular:"#ffd166", open_cluster:"#7ee787",
-  nebula:"#ff7b72", planetary:"#79c0ff", supernova_remnant:"#d2a8ff",
-  star_cloud:"#e3b341", asterism:"#9ca5b5"
-};
+/* Type vocabulary - shared in core/ (Phase 2, concept 2), WEB canonical
+   palette adopted by the desktop by owner decision. */
+export { TYPE_LABELS as TYPE_LABEL, TYPE_COLORS as TYPE_COLOR,
+         isCustomId } from "./core.js";
 
 export const CONST_FULL = {
   And:"Andromeda", Ant:"Antlia", Aps:"Apus", Aqr:"Aquarius", Aql:"Aquila",
