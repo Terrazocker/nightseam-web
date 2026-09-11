@@ -13,7 +13,7 @@
  * tests/js/astro_parity.mjs.
  */
 import * as E from './astro.js?v=6';
-import { NO_BLOCK, ceilFor } from './horizon.js?v=15';
+import { NO_BLOCK, ceilFor } from './horizon.js?v=17';
 
 /** The one visibility predicate: above the min altitude AND above the
  *  obstruction ceiling AND below the sky-mode ceiling (ceilTop; absent = no

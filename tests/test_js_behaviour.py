@@ -66,3 +66,21 @@ def test_web_panorama_geometry():
     the desktop's semantics; a save/load round trip preserves them."""
     out = run_node_harness("pano_geom.mjs")
     assert "pano geometry contract held" in out
+
+
+def test_web_backup_integrity():
+    """web/webstore.js + web/horizon.js backup/restore through a fake
+    IndexedDB: truthful hasImage, the profile/strokes invariant, staged
+    validation before any write, and rollback to the pre-restore snapshot when
+    a write fails."""
+    out = run_node_harness("web_backup.mjs")
+    assert "web backup integrity held" in out
+
+
+def test_web_panorama_editor_history_and_view():
+    """The panorama editor's pure UI logic (web/horizon.js): undo/redo history
+    with a bounded stack and redo invalidation, the dirty/saved baseline, and
+    the presentation-only zoom transform (uniform scale, screen<->base
+    round-trip, focus clamping, DPR-independent geometry)."""
+    out = run_node_harness("pano_ui.mjs")
+    assert "pano ui contract held" in out
