@@ -56,6 +56,7 @@ def test_desktop_preference_and_scrub_handlers():
     assert "E5 handler: bortle re-derives min-alt held" in out
     assert "E5 handler: explicit min-alt survives bortle held" in out
     assert "E8 handler: 6/60-min steps + clamp held" in out
+    assert "E9 handler: scrub window follows view_full_day held" in out
 
 
 def test_web_panorama_geometry():

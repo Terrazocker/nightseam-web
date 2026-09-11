@@ -113,7 +113,7 @@ html[data-theme="dome"] .planner-controls input[type="date"] {
   background: rgba(15,21,40,0.7);
   max-width: 130px; padding: 5px 8px; font-size: 12px;
 }
-html[data-theme="dome"] .minalt input[type="range"] { width: 68px; }
+html[data-theme="dome"] .minalt input[type="range"] { width: 100%; }
 html[data-theme="dome"] .scrub input[type="range"] { width: 96px; }
 html[data-theme="dome"] .ghost {
   background: rgba(15,21,40,0.7);
@@ -330,7 +330,7 @@ html[data-theme="dome"] ::-webkit-scrollbar-track { background: transparent; }
   html[data-theme="dome"] .planner-controls label { font-size: 10.5px; }
   html[data-theme="dome"] .planner-controls select { max-width: 110px; }
   html[data-theme="dome"] .planner-controls input[type="date"] { max-width: 120px; }
-  html[data-theme="dome"] .minalt input[type="range"] { width: 56px; }
+  html[data-theme="dome"] .minalt input[type="range"] { width: 100%; }
   html[data-theme="dome"] .scrub input[type="range"] { width: 84px; }
   html[data-theme="dome"] .nightinfo { font-size: 11px; padding: 4px 10px; }
 }

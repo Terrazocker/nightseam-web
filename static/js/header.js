@@ -2,7 +2,7 @@
 
 import { $, fmtHM, fmtT, esc, api, phaseName, applyEdgeSpace } from "./util.js";
 import { S } from "./state.js";
-import { moonUpDownText, effectiveMinAlt } from "./derive.js";
+import { moonUpDownText, effectiveMinAlt, scrubWindowRange } from "./derive.js";
 import { scheduleLoadNight } from "./night.js";
 import { openSites } from "./setup.js";
 import { refreshWeatherForSite } from "./weather.js";
@@ -19,7 +19,10 @@ export function bindHeader() {
     refreshWeatherForSite();
   });
   $("#dateInput").addEventListener("change", () => scheduleLoadNight(300));
-  $("#btnSites").addEventListener("click", openSites);
+  $("#btnSites").addEventListener("click", () => {
+    $("#menuPanel").classList.add("hidden");   // Setup now lives in the menu
+    openSites();
+  });
 
   // hamburger options menu
   $("#btnMenu").addEventListener("click", e => {
@@ -75,6 +78,16 @@ export function bindHeader() {
       headers:{"Content-Type":"application/json"},
       body: JSON.stringify({ moon_aware: e.target.checked })});
     document.dispatchEvent(new CustomEvent("prefs:changed"));
+  });
+  // View full day: widen the scrub to the whole payload grid; off (default)
+  // keeps it on the dark window the planner scores on. Clamp the selected
+  // sample back inside the new range so it never points outside the slider.
+  $("#viewFullDay").addEventListener("change", async e => {
+    S.cfg.view_full_day = e.target.checked;
+    await api("/api/settings", { method:"POST",
+      headers:{"Content-Type":"application/json"}, silent: true,
+      body: JSON.stringify({ view_full_day: e.target.checked })}).catch(() => {});
+    applyScrubRange();
   });
   let _bortleT = null;
   $("#bortle").addEventListener("input", e => {
@@ -159,4 +172,19 @@ export function updateTimeLabel() {
   if (!S.night) { el.textContent = ""; return; }
   const d = new Date(S.night.timeline.times_iso[S.tIdx] + "Z");
   el.textContent = fmtT(d);
+}
+
+/** Re-derive the scrub slider bounds (night window by default, whole payload
+ *  grid with view_full_day) and clamp S.tIdx inside them. Called after a night
+ *  load and when the View full day toggle flips. */
+export function applyScrubRange() {
+  const slider = $("#timeSlider");
+  if (!slider || !S.night) return;
+  const [lo, hi] = scrubWindowRange();
+  slider.min = String(lo);
+  slider.max = String(hi);
+  S.tIdx = Math.max(lo, Math.min(hi, S.tIdx));
+  slider.value = String(S.tIdx);
+  updateTimeLabel();
+  document.dispatchEvent(new CustomEvent("time:changed"));
 }

@@ -16,7 +16,7 @@ import os
 import re
 import shutil
 import subprocess
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -1020,3 +1020,75 @@ def test_web_detail_visibility_predicate_cannot_drift():
         "identical to nightrank.js::sampleVisible()"
     assert "alt >= minAlt && alt > ceil && alt < (ceilTop ?? 90.5)" in shared, \
         "nightrank.js::sampleVisible() changed - re-check the detail loop"
+
+
+# ================================================== scrub-range policy
+# (ITEM 1: the scrub spans the planner's dusk..dawn by default, the full span
+#  only with viewFullDay. One shared policy in web/astro.js + static/js/derive.js.)
+_SCRUB_SCENARIOS = [
+    # name, lat, lon, date, tz_min, expected twilight level
+    ("astronomical", 48.0, 11.0, date(2026, 1, 15), 60, "astronomical"),
+    ("nautical", 51.5, 0.0, date(2026, 6, 21), 60, "nautical"),
+    ("civil", 57.0, 0.0, date(2026, 6, 21), 60, "civil"),
+    ("polar fallback", 69.0, 18.0, date(2026, 6, 21), 120, "fallback"),
+    ("midnight-crossing", 60.0, 10.0, date(2026, 12, 21), 60, "astronomical"),
+    ("southern summer", -33.87, 151.21, date(2026, 1, 15), 660, "astronomical"),
+    ("southern winter", -33.87, 151.21, date(2026, 6, 21), 600, "astronomical"),
+    ("dst night", 52.52, 13.40, date(2026, 3, 29), 120, "astronomical"),
+]
+
+
+def _ms(dt):
+    return int(dt.replace(tzinfo=timezone.utc).timestamp() * 1000)
+
+
+def test_scrub_window_follows_the_planner_and_matches_between_apps():
+    """ITEM 1: default scrub range == the planner's dark window (dusk..dawn,
+    picked twilight level / site-zoned 20:00-04:00 fallback); viewFullDay ON
+    => the full span. Checked for astronomical / nautical / civil / polar
+    fallback / midnight-crossing / DST / both hemispheres, at BOTH toggle
+    states, and desktop(derive.js) == web(astro.js) for every case. Probes
+    outside the range must clamp to the nearest edge (turning the night window
+    back on while sitting at 1 pm)."""
+    from app import planning
+    cases = []
+    expected = []
+    for name, lat, lon, d, tz, level in _SCRUB_SCENARIOS:
+        nw = planning.night_window(d.year, d.month, d.day, tz, lat, lon)
+        assert nw["level"] == level, (name, nw["level"])
+        night_start, night_end = _ms(nw["dusk"]), _ms(nw["dawn"])
+        # a deliberately WIDER "full day" span, never equal to the night window
+        full_start = night_start - 6 * 3600_000
+        full_end = night_end + 6 * 3600_000
+        # probes: the exact edges, a mid-night instant, the full-span edges
+        # (outside the night window), and 1 h beyond each side
+        probes = [night_start, night_end, (night_start + night_end) // 2,
+                  full_start, full_end, full_start - 3600_000,
+                  full_end + 3600_000]
+        for vfd in (False, True):
+            cases.append({
+                "name": name, "viewFullDay": vfd,
+                "nightStart": night_start, "nightEnd": night_end,
+                "fullStart": full_start, "fullEnd": full_end,
+                "probes": probes,
+            })
+            expected.append((night_start, night_end, full_start, full_end))
+
+    res = _run_node("scrubwindow", cases)
+    assert len(res) == len(cases)
+    for c, r, exp in zip(cases, res, expected):
+        n0, n1, f0, f1 = exp
+        assert r["desk"] == r["web"], ("app parity", c["name"], c["viewFullDay"], r)
+        it = r["web"]
+        if c["viewFullDay"]:
+            assert (it["start"], it["end"]) == (f0, f1), (c["name"], it)
+        else:
+            # exactly the planner's dusk/dawn - never sunset/sunrise or a
+            # second window definition
+            assert (it["start"], it["end"]) == (n0, n1), (c["name"], it)
+        for p, cl in zip(c["probes"], it["clamps"]):
+            assert cl == min(max(p, it["start"]), it["end"]), (c["name"], p, cl)
+        # explicit: an out-of-range instant clamps to the NEXT edge, so turning
+        # the night window back on while at 1 pm lands on dawn (or dusk)
+        if not c["viewFullDay"]:
+            assert it["clamps"][3] == n0 and it["clamps"][4] == n1, (c["name"], it)

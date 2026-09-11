@@ -123,6 +123,7 @@ class SettingsIn(BaseModel):
     timezone: Optional[str] = None
     theme: Optional[str] = None
     weather_auto: Optional[bool] = None
+    view_full_day: Optional[bool] = None
 
 
 class RigIn(BaseModel):
@@ -369,6 +370,7 @@ def create_app(db: Database, *, prefetch: bool = True) -> FastAPI:
             "timezone": db.setting("timezone") or "",
             "theme": db.setting("theme", "") or "",
             "weather_auto": bool(db.setting("weather_auto", False)),
+            "view_full_day": bool(db.setting("view_full_day", False)),
         }
 
     @app.post("/api/settings")
@@ -410,6 +412,8 @@ def create_app(db: Database, *, prefetch: bool = True) -> FastAPI:
             db.set_setting("theme", body.theme.strip()[:32])
         if body.weather_auto is not None:
             db.set_setting("weather_auto", bool(body.weather_auto))
+        if body.view_full_day is not None:
+            db.set_setting("view_full_day", bool(body.view_full_day))
         return {"ok": True}
 
     # ---------------- sites ----------------

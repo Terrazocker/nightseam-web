@@ -140,7 +140,7 @@ async function init() {
         const step = e.shiftKey
           ? Math.round(SCRUB_SHIFT_STEP_MIN / SCRUB_STEP_MIN)
           : 1;
-        S.tIdx = Math.max(0, Math.min(+slider.max,
+        S.tIdx = Math.max(+slider.min || 0, Math.min(+slider.max,
           S.tIdx + (e.key === "ArrowRight" ? step : -step)));
         slider.value = S.tIdx;
         updateTimeLabel();

@@ -265,6 +265,7 @@ export function applyCfgToUI() {
   if ($("#libUnit")) $("#libUnit").value = S.cfg.size_unit || "arcmin";
   applyEdgeSpace(S.cfg.edge_space ?? 200);
   if ($("#advMode")) $("#advMode").checked = !!S.cfg.adv_mode;
+  if ($("#viewFullDay")) $("#viewFullDay").checked = !!S.cfg.view_full_day;
   if ($("#tzSection")) {
     $("#tzSection").classList.toggle("hidden", !S.cfg.adv_mode);
   }

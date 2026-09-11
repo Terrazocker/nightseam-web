@@ -102,8 +102,8 @@ body.catmode .modebtn:hover { color: var(--accent); }
   text-transform: uppercase; letter-spacing: .07em; color: var(--dim); }
 .menu-section .hint { margin: 6px 0 0; }
 .chkrow { display: flex; gap: 14px; flex-wrap: wrap; }
-.minalt { display: flex; gap: 6px; align-items: center; white-space: nowrap; }
-.minalt input[type=range] { width: 110px; }
+.minalt { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.minalt input[type=range] { width: 100%; flex: 1 1 100%; }
 .minalt .mono { min-width: 40px; text-align: center; color: var(--text); }
 body.catmode #plannerControls, body.catmode #nightInfo, body.catmode #tabs { display: none; }
 #tabs-cat { display: none; }

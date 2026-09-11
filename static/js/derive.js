@@ -112,7 +112,7 @@ export function curTimeISO() {
   return S.night ? S.night.timeline.times_iso[S.tIdx] : null;
 }
 
-function nightIndexRange() {
+export function nightIndexRange() {
   const tl = S.night.timeline;
   let i0 = 0, i1 = tl.n - 1;
   // no astronomical night (polar summer) -> the whole grid is the window;
@@ -126,6 +126,34 @@ function nightIndexRange() {
     if (parseUTC(tl.times_iso[i]) <= parseUTC(S.night.dawn)) { i1 = i; break; }
   }
   return [i0, Math.max(i0, i1)];
+}
+
+/** Scrub-range policy - SHARED with the web (web/astro.js) and pinned by the
+ *  "scrubwindow" engine of tests/js/astro_parity.mjs. `viewFullDay` false =>
+ *  the planner's night window (dusk..dawn, the picked twilight level or the
+ *  site-zoned 20:00-04:00 polar fallback); true => the full payload grid
+ *  (dusk-1h..dawn+1h). Inputs/outputs are epoch milliseconds. */
+export function scrubBounds(viewFullDay, nightStart, nightEnd, fullStart, fullEnd) {
+  if (!viewFullDay && nightStart != null && nightEnd != null && nightEnd > nightStart) {
+    return { start: nightStart, end: nightEnd };
+  }
+  return { start: fullStart, end: fullEnd };
+}
+
+/** Clamp an instant into a scrub range (the selected time must stay inside). */
+export function scrubClamp(t, start, end) {
+  if (t < start) return start;
+  if (t > end) return end;
+  return t;
+}
+
+/** Grid index bounds [lo, hi] the scrub may select: the night window by
+ *  default, the whole payload grid when view_full_day is on. */
+export function scrubWindowRange() {
+  const tl = S.night && S.night.timeline;
+  if (!tl) return [0, 0];
+  if (S.cfg && S.cfg.view_full_day) return [0, tl.n - 1];
+  return nightIndexRange();
 }
 
 /* ---------------- advanced catalog: synthesize tracks client-side -------- */

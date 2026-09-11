@@ -64,6 +64,18 @@ Image Catalog (FITS ingest + library). `README.md` has the feature list.
 - Selected time is the source of truth: desktop `S.tIdx`, web `S.skyTime`. "Best
   targets tonight" (web) lists only rows with `visN > 0`. Keyboard scrub is 6 min,
   Shift 60 min in BOTH apps (`SCRUB_STEP_MIN`/`SCRUB_SHIFT_STEP_MIN`).
+- **Scrub window (0.6.13):** the scrub spans ONLY the planner's dark window
+  (dusk..dawn: picked twilight level, or the site-zoned 20:00-04:00 polar
+  fallback) unless the `viewFullDay` preference is ON, which widens it to the
+  app's full span (web: 24 h noon->noon; desktop: the whole payload grid,
+  dusk-1h..dawn+1h). ONE shared policy `scrubBounds`/`scrubClamp` in
+  `web/astro.js` + `static/js/derive.js`, pinned at both states by the
+  `scrubwindow` engine of `tests/test_js_parity.py` (+ absolute scenarios:
+  astronomical/nautical/civil/polar/DST/both hemispheres). Toggling re-derives
+  live and clamps the selected time to the nearest in-range instant. Desktop
+  `derive.js::nightIndexRange`/`scrubWindowRange` select the grid indices; web
+  `app.js::scrubRange` maps `nightWindow()` to the slider. Never define a second
+  night window.
 
 **Charts and units**
 - Magnitude limit is ONE rule `magVisible(vmag,limit,maxLimit)` in `derive.js` +
@@ -124,7 +136,9 @@ Image Catalog (FITS ingest + library). `README.md` has the feature list.
   `version`; `restoreBackup` stages/validates the whole bundle BEFORE any write
   and rolls back to the `meta`/`safety` snapshot if a write fails. Pinned by
   `tests/js/web_backup.mjs`. A desktop restore clears `import_batches` (history
-  of the replaced library).
+  of the replaced library). The `viewFullDay` preference rides in `prefs`
+  (opaque passthrough) and `view_full_day` in the desktop settings table, so
+  both round-trip through backup (`web_backup.mjs`, `tests/test_backup.py`).
 
 **Async**
 - After every `await` in `static/js/night.js`, re-check `ctl === _nightCtl`
@@ -143,6 +157,26 @@ Image Catalog (FITS ingest + library). `README.md` has the feature list.
   `Get-Content`/`Set-Content` round-trip WILL cp1252-mangle non-ASCII files
   (em dashes, degree signs, emoji) with no other check noticing - run the guard
   after any text rewrite.
+
+## UI philosophy (progressive disclosure)
+
+- **Rule:** anything special, advanced, experimental, or needed only by some
+  users lives in the hamburger menu with a safe/quiet default - it must not
+  occupy the primary working UI. Common-case controls stay visible.
+- **Menu groups/labels (BOTH apps):** *Appearance* (theme); *Display* (free
+  space per side, **View full day**, min altitude, object size units);
+  *Advanced* (advanced catalog, timezone, moon-aware ranking, Bortle, equipment
+  filters); *Data* (Setup - sites/rigs/targets/backup); *About*.
+- **Safe defaults:** options start quiet - `viewFullDay` defaults to **false**,
+  advanced catalog mode off. Persist on change; a display preference must not
+  require a reload.
+- **Migrated in 0.6.13:** the min-altitude slider and the Setup button left the
+  primary toolbar for Display/Data. The imaging `#rigSelect` deliberately STAYS
+  in the topbar next to Site (framing is a core workflow; pinned by
+  `tests/test_ui_invariants.py::test_rig_selector_sits_in_the_topbar`).
+  `tests/test_ui_invariants.py::test_progressive_disclosure_keeps_advanced_
+  controls_in_the_menu` fails if a migrated control returns to the primary UI,
+  if `viewFullDay` defaults ON, or if a group label disappears.
 
 ## Context discipline (the transcript is the budget)
 
@@ -174,7 +208,7 @@ Image Catalog (FITS ingest + library). `README.md` has the feature list.
     `Get-CimInstance Win32_Process`).
   - If 8407 is briefly taken at boot, `free_port()` silently picks a RANDOM port
     (written to `instance.json`).
-- Tests: `python -m pytest tests/` (517). Single test:
+- Tests: `python -m pytest tests/` (526). Single test:
   `python -m pytest tests/test_astro.py -k name`. API tests use
   `create_app(db, prefetch=False)` (no image-cache thread). The `client` fixture
   must leave `data/panos` in the tmp dir it patches in.
@@ -182,13 +216,14 @@ Image Catalog (FITS ingest + library). `README.md` has the feature list.
     `pytest.ini`) can acquire an owner-SID-only DACL, so every `tmp_path` test
     errors at fixture cleanup - an environment artifact, not a failure. Workaround
     (no escalation needed): `python -m pytest tests/ -q --basetemp
-    C:\Users\<user>\AppData\Local\Temp\opencode\pt -p no:cacheprovider` -> 517/517.
+    C:\Users\<user>\AppData\Local\Temp\opencode\pt -p no:cacheprovider` -> 526/526.
 - JS checks (run after touching `static/` OR `web/`): `python scripts/check_js.py`
   runs all of them and exits non-zero on hard failures:
   - `check_js_imports.py` - broken relative ES-module imports / missing named exports
   - `check_dom_ids.py` - `$('#id')` missing from that app's `index.html`
   - `check_js_syntax.py` - `node --check` on all 27 shipped modules (via temp `.mjs`)
   - `check_encoding.py` - the encoding guard above
+  - `check_catalog_token.py` - `web/catalog.json` + `catalog.manifest.json` pair with `CATALOG_TOKEN` in `web/app.js`
   - `check_js_defs.py` - heuristic, always exits 0
 - Build exe: `powershell -ExecutionPolicy Bypass -File build.ps1` ->
   `dist\NightSeam.exe` (isolated `.venv-build`; kills running NightSeam first).
@@ -289,9 +324,9 @@ Image Catalog (FITS ingest + library). `README.md` has the feature list.
   `scripts/check_catalog_token.py`, wired into `scripts/check_js.py`, and pinned
   by `tests/test_cache_tokens.py` (mutation-tested). Do NOT add
   `{cache:'no-store'}` - the file must stay cacheable.
-  Current: `app.js?v=34` (index.html) / `CATALOG_TOKEN = '2'`, `astro.js?v=6`,
-  `horizon.js?v=17`, `format.js?v=3`, `nightrank.js?v=4`, `webstore.js?v=6`,
-  `dragwin.js?v=1`, `style.css?v=12`, `themes.css?v=2`.
+  Current: `app.js?v=35` (index.html) / `CATALOG_TOKEN = '2'`, `astro.js?v=7`,
+  `horizon.js?v=18`, `format.js?v=3`, `nightrank.js?v=4`, `webstore.js?v=6`,
+  `dragwin.js?v=1`, `style.css?v=13`, `themes.css?v=3`.
 - **Never publish `index.html` before the modules it names.** Deploys are not
   atomic and the page carries the tokens; `ftps_deploy.py::upload_order()` sorts
   HTML last (`index.html` very last), pinned by `tests/test_deploy_order.py`. Keep

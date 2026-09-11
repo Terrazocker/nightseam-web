@@ -14,6 +14,28 @@ export const R2D = 180 / Math.PI;
    key is the fine step (one 6-min night-grid sample), Shift is the coarse one. */
 export const SCRUB_STEP_MIN = 6;
 export const SCRUB_SHIFT_STEP_MIN = 60;
+
+/* Scrub-range policy - SHARED with the desktop (static/js/derive.js) and pinned
+   by the "scrubwindow" engine of tests/js/astro_parity.mjs. `viewFullDay` false
+   => the planner's night window (dusk..dawn: the picked twilight level, or the
+   site-zoned 20:00-04:00 polar fallback); true => the app's full span (web: the
+   24 h noon->noon day; desktop: its payload grid). Inputs/outputs are epoch
+   milliseconds; a missing night window degrades to the full span. */
+export function scrubBounds(viewFullDay, nightStart, nightEnd, fullStart, fullEnd) {
+  if (!viewFullDay && nightStart != null && nightEnd != null && nightEnd > nightStart) {
+    return { start: nightStart, end: nightEnd };
+  }
+  return { start: fullStart, end: fullEnd };
+}
+
+/** Clamp an instant into a scrub range - the selected time must never sit
+ *  outside the window when "View full day" is switched off (e.g. 1 pm). */
+export function scrubClamp(t, start, end) {
+  if (t < start) return start;
+  if (t > end) return end;
+  return t;
+}
+
 const ASEC2DEG = 1 / 3600;
 const J2000 = 2451545.0;
 const MS_PER_DAY = 86400000;

@@ -187,7 +187,7 @@ html[data-theme="dome"] .controls label {
   font-size: 11px;
 }
 html[data-theme="dome"] .minalt input[type=range] {
-  width: 84px;
+  width: 100%;
 }
 html[data-theme="dome"] .scrub input[type=range] {
   max-width: 150px;
@@ -935,7 +935,7 @@ html[data-theme="dome"] body.catmode .brand em {
   html[data-theme="dome"] .controls label { font-size: 10.5px; }
   html[data-theme="dome"] #topbar select { max-width: 130px; }
   html[data-theme="dome"] #topbar input[type=date] { max-width: 130px; }
-  html[data-theme="dome"] .minalt input[type=range] { width: 60px; }
+  html[data-theme="dome"] .minalt input[type=range] { width: 100%; }
   html[data-theme="dome"] .scrub input[type=range] { max-width: 115px; }
   html[data-theme="dome"] #topbar select,
   html[data-theme="dome"] #topbar input:not([type=range]):not([type=checkbox]) {

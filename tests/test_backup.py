@@ -88,6 +88,18 @@ def test_export_import_roundtrip(db, tmp_path):
     assert new_img.read_bytes() == b"FITSDATA"
 
 
+def test_view_full_day_preference_roundtrips(db, tmp_path):
+    """ITEM 1 (0.6.13): view_full_day is one shared preference - the desktop
+    stores it in the settings table, so it must survive an export/import like
+    every other pref (the web twin rides in backup.prefs)."""
+    db.set_setting("view_full_day", True)
+    blob = build_export_zip(db)
+    db2 = Database(tmp_path / "other.db")
+    db2.set_setting("image_dir", str(tmp_path / "archive"))
+    apply_import_zip(db2, blob)
+    assert db2.setting("view_full_day", False) is True
+
+
 def test_import_clears_stale_import_history(db, tmp_path):
     """The 'Recent imports' history describes the library the restore replaces,
     so a restore must clear it. Rows surviving a restore would point at

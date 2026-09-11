@@ -17,7 +17,8 @@
 const engine = process.argv[2];
 if (!["desktop", "web", "window", "darkwindow", "pick", "crosszone",
      "scoring", "ceil", "size", "status", "frame", "advice", "minalt",
-     "shortcut", "nightstats", "mag", "skyzoom", "abovehorizon"].includes(engine)) {
+     "shortcut", "nightstats", "mag", "skyzoom", "abovehorizon",
+     "scrubwindow"].includes(engine)) {
   console.error("usage: node astro_parity.mjs <engine>");
   process.exit(2);
 }
@@ -340,6 +341,24 @@ if (engine === "size") {
     };
   });
   process.stdout.write(JSON.stringify(out));
+} else if (engine === "scrubwindow") {
+  /* Scrub-range policy at BOTH states: desktop derive.js vs web/astro.js.
+   * Case: {viewFullDay, nightStart, nightEnd, fullStart, fullEnd, probes[]}
+   * with epoch-ms bounds; returns the chosen [start,end] and the clamped
+   * probes, so the Python side can check the planner window AND parity. */
+  const desk = await import(new URL("../../static/js/derive.js", import.meta.url).href);
+  const web = await import(new URL("../../web/astro.js", import.meta.url).href);
+  const one = (m, c) => {
+    const b = m.scrubBounds(c.viewFullDay, c.nightStart, c.nightEnd,
+                            c.fullStart, c.fullEnd);
+    return {
+      start: b.start, end: b.end,
+      clamps: (c.probes || []).map((t) => m.scrubClamp(t, b.start, b.end)),
+    };
+  };
+  process.stdout.write(JSON.stringify(cases.map((c) => ({
+    desk: one(desk, c), web: one(web, c),
+  }))));
 } else {
   const out = cases.map((c) => {
     const r = {};

@@ -2,7 +2,7 @@
 
 import { $, api, setBusy, todayLocal, tzOffAt, toast } from "./util.js";
 import { S } from "./state.js";
-import { timeIndexFor, synthesizeAdvancedTracks } from "./derive.js";
+import { timeIndexFor, synthesizeAdvancedTracks, scrubWindowRange } from "./derive.js";
 
 let _nightCtl = null;
 let _nightTimer = null;
@@ -42,8 +42,15 @@ async function doLoadNight() {
     S.night = N;
     const n = N.timeline.n;
     const nowIdx = timeIndexFor(new Date());
-    S.tIdx = nowIdx >= 0 ? nowIdx : Math.floor(n * 0.45);
-    $("#timeSlider").max = n - 1;
+    // scrub range: the dark window (dusk..dawn) by default, the whole payload
+    // grid only with view_full_day. The selected sample is clamped inside it.
+    const [lo, hi] = scrubWindowRange();
+    const seed = nowIdx >= 0 ? nowIdx : Math.floor(n * 0.45);
+    S.tIdx = Math.max(lo, Math.min(hi, seed));
+    const slider = $("#timeSlider");
+    slider.min = String(lo);
+    slider.max = String(hi);
+    slider.value = String(S.tIdx);
 
     // views derive their own flags/scores from the raw tracks
     document.dispatchEvent(new CustomEvent("night:loaded"));

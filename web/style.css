@@ -53,7 +53,8 @@ body {
 /* the rig selector sits in the topbar next to Site (it used to hide in the
    hamburger menu) - long preset names must not stretch the bar */
 #rigSelect { max-width: 170px; }
-.minalt input[type="range"] { width: 88px; accent-color: var(--accent); margin: 0; }
+.minalt { flex-wrap: wrap; }
+.minalt input[type="range"] { width: 100%; flex: 1 1 100%; accent-color: var(--accent); margin: 0; }
 .minalt .mono { min-width: 40px; text-align: right; font-size: 11.5px; color: var(--txt); }
 .minalt .note { font-size: 10.5px; color: var(--muted); opacity: .8; }
 .scrub { display: inline-flex; align-items: center; gap: 6px; }
@@ -381,12 +382,16 @@ a.wiki { color: var(--accent); }
 #pano-canvas.panning { cursor: grabbing; }
 #pano-profile { width: 100%; border: 1px solid var(--line); border-radius: 8px; margin-top: 8px; display: block; background: #081022; }
 
-/* panorama editor toolbar */
-.ed-toolbar { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; }
-.ed-group { display: flex; align-items: center; gap: 6px; }
+/* panorama editor toolbar - grouped (mode | paint | history | clear | view |
+   status) with separators; wraps instead of overflowing on narrow screens. */
+.ed-toolbar { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; max-width: 100%; }
+.ed-group { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.ed-group + .ed-group { padding-left: 14px; border-left: 1px solid var(--line); }
 .ed-group .btn { flex: 0 0 auto; }
+.ed-group select { max-width: 100%; }
+.ed-destructive { color: var(--bad, #ff8a8a); }
 .ed-brush { font-size: 12px; color: var(--muted); display: flex; align-items: center; gap: 6px; }
-.ed-brush input[type="range"] { width: 90px; accent-color: var(--accent); }
+.ed-brush input[type="range"] { width: 90px; max-width: 28vw; accent-color: var(--accent); }
 .ed-status-group { margin-left: auto; }
 .ed-status { font-size: 12px; color: var(--muted); white-space: nowrap; }
 .ed-status.dirty { color: var(--amber, #ffd166); }
@@ -409,6 +414,7 @@ a.wiki { color: var(--accent); }
 .ed-confirm-box .btn { flex: 0 0 auto; }
 @media (max-width: 640px) {
   .ed-toolbar { gap: 6px 10px; }
+  .ed-group + .ed-group { padding-left: 8px; }
   .ed-group .btn { padding: 6px 8px; }
   .ed-status-group { margin-left: 0; }
 }

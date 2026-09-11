@@ -82,4 +82,31 @@ const r4 = S.tIdx === 20;
 console.log(r1 && r2 && r3 && r4
   ? 'E8 handler: 6/60-min steps + clamp held'
   : `E8 handler: FAILED ${JSON.stringify({ r1, r2, r3, r4, tIdx: S.tIdx })}`);
+
+/* ------------------------------- E9 ------------------------------- */
+// ITEM 1: the scrub defaults to the planner's night window (dusk..dawn) and
+// only widens to the whole grid with view_full_day; the selected sample is
+// clamped when the range shrinks (e.g. toggling the night window back on).
+const iso2 = Array.from({ length: 21 }, (_, i) =>
+  `2026-09-10T${String(20 + Math.floor(i * 6 / 60)).padStart(2, '0')}:` +
+  `${String((i * 6) % 60).padStart(2, '0')}:00`);
+S.night = { timeline: { times_iso: iso2, n: 21, step_min: 6 }, objects: [] };
+S.night.dusk = iso2[3];
+S.night.dawn = iso2[17];
+S.cfg = { ...(S.cfg || {}), bortle: 4, view_full_day: false };
+const slider9 = els['#timeSlider'];
+S.tIdx = 10;
+H.applyScrubRange();
+const nightWin = slider9.min === '3' && slider9.max === '17' && S.tIdx === 10;
+S.cfg.view_full_day = true;
+H.applyScrubRange();
+const fullWin = slider9.min === '0' && slider9.max === '20';
+S.cfg.view_full_day = false;
+S.tIdx = 0; H.applyScrubRange();
+const clampLo = S.tIdx === 3;
+S.tIdx = 20; H.applyScrubRange();
+const clampHi = S.tIdx === 17;
+console.log(nightWin && fullWin && clampLo && clampHi
+  ? 'E9 handler: scrub window follows view_full_day held'
+  : `E9 handler: FAILED ${JSON.stringify({ nightWin, fullWin, clampLo, clampHi, min: slider9.min, max: slider9.max, tIdx: S.tIdx })}`);
 process.exit(0);

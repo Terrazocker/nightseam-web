@@ -171,6 +171,14 @@ assert(backup.app === 'nightseam-web' && backup.version === 2, 'backup carries s
 assert(backup.theme === 'classic', 'collectBackup carries the theme');
 assert(backup.sites.length === 1 && backup.rigs.length === 1, 'collectBackup reads the stores');
 
+/* 5b. View full day preference round-trips (ITEM 1) ---------------------- */
+const vfd = await WS.collectBackup(
+  { bortle: 6, viewFullDay: true }, { panos: [], activeId: null }, 'classic');
+assert(vfd.prefs.viewFullDay === true, 'collectBackup carries viewFullDay');
+assert(WS.stageBackup(vfd).prefs.viewFullDay === true, 'stageBackup preserves viewFullDay');
+assert(WS.stageBackup({ app: 'nightseam-web', prefs: { viewFullDay: false } }).prefs.viewFullDay === false,
+  'an imported bundle keeps the viewFullDay value');
+
 /* 6. malformed restore does NOT destroy current data -------------------- */
 const beforeSites = (await WS.all('sites')).length;
 let bad = false;

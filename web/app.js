@@ -8,8 +8,8 @@
  *   • Settings — sites, rigs, custom targets, backup/restore (webstore.js)
  * All sky math runs client-side (astro.js, Meeus algorithms).
  */
-import * as E from './astro.js?v=6';
-import * as Hor from './horizon.js?v=17';
+import * as E from './astro.js?v=7';
+import * as Hor from './horizon.js?v=18';
 import * as WS from './webstore.js?v=6';
 import { initDragWindows } from './dragwin.js?v=1';
 import { fmtSize, sizeArcmin, framePct, magVisible, skyClampZoom,
@@ -190,6 +190,46 @@ function obsNightGrid() {
     minAlt: Hor.effectiveMinAlt(), pano: Hor.activePano(), lat, lon,
   };
 }
+/* Memoized night window for the scrub (called on every slider tick): the
+   window only depends on the anchor date, site and timezone, so it is cached
+   instead of rescanning 30 h of twilight on each pointer move. Scoring still
+   uses nightWindow() directly - this is presentation-only caching. */
+let _winMemo = { key: null, val: null };
+function cachedNightWindow() {
+  const key = `${dateKey(nightAnchor())}|${S.site.lat}|${S.site.lon}|${Hor.getPrefs().tz || ''}`;
+  if (_winMemo.key !== key) _winMemo = { key, val: nightWindow() };
+  return _winMemo.val;
+}
+
+/** The active scrub span [start, end) in UTC. Off = the planner's dark window
+ *  (dusk..dawn: picked twilight level / site-zoned polar fallback); On = the
+ *  24 h noon->noon day. scrubBounds is SHARED with the desktop so both apps
+ *  follow ONE policy. */
+function scrubRange() {
+  const fullStart = skyAnchor(S.skyTime);
+  const fullEnd = new Date(fullStart.getTime() + 24 * 3600000);
+  const w = cachedNightWindow();
+  const b = E.scrubBounds(!!Hor.getPrefs().viewFullDay,
+    w.startT ? w.startT.getTime() : null, w.endT ? w.endT.getTime() : null,
+    fullStart.getTime(), fullEnd.getTime());
+  return { start: new Date(b.start), end: new Date(b.end) };
+}
+
+/** Keep the selected time inside the active scrub range (used when the range
+ *  shrinks under it - e.g. turning "View full day" off while at 1 pm). */
+function clampSkyTime() {
+  const r = scrubRange();
+  S.skyTime = new Date(E.scrubClamp(S.skyTime.getTime(), r.start.getTime(), r.end.getTime()));
+  return r;
+}
+
+/** Caption under the Sky View scrub, matching the active range. */
+function rangeLabel() {
+  return Hor.getPrefs().viewFullDay
+    ? 'slider spans the full 24 h day, site time'
+    : 'slider spans the dark window (dusk\u2013dawn), site time';
+}
+
 function obsKey(g, oid) {
   if (obsCache.size > 250000) obsCache.clear(); // guard against stale-site growth
   // the ANCHOR date (topbar "night of", else today at the site) - NOT today:
@@ -769,7 +809,7 @@ function renderSky() {
             <button class="btn primary" id="sky-now">Now</button>
             <button class="btn" id="sky-reset" title="double-click the chart also resets">↺ Reset view</button>
           </div>
-          <p class="sub" style="margin-top:10px">slider spans noon → next noon, site time</p>
+          <p class="sub" style="margin-top:10px">${rangeLabel()}</p>
         </div>
         <div class="card">
           <h3>Chart</h3>
@@ -1098,13 +1138,14 @@ function renderSky() {
   const slider = $('#sky-slider');
   const sout = $('#sky-sout');
   const pad2 = (x) => String(x).padStart(2, '0');
-  const rangeStart = () => skyAnchor(S.skyTime);
-  const sliderVal = () => {
-    const rs = rangeStart();
-    return Math.max(0, Math.min(1440, Math.round((S.skyTime.getTime() - rs.getTime()) / 60000)));
-  };
+  const rangeMins = (r) => Math.max(1, Math.round((r.end.getTime() - r.start.getTime()) / 60000));
+  const sliderVal = (r) => Math.max(0, Math.min(rangeMins(r),
+    Math.round((S.skyTime.getTime() - r.start.getTime()) / 60000)));
   const syncControls = () => {
-    slider.value = String(sliderVal());
+    const r = scrubRange();
+    slider.min = '0';
+    slider.max = String(rangeMins(r));
+    slider.value = String(sliderVal(r));
     sout.textContent = fmtClock(S.skyTime); // wall clock at the site
     timeEl.value = dtoLocalInput(S.skyTime);
   };
@@ -1113,17 +1154,19 @@ function renderSky() {
   // scrub (bound to 'sky:time') never keeps showing a stale time
   const announceTime = () => window.dispatchEvent(new CustomEvent('sky:time'));
   slider.addEventListener('input', () => {
-    S.skyTime = new Date(rangeStart().getTime() + Number(slider.value) * 60000);
+    const r = scrubRange();
+    S.skyTime = new Date(r.start.getTime() + Number(slider.value) * 60000);
     syncControls();
     draw();
     announceTime();
   });
   timeEl.addEventListener('input', () => {
     const v = timeEl.value;
-    if (v) { S.skyTime = WS.wallToUtc(new Date(v)); syncControls(); draw(); announceTime(); }
+    if (v) { S.skyTime = WS.wallToUtc(new Date(v)); clampSkyTime(); syncControls(); draw(); announceTime(); }
   });
   $('#sky-now').addEventListener('click', () => {
     S.skyTime = new Date();
+    clampSkyTime();
     syncControls();
     draw();
     announceTime();
@@ -2308,7 +2351,10 @@ async function boot() {
     const s = SITES.find((x) => x.id === ev.target.value);
     if (s) { applyActiveSite(s); refreshView(); refreshWeatherForSite(); }
   });
-  $('#btn-settings').addEventListener('click', () => { renderSettings(); });
+  $('#btn-settings').addEventListener('click', () => {
+    const mp = $('#menuPanel'); if (mp) mp.classList.add('hidden');
+    renderSettings();
+  });
 
   // — topbar: min-alt slider (desktop parity) —
   const syncTopPrefs = () => {
@@ -2355,18 +2401,21 @@ async function boot() {
   const scrub = $('#tb-scrub'), scrubT = $('#tb-scrub-time');
   if (scrub) {
     const syncScrub = () => {
-      const rs = skyAnchor(S.skyTime);
-      const mins = Math.max(0, Math.min(1440, Math.round((S.skyTime.getTime() - rs.getTime()) / 60000)));
+      const r = scrubRange();
+      const len = Math.max(1, Math.round((r.end.getTime() - r.start.getTime()) / 60000));
+      scrub.min = '0';
+      scrub.max = String(len);
+      const mins = Math.max(0, Math.min(len,
+        Math.round((S.skyTime.getTime() - r.start.getTime()) / 60000)));
       scrub.value = String(mins);
       if (scrubT) scrubT.textContent = fmtClock(S.skyTime);
     };
     syncScrub();
     const onScrub = () => {
-      // stable anchor for the whole drag: skyAnchor keeps the current
-      // window fixed while the time stays inside it, so crossing noon
-      // never snaps the slider back.
-      const rs = skyAnchor(S.skyTime);
-      S.skyTime = new Date(rs.getTime() + Number(scrub.value) * 60000);
+      // stable range for the whole drag: skyAnchor keeps the 24 h window fixed
+      // while the time stays inside it, so crossing noon never snaps back.
+      const r = scrubRange();
+      S.skyTime = new Date(r.start.getTime() + Number(scrub.value) * 60000);
       if (scrubT) scrubT.textContent = fmtClock(S.skyTime);
       window.dispatchEvent(new CustomEvent('sky:time'));
     };
@@ -2448,6 +2497,7 @@ async function boot() {
     if (edge) edge.value = String(Number.isFinite(prefs.edge) ? prefs.edge : 14);
     if (edgeV) edgeV.innerHTML = `${Number.isFinite(prefs.edge) ? prefs.edge : 14}&nbsp;px`;
     const adv = $('#advMode'); if (adv) adv.checked = !!prefs.advMode;
+    const vfd = $('#viewFullDay'); if (vfd) vfd.checked = !!prefs.viewFullDay;
     const tzSec = $('#tzSection'); if (tzSec) tzSec.classList.toggle('hidden', !prefs.advMode);
     const tz = $('#tzSelect'); if (tz) tz.value = prefs.tz || '';
     const moon = $('#moonAware'); if (moon) moon.checked = !!prefs.moonAware;
@@ -2485,6 +2535,13 @@ async function boot() {
     refreshView();
   });
   $('#moonAware').addEventListener('change', (ev) => { Hor.setPrefs({ moonAware: ev.target.checked }); refreshView(); });
+  // View full day: re-derive the scrub range live and pull the selected time
+  // into it (e.g. 1 pm clamps back to dusk when switching the night window on).
+  $('#viewFullDay').addEventListener('change', (ev) => {
+    Hor.setPrefs({ viewFullDay: ev.target.checked });
+    clampSkyTime();
+    window.dispatchEvent(new CustomEvent('sky:time'));
+  });
   $('#bortle').addEventListener('input', (ev) => {
     Hor.setPrefs({ bortle: Hor.num(ev.target.value) || 4 });
     refreshMenuUI(); syncTopPrefs();
@@ -2558,6 +2615,7 @@ async function boot() {
     if (ev.key === 'ArrowLeft' || ev.key === 'ArrowRight') {
       const mins = ev.shiftKey ? E.SCRUB_SHIFT_STEP_MIN : E.SCRUB_STEP_MIN;
       S.skyTime = new Date(S.skyTime.getTime() + (ev.key === 'ArrowRight' ? mins : -mins) * 60000);
+      clampSkyTime();   // never scrub past the active range (night window by default)
       window.dispatchEvent(new CustomEvent('sky:time'));
       if (S.view === 'sky') draw();
       ev.preventDefault();

@@ -689,23 +689,27 @@ function hideSplash(box) {
 function haziEditorHTML(p) {
   return `
     <div class="ed-toolbar">
-      <div class="ed-group">
+      <div class="ed-group ed-mode">
         <select id="ed-mode" title="paint mode" aria-label="Paint mode">
           <option value="obstacle" ${p.paintMode === 'obstacle' ? 'selected' : ''}>Obstacles (paint what blocks)</option>
           <option value="sky" ${p.paintMode === 'sky' ? 'selected' : ''}>Sky band (paint visible sky)</option>
         </select>
+      </div>
+      <div class="ed-group ed-paint">
         <label class="ed-brush">Brush
           <input id="ed-brush" type="range" min="3" max="80" value="28" aria-label="Brush size">
         </label>
         <button class="btn" id="ed-eraser" title="Toggle eraser (or right-click)" aria-pressed="false">🧽 Eraser</button>
       </div>
-      <div class="ed-group">
+      <div class="ed-group ed-history">
         <button class="btn" id="ed-undo" title="Undo (Ctrl+Z)" aria-label="Undo">↩ Undo</button>
         <button class="btn" id="ed-redo" title="Redo (Ctrl+Shift+Z)" aria-label="Redo">↪ Redo</button>
         <button class="btn" id="ed-revert" title="Discard changes and restore the last saved horizon (undoable)">⟲ Revert</button>
+      </div>
+      <div class="ed-group ed-destructive">
         <button class="btn" id="ed-clear" title="Remove all paint (asks first; undoable)">Clear…</button>
       </div>
-      <div class="ed-group">
+      <div class="ed-group ed-view">
         <button class="btn" id="ed-zoom-out" title="Zoom out" aria-label="Zoom out">\u2212</button>
         <span id="ed-zoom-label" class="mono">1.0\u00D7</span>
         <button class="btn" id="ed-zoom-in" title="Zoom in" aria-label="Zoom in">+</button>
@@ -793,9 +797,9 @@ export function setPrefs(patch) { prefs = { ...prefs, ...patch }; savePrefs(); }
 function loadPrefs() {
   try {
     const raw = localStorage.getItem('nightseam_prefs_v1');
-    if (raw) return { bortle: 4, minAlt: null, moonAware: false, ...JSON.parse(raw) };
+    if (raw) return { bortle: 4, minAlt: null, moonAware: false, viewFullDay: false, ...JSON.parse(raw) };
   } catch { /* ignore */ }
-  return { bortle: 4, minAlt: null, moonAware: false };
+  return { bortle: 4, minAlt: null, moonAware: false, viewFullDay: false };
 }
 function savePrefs() { try { localStorage.setItem('nightseam_prefs_v1', JSON.stringify(prefs)); } catch { /* ignore */ } }
 
