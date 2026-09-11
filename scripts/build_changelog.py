@@ -30,6 +30,9 @@ ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "landing" / "changelog.json"
 
 CURATED = {
+    # 0.6.16 extracts the shared panorama/horizon geometry into the baked core
+    # and fixes the web's profile coordinates (D1) + rig FOV unit (D2).
+    "0.6.16": "Shared-core release. The panorama and horizon geometry now lives in one place, baked into both the desktop app and the web planner, so the two apps can no longer drift apart. This fixes partial and rotated panoramas: the painted horizon profile is stored in the same world-azimuth coordinates the desktop and the server have always used, so the blocked directions are correct whatever calibration you use (a full 360 panorama with no offset is unchanged). Telescope fields of view are also stored in arcminutes on the web, the same unit as the desktop, and existing rigs are converted automatically.",
     # 0.6.15 is the 0.6.14 follow-up patch: the web editor's profile preview
     # hatches the assumed-open band in bin space (no shift on rotated/partial
     # panoramas), and both sky views shade with the legend's red.
