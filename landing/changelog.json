@@ -1,5 +1,10 @@
 [
  {
+  "version": "0.6.17",
+  "date": "2026-09-11",
+  "summary": "Shared-core release. The desktop app and the web planner now compute every planning number with one shared engine, so the two can no longer drift apart. Three visible corrections come with it: object-type names and colours are identical in both apps (the desktop adopts the web palette); a grazing polar-night day can no longer report a sunrise without a sunset (Tromso in January showed a \"sunrise\" 29 minutes before its own sunset); and the night slider and the altitude chart now use the dark window whenever the sunset-to-sunrise pair is degenerate, instead of building an inverted range. Ordinary nights, DST transitions and southern-hemisphere nights are unchanged. Python still computes the desktop's planning payload."
+ },
+ {
   "version": "0.6.16",
   "date": "2026-09-11",
   "summary": "Shared-core release. The panorama and horizon geometry now lives in one place, baked into both the desktop app and the web planner, so the two apps can no longer drift apart. This fixes partial and rotated panoramas: the painted horizon profile is stored in the same world-azimuth coordinates the desktop and the server have always used, so the blocked directions are correct whatever calibration you use (a full 360 panorama with no offset is unchanged). Telescope fields of view are also stored in arcminutes on the web, the same unit as the desktop, and existing rigs are converted automatically."
