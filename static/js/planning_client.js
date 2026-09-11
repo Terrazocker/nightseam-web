@@ -88,6 +88,24 @@ const frame = () => new Promise((r) =>
   typeof requestAnimationFrame === "function" ? requestAnimationFrame(() => r())
                                               : setTimeout(r, 0));
 
+/* Dev-only test hooks (inert unless explicitly called; no effect on the app):
+   gate 1 exercises a real terminate -> sync fallback -> fresh-worker recovery. */
+if (typeof window !== "undefined") {
+  window.__NS_KILL_WORKER = () => {
+    if (!window.__NS_DEBUG_WORKER) return false;
+    _workerBroken = true;
+    if (_worker) { _worker.terminate(); _worker = null; }
+    for (const [, p] of _pending) p.reject(new Error("worker terminated"));
+    _pending.clear();
+    return true;
+  };
+  window.__NS_REVIVE_WORKER = () => {
+    if (!window.__NS_DEBUG_WORKER) return false;
+    _workerBroken = false;
+    return true;
+  };
+}
+
 /* The catalog is metadata only: reuse the boot copy (main.js::S.catalog) or the
    previous fetch - a date/site change must not re-download ~4 MB. */
 async function catalogFor(adv) {

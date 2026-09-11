@@ -30,6 +30,10 @@ ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "landing" / "changelog.json"
 
 CURATED = {
+    # 0.6.19 moves the desktop planning compute into a worker: no behavior
+    # change, but date/site changes stay responsive and pref changes rescore
+    # off-thread; fallbacks (sync client -> server) unchanged.
+    "0.6.19": "Faster planning. The desktop app now calculates its night planning off the main thread: changing the date or site keeps the window responsive while a busy indicator works, rapid date/site or preference changes cancel the superseded calculation instead of blocking, and preference changes (minimum altitude, Bortle class, moon-aware ranking, filters) update almost instantly. Every displayed number is unchanged. If the background calculation cannot start or stops, the app falls back automatically to the previous in-app calculation and then to the local server, so planning never stops working. Two polish items are planned for a follow-up: chunking the list rendering on very slow machines and a memory hardening for very long sessions with the full 12,000-object catalog.",
     # 0.6.18 is the authority flip: the desktop plans entirely with the shared
     # core (client-side tracks + scoring), the server payload stays as the
     # runtime fallback. One flagged feature, no interface change.
