@@ -9,8 +9,8 @@
  * All sky math runs client-side (astro.js, Meeus algorithms).
  */
 import * as E from './astro.js?v=9';
-import * as Hor from './horizon.js?v=39';
-import * as WS from './webstore.js?v=18';
+import * as Hor from './horizon.js?v=40';
+import * as WS from './webstore.js?v=19';
 import { initDragWindows } from './dragwin.js?v=1';
 import { fmtSize, sizeArcmin, framePct, magVisible, skyClampZoom,
          skyViewMatrix, skyScreenToBase, skyClampFocus } from './format.js?v=16';
@@ -1847,8 +1847,12 @@ async function reloadRigs() {
   if (rsSel) {
     rsSel.innerHTML = '<option value="">None — no frame coverage shown</option>' +
       rigs.map((r) => `<option value="${esc(r.id)}">${esc(r.name)}</option>`).join('');
+    // keep the active choice when the rig still exists; a deleted rig falls
+    // back to "none". (refreshMenuUI is local to boot(), so this must not call it.)
+    const want = Hor.getPrefs().activeRigId || '';
+    rsSel.value = rigs.some((r) => r.id === want) ? want : '';
+    if (!rsSel.value && want) Hor.setPrefs({ activeRigId: '' });
   }
-  refreshMenuUI(); // re-sync select values now that the rig options exist
 }
 
 async function renderSettings() {

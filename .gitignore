@@ -35,3 +35,6 @@ theme-preview/
 .dsh-vision-toolkit/
 dist/release/
 logs/
+# browser-gate failure artifacts (screenshots + DOM dumps): regenerable, and a
+# failing run must not leave repo noise behind.
+tests/browser/artifacts/

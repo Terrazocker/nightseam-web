@@ -46,7 +46,8 @@ Image Catalog (FITS ingest + library). `README.md` has the feature list.
   was generated from the same implementation lineage (the retired oracle), so
   it catches drift but NOT a shared misreading of a formula (the old X-axis
   precession bug survived three engines that way). The CORRECTNESS AUTHORITY is
-  `tests/js/reference_anchors.mjs` + `tests/test_reference_anchors.py`:
+  `tests/js/reference_anchors.mjs` + `tests/test_reference_anchors.py` (19
+  checks):
   published IAU 2006/Capitaine precession (forward + inverse), Meeus ch.7/12/21
   textbook values, the published 2026-08-12/28 moon phases, an astropy/ERFA
   lunar position and the Bennett refraction formula - asserted absolutely, with
@@ -246,17 +247,22 @@ Image Catalog (FITS ingest + library). `README.md` has the feature list.
   (opaque passthrough) and `view_full_day` in the desktop settings table, so
   both round-trip through backup (`web_backup.mjs`, `tests/test_backup.py`).
 
-**Async**
+**Async / the worker path**
 - After every `await` in `static/js/night.js`, re-check `ctl === _nightCtl`
   before touching state, UI or the busy chip. A superseded night load stays
   silent (`tests/js/night_race.mjs`).
-- **Phase C:** the loader is core-only, so `night_race.mjs` drives the real
-  `planning_client.js` sync path (a stub fetch holds `/api/sites` so a
-  superseded load can finish late), and a client failure surfaces as a toast -
-  there is no server fallback anymore. The worker dev hooks
-  (`window.__NS_DEBUG_WORKER` gating `__NS_KILL_WORKER`/`__NS_REVIVE_WORKER`)
-  are KEPT: inert unless explicitly set in devtools, they back the
-  worker-recovery coverage.
+- The desktop night builder is worker-first: `planning_client.js` sends the
+  grid to `planning_worker.js`, binds flat tracks in 8 ms frames, and keeps
+  SEPARATE generation counters for a night load and for prefs so a prefs flush
+  can never cancel a night (and vice versa); `flushQueuedPrefs()` runs before
+  render so a queued min-alt/Bortle change is applied to the loaded plan.
+- Any worker failure falls back to the in-thread `syncBuildClientNight`
+  (cache-keyed). There is NO server planning fallback since Phase C:
+  `/api/night` and `/api/object/{oid}` answer 404 and a client failure is a
+  toast. The worker dev hooks `window.__NS_DEBUG_WORKER` gating
+  `__NS_KILL_WORKER`/`__NS_REVIVE_WORKER` are KEPT: inert unless explicitly set
+  in devtools, they back the worker-recovery coverage and the
+  `desktop-worker-kill-sync-fallback` browser check.
 
 **Release integrity** (see also "Versioning and release")
 - `scripts/check_release.py` must pass before staging; `build.ps1` refuses a
@@ -323,7 +329,7 @@ Image Catalog (FITS ingest + library). `README.md` has the feature list.
     `Get-CimInstance Win32_Process`).
   - If 8407 is briefly taken at boot, `free_port()` silently picks a RANDOM port
     (written to `instance.json`).
-- Tests: `python -m pytest tests/` (410). Single test:
+- Tests: `python -m pytest tests/` (436). Single test:
   `python -m pytest tests/test_js_parity.py -k name`. API tests use
   `create_app(db, prefetch=False)` (no image-cache thread). The `client` fixture
   must leave `data/panos` in the tmp dir it patches in.
@@ -331,7 +337,7 @@ Image Catalog (FITS ingest + library). `README.md` has the feature list.
     `pytest.ini`) can acquire an owner-SID-only DACL, so every `tmp_path` test
     errors at fixture cleanup - an environment artifact, not a failure. Workaround
     (no escalation needed): `python -m pytest tests/ -q --basetemp
-    C:\Users\<user>\AppData\Local\Temp\opencode\pt -p no:cacheprovider` -> 410/410.
+    C:\Users\<user>\AppData\Local\Temp\opencode\pt -p no:cacheprovider` -> 436/436.
 - JS checks (run after touching `static/` OR `web/`): `python scripts/check_js.py`
   runs all of them and exits non-zero on hard failures:
   - `check_js_imports.py` - broken relative ES-module imports / missing named exports
@@ -343,6 +349,16 @@ Image Catalog (FITS ingest + library). `README.md` has the feature list.
   - `check_core.py` - baked core drift, stub/token pairing and the core purity +
     moved-concept guards (see "Shared core" invariant)
   - `check_js_defs.py` - heuristic, always exits 0
+- **Browser gate (real engine; run after touching `static/`, `web/` or any shell
+  contract):** `python scripts/check_browser.py --all` runs `tests/browser/`
+  through Playwright + system Chrome - `--web` (static `web/`, no exe) or
+  `--desktop` (the packed `dist/NightSeam.exe`, copied into a temp dir so the
+  user's data is never touched). A browser that cannot launch is a HARD failure
+  (exit 2), never a skip - same rule as a missing node. It is part of the
+  release checklist: run it on the STAGED build before upload
+  (`--prod-url https://nightseam.de/astro/` adds a read-only production smoke).
+  Deterministic: UTC, pinned clock, empty storage per check; `-p no` pytest
+  never collects it (`*_suite.py`, functions take a `ctx`).
 - Build exe: `powershell -ExecutionPolicy Bypass -File build.ps1` ->
   `dist\NightSeam.exe` (isolated `.venv-build`; kills running NightSeam first).
   `build.ps1` drives PyInstaller via CLI flags (the committed `NightSeam.spec` is
@@ -388,15 +404,35 @@ Image Catalog (FITS ingest + library). `README.md` has the feature list.
   restricted token). This repo's LOCAL config sets `maintenance.auto=false` +
   `gc.auto=0` to stop it (invisible to `git status`, costs no release window).
   Never run `git gc` from the sandboxed shell.
-- **No browser here.** Headless Chrome/Edge have returned exit 0 with ZERO bytes
-  even escalated - do not burn turns on it. Verify UI work without a browser:
-  `node --check` on a `.mjs` copy for syntax; stack-walk a JS-built template with
-  `html.parser` (blank `${...}` first) for structure; the DEPLOYED app via FTP
+- **Browser automation works here now (the old "no browser" note was stale).**
+  Playwright drives system Chrome / Edge / bundled Chromium - that is how
+  `scripts/check_browser.py` runs the `web/` and packed-exe checks. Raw headless
+  Chrome/Edge without Playwright could still return exit 0 with zero bytes, so
+  prefer the gate. For a manual look, the DEPLOYED app is verified via FTP
   download + `Get-FileHash` against the local file, plus an HTTP fetch of
-  `/astro/version.json` and `/astro/index.html`. If CDP is available, Chrome needs
-  `--remote-allow-origins=*`, `Network.setCacheDisabled` + a `?v=` query, an
-  absolute `--user-data-dir` inside the workspace, and `S` (state.js) is not
+  `/astro/version.json` and `/astro/index.html`. If driving CDP by hand: Chrome
+  needs `--remote-allow-origins=*`, `Network.setCacheDisabled` + a `?v=` query,
+  an absolute `--user-data-dir` inside the workspace, and `S` (state.js) is not
   global - probe the DOM/API.
+
+## Code review record and status
+
+- `CODE-REVIEW-0.6.20.md` (tracked) - the 0.6.20 review; Batch 1 (0.6.21) and
+  Batch 2 (0.6.22) shipped every USER-REACHABLE finding with a
+  failing-before/passing-after pin; `BATCH3-REPORT.md` records Batch 3
+  (Python + web hardening shipped; the rule/table lists every item).
+- **The program is closed for user-reachable findings.** A bounded carry-over
+  of non-reachable hardening/tooling/test-quality items remains (consume it in
+  the next review pass): `CR2` malformed-horizon guards (all shipped producers
+  normalize before preview), `CR3` FOV-edge half-bin (changes a
+  rendering/scoring boundary = user-visible, needs its own release decision),
+  `DS4` worker/sync `max_alt` (one-sample/0.05 deg near ties, cosmetic), `DS5`
+  worker revive (sync fallback always planned), `TL3` catalog committed-change
+  check, `TL4` `--specpath` + PyInstaller pin, `TL5` stale `web/version.json`
+  hard error, `TS4` untested exports, `TS7` fixture `has()` gating, `E15`
+  per-module token discipline, `PY6` TLS-redirect hardening (same trust
+  boundary, image bytes only), `WB7` bundle-version check (forward-compat
+  choice). Baked-core retention is documented in "Versioning and release".
 
 ## Versioning and release
 
@@ -416,7 +452,9 @@ Image Catalog (FITS ingest + library). `README.md` has the feature list.
      exactly at the tag and the tree is clean** (both call `git describe
      --dirty`, so any uncommitted change leaks into the exe/zip/`version.json`).
   5. `scripts/check_release.py` must exit 0 with 0 errors.
-  6. browser smoke gate (see the sandbox notes), then upload.
+  6. browser gate on the STAGED build: `python scripts/check_browser.py --all`
+     (add `--prod-url https://nightseam.de/astro/` once the code is live); then
+     upload the changed `web/` tree LAST (index.html very last).
   7. `scripts/build_changelog.py` regenerates the TRACKED `landing/changelog.json`;
      commit that as its own follow-up commit after the tag (**never move the tag**).
   `check_release.py` verifies the staged zip sha256/size vs `version.json`, the
@@ -442,10 +480,19 @@ Image Catalog (FITS ingest + library). `README.md` has the feature list.
   `scripts/check_catalog_token.py`, wired into `scripts/check_js.py`, and pinned
   by `tests/test_cache_tokens.py` (mutation-tested). Do NOT add
   `{cache:'no-store'}` - the file must stay cacheable.
-  Current: `app.js?v=58` (index.html) / `CATALOG_TOKEN = '2'`, `astro.js?v=9`,
-  `horizon.js?v=39`, `format.js?v=16`, `nightrank.js?v=6`, `webstore.js?v=18`,
-  `dragwin.js?v=1`, `style.css?v=16`, `themes.css?v=4`; the core stub is
-  `web/core.js?v=16` (bump = re-bake, enforced by `scripts/check_core.py`).
+  Current (post-Batch-3): `app.js?v=59` (index.html) / `CATALOG_TOKEN = '2'`,
+  `astro.js?v=9`, `horizon.js?v=40`, `format.js?v=16`, `nightrank.js?v=6`,
+  `webstore.js?v=19`, `dragwin.js?v=1`, `style.css?v=16`, `themes.css?v=4`; the
+  core stub is `web/core.js?v=16` (bump = re-bake, enforced by
+  `scripts/check_core.py`). Batch 3 changed `app.js` (rig refresh + reloadRigs
+  fix), `horizon.js` (cross-tab guard, import id/stroke bounds) and `webstore.js`
+  (blocked IndexedDB upgrade) => 59/40/19. Those bytes are UNRELEASED; the live
+  web is 0.6.22.
+- **Baked-core retention policy:** keep the CURRENT content-hashed dir plus the
+  immediately previous one (N-1) so a visitor holding a cached old `core.js`
+  stub still resolves its tree; remove anything older at the next re-bake.
+  `check_core.py` only requires the current dir. The deployed `/astro` tree
+  must match.
 - **Never publish `index.html` before the modules it names.** Deploys are not
   atomic and the page carries the tokens; `ftps_deploy.py::upload_order()` sorts
   HTML last (`index.html` very last), pinned by `tests/test_deploy_order.py`. Keep
@@ -456,6 +503,15 @@ Image Catalog (FITS ingest + library). `README.md` has the feature list.
 
 ## Architecture
 
+- **One JS core (Phases 1-2): `core/` is the single implementation of the
+  shared domain logic.** Both shells import the baked, content-hashed tree
+  (`web/core/<hash>/`, `static/js/core/<hash>/`) through the `core.js` stubs;
+  Python is storage/platform/IO only. `scripts/check_core.py` (wired into
+  `check_js.py` and `check_release.py`) is the guard: drift, stale hash dirs,
+  stub/token mismatch, impure identifiers in `core/`, retired Python modules,
+  and moved astronomy/planning math re-implemented in `app/` or `scripts/`.
+  Never edit the baked trees or stubs by hand - edit `core/` and re-run
+  `scripts/build_core.py`.
 - `main.py` - entrypoint: uvicorn in a daemon thread, UI in a pywebview window
   (browser app-mode fallback). Single-instance handoff via `data/instance.json`;
   a `JsApi` class exposes a native folder picker to `window.pywebview.api`.

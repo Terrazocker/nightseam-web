@@ -1,0 +1,449 @@
+"""Shared plumbing for the real-browser release gate (tests/browser/*).
+
+Two targets, both driven by Playwright against a REAL browser engine (a
+browser that cannot launch is a HARD failure, exactly like a missing node in
+`tests/js/*` - never a silent skip):
+
+  web      a static HTTP server over `web/`, opened in system Chrome
+  desktop  the PACKED `dist/NightSeam.exe`, copied into a throwaway temp dir
+           so its `data/` never touches the user's install, then driven over
+           the local FastAPI server it starts (`--no-browser`)
+
+Every check gets a fresh, deterministic context: UTC timezone, en-US locale,
+dark scheme, fixed viewport, a pinned fake clock, and empty storage.  Checks
+assert something a user can see; implementation details are only used to reach
+a state.
+
+This is NOT a pytest suite (pytest only collects `test_*.py` / `*_test.py`;
+the modules here are named `*_suite.py` and take a `ctx`, not fixtures), so
+`python -m pytest tests/` never touches it.  `scripts/check_browser.py` is the
+runner.  Only stdlib + playwright are imported.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import http.server
+import json
+import os
+import shutil
+import socket
+import subprocess
+import sys
+import tempfile
+import threading
+import time
+import traceback
+import urllib.request
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from functools import partial
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[2]
+WEB_DIR = ROOT / "web"
+DEFAULT_EXE = ROOT / "dist" / "NightSeam.exe"
+ARTIFACTS = ROOT / "tests" / "browser" / "artifacts"
+
+# Pinned wall clock: a real, non-degenerate late-summer night.  Passed as an
+# ISO string on purpose - Playwright's numeric `clock.install(time=...)` is
+# interpreted as SECONDS in the Python binding (a 1000x skew), the string is not.
+PINNED_ISO = "2026-08-12T22:00:00Z"
+PINNED_DATE = "2026-08-12"
+TZ = "UTC"
+VIEWPORT = (1366, 900)
+
+_CREATE_NO_WINDOW = 0x08000000 if os.name == "nt" else 0
+
+
+# ---------------------------------------------------------------- registry
+
+_TESTS: list[tuple[str, str, object]] = []
+
+
+def check(name: str, target: str):
+    """Register a browser check under `name` for `target` ("web"/"desktop")."""
+    if target not in ("web", "desktop"):
+        raise ValueError(target)
+
+    def deco(fn):
+        _TESTS.append((name, target, fn))
+        return fn
+
+    return deco
+
+
+def all_checks():
+    return list(_TESTS)
+
+
+# ---------------------------------------------------------------- helpers
+
+
+def free_port() -> int:
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
+
+
+def _http(url: str, method: str = "GET", body: dict | None = None,
+          timeout: float = 10.0):
+    data = json.dumps(body).encode() if body is not None else None
+    req = urllib.request.Request(url, data=data, method=method)
+    if data is not None:
+        req.add_header("Content-Type", "application/json")
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        raw = r.read()
+    return json.loads(raw) if raw else None
+
+
+class StaticServer:
+    """Threading HTTP server over a directory (no cache-busting rewritten)."""
+
+    def __init__(self, directory: Path):
+        handler = partial(_QuietHandler, directory=str(directory))
+        self.httpd = http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler)
+        self.port = self.httpd.server_address[1]
+        self._thread = threading.Thread(target=self.httpd.serve_forever, daemon=True)
+
+    def start(self) -> str:
+        self._thread.start()
+        return f"http://127.0.0.1:{self.port}/"
+
+    def stop(self):
+        self.httpd.shutdown()
+        self.httpd.server_close()
+
+
+class _QuietHandler(http.server.SimpleHTTPRequestHandler):
+    def log_message(self, *args):  # keep the gate output readable
+        pass
+
+
+class DesktopServer:
+    """The packed exe, isolated in a temp dir (never the user's data)."""
+
+    def __init__(self, exe: Path = DEFAULT_EXE, seed: bool = True):
+        self.exe = Path(exe)
+        self.seed = seed
+        self.tmp: Path | None = None
+        self.proc: subprocess.Popen | None = None
+        self.port = 0
+        self.base = ""
+
+    def start(self, timeout: float = 45.0) -> str:
+        if not self.exe.is_file():
+            raise RuntimeError(f"packed exe not found: {self.exe}")
+        self.tmp = Path(tempfile.mkdtemp(prefix="ns-browser-"))
+        exe = self.tmp / "NightSeam.exe"
+        shutil.copy2(self.exe, exe)
+        self.port = free_port()
+        self.proc = subprocess.Popen(
+            [str(exe), "--no-browser", "--port", str(self.port),
+             "--idle-exit-hours", "0"],
+            cwd=str(self.tmp), stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL, creationflags=_CREATE_NO_WINDOW)
+        self.base = f"http://127.0.0.1:{self.port}/"
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            if self.proc.poll() is not None:
+                raise RuntimeError(
+                    f"packed exe exited early (code {self.proc.returncode})")
+            try:
+                _http(self.base + "api/state", timeout=2.0)
+                break
+            except Exception:
+                time.sleep(0.3)
+        else:
+            raise RuntimeError("packed exe never answered /api/state")
+        if self.seed:
+            _http(self.base + "api/sites", "POST",
+                  {"name": "Gate Site", "lat": 52.52, "lon": 13.4, "elev": 34})
+            _http(self.base + "api/settings", "POST", {"wizard_done": True})
+        return self.base
+
+    def api(self, path: str, method: str = "GET", body: dict | None = None):
+        return _http(self.base + path.lstrip("/"), method, body)
+
+    def stop(self):
+        if self.proc is not None and self.proc.poll() is None:
+            self.proc.terminate()
+            try:
+                self.proc.wait(timeout=8)
+            except subprocess.TimeoutExpired:
+                self.proc.kill()
+        if self.tmp is not None:
+            shutil.rmtree(self.tmp, ignore_errors=True)
+
+
+# ---------------------------------------------------------------- context
+
+class Ctx:
+    """Per-check browser context + the assertions a check may make."""
+
+    def __init__(self, page, base: str, target: str, artifacts: Path):
+        self.page = page
+        self.base = base
+        self.target = target
+        self.artifacts = artifacts
+        self.console_errors: list[str] = []
+        self.page_errors: list[str] = []
+        self.bad_responses: list[str] = []
+        self._allow_console = False
+        self._allow_responses = False
+
+    # same-origin URL used to decide which responses belong to the app under
+    # test (external CDNs/images are not the gate's business).
+    @property
+    def origin(self) -> str:
+        return "/".join(self.base.split("/")[:3])
+
+    def goto(self, path: str = "/"):
+        self.page.goto(self.base.rstrip("/") + path,
+                       wait_until="domcontentloaded")
+
+    def url(self, path: str = "/") -> str:
+        return self.base.rstrip("/") + path
+
+    def expect(self, cond, msg: str):
+        if not cond:
+            raise AssertionError(msg)
+
+    def expect_eq(self, got, want, msg: str = ""):
+        if got != want:
+            raise AssertionError(f"{msg}: got {got!r}, want {want!r}")
+
+    def expect_in(self, needle, haystack, msg: str = ""):
+        if needle not in (haystack or ""):
+            raise AssertionError(
+                f"{msg}: {needle!r} not in {(haystack or '')[:300]!r}")
+
+    def allow_console_errors(self, reason: str):
+        self._allow_console = True
+
+    def allow_failed_responses(self, reason: str):
+        self._allow_responses = True
+
+    def assert_clean(self):
+        """Every check that does not deliberately break something ends here:
+        no console errors, no uncaught exceptions, no same-origin 4xx/5xx."""
+        if self.page_errors and not self._allow_console:
+            raise AssertionError("uncaught page errors: " + "; ".join(self.page_errors[:5]))
+        if self.console_errors and not self._allow_console:
+            raise AssertionError("console errors: " + "; ".join(self.console_errors[:5]))
+        if self.bad_responses and not self._allow_responses:
+            raise AssertionError("failed same-origin responses: "
+                                 + "; ".join(self.bad_responses[:5]))
+
+    # -- waiting helpers
+
+    def wait_hidden(self, selector: str, timeout: float = 45000.0):
+        self.page.wait_for_function(
+            """(sel) => { const e = document.querySelector(sel);
+                 return !e || e.classList.contains('hidden')
+                        || getComputedStyle(e).display === 'none'
+                        || getComputedStyle(e).visibility === 'hidden'; }""",
+            arg=selector, timeout=timeout)
+
+    def wait_visible(self, selector: str, timeout: float = 45000.0):
+        self.page.wait_for_selector(selector, state="visible", timeout=timeout)
+
+    def wait_app(self, ready_selector: str, timeout: float = 60000.0):
+        self.page.wait_for_selector("#view", timeout=timeout)
+        self.page.wait_for_selector(ready_selector, timeout=timeout)
+        try:
+            self.wait_hidden("#busy", timeout=20000)
+        except Exception:
+            pass
+
+
+# ---------------------------------------------------------------- runner
+
+@dataclass
+class Result:
+    name: str
+    target: str
+    ok: bool
+    error: str = ""
+    duration: float = 0.0
+
+
+def _install_stubs(page):
+    """The gate is offline + deterministic: stub the one external file the web
+    app fetches at boot (The popularity source popularity; popularity-source.invalid sends no CORS
+    header, so a live fetch is a console error even when the app catches it).
+    The baked catalog popularity still applies."""
+    def handler(route):
+        try:
+            route.fulfill(status=200, content_type="application/json", body="{}")
+        except Exception:
+            pass
+    page.route("https://popularity-source.invalid/", handler)
+
+
+def _new_context(browser, dpr: int = 1):
+    ctx = browser.new_context(
+        timezone_id=TZ, locale="en-US",
+        viewport={"width": VIEWPORT[0], "height": VIEWPORT[1]},
+        color_scheme="dark", device_scale_factor=dpr,
+        reduced_motion="reduce",
+    )
+    page = ctx.new_page()
+    try:
+        page.clock.install(time=PINNED_ISO)
+        page.clock.resume()
+    except Exception:
+        pass  # clock API unavailable: tests set dates explicitly anyway
+    _install_stubs(page)
+    return ctx, page
+
+
+def _attach(ctx: Ctx):
+    def on_console(msg):
+        if msg.type == "error":
+            ctx.console_errors.append(msg.text[:300])
+    def on_pageerror(err):
+        ctx.page_errors.append(str(err)[:300])
+    def on_response(resp):
+        try:
+            if resp.status >= 400 and resp.url.startswith(ctx.origin):
+                if resp.url.endswith("favicon.ico"):
+                    return
+                ctx.bad_responses.append(f"{resp.status} {resp.url}")
+        except Exception:
+            pass
+    ctx.page.on("console", on_console)
+    ctx.page.on("pageerror", on_pageerror)
+    ctx.page.on("response", on_response)
+
+
+def run(channel: str = "chrome", targets=("web", "desktop"),
+        exe: Path = DEFAULT_EXE, only: str | None = None,
+        headed: bool = False, prod_url: str | None = None,
+        artifacts: Path = ARTIFACTS, verbose: bool = True) -> int:
+    """Run the registered checks. Returns 0 (pass), 1 (failures) or 2 (the
+    infrastructure could not start - browser, server or packed exe)."""
+    from playwright.sync_api import sync_playwright
+
+    selected = [(n, t, f) for (n, t, f) in all_checks()
+                if t in targets and (not only or only in n)]
+    if not selected and not prod_url:
+        print("check_browser: no checks selected")
+        return 0
+
+    artifacts.mkdir(parents=True, exist_ok=True)
+    web_srv = desktop_srv = None
+    bases: dict[str, str] = {}
+    try:
+        if "web" in targets:
+            web_srv = StaticServer(WEB_DIR)
+            bases["web"] = web_srv.start()
+        if "desktop" in targets:
+            desktop_srv = DesktopServer(exe)
+            bases["desktop"] = desktop_srv.start()
+    except Exception as exc:
+        print(f"check_browser FATAL: could not start a target: {exc}")
+        if web_srv:
+            web_srv.stop()
+        if desktop_srv:
+            desktop_srv.stop()
+        return 2
+
+    results: list[Result] = []
+    try:
+        with sync_playwright() as p:
+            try:
+                browser = p.chromium.launch(channel=channel, headless=not headed)
+            except Exception as exc:
+                print(f"check_browser FATAL: browser '{channel}' could not "
+                      f"launch ({exc}). Install it or pass --channel.")
+                return 2
+            for name, target, fn in selected:
+                ctx_b, page = _new_context(browser)
+                c = Ctx(page, bases[target], target, artifacts)
+                _attach(c)
+                t0 = time.time()
+                ok, err = True, ""
+                try:
+                    fn(c)
+                except Exception as exc:
+                    ok, err = False, f"{type(exc).__name__}: {exc}"
+                try:
+                    c.assert_clean()
+                except Exception as exc:
+                    ok = False
+                    err = (err + " | " if err else "") + str(exc)
+                if not ok:
+                    _dump_failure(c, name, err)
+                try:
+                    ctx_b.close()
+                except Exception:
+                    pass
+                dt = time.time() - t0
+                results.append(Result(name, target, ok, err, dt))
+                if verbose:
+                    mark = "PASS" if ok else "FAIL"
+                    print(f"  [{mark}] {target:7s} {name} ({dt:.1f}s)")
+                    if not ok:
+                        print(f"         {err[:400]}")
+            if prod_url:
+                results.append(_prod_smoke(browser, prod_url, artifacts, verbose))
+            browser.close()
+    finally:
+        if web_srv:
+            web_srv.stop()
+        if desktop_srv:
+            desktop_srv.stop()
+
+    failed = [r for r in results if not r.ok]
+    print(f"check_browser: {len(results) - len(failed)}/{len(results)} passed")
+    return 1 if failed else 0
+
+
+def _prod_smoke(browser, prod_url: str, artifacts: Path, verbose: bool) -> Result:
+    """Read-only production smoke (/astro): the page loads, shows a version
+    and has no console errors. Never mutates anything."""
+    ctx_b, page = _new_context(browser)
+    c = Ctx(page, prod_url, "web-prod", artifacts)
+    _attach(c)
+    t0 = time.time()
+    ok, err = True, ""
+    try:
+        c.goto("/")
+        page.wait_for_selector("#foot-ver", timeout=45000)
+        page.wait_for_function(
+            """() => { const v = document.querySelector('#foot-ver');
+                 const t = (v && v.textContent || '').trim();
+                 return t && t !== '\\u2026'; }""", timeout=45000)
+        c.assert_clean()
+    except Exception as exc:
+        ok, err = False, f"{type(exc).__name__}: {exc}"
+        _dump_failure(c, "web-prod-smoke", err)
+    finally:
+        try:
+            ctx_b.close()
+        except Exception:
+            pass
+    dt = time.time() - t0
+    if verbose:
+        print(f"  [{'PASS' if ok else 'FAIL'}] web-prod production smoke ({dt:.1f}s)")
+        if not ok:
+            print(f"         {err[:400]}")
+    return Result("production-smoke", "web-prod", ok, err, dt)
+
+
+def _dump_failure(c: Ctx, name: str, err: str):
+    safe = "".join(ch if ch.isalnum() or ch in "-_" else "_" for ch in name)
+    try:
+        c.page.screenshot(path=str(c.artifacts / f"{safe}.png"), full_page=True)
+    except Exception:
+        pass
+    try:
+        (c.artifacts / f"{safe}.json").write_text(json.dumps({
+            "name": name, "target": c.target, "url": c.page.url,
+            "error": err, "console_errors": c.console_errors,
+            "page_errors": c.page_errors, "bad_responses": c.bad_responses,
+            "dom": (c.page.content() or "")[:4000],
+        }, indent=1), encoding="utf-8")
+    except Exception:
+        pass
