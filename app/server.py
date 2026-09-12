@@ -24,7 +24,6 @@ from .database import Database, new_id
 from .fits import parse_dec_deg, parse_ra_hours
 from .imglib import name_key
 from .ingest import ingest_one, obj_slug, reindex_library, rename_archive_folder
-from .nightcalc import PROFILE_BINS, compute_night, object_detail
 from .paths import TOKEN_RE, data_dir, safe_join, safe_token, static_dir
 from .rig_presets import presets_payload as rig_presets_payload
 from .rig_presets import remove_seeded_once as unseed_rig_presets
@@ -51,6 +50,10 @@ _MAX_REQUEST_BYTES = {
 }
 
 _state = {"last_request": time.time(), "shutdown": False}
+
+# Panorama obstruction arrays are exactly 720 numbers (0.5-degree world-azimuth
+# bins). This is a STORAGE format constant (core/horizon.js owns the math now).
+PROFILE_BINS = 720
 
 
 def _same_origin_request(request) -> bool:
@@ -462,77 +465,12 @@ def create_app(db: Database, *, prefetch: bool = True) -> FastAPI:
         db.delete_rig(rid)
         return {"ok": True}
 
-    # ---------------- catalog + night ----------------
+    # ---------------- catalog + images (IO) ----------------
 
     @app.get("/api/catalog")
     def api_catalog(adv: bool = False):
         return [{k: v for k, v in o.items() if k != "_adv"}
                 for o in db.all_objects(advanced=adv)]
-
-    @app.get("/api/night")
-    def api_night(date: str, tz_offset_min: int, site: Optional[int] = None,
-                  pano: Optional[str] = None, adv: bool = False):
-        site_row = None
-        if site is not None:
-            site_row = next((s for s in db.sites() if s["id"] == site), None)
-        if site_row is None:
-            aid = db.setting("active_site_id")
-            site_row = next((s for s in db.sites() if s["id"] == aid), None)
-        if site_row is None:
-            raise HTTPException(400, "No observing location configured")
-
-        pano_row = None
-        if pano:
-            pano_row = db.get_panorama(pano)
-        else:
-            pano_row = db.active_panorama()
-        profile = pano_row["profile"] if pano_row else []
-        # sky mode: the painted band top is a ceiling ONLY with block_above; by
-        # default everything above the band is free sky (open above)
-        profile_top = ((pano_row.get("profile_top") or [])
-                       if (pano_row and pano_row.get("block_above")) else [])
-
-        try:
-            result = compute_night(db, site_row["lat"], site_row["lon"],
-                                   site_row["elev"], date, tz_offset_min,
-                                   profile, profile_top=profile_top,
-                                   advanced=adv)
-        except Exception as exc:  # noqa: BLE001
-            raise HTTPException(500, f"Computation failed: {exc}") from exc
-        return JSONResponse(result)
-
-    @app.get("/api/object/{oid}")
-    def api_object_detail(oid: str, date: str, tz_offset_min: int,
-                          site: Optional[int] = None, pano: Optional[str] = None,
-                          minalt: Optional[float] = None):
-        site_row = None
-        all_sites = db.sites()
-        if site is not None:
-            site_row = next((s for s in all_sites if s["id"] == site), None)
-        if site_row is None:
-            aid = db.setting("active_site_id")
-            site_row = next((s for s in all_sites if s["id"] == aid), None)
-        if site_row is None:
-            raise HTTPException(400, "No observing location configured")
-
-        pano_row = db.get_panorama(pano) if pano else db.active_panorama()
-        profile = pano_row["profile"] if pano_row else []
-        # see api_night: profile_top only caps the sky when block_above is set
-        profile_top = ((pano_row.get("profile_top") or [])
-                       if (pano_row and pano_row.get("block_above")) else [])
-        minalt_eff = float(minalt if minalt is not None
-                           else _effective_min_alt(db))
-
-        try:
-            result = object_detail(db, oid, date, tz_offset_min,
-                                   site_row["lat"], site_row["lon"],
-                                   profile, minalt_eff,
-                                   profile_top=profile_top)
-        except Exception as exc:  # noqa: BLE001 - mirror api_night
-            raise HTTPException(500, f"Computation failed: {exc}") from exc
-        if result is None:
-            raise HTTPException(404, "Object not found")
-        return JSONResponse(result)
 
     @app.get("/api/object/{oid}/image")
     def api_object_image(oid: str, thumb: bool = False):

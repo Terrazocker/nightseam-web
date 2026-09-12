@@ -112,196 +112,23 @@ def test_rigs_crud_and_fov(client):
     assert r.status_code == 400
 
 
-# ------------------------------------------------------------------ night / detail
+# ---------------------------------------------------- planning lives in core/
+# Phase C removed the server planning routes (/api/night, /api/object/{oid}):
+# the desktop and the web both compute from core/ client-side. The payload
+# contracts are pinned by tests/js/night_race.mjs, tests/js/core_fixtures.mjs
+# and the derive engines - plus the frozen fixtures under tests/fixtures/.
 
-def test_night_requires_site(client):
-    r = client.get("/api/night", params={"date": _DATE, "tz_offset_min": _TZ})
-    assert r.status_code == 400
 
-
-def test_night_tracks(client):
+def test_removed_planning_routes_answer_404(client):
+    """A stale client must fail loudly, not reach a half-alive compute route."""
     add_site(client)
-    r = client.get("/api/night", params={"date": _DATE, "tz_offset_min": _TZ})
-    assert r.status_code == 200
-    night = r.json()
-    assert night["timeline"]["step_min"] == 6
-    assert len(night["sun_alt"]) == night["timeline"]["n"]
-    assert len(night["moon_az"]) == night["timeline"]["n"]
-    assert 0.0 <= night["moon_illum"] <= 1.0
-    # standard mode: 197 curated objects, all with full tracks
-    assert len(night["objects"]) == 197
-    for o in night["objects"]:
-        assert "alt" in o and "az" in o and "ceil" in o
-        assert len(o["alt"]) == night["timeline"]["n"]
-        assert o["max_alt"] <= 90.0
-
-
-def test_night_advanced_metadata_only(client, db):
-    add_site(client)
-    r = client.get("/api/night", params={"date": _DATE, "tz_offset_min": _TZ,
-                                         "adv": "1"})
-    assert r.status_code == 200
-    objs = r.json()["objects"]
-    assert len(objs) == 197 + db.advanced_count()
-    # standard objects keep full tracks; only the advanced rows ship metadata
-    plain, adv_objs = objs[:197], objs[197:]
-    assert all("alt" in o and "az" in o for o in plain)
-    assert all(o.get("adv") is True for o in adv_objs)
-    assert all("alt" not in o and "az" not in o for o in adv_objs)
-    # advanced metadata carries the popularity source popularity score
-    scored = [o for o in adv_objs if o.get("popularity")]
-    assert scored
-    assert all(isinstance(o["popularity"], int) for o in adv_objs)
-
-
-def test_night_tz_offset_shifts_local_window(client):
-    """The tz offset converts the local date to UTC: at a polar site with no
-    twilight (midnight sun) the 20:00/04:00 local fallback window must move
-    with the offset - the offset-at-date the client sends fixes DST drift."""
-    sid = add_site(client, name="Tromso", lat=69.6, lon=18.9)
-    p = {"date": "2026-06-21", "site": sid}
-    r1 = client.get("/api/night", params={**p, "tz_offset_min": 120}).json()
-    r2 = client.get("/api/night", params={**p, "tz_offset_min": 0}).json()
-    assert r1["twilight_level"] == "fallback"
-    assert r1["tz_offset_min"] == 120
-    from datetime import datetime
-    d1 = datetime.fromisoformat(r1["dusk"])
-    d2 = datetime.fromisoformat(r2["dusk"])
-    assert abs((d1 - d2).total_seconds()) == 120 * 60
-    assert d1.hour == 18 and d2.hour == 20
-
-
-def test_polar_day_compute_night_pins_the_fallback_window(db):
-    """The polar NULL-dusk path, pinned at the computation layer.
-
-    At 78 N in June the sun never reaches even the civil twilight level, so
-    app/planning.night_window() finds no crossing pair at all and substitutes
-    the documented 20:00 -> 04:00 local fallback. app/nightcalc.compute_night()
-    therefore ships NON-NULL dusk/dawn (not null - the `_iso(dusk) if dusk else
-    None` in its payload would render as "--:--" in both UIs) and must still
-    produce a usable planning payload: a real grid and object tracks on it.
-    """
-    from datetime import datetime as _dt
-
-    from app.nightcalc import compute_night
-    from app.planning import find_twilight, make_sun_alt_fn, night_window
-
-    # the condition the fallback exists for: no crossing at even the civil
-    # level anywhere in the 30 h scan (else this test would silently test
-    # nothing and a latitude/date change would go unnoticed)
-    win = night_window(2026, 6, 21, 120, 78.22, 15.63)
-    assert find_twilight(make_sun_alt_fn(78.22, 15.63), win["t_start"],
-                         win["t_end"], -6.0) == (None, None)
-
-    night = compute_night(db, 78.22, 15.63, 50, "2026-06-21", 120, [])
-    assert night["twilight_level"] == "fallback"
-    assert night["dusk"] is not None and night["dawn"] is not None
-    dusk = _dt.fromisoformat(night["dusk"])
-    dawn = _dt.fromisoformat(night["dawn"])
-    assert (dusk.hour, dusk.minute) == (18, 0)      # 20:00 at UTC+2
-    assert dawn > dusk and (dawn - dusk).total_seconds() > 6 * 3600
-    n = night["timeline"]["n"]
-    assert n > 0 and night["timeline"]["step_min"] == 6
-    assert len(night["sun_alt"]) == len(night["moon_alt"]) == n
-    assert night["objects"], "a polar night must still plan objects"
-    assert all(len(o["alt"]) == n for o in night["objects"])
-    # COPY 0.6.13: the payload grid is now the full 24 h site-zoned day
-    # (local noon -> next noon) at 6 min, in every latitude case - the fallback
-    # is the SCORING window (dusk..dawn), not a shorter grid. This is what makes
-    # the desktop "View full day" toggle real.
-    assert n == 24 * 60 / 6 + 1 == 241
-    from app.planning import local_utc  # noqa: PLC0415
-    t0 = _dt.fromisoformat(night["timeline"]["t0"])
-    tlast = _dt.fromisoformat(night["timeline"]["times_iso"][-1])
-    assert t0 == local_utc(2026, 6, 21, 120, 12)     # site-zoned local noon
-    assert (tlast - t0).total_seconds() == 24 * 3600
-
-
-def test_night_payload_grid_is_a_full_24h_site_zoned_day(db):
-    """COPY 0.6.13 (ITEM A): the /api/night grid is a true 24 h local-noon ->
-    next-noon window at the 6-min step, at every latitude - this is the range
-    the desktop "View full day" toggle maps to. The SCORING window is still the
-    twilight-level dusk..dawn, clipped client-side (derive.js::nightIndexRange),
-    and always lies inside this grid."""
-    from datetime import datetime as _dt
-
-    from app.nightcalc import compute_night
-    from app.planning import local_utc
-    for lat, lon, date, tz in ((52.52, 13.4, "2026-01-15", 60),
-                               (52.52, 13.4, "2026-06-21", 120),
-                               (-33.87, 151.21, "2026-01-15", 660),
-                               (78.22, 15.63, "2026-06-21", 120)):
-        night = compute_night(db, lat, lon, 0, date, tz, [])
-        tl = night["timeline"]
-        assert tl["n"] == 241 and tl["step_min"] == 6
-        y, m, d = (int(x) for x in date.split("-"))
-        t0 = _dt.fromisoformat(tl["t0"])
-        tN = _dt.fromisoformat(tl["times_iso"][-1])
-        assert t0 == local_utc(y, m, d, tz, 12)      # site-zoned local noon
-        assert (tN - t0).total_seconds() == 24 * 3600
-        dusk = _dt.fromisoformat(night["dusk"])
-        dawn = _dt.fromisoformat(night["dawn"])
-        assert t0 <= dusk <= tN and t0 <= dawn <= tN
-        assert len(night["sun_alt"]) == len(night["moon_alt"]) == tl["n"]
-        assert all(len(o["alt"]) == tl["n"] for o in night["objects"])
-
-
-def test_night_payload_size_and_compute_time_stay_bounded(db):
-    """Regression guard for the 24 h grid (ITEM A), STANDARD and ADVANCED
-    measured/bounded separately. Shipped measurements at 52 N on localhost:
-    standard ~0.95 MiB / ~0.23 s, advanced ~2.34 MiB / ~0.32 s. The size bounds
-    carry ~15-20%% headroom and the time bounds ~2.5-3x (shared CI can be slow);
-    a real regression (bigger grid, accidental O(n^2)) blows both."""
-    import json
-    import statistics
-    import time
-
-    from app.nightcalc import compute_night
-
-    def measure(adv):
-        times = []
-        night = None
-        for _ in range(3):
-            t0 = time.perf_counter()
-            night = compute_night(db, 52.52, 13.4, 0, "2026-01-15", 60,
-                                  [], None, adv)
-            times.append(time.perf_counter() - t0)
-        return night, len(json.dumps(night)), statistics.median(times)
-
-    std, std_size, std_dt = measure(False)
-    assert std["timeline"]["n"] == 241
-    assert not any(o.get("adv") for o in std["objects"]), \
-        "standard mode must ship tracks for the curated catalog only"
-    assert std_size < 1_150_000, f"standard payload grew to {std_size/1024:.0f} KiB"
-    assert std_dt < 0.6, f"standard compute_night took {std_dt:.2f}s"
-
-    adv, adv_size, adv_dt = measure(True)
-    assert adv["timeline"]["n"] == 241
-    assert any(o.get("adv") for o in adv["objects"]), \
-        "advanced mode must ship the metadata-only advanced catalog"
-    assert adv_size < 2_700_000, f"advanced payload grew to {adv_size/1024:.0f} KiB"
-    assert adv_dt < 1.0, f"advanced compute_night took {adv_dt:.2f}s"
-
-
-def test_object_detail(client):
-    add_site(client)
-    r = client.get("/api/object/m31",
-                   params={"date": _DATE, "tz_offset_min": _TZ})
-    assert r.status_code == 200
-    d = r.json()
-    assert d["meta"]["id"] == "m31"
-    assert d["meta"]["ra_hms"].startswith("00h 42m")
-    assert len(d["alt"]) == len(d["vis"]) == len(d["times_iso"])
-    assert d["max_alt"] == max(d["alt"])
-    assert d["min_useful_alt"] == 25.0
-    assert d["best"] is None or d["best"][1] > d["best"][0]
-
-
-def test_object_detail_unknown(client):
-    add_site(client)
-    r = client.get("/api/object/nope",
-                   params={"date": _DATE, "tz_offset_min": _TZ})
-    assert r.status_code == 404
+    assert client.get("/api/night", params={
+        "date": _DATE, "tz_offset_min": _TZ}).status_code == 404
+    assert client.get("/api/object/m31", params={
+        "date": _DATE, "tz_offset_min": _TZ}).status_code == 404
+    # the image IO route is NOT planning and stays
+    assert client.get("/api/object/m31/image", params={
+        "thumb": 1}).status_code == 200
 
 
 # ------------------------------------------------------------------ catalog / customs
@@ -890,26 +717,6 @@ def test_state_min_alt_explicit_flag(client):
     assert st["min_useful_alt"] == 30.0
 
 
-def test_object_detail_defaults_to_bortle_min_alt(client):
-    """E5: the detail endpoint's implicit min-alt default must be the same
-    17 + 2*bortle rule as /api/state (it used to fall back to a hard 25.0, so
-    a Bortle-7 site planned the detail view at 25 deg instead of 31)."""
-    add_site(client)
-    client.post("/api/settings", json={"bortle": 7})
-    d = client.get("/api/object/m31",
-                   params={"date": _DATE, "tz_offset_min": _TZ}).json()
-    assert d["min_useful_alt"] == 31.0
-    client.post("/api/settings", json={"bortle": 1})
-    d = client.get("/api/object/m31",
-                   params={"date": _DATE, "tz_offset_min": _TZ}).json()
-    assert d["min_useful_alt"] == 19.0
-    # an explicit min alt wins over the bortle default
-    client.post("/api/settings", json={"min_useful_alt": 30.0, "bortle": 7})
-    d = client.get("/api/object/m31",
-                   params={"date": _DATE, "tz_offset_min": _TZ}).json()
-    assert d["min_useful_alt"] == 30.0
-
-
 # ------------------------------------------------------------------ library export
 
 def test_library_export(client):
@@ -1003,7 +810,7 @@ def test_activating_a_panorama_deactivates_the_previous(client):
 
     `PUT /api/panorama/{pid}` with active=true used to leave earlier rows
     active; `active_panorama()` returns the newest of them, so `/api/state` and
-    `/api/night` could disagree about which horizon governs planning."""
+    the planning client could disagree about which horizon governs planning."""
     ids = [client.post("/api/panorama",
                        files={"file": (f"{n}.jpg", b"x", "image/jpeg")}).json()["id"]
            for n in ("pa", "pb")]
@@ -1021,68 +828,6 @@ def test_activating_a_panorama_deactivates_the_previous(client):
     finally:
         for i in ids:
             client.delete(f"/api/panorama/{i}")
-
-
-def test_night_ceil_top_band(client):
-    """Sky mode: the band top is a ceiling ONLY with block_above; by default
-    everything above the painted band is free (open above) and ships no
-    ceil_top tracks."""
-    r = client.post("/api/panorama",
-                    files={"file": ("band.jpg", b"fake jpeg", "image/jpeg")})
-    pid = r.json()["id"]
-    try:
-        # band open 20..45 deg over az 0..180, fully blocked elsewhere
-        profile, profile_top = [], []
-        for i in range(720):
-            az = i * 0.5
-            if az <= 180:
-                profile.append(20.0)
-                profile_top.append(45.0)
-            else:
-                profile.append(90.0)
-                profile_top.append(90.0)
-        assert client.put(f"/api/panorama/{pid}", json={
-            "paint_mode": "sky", "strokes": [],
-            "profile": profile, "profile_top": profile_top}).status_code == 200
-        # make it the active panorama
-        assert client.post("/api/settings",
-                           json={"active_pano_id": pid}).status_code == 200
-        add_site(client)
-        # DEFAULT (block_above off): open above -> no upper ceiling anywhere
-        night = client.get("/api/night",
-                           params={"date": _DATE, "tz_offset_min": _TZ}).json()
-        assert all("ceil_top" not in o for o in night["objects"])
-        d0 = client.get("/api/object/m31",
-                        params={"date": _DATE, "tz_offset_min": _TZ}).json()
-        assert "ceil_top" not in d0
-
-        # opt in: block above the band -> the painted top ships as ceil_top
-        assert client.put(f"/api/panorama/{pid}",
-                          json={"block_above": True}).status_code == 200
-        night = client.get("/api/night",
-                           params={"date": _DATE, "tz_offset_min": _TZ}).json()
-        for o in night["objects"][:5]:
-            assert len(o["ceil_top"]) == len(o["alt"])
-            # az 0..180 band: ceiling must be 45 there; blocked side is 90
-        m31 = next(o for o in night["objects"] if o["id"] == "m31")
-        assert 0.0 <= max(m31["ceil_top"]) <= 90.0
-
-        d = client.get("/api/object/m31",
-                       params={"date": _DATE, "tz_offset_min": _TZ}).json()
-        assert len(d["ceil_top"]) == len(d["alt"])
-        assert len(d["vis"]) == len(d["alt"])
-        # an object at 60 deg over the open band must be blocked (above 45)
-        assert any(v is False for v in d["vis"])  # upper ceiling restricts
-    finally:
-        client.delete(f"/api/panorama/{pid}")
-
-
-def test_night_no_ceil_top_without_band(client):
-    """Without a sky-mode top ceiling the payload has no ceil_top at all."""
-    add_site(client)
-    night = client.get("/api/night",
-                       params={"date": _DATE, "tz_offset_min": _TZ}).json()
-    assert all("ceil_top" not in o for o in night["objects"])
 
 
 # ------------------------------------------------------------------ export / import
@@ -1227,7 +972,7 @@ def test_panorama_profile_length_and_types_are_validated(client):
                           json={"profile": [10.0] * 719}).status_code == 400
         assert client.put(f"/api/panorama/{pid}",
                           json={"profile_top": [10.0] * 721}).status_code == 400
-        # non-numeric values used to make /api/night return 500 forever
+        # non-numeric values used to make the read-time lookup fail open
         assert client.put(f"/api/panorama/{pid}",
                           json={"profile": ["x"] * 720}).status_code == 400
         assert client.put(f"/api/panorama/{pid}",
@@ -1239,9 +984,6 @@ def test_panorama_profile_length_and_types_are_validated(client):
                           json={"profile": [12.5] * 720}).status_code == 200
         assert client.post("/api/settings",
                            json={"active_pano_id": pid}).status_code == 200
-        add_site(client)
-        assert client.get("/api/night", params={
-            "date": _DATE, "tz_offset_min": _TZ}).status_code == 200
     finally:
         client.delete(f"/api/panorama/{pid}")
 
@@ -1260,9 +1002,10 @@ def test_site_coordinates_are_validated(client):
                       json={"name": "x", "lat": 91, "lon": 0}).status_code == 400
 
 
-def test_deleting_the_active_site_keeps_planning_usable(client):
-    """Regression: the active pointer dangled, so /api/night answered 400 with
-    no way back through the UI."""
+def test_deleting_the_active_site_reassigns_the_pointer(client):
+    """Regression: the active pointer dangled, so planning had no site with no
+    way back through the UI. The server keeps the pointer coherent; the client
+    core resolves the same way."""
     first = add_site(client, "First")
     second = add_site(client, "Second")
     assert client.get("/api/state").json()["active_site_id"] == first
@@ -1271,19 +1014,13 @@ def test_deleting_the_active_site_keeps_planning_usable(client):
     assert client.delete(f"/api/sites/{second}").status_code == 200
     st = client.get("/api/state").json()
     assert st["active_site_id"] == first
-    assert client.get("/api/night", params={
-        "date": _DATE, "tz_offset_min": _TZ}).status_code == 200
 
-    # deleting every site clears the pointer (and planning reports it clearly)
+    # deleting every site clears the pointer
     assert client.delete(f"/api/sites/{first}").status_code == 200
     assert client.get("/api/state").json()["active_site_id"] is None
-    r = client.get("/api/night", params={"date": _DATE, "tz_offset_min": _TZ})
-    assert r.status_code == 400
     # ... and adding a new site repairs it without touching the files
     again = add_site(client, "Again")
     assert client.get("/api/state").json()["active_site_id"] == again
-    assert client.get("/api/night", params={
-        "date": _DATE, "tz_offset_min": _TZ}).status_code == 200
 
 
 # ------------------------------------------------------------ UI cache policy
