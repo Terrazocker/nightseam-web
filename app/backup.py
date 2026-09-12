@@ -115,14 +115,18 @@ def apply_import_zip(db: Database, blob: bytes | Path) -> dict:
     failed restore never destroys the pre-import data (it can be re-imported
     manually). The safety copy is best-effort: a failure to write it must
     not block the user's deliberate restore."""
+    zf = None
     try:
         zf = zipfile.ZipFile(io.BytesIO(blob) if isinstance(blob, bytes)
                              else blob)
         setup = json.loads(_read_member(zf, "setup.json", 64 << 20)
                            .decode("utf-8"))
     except Exception as exc:  # noqa: BLE001
+        if zf is not None:
+            zf.close()
         raise ValueError(f"Not a valid NightSeam export: {exc}") from None
     if setup.get("app") != "NightSeam":
+        zf.close()
         raise ValueError("This zip is not a NightSeam setup export")
 
     safety_path = db.path.with_suffix(".backup-auto.zip")

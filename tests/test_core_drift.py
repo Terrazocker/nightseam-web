@@ -151,15 +151,19 @@ def test_mutations_fail_the_guard(tmp_path):
     assert guard.scan(), "Python astronomy math outside core/ must FAIL the guard"
 
     # ... or the re-implementation evades the plain patterns (h): an ARROW
-    # shell definition and an `async def` Python one (TS3, review).
+    # shell definition, a comment-separated arrow and an `async def` Python
+    # one (TS3, review + adversarial verification).
     (guard.SCRIPTS_DIR / "bake.py").unlink()
     shell = guard.WEB_DIR / "horizon.js"
-    shell.write_text(shell.read_text(encoding="utf-8")
-                     + "\nconst profileSegments = () => [];\n",
-                     encoding="utf-8")
-    assert guard.scan(), "an arrow re-implementation must FAIL the guard"
-    shutil.copy(ROOT / "web" / "horizon.js", shell)
-    assert guard.scan() == []
+    for evasion in ("\nconst profileSegments = () => [];\n",
+                    "\nconst profileSegments = /* c */ (a) => [];\n",
+                    "\nprofileSegments = (a) => [];\n",
+                    "\nfunction profileSegments(a) { return []; }\n"):
+        shell.write_text(shell.read_text(encoding="utf-8") + evasion,
+                         encoding="utf-8")
+        assert guard.scan(), f"evasion not detected: {evasion!r}"
+        shutil.copy(ROOT / "web" / "horizon.js", shell)
+        assert guard.scan() == []
     (guard.SCRIPTS_DIR / "bake.py").write_text(
         "async def altaz(ra, dec):\n    return 0\n", encoding="utf-8")
     assert guard.scan(), "an async Python astronomy re-implementation must FAIL"

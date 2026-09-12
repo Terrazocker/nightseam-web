@@ -2080,7 +2080,9 @@ async function renderSettings() {
     const staged = await WS.restoreBackup(data, current);  // sites / rigs / targets
     const norm = Hor.normalizePanos(staged.panos);
     if (staged.panos && !norm) throw new Error('malformed panorama section');
-    Hor.applyPanosSnapshot(norm || { panos: [], activeId: null });
+    if (!Hor.applyPanosSnapshot(norm || { panos: [], activeId: null })) {
+      throw new Error('saving panoramas failed (storage full or unavailable)');
+    }
     if (staged.prefs) Hor.setPrefs(staged.prefs);
     if (staged.theme) applyTheme(staged.theme);
     return staged;

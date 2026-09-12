@@ -251,9 +251,13 @@ export function normalizePanos(data) {
 }
 
 /** Apply a snapshot produced by normalizePanos(): replace the live set, persist,
- *  and re-cache the embedded photos into IndexedDB (best-effort). */
+ *  and re-cache the embedded photos into IndexedDB (best-effort). Returns false
+ *  and ROLLS BACK the live set when persistence fails (FIX-5 follow-up: the
+ *  previous version applied the records in memory and returned true even when
+ *  save() had failed). */
 export function applyPanosSnapshot(snapshot) {
   if (!snapshot || !Array.isArray(snapshot.panos)) return false;
+  const prev = db;
   const pending = [];
   db = {
     panos: snapshot.panos.map((p) => {
@@ -267,7 +271,10 @@ export function applyPanosSnapshot(snapshot) {
   };
   if (!db.activeId && db.panos.length) db.activeId = db.panos[0].id;
   if (db.activeId && !db.panos.some((p) => p.id === db.activeId)) db.activeId = db.panos.length ? db.panos[0].id : null;
-  save();
+  if (!save()) {
+    db = prev;                       // storage refused: keep live == stored
+    return false;
+  }
   for (const [id, image] of pending) {
     dataUrlToBlob(image).then((b) => { if (b) panoImgSet(id, b); }).catch(() => {});
   }

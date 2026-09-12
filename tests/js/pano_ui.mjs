@@ -178,5 +178,18 @@ const succeeded = H.updatePano(C);
 assert(succeeded === true, 'updatePano must report success (got ' + succeeded + ')');
 H.deletePano(C.id);
 
+// FIX-5b: a failed snapshot APPLY must roll the live set back and report false
+// (the restore path in app.js throws on false and runs its rollback).
+const beforeIds = H.allPanos().map((p) => p.id).join(',');
+const sample = H.allPanos()[0];
+const injected = H.normalizePanos({ panos: [{ ...sample, id: 'px',
+                                              name: 'injected' }] });
+globalThis.localStorage.setItem = () => { throw new Error('quota exceeded'); };
+const applied = H.applyPanosSnapshot(injected);
+globalThis.localStorage.setItem = origSetItem;
+assert(applied === false, 'a failed apply must report false (got ' + applied + ')');
+assert(H.allPanos().map((p) => p.id).join(',') === beforeIds,
+       'a failed apply must roll the live set back');
+
 console.log(ok ? 'pano ui contract held' : 'pano ui FAILED');
 process.exit(ok ? 0 : 1);

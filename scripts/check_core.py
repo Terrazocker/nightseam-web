@@ -165,15 +165,25 @@ def scan() -> list[str]:
                 continue
             text = _read(p)
             for name in MOVED:
-                # `function name(` AND function-valued `const name = (` /
-                # `async` / `function` - an arrow re-implementation must not
+                # `function name(`, any assignment `name =` (const/let/var,
+                # reassignment, comment-separated arrow) and method-style
+                # `name(...) {` - an arrow or method re-implementation must not
                 # slip past the guard (TS3, review). The documented shell
-                # wrappers are exempt from the const/arrow form only.
-                if re.search(r"(export\s+)?(async\s+)?function\s+" + name + r"\b",
-                             text) or \
-                   (name not in SHELL_WRAPPERS and
-                    re.search(r"\b(?:const|let|var)\s+" + name
-                              + r"\s*=\s*(?:\(|async\b|function\b)", text)):
+                # wrappers are exempt from the non-function forms only.
+                plain = re.search(r"(export\s+)?(async\s+)?function\s+"
+                                  + name + r"\b", text)
+                sneak = None
+                if name not in SHELL_WRAPPERS:
+                    # only FUNCTION-VALUED assignments (or method definitions):
+                    # MOVED names are also natural local variable names
+                    # (`const moonAge = ...`, `const sunAlt = []`).
+                    sneak = re.search(
+                        r"(?<![\w.$=!<>])" + name +
+                        r"\s*=\s*(?:/\*[\s\S]*?\*/\s*)?"
+                        r"(?:\(|async\b|function\b|[\w$]+\s*=>)", text) or \
+                        re.search(r"(?:^|[;}\n])\s*" + name
+                                  + r"\s*\([^)]*\)\s*\{", text, re.M)
+                if plain or sneak:
                     problems.append(f"{p.name}: {name}() must live in core/ only")
 
     # Phase C: Python is IO/platform only - no astronomy/planning math may be

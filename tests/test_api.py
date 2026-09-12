@@ -878,6 +878,22 @@ def test_import_rejects_garbage(client):
     assert r.status_code == 400
 
 
+def test_import_malformed_bundles_are_clean_400s(client):
+    """FIX-4 follow-up (verification): a VALID zip with a wrong/missing
+    setup.json used to leave the ZipFile open, so the route's spool unlink
+    failed on Windows and a clean 400 became a 500 (plus a leaked spool)."""
+    for setup in ({"app": "Other"}, None):
+        out = io.BytesIO()
+        with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
+            if setup is not None:
+                z.writestr("setup.json", json.dumps(setup))
+            else:
+                z.writestr("other.txt", "x")
+        r = client.post("/api/import", files={
+            "file": ("backup.zip", out.getvalue(), "application/zip")})
+        assert r.status_code == 400, (setup, r.status_code, r.text)
+
+
 def test_import_rejects_hostile_settings_and_keeps_state_alive(client):
     """FIX-4 (review PY2): a crafted bundle with bortle=null used to be stored
     verbatim and then 500'd /api/state forever - and the desktop awaits that
