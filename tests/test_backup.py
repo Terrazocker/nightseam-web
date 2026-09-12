@@ -337,6 +337,54 @@ def test_import_rejects_malformed_bundle_shape(db):
     assert len(db.sites()) == 1
 
 
+def _mutate_bundle(blob, mutate):
+    """Copy a bundle with setup.json mutated (test helper)."""
+    src = zipfile.ZipFile(io.BytesIO(blob))
+    setup = json.loads(src.read("setup.json"))
+    mutate(setup)
+    out = io.BytesIO()
+    with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as dst:
+        dst.writestr("setup.json", json.dumps(setup))
+        for name in src.namelist():
+            if name != "setup.json":
+                dst.writestr(name, src.read(name))
+    return out.getvalue()
+
+
+def test_import_rejects_malformed_profiles(db, tmp_path):
+    """FIX-4 (review PY1): a panorama profile that is not [] or exactly 720
+    finite numbers used to be stored verbatim and then failed OPEN at planning
+    time (a blocked target ranked observable). Fail closed, leave data intact."""
+    db.add_site("Home", 50.0, 7.8, 150)
+    baseline = build_export_zip(db)
+    for bad in ([10.0] * 719, [10.0] * 721, ["x"] * 720, [True] * 720,
+                [float("nan")] * 720):
+        blob = _mutate_bundle(
+            baseline,
+            lambda s, bad=bad: s["panoramas"].append(
+                {"id": "pbad", "name": "bad", "file": "bad.jpg",
+                 "profile": bad, "profile_top": []}))
+        with pytest.raises(ValueError, match="profile"):
+            apply_import_zip(db, blob)
+    assert len(db.sites()) == 1          # nothing was replaced
+    assert db.setting("bortle", 4) == 4
+
+
+def test_import_rejects_hostile_settings(db):
+    """FIX-4 (review PY2): an opaque imported setting could brick /api/state
+    forever (bortle null -> float(None) at every boot). Fail closed instead."""
+    db.add_site("Home", 50.0, 7.8, 150)
+    for bad in ({"bortle": None}, {"bortle": "x"}, {"min_useful_alt": "x"},
+                {"adv_mode": 1}, {"filters": []}):
+        blob = _mutate_bundle(build_export_zip(db),
+                              lambda s, bad=bad: s["settings"].update(bad))
+        with pytest.raises(ValueError):
+            apply_import_zip(db, blob)
+    assert len(db.sites()) == 1
+    db.set_setting("edge_space", 100)    # a later write must not persist a wipe
+    assert len(db.sites()) == 1
+
+
 def _zip_with(app_name: str, setup: dict, files: dict | None = None) -> bytes:
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:

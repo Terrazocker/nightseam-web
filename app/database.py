@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 import shutil
 import sqlite3
 import threading
@@ -13,6 +14,79 @@ from pathlib import Path
 
 from . import catalog_data
 from .paths import safe_rel, safe_token
+
+# Panorama obstruction arrays are exactly 720 numbers (0.5-degree world-azimuth
+# bins) or empty. This is the storage-format rule shared by the PUT route and
+# the import boundary (core/horizon.js owns the math).
+PROFILE_BINS = 720
+
+
+def profile_values_ok(values) -> bool:
+    """True for the canonical panorama array: [] or exactly PROFILE_BINS finite
+    non-bool numbers. A profile that violates this used to be stored verbatim
+    and then failed OPEN at planning time - the exact invariant `_check_profile`
+    exists to protect."""
+    if not isinstance(values, list) or len(values) not in (0, PROFILE_BINS):
+        return False
+    return all(not isinstance(v, bool) and isinstance(v, (int, float))
+               and math.isfinite(float(v)) for v in values)
+
+
+def _validate_import_profile(values, label: str) -> None:
+    """Fail-closed import check; `None` counts as the empty profile."""
+    if values is None:
+        return
+    if not profile_values_ok(values):
+        raise ValueError(
+            f"panorama {label} must be empty or exactly {PROFILE_BINS} finite "
+            "numbers")
+
+
+_BOOL_SETTINGS = ("moon_aware", "adv_mode", "weather_auto", "view_full_day",
+                  "wizard_done")
+_STR_SETTINGS = ("timezone", "theme")
+_SIZE_UNITS = ("arcmin", "arcsec", "deg")
+
+
+def _validate_import_settings(settings: dict) -> None:
+    """Validate the settings shapes that server code reads.
+
+    Imported settings were stored verbatim, so a hostile/broken bundle could
+    put `bortle: null` into the table and 500 `/api/state` at every boot
+    (`float(db.setting("bortle"))`). Unknown keys pass through unchanged
+    (older bundles carry retired flags like `planning_client_compute`)."""
+    for key in _BOOL_SETTINGS:
+        if key in settings and not isinstance(settings[key], bool):
+            raise ValueError(f"settings.{key} must be a boolean")
+    for key in _STR_SETTINGS:
+        if key in settings and not isinstance(settings[key], str):
+            raise ValueError(f"settings.{key} must be a string")
+    if "active_pano_id" in settings and settings["active_pano_id"] is not None \
+            and not isinstance(settings["active_pano_id"], str):
+        raise ValueError("settings.active_pano_id must be a string or null")
+    for key, lo, hi in (("bortle", 1, 9), ("edge_space", 0, 1000)):
+        if key in settings:
+            v = settings[key]
+            if isinstance(v, bool) or not isinstance(v, (int, float)) \
+                    or not math.isfinite(float(v)):
+                raise ValueError(f"settings.{key} must be a finite number")
+            settings[key] = max(lo, min(hi, int(v)))
+    if "min_useful_alt" in settings and settings["min_useful_alt"] is not None:
+        v = settings["min_useful_alt"]
+        if isinstance(v, bool) or not isinstance(v, (int, float)) \
+                or not math.isfinite(float(v)):
+            raise ValueError("settings.min_useful_alt must be a finite number")
+    if "size_unit" in settings and settings["size_unit"] not in _SIZE_UNITS:
+        raise ValueError("settings.size_unit must be arcmin, arcsec or deg")
+    if "filters" in settings and not isinstance(settings["filters"], dict):
+        raise ValueError("settings.filters must be an object")
+    if "favorites" in settings and not isinstance(settings["favorites"], list):
+        raise ValueError("settings.favorites must be a list")
+    for key in ("active_site_id", "active_rig_id"):
+        if key in settings and settings[key] is not None \
+                and (isinstance(settings[key], bool)
+                     or not isinstance(settings[key], int)):
+            raise ValueError(f"settings.{key} must be an integer or null")
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS objects (
@@ -686,6 +760,13 @@ class Database:
                 isinstance(x, list)
                 for x in (sites, rigs, panoramas, customs, images)):
             raise ValueError("malformed setup bundle")
+        # FIX-4 (review PY1/PY2): fail closed BEFORE any write. A malformed
+        # profile would fail open at planning time and a hostile setting could
+        # brick /api/state at every boot; the transaction below is never entered.
+        _validate_import_settings(settings)
+        for p in panoramas:
+            _validate_import_profile(p.get("profile"), "profile")
+            _validate_import_profile(p.get("profile_top"), "profile_top")
         skipped = {"panoramas": 0, "images": 0}
         with self.lock:
             cur = self.conn.cursor()

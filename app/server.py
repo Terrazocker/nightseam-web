@@ -20,7 +20,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from .backup import _export_zip_to, apply_import_zip, build_export_zip
-from .database import Database, new_id
+from .database import (Database, PROFILE_BINS, new_id, profile_values_ok)
 from .fits import parse_dec_deg, parse_ra_hours
 from .imglib import name_key
 from .ingest import ingest_one, obj_slug, reindex_library, rename_archive_folder
@@ -50,10 +50,6 @@ _MAX_REQUEST_BYTES = {
 }
 
 _state = {"last_request": time.time(), "shutdown": False}
-
-# Panorama obstruction arrays are exactly 720 numbers (0.5-degree world-azimuth
-# bins). This is a STORAGE format constant (core/horizon.js owns the math now).
-PROFILE_BINS = 720
 
 
 def _same_origin_request(request) -> bool:
@@ -195,16 +191,16 @@ def _check_profile(values, label: str) -> None:
 
     Without this a short/corrupt profile was stored and then failed OPEN at
     read time (ceil_lookup returns "nothing blocks"), silently disabling the
-    horizon mask the user painted."""
+    horizon mask the user painted. The rule itself lives in
+    `database.profile_values_ok` so the PUT route and the import boundary
+    cannot drift apart."""
     if values is None:
         return
     if not isinstance(values, list) or len(values) not in (0, PROFILE_BINS):
         raise HTTPException(
             400, f"{label} must be empty or exactly {PROFILE_BINS} values")
-    for v in values:
-        if isinstance(v, bool) or not isinstance(v, (int, float)) or \
-                not math.isfinite(float(v)):
-            raise HTTPException(400, f"{label} must contain only finite numbers")
+    if not profile_values_ok(values):
+        raise HTTPException(400, f"{label} must contain only finite numbers")
 
 
 # ------------------------------------------------------------------ image prefetch

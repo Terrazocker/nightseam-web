@@ -6,6 +6,7 @@ prefetch=False so no image-cache thread hits the network.
 """
 
 import io
+import json
 import zipfile
 
 import pytest
@@ -875,6 +876,28 @@ def test_import_rejects_garbage(client):
     r = client.post("/api/import", files={
         "file": ("junk.zip", b"not a zip at all", "application/zip")})
     assert r.status_code == 400
+
+
+def test_import_rejects_hostile_settings_and_keeps_state_alive(client):
+    """FIX-4 (review PY2): a crafted bundle with bortle=null used to be stored
+    verbatim and then 500'd /api/state forever - and the desktop awaits that
+    route at boot, so the UI never started. The import must be a clean 400 and
+    the state route must stay alive afterwards."""
+    z = client.get("/api/export")
+    assert z.status_code == 200
+    setup = json.loads(zipfile.ZipFile(io.BytesIO(z.content))
+                       .read("setup.json"))
+    setup["settings"]["bortle"] = None
+    out = io.BytesIO()
+    with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as dst:
+        dst.writestr("setup.json", json.dumps(setup))
+    r = client.post("/api/import", files={
+        "file": ("backup.zip", out.getvalue(), "application/zip")})
+    assert r.status_code == 400, r.text
+    assert "bortle" in r.json()["detail"]
+    st = client.get("/api/state")
+    assert st.status_code == 200
+    assert st.json()["bortle"] == 4
 
 
 # -------------------------------------------------- request guard (middleware)
