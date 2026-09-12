@@ -22,7 +22,6 @@ from pathlib import Path
 import pytest
 
 from app import astro
-from app.nightcalc import longest_run
 
 ROOT = Path(__file__).resolve().parent.parent
 HARNESS = ROOT / "tests" / "js" / "astro_parity.mjs"
@@ -303,9 +302,9 @@ def test_desktop_and_web_square_zoom_math_identical(W, H):
 
 # ------------------------------------------------------- clear-window contract
 # The client derives its own best window from the 6-min night grid; the detail
-# modal uses the server's 4-min grid. Both must follow the same half-open
-# contract as app/nightcalc.py's longest_run(), and the end boundary must
-# always resolve to a REAL timestamp (the "--:--" / "NaNh NaNm" regression).
+# modal uses the server's 4-min grid. Both follow the same half-open contract
+# the retired app/nightcalc.py::longest_run() established, and the end boundary
+# must always resolve to a REAL timestamp (the "--:--" / "NaNh NaNm" regression).
 
 _STEP = 6
 
@@ -314,42 +313,6 @@ def _times(n: int) -> list[str]:
     """A 6-minute UTC grid starting at 18:00, long enough for `n` samples."""
     return [f"2026-09-10T{(18 * 60 + i * _STEP) // 60:02d}:"
             f"{(18 * 60 + i * _STEP) % 60:02d}:00" for i in range(n)]
-
-
-_WINDOW_FLAGS = {
-    "all_blocked": [False] * 12,
-    "all_clear": [True] * 12,
-    "single_at_start": [True] + [False] * 11,
-    "single_in_middle": [False, False, True] + [False] * 9,
-    "single_at_end": [False] * 11 + [True],
-    "ends_at_last_sample": [False, True, True, True] + [False] * 8,
-    "reaches_both_ends": [True, True] + [False] * 8 + [True, True],
-    "competing_tie_first_wins": [True, True, False, True, True],
-    "longest_wins": [True, False] + [True] * 5 + [False, True],
-    "empty": [],
-}
-
-_WINDOW_CASES = [{"flags": f, "times": _times(len(f)), "step": _STEP}
-                 for f in _WINDOW_FLAGS.values()]
-
-
-def test_js_window_parity_with_python():
-    got = _run_node("window", _WINDOW_CASES)
-    for (name, flags), case, res in zip(_WINDOW_FLAGS.items(),
-                                        _WINDOW_CASES, got):
-        want = longest_run(flags)
-        if want is None:
-            assert res["best"] is None, name
-            assert res["endISO"] is None, name
-            continue
-        assert res["best"] == list(want), name
-        # the end boundary is a real time in both implementations, including a
-        # run that reaches the last sample (end == n)
-        assert res["endISO"] is not None, name
-        if want[1] < len(case["times"]):
-            assert res["endISO"] == case["times"][want[1]], name
-        else:
-            assert res["endISO"] > case["times"][-1], name
 
 
 def test_js_window_end_is_never_undefined_for_a_full_grid_run():
