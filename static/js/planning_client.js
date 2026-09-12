@@ -38,6 +38,11 @@ const BIND_MS = 8;                 // bind budget per frame (no long tasks)
 let _worker = null, _workerBroken = false;
 let _wgen = 0, _bindGen = 0, _dgen = 0;
 const _pending = new Map();
+// A preference change during an in-flight build cannot be scored into a payload
+// that was already requested with the OLD prefs; it is queued and applied to
+// the finished plan instead of cancelling the build (FIX-1, review DS1).
+let _buildsInFlight = 0;
+let _prefsQueued = false;
 
 function workerUsable() {
   return typeof Worker === "function" && !window.__NS_WORKER_FORCE_FAIL && !_workerBroken;
@@ -161,15 +166,20 @@ function siteFor(siteId) {
 /** Worker-first night build; a worker failure falls back to the synchronous
  *  client path. */
 export async function buildClientNight(opts) {
-  if (workerUsable()) {
-    try {
-      return await buildWorkerNight(opts);
-    } catch (err) {
-      if (err && err.name === "SupersededError") throw err;
-      console.warn("[planning] worker failed; synchronous client path:", err);
+  _buildsInFlight++;
+  try {
+    if (workerUsable()) {
+      try {
+        return await buildWorkerNight(opts);
+      } catch (err) {
+        if (err && err.name === "SupersededError") throw err;
+        console.warn("[planning] worker failed; synchronous client path:", err);
+      }
     }
+    return syncBuildClientNight(opts);
+  } finally {
+    _buildsInFlight--;
   }
-  return syncBuildClientNight(opts);
 }
 
 async function buildWorkerNight({ date, siteId, tzMin }) {
@@ -246,8 +256,15 @@ function applyDerivedNumbers(o, d, j) {
 }
 
 /** Preference-change rescore through the worker (uses its retained tracks);
- *  returns false when the caller must run the synchronous fallback. */
+ *  returns false when the caller must run the synchronous fallback. A change
+ *  that arrives while a build is in flight is QUEUED (returns true: do not
+ *  rescore the old payload now); night.js calls flushQueuedPrefs() on the
+ *  finished plan. */
 export async function requestPrefsDerived() {
+  if (_buildsInFlight > 0) {
+    _prefsQueued = true;
+    return true;
+  }
   if (!S.night || !S.night._derivedReady || !workerUsable()) return false;
   const gen = ++_dgen;
   try {
@@ -265,6 +282,15 @@ export async function requestPrefsDerived() {
     console.warn("[planning] worker prefs failed; synchronous path:", err);
     return false;
   }
+}
+
+/** Apply a preference change that arrived while a build was in flight; the
+ *  night loader calls this once the payload is committed, before the views
+ *  render. Returns false when the caller must run the synchronous derivation. */
+export async function flushQueuedPrefs() {
+  if (!_prefsQueued) return true;
+  _prefsQueued = false;
+  return requestPrefsDerived();
 }
 
 async function bindDerived(objects, d) {

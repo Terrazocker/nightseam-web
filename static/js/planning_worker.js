@@ -20,17 +20,22 @@ const BINS = 720;
 const NO_BLOCK = -90.0;
 const CHUNK = 2000;
 
-let latestGen = -1;
+let latestNightGen = -1;
+let latestPrefsGen = -1;
 let catalog = { adv: null, list: null, pending: null };
 let session = null;
 
 self.onmessage = (ev) => {
   const m = ev.data || {};
-  if (m.type !== "night" && m.type !== "prefs") return;
-  latestGen = m.gen;
-  const run = m.type === "night" ? runNight(m) : runPrefs(m);
-  run.catch((err) => post({ gen: m.gen, type: "error",
-                            error: String((err && err.message) || err) }));
+  if (m.type === "night") {
+    latestNightGen = m.gen;
+    runNight(m).catch((err) => post({ gen: m.gen, type: "error",
+                                      error: String((err && err.message) || err) }));
+  } else if (m.type === "prefs") {
+    latestPrefsGen = m.gen;
+    runPrefs(m).catch((err) => post({ gen: m.gen, type: "error",
+                                      error: String((err && err.message) || err) }));
+  }
 };
 
 const post = (msg, transfer) => self.postMessage(msg, transfer ? { transfer } : undefined);
@@ -92,7 +97,10 @@ const DERIVED_TRANSFER = (d) => [
 
 async function runNight(m) {
   const t0 = performance.now();
-  const isCurrent = () => m.gen === latestGen;
+  // night and prefs have SEPARATE generations: a preference change must never
+  // cancel the build whose tracks it is about to rescore (the client queues
+  // the rescore for the finished plan instead).
+  const isCurrent = () => m.gen === latestNightGen;
   const list = await catalogFor(!!m.adv);
   if (!isCurrent()) return cancelled(m, t0);
 
@@ -185,6 +193,7 @@ async function runNight(m) {
 async function runPrefs(m) {
   const t0 = performance.now();
   if (!session) throw new Error("no session");
+  if (m.gen < latestPrefsGen) return;      // superseded by a newer prefs request
   setPrefs(m);
   recomputeNightDerived();
   const derived = packDerived(session.objects, session.count);

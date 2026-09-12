@@ -36,6 +36,14 @@ def test_night_load_supersession_invariant():
     assert "supersession invariant held" in out
 
 
+def test_worker_lifecycle_prefs_during_build():
+    """FIX-1: a preference change during an in-flight worker build must not
+    cancel the build; the finished plan carries the new preference and the busy
+    chip clears (real planning_worker.js under Node via worker_bridge.mjs)."""
+    out = run_node_harness("worker_lifecycle.mjs")
+    assert "worker lifecycle contract held" in out
+
+
 def test_desktop_window_contract():
     """The clear window / % of night / score are measured inside dusk..dawn.
 

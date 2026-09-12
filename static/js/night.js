@@ -2,8 +2,8 @@
 
 import { $, setBusy, todayLocal, tzOffAt, toast } from "./util.js";
 import { S } from "./state.js";
-import { timeIndexFor, scrubWindowRange } from "./derive.js";
-import { buildClientNight } from "./planning_client.js";
+import { timeIndexFor, scrubWindowRange, recomputeNightDerived } from "./derive.js";
+import { buildClientNight, flushQueuedPrefs } from "./planning_client.js";
 
 let _nightCtl = null;
 let _nightTimer = null;
@@ -55,6 +55,14 @@ async function doLoadNight() {
     slider.min = String(lo);
     slider.max = String(hi);
     slider.value = String(S.tIdx);
+
+    // A preference change that arrived while this build was in flight must
+    // score the FINISHED plan before the views render (FIX-1). On the sync
+    // path the flush cannot use the worker, so derive here; main.js's
+    // night:loaded handler still derives un-derived payloads as before.
+    const prefsOk = await flushQueuedPrefs();
+    if (ctl !== _nightCtl) return;            // superseded during the flush
+    if (!prefsOk) recomputeNightDerived();
 
     // views derive their own flags/scores from the raw tracks
     document.dispatchEvent(new CustomEvent("night:loaded"));
