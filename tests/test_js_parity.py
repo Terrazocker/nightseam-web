@@ -505,8 +505,41 @@ _SIZE_CASES = [
                  "645x550", "120x80.0", "6x4", "1000", "0.5")
 ]
 
+# Absolute expected strings (TS1, review: the desktop/web "parity" pairs both
+# re-export the same core function, so a COORDINATED change - a re-baked
+# core/format.js with a wrong unit or rounding - passed the old equality check).
+# Provenance: format documented in core/format.js - arcmin/arcsec/deg are ONE
+# user unit, unknown -> em dash, pairs joined with U+00D7, arcsec = x60,
+# deg = x/60 rounded to 2 decimals (1 dp below 1').
+_SIZE_EXPECTED = {
+    (None, "arcmin"): "\u2014", ("", "arcmin"): "\u2014",
+    ("330", "arcmin"): "330\u2032", ("110", "arcmin"): "110\u2032",
+    ("50", "arcmin"): "50\u2032", ("1.4", "arcmin"): "1.4\u2032",
+    ("9.3", "arcmin"): "9.3\u2032", ("0.05", "arcmin"): "0.1\u2032",
+    ("645x550", "arcmin"): "645\u2032\u00D7550\u2032",
+    ("120x80.0", "arcmin"): "120\u2032\u00D780\u2032",
+    ("6x4", "arcmin"): "6\u2032\u00D74\u2032",
+    ("1000", "arcmin"): "1000\u2032", ("0.5", "arcmin"): "0.5\u2032",
+    (None, "arcsec"): "\u2014", ("", "arcsec"): "\u2014",
+    ("330", "arcsec"): "19800\u2033", ("110", "arcsec"): "6600\u2033",
+    ("50", "arcsec"): "3000\u2033", ("1.4", "arcsec"): "84\u2033",
+    ("9.3", "arcsec"): "558\u2033", ("0.05", "arcsec"): "3\u2033",
+    ("645x550", "arcsec"): "38700\u2033\u00D733000\u2033",
+    ("120x80.0", "arcsec"): "7200\u2033\u00D74800\u2033",
+    ("6x4", "arcsec"): "360\u2033\u00D7240\u2033",
+    ("1000", "arcsec"): "60000\u2033", ("0.5", "arcsec"): "30\u2033",
+    (None, "deg"): "\u2014", ("", "deg"): "\u2014",
+    ("330", "deg"): "5.5\u00B0", ("110", "deg"): "1.83\u00B0",
+    ("50", "deg"): "0.83\u00B0", ("1.4", "deg"): "0.02\u00B0",
+    ("9.3", "deg"): "0.15\u00B0", ("0.05", "deg"): "0\u00B0",
+    ("645x550", "deg"): "10.75\u00B0\u00D79.17\u00B0",
+    ("120x80.0", "deg"): "2\u00B0\u00D71.33\u00B0",
+    ("6x4", "deg"): "0.1\u00B0\u00D70.07\u00B0",
+    ("1000", "deg"): "16.67\u00B0", ("0.5", "deg"): "0.01\u00B0",
+}
 
-def test_web_size_column_matches_desktop():
+
+def test_web_size_column_absolute_values():
     """Catalog sizes are arcminutes shown in ONE unit - single-axis too.
 
     The web used to reformat only "NxM" strings and echo everything else
@@ -515,11 +548,15 @@ def test_web_size_column_matches_desktop():
     arcmin/arcsec/deg setting, while the desktop showed "330'"; the same
     strict regex also left the Frame % column empty for those objects.
     web/format.js is the web twin of static/js/util.js::fmtSize.
+
+    TS1 (review): the old check compared the two shells, which now re-export
+    the same core function - a coordinated formatting change (or the frozen
+    values being wrong) passed. These absolute strings are the reference.
     """
     got = _run_node("size", _SIZE_CASES)
     assert len(got) == len(_SIZE_CASES)
-    bad = [c for c in got if not c["ok"]]
-    assert not bad, bad[:6]
+    for (size, unit), res in zip(_SIZE_CASES, got):
+        assert res["web"] == _SIZE_EXPECTED[(size, unit)], (size, unit, res)
 
 
 # ================================================== E1/E2 remediation pins
