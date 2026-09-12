@@ -1,5 +1,10 @@
 [
  {
+  "version": "0.6.20",
+  "date": "2026-09-12",
+  "summary": "Internal cleanup release - no behavior change. The desktop app and the web planner now use one shared planning and astronomy engine, and the duplicated local-server calculation path was removed. This makes the Windows app about 19 KB smaller and the code easier to keep correct; the interface, every displayed number and the way you plan are unchanged. Your sites, rigs, targets, panoramas and image library carry over as before, and backups from earlier 0.6.x versions restore normally."
+ },
+ {
   "version": "0.6.19",
   "date": "2026-09-12",
   "summary": "Faster planning. The desktop app now calculates its night planning off the main thread: changing the date or site keeps the window responsive while a busy indicator works, rapid date/site or preference changes cancel the superseded calculation instead of blocking, and preference changes (minimum altitude, Bortle class, moon-aware ranking, filters) update almost instantly. Every displayed number is unchanged. If the background calculation cannot start or stops, the app falls back automatically to the previous in-app calculation and then to the local server, so planning never stops working. Two polish items are planned for a follow-up: chunking the list rendering on very slow machines and a memory hardening for very long sessions with the full 12,000-object catalog."

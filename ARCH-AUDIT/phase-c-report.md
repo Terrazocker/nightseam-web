@@ -90,8 +90,23 @@ No `web/` module, `core/` byte or catalog changed in Phase C (JS shells touched:
 
 ## Release report (0.6.20)
 
-- [ ] curated changelog entry, pre-tag check, tag, make_release,
-      `web/build_web.py version`, check_release
-- [ ] packaged smoke (normal / polar night / polar day / DST / partial pano /
-      advanced / offline / backup import)
-- [ ] upload record
+- Curated changelog entry: added to `scripts/build_changelog.py` in the
+  `NightSeam 0.6.20` commit (2c6a72e), `pre_tag_check.py 0.6.20` OK.
+- Tag `v0.6.20` on 2c6a72e; `build.ps1` built `dist/NightSeam.exe` at the tag
+  (version 0.6.20); `web/version.json` baked by hand (the sandbox cannot spawn
+  `build_web.py version`) as `{"version":"0.6.20","describe":"v0.6.20",...}`.
+- `scripts/check_release.py`: 0 errors, 1 expected changelog warning before the
+  post-tag regen.
+- Artifacts: `NightSeam-0.6.20.zip` = 20,448,876 bytes, sha256
+  `63948945fc5ae0ac8820c9169ef6bd151cdd6fc18ce438ce2a3800fd233612e0`;
+  `NightSeam-latest.zip` identical; `version.json`/`ns-version.js` staged.
+- Packed smoke on the tagged exe (headless, port 8413): `/api/state` version
+  0.6.20, retired routes 404, image route 200, UI + planning_client served,
+  catalog 197, offline export OK.
+- Deploy scope: no `web/` or `core/` byte changed in Phase C -> upload
+  `/downloads` artifacts + `landing/changelog.json` only (no `/astro` tree).
+- Rollback: the local stage no longer holds 0.6.19 (`make_release` replaced it)
+  - rollback source is the `v0.6.19` tag (b722716) plus any 0.6.19 zip copy on
+  the public site / in GitHub history.
+- Post-tag follow-up: `landing/changelog.json` regenerated (0.6.20 entry) and
+  committed separately; the tag never moved.
