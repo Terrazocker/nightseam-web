@@ -7,6 +7,7 @@ import { loadNight, scheduleLoadNight } from "./night.js";
 import { updateTimeLabel } from "./header.js";
 import { renderTargets } from "./targets.js";
 import { effectiveMinAlt } from "./derive.js";
+import { resetPlanningCaches } from "./planning_client.js";
 
 export async function openSites() {
   $("#sitesModal").classList.remove("hidden");
@@ -218,6 +219,10 @@ export function bindSetup() {
 }
 
 async function refreshCatalogMeta() {
+  // the custom-target list changed: drop the planning caches (main metadata +
+  // payload AND the worker's retained catalog) so the next build cannot serve
+  // or bind stale entries (FIX-2, review DS2).
+  resetPlanningCaches();
   S.catalog = await api("/api/catalog" + (S.cfg.adv_mode ? "?adv=1" : ""));
   S.meta = {};
   for (const o of S.catalog) S.meta[o.id] = o;

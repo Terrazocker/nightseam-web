@@ -424,3 +424,17 @@ def test_desktop_planning_is_core_only():
     server = _read("app", "server.py")
     assert "planning_client_compute" not in server, \
         "the retired flag must not survive in the API"
+
+
+def test_catalog_edits_invalidate_the_planning_caches():
+    """FIX-2 (review DS2): a custom-target add/delete must drop the planning
+    caches - the metadata list + built payload in planning_client.js AND the
+    worker's retained catalog - or a same-length change can bind tracks to the
+    wrong object. setup.js::refreshCatalogMeta is the one edit path."""
+    setup = _read("static", "js", "setup.js")
+    assert "resetPlanningCaches()" in setup, \
+        "refreshCatalogMeta must invalidate the planning caches"
+    pc = _read("static", "js", "planning_client.js")
+    assert "export function resetPlanningCaches" in pc
+    assert "catalog ids mismatch" in pc, \
+        "the worker response must be id-validated before binding"

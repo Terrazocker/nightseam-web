@@ -44,6 +44,14 @@ def test_worker_lifecycle_prefs_during_build():
     assert "worker lifecycle contract held" in out
 
 
+def test_catalog_identity_across_worker_boundary():
+    """FIX-2: a changed catalog must invalidate the worker + client caches, and
+    a worker response whose ids do not match the current catalog must never be
+    bound by position (real planning_worker.js under Node)."""
+    out = run_node_harness("catalog_identity.mjs")
+    assert "catalog identity contract held" in out
+
+
 def test_desktop_window_contract():
     """The clear window / % of night / score are measured inside dusk..dawn.
 

@@ -23,10 +23,20 @@ const CHUNK = 2000;
 let latestNightGen = -1;
 let latestPrefsGen = -1;
 let catalog = { adv: null, list: null, pending: null };
+let catalogEpoch = 0;
 let session = null;
 
 self.onmessage = (ev) => {
   const m = ev.data || {};
+  if (m.type === "catalog-reset") {
+    // the main thread changed the catalog: drop the retained copy + tracks so
+    // the next build refetches, and guard against a stale in-flight fetch
+    // resolving into the reset state (FIX-2, review DS2).
+    catalogEpoch++;
+    catalog = { adv: null, list: null, pending: null };
+    session = null;
+    return;
+  }
   if (m.type === "night") {
     latestNightGen = m.gen;
     runNight(m).catch((err) => post({ gen: m.gen, type: "error",
@@ -55,9 +65,18 @@ function lookup(profile) {
 async function catalogFor(adv) {
   if (catalog.adv === adv && catalog.list) return catalog.list;
   if (!catalog.pending) {
+    const epoch = catalogEpoch;
     catalog.pending = fetch("/api/catalog" + (adv ? "?adv=1" : ""))
       .then((r) => { if (!r.ok) throw new Error("catalog HTTP " + r.status); return r.json(); })
-      .then((list) => { catalog = { adv, list, pending: null }; return list; });
+      .then((list) => {
+        if (epoch !== catalogEpoch) return list;   // reset meanwhile: do not store
+        catalog = { adv, list, pending: null };
+        return list;
+      })
+      .catch((err) => {
+        if (epoch === catalogEpoch) catalog.pending = null;   // allow a retry
+        throw err;
+      });
   }
   return catalog.pending;
 }

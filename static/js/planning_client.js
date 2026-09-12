@@ -126,6 +126,16 @@ async function catalogFor(adv) {
 /** Drop the cached tracks (tests / explicit invalidation). */
 export function invalidatePlanCache() { _cache = { key: null, payload: null }; }
 
+/** Invalidate EVERY planning cache after the catalog changed (custom target
+ *  add/delete, setup import): the metadata list, the built payload, and the
+ *  worker's retained catalog/tracks. The id validation in bindWorkerNight is
+ *  the safety net; this is what keeps the caches honest (FIX-2, review DS2). */
+export function resetPlanningCaches() {
+  _catCache = { adv: null, list: null };
+  invalidatePlanCache();
+  if (_worker) _worker.postMessage({ type: "catalog-reset" });
+}
+
 const iso = (dt) => (dt instanceof Date && !isNaN(dt))
   ? dt.toISOString().slice(0, 19) : null;
 const r1 = (x) => Math.round(x * 10) / 10;
@@ -207,6 +217,16 @@ async function bindWorkerNight(res, catalog, pano, topProf) {
   const { n, count, alt, az, derived, meta } = res;
   if (n !== catalog.length) {
     throw new Error("catalog mismatch " + n + " vs " + catalog.length);
+  }
+  // Identity, not position: a same-length catalog change must never bind the
+  // worker's tracks to the wrong object (FIX-2, review DS2). Throwing here
+  // falls back to the synchronous build, which computes with THIS catalog.
+  for (let j = 0; j < n; j++) {
+    if (!res.ids || res.ids[j] !== catalog[j].id) {
+      throw new Error("catalog ids mismatch at object " + j + " (" +
+                      (res.ids ? res.ids[j] : "no ids") + " vs " +
+                      catalog[j].id + ")");
+    }
   }
   const ceilAt = lookup(pano), topAt = lookup(topProf);
   const objects = new Array(n);
