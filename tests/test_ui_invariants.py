@@ -446,3 +446,20 @@ def test_web_night_info_anchors_the_polar_fallback():
     app = _read("web", "app.js")
     assert "E.pickDarkWindow(info, nightAnchor(), siteNoon(nightAnchor()))" in app, \
         "renderNightInfo must pass the night anchor + site noon"
+
+
+def test_batch3_web_hardening_wiring():
+    """Batch 3 web items that are not browser-testable here (WB3/WB4/WB6/WB7):
+    the reload path is shared, the cross-tab guard exists, an IDB upgrade
+    blocked by another tab rejects instead of hanging, and a bundle without a
+    pano section cannot wipe horizons. Behavioural guards for WB5 are in
+    tests/js/pano_ui.mjs."""
+    app = _read("web", "app.js")
+    assert app.count("await reloadRigs();") >= 3, \
+        "boot, renderSettings and reinitUserData must share reloadRigs()"
+    assert "missing panorama section" in app
+    hz = _read("web", "horizon.js")
+    assert 'addEventListener("storage"' in hz, \
+        "another tab's pano/prefs write must trigger a reload (WB4)"
+    ws = _read("web", "webstore.js")
+    assert "rq.onblocked" in ws, "a blocked IDB upgrade must reject (WB6)"

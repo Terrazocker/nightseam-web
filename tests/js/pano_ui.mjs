@@ -191,5 +191,17 @@ assert(applied === false, 'a failed apply must report false (got ' + applied + '
 assert(H.allPanos().map((p) => p.id).join(',') === beforeIds,
        'a failed apply must roll the live set back');
 
+/* ---------------- WB5: untrusted import records ---------------- */
+// non-token ids are dropped, duplicates collapse, strokes are capped
+const wb1 = H.normalizePanos({ panos: [{ id: 'ok-1', strokes: [] },
+                                      { id: '../evil', strokes: [] },
+                                      { id: 'ok-1', strokes: [] }] });
+assert(wb1 && wb1.panos.length === 1 && wb1.panos[0].id === 'ok-1',
+       'WB5: non-token/duplicate pano ids must be dropped');
+const wb2 = H.normalizePanos({ panos: [{ id: 'ok-2',
+  strokes: new Array(30000).fill({ m: 'b', x: 1, y: 1, r: 1 }) }] });
+assert(wb2 && wb2.panos[0].strokes.length === 20000,
+       'WB5: imported strokes must be capped');
+
 console.log(ok ? 'pano ui contract held' : 'pano ui FAILED');
 process.exit(ok ? 0 : 1);

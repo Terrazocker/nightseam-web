@@ -1836,7 +1836,23 @@ function showMTab(name) {
   });
 }
 
+/** Re-read rigs and rebuild the topbar picker. WB3 (review): this used to run
+ *  only at boot, so a rig added/edited in Setup (or restored from a backup)
+ *  was invisible to the picker and to frame coverage until a reload. */
+async function reloadRigs() {
+  const rigs = await WS.getRigs();
+  RIGS.length = 0;
+  RIGS.push(...rigs);
+  const rsSel = $('#rigSelect');
+  if (rsSel) {
+    rsSel.innerHTML = '<option value="">None — no frame coverage shown</option>' +
+      rigs.map((r) => `<option value="${esc(r.id)}">${esc(r.name)}</option>`).join('');
+  }
+  refreshMenuUI(); // re-sync select values now that the rig options exist
+}
+
 async function renderSettings() {
+  await reloadRigs();  // WB3: rig edits must show up without a reload
   const modal = $('#modal');
   const sites = await WS.getSites();
   SITES = sites;
@@ -2078,8 +2094,11 @@ async function renderSettings() {
   // bundle throws before anything is destroyed.
   async function applyWebSnapshot(data, current) {
     const staged = await WS.restoreBackup(data, current);  // sites / rigs / targets
+    // WB7 (review): a bundle without a panorama section must not silently
+    // replace the user's horizons with an empty set.
+    if (!staged.panos) throw new Error('missing panorama section');
     const norm = Hor.normalizePanos(staged.panos);
-    if (staged.panos && !norm) throw new Error('malformed panorama section');
+    if (!norm) throw new Error('malformed panorama section');
     if (!Hor.applyPanosSnapshot(norm || { panos: [], activeId: null })) {
       throw new Error('saving panoramas failed (storage full or unavailable)');
     }
@@ -2294,10 +2313,11 @@ function closeModal() {
   if (modal) { modal.hidden = true; modal.innerHTML = ''; }
 }
 
-/** Re-read user data after a backup import (sites, targets). */
+/** Re-read user data after a backup import (sites, targets, rigs). */
 async function reinitUserData() {
   SITES = await WS.getSites();
   for (const t of await WS.getTargets()) upsertTarget(t);
+  await reloadRigs();
   let sid = Hor.getPrefs().activeSiteId;
   if (!SITES.some((s) => s.id === sid)) sid = SITES.length ? SITES[0].id : null;
   if (sid && SITES.some((s) => s.id === sid)) applyActiveSite(SITES.find((s) => s.id === sid));
@@ -2644,15 +2664,7 @@ async function boot() {
     if (gone.includes(rigPrefs.activeRigId)) patch.activeRigId = '';
     Hor.setPrefs(patch);
   }
-  const rigs = await WS.getRigs();
-  RIGS.length = 0;
-  RIGS.push(...rigs);
-  const rsSel = $('#rigSelect');
-  if (rsSel) {
-    rsSel.innerHTML = '<option value="">None — no frame coverage shown</option>' +
-      rigs.map((r) => `<option value="${esc(r.id)}">${esc(r.name)}</option>`).join('');
-  }
-  refreshMenuUI(); // re-sync select values now that the rig options exist
+  await reloadRigs();
 
   initDragWindows();
 

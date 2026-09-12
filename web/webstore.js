@@ -31,7 +31,13 @@ function open() {
         }
       };
       rq.onsuccess = () => { _db = rq.result; resolve(_db); };
-      rq.onerror = () => reject(rq.error);
+      // WB6 (review): an upgrade blocked by another open tab used to hang
+      // forever; reject (and let a later call retry) instead.
+      rq.onblocked = () => {
+        _dbP = null;
+        reject(new Error("IndexedDB upgrade is blocked by another tab"));
+      };
+      rq.onerror = () => { _dbP = null; reject(rq.error); };
     } catch (e) { reject(e); }
   });
   return _dbP;

@@ -103,6 +103,18 @@ function compressImage(dataUrl, maxW, quality) {
 
 let db = load();
 
+// WB4 (review): panoramas live in ONE localStorage blob. Without a cross-tab
+// signal, two open tabs silently overwrite each other (last writer wins). A
+// storage event from another tab reloads this one so it re-reads before any
+// further edit; guarded for the Node harnesses (no addEventListener there).
+if (typeof addEventListener === "function") {
+  addEventListener("storage", (e) => {
+    if (e && (e.key === LS_KEY || e.key === 'nightseam_prefs_v1')) {
+      location.reload();
+    }
+  });
+}
+
 function load() {
   try {
     const raw = localStorage.getItem(LS_KEY);
@@ -211,11 +223,23 @@ export function normalizePanos(data) {
   if (!data || !Array.isArray(data.panos)) return null;
   const blank = () => new Array(BINS).fill(NO_BLOCK);
   const num = (v, dflt) => (Number.isFinite(Number(v)) ? Number(v) : dflt);
-  const panos = data.panos.map((p) => {
+  // WB5 (review): ids reach DOM data-attributes and IndexedDB keys, so an
+  // untrusted backup must not smuggle a non-token/duplicate id into the set,
+  // and strokes are bounded (a crafted bundle could otherwise freeze the
+  // editor by rebuilding a million-stroke mask).
+  const token = (v) => (typeof v === 'string'
+    && /^[A-Za-z0-9_-]{1,64}$/.test(v)) ? v : null;
+  const seen = new Set();
+  const panos = data.panos.filter((p) => {
+    const id = token(p && p.id);
+    if (!id || seen.has(id)) return false;
+    seen.add(id);
+    return true;
+  }).map((p) => {
     const image = (typeof p.image === 'string' && p.image.startsWith('data:')) ? p.image : null;
-    const strokes = Array.isArray(p.strokes) ? p.strokes : [];
+    const strokes = (Array.isArray(p.strokes) ? p.strokes : []).slice(0, 20000);
     const rec = {
-      id: String(p.id ?? ''),
+      id: token(p.id),
       name: p.name || 'Panorama',
       azOffset: num(p.azOffset, 0),
       altBottom: num(p.altBottom, 0),
