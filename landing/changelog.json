@@ -1,5 +1,10 @@
 [
  {
+  "version": "0.6.23",
+  "date": "2026-09-12",
+  "summary": "Hardening release with a new internal safety net - no planning or interface changes. Restoring a backup or editing a site, rig or panorama now refuses invalid numbers (such as infinity) and custom-object ids that are not properly namespaced, so a damaged or hand-edited file can no longer break the app on startup. The web planner is more robust around browser storage: a save that fails because storage is full says so and keeps your edit, another tab's changes reload instead of silently overwriting each other, an in-browser database upgrade blocked by another tab no longer hangs, and an imported file without a horizon section can no longer wipe your horizons. A new automated real-browser test gate (system Chrome for the web planner, and the packaged Windows app) now runs as part of every release, so interface regressions are caught before shipping. Your data, every displayed number and the way you plan are unchanged."
+ },
+ {
   "version": "0.6.22",
   "date": "2026-09-12",
   "summary": "Planning-window, cache and save fixes. A polar-day or polar-twilight site now always shows its dark window anchored to the selected night and the site's timezone instead of a window based on the current clock. In the web planner, changing the timezone or repainting a horizon can no longer serve a stale plan from the in-browser cache, and a Save that fails because browser storage is full now says so - keeping the previous state - instead of reporting success. The internal guard and reference-anchor test suites were also tightened. No planning numbers or interface changes."
