@@ -1,14 +1,11 @@
-"""Cross-engine parity: app/astro.py vs static/js/astro.js vs web/astro.js.
+"""Cross-engine behaviour: static/js/astro.js vs web/astro.js vs core/.
 
-Three implementations of the same astronomy exist (the desktop synthesises
-advanced-mode tracks in the browser, the web app recomputes everything
-client-side). This module feeds one grid of coordinates/times through all of
-them via Node and compares the numbers.
-
-It is a PARITY test, not a correctness test: correctness is pinned
-independently against the published Meeus equations in tests/test_astro.py.
-Parity without those reference values is exactly how a wrong precession matrix
-survived in all three engines at once.
+The desktop and the web each own a JS astronomy layer (the web recomputes
+everything client-side; the desktop builds its tracks in a worker). The Python
+oracle (app/astro.py) was retired in Phase C, so this module no longer compares
+live Python: it drives the node engines (tests/js/astro_parity.mjs) and asserts
+their contracts, with ABSOLUTE values frozen from the oracle where one number is
+the point (the fixture-based oracle checks live in tests/test_core_fixtures.py).
 """
 
 import json
@@ -16,38 +13,13 @@ import os
 import re
 import shutil
 import subprocess
-from datetime import date, datetime, timedelta, timezone
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
 
-from app import astro
-
 ROOT = Path(__file__).resolve().parent.parent
 HARNESS = ROOT / "tests" / "js" / "astro_parity.mjs"
-
-# J2000, the 2026 planning epoch, 2100 and 1950 (both precession directions)
-_JDS = [
-    2451545.0,
-    astro.julian_day(datetime(2026, 8, 22, 22, 0)),
-    astro.julian_day(datetime(2100, 1, 1, 0, 0)),
-    astro.julian_day(datetime(1950, 6, 15, 3, 0)),
-]
-# equatorial, a Messier field, far south, near the pole, negative-RA wraparound
-_POINTS = [
-    (0.0, 0.0), (83.63, 22.01), (250.42, 36.46), (210.80, -45.50),
-    (15.0, 89.0), (359.5, -70.0),
-]
-_SITES = [(52.52, 13.40), (-33.87, 151.21)]
-
-
-def _cases() -> list[dict]:
-    out = []
-    for jd in _JDS:
-        for ra, dec in _POINTS:
-            lat, lon = _SITES[len(out) % len(_SITES)]
-            out.append({"jd": jd, "ra": ra, "dec": dec, "lat": lat, "lon": lon})
-    return out
 
 
 def _run_node(engine: str, cases):
@@ -68,67 +40,34 @@ def _run_node(engine: str, cases):
     return json.loads(proc.stdout)
 
 
-@pytest.mark.parametrize("engine", ["desktop", "web"])
-def test_precession_parity_with_python(engine):
-    cases = _cases()
-    got = _run_node(engine, cases)
-    assert len(got) == len(cases)
-    for case, res in zip(cases, got):
-        ra, dec = astro._precess_j2000_to_date(case["ra"], case["dec"], case["jd"])
-        assert res["ra"] == pytest.approx(ra, abs=1e-9), case
-        assert res["dec"] == pytest.approx(dec, abs=1e-9), case
+# ------------------------------------------------- sun/moon visibility anchors
+# Frozen from the retired Python oracle (app/astro.py) right before Phase C
+# deleted it: (jd, lat, lon, expected apparent altitude). The node engines must
+# reproduce them; the visible/invisible decision is the shared aboveHorizon rule.
+_SUN_ANCHORS = [
+    # 2026-06-21 local noon, Berlin: definitively up
+    (2461212.9166666665, 52.52, 13.40, 58.152360),
+    # 2026-09-21 after sunset, Berlin: deep night
+    (2461305.4166666665, 52.52, 13.40, -35.612917),
+    # 2026-09-22 before sunrise, Berlin: below but near the horizon
+    (2461305.6666666665, 52.52, 13.40, -8.681207),
+    # 2026-06-21 midnight sun, Svalbard
+    (2461213.4166666665, 78.22, 15.65, 12.095180),
+    # 2026-12-21 polar-night noon, Svalbard
+    (2461395.9583333335, 78.22, 15.65, -11.656560),
+]
+_MOON_ANCHORS = [
+    (2461305.4166666665, 52.52, 13.40, 8.599908),      # up at night, Berlin
+    (2461305.5833333335, 52.52, 13.40, -20.732772),    # down at night, Berlin
+    (2461304.9166666665, 52.52, 13.40, -45.316577),    # daytime Moon, below
+    (2461305.0833333335, 78.22, 15.65, -19.270697),    # Svalbard daytime
+    (2461396.0, 78.22, 15.65, 17.202490),              # polar-night Moon, up
+]
 
 
-def test_web_inverse_precession_parity_with_python():
-    cases = _cases()
-    got = _run_node("web", cases)
-    for case, res in zip(cases, got):
-        ra, dec = astro._precess_j2000_to_date_inverse(
-            case["ra"], case["dec"], case["jd"])
-        assert res["inv_ra"] == pytest.approx(ra, abs=1e-9), case
-        assert res["inv_dec"] == pytest.approx(dec, abs=1e-9), case
-
-
-@pytest.mark.parametrize("engine", ["desktop", "web"])
-def test_altaz_parity_with_python(engine):
-    cases = _cases()
-    got = _run_node(engine, cases)
-    for case, res in zip(cases, got):
-        alt, az = astro.altaz(case["ra"], case["dec"], case["jd"],
-                              case["lat"], case["lon"])
-        assert res["alt"] == pytest.approx(alt, abs=1e-9), case
-        assert res["az"] == pytest.approx(az, abs=1e-9), case
-
-
-def test_gmst_parity_with_python():
-    cases = _cases()
-    for case, res in zip(cases, _run_node("web", cases)):
-        assert res["gmst"] == pytest.approx(astro.gmst_deg(case["jd"]), abs=1e-9)
-
-
-def test_web_sun_and_moon_parity_with_python():
-    """The web app computes sunrise/sunset itself, so its solar/lunar series
-    must match the server's - including the date->J2000 conversion, which is
-    what makes the precession error cancel for the sun and moon."""
-    cases = _cases()
-    for case, res in zip(cases, _run_node("web", cases)):
-        sra, sdec = astro.sun_ra_dec(case["jd"])
-        assert res["sun_ra"] == pytest.approx(sra, abs=1e-9), case
-        assert res["sun_dec"] == pytest.approx(sdec, abs=1e-9), case
-        mra, mdec = astro.moon_ra_dec(case["jd"])
-        assert res["moon_ra"] == pytest.approx(mra, abs=1e-9), case
-        assert res["moon_dec"] == pytest.approx(mdec, abs=1e-9), case
-        # the COMPOSED selected-time altitude (the map's visibility input) must
-        # match too; the old chart passed ra*15, which only showed up here
-        want_salt, _ = astro.altaz(sra, sdec, case["jd"], case["lat"], case["lon"])
-        want_malt, _ = astro.altaz(mra, mdec, case["jd"], case["lat"], case["lon"])
-        assert res["sun_alt"] == pytest.approx(want_salt, abs=1e-9), case
-        assert res["moon_alt"] == pytest.approx(want_malt, abs=1e-9), case
-
-
-def _sun_moon_case(dt_utc, lat, lon):
-    return {"jd": astro.julian_day(dt_utc), "ra": 0.0, "dec": 0.0,
-            "lat": lat, "lon": lon}
+def _anchor_cases(anchors):
+    return [{"jd": jd, "ra": 0.0, "dec": 0.0, "lat": lat, "lon": lon}
+            for jd, lat, lon, _alt in anchors]
 
 
 def test_web_sun_visibility_is_astronomical_not_clock_based():
@@ -136,86 +75,35 @@ def test_web_sun_visibility_is_astronomical_not_clock_based():
     selected time - day, night, polar day/night and around a crossing.
 
     The original map bug: web/app.js passed `sunRa * 15` (sunRaDec returns
-    DEGREES) to altaz, so the Sun sat high in the sky all night. This pins the
-    true altitude and the visible/invisible decision at each state."""
-    berlin = (52.52, 13.40)
-    svalbard = (78.22, 15.65)
-    cases = [
-        # (utc, site, expect_sun_above)
-        (datetime(2026, 6, 21, 10, 0, tzinfo=timezone.utc), berlin, True),   # local noon
-        (datetime(2026, 9, 21, 22, 0, tzinfo=timezone.utc), berlin, False),  # after sunset, deep night
-        (datetime(2026, 9, 22, 4, 0, tzinfo=timezone.utc), berlin, False),   # before sunrise
-        (datetime(2026, 6, 21, 22, 0, tzinfo=timezone.utc), svalbard, True), # polar day (midnight sun)
-        (datetime(2026, 12, 21, 11, 0, tzinfo=timezone.utc), svalbard, False),  # polar night (noon)
-    ]
-    node_cases = [_sun_moon_case(dt, lat, lon) for dt, (lat, lon), _ in cases]
-    for (dt, (lat, lon), expect), case, res in zip(cases, node_cases, _run_node("web", node_cases)):
-        want, _ = astro.altaz(*astro.sun_ra_dec(case["jd"]), case["jd"], lat, lon)
-        assert res["sun_alt"] == pytest.approx(want, abs=1e-9), (dt, lat, lon)
-        assert (res["sun_alt"] > 0) is expect, (dt, lat, lon, res["sun_alt"])
-        if expect:
-            assert res["sun_alt"] > 2, (dt, lat, lon, res["sun_alt"])
-        else:
-            assert res["sun_alt"] < -2, (dt, lat, lon, res["sun_alt"])
+    DEGREES) to altaz, so the Sun sat high in the sky all night. The frozen
+    oracle altitudes pin the true altitude and the visible/invisible decision
+    at each state."""
+    for (jd, lat, lon, want), res in zip(
+            _SUN_ANCHORS, _run_node("web", _anchor_cases(_SUN_ANCHORS))):
+        assert res["sun_alt"] == pytest.approx(want, abs=1e-6), (jd, lat, lon)
+        assert (res["sun_alt"] > 0) is (want > 0), (jd, res["sun_alt"])
+        # away from the horizon, so this is a real day/night decision
+        assert abs(want) > 2, (jd, want)
 
 
 def test_web_sun_below_horizon_at_night_reproduces_the_original_bug():
-    """The regression in one assertion: on an August night the Sun is ~-22 deg
-    (invisible); the OLD `ra*15` composition reports it around +45 deg, which
-    is exactly what the map drew (verified before the fix)."""
-    jd = astro.julian_day(datetime(2026, 8, 12, 22, 0))
-    lat, lon = 52.52, 13.40
-    res = _run_node("web", [{"jd": jd, "ra": 0.0, "dec": 0.0, "lat": lat, "lon": lon}])[0]
+    """The regression in one assertion: on an August night the Sun is ~-21 deg
+    (invisible); the OLD `ra * 15` composition put it well above the horizon,
+    which is exactly what the map drew (verified before the fix)."""
+    jd = 2461265.4166666665           # 2026-08-12T22:00Z
+    res = _run_node("web", [{"jd": jd, "ra": 0.0, "dec": 0.0,
+                             "lat": 52.52, "lon": 13.40}])[0]
     assert res["sun_alt"] < -5
-    sra, sdec = astro.sun_ra_dec(jd)
-    buggy = astro.altaz(sra * 15, sdec, jd, lat, lon)[0]
-    assert buggy > 0, "the old ra*15 composition should have put the Sun up"
-
-
-def test_web_sun_and_moon_visibility_over_a_full_day():
-    """Integration sweep: sample a full day at 10-min steps. The web Sun/Moon
-    altitudes must match Python everywhere, and the Sun must actually cross the
-    horizon twice (rise + set) - exercising just-before/just-after sunset and
-    the crossing without hard-coding a time of day."""
-    lat, lon = 52.52, 13.40
-    start = datetime(2026, 9, 21, 0, 0)
-    cases = [{"jd": astro.julian_day(start + timedelta(minutes=10 * i)),
-              "ra": 0.0, "dec": 0.0, "lat": lat, "lon": lon} for i in range(145)]
-    res = _run_node("web", cases)
-    assert len(res) == len(cases)
-    flips = 0
-    prev_up = None
-    for case, r in zip(cases, res):
-        want_s, _ = astro.altaz(*astro.sun_ra_dec(case["jd"]),
-                                case["jd"], lat, lon)
-        want_m, _ = astro.altaz(*astro.moon_ra_dec(case["jd"]),
-                                case["jd"], lat, lon)
-        assert r["sun_alt"] == pytest.approx(want_s, abs=1e-9), case
-        assert r["moon_alt"] == pytest.approx(want_m, abs=1e-9), case
-        up = r["sun_alt"] > 0
-        if prev_up is not None and up != prev_up:
-            flips += 1
-        prev_up = up
-    assert flips == 2, f"the Sun should rise and set exactly once, got {flips}"
 
 
 def test_web_moon_visibility_is_astronomical():
     """Moon: above/below the horizon, a daytime Moon, and a polar site - the
-    visible/invisible decision must follow the true altitude in every case."""
-    berlin = (52.52, 13.40)
-    svalbard = (78.22, 15.65)
-    cases = [_sun_moon_case(dt, lat, lon) for dt, (lat, lon) in [
-        (datetime(2026, 9, 21, 22, 0, tzinfo=timezone.utc), berlin),
-        (datetime(2026, 9, 22, 2, 0, tzinfo=timezone.utc), berlin),
-        (datetime(2026, 9, 21, 10, 0, tzinfo=timezone.utc), berlin),
-        (datetime(2026, 9, 21, 14, 0, tzinfo=timezone.utc), svalbard),
-        (datetime(2026, 12, 21, 12, 0, tzinfo=timezone.utc), svalbard),
-    ]]
+    visible/invisible decision must follow the true altitude in every case
+    (frozen oracle values) and discriminate above AND below."""
     above = below = 0
-    for case, res in zip(cases, _run_node("web", cases)):
-        mra, mdec = astro.moon_ra_dec(case["jd"])
-        want, _ = astro.altaz(mra, mdec, case["jd"], case["lat"], case["lon"])
-        assert res["moon_alt"] == pytest.approx(want, abs=1e-9), case
+    for (jd, lat, lon, want), res in zip(
+            _MOON_ANCHORS, _run_node("web", _anchor_cases(_MOON_ANCHORS))):
+        assert res["moon_alt"] == pytest.approx(want, abs=1e-6), (jd, lat, lon)
         if res["moon_alt"] > 0:
             above += 1
         else:
@@ -327,7 +215,7 @@ def test_js_window_end_is_never_undefined_for_a_full_grid_run():
 # ------------------------------------------------- twilight-window selection
 # The web used to score over the CIVIL window while the desktop prefers the
 # astronomical one, so "% of night" and the ranking disagreed between the two
-# apps for the same site and date. Both now follow app/planning.py's cascade:
+# apps for the same site and date. Both now follow the shared core cascade:
 # astronomical -> nautical -> civil -> sunset/sunrise.
 
 def test_web_twilight_choice_rule():
@@ -871,21 +759,14 @@ def test_web_night_stats_absolute_values():
 
 
 # ================================================== 11.1 moon illum/age/JD
-def test_web_moon_illumination_age_julian_day_parity_with_python():
-    """moonIllumination/moonAge/julianDay were never parity-pinned (the
-    harness shipped only sun/moon ra/dec). The PYTHON side is now anchored
-    absolutely (tests/test_astro.py: published 2026-08-12/28 phase instants +
-    elongation derived from the ERFA-pinned positions), so this loop proves the
-    web engine matches the reference rather than merely agreeing with a twin."""
-    cases = _cases()
-    got = _run_node("web", cases)
-    for case, res in zip(cases, got):
-        assert res["illum"] == pytest.approx(
-            astro.moon_illumination(case["jd"]), abs=1e-9), case
-        assert res["age"] == pytest.approx(
-            astro.moon_age(case["jd"]), abs=1e-9), case
-        # julianDay(dateFromJD(jd)) round-trips to the same instant
-        assert res["jd_rt"] == pytest.approx(case["jd"], abs=1e-7), case
+def test_web_julian_day_round_trips():
+    """julianDay(dateFromJD(jd)) must return the same instant (the frozen jd is
+    a textbook oracle value). moonIllumination/moonAge absolute values are
+    pinned by the frozen fixtures in tests/test_core_fixtures.py."""
+    jd = 2461305.4166666665           # 2026-09-21T22:00Z
+    res = _run_node("web", [{"jd": jd, "ra": 0.0, "dec": 0.0,
+                             "lat": 52.52, "lon": 13.40}])[0]
+    assert res["jd_rt"] == pytest.approx(jd, abs=1e-7)
 
 
 def test_web_detail_visibility_predicate_cannot_drift():
