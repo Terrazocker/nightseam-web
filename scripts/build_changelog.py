@@ -30,6 +30,10 @@ ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "landing" / "changelog.json"
 
 CURATED = {
+    # 0.6.23 ships the Batch 3 review hardening (API/import numeric + custom-id
+    # validation, web storage/IDB/cross-tab/pano-section robustness) and the
+    # first real-browser release gate. No planning-number or interface changes.
+    "0.6.23": "Hardening release with a new internal safety net - no planning or interface changes. Restoring a backup or editing a site, rig or panorama now refuses invalid numbers (such as infinity) and custom-object ids that are not properly namespaced, so a damaged or hand-edited file can no longer break the app on startup. The web planner is more robust around browser storage: a save that fails because storage is full says so and keeps your edit, another tab's changes reload instead of silently overwriting each other, an in-browser database upgrade blocked by another tab no longer hangs, and an imported file without a horizon section can no longer wipe your horizons. A new automated real-browser test gate (system Chrome for the web planner, and the packaged Windows app) now runs as part of every release, so interface regressions are caught before shipping. Your data, every displayed number and the way you plan are unchanged.",
     # 0.6.22 ships the Batch 2 review fixes: site-noon polar fallback, sync
     # cache identity (tz + profile content), web save durability, plus
     # test-quality/guard work. No planning-number changes.
