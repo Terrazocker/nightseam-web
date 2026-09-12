@@ -504,14 +504,14 @@ Image Catalog (FITS ingest + library). `README.md` has the feature list.
   `scripts/check_catalog_token.py`, wired into `scripts/check_js.py`, and pinned
   by `tests/test_cache_tokens.py` (mutation-tested). Do NOT add
   `{cache:'no-store'}` - the file must stay cacheable.
-  Current (post-Batch-3): `app.js?v=59` (index.html) / `CATALOG_TOKEN = '2'`,
-  `astro.js?v=9`, `horizon.js?v=40`, `format.js?v=16`, `nightrank.js?v=6`,
-  `webstore.js?v=19`, `dragwin.js?v=1`, `style.css?v=16`, `themes.css?v=4`; the
+  Current (0.6.24): `app.js?v=60` (index.html) / `CATALOG_TOKEN = '2'`,
+  `astro.js?v=10`, `horizon.js?v=41`, `format.js?v=17`, `nightrank.js?v=7`,
+  `webstore.js?v=20`, `dragwin.js?v=1`, `style.css?v=16`, `themes.css?v=4`; the
   core stub is `web/core.js?v=17` (bump = re-bake, enforced by
-  `scripts/check_core.py`). Batch 3 changed `app.js` (rig refresh + reloadRigs
-  fix), `horizon.js` (cross-tab guard, import id/stroke bounds) and `webstore.js`
-  (blocked IndexedDB upgrade) => 59/40/19. Those bytes are UNRELEASED; the live
-  web is 0.6.22.
+  `scripts/check_core.py`). 0.6.24 re-baked core (16->17), which changed the
+  bytes of EVERY module that imports it (app/astro/format/nightrank/webstore)
+  plus `horizon.js` (crop UI) => 60/10/41/17/7/20. 0.6.23 (live) was
+  59/9/40/16/6/19.
 - **Baked-core retention policy:** keep the CURRENT content-hashed dir plus the
   immediately previous one (N-1) so a visitor holding a cached old `core.js`
   stub still resolves its tree; remove anything older at the next re-bake.
