@@ -32,10 +32,13 @@ APP_DIR = ROOT / "app"
 SCRIPTS_DIR = ROOT / "scripts"
 
 # Functions that must exist only in core/. Keep in sync with core/index.js.
-# (`clearMask` stays out: the desktop editor keeps its own UI-level variant.)
+# Two deliberate shell-level variants stay OUT (pinned by test_core_drift.py's
+# MOVED pin): `clearMask` (the desktop editor keeps its own UI-level variant)
+# and `popularityFactor` (the shells wrap it to resolve m.popularity first).
 MOVED = (
-    "rebuildMask", "altOf", "rowOfAlt", "xOfAz", "azOfX", "profileFromMask",
-    "profileSegments", "visibleSkyBands", "skyBandPolygons", "computeProfile",
+    "rebuildMask", "altOf", "rowOfAlt", "xOfAz", "azOfX", "wrapsFor",
+    "profileFromMask", "normalizeProfileBins", "profileSegments",
+    "visibleSkyBands", "skyBandPolygons", "computeProfile",
     "ceilFor", "bandTopFor", "overhangRuns", "assumedOpenRuns",
     "assumedOpenHatchPolys",
     "fmtSize", "sizeArcmin", "fmtFov", "fmtFovPair", "framePct", "magVisible",
@@ -44,12 +47,13 @@ MOVED = (
     "offsetEastMin", "zoneOffsetAtLocalNoon", "wallFromUtcMs", "utcFromWallMs",
     "aboveHorizon", "sampleVisible", "statusOf", "effectiveMinAlt",
     "moonSensitivity", "moonMinDist", "effectiveMoonGlow", "moonPenalty",
-    "bortleMoonFactor",
+    "bortleMoonFactor", "nightStatsBatch",
+    "computeNightTracks", "scoreNightTracks",
     "julianDay", "dateFromJD", "gmstDeg", "precessJ2000ToDate",
     "precessDateToJ2000", "refractionDeg", "altaz", "altazFrame",
     "altazFrameApply", "sunRaDec", "moonRaDec", "moonIllumination",
     "moonAge",
-    "sunAlt", "sunCrossings", "nightInfo", "pickDarkWindow",
+    "sunAlt", "sunCrossings", "nightInfo", "pickDarkWindow", "scrubWindowMs",
     "scrubBounds", "scrubClamp", "sepDeg", "nightStats",
 )
 # The Python astronomy/planning layer was deleted in Phase C (0.6.20): these

@@ -8,10 +8,32 @@ a moved concept re-implemented in a shell. The real repository must pass.
 """
 
 import importlib.util
+import re
 import shutil
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+
+# Two core functions have deliberate shell-level variants, documented in
+# scripts/check_core.py: clearMask (desktop editor UI variant) and
+# popularityFactor (the shells resolve m.popularity before delegating).
+_MOVED_EXCEPTIONS = {"clearMask", "popularityFactor"}
+
+
+def _core_exported_functions() -> set[str]:
+    """Every function `core/` exports, derived from the source files.
+
+    Matches both `export function name` and function-valued
+    `export const name = (` / `async` / `function` (constants like NO_BLOCK
+    are excluded - the guard has no reason to track them)."""
+    names: set[str] = set()
+    for p in sorted((ROOT / "core").glob("*.js")):
+        text = p.read_text(encoding="utf-8")
+        names.update(re.findall(r"export\s+(?:async\s+)?function\s+(\w+)",
+                                text))
+        names.update(re.findall(
+            r"export\s+const\s+(\w+)\s*=\s*(?:\(|async\b|function\b)", text))
+    return names
 
 
 def _guard():
@@ -24,6 +46,30 @@ def _guard():
 
 def test_real_repository_core_bake_is_clean():
     assert _guard().scan() == [], "the baked core trees drifted from core/"
+
+
+def test_moved_list_covers_every_core_function():
+    """FIX-8 (review TS2): scripts/check_core.py::MOVED is hand-kept and had
+    fallen behind core/index.js, leaving moved concepts (scrubWindowMs,
+    computeNightTracks, ...) unflagged if a shell re-defined them."""
+    guard = _guard()
+    missing = _core_exported_functions() - set(guard.MOVED) - _MOVED_EXCEPTIONS
+    assert not missing, f"add these to check_core.py MOVED: {sorted(missing)}"
+
+
+def test_moved_list_has_no_stale_entries():
+    guard = _guard()
+    stale = set(guard.MOVED) - _core_exported_functions()
+    assert not stale, f"check_core.py MOVED names no core function: {sorted(stale)}"
+
+
+def test_moved_staleness_is_detected():
+    """Mutation proof for the pin above: dropping one name from MOVED must be
+    visible as 'missing' (the real list is never touched)."""
+    guard = _guard()
+    guard.MOVED = tuple(n for n in guard.MOVED if n != "scrubWindowMs")
+    missing = _core_exported_functions() - set(guard.MOVED) - _MOVED_EXCEPTIONS
+    assert "scrubWindowMs" in missing
 
 
 def _stage(tmp_path: Path):
