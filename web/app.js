@@ -8,13 +8,13 @@
  *   • Settings — sites, rigs, custom targets, backup/restore (webstore.js)
  * All sky math runs client-side (astro.js, Meeus algorithms).
  */
-import * as E from './astro.js?v=7';
+import * as E from './astro.js?v=8';
 import * as Hor from './horizon.js?v=38';
 import * as WS from './webstore.js?v=17';
 import { initDragWindows } from './dragwin.js?v=1';
 import { fmtSize, sizeArcmin, framePct, magVisible, skyClampZoom,
          skyViewMatrix, skyScreenToBase, skyClampFocus } from './format.js?v=15';
-import { nightStats, sampleVisible } from './nightrank.js?v=4';
+import { nightStats, sampleVisible } from './nightrank.js?v=5';
 import { TYPE_LABELS, TYPE_COLORS, searchBlob as coreSearchBlob }
   from './core.js?v=15';
 import { popularityFactor as corePopularityFactor } from './core.js?v=15';

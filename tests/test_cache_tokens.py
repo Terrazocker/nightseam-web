@@ -37,6 +37,30 @@ def test_catalog_token_matches_bytes_and_single_fetch_site():
     assert hashlib.sha256((WEB / "catalog.json").read_bytes()).hexdigest() == man["sha256"]
 
 
+def test_web_token_register_matches_the_sources():
+    """FIX-7 (review TL2/F2): the AGENTS.md 'Current:' register is the only
+    place the per-module cache tokens are tracked, and it had gone stale
+    (app.js 55 vs 56, horizon 37 vs 38, format 14 vs 15, core 14 vs 15).
+    Pin doc == source for every listed token."""
+    agents = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
+    register = {full.rsplit("/", 1)[-1]: tok for full, _ext, tok in
+                re.findall(r"`([\w./]+)\.(js|css)\?v=(\d+)`", agents)}
+    assert register, "AGENTS.md no longer carries the token register"
+    index = (WEB / "index.html").read_text(encoding="utf-8")
+    app = (WEB / "app.js").read_text(encoding="utf-8")
+    assert register["app"] == re.search(r"app\.js\?v=(\d+)", index).group(1)
+    for name in ("style", "themes"):
+        assert register[name] == \
+            re.search(name + r"\.css\?v=(\d+)", index).group(1)
+    for name, tok in re.findall(r"\./([\w.]+)\.js\?v=(\d+)", app):
+        if name == "core":
+            continue                     # enforced against the manifest below
+        assert register.get(name) == tok, (name, tok, register.get(name))
+    man = json.loads((ROOT / "core" / "core.manifest.json").read_text(
+        encoding="utf-8"))
+    assert register["core"] == str(man["token"])
+
+
 def test_catalog_change_without_token_bump_fails_and_matched_bump_passes(
         tmp_path, monkeypatch):
     """Mutation proof (owner-requested), performed on a COPY of the three files
