@@ -91,6 +91,20 @@ def _mutated_core(tmp_path, old, new):
     return dest
 
 
+def _mutated_core_nth(tmp_path, old, new, nth):
+    """Replace the nth (1-based) occurrence - the forward and inverse
+    precession functions share their first line verbatim."""
+    dest = tmp_path / "core"
+    shutil.copytree(ROOT / "core", dest)
+    target = dest / "astro.js"
+    text = target.read_text(encoding="utf-8")
+    parts = text.split(old)
+    assert len(parts) > nth, f"mutation anchor {old!r} has no occurrence {nth}"
+    target.write_text(old.join(parts[:nth]) + new + old.join(parts[nth:]),
+                      encoding="utf-8")
+    return dest
+
+
 def _assert_mutation_fails(tmp_path, old, new, expected_id):
     failed = _failed(_mutated_core(tmp_path, old, new))
     assert expected_id in failed, \
@@ -130,3 +144,20 @@ def test_moon_phase_mutation_fails_the_published_phase_anchor(tmp_path):
 def test_refraction_mutation_fails_the_refraction_anchor(tmp_path):
     _assert_mutation_fails(tmp_path, "1.02 / Math.tan(", "1.50 / Math.tan(",
                            "refraction_magnitude")
+
+
+def test_inverse_precession_mutation_fails_the_iau2006_anchor(tmp_path):
+    """TS5 (review): the previous mutation replaced the FIRST `2306.2181 * t`,
+    i.e. only the forward function - the inverse check
+    (`precessDateToJ2000`) had no bite proof. The shared coefficient appears
+    twice per function (zeta and z), so the inverse zeta is occurrence 3;
+    mutate it and require the inverse anchor to fail."""
+    core = _mutated_core_nth(tmp_path, "2306.2181 * t", "2316.2181 * t", 3)
+    failed = _failed(core)
+    assert "iau2006_inverse" in failed, sorted(failed)
+
+
+def test_julian_day_mutation_fails_the_time_anchor(tmp_path):
+    """TS5 (review): the JD examples had no mutation proof either."""
+    _assert_mutation_fails(tmp_path, "- 1524.5;", "- 1524.0;",
+                           "meeus_jd_examples")
