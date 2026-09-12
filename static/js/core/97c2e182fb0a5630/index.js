@@ -15,6 +15,7 @@ export {
   visibleSkyBands, skyBandPolygons,
   computeProfile, clearMask, ceilFor, bandTopFor,
   overhangRuns, assumedOpenRuns, assumedOpenHatchPolys,
+  CROP_MIN_FOV, cropKeptBand, cropStrokes, clipProfileToFov, cropPano,
 } from './horizon.js';
 
 export {

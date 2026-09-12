@@ -41,6 +41,7 @@ MOVED = (
     "visibleSkyBands", "skyBandPolygons", "computeProfile",
     "ceilFor", "bandTopFor", "overhangRuns", "assumedOpenRuns",
     "assumedOpenHatchPolys",
+    "cropKeptBand", "cropStrokes", "clipProfileToFov", "cropPano",
     "fmtSize", "sizeArcmin", "fmtFov", "fmtFovPair", "framePct", "magVisible",
     "skyClampZoom", "skyViewMatrix", "skyScreenToBase", "skyClampFocus",
     "searchBlob", "isCustomId",

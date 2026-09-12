@@ -5,7 +5,7 @@
 import { $, clamp, esc, api, toast, num } from "./util.js";
 import { S } from "./state.js";
 import { loadNight } from "./night.js";
-import { profileSegments } from "./core.js";
+import { profileSegments, cropKeptBand } from "./core.js";
 
 export { profileSegments };
 
@@ -336,7 +336,6 @@ async function applyCrop() {
   const c = normCrop();
   const W = cvW(), H = cvH();
   if (!c || c.w < 4 || !Pano.img || !Pano.img.complete) return;
-  // full-height side band: keep everything outside [c.x, c.x+c.w]
   const keepL = Math.round(c.x / W * Pano.img.naturalWidth);
   const keepR = Math.round((W - (c.x + c.w)) / W * Pano.img.naturalWidth);
   let sx = keepL, sw = Pano.img.naturalWidth - keepL - keepR;
@@ -357,17 +356,19 @@ async function applyCrop() {
   const blob = await new Promise(res => cv.toBlob(res, "image/png"));
   if (!blob) return alert("Cropping failed");
 
-  // recalibrate: removed degrees shift the left-edge azimuth / shrink FOV
-  const fovOld = +$("#fovAz").value || 360;
-  const azOffOld = +$("#azOffset").value || 0;
-  const cutLeftDeg = c.x / W * fovOld;
-  const fovNew = Math.round(fovOld * (1 - c.w / W));
-  const azNew = ((azOffOld + cutLeftDeg) % 360 + 360) % 360;
+  // recalibrate with the SHARED kept-band helper (core/horizon.js): the kept
+  // band [c.x, c.x+c.w] shrinks the FOV to its fraction and moves the left-edge
+  // azimuth; the 45 deg floor + 2 dp azimuth live there for BOTH shells. The old
+  // inline fovOld*(1-c.w/W) computed the REMOVED fraction and only happened to
+  // agree at exactly half width.
+  const { fov: fovNew, azOffset: azNew } =
+      cropKeptBand(+$("#fovAz").value || 360, +$("#azOffset").value || 0,
+                   { x: c.x, w: c.w }, W);
 
   const fd = new FormData();
   fd.append("file", blob, `${Pano.cur.id}.png`);
   fd.append("az_offset", azNew.toFixed(2));
-  fd.append("fov", String(Math.max(45, fovNew)));
+  fd.append("fov", String(fovNew));
   try {
     await api(`/api/panorama/${Pano.cur.id}/image`, { method: "POST", body: fd });
     await refreshPanos();

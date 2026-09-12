@@ -150,5 +150,75 @@ if (!back || back.profile.length !== 720 || back.profileTop.length !== 720) fail
 if (!back || back.strokes.length !== 1) fail("round-trip strokes");
 if (!back || back.fov !== 360) fail("round-trip calibration");
 
+/* 8. kept-band crop: the ONE shared formula (both shells) + non-destructive
+   transforms. The retired desktop formula fovOld*(1-w/W) computed the REMOVED
+   fraction and only matched at exactly half width - guarded below. */
+const CB = H.cropKeptBand, CW = 1000;
+const cbCases = [
+  // [fovOld, azOffOld, sel, wantFov, wantAz]
+  [360, 0, { x: 0, w: 1000 }, 360, 0],       // select all keeps the full frame
+  [360, 0, { x: 250, w: 500 }, 180, 90],     // center 50%
+  [360, 0, { x: 0, w: 500 }, 180, 0],        // left 50%
+  [360, 0, { x: 100, w: 800 }, 288, 36],     // center 80%
+  [360, 0, { x: 400, w: 200 }, 72, 144],     // center 20%
+  [360, 0, { x: 700, w: 300 }, 108, 252],    // right 30%
+  [360, 350, { x: 200, w: 400 }, 144, 62],   // mod-360 wrap
+  [180, 90, { x: 100, w: 800 }, 144, 108],   // partial FOV + azOffset
+];
+for (const [f0, a0, sel, wf, wa] of cbCases) {
+  const r = CB(f0, a0, sel, CW);
+  if (r.fov !== wf || !near(r.azOffset, wa, 1e-9)) {
+    fail(`cropKeptBand(${f0},${a0},${JSON.stringify(sel)}) -> ${r.fov}/${r.azOffset}, want ${wf}/${wa}`);
+  }
+}
+if (CB(360, 0, { x: 400, w: 50 }, CW).fov !== H.CROP_MIN_FOV) fail("cropKeptBand floor != 45");
+if (CB(180, 0, { x: 0, w: 333 }, CW).fov !== 60) fail(`cropKeptBand rounding -> ${CB(180, 0, { x: 0, w: 333 }, CW).fov}`);
+if (!near(CB(360, 0, { x: 1, w: 999 }, CW).azOffset, 0.36)) fail("cropKeptBand azimuth must be 2 dp");
+if (CB(360, 0, { x: 100, w: 800 }, CW).fov === 72) fail("cropKeptBand regressed to the removed-fraction formula");
+
+/* 8b. stroke transform/clip - keep the middle half (W=720, sel x=180 w=360) */
+const st = [
+  { m: "b", x: 200, y: 100, r: 10 },
+  { m: "b", x: 500, y: 100, r: 10 },
+  { m: "b", x: 90, y: 100, r: 10 },    // transforms to -180 -> clipped
+  { m: "b", x: 710, y: 100, r: 10 },   // transforms past 720 -> clipped
+];
+const cs = H.cropStrokes(st, { x: 180, w: 360 }, 720);
+if (cs.length !== 2) fail(`cropStrokes kept ${cs.length}, want 2`);
+if (cs[0] && !near(cs[0].x, 40)) fail(`cropStrokes x 200 -> ${cs[0] && cs[0].x}, want 40`);
+if (cs[1] && !near(cs[1].x, 640)) fail(`cropStrokes x 500 -> ${cs[1] && cs[1].x}, want 640`);
+if (cs[0] && cs[0].y !== 100) fail("cropStrokes must not change y (horizontal crop only)");
+
+/* 8c. profile-only record: crop clips the stored profile to the new frame and
+   fills out-of-coverage bins exactly as a fresh pano of the new frame does */
+const po = { ...base, paintMode: "obstacle", strokes: [],
+             profile: new Array(720).fill(20), profileTop: new Array(720).fill(-90) };
+H.cropPano(po, { x: 180, w: 360 }, 720);           // keep az 90..270
+if (po.fov !== 180 || !near(po.azOffset, 90)) fail(`profile crop calib ${po.fov}/${po.azOffset}`);
+if (po.profile[200] !== 20) fail(`in-FOV bin lost: ${po.profile[200]}`);
+if (po.profile[20] !== H.NO_BLOCK) fail(`out-of-FOV obstacle bin -> ${po.profile[20]}, want NO_BLOCK`);
+if (po.profileTop[20] !== H.NO_BLOCK) fail("out-of-FOV obstacle top must be NO_BLOCK");
+const poSky = { ...base, paintMode: "sky", strokes: [],
+                profile: new Array(720).fill(10), profileTop: new Array(720).fill(40) };
+H.cropPano(poSky, { x: 180, w: 360 }, 720);
+if (poSky.profile[20] !== 90) fail(`out-of-FOV sky bin -> ${poSky.profile[20]}, want 90`);
+
+/* 8d. stroke record: strokes WIN - they are clipped and the profile re-derived
+   (unlike the desktop, which re-encodes the photo and WIPES the mask). */
+const ps2 = { ...base, paintMode: "obstacle", strokes: [{ m: "b", x: 200, y: 100, r: 10 }],
+              profile: new Array(720).fill(-90), profileTop: new Array(720).fill(-90) };
+H.cropPano(ps2, { x: 180, w: 360 }, 720);
+if (!(ps2.profile[200] !== H.NO_BLOCK)) fail("cropped stroke record must keep a derived profile");
+if (ps2.profile[0] !== H.NO_BLOCK) fail("cropped stroke record must not block outside its band");
+if (!near(ps2.fov, 180)) fail("stroke crop fov");
+if (H.wrapsFor({ ...base, fov: 180 })) fail("wrapsFor must be false for a partial FOV");
+// a crop that keeps a stroke crossing the old seam re-derives without wrap
+const seamCrop = { ...base, paintMode: "obstacle", strokes: [{ m: "b", x: 1, y: 180, r: 12 }] };
+H.cropPano(seamCrop, { x: 0, w: 720 }, 720);       // select all: full frame, still wraps
+if (!H.wrapsFor(seamCrop)) fail("select-all crop must stay a wrapping 360 pano");
+if (seamCrop.profile[0] === H.NO_BLOCK || seamCrop.profile[719] === H.NO_BLOCK) {
+  fail("select-all crop lost the seam continuity");
+}
+
 console.log(ok ? "pano geometry contract held" : "pano geometry FAILED");
 process.exit(ok ? 0 : 1);

@@ -203,5 +203,31 @@ const wb2 = H.normalizePanos({ panos: [{ id: 'ok-2',
 assert(wb2 && wb2.panos[0].strokes.length === 20000,
        'WB5: imported strokes must be capped');
 
+/* ---------------- crop: one history entry, undo/redo, dirty ---------------- */
+// A crop is ONE gesture => one history entry; undo restores the WHOLE pre-crop
+// state (fov, azOffset AND strokes), and Save clears the dirty flag.
+const cp = H.newPano('crop-ui');
+cp.strokes = [{ m: 'b', x: 360, y: 100, r: 20 }];
+H.computeProfile(cp);
+const preStrokes = JSON.stringify(cp.strokes);
+const preFov = cp.fov, preAz = cp.azOffset;
+const ch = H.newHistory(cp);
+H.historyMarkSaved(ch, cp);                 // baseline = pre-crop
+assert(!H.historyDirty(ch, cp), 'crop test starts clean');
+H.cropPano(cp, { x: 180, w: 360 }, 720);    // keep az 90..270 -> fov 180, az 90
+H.historyCommit(ch, cp);
+assert(ch.entries.length === 2, `crop must add exactly ONE history entry (${ch.entries.length})`);
+assert(cp.fov === 180 && near(cp.azOffset, 90), 'crop applied fov/az');
+assert(H.historyDirty(ch, cp), 'a crop marks the editor dirty');
+H.historyUndo(ch, cp);
+assert(cp.fov === preFov && near(cp.azOffset, preAz), 'undo restores pre-crop calibration');
+assert(JSON.stringify(cp.strokes) === preStrokes, 'undo restores the pre-crop strokes');
+assert(!H.historyDirty(ch, cp), 'undo back to the saved state is clean');
+H.historyRedo(ch, cp);
+assert(cp.fov === 180 && cp.strokes.length > 0, 'redo reapplies the crop with its strokes');
+H.historyMarkSaved(ch, cp);
+assert(!H.historyDirty(ch, cp), 'Save clears the crop dirty flag');
+H.deletePano(cp.id);
+
 console.log(ok ? 'pano ui contract held' : 'pano ui FAILED');
 process.exit(ok ? 0 : 1);

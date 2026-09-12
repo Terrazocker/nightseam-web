@@ -463,3 +463,22 @@ def test_batch3_web_hardening_wiring():
         "another tab's pano/prefs write must trigger a reload (WB4)"
     ws = _read("web", "webstore.js")
     assert "rq.onblocked" in ws, "a blocked IDB upgrade must reject (WB6)"
+
+
+def test_desktop_crop_uses_the_shared_kept_band_helper():
+    """The desktop crop must consume the shared core helper (kept band), not the
+    retired fovOld*(1-w/W) removed-fraction formula, and the 45 deg floor lives
+    once in core. The web side of the same contract is pinned by
+    tests/js/pano_geom.mjs (formula cases) and tests/js/pano_ui.mjs (history)."""
+    core = _read("core", "horizon.js")
+    assert "export const CROP_MIN_FOV = 45" in core, "the 45 deg floor must live in core"
+    assert "export function cropKeptBand(" in core
+    pano = _read("static", "js", "pano.js")
+    assert "cropKeptBand(" in pano, "the desktop crop must use the shared helper"
+    assert "fovOld * (1 - c.w / W)" not in pano, \
+        "the removed-fraction crop formula must be gone from the desktop"
+    assert "keep everything outside" not in pano, "the stale crop comment must be gone"
+    assert "Math.max(45, fovNew)" not in pano, "the 45 floor must not be inline"
+    web = _read("web", "horizon.js")
+    assert "cropPano(p," in web and "cropKeptBand" in web, \
+        "the web editor must crop through the shared core helpers"

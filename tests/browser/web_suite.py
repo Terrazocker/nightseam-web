@@ -47,6 +47,10 @@ def open_editor(c):
     c.page.wait_for_selector("#pano-blank", timeout=20000)
     c.page.click("#pano-blank")
     c.page.wait_for_selector("#pano-canvas", state="visible", timeout=20000)
+    # The editor is tall (canvas ~608 px below the topbar): give the viewport
+    # room for the whole canvas so pointer paint/crop gestures land on it.
+    c.page.set_viewport_size({"width": 1366, "height": 1500})
+    c.page.evaluate("() => window.scrollTo(0, 0)")
     c.page.locator("#pano-canvas").scroll_into_view_if_needed()
     c.page.wait_for_timeout(250)
 
@@ -398,4 +402,90 @@ def web_mag_slider_changes_sky(c):
     dig1 = canvas_digest(c, "#sky")
     c.expect(val1 != val0, f"the magnitude readout must change ({val0!r} -> {val1!r})")
     c.expect(dig1 != dig0, "changing the magnitude limit must redraw the sky view")
+    c.assert_clean()
+
+
+def crop_drag(c, x0: float, x1: float):
+    """Drag the crop band (fractions of the editor canvas width) at mid height."""
+    box = c.page.locator("#pano-canvas").bounding_box()
+    c.expect(box and box["width"] > 20, "pano canvas must have a size")
+    y = box["y"] + box["height"] * 0.5
+    sx = box["x"] + box["width"] * x0
+    ex = box["x"] + box["width"] * x1
+    c.page.mouse.move(sx, y)
+    c.page.mouse.down()
+    for i in range(1, 9):
+        c.page.mouse.move(sx + (ex - sx) * i / 8, y)
+    c.page.mouse.up()
+    c.page.wait_for_timeout(150)
+
+
+def active_profile(c):
+    st = pano_state(c)
+    if not st or not st.get("panos"):
+        return None
+    p = next((p for p in st["panos"] if p.get("id") == st.get("activeId")),
+             st["panos"][0])
+    return p.get("profile")
+
+
+@check("web-pano-crop-recalibrate", "web")
+def web_pano_crop_recalibrate(c):
+    """Non-destructive kept-band crop: it shrinks the FOV, moves the left-edge
+    azimuth and transforms the strokes (the photo and paint survive - unlike the
+    desktop, which re-encodes and wipes). Crop both sides of a partial-FOV frame,
+    save, reload, and confirm the blocked profile is byte-identical."""
+    boot(c)
+    open_editor(c)
+    paint(c)
+    # a partial 180 deg frame so the crop is a real recalibration
+    c.page.evaluate(
+        """() => { const s = document.querySelector('#ed-fov');
+             s.value = '180'; s.dispatchEvent(new Event('input', { bubbles: true }));
+             s.dispatchEvent(new Event('change', { bubbles: true })); }""")
+    c.page.wait_for_timeout(200)
+
+    c.page.click("#ed-crop")
+    crop_drag(c, 0.25, 0.75)                 # keep the middle half
+    c.page.click("#ed-crop-apply")
+    c.page.wait_for_timeout(250)
+    # kept half of a 180 deg frame -> 90 deg; az = 0 + 0.25*180 = 45
+    c.expect_in("90\u00B0", c.page.inner_text("#ed-fov-v"),
+                "the crop must keep half the FOV")
+    c.expect_in("45\u00B0", c.page.inner_text("#ed-az-v"),
+                "the crop must move the left-edge azimuth")
+    c.expect_in("Unsaved", c.page.inner_text("#ed-status"),
+                "a crop must dirty the editor")
+    c.expect(not c.page.get_attribute("#ed-undo", "disabled"),
+             "a crop must be one undoable history entry")
+
+    # undo restores the pre-crop calibration; redo reapplies the crop
+    c.page.click("#ed-undo")
+    c.page.wait_for_function(
+        """() => (document.querySelector('#ed-fov-v')?.textContent || '').includes('180')""",
+        timeout=8000)
+    c.page.click("#ed-redo")
+    c.page.wait_for_function(
+        """() => (document.querySelector('#ed-fov-v')?.textContent || '').includes('90')""",
+        timeout=8000)
+
+    c.page.click("#ed-save")
+    c.page.wait_for_function(
+        """() => (document.querySelector('#ed-status')?.textContent || '').includes('Saved')""",
+        timeout=10000)
+    c.expect(active_strokes(c) > 0,
+             "the cropped strokes must survive (non-destructive crop)")
+    saved = active_profile(c)
+    c.expect(saved and len(saved) == 720, "the cropped profile must be saved")
+
+    # reload: the cropped frame and its blocked profile survive untouched
+    c.goto("/")
+    tab(c, "horizon")
+    c.page.wait_for_selector("#pano-list li[data-id]", timeout=30000)
+    c.page.click("#pano-list li[data-id]")
+    c.page.wait_for_selector("#pano-canvas", timeout=30000)
+    c.expect_in("90\u00B0", c.page.inner_text("#ed-fov-v"),
+                "reload must keep the cropped FOV")
+    c.expect(active_profile(c) == saved,
+             "the blocked profile must match the pre-save geometry")
     c.assert_clean()

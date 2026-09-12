@@ -25,6 +25,7 @@ WEB_CHECKS = [
     "web-sun-moon-above-horizon",
     "web-scrub-changes-time",
     "web-mag-slider-changes-sky",
+    "web-pano-crop-recalibrate",
 ]
 DESKTOP_CHECKS = [
     "desktop-boot",
@@ -33,6 +34,7 @@ DESKTOP_CHECKS = [
     "desktop-pref-rescore",
     "desktop-advanced-mode",
     "desktop-scrub-window",
+    "desktop-pano-crop-fov",
 ]
 
 

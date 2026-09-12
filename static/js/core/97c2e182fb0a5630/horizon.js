@@ -288,6 +288,94 @@ export function clearMask(p) {
   return p.profile;
 }
 
+/* ---------------- kept-band crop (shared by both shells) ----------------
+ *
+ * A horizontal crop keeps ONE contiguous azimuth band and shrinks the
+ * calibrated FOV to it. `sel = { x, w }` is the KEPT band in the editor's
+ * canvas pixels and `W` is that canvas width (the web passes its 720-wide
+ * logical mask, the desktop its displayed canvas width - only the fraction
+ * matters). fovNew = max(45, round(fovOld * w/W)); azNew is the azimuth of the
+ * kept band's left edge, at the same 2 dp the desktop transport used.
+ *
+ * History note (0.6.2x): the retired desktop formula `fovOld * (1 - w/W)`
+ * computed the REMOVED fraction while the image, dim overlay, azimuth and HUD
+ * all used the kept band - they agreed only at exactly half width (and a
+ * select-all crop stored 45 deg). The kept-band formula is the single shared
+ * truth now; `CROP_MIN_FOV` is the ONE floor. */
+
+export const CROP_MIN_FOV = 45;
+
+export function cropKeptBand(fovOld, azOffOld, sel, W) {
+  const fov0 = Number(fovOld) > 0 ? Number(fovOld) : 360;
+  const az0 = Number(azOffOld) || 0;
+  const w = Number(sel && sel.w) || 0;
+  const frac = (W > 0) ? Math.min(1, Math.max(0, w / W)) : 1;
+  const fov = Math.max(CROP_MIN_FOV, Math.round(fov0 * frac));
+  let az = ((az0 + ((Number(sel && sel.x) || 0) / W) * fov0) % 360 + 360) % 360;
+  az = (Math.round(az * 100) / 100) % 360;
+  return { fov, azOffset: az };
+}
+
+/** Transform + clip FOV-relative strokes into a kept-band crop. Horizontal
+ *  only: y and radius are unchanged. A dab whose circle overlaps the kept band
+ *  is kept even when its centre lands just outside; rebuildMask clips it. */
+export function cropStrokes(strokes, sel, W) {
+  const w = Number(sel && sel.w) || 0;
+  const frac = (W > 0) ? w / W : 1;
+  if (!(frac > 0)) return [];
+  const x0 = ((Number(sel && sel.x) || 0) / W) * MASK_W;
+  const scale = 1 / frac;
+  const out = [];
+  for (const s of strokes || []) {
+    const nx = (s.x - x0) * scale;
+    const r = Number(s.r) || 0;
+    if (nx < -r || nx > MASK_W + r) continue;
+    out.push({ ...s, x: nx });
+  }
+  return out;
+}
+
+/** Non-destructive crop for a stroke-less record: keep the in-FOV world bins
+ *  (world azimuths do not move under a crop) and reset the bins the new frame
+ *  no longer covers to the mode sentinel, exactly as a fresh panorama of the
+ *  new frame holds there. Mutates p in place. */
+export function clipProfileToFov(p) {
+  const sky = p.paintMode === 'sky';
+  const fov = Number(p.fov) > 0 ? Number(p.fov) : 360;
+  const azOff = Number(p.azOffset) || 0;
+  if (!Array.isArray(p.profile) || p.profile.length !== BINS) {
+    p.profile = new Array(BINS).fill(sky ? 90 : NO_BLOCK);
+  }
+  if (!Array.isArray(p.profileTop) || p.profileTop.length !== BINS) {
+    p.profileTop = new Array(BINS).fill(NO_BLOCK);
+  }
+  for (let i = 0; i < BINS; i++) {
+    const rel = (((i * BIN_DEG - azOff) % 360) + 360) % 360;
+    if (rel <= fov) continue;
+    p.profile[i] = sky ? 90 : NO_BLOCK;
+    p.profileTop[i] = NO_BLOCK;
+  }
+  p.profileBins = WORLD_BINS;
+  return p.profile;
+}
+
+/** The whole web-side crop in ONE shared call: sets fov/azOffset, transforms +
+ *  clips the strokes when present (strokes WIN, profile re-derived), otherwise
+ *  clips the authoritative stored profile. Never touches the photo, the alt
+ *  bounds, paint mode or block-above. Persisting is the caller's job. */
+export function cropPano(p, sel, W) {
+  const { fov, azOffset } = cropKeptBand(p.fov, p.azOffset, sel, W);
+  p.fov = fov;
+  p.azOffset = azOffset;
+  if (Array.isArray(p.strokes) && p.strokes.length) {
+    p.strokes = cropStrokes(p.strokes, sel, W);
+    computeProfile(p);
+  } else {
+    clipProfileToFov(p);
+  }
+  return p;
+}
+
 /**
  * Ceiling lookup for one azimuth (deg). Returns { ceil, ceilTop }.
  * Blocking rule (applied per object sample):

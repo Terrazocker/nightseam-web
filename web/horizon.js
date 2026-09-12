@@ -20,14 +20,16 @@ import {
   normalizeProfileBins, WORLD_BINS, profileSegments, visibleSkyBands,
   skyBandPolygons, computeProfile, clearMask, ceilFor, bandTopFor,
   overhangRuns, assumedOpenRuns, assumedOpenHatchPolys,
+  CROP_MIN_FOV, cropPano, cropKeptBand, cropStrokes, clipProfileToFov,
   effectiveMinAlt as coreMinAlt,
-} from './core.js?v=16';
+} from './core.js?v=17';
 
 export {
   NO_BLOCK, BINS, MASK_W, MASK_H,
   rebuildMask, altOf, rowOfAlt, xOfAz, azOfX, profileSegments,
   visibleSkyBands, skyBandPolygons, computeProfile, clearMask, ceilFor,
   bandTopFor, overhangRuns, assumedOpenRuns, assumedOpenHatchPolys,
+  wrapsFor, CROP_MIN_FOV, cropKeptBand, cropStrokes, clipProfileToFov, cropPano,
 };
 
 const LS_KEY = 'nightseam_panos_v1';
@@ -615,6 +617,15 @@ function haziEditorHTML(p) {
         </div>
       </div>
       <div class="ed-row">
+        <span class="ed-rowlabel">Crop</span>
+        <div class="ed-group ed-crop">
+          <button class="btn" id="ed-crop" title="Crop horizontally — drag the azimuth band to KEEP">✂ Crop</button>
+          <button class="btn primary hidden" id="ed-crop-apply" title="Apply the crop (one undo step)">Apply crop</button>
+          <button class="btn hidden" id="ed-crop-cancel" title="Cancel the crop (Esc)">Cancel</button>
+          <span id="ed-crop-hint" class="ed-status"></span>
+        </div>
+      </div>
+      <div class="ed-row">
         <span class="ed-rowlabel">History</span>
         <div class="ed-group ed-history">
           <button class="btn" id="ed-undo" title="Undo (Ctrl+Z)" aria-label="Undo">↩ Undo</button>
@@ -762,6 +773,9 @@ function wireEditor(box, p, onChanged) {
   let gestureErase = false;   // right-button drag erases for the whole gesture
   let painting = false;
   let panning = false;
+  let cropTool = false;       // crop mode: drag a band to KEEP
+  let cropSel = null;         // {x0,x1} in logical mask px (base coords)
+  let cropping = false;
   let spaceDown = false;
   let panPrev = null;
   let imgEl = null;
@@ -855,6 +869,7 @@ function wireEditor(box, p, onChanged) {
     ctx.drawImage(maskCanvas, 0, 0, MASK_W, MASK_H);
     drawGuides();
     drawProfile();
+    drawCropOverlay();
     renderStatus();
   }
 
@@ -985,6 +1000,36 @@ function wireEditor(box, p, onChanged) {
     profCtx.fillText('profile \u2014 ' + paintMode() + ' \u00B7 alt ' + lo.toFixed(0) + '\u2026' + hi.toFixed(0) + '\u00B0', 540, 12);
   }
 
+  function drawCropOverlay() {
+    const hint = $('#ed-crop-hint', box);
+    if (!cropTool || !cropSel) {
+      if (hint) hint.textContent = cropTool ? 'drag to mark the band to KEEP' : '';
+      return;
+    }
+    const x0 = Math.min(cropSel.x0, cropSel.x1);
+    const x1 = Math.max(cropSel.x0, cropSel.x1);
+    ctx.save();
+    ctx.fillStyle = 'rgba(5,7,12,.55)';
+    ctx.fillRect(0, 0, x0, MASK_H);
+    ctx.fillRect(x1, 0, MASK_W - x1, MASK_H);
+    ctx.strokeStyle = '#4f9cff';
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([8, 5]);
+    for (const lx of [x0, x1]) {
+      ctx.beginPath(); ctx.moveTo(lx, 0); ctx.lineTo(lx, MASK_H); ctx.stroke();
+    }
+    ctx.setLineDash([]);
+    const { fov, azOffset } =
+        cropKeptBand(p.fov, p.azOffset, { x: x0, w: x1 - x0 }, MASK_W);
+    ctx.fillStyle = '#9cc4ff';
+    ctx.font = '11px system-ui';
+    ctx.fillText(`keep ${Math.round(x1 - x0)}px`, x0 + 6, 16);
+    ctx.restore();
+    if (hint) {
+      hint.textContent = `FOV \u2192 ${fov}\u00B0 \u00B7 az left ${azOffset}\u00B0`;
+    }
+  }
+
   function renderStatus() {
     const undoBtn = $('#ed-undo', box), redoBtn = $('#ed-redo', box);
     if (undoBtn) undoBtn.disabled = !historyCanUndo(hist);
@@ -1011,12 +1056,14 @@ function wireEditor(box, p, onChanged) {
   function doUndo() {
     if (!historyUndo(hist, p)) return;
     rebuildMaskNow();
+    syncCalInputs();
     overlay();
     renderStatus();
   }
   function doRedo() {
     if (!historyRedo(hist, p)) return;
     rebuildMaskNow();
+    syncCalInputs();
     overlay();
     renderStatus();
   }
@@ -1083,6 +1130,16 @@ function wireEditor(box, p, onChanged) {
 
   cvs.addEventListener('pointerdown', (ev) => {
     cvs.focus();
+    if (cropTool) {
+      const [cx] = toCanvas(ev);
+      const x = Math.max(0, Math.min(MASK_W, cx));
+      cropSel = { x0: x, x1: x };
+      cropping = true;
+      cvs.setPointerCapture(ev.pointerId);
+      overlay();
+      ev.preventDefault();
+      return;
+    }
     const wantPan = ev.button === 1 || (ev.button === 0 && spaceDown);
     if (wantPan) {
       panning = true;
@@ -1113,6 +1170,12 @@ function wireEditor(box, p, onChanged) {
   });
   cvs.addEventListener('pointermove', (ev) => {
     updateReadout(ev);
+    if (cropTool && cropping && cropSel) {
+      const [cx] = toCanvas(ev);
+      cropSel.x1 = Math.max(0, Math.min(MASK_W, cx));
+      overlay();
+      return;
+    }
     if (panning) {
       const r = cvs.getBoundingClientRect();
       const dx = (ev.clientX - panPrev.x) / r.width * MASK_W;
@@ -1140,6 +1203,12 @@ function wireEditor(box, p, onChanged) {
     if (el) el.textContent = 'az \u2014 \u00B7 alt \u2014';
   });
   cvs.addEventListener('pointerup', () => {
+    if (cropping) {
+      cropping = false;
+      if (cropSel && Math.abs(cropSel.x1 - cropSel.x0) < 4) cropSel = null;
+      overlay();
+      return;
+    }
     endPan();
     if (!painting) return;
     painting = false;
@@ -1149,6 +1218,48 @@ function wireEditor(box, p, onChanged) {
   cvs.addEventListener('contextmenu', (ev) => {
     ev.preventDefault();    // the right-button drag (above) already erased
   });
+
+  /** Push p's calibration back into the slider DOM (used after a crop and
+   *  after undo/redo, which previously left the sliders showing stale values). */
+  function syncCalInputs() {
+    const az = $('#ed-az', box), ab = $('#ed-ab', box), at = $('#ed-at', box), fv = $('#ed-fov', box);
+    if (az) az.value = String(p.azOffset);
+    if (ab) ab.value = String(p.altBottom);
+    if (at) { at.min = String(Math.min(90, p.altBottom + 5)); at.value = String(p.altTop); }
+    if (fv) fv.value = String(p.fov);
+    const set = (sel, txt) => { const e = $(sel, box); if (e) e.textContent = txt; };
+    set('#ed-az-v', p.azOffset + '\u00B0');
+    set('#ed-ab-v', p.altBottom + '\u00B0');
+    set('#ed-at-v', p.altTop + '\u00B0');
+    set('#ed-fov-v', p.fov + '\u00B0');
+  }
+
+  function setCropTool(on) {
+    cropTool = !!on;
+    if (!cropTool) { cropSel = null; cropping = false; }
+    const apply = $('#ed-crop-apply', box), cancel = $('#ed-crop-cancel', box), btn = $('#ed-crop', box);
+    if (apply) apply.classList.toggle('hidden', !cropTool);
+    if (cancel) cancel.classList.toggle('hidden', !cropTool);
+    if (btn) btn.classList.toggle('on', cropTool);
+    cvs.style.cursor = cropTool ? 'crosshair' : '';
+    overlay();
+  }
+
+  /** Commit the kept-band crop as ONE history entry (undo restores fov, az,
+   *  strokes and profile). Non-destructive: the photo, alt bounds, paint mode
+   *  and block-above are untouched (core cropPano owns the semantics). */
+  function applyCrop() {
+    if (!cropSel) return;
+    const x0 = Math.min(cropSel.x0, cropSel.x1);
+    const x1 = Math.max(cropSel.x0, cropSel.x1);
+    if (x1 - x0 < 4) return;
+    cropPano(p, { x: x0, w: x1 - x0 }, MASK_W);
+    rebuildMaskNow();
+    setCropTool(false);
+    syncCalInputs();
+    commit();
+    overlay();
+  }
 
   function zoomTo(z, ax, ay) {
     const nz = editorClampZoom(z);
@@ -1191,6 +1302,9 @@ function wireEditor(box, p, onChanged) {
   $('#ed-revert', box).addEventListener('click', revertSession);
   $('#ed-clear', box).addEventListener('click', doClear);
   $('#ed-save', box).addEventListener('click', saveSession);
+  $('#ed-crop', box).addEventListener('click', () => setCropTool(!cropTool));
+  $('#ed-crop-apply', box).addEventListener('click', applyCrop);
+  $('#ed-crop-cancel', box).addEventListener('click', () => setCropTool(false));
 
   // calibration sliders: live preview on input, ONE history entry on release
   const calApply = () => {
@@ -1231,6 +1345,12 @@ function wireEditor(box, p, onChanged) {
 
   if (undoHandler) document.removeEventListener('keydown', undoHandler);
   undoHandler = (ev) => {
+    if (ev.key === 'Escape' && cropTool) {
+      if (!document.querySelector('#pano-canvas') || !box.contains(document.activeElement)) return;
+      ev.preventDefault();
+      setCropTool(false);
+      return;
+    }
     if (!(ev.ctrlKey || ev.metaKey)) return;
     const k = ev.key.toLowerCase();
     const isUndo = k === 'z' && !ev.shiftKey;

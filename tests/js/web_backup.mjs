@@ -261,5 +261,36 @@ const newRig = (await WS.getRigs()).find((r) => r.id === 'r-new');
 assert(newRig && Math.abs(newRig.fov_w - WS.fovArcmin(500, 5.57)) < 1e-6,
   'an arcmin rig must not be converted again');
 
+/* 9. crop round-trip + legacy restore -> crop -> export -> re-import -------- */
+// (a) a stroke record: crop, then normalize, and confirm fov/az/strokes survive
+const cst = H.normalizePanos({ panos: [panoRec({ id: 'crop-strokes',
+  strokes: [{ m: 'b', x: 360, y: 100, r: 30 }] })] }).panos[0];
+H.cropPano(cst, { x: 180, w: 360 }, 720);          // keep az 90..270 -> fov 180, az 90
+const cstAgain = H.normalizePanos({ panos: [JSON.parse(JSON.stringify(cst))] }).panos[0];
+assert(cstAgain.fov === 180 && cstAgain.azOffset === 90, 'crop fov/az survive normalize');
+assert(cstAgain.strokes.length === cst.strokes.length, 'cropped strokes survive normalize');
+
+// (b) legacy profile-only record: migrate (world bins), crop, then export and
+// re-import; the cropped record must come back byte-identical.
+const legacyCrop = H.normalizePanos({ panos: [panoRec({
+  id: 'legacy-crop', fov: 180, azOffset: 90,
+  profile: new Array(720).fill(20), profileTop: blank720(),
+  profileBins: undefined,
+})] }).panos[0];
+assert(legacyCrop.profileBins === 'world', 'legacy crop record migrated to world bins');
+H.cropPano(legacyCrop, { x: 180, w: 360 }, 720);   // keep az 135..225 -> fov 90, az 135
+assert(legacyCrop.fov === 90 && legacyCrop.azOffset === 135, 'legacy crop calibration');
+H.applyPanosSnapshot({ panos: [JSON.parse(JSON.stringify(legacyCrop))],
+                       activeId: legacyCrop.id });
+const exportedCrop = H.exportPanos();
+const reimported = H.normalizePanos(exportedCrop).panos.find((x) => x.id === 'legacy-crop');
+assert(reimported, 'the cropped record must survive export + re-import');
+assert(reimported.fov === legacyCrop.fov && reimported.azOffset === legacyCrop.azOffset,
+  'crop fov/az must survive export + re-import');
+assert(JSON.stringify(reimported.profile) === JSON.stringify(legacyCrop.profile),
+  'crop profile must be byte-identical after export + re-import');
+assert(JSON.stringify(reimported.profileTop) === JSON.stringify(legacyCrop.profileTop),
+  'crop profileTop must be byte-identical after export + re-import');
+
 console.log(ok ? 'web backup integrity held' : 'web backup integrity FAILED');
 process.exit(ok ? 0 : 1);

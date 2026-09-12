@@ -16,8 +16,8 @@ import { fmtSize, sizeArcmin, framePct, magVisible, skyClampZoom,
          skyViewMatrix, skyScreenToBase, skyClampFocus } from './format.js?v=16';
 import { nightStats, sampleVisible } from './nightrank.js?v=6';
 import { TYPE_LABELS, TYPE_COLORS, searchBlob as coreSearchBlob }
-  from './core.js?v=16';
-import { popularityFactor as corePopularityFactor } from './core.js?v=16';
+  from './core.js?v=17';
+import { popularityFactor as corePopularityFactor } from './core.js?v=17';
 
 // Cache-bust token for the ~4 MB data file web/catalog.json. It is NOT a JS
 // module, so it cannot carry a ?v= in an import: this named token IS its

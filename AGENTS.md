@@ -226,6 +226,30 @@ Image Catalog (FITS ingest + library). `README.md` has the feature list.
   saved before 0.6.16 hold degrees and convert once in `getRigs` via the
   `fov_unit !== 'arcmin'` marker - never persist a rig without
   `fov_unit: 'arcmin'`.
+- **Panorama crop (next feature release):** horizontal kept-band crop is ONE
+  shared core formula, `cropKeptBand(fovOld, azOffOld, {x,w}, W)` in
+  `core/horizon.js` (`fov = max(CROP_MIN_FOV, round(fovOld*w/W))`, azimuth =
+  the kept band's left edge at 2 dp; `CROP_MIN_FOV = 45` is the only 45 floor).
+  Both shells consume it. **The web crop is NON-DESTRUCTIVE** (`cropPano`): it
+  sets fov/azOffset, transforms + clips the strokes when present (strokes win,
+  profile re-derived) or clips the authoritative stored WORLD-BIN profile to
+  the new FOV (out-of-coverage bins -> the mode sentinel, exactly as a fresh
+  pano of the new frame), and NEVER re-encodes the photo or touches alt
+  bounds / paint mode / blockAbove. **The desktop crop diverges on purpose:**
+  it re-encodes the photo (PNG, <=4096 px) and the server WIPES
+  strokes/profile/profile_top - so parity is scoped to fov/azOffset; the web
+  deliberately preserves the paint (asserted as an intentional difference, not
+  accidental parity). The retired desktop formula `fovOld*(1-w/W)` (the
+  REMOVED fraction; agreed with the HUD only at half width, and stored 45 deg
+  for a select-all crop) is gone, as is its stale comment. Pinned by
+  `tests/js/pano_geom.mjs` (formula/transform/clip), `pano_ui.mjs` (one history
+  entry, undo/redo, dirty), `web_backup.mjs` (crop + legacy restore ->
+  crop -> export -> re-import), the `web-pano-crop-recalibrate` /
+  `desktop-pano-crop-fov` browser checks, and
+  `tests/test_ui_invariants.py::test_desktop_crop_uses_the_shared_kept_band_helper`.
+  **Compatibility note:** panos cropped on the DESKTOP before this release
+  carry a wrong fov (the removed fraction); re-cropping or re-calibrating them
+  corrects it - no migration touches stored data.
 - Web `app.js::clampSkyTime()` also runs at boot and on every `refreshView()`
   (site/date change), so loading during the day starts the scrub at the first
   allowed instant (the window start) instead of showing a daylight
@@ -483,7 +507,7 @@ Image Catalog (FITS ingest + library). `README.md` has the feature list.
   Current (post-Batch-3): `app.js?v=59` (index.html) / `CATALOG_TOKEN = '2'`,
   `astro.js?v=9`, `horizon.js?v=40`, `format.js?v=16`, `nightrank.js?v=6`,
   `webstore.js?v=19`, `dragwin.js?v=1`, `style.css?v=16`, `themes.css?v=4`; the
-  core stub is `web/core.js?v=16` (bump = re-bake, enforced by
+  core stub is `web/core.js?v=17` (bump = re-bake, enforced by
   `scripts/check_core.py`). Batch 3 changed `app.js` (rig refresh + reloadRigs
   fix), `horizon.js` (cross-tab guard, import id/stroke bounds) and `webstore.js`
   (blocked IndexedDB upgrade) => 59/40/19. Those bytes are UNRELEASED; the live

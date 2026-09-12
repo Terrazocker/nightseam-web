@@ -4,6 +4,11 @@ real database is never touched).  The UI served at `/` is `static/`."""
 
 from __future__ import annotations
 
+import struct
+import tempfile
+import zlib
+from pathlib import Path
+
 from harness import check
 
 COUNT_RE = r"filtered"
@@ -183,4 +188,88 @@ def desktop_scrub_window(c):
              f"the selected time must stay inside the range: {after}")
     label = text(c, "#timeLabel")
     c.expect(label, "the scrub must carry a heading/time label")
+    c.assert_clean()
+
+
+def _wide_png(w: int = 1024, h: int = 16) -> Path:
+    """A real RGB PNG wide enough that a crop keeps >=16 px (the desktop refuses
+    to keep a sliver). Written once under the temp dir - no third-party lib."""
+    p = Path(tempfile.gettempdir()) / "ns-crop-gate.png"
+    if not p.exists():
+        raw = b"".join(b"\x00" + bytes([40, 60, 90]) * w for _ in range(h))
+
+        def chunk(tag: bytes, data: bytes) -> bytes:
+            return (struct.pack(">I", len(data)) + tag + data
+                    + struct.pack(">I", zlib.crc32(tag + data) & 0xFFFFFFFF))
+
+        ihdr = struct.pack(">IIBBBBB", w, h, 8, 2, 0, 0, 0)
+        p.write_bytes(b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", ihdr)
+                      + chunk(b"IDAT", zlib.compress(raw)) + chunk(b"IEND", b""))
+    return p
+
+
+@check("desktop-pano-crop-fov", "desktop")
+def desktop_pano_crop_fov(c):
+    """The desktop crop must store the KEPT-band FOV (via the shared core
+    helper), not the retired removed-fraction formula: select-all -> 360,
+    center 80% -> 288 (the bug stored 72), off-center 20% -> 72 / az 108."""
+    boot(c)
+    c.page.click('.tab[data-tab="horizon"]')
+    c.page.wait_for_selector("#panoFile", state="attached", timeout=30000)
+    # the editor is tall; give the viewport room so the crop drag lands on the
+    # canvas instead of below the fold
+    c.page.set_viewport_size({"width": 1366, "height": 1500})
+    png = str(_wide_png())
+    cases = [
+        (0.0, 1.0, 360.0, 0.0),    # select all keeps the full frame
+        (0.1, 0.9, 288.0, 36.0),   # center 80%
+        (0.3, 0.5, 72.0, 108.0),   # off-center 20%
+    ]
+    prev = None
+    for x0, x1, want_fov, want_az in cases:
+        c.page.set_input_files("#panoFile", png)
+        # wait for the NEW panorama to be selected (a stale id means the upload
+        # round-trip has not landed yet) and its image decoded
+        c.page.wait_for_function(
+            """(prev) => window.Pano && window.Pano.cur
+                 && window.Pano.cur.id !== prev
+                 && window.Pano.img && window.Pano.img.complete""",
+            arg=prev, timeout=30000)
+        pid = c.page.evaluate("() => window.Pano.cur.id")
+        prev = pid
+        c.expect(pid, "a panorama must be selected after upload")
+        # default full-frame calibration for this fresh image
+        c.page.evaluate(
+            """() => { const f = document.querySelector('#fovAz');
+                 f.value = '360'; f.dispatchEvent(new Event('input', { bubbles: true }));
+                 const a = document.querySelector('#azOffset');
+                 a.value = '0'; a.dispatchEvent(new Event('input', { bubbles: true })); }""")
+        c.page.click("#toolCrop")
+        c.page.locator("#panoCanvas").scroll_into_view_if_needed()
+        c.page.wait_for_timeout(200)
+        box = c.page.locator("#panoCanvas").bounding_box()
+        c.expect(box and box["width"] > 20, "the desktop pano canvas must have a size")
+        y = box["y"] + box["height"] * 0.5
+        sx = box["x"] + box["width"] * x0
+        ex = box["x"] + box["width"] * x1
+        c.page.mouse.move(sx, y)
+        c.page.mouse.down()
+        for i in range(1, 9):
+            c.page.mouse.move(sx + (ex - sx) * i / 8, y)
+        c.page.mouse.up()
+        c.page.wait_for_timeout(150)
+        c.page.click("#btnCropApply")
+        c.page.wait_for_function(
+            """([pid, want]) => fetch('/api/panoramas').then((r) => r.json())
+                 .then((rows) => { const p = rows.find((x) => x.id === pid);
+                   return !!p && Math.abs(Number(p.fov) - want) < 0.5; })""",
+            arg=[pid, want_fov], timeout=20000)
+        row = c.page.evaluate(
+            """async (pid) => { const rows = await (await fetch('/api/panoramas')).json();
+                 return rows.find((r) => r.id === pid) || null; }""", pid)
+        c.expect(abs(float(row["fov"]) - want_fov) < 0.5,
+                 f"stored FOV must be the kept fraction for {x0}-{x1}: "
+                 f"{row['fov']} vs {want_fov}")
+        c.expect(abs(float(row["az_offset"]) - want_az) < 0.05,
+                 f"stored az_offset for {x0}-{x1}: {row['az_offset']} vs {want_az}")
     c.assert_clean()
