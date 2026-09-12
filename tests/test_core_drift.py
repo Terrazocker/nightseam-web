@@ -150,5 +150,20 @@ def test_mutations_fail_the_guard(tmp_path):
                                                encoding="utf-8")
     assert guard.scan(), "Python astronomy math outside core/ must FAIL the guard"
 
+    # ... or the re-implementation evades the plain patterns (h): an ARROW
+    # shell definition and an `async def` Python one (TS3, review).
+    (guard.SCRIPTS_DIR / "bake.py").unlink()
+    shell = guard.WEB_DIR / "horizon.js"
+    shell.write_text(shell.read_text(encoding="utf-8")
+                     + "\nconst profileSegments = () => [];\n",
+                     encoding="utf-8")
+    assert guard.scan(), "an arrow re-implementation must FAIL the guard"
+    shutil.copy(ROOT / "web" / "horizon.js", shell)
+    assert guard.scan() == []
+    (guard.SCRIPTS_DIR / "bake.py").write_text(
+        "async def altaz(ra, dec):\n    return 0\n", encoding="utf-8")
+    assert guard.scan(), "an async Python astronomy re-implementation must FAIL"
+    (guard.SCRIPTS_DIR / "bake.py").unlink()
+
     # the real repository was never touched
     assert _guard().scan() == []

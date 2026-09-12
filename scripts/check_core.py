@@ -67,6 +67,11 @@ MOVED_PY = (
     "compute_night", "object_detail", "ceil_lookup", "longest_run",
 )
 RETIRED_PY_MODULES = ("astro.py", "planning.py", "nightcalc.py")
+# Shell files deliberately carry thin arrow wrappers around these core
+# functions (they inject shell state: esc(), S.minAlt, cfg); a const/arrow
+# definition of them is NOT a moved-concept violation. `clearMask` and
+# `popularityFactor` are not in MOVED at all (documented above).
+SHELL_WRAPPERS = {"fmtSize", "statusOf", "effectiveMinAlt"}
 FORBIDDEN = (
     r"\bdocument\s*\.", r"\bwindow\s*\.", r"\blocalStorage\b",
     r"\bsessionStorage\b", r"\bindexedDB\b", r"\bXMLHttpRequest\b",
@@ -160,7 +165,15 @@ def scan() -> list[str]:
                 continue
             text = _read(p)
             for name in MOVED:
-                if re.search(r"(export\s+)?(async\s+)?function\s+" + name + r"\b", text):
+                # `function name(` AND function-valued `const name = (` /
+                # `async` / `function` - an arrow re-implementation must not
+                # slip past the guard (TS3, review). The documented shell
+                # wrappers are exempt from the const/arrow form only.
+                if re.search(r"(export\s+)?(async\s+)?function\s+" + name + r"\b",
+                             text) or \
+                   (name not in SHELL_WRAPPERS and
+                    re.search(r"\b(?:const|let|var)\s+" + name
+                              + r"\s*=\s*(?:\(|async\b|function\b)", text)):
                     problems.append(f"{p.name}: {name}() must live in core/ only")
 
     # Phase C: Python is IO/platform only - no astronomy/planning math may be
@@ -177,7 +190,9 @@ def scan() -> list[str]:
                 continue
             text = _read(p)
             for name in MOVED_PY:
-                if re.search(r"^\s*def\s+" + name + r"\s*\(", text, re.M):
+                # `async def` counts too (TS3, review).
+                if re.search(r"^\s*(?:async\s+)?def\s+" + name + r"\s*\(",
+                             text, re.M):
                     problems.append(
                         f"{p.relative_to(base)}: {name}() must live in core/ only")
     return problems
