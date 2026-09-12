@@ -28,6 +28,8 @@ CORE = ROOT / "core"
 MANIFEST = CORE / "core.manifest.json"
 WEB_DIR = ROOT / "web"
 STATIC_JS = ROOT / "static" / "js"
+APP_DIR = ROOT / "app"
+SCRIPTS_DIR = ROOT / "scripts"
 
 # Functions that must exist only in core/. Keep in sync with core/index.js.
 # (`clearMask` stays out: the desktop editor keeps its own UI-level variant.)
@@ -50,6 +52,17 @@ MOVED = (
     "sunAlt", "sunCrossings", "nightInfo", "pickDarkWindow",
     "scrubBounds", "scrubClamp", "sepDeg", "nightStats",
 )
+# The Python astronomy/planning layer was deleted in Phase C (0.6.20): these
+# snake_case cores must not reappear as Python definitions in app/ or scripts/.
+# (app/fits.py's parse_ra_hours/parse_dec_deg are PARSERS, not astronomy.)
+MOVED_PY = (
+    "julian_day", "gmst_deg", "precess_j2000_to_date",
+    "precess_j2000_to_date_inverse", "altaz", "sun_ra_dec", "moon_ra_dec",
+    "moon_illumination", "moon_age", "sun_alt",
+    "find_twilight", "make_sun_alt_fn", "night_window", "local_utc",
+    "compute_night", "object_detail", "ceil_lookup", "longest_run",
+)
+RETIRED_PY_MODULES = ("astro.py", "planning.py", "nightcalc.py")
 FORBIDDEN = (
     r"\bdocument\s*\.", r"\bwindow\s*\.", r"\blocalStorage\b",
     r"\bsessionStorage\b", r"\bindexedDB\b", r"\bXMLHttpRequest\b",
@@ -145,6 +158,24 @@ def scan() -> list[str]:
             for name in MOVED:
                 if re.search(r"(export\s+)?(async\s+)?function\s+" + name + r"\b", text):
                     problems.append(f"{p.name}: {name}() must live in core/ only")
+
+    # Phase C: Python is IO/platform only - no astronomy/planning math may be
+    # re-implemented in app/ or scripts/ (the retired modules or their cores).
+    for name in RETIRED_PY_MODULES:
+        if (APP_DIR / name).exists():
+            problems.append(f"app/{name}: retired in Phase C - astronomy lives "
+                            "in core/")
+    for base in (APP_DIR, SCRIPTS_DIR):
+        if not base.is_dir():
+            continue
+        for p in sorted(base.rglob("*.py")):
+            if "__pycache__" in p.parts:
+                continue
+            text = _read(p)
+            for name in MOVED_PY:
+                if re.search(r"^\s*def\s+" + name + r"\s*\(", text, re.M):
+                    problems.append(
+                        f"{p.relative_to(base)}: {name}() must live in core/ only")
     return problems
 
 

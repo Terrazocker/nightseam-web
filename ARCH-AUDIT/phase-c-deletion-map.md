@@ -1,5 +1,8 @@
 # Phase C - deletion map + commit plan (Python astronomy -> IO/platform only)
 
+> EXECUTED. See `phase-c-report.md` for the actual-vs-planned record, gates,
+> guard proof, freeze evidence and the exe size delta.
+
 Baseline: NightSeam 0.6.19 (tag `v0.6.19`, commit b722716). Rollback targets
 `v0.6.19` / `v0.6.18` intact; `dist/release/NightSeam-0.6.19.zip` present.
 

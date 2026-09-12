@@ -45,6 +45,10 @@ def _stage(tmp_path: Path):
     guard.MANIFEST = guard.CORE / "core.manifest.json"
     guard.WEB_DIR = tmp_path / "web"
     guard.STATIC_JS = tmp_path / "static" / "js"
+    guard.APP_DIR = tmp_path / "app"
+    guard.SCRIPTS_DIR = tmp_path / "scripts"
+    guard.APP_DIR.mkdir()
+    guard.SCRIPTS_DIR.mkdir()
     return guard, hash_
 
 
@@ -86,6 +90,19 @@ def test_mutations_fail_the_guard(tmp_path):
                      + "\nexport function profileSegments() { return []; }\n",
                      encoding="utf-8")
     assert guard.scan(), "a moved concept outside core/ must FAIL the guard"
+
+    # restore, then the Python side (Phase C): a retired module reappears (f)
+    shutil.copy(ROOT / "web" / "horizon.js", shell)
+    assert guard.scan() == []
+    (guard.APP_DIR / "nightcalc.py").write_text("def compute_night():\n    pass\n",
+                                                encoding="utf-8")
+    assert guard.scan(), "a retired Python astronomy module must FAIL the guard"
+
+    # ... or a script re-implements a moved core (g)
+    (guard.APP_DIR / "nightcalc.py").unlink()
+    (guard.SCRIPTS_DIR / "bake.py").write_text("def altaz(ra, dec):\n    return 0\n",
+                                               encoding="utf-8")
+    assert guard.scan(), "Python astronomy math outside core/ must FAIL the guard"
 
     # the real repository was never touched
     assert _guard().scan() == []

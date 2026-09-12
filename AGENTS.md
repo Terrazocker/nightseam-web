@@ -30,25 +30,33 @@ Image Catalog (FITS ingest + library). `README.md` has the feature list.
   `paths.default_archive_dir()` into `logs/`.
 
 **Astronomy / planner**
-- `app/astro.py::_precess` is Meeus ch.21 eq.21.4 with the middle rotation about
-  **Y**; `static/js/astro.js` and `web/astro.js` mirror it. Correctness is pinned
-  by published values in `tests/test_astro.py`, NOT a round-trip. Three-engine
-  parity: `tests/test_js_parity.py` + `tests/js/astro_parity.mjs`.
+- **Phase C (0.6.20): `core/` is the ONLY astronomy/planning implementation.**
+  The Python math modules (`app/astro.py`, `app/planning.py`, `app/nightcalc.py`)
+  and their routes (`/api/night`, `/api/object/{oid}`) are DELETED; `app/` is
+  storage/platform/IO. `core/astro.js::precessJ2000ToDate` is Meeus ch.21 eq.21.4
+  with the middle rotation about **Y**; the desktop (`static/js/astro.js`) and
+  the web (`web/astro.js` re-exporting core) stay in agreement. The retired
+  oracle's outputs are FROZEN in `tests/fixtures/core_fixtures.json` and
+  compared by `tests/test_core_fixtures.py`; the JS behaviour anchors are in
+  `tests/test_js_parity.py` + `tests/js/astro_parity.mjs`. `scripts/check_core.py`
+  (mutation-proven in `tests/test_core_drift.py`) fails if astronomy/planning
+  math reappears in `app/` or `scripts/`.
 - Sun/Moon chart visibility is astronomical, not a clock: drawn only while the
   APPARENT (refracted) altitude is `> 0`, the one `aboveHorizon()` in BOTH
   `web/astro.js` and `static/js/derive.js`. `sunRaDec`/`moonRaDec` return RA in
-  DEGREES (like `app/astro.py`); `web/app.js` must use `sunAltAz()`/`moonAltAz()`
+  DEGREES (like `core/astro.js`); `web/app.js` must use `sunAltAz()`/`moonAltAz()`
   and NEVER `sunRaDec`/`moonRaDec`
   (`tests/test_ui_invariants.py::test_web_sun_moon_use_the_altaz_wrappers`). Old
   bugs: web chart passed `sunRaDec() * 15` (degrees as hours) so the Sun sat high
   all night; desktop drew Sun/Moon down to `-6 deg`.
-- Clear window: `longest_run`/`longestRunJS` return a HALF-OPEN `[start,end)`
+- Clear window: the shared `longestRunJS` returns a HALF-OPEN `[start,end)`
   whose `end` may equal the grid length. Never index `times_iso[end]`; resolve it
-  with `windowEndISO()`. `/api/object/{oid}` ships `step_min`.
+  with `windowEndISO()`. The client detail payload ships `step_min`.
 - Every "night" number (clear window, `% of night`, score) is measured inside
   `dusk..dawn` on BOTH sides; the payload grid carries twilight margins for the
-  charts only. `static/js/derive.js` clips them and `nightcalc.object_detail`
-  clips its 4-min window the same way (`tests/js/derive_window.mjs`).
+  charts only. `static/js/derive.js` clips them and
+  `static/js/planning_client.js::buildClientDetail` clips its 4-min window the
+  same way (`tests/js/derive_window.mjs`).
 - Twilight scan is anchored at the SITE's local noon + 30 h, never browser
   midnight + 48 h. `nightInfo(localDate,lat,lon,localNoon)` needs the site's noon
   (`siteNoon()`, via `webstore.wallToUtc`) or a cross-timezone site resolves the
@@ -66,7 +74,7 @@ Image Catalog (FITS ingest + library). `README.md` has the feature list.
   Shift 60 min in BOTH apps (`SCRUB_STEP_MIN`/`SCRUB_SHIFT_STEP_MIN`).
 - **Scrub window (0.6.13; degeneracy policy 0.6.17):** the scrub's default range
   is the WHOLE night, from the planner's own sunset..sunrise sun-crossings
-  (`planning.night_window` / web `nightInfo`) ONLY when that pair is coherent -
+  (`core/planning.js::nightInfo`/`pickDarkWindow`) ONLY when that pair is
   strictly ordered AND the sunset precedes the next dawn. A grazing polar day
   can "set" around local noon AFTER the dark window (Tromso 2026-01-15: sunset
   11:08Z, dawn 05:12Z), and the old per-app fallbacks built inverted ranges
@@ -79,19 +87,20 @@ Image Catalog (FITS ingest + library). `README.md` has the feature list.
   `scrubBounds`/`scrubClamp`; pinned by `tests/js/scrub_degenerate.mjs`,
   `tests/js/derive_window.mjs` and the `scrubwindow`/`scrubgrid` engines.
   `viewFullDay` ON widens the scrub to the app's full span: the SAME 24 h
-  site-zoned local noon->noon grid in BOTH apps (desktop `/api/night` ships it;
-  web computes it). Toggling re-derives live and clamps the selected time to
+  site-zoned local noon->noon grid in BOTH apps (desktop
+  `planning_client.js` builds it; web computes it). Toggling re-derives live and
+  clamps the selected time to
   the nearest in-range instant. Desktop `derive.js::indexRangeFor` backs BOTH
   `nightIndexRange` (scoring, dusk..dawn) and `scrubWindowRange` (scrub).
   Never define a second window.
 - **Desktop payload grid is a full 24 h site-zoned day** (0.6.13, ITEM A):
-  `nightcalc.compute_night` samples local noon -> next local noon at 6 min
-  (241 samples), so the desktop `View full day` toggle is real and matches the
-  web exactly. This is bounded and measured: standard payload ~0.9 MiB /
-  ~0.23 s, advanced ~2.4 MiB / ~0.32 s at 52 N; guarded by
-  `tests/test_api.py::test_night_payload_size_and_compute_time_stay_bounded`
-  and the grid-bounds test. The scoring clip (dusk..dawn) and the detail
-  endpoint's own chart margins are unchanged.
+  the client builder (`static/js/planning_client.js`, sync AND worker) samples
+  local noon -> next local noon at 6 min (241 samples), so the desktop
+  `View full day` toggle is real and matches the web exactly. The oracle-era
+  measurements (standard ~0.9 MiB / ~0.23 s, advanced ~2.4 MiB / ~0.32 s at
+  52 N) are historical; the grid/step constants are pinned by the `scrubgrid`
+  engine and `tests/js/night_race.mjs`. The scoring clip (dusk..dawn) and the
+  detail builder's own chart margins are unchanged.
 
 **Charts and units**
 - Magnitude limit is ONE rule `magVisible(vmag,limit,maxLimit)` in `derive.js` +
@@ -192,14 +201,14 @@ Image Catalog (FITS ingest + library). `README.md` has the feature list.
   bumps the stub token, and every `./core.js?v=N` importer must match it in the
   same commit (`tests/test_core_drift.py` proves each mutation fails).
 - **D1 - world-azimuth profile bins:** `core/horizon.js` stores bin
-  `i = azimuth i*0.5 deg`, exactly like `app/nightcalc.py::ceil_lookup` and the
-  desktop editor. The web editor's FOV-relative mask converts through
+  `i = azimuth i*0.5 deg`, exactly like the retired `app/nightcalc.py::ceil_lookup`
+  and the desktop editor. The web editor's FOV-relative mask converts through
   `normalizeProfileBins()` at the storage boundary (`load`, `normalizePanos`);
   records carry `profileBins: 'world'` and a stroke-derived profile is already
   world. The representative mask column is `floor(rel*720/fov)`, which keeps
   `fov=360/azOffset=0` an exact identity. Pinned by `tests/js/core_d1.mjs`
   (mutation-proven in `tests/test_d1_contract.py`) and the partial-FOV cases of
-  `tests/test_horizon_parity.py`.
+  the core engines.
 - **D2 - rig FOV is arcminutes:** `web/webstore.js::fovArcmin` returns arcmin
   (one unit with the desktop/server `fov_w`); `fovDeg` is display-only. Rigs
   saved before 0.6.16 hold degrees and convert once in `getRigs` via the
@@ -230,6 +239,13 @@ Image Catalog (FITS ingest + library). `README.md` has the feature list.
 - After every `await` in `static/js/night.js`, re-check `ctl === _nightCtl`
   before touching state, UI or the busy chip. A superseded night load stays
   silent (`tests/js/night_race.mjs`).
+- **Phase C:** the loader is core-only, so `night_race.mjs` drives the real
+  `planning_client.js` sync path (a stub fetch holds `/api/sites` so a
+  superseded load can finish late), and a client failure surfaces as a toast -
+  there is no server fallback anymore. The worker dev hooks
+  (`window.__NS_DEBUG_WORKER` gating `__NS_KILL_WORKER`/`__NS_REVIVE_WORKER`)
+  are KEPT: inert unless explicitly set in devtools, they back the
+  worker-recovery coverage.
 
 **Release integrity** (see also "Versioning and release")
 - `scripts/check_release.py` must pass before staging; `build.ps1` refuses a
@@ -270,7 +286,7 @@ Image Catalog (FITS ingest + library). `README.md` has the feature list.
 
 - **Run the full suite once, at the end:** `python -m pytest tests/ -q --tb=no`,
   and only the modules that matter while iterating
-  (`python -m pytest tests/test_astro.py tests/test_planning.py -q`).
+  (`python -m pytest tests/test_api.py tests/test_js_parity.py -q`).
 - **Never dump output into chat:** no build/tool logs, no whole files, no raw
   grep matches. Use `read` with `offset`/`limit`, read tails, or counts
   (`Select-String -Quiet`, `Measure-Object`).
@@ -296,15 +312,15 @@ Image Catalog (FITS ingest + library). `README.md` has the feature list.
     `Get-CimInstance Win32_Process`).
   - If 8407 is briefly taken at boot, `free_port()` silently picks a RANDOM port
     (written to `instance.json`).
-- Tests: `python -m pytest tests/` (575). Single test:
-  `python -m pytest tests/test_astro.py -k name`. API tests use
+- Tests: `python -m pytest tests/` (403). Single test:
+  `python -m pytest tests/test_js_parity.py -k name`. API tests use
   `create_app(db, prefetch=False)` (no image-cache thread). The `client` fixture
   must leave `data/panos` in the tmp dir it patches in.
   - **WinError 5 in this sandbox:** the repo-local `.pytest-tmp` (see
     `pytest.ini`) can acquire an owner-SID-only DACL, so every `tmp_path` test
     errors at fixture cleanup - an environment artifact, not a failure. Workaround
     (no escalation needed): `python -m pytest tests/ -q --basetemp
-    C:\Users\<user>\AppData\Local\Temp\opencode\pt -p no:cacheprovider` -> 575/575.
+    C:\Users\<user>\AppData\Local\Temp\opencode\pt -p no:cacheprovider` -> 403/403.
 - JS checks (run after touching `static/` OR `web/`): `python scripts/check_js.py`
   runs all of them and exits non-zero on hard failures:
   - `check_js_imports.py` - broken relative ES-module imports / missing named exports
@@ -433,14 +449,11 @@ Image Catalog (FITS ingest + library). `README.md` has the feature list.
   (browser app-mode fallback). Single-instance handoff via `data/instance.json`;
   a `JsApi` class exposes a native folder picker to `window.pywebview.api`.
 - `app/server.py` - `create_app(db)` FastAPI factory with all `/api/*` routes
-  (docs disabled; `prefetch=False` skips the image-cache thread). Computation
-  lives in `app/nightcalc.py` (`compute_night()`, `object_detail()`,
-  `ceil_lookup()`, `longest_run()` - the 6-min/4-min grids, sun/moon tracks),
-  `app/ingest.py` (streaming FITS ingest, 1 GiB cap), `app/backup.py`
+  (docs disabled; `prefetch=False` skips the image-cache thread). IO/platform
+  only: storage, catalog, panoramas, images, ingest/backup. The planning routes
+  (`/api/night`, `/api/object/{oid}`) were DELETED in Phase C; deleted routes
+  answer 404. `app/ingest.py` (streaming FITS ingest, 1 GiB cap), `app/backup.py`
   (export/import ZIP).
-- `app/astro.py` - pure-Python astronomy (golden values in `tests/test_astro.py`).
-  `app/planning.py` - night-window/twilight search, the SINGLE source of truth for
-  `/api/night` and `/api/object/{oid}`; never reimplement twilight logic.
 - `app/database.py` - SQLite, schema created on init, catalog seeded from
   `catalog_data.py`; `advanced_objects` bulk-seeded from `app/data/openned.csv`
   (OpenNGC, CC BY-SA 4.0). `app/fits.py` - hand-written FITS parser; `parse_ra_hours`
@@ -460,24 +473,25 @@ Image Catalog (FITS ingest + library). `README.md` has the feature list.
   `format.js` (sizes/FOV/zoom), `time.js` (IANA offsets). Baked by
   `scripts/build_core.py` to `web/core/<hash>/` + `static/js/core/<hash>/`
   with stable explicit-export stubs; `scripts/check_core.py` enforces
-  drift/token/purity and the moved-concept source guard. Canonical
+  drift/token/purity and the moved-concept source guard (JS shells AND `app/` +
+  `scripts/` Python). Canonical
   representations: world-azimuth profile bins (`profileBins:'world'`), arcmin
-  FOV (`fov_unit:'arcmin'`), degrees/epoch-ms elsewhere. Python remains the
-  astronomy/planning ORACLE: `scripts/gen_core_fixtures.py` regenerates
-  `tests/fixtures/core_fixtures.json` (oracle revision + per-concept
-  tolerances), compared by `tests/test_core_fixtures.py`; parity/convergence
-  anchors are the other `tests/js/*.mjs` engines. Python astronomy is NOT to be
-  deleted - that is the authority-flip phase.
+  FOV (`fov_unit:'arcmin'`), degrees/epoch-ms elsewhere. Python's old
+  astronomy/planning ORACLE role is retired (Phase C, 0.6.20):
+  `tests/fixtures/core_fixtures.json` is FROZEN (its generator was deleted with
+  the oracle) and compared by `tests/test_core_fixtures.py`; the JS
+  parity/convergence anchors are the `tests/js/*.mjs` engines. Python is
+  storage/platform/IO only - astronomy math must NOT reappear outside `core/`.
 
 ## Advanced mode (12,000+ objects)
 
 - Toggled in the hamburger menu (`adv_mode`); changing it reloads the page.
   Standard mode is the curated 197 objects.
-- `/api/night?adv=1` ships advanced objects as METADATA ONLY (no tracks);
-  `synthesizeAdvancedTracks()` in `derive.js` computes tracks in the browser via
-  `static/js/astro.js` (precession once/object at the grid midpoint, sidereal time
-  once/sample via `altazFrame`, yields every 256 objects). Never add track arrays
-  for the full advanced catalog to the night payload.
+- `/api/catalog?adv=1` ships advanced objects as METADATA; `static/js/planning_client.js`
+  (worker or sync) computes tracks for the whole catalog via core
+  `computeNightTracks` (precession once/object at the grid midpoint, sidereal time
+  once/sample via `altazFrame`). Never add track arrays
+  for the full advanced catalog to a night payload.
 - Advanced rows carry `_adv` (stripped by `api_catalog`); image-ingest resolution
   and the library use the FULL catalog regardless of mode.
 
@@ -572,6 +586,25 @@ Image Catalog (FITS ingest + library). `README.md` has the feature list.
   `check_encoding.py`.
 - The dev mirror `<workspace>\Astro-Web` is BEHIND this repo; the robocopy sync runs
   mirror -> repo, so copy changed files into the mirror first or skip it.
+
+## Phase C (0.6.20): Python astronomy removed
+
+- Deleted, one commit per step: the `planning_client_compute` flag + desktop
+  server fallback; `/api/night` and `/api/object/{oid}` (now 404; the image
+  route stays); `app/nightcalc.py`; `app/planning.py`; `app/astro.py`; the
+  oracle generator `scripts/gen_core_fixtures.py` and the one-off audit tools
+  (`scripts/shadow_export.py`/`shadow_compare.mjs`). `PROFILE_BINS` moved to
+  `app/server.py` as a storage-format constant.
+- Frozen goldens kept: `tests/fixtures/core_fixtures.json` (verified
+  byte-identical to the last oracle run before deletion) plus the scrub and
+  sun/moon literals frozen into `tests/test_js_parity.py`. Removed:
+  `test_astro.py`, `test_precession_reference.py`, `test_planning.py`,
+  `test_horizon.py`, `test_horizon_parity.py` and the live Py<->JS comparisons.
+- Guard: `scripts/check_core.py` now fails when a retired module reappears or
+  `MOVED_PY` math is defined in `app/`/`scripts/` (mutation-proven in
+  `tests/test_core_drift.py`).
+- Backups written by 0.6.18/0.6.19 containing the retired flag still import
+  safely (`tests/test_backup.py::test_import_of_the_retired_planning_flag_stays_safe`).
 
 ## History: renamed from AstroPilot
 
