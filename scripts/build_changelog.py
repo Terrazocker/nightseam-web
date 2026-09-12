@@ -30,6 +30,10 @@ ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "landing" / "changelog.json"
 
 CURATED = {
+    # 0.6.22 ships the Batch 2 review fixes: site-noon polar fallback, sync
+    # cache identity (tz + profile content), web save durability, plus
+    # test-quality/guard work. No planning-number changes.
+    "0.6.22": "Planning-window, cache and save fixes. A polar-day or polar-twilight site now always shows its dark window anchored to the selected night and the site's timezone instead of a window based on the current clock. In the web planner, changing the timezone or repainting a horizon can no longer serve a stale plan from the in-browser cache, and a Save that fails because browser storage is full now says so - keeping the previous state - instead of reporting success. The internal guard and reference-anchor test suites were also tightened. No planning numbers or interface changes.",
     # 0.6.21 fixes the code-review Batch 1 findings: worker/prefs race,
     # catalog identity + cache invalidation, import validation, guard/release
     # holes and the stale web cache tokens. No planning-number changes.
