@@ -52,6 +52,13 @@ def test_catalog_identity_across_worker_boundary():
     assert "catalog identity contract held" in out
 
 
+def test_polar_fallback_never_reads_the_wall_clock():
+    """FIX-6: the polar-day fallback window needs the site's local noon (or an
+    explicit day anchor); with neither it must refuse, not use `new Date()`."""
+    out = run_node_harness("noon_fallback.mjs")
+    assert "noon fallback contract held" in out
+
+
 def test_desktop_window_contract():
     """The clear window / % of night / score are measured inside dusk..dawn.
 

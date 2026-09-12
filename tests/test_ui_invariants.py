@@ -438,3 +438,11 @@ def test_catalog_edits_invalidate_the_planning_caches():
     assert "export function resetPlanningCaches" in pc
     assert "catalog ids mismatch" in pc, \
         "the worker response must be id-validated before binding"
+
+
+def test_web_night_info_anchors_the_polar_fallback():
+    """FIX-6 (review CR1): the night-info chip's fallback window must come from
+    the selected night's SITE-noon anchor, never the wall clock."""
+    app = _read("web", "app.js")
+    assert "E.pickDarkWindow(info, nightAnchor(), siteNoon(nightAnchor()))" in app, \
+        "renderNightInfo must pass the night anchor + site noon"

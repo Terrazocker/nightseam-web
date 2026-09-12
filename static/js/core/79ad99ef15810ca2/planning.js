@@ -95,7 +95,9 @@ export function nightInfo(localDate, lat, lon, localNoon) {
  *  siteNoon()); the fallback is then built in the SITE's zone - 20:00/04:00
  *  local - exactly like planning.py's tz_min arithmetic. Without it the
  *  browser's zone stands in, correct only while both are the same.
- *  `dayDate` is the calendar day the window belongs to (defaults to today). */
+ *  `dayDate` is the local-noon anchor of the night (also accepted in place of
+ *  `localNoon`); there is NO wall-clock default - a missing anchor throws, so
+ *  a polar-day chip can never show `now+8h..now+16h` (FIX-6, review CR1). */
 export function pickDarkWindow(info, dayDate, localNoon) {
   const level = (info.astroDusk && info.astroDawn) ? "astronomical"
     : (info.nauticalDusk && info.nauticalDawn) ? "nautical"
@@ -107,7 +109,13 @@ export function pickDarkWindow(info, dayDate, localNoon) {
 
   const anchor = (localNoon instanceof Date && !isNaN(localNoon))
     ? localNoon
-    : (dayDate || new Date());
+    : dayDate;
+  if (!(anchor instanceof Date) || isNaN(anchor)) {
+    throw new Error(
+      "pickDarkWindow: the polar fallback needs an explicit anchor (the " +
+      "site's local noon or the night's day date); it must never read the " +
+      "wall clock");
+  }
   return {
     dusk: new Date(anchor.getTime() + 8 * 3600000),     // 20:00 local
     dawn: new Date(anchor.getTime() + 16 * 3600000),    // 04:00 local, next day

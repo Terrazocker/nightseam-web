@@ -442,10 +442,10 @@ Image Catalog (FITS ingest + library). `README.md` has the feature list.
   `scripts/check_catalog_token.py`, wired into `scripts/check_js.py`, and pinned
   by `tests/test_cache_tokens.py` (mutation-tested). Do NOT add
   `{cache:'no-store'}` - the file must stay cacheable.
-  Current: `app.js?v=57` (index.html) / `CATALOG_TOKEN = '2'`, `astro.js?v=8`,
-  `horizon.js?v=38`, `format.js?v=15`, `nightrank.js?v=5`, `webstore.js?v=17`,
+  Current: `app.js?v=58` (index.html) / `CATALOG_TOKEN = '2'`, `astro.js?v=9`,
+  `horizon.js?v=39`, `format.js?v=16`, `nightrank.js?v=6`, `webstore.js?v=18`,
   `dragwin.js?v=1`, `style.css?v=16`, `themes.css?v=4`; the core stub is
-  `web/core.js?v=15` (bump = re-bake, enforced by `scripts/check_core.py`).
+  `web/core.js?v=16` (bump = re-bake, enforced by `scripts/check_core.py`).
 - **Never publish `index.html` before the modules it names.** Deploys are not
   atomic and the page carries the tokens; `ftps_deploy.py::upload_order()` sorts
   HTML last (`index.html` very last), pinned by `tests/test_deploy_order.py`. Keep

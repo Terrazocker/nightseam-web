@@ -8,16 +8,16 @@
  *   • Settings — sites, rigs, custom targets, backup/restore (webstore.js)
  * All sky math runs client-side (astro.js, Meeus algorithms).
  */
-import * as E from './astro.js?v=8';
-import * as Hor from './horizon.js?v=38';
-import * as WS from './webstore.js?v=17';
+import * as E from './astro.js?v=9';
+import * as Hor from './horizon.js?v=39';
+import * as WS from './webstore.js?v=18';
 import { initDragWindows } from './dragwin.js?v=1';
 import { fmtSize, sizeArcmin, framePct, magVisible, skyClampZoom,
-         skyViewMatrix, skyScreenToBase, skyClampFocus } from './format.js?v=15';
-import { nightStats, sampleVisible } from './nightrank.js?v=5';
+         skyViewMatrix, skyScreenToBase, skyClampFocus } from './format.js?v=16';
+import { nightStats, sampleVisible } from './nightrank.js?v=6';
 import { TYPE_LABELS, TYPE_COLORS, searchBlob as coreSearchBlob }
-  from './core.js?v=15';
-import { popularityFactor as corePopularityFactor } from './core.js?v=15';
+  from './core.js?v=16';
+import { popularityFactor as corePopularityFactor } from './core.js?v=16';
 
 // Cache-bust token for the ~4 MB data file web/catalog.json. It is NOT a JS
 // module, so it cannot carry a ?v= in an import: this named token IS its
@@ -2501,7 +2501,7 @@ async function boot() {
     if (!el) return;
     const info = E.nightInfo(nightAnchor(), S.site.lat, S.site.lon,
                              siteNoon(nightAnchor()));
-    const dw = E.pickDarkWindow(info);
+    const dw = E.pickDarkWindow(info, nightAnchor(), siteNoon(nightAnchor()));
     // the ANCHORED night's moon (desktop header parity: it reports the night's
     // illumination, not the live one) - only "now" when there is no dark
     // window at all (polar day)
