@@ -122,13 +122,17 @@ function load() {
 function save() {
   // strip in-memory image data URLs before persisting — they can exceed the
   // localStorage quota; profiles/strokes/calibration are what planning needs.
+  // Returns false on storage failure (quota/security): the caller MUST surface
+  // it (FIX-5, review WB1) - swallowing it made the editor report "Saved"
+  // while the previous state stayed in storage.
   try {
     const slim = { ...db, panos: db.panos.map((p) => {
       const { _img, ...rest } = p;
       return rest;
     }) };
     localStorage.setItem(LS_KEY, JSON.stringify(slim));
-  } catch { /* ignore */ }
+    return true;
+  } catch { return false; }
 }
 
 export function allPanos() { return db.panos; }
@@ -309,7 +313,7 @@ export function deletePano(id) {
 }
 
 export function updatePano(p) {
-  save();
+  return save();
 }
 
 /* ---------------- editor session: history + view (pure) ----------------
@@ -995,13 +999,14 @@ function wireEditor(box, p, onChanged) {
   function saveSession() {
     status = 'saving';
     renderStatus();
-    try {
-      computeProfile(p);    // derive from strokes (or keep the stored profile)
-      updatePano(p);        // the ONE persistence path (localStorage)
+    computeProfile(p);    // derive from strokes (or keep the stored profile)
+    // FIX-5: only a REAL write may clear the dirty baseline; on failure keep
+    // the edits and let the caller show "Save failed".
+    if (updatePano(p)) {
       historyMarkSaved(hist, p);
       status = 'saved';
       onChanged();
-    } catch (e) {
+    } else {
       status = 'failed';
     }
     renderStatus();

@@ -164,5 +164,19 @@ let prevented = false;
 bu({ preventDefault() { prevented = true; }, returnValue: '' });
 assert(!prevented, 'a clean editor must not block unload');
 
+/* ---------------- FIX-5: storage failure must be reported ---------------- */
+// A quota/security failure used to be swallowed inside save(), so the editor
+// showed "Saved" while localStorage kept the previous state (data loss on
+// reload). updatePano() must report the failure to its caller.
+const C = H.newPano('quota-test');
+const origSetItem = globalThis.localStorage.setItem;
+globalThis.localStorage.setItem = () => { throw new Error('quota exceeded'); };
+const failed = H.updatePano(C);
+globalThis.localStorage.setItem = origSetItem;
+assert(failed === false, 'updatePano must report a storage failure (got ' + failed + ')');
+const succeeded = H.updatePano(C);
+assert(succeeded === true, 'updatePano must report success (got ' + succeeded + ')');
+H.deletePano(C.id);
+
 console.log(ok ? 'pano ui contract held' : 'pano ui FAILED');
 process.exit(ok ? 0 : 1);
