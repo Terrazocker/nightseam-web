@@ -30,6 +30,9 @@ ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "landing" / "changelog.json"
 
 CURATED = {
+    # 0.6.24 ships the shared kept-band panorama crop (web + desktop) and the
+    # desktop stored-FOV fix. No planning-number changes.
+    "0.6.24": "Panorama crop. In the web planner you can now trim a panorama to the azimuth band you want by dragging the band to keep: the horizon keeps its paint (the photo is not modified) and the crop is a single undo step. The Windows app's crop tool now stores the correct field of view - it previously stored the removed portion, so an off-centre crop was stretched; a panorama cropped in an older Windows version can be fixed by re-cropping, or by correcting the field of view directly in the editor. Every displayed planning number is unchanged.",
     # 0.6.23 ships the Batch 3 review hardening (API/import numeric + custom-id
     # validation, web storage/IDB/cross-tab/pano-section robustness) and the
     # first real-browser release gate. No planning-number or interface changes.

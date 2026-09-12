@@ -248,8 +248,8 @@ Image Catalog (FITS ingest + library). `README.md` has the feature list.
   `desktop-pano-crop-fov` browser checks, and
   `tests/test_ui_invariants.py::test_desktop_crop_uses_the_shared_kept_band_helper`.
   **Compatibility note:** panos cropped on the DESKTOP before this release
-  carry a wrong fov (the removed fraction); re-cropping or re-calibrating them
-  corrects it - no migration touches stored data.
+  carry a wrong fov (the removed fraction); re-cropping, or correcting the FOV
+  field directly in the editor, fixes it - no migration touches stored data.
 - Web `app.js::clampSkyTime()` also runs at boot and on every `refreshView()`
   (site/date change), so loading during the day starts the scrub at the first
   allowed instant (the window start) instead of showing a daylight
