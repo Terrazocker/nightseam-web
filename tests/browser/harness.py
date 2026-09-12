@@ -411,10 +411,26 @@ def _prod_smoke(browser, prod_url: str, artifacts: Path, verbose: bool) -> Resul
     try:
         c.goto("/")
         page.wait_for_selector("#foot-ver", timeout=45000)
+        # First-run welcome (throwaway profile, empty storage): "Skip" keeps the
+        # default site so boot proceeds.  This writes only to the ephemeral
+        # browser profile - the server and any real user data are untouched.
+        try:
+            page.wait_for_selector("#w-skip", state="visible", timeout=10000)
+            page.click("#w-skip")
+        except Exception:
+            pass
         page.wait_for_function(
             """() => { const v = document.querySelector('#foot-ver');
                  const t = (v && v.textContent || '').trim();
                  return t && t !== '\\u2026'; }""", timeout=45000)
+        shown = (page.evaluate(
+            """() => (document.querySelector('#foot-ver')?.textContent || '').trim()""") or "")
+        deployed = page.evaluate(
+            """async () => { const r = await fetch('version.json'); return r.ok
+                 ? (await r.json()).version : null; }""")
+        c.expect(deployed, "the deployed version.json must be readable")
+        c.expect(deployed in shown,
+                 f"page shows {shown!r} but version.json says {deployed!r}")
         c.assert_clean()
     except Exception as exc:
         ok, err = False, f"{type(exc).__name__}: {exc}"
