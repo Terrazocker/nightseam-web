@@ -30,6 +30,10 @@ ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "landing" / "changelog.json"
 
 CURATED = {
+    # 0.6.21 fixes the code-review Batch 1 findings: worker/prefs race,
+    # catalog identity + cache invalidation, import validation, guard/release
+    # holes and the stale web cache tokens. No planning-number changes.
+    "0.6.21": "Fixes a rare planning race and hardens restores. Changing a preference (minimum altitude, Bortle class, moon-aware ranking or filters) while a new night was being calculated could cancel that calculation and leave the busy indicator running; the calculation now finishes, the new preference is applied to it, and the indicator clears. Custom targets you add or remove are now reflected in planning immediately, and tracks can never be attached to the wrong object after a catalog change. Restoring a backup now validates its horizon profiles and settings up front: a damaged file is rejected with a clear message instead of silently disabling your horizon or preventing the app from starting. Internal checks and the reference-value test suite were also tightened; the interface and every planning number are unchanged.",
     # 0.6.20 is an internal architecture cleanup: the duplicated Python
     # astronomy/planning layer and the desktop's server fallback are gone; the
     # shared engine is the only planner. No behavior change, exe ~19 KB smaller.
