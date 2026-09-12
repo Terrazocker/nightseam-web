@@ -69,7 +69,7 @@ def _ms(parts):
 def _run_node(cases):
     node = shutil.which("node")
     if not node:
-        pytest.skip("node is not installed - timezone core cannot be checked")
+        pytest.fail("node is not installed - timezone core cannot be checked")
     try:
         proc = subprocess.run(
             [node, str(HARNESS), "timezone"],
@@ -77,7 +77,7 @@ def _run_node(cases):
             encoding="utf-8", timeout=120, cwd=str(ROOT),
             env={**os.environ, "TZ": "UTC"})
     except OSError as exc:          # sandboxed environments deny pipe creation
-        pytest.skip(f"cannot spawn node here: {exc}")
+        pytest.fail(f"cannot spawn node here: {exc}")
     assert proc.returncode == 0, f"harness failed: {proc.stderr[-2000:]}"
     return json.loads(proc.stdout)
 

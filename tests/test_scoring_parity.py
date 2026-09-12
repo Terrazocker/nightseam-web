@@ -20,7 +20,7 @@ RUNNER = ROOT / "tests" / "js" / "scoring_parity.mjs"
 def _run(core_dir=None):
     node = shutil.which("node")
     if not node:
-        pytest.skip("node is not installed - scoring parity cannot run")
+        pytest.fail("node is not installed - scoring parity cannot run")
     argv = [node, str(RUNNER), str(GOLDENS)]
     if core_dir is not None:
         argv.append(str(core_dir))
@@ -28,7 +28,7 @@ def _run(core_dir=None):
         return subprocess.run(argv, capture_output=True, text=True,
                               encoding="utf-8", timeout=300, cwd=str(ROOT))
     except OSError as exc:
-        pytest.skip(f"cannot spawn node here: {exc}")
+        pytest.fail(f"cannot spawn node here: {exc}")
 
 
 def test_batched_scoring_matches_the_pre_change_goldens():

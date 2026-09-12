@@ -23,7 +23,7 @@ TOL = FX["manifest"]["tolerances"]
 def _node():
     node = shutil.which("node")
     if not node:
-        pytest.skip("node is not installed - mutations cannot run")
+        pytest.fail("node is not installed - mutations cannot run")
     return node
 
 
@@ -32,7 +32,7 @@ def _run(argv):
         return subprocess.run(argv, capture_output=True, text=True,
                               encoding="utf-8", timeout=300, cwd=str(ROOT))
     except OSError as exc:
-        pytest.skip(f"cannot spawn node here: {exc}")
+        pytest.fail(f"cannot spawn node here: {exc}")
 
 
 def _near(a, b, tol):

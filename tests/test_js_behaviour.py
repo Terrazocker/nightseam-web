@@ -18,13 +18,13 @@ ROOT = Path(__file__).resolve().parent.parent
 def run_node_harness(script: str):
     node = shutil.which("node")
     if not node:
-        pytest.skip("node is not installed - JS behaviour cannot be checked here")
+        pytest.fail("node is not installed - JS behaviour cannot be checked here")
     try:
         proc = subprocess.run([node, str(ROOT / "tests" / "js" / script)],
                               capture_output=True, text=True, encoding="utf-8",
                               timeout=180, cwd=str(ROOT))
     except OSError as exc:          # sandboxed environments deny pipe creation
-        pytest.skip(f"cannot spawn node here: {exc}")
+        pytest.fail(f"cannot spawn node here: {exc}")
     assert proc.returncode == 0, (
         f"{script} failed:\n{proc.stdout[-1500:]}\n{proc.stderr[-1500:]}")
     return proc.stdout

@@ -18,14 +18,14 @@ ROOT = Path(__file__).resolve().parents[1]
 def _run_contract(module: Path) -> subprocess.CompletedProcess:
     node = shutil.which("node")
     if not node:
-        pytest.skip("node is not installed - D1 contract cannot be checked")
+        pytest.fail("node is not installed - D1 contract cannot be checked")
     try:
         return subprocess.run(
             [node, str(ROOT / "tests" / "js" / "core_d1.mjs"), str(module)],
             capture_output=True, text=True, encoding="utf-8",
             timeout=180, cwd=str(ROOT))
     except OSError as exc:          # sandboxed environments deny pipe creation
-        pytest.skip(f"cannot spawn node here: {exc}")
+        pytest.fail(f"cannot spawn node here: {exc}")
 
 
 def test_core_d1_contract_holds():

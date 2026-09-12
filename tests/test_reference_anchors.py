@@ -34,7 +34,7 @@ ANCHOR_COUNT = 19
 def _run(core_dir=None):
     node = shutil.which("node")
     if not node:
-        pytest.skip("node is not installed - reference anchors cannot run")
+        pytest.fail("node is not installed - reference anchors cannot run")
     argv = [node, str(HARNESS)]
     if core_dir is not None:
         argv.append(str(core_dir))
@@ -42,7 +42,7 @@ def _run(core_dir=None):
         return subprocess.run(argv, capture_output=True, text=True,
                               encoding="utf-8", timeout=300, cwd=str(ROOT))
     except OSError as exc:          # sandboxed environments deny pipe creation
-        pytest.skip(f"cannot spawn node here: {exc}")
+        pytest.fail(f"cannot spawn node here: {exc}")
 
 
 def _failed(core_dir=None) -> set[str]:
@@ -63,6 +63,22 @@ def test_all_reference_anchors_pass():
     assert len(data["checks"]) == ANCHOR_COUNT, \
         f"anchor count changed: {len(data['checks'])} != {ANCHOR_COUNT}"
     assert data["failed"] == 0
+
+
+def test_missing_node_fails_instead_of_skipping(monkeypatch):
+    """FIX-9b (review TS6): without node the reference anchors cannot run, so
+    a missing node must FAIL the suite - a green run must never mean 'the
+    astronomy checks were skipped'. Mutation: turn the helper's pytest.fail()
+    back into pytest.skip() and this test fails with 'got Skipped'."""
+    import shutil as _shutil
+    monkeypatch.setattr(_shutil, "which", lambda name: None)
+    try:
+        _run()
+    except pytest.fail.Exception:
+        return                      # the required outcome
+    except BaseException as exc:    # a Skipped outcome is the regression
+        pytest.fail(f"missing node must FAIL the check, got {type(exc).__name__}")
+    pytest.fail("missing node must fail the check")
 
 
 def _mutated_core(tmp_path, old, new):

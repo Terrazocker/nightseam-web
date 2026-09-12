@@ -25,7 +25,7 @@ HARNESS = ROOT / "tests" / "js" / "astro_parity.mjs"
 def _run_node(engine: str, cases):
     node = shutil.which("node")
     if not node:
-        pytest.skip("node is not installed - JS parity cannot be checked here")
+        pytest.fail("node is not installed - JS parity cannot be checked here")
     try:
         proc = subprocess.run(
             [node, str(HARNESS), engine],
@@ -35,7 +35,7 @@ def _run_node(engine: str, cases):
             # scan window from local-noon getters)
             env={**os.environ, "TZ": "UTC"})
     except OSError as exc:          # sandboxed environments deny pipe creation
-        pytest.skip(f"cannot spawn node here: {exc}")
+        pytest.fail(f"cannot spawn node here: {exc}")
     assert proc.returncode == 0, f"harness failed: {proc.stderr[-2000:]}"
     return json.loads(proc.stdout)
 
@@ -389,7 +389,7 @@ def _assert_scoring_anchors(res: dict) -> None:
 def _crosszone(case, browser_zone):
     node = shutil.which("node")
     if not node:
-        pytest.skip("node is not installed - JS parity cannot be checked here")
+        pytest.fail("node is not installed - JS parity cannot be checked here")
     try:
         proc = subprocess.run(
             [node, str(HARNESS), "crosszone"],
@@ -397,7 +397,7 @@ def _crosszone(case, browser_zone):
             encoding="utf-8", timeout=120, cwd=str(ROOT),
             env={**os.environ, "TZ": browser_zone})
     except OSError as exc:
-        pytest.skip(f"cannot spawn node here: {exc}")
+        pytest.fail(f"cannot spawn node here: {exc}")
     assert proc.returncode == 0, proc.stderr[-1500:]
     return json.loads(proc.stdout)[0]
 
@@ -550,7 +550,7 @@ _POLAR_CASES = [
 def _darkwindow(case, browser_zone):
     node = shutil.which("node")
     if not node:
-        pytest.skip("node is not installed - JS parity cannot be checked here")
+        pytest.fail("node is not installed - JS parity cannot be checked here")
     try:
         proc = subprocess.run(
             [node, str(HARNESS), "darkwindow"],
@@ -558,7 +558,7 @@ def _darkwindow(case, browser_zone):
             encoding="utf-8", timeout=120, cwd=str(ROOT),
             env={**os.environ, "TZ": browser_zone})
     except OSError as exc:
-        pytest.skip(f"cannot spawn node here: {exc}")
+        pytest.fail(f"cannot spawn node here: {exc}")
     assert proc.returncode == 0, proc.stderr[-1500:]
     return json.loads(proc.stdout)["windows"][0]
 

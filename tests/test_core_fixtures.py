@@ -24,7 +24,7 @@ RUNNER = ROOT / "tests" / "js" / "core_fixtures.mjs"
 def _run(core_dir: Path | None = None) -> dict:
     node = shutil.which("node")
     if not node:
-        pytest.skip("node is not installed - core fixtures cannot run")
+        pytest.fail("node is not installed - core fixtures cannot run")
     argv = [node, str(RUNNER), str(FIXTURES)]
     if core_dir is not None:
         argv.append(str(core_dir))
@@ -32,7 +32,7 @@ def _run(core_dir: Path | None = None) -> dict:
         proc = subprocess.run(argv, capture_output=True, text=True,
                               encoding="utf-8", timeout=180, cwd=str(ROOT))
     except OSError as exc:          # sandboxed environments deny pipe creation
-        pytest.skip(f"cannot spawn node here: {exc}")
+        pytest.fail(f"cannot spawn node here: {exc}")
     assert proc.returncode == 0, f"fixture runner failed:\n{proc.stderr[-2000:]}"
     return json.loads(proc.stdout)
 
