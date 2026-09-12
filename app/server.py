@@ -64,7 +64,12 @@ def _same_origin_request(request) -> bool:
     if site and site not in ("same-origin", "none"):
         return False
     origin = (request.headers.get("origin") or "").strip()
-    if origin and origin != "null":
+    if origin == "null":
+        # PY6 (review): `Origin: null` never belongs to a legitimate local app
+        # (sandboxed iframes / legacy send it); non-browser clients send no
+        # Origin header at all and stay allowed.
+        return False
+    if origin:
         host = (request.headers.get("host") or "").strip().lower()
         if origin.rstrip("/").lower() not in (f"http://{host}", f"https://{host}"):
             return False
@@ -184,6 +189,15 @@ def _check_site(lat: float, lon: float, elev: int) -> None:
         if value is None or not math.isfinite(float(value)) or \
                 not (lo <= float(value) <= hi):
             raise HTTPException(400, f"{label} must be between {lo} and {hi}")
+
+
+def _finite(value: float, label: str) -> float:
+    """Reject NaN/Infinity on the API boundary (PY3, review): the response is
+    serialized with allow_nan=False, so one stored NaN would 500 /api/state
+    forever - and the desktop awaits that route at boot."""
+    if value is None or not math.isfinite(float(value)):
+        raise HTTPException(400, f"{label} must be a finite number")
+    return float(value)
 
 
 def _check_profile(values, label: str) -> None:
@@ -381,7 +395,8 @@ def create_app(db: Database, *, prefetch: bool = True) -> FastAPI:
         if body.active_pano_id is not None:
             db.set_active_panorama(body.active_pano_id)
         if body.min_useful_alt is not None:
-            db.set_setting("min_useful_alt", body.min_useful_alt)
+            db.set_setting("min_useful_alt",
+                           _finite(body.min_useful_alt, "min_useful_alt"))
         if body.moon_aware is not None:
             db.set_setting("moon_aware", bool(body.moon_aware))
         if body.filters is not None:
@@ -446,6 +461,9 @@ def create_app(db: Database, *, prefetch: bool = True) -> FastAPI:
 
     @app.post("/api/rigs")
     def api_add_rig(body: RigIn):
+        _finite(body.focal_mm, "Focal length")
+        _finite(body.sensor_w, "Sensor width")
+        _finite(body.sensor_h, "Sensor height")
         if body.focal_mm <= 0 or body.sensor_w <= 0 or body.sensor_h <= 0:
             raise HTTPException(400, "Focal length and sensor size must be positive")
         fov_w = fov_arcmin(body.focal_mm, body.sensor_w)
@@ -571,9 +589,9 @@ def create_app(db: Database, *, prefetch: bool = True) -> FastAPI:
                         "profile_top": [], "paint_mode": "obstacle",
                         "block_above": False}
         if az_offset is not None:
-            fields["az_offset"] = float(az_offset)
+            fields["az_offset"] = _finite(az_offset, "az_offset")
         if fov is not None:
-            fields["fov"] = float(fov)
+            fields["fov"] = _finite(fov, "fov")
         db.update_panorama(pid, **fields)
         return {"ok": True}
 
@@ -585,6 +603,10 @@ def create_app(db: Database, *, prefetch: bool = True) -> FastAPI:
             raise HTTPException(400, "paint_mode must be 'obstacle' or 'sky'")
         _check_profile(body.profile, "profile")
         _check_profile(body.profile_top, "profile_top")
+        for label in ("az_offset", "alt_bottom", "alt_top", "fov"):
+            value = getattr(body, label)
+            if value is not None:
+                _finite(value, label)
         fields = {k: v for k, v in body.model_dump().items() if v is not None}
         fields.pop("active", None)      # activation is handled atomically below
         if fields:

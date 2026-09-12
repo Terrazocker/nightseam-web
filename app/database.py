@@ -813,6 +813,14 @@ class Database:
                          p.get("paint_mode", "obstacle"),
                          1 if p.get("block_above") else 0))
                 for c in customs:
+                    # PY4 (review): the id must keep the `u_` custom prefix -
+                    # a bundle carrying a builtin id (e.g. "m31") would collide
+                    # with the seeded catalog and could not be deleted.
+                    cid = c.get("id")
+                    if not isinstance(cid, str) or not cid.startswith("u_"):
+                        raise ValueError(
+                            "custom target id must start with 'u_' "
+                            f"(got {cid!r})")
                     cur.execute(
                         "INSERT OR REPLACE INTO custom_objects"
                         "(id,primary_name,otype,ra_hours,dec_deg,vmag,size_am,"

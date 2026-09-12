@@ -878,6 +878,33 @@ def test_import_rejects_garbage(client):
     assert r.status_code == 400
 
 
+def test_numeric_fields_reject_nan_and_keep_state_alive(client):
+    """PY3 (review): NaN/Infinity used to be stored by settings/rigs/panoramas
+    and then 500 /api/state forever (the desktop awaits it at boot)."""
+    for path, body in (("/api/settings", {"min_useful_alt": float("nan")}),
+                       ("/api/rigs", {"name": "x", "focal_mm": float("nan"),
+                                      "sensor_w": 6.0, "sensor_h": 4.0})):
+        r = client.post(path, content=json.dumps(body),
+                        headers={"Content-Type": "application/json"})
+        assert r.status_code == 400, (path, r.status_code, r.text)
+    pid = client.post("/api/panorama",
+                      files={"file": ("p.jpg", b"x", "image/jpeg")}
+                      ).json()["id"]
+    r = client.put(f"/api/panorama/{pid}",
+                   content=json.dumps({"az_offset": float("inf")}),
+                   headers={"Content-Type": "application/json"})
+    assert r.status_code == 400, r.text
+    assert client.get("/api/state").status_code == 200
+
+
+def test_origin_null_is_rejected(client):
+    """PY6 (review): `Origin: null` skips the host comparison - it never
+    belongs to a legitimate local app. No-Origin clients stay allowed."""
+    assert client.get("/api/state",
+                      headers={"Origin": "null"}).status_code == 403
+    assert client.get("/api/state").status_code == 200
+
+
 def test_import_malformed_bundles_are_clean_400s(client):
     """FIX-4 follow-up (verification): a VALID zip with a wrong/missing
     setup.json used to leave the ZipFile open, so the route's spool unlink

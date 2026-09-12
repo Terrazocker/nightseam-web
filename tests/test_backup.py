@@ -385,6 +385,22 @@ def test_import_rejects_hostile_settings(db):
     assert len(db.sites()) == 1
 
 
+def test_import_rejects_custom_ids_without_the_u_prefix(db):
+    """PY4 (review): a bundle could insert a custom target with a BUILTIN id
+    (e.g. "m31"); /api/catalog then shipped duplicate ids that the API could
+    not delete. Fail closed."""
+    db.add_site("Home", 50.0, 7.8, 150)
+    blob = _mutate_bundle(
+        build_export_zip(db),
+        lambda s: s["customs"].append(
+            {"id": "m31", "primary_name": "Evil", "otype": "galaxy",
+             "ra_hours": 0.7, "dec_deg": 41.3, "vmag": 4, "size_am": "",
+             "constellation": "", "blurb": ""}))
+    with pytest.raises(ValueError, match="u_"):
+        apply_import_zip(db, blob)
+    assert len(db.sites()) == 1
+
+
 def _zip_with(app_name: str, setup: dict, files: dict | None = None) -> bytes:
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
