@@ -788,3 +788,24 @@ def test_run_returns_0_when_nothing_is_wrong_and_1_when_something_is():
     # the report must name every error it counted (no silent findings)
     for f in errors:
         assert f.check in buf.getvalue(), f.render()
+
+
+def test_make_release_consults_the_core_drift_check(monkeypatch):
+    """FIX-9 (review TL1): check_release.py::run() appended
+    check_core_findings(), but make_release.run_check() did not - its 'release
+    check: ok' could not see a core/ drift. The core check must be consulted
+    before staging (mutation: remove the call -> this test fails)."""
+    import pytest
+    MR = _load("ns_make_release", ROOT / "scripts" / "make_release.py")
+    called = []
+
+    def fake_core(root=ROOT):
+        called.append(root)
+        return [CR.Finding(CR.ERROR, "core", "simulated core drift")]
+
+    monkeypatch.setattr(MR, "check_core_findings", fake_core)
+    monkeypatch.setattr(MR, "collect", lambda *a, **k: None)
+    monkeypatch.setattr(MR, "evaluate", lambda *a, **k: [])
+    with pytest.raises(SystemExit):
+        MR.run_check("0.6.21", False, False, "before staging")
+    assert called, "make_release.run_check must consult check_core_findings()"
