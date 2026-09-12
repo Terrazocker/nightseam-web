@@ -71,17 +71,6 @@ def test_settings_roundtrip(client):
                              "narrowband_oiii": False}
 
 
-def test_planning_client_compute_flag_defaults_true_and_toggles(client):
-    # authority flip: ON by default, desktop/server-side only, and the flag
-    # only selects the client path - the server path always stays available
-    assert client.get("/api/state").json()["planning_client_compute"] is True
-    r = client.post("/api/settings", json={"planning_client_compute": False})
-    assert r.status_code == 200
-    assert client.get("/api/state").json()["planning_client_compute"] is False
-    client.post("/api/settings", json={"planning_client_compute": True})
-    assert client.get("/api/state").json()["planning_client_compute"] is True
-
-
 def test_timezone_setting_roundtrip(client):
     r = client.post("/api/settings", json={"timezone": "America/Santiago"})
     assert r.status_code == 200

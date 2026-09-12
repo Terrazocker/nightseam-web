@@ -100,6 +100,20 @@ def test_view_full_day_preference_roundtrips(db, tmp_path):
     assert db2.setting("view_full_day", False) is True
 
 
+def test_import_of_the_retired_planning_flag_stays_safe(db, tmp_path):
+    """Phase C retired `planning_client_compute`, but backups written by
+    0.6.18/0.6.19 carry it in their settings map. Import passes settings
+    through opaquely, so such a bundle must restore without error and the dead
+    key must simply sit inert in the table (it is never read again)."""
+    db.set_setting("planning_client_compute", False)
+    blob = build_export_zip(db)
+    db2 = Database(tmp_path / "other.db")
+    db2.set_setting("image_dir", str(tmp_path / "archive"))
+    summary = apply_import_zip(db2, blob)          # must not raise
+    assert summary["auto_backup"]
+    assert db2.setting("planning_client_compute", "unset") is False
+
+
 def test_import_clears_stale_import_history(db, tmp_path):
     """The 'Recent imports' history describes the library the restore replaces,
     so a restore must clear it. Rows surviving a restore would point at

@@ -1,8 +1,8 @@
 /* night payload loading: debounced, abortable */
 
-import { $, api, setBusy, todayLocal, tzOffAt, toast } from "./util.js";
+import { $, setBusy, todayLocal, tzOffAt, toast } from "./util.js";
 import { S } from "./state.js";
-import { timeIndexFor, synthesizeAdvancedTracks, scrubWindowRange } from "./derive.js";
+import { timeIndexFor, scrubWindowRange } from "./derive.js";
 import { buildClientNight } from "./planning_client.js";
 
 let _nightCtl = null;
@@ -34,42 +34,15 @@ async function doLoadNight() {
   setBusy(true);
   try {
     const date = $("#dateInput").value || todayLocal();
-    const q = new URLSearchParams({ date, tz_offset_min: tzOffAt(date) });
-    if (sel.value) q.set("site", sel.value);   // empty string would 422
-    if (S.cfg && S.cfg.adv_mode) q.set("adv", "1");
 
-    // Authority flip: the desktop computes planning locally from the shared
-    // core (planning_client.js). The server path is retained and used when the
-    // flag is off OR the client build throws (runtime fallback, logged).
-    const useClient = !S.cfg || S.cfg.planning_client_compute !== false;
-    let N = null;
-    if (useClient) {
-      await nextPaint();                        // busy chip paints first
-      if (ctl !== _nightCtl) return;
-      try {
-        N = await buildClientNight({ date, siteId: sel.value, tzMin: tzOffAt(date) });
-      } catch (err) {
-        if (ctl !== _nightCtl) return;
-        console.warn("[night] client planning failed; falling back to the " +
-                     "server path:", err);
-        N = null;
-      }
-      if (ctl !== _nightCtl) return;
-    }
-    if (!N) {
-      N = await api("/api/night?" + q, { signal: ctl.signal, silent: true });
-      if (ctl !== _nightCtl) return;            // superseded meanwhile
-    }
+    // Core-only planning (Phase C): the desktop builds the payload LOCALLY
+    // from the shared core (planning_client.js) - there is no server fallback.
+    await nextPaint();                        // busy chip paints first
+    if (ctl !== _nightCtl) return;
+    const N = await buildClientNight({ date, siteId: sel.value,
+                                       tzMin: tzOffAt(date) });
+    if (ctl !== _nightCtl) return;            // superseded meanwhile
 
-    // The synthesis awaits for seconds in advanced mode, so the supersede check
-    // has to be repeated AFTER it: without this, a load superseded while
-    // synthesising still committed its payload below and repainted every view
-    // with the previous date's data (and cleared busy while the newer load was
-    // still in flight).
-    if (!N._clientTracks && N.objects.some(o => o.adv)) {
-      await synthesizeAdvancedTracks(N);
-      if (ctl !== _nightCtl) return;            // superseded during synthesis
-    }
     S.night = N;
     const n = N.timeline.n;
     const nowIdx = timeIndexFor(new Date());

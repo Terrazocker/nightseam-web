@@ -7,10 +7,8 @@
    caches its payload: a site/date/catalog/profile change rebuilds the tracks,
    while preference changes (min-alt, Bortle, moonAware, filters, mag cap) never
    reach this module - derive.js::recomputeNightDerived rescores the stored
-   tracks in place. Any failure throws; night.js/detail.js then use the
-   retained server path and log the fallback.
-
-   Desktop/server only: the web has no flag and no pref for this. */
+   tracks in place. A worker failure falls back to the synchronous client
+   build; any failure then surfaces to the caller (no server compute exists). */
 
 import { S } from "./state.js";
 import { api, parseUTC } from "./util.js";
@@ -161,7 +159,7 @@ function siteFor(siteId) {
 }
 
 /** Worker-first night build; a worker failure falls back to the synchronous
- *  client path (night.js in turn falls back to the server route on failure). */
+ *  client path. */
 export async function buildClientNight(opts) {
   if (workerUsable()) {
     try {
@@ -175,9 +173,6 @@ export async function buildClientNight(opts) {
 }
 
 async function buildWorkerNight({ date, siteId, tzMin }) {
-  if (window.__NS_PLAN_FORCE_FAIL) {
-    throw new Error("forced client-planning failure (smoke hook)");
-  }
   const site = await siteFor(siteId);
   const adv = !!(S.cfg && S.cfg.adv_mode);
   const pano = activeProfile();
@@ -295,9 +290,6 @@ async function bindDerived(objects, d) {
 /** Build the /api/night payload client-side. `siteId` is the siteSelect value;
  *  `date` is the wall date from #dateInput; tzMin the effective offset at it. */
 async function syncBuildClientNight({ date, siteId, tzMin }) {
-  if (window.__NS_PLAN_FORCE_FAIL) {
-    throw new Error("forced client-planning failure (smoke hook)");
-  }
   const site = await siteFor(siteId);
   const adv = !!(S.cfg && S.cfg.adv_mode);
   const pano = activeProfile();
@@ -409,12 +401,8 @@ function fmtDec(decDeg) {
   return `${sign}${String(dd).padStart(2, "0")}deg ${String(mm).padStart(2, "0")}' ${ss.toFixed(1).padStart(4, "0")}"`;
 }
 
-/** Client detail payload; throws on unknown/malformed ids so detail.js falls
- *  back to the retained server route. */
+/** Client detail payload; throws on unknown/malformed ids. */
 export async function buildClientDetail(oid, { date, tzMin, minAlt, siteId }) {
-  if (window.__NS_PLAN_FORCE_FAIL) {
-    throw new Error("forced client-planning failure (smoke hook)");
-  }
   const meta = S.meta[oid];
   if (!meta || meta.ra_hours == null || meta.dec_deg == null) {
     throw new Error("object metadata unavailable");

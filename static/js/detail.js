@@ -1,6 +1,6 @@
 /* object detail modal + altitude-vs-time chart */
 
-import { $, api, clamp, parseUTC, esc, fmtHM, fmtT, toast, tzOffAt,
+import { $, clamp, parseUTC, esc, fmtHM, fmtT, toast, tzOffAt,
          zoneHour,
          TYPE_LABEL, constName, fmtSize } from "./util.js";
 import { S, IMG_VER } from "./state.js";
@@ -52,30 +52,17 @@ export async function openDetail(id) {
     .catch(() => {})
     .finally(() => clearTimeout(upTimer));
 
-  const q = new URLSearchParams({date: $("#dateInput").value,
-    tz_offset_min: tzOffAt($("#dateInput").value), minalt: S.minAlt});
-  if (S.activeSiteId != null) q.set("site", S.activeSiteId);
-  // Authority flip: same client-first / server-fallback policy as night.js.
-  let d = null;
-  if (!S.cfg || S.cfg.planning_client_compute !== false) {
-    try {
-      d = await buildClientDetail(id, { date: $("#dateInput").value,
-        tzMin: tzOffAt($("#dateInput").value), minAlt: S.minAlt,
-        siteId: S.activeSiteId });
-    } catch (err) {
-      console.warn("[detail] client planning failed; falling back to the " +
-                   "server path:", err);
-      d = null;
-    }
-  }
-  if (!d) {
-    try {
-      d = await api(`/api/object/${id}?` + q);
-    } catch (err) {
-      toast("Object details failed: " + err.message);
-      console.error(err);
-      return;
-    }
+  // Core-only planning (Phase C): the detail payload is built locally from
+  // the shared core (planning_client.js) - there is no server fallback.
+  let d;
+  try {
+    d = await buildClientDetail(id, { date: $("#dateInput").value,
+      tzMin: tzOffAt($("#dateInput").value), minAlt: S.minAlt,
+      siteId: S.activeSiteId });
+  } catch (err) {
+    toast("Object details failed: " + err.message);
+    console.error(err);
+    return;
   }
   if (S.currentId !== id) return;   // another object was opened while loading:
                                     // never paint this one's data under its title

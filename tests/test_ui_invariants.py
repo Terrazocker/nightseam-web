@@ -399,30 +399,28 @@ def test_web_sky_mode_is_one_obstruction_colour_and_scrub_time_is_clamped():
         "clampSkyTime must guard before the active site is known"
 
 
-def test_desktop_planning_flip_uses_core_with_server_fallback():
-    """Authority flip (0.6.18): the desktop builds /api/night AND
-    /api/object/{id} locally from the shared core, with the server call kept as
-    a runtime fallback. Neither consumer may be left half-flipped: both read
-    the flag, both try the client builder first, both log + fall back on
-    failure, and the tracks come from core computeNightTracks."""
+def test_desktop_planning_is_core_only():
+    """Phase C: the desktop builds /api/night AND /api/object/{id} locally from
+    the shared core. The old planning_client_compute flag and the server
+    fallback are gone - neither consumer may reach for a server compute route,
+    and the server may not carry the retired setting."""
     pc = _read("static", "js", "planning_client.js")
     assert "computeNightTracks" in pc
     assert "from \"./core.js\"" in pc
     night = _read("static", "js", "night.js")
     assert "buildClientNight" in night
-    assert "planning_client_compute !== false" in night, \
-        "night.js must default the flag ON"
-    assert "/api/night?" in night, "the server path must stay reachable"
-    assert "falling back to the " in night, "a client failure must log + fall back"
+    assert "planning_client_compute" not in night
+    assert "/api/night" not in night, "the server planning route is gone"
+    assert "falling back to the " not in night, "no server fallback may return"
     assert "requestAnimationFrame" in night, \
         "the busy chip must paint before the synchronous compute"
     detail = _read("static", "js", "detail.js")
     assert "buildClientDetail" in detail
-    assert "planning_client_compute !== false" in detail, \
-        "detail.js must default the flag ON"
-    assert "/api/object/" in detail, "the server detail route must stay reachable"
-    assert "falling back to the " in detail
+    assert "planning_client_compute" not in detail
+    assert not re.search(r"/api/object/\$\{id\}\?", detail), \
+        "detail.js must not call the server planning route"
+    assert "/api/object/${id}/image" in detail, \
+        "the image route is IO and stays"
     server = _read("app", "server.py")
-    assert "\"planning_client_compute\"" in server
-    assert "db.setting(\"planning_client_compute\", True)" in server, \
-        "the flag must default ON in /api/state"
+    assert "planning_client_compute" not in server, \
+        "the retired flag must not survive in the API"
