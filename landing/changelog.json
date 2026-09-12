@@ -1,5 +1,10 @@
 [
  {
+  "version": "0.6.21",
+  "date": "2026-09-12",
+  "summary": "Fixes a rare planning race and hardens restores. Changing a preference (minimum altitude, Bortle class, moon-aware ranking or filters) while a new night was being calculated could cancel that calculation and leave the busy indicator running; the calculation now finishes, the new preference is applied to it, and the indicator clears. Custom targets you add or remove are now reflected in planning immediately, and tracks can never be attached to the wrong object after a catalog change. Restoring a backup now validates its horizon profiles and settings up front: a damaged file is rejected with a clear message instead of silently disabling your horizon or preventing the app from starting. Internal checks and the reference-value test suite were also tightened; the interface and every planning number are unchanged."
+ },
+ {
   "version": "0.6.20",
   "date": "2026-09-12",
   "summary": "Internal cleanup release - no behavior change. The desktop app and the web planner now use one shared planning and astronomy engine, and the duplicated local-server calculation path was removed. This makes the Windows app about 19 KB smaller and the code easier to keep correct; the interface, every displayed number and the way you plan are unchanged. Your sites, rigs, targets, panoramas and image library carry over as before, and backups from earlier 0.6.x versions restore normally."
