@@ -59,6 +59,13 @@ def test_polar_fallback_never_reads_the_wall_clock():
     assert "noon fallback contract held" in out
 
 
+def test_sync_cache_key_covers_tz_and_profile_content():
+    """FIX-3: on the synchronous fallback a timezone change or a horizon
+    repaint (same pano id, same 720 bins) must rebuild the payload."""
+    out = run_node_harness("sync_cache_key.mjs")
+    assert "sync cache key contract held" in out
+
+
 def test_desktop_window_contract():
     """The clear window / % of night / score are measured inside dusk..dawn.
 

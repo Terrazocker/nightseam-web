@@ -140,6 +140,20 @@ const iso = (dt) => (dt instanceof Date && !isNaN(dt))
   ? dt.toISOString().slice(0, 19) : null;
 const r1 = (x) => Math.round(x * 10) / 10;
 
+/** Cache-key fingerprint of a horizon profile's CONTENT (FNV-1a over the
+ *  values rounded to 0.1 deg): the sync cache key used to cover only the pano
+ *  id and array LENGTH, so a repaint that kept 720 bins served stale ceilings
+ *  (FIX-3, review DS3). */
+function profileKey(p) {
+  if (!p || !p.length) return "-";
+  let h = 2166136261;
+  for (let i = 0; i < p.length; i++) {
+    h ^= (Math.round(p[i] * 10) | 0);
+    h = Math.imul(h, 16777619);
+  }
+  return p.length + ":" + (h >>> 0);
+}
+
 /** The server's ceil_lookup: pure world-bin lookup, no FOV gate - the stored
  *  profile already encodes outside-FOV behaviour per paint mode. */
 function lookup(profile) {
@@ -339,10 +353,14 @@ async function syncBuildClientNight({ date, siteId, tzMin }) {
   const site = await siteFor(siteId);
   const adv = !!(S.cfg && S.cfg.adv_mode);
   const pano = activeProfile();
+  const topProf = activeTopProfile();
   const panoId = (S.panos.find((p) => p.active) ||
                   S.panos.find((p) => p.id === (S.cfg && S.cfg.active_pano_id)))?.id;
-  const key = [site.id, date, adv ? 1 : 0, panoId || "-",
-               pano ? pano.length : 0].join("|");
+  // tzMin and the profile CONTENTS are part of the payload identity: the
+  // timezone anchors the grid/windows and the profiles set every ceiling
+  // (FIX-3, review DS3).
+  const key = [site.id, date, tzMin, adv ? 1 : 0, panoId || "-",
+               profileKey(pano), profileKey(topProf)].join("|");
   if (_cache.key === key && _cache.payload) return _cache.payload;
 
   const { noonMs, info, w } = clientWindows(date, tzMin, site.lat, site.lon);
@@ -369,7 +387,6 @@ async function syncBuildClientNight({ date, siteId, tzMin }) {
   const moonAgeDays = Math.round(moonAge(midJd) * 100) / 100;
 
   const catalog = await catalogFor(adv);
-  const topProf = activeTopProfile();
   const ceilAt = lookup(pano);
   const topAt = lookup(topProf);
 
