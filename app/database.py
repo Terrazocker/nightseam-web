@@ -764,7 +764,24 @@ class Database:
         # profile would fail open at planning time and a hostile setting could
         # brick /api/state at every boot; the transaction below is never entered.
         _validate_import_settings(settings)
+        # PY3 follow-up (adversarial verification): site/rig/pano numbers are
+        # read into /api/state, which rejects NaN on serialization - validate
+        # them on the import boundary too (None is allowed; JSON null is fine).
+        def _fin(label, v):
+            if v is None:
+                return
+            if isinstance(v, bool) or not isinstance(v, (int, float)) \
+                    or not math.isfinite(float(v)):
+                raise ValueError(f"imported {label} must be a finite number")
+        for s in sites:
+            for key in ("lat", "lon", "elev"):
+                _fin(f"site {key}", s.get(key))
+        for r in rigs:
+            for key in ("focal_mm", "sensor_w", "sensor_h", "fov_w", "fov_h"):
+                _fin(f"rig {key}", r.get(key))
         for p in panoramas:
+            for key in ("az_offset", "alt_bottom", "alt_top", "fov"):
+                _fin(f"panorama {key}", p.get(key))
             _validate_import_profile(p.get("profile"), "profile")
             _validate_import_profile(p.get("profile_top"), "profile_top")
         skipped = {"panoramas": 0, "images": 0}

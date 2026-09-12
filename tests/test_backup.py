@@ -385,6 +385,28 @@ def test_import_rejects_hostile_settings(db):
     assert len(db.sites()) == 1
 
 
+def test_import_rejects_nonfinite_site_and_rig_numbers(db):
+    """PY3 follow-up (adversarial verification): imported site/rig/pano
+    numbers reach /api/state, so a crafted zip with Infinity used to 500 the
+    route forever. Must fail closed before any write."""
+    db.add_site("Home", 50.0, 7.8, 150)
+    for bad in ({"lat": float("inf")},
+                {"lat": 1.0, "lon": float("nan")}):
+        blob = _mutate_bundle(build_export_zip(db),
+                              lambda s, bad=bad: s["sites"][0].update(bad))
+        with pytest.raises(ValueError, match="finite"):
+            apply_import_zip(db, blob)
+    blob = _mutate_bundle(
+        build_export_zip(db),
+        lambda s: s["rigs"].append({"id": 1, "name": "r",
+                                    "focal_mm": float("inf"),
+                                    "sensor_w": 6.0, "sensor_h": 4.0}))
+    with pytest.raises(ValueError, match="finite"):
+        apply_import_zip(db, blob)
+    assert len(db.sites()) == 1                    # nothing was replaced
+    assert db.sites()[0]["lat"] == 50.0
+
+
 def test_import_rejects_custom_ids_without_the_u_prefix(db):
     """PY4 (review): a bundle could insert a custom target with a BUILTIN id
     (e.g. "m31"); /api/catalog then shipped duplicate ids that the API could
