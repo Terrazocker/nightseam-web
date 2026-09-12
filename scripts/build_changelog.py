@@ -30,6 +30,10 @@ ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "landing" / "changelog.json"
 
 CURATED = {
+    # 0.6.20 is an internal architecture cleanup: the duplicated Python
+    # astronomy/planning layer and the desktop's server fallback are gone; the
+    # shared engine is the only planner. No behavior change, exe ~19 KB smaller.
+    "0.6.20": "Internal cleanup release - no behavior change. The desktop app and the web planner now use one shared planning and astronomy engine, and the duplicated local-server calculation path was removed. This makes the Windows app about 19 KB smaller and the code easier to keep correct; the interface, every displayed number and the way you plan are unchanged. Your sites, rigs, targets, panoramas and image library carry over as before, and backups from earlier 0.6.x versions restore normally.",
     # 0.6.19 moves the desktop planning compute into a worker: no behavior
     # change, but date/site changes stay responsive and pref changes rescore
     # off-thread; fallbacks (sync client -> server) unchanged.
