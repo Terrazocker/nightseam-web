@@ -69,6 +69,49 @@ Mutation-proven in `tests/test_core_drift.py`: staging a `nightcalc.py` or a
 - Sun/moon visibility: JDs and apparent altitudes frozen before deletion
   (`_SUN_ANCHORS`, `_MOON_ANCHORS`).
 
+## Reference anchors (correctness authority)
+
+Phase C deleted the Python reference suites; their independent anchors were
+inventoried, and every LOST one was ported to the JS suite as
+`tests/js/reference_anchors.mjs` (19 checks) with mutation proofs in
+`tests/test_reference_anchors.py`. The harness asserts PUBLISHED models/values,
+never the core's own output.
+
+**Golden hierarchy:** `tests/fixtures/core_fixtures.json` is a
+regression/maintenance golden (oracle lineage; catches drift, not a shared
+misreading). The reference anchors are the correctness authority.
+
+| Anchor | Lived in | Status |
+| --- | --- | --- |
+| JD textbook examples (Meeus ch.7) | test_astro | ported -> `meeus_jd_examples` |
+| GMST at J2000 = 280.46061837 | test_astro | ported -> `gmst_j2000` |
+| Precession vs Meeus ch.21 transcription (6 epochs x 8 points) | test_astro | ported -> `meeus_precession_transcription` |
+| Equinox general-precession rate (3.07496 s/yr; 20.0431"/yr) | test_astro | ported -> `precession_equinox_rate` |
+| Round-trip J2000 <-> date | test_astro | ported -> `precession_round_trip` |
+| Transit uses precessed dec (M13 90-\|lat-dec\|, 2-min day) | test_astro | ported -> `transit_altitude_uses_precessed_declination` |
+| Polaris tracks latitude | test_astro | ported -> `polaris_tracks_latitude` |
+| M13 transit Berlin (alt + az) | test_astro | ported -> `m13_transit_berlin` |
+| Sun position Aug 2026 (J2000 + of-date frames) | test_astro | ported -> `sun_position_august_2026` |
+| Sun noon altitude Berlin | test_astro | ported -> `sun_noon_altitude_berlin` |
+| Refraction magnitude (Bennett) | test_astro | ported -> `refraction_magnitude` |
+| Moon illumination bounds | test_astro | ported -> `moon_illumination_bounds` |
+| Published phases (new 2026-08-12 17:37 UT, full 2026-08-28 04:18 UT) | test_astro | ported -> `moon_published_phases` |
+| Illumination/age from elongation + synodic constant | test_astro | ported -> `moon_illumination_matches_elongation` |
+| ERFA/astropy lunar position 2026-08-22 23:00 UT | test_astro | ported -> `moon_erfa_position` |
+| IAU 2006/Capitaine precession, forward | test_precession_reference | ported -> `iau2006_forward` |
+| IAU 2006/Capitaine precession, inverse | test_precession_reference | ported -> `iau2006_inverse` |
+| IAU 2006 != Meeus guard | test_precession_reference | ported -> `iau2006_model_differs` |
+| Old X-axis bug size guard | test_precession_reference | ported -> `old_x_axis_bug_guard` |
+| Frozen oracle fixtures | test_core_fixtures | SURVIVED (regression golden, not authority) |
+| Night-window absolute cases (polar fallback, civil/nautical) | test_planning | SURVIVED as frozen literals (`test_js_parity.py::_SCRUB_SCENARIOS`, core fixtures twilight) - behaviour, not a published astronomy anchor |
+
+**Mutation proofs** (`tests/test_reference_anchors.py`, each perturbs one
+load-bearing constant/sign in a COPY of `core/astro.js`):
+precession coefficient -> Meeus transcription + IAU 2006 forward; GMST term ->
+time anchor; solar equation of centre -> sun position; lunar mean longitude ->
+ERFA position; illumination sign -> published phases; refraction constant ->
+Bennett check.
+
 ## Dev hook disposition
 
 `window.__NS_DEBUG_WORKER` (gates `__NS_KILL_WORKER`/`__NS_REVIVE_WORKER`) is

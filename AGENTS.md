@@ -41,6 +41,17 @@ Image Catalog (FITS ingest + library). `README.md` has the feature list.
   `tests/test_js_parity.py` + `tests/js/astro_parity.mjs`. `scripts/check_core.py`
   (mutation-proven in `tests/test_core_drift.py`) fails if astronomy/planning
   math reappears in `app/` or `scripts/`.
+- **Golden hierarchy (do not confuse the two):**
+  `tests/fixtures/core_fixtures.json` is a REGRESSION/MAINTENANCE golden - it
+  was generated from the same implementation lineage (the retired oracle), so
+  it catches drift but NOT a shared misreading of a formula (the old X-axis
+  precession bug survived three engines that way). The CORRECTNESS AUTHORITY is
+  `tests/js/reference_anchors.mjs` + `tests/test_reference_anchors.py`:
+  published IAU 2006/Capitaine precession (forward + inverse), Meeus ch.7/12/21
+  textbook values, the published 2026-08-12/28 moon phases, an astropy/ERFA
+  lunar position and the Bennett refraction formula - asserted absolutely, with
+  a mutation proof per anchor group. Never "fix" a reference failure by
+  updating the fixtures.
 - Sun/Moon chart visibility is astronomical, not a clock: drawn only while the
   APPARENT (refracted) altitude is `> 0`, the one `aboveHorizon()` in BOTH
   `web/astro.js` and `static/js/derive.js`. `sunRaDec`/`moonRaDec` return RA in
@@ -312,7 +323,7 @@ Image Catalog (FITS ingest + library). `README.md` has the feature list.
     `Get-CimInstance Win32_Process`).
   - If 8407 is briefly taken at boot, `free_port()` silently picks a RANDOM port
     (written to `instance.json`).
-- Tests: `python -m pytest tests/` (403). Single test:
+- Tests: `python -m pytest tests/` (410). Single test:
   `python -m pytest tests/test_js_parity.py -k name`. API tests use
   `create_app(db, prefetch=False)` (no image-cache thread). The `client` fixture
   must leave `data/panos` in the tmp dir it patches in.
@@ -320,7 +331,7 @@ Image Catalog (FITS ingest + library). `README.md` has the feature list.
     `pytest.ini`) can acquire an owner-SID-only DACL, so every `tmp_path` test
     errors at fixture cleanup - an environment artifact, not a failure. Workaround
     (no escalation needed): `python -m pytest tests/ -q --basetemp
-    C:\Users\<user>\AppData\Local\Temp\opencode\pt -p no:cacheprovider` -> 403/403.
+    C:\Users\<user>\AppData\Local\Temp\opencode\pt -p no:cacheprovider` -> 410/410.
 - JS checks (run after touching `static/` OR `web/`): `python scripts/check_js.py`
   runs all of them and exits non-zero on hard failures:
   - `check_js_imports.py` - broken relative ES-module imports / missing named exports
@@ -603,6 +614,11 @@ Image Catalog (FITS ingest + library). `README.md` has the feature list.
 - Guard: `scripts/check_core.py` now fails when a retired module reappears or
   `MOVED_PY` math is defined in `app/`/`scripts/` (mutation-proven in
   `tests/test_core_drift.py`).
+- Reference anchors: the published-value checks deleted with the Python suites
+  (Capitaine/IAU 2006 forward+inverse, Meeus ch.7/12/21 examples, the
+  2026-08-12/28 moon phases, the ERFA lunar position, Bennett refraction) were
+  PORTED to `tests/js/reference_anchors.mjs` (19 checks) + the mutation proofs
+  in `tests/test_reference_anchors.py`.
 - Backups written by 0.6.18/0.6.19 containing the retired flag still import
   safely (`tests/test_backup.py::test_import_of_the_retired_planning_flag_stays_safe`).
 
