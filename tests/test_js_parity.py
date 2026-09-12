@@ -363,68 +363,10 @@ def test_web_twilight_choice_rule():
     assert got[1]["level"] == "nautical" and got[1]["dusk"].endswith("T21:00:00.000Z")
 
 
-def test_python_polar_twilight_uses_the_fixed_window():
-    """E1 python side: in the polar-twilight band the sun SETS but never
-    reaches -6 deg (Tromso mid-May: sunset 23:36 local) - planning.py still
-    uses the fixed 20:00-04:00 window, never sunset..sunrise."""
-    from app.planning import night_window
-    win = night_window(2026, 5, 15, 120, 69.65, 18.96)
-    assert win["level"] == "fallback"
-    assert win["sunset"] is not None, "the sun does set - the fallback must win"
-    assert (win["dusk"].hour, win["dusk"].minute) == (18, 0)   # 20:00 at UTC+2
-    assert (win["dawn"].hour, win["dawn"].minute) == (2, 0)    # 04:00 next day
-    assert win["dusk"].day == 15 and win["dawn"].day == 16
-    assert win["dusk"].month == 5
-
-
-def test_python_twilight_choice_rule():
-    """The same cascade in app/planning.py, on a real high-latitude case:
-    Berlin never reaches -18 deg around the June solstice, so the night window
-    must fall back to the nautical twilight."""
-    from app.planning import night_window
-    midsummer = night_window(2026, 6, 21, 120, 52.52, 13.40)
-    assert midsummer["level"] == "nautical"
-    # ... and a normal autumn night uses the astronomical one
-    autumn = night_window(2026, 9, 10, 120, 52.52, 13.40)
-    assert autumn["level"] == "astronomical"
-
-
-@pytest.mark.parametrize("zone,case", [
-    ("UTC", {"date": "2026-09-10", "lat": 51.48, "lon": 0.0}),
-    ("UTC", {"date": "2026-06-21", "lat": 51.48, "lon": 0.0}),
-    ("Australia/Sydney", {"date": "2026-12-21", "lat": -33.87, "lon": 151.21}),
-])
-def test_web_and_python_agree_on_the_real_dark_window(zone, case):
-    """Cross-engine check on real sun geometry.
-
-    The site is placed in the harness's own zone (TZ), which is also the zone
-    the web anchors its calendar date in, so app/planning.py is given the same
-    offset and both sides must resolve the same night."""
-    from app.planning import night_window
-    node = shutil.which("node")
-    if not node:
-        pytest.skip("node is not installed - JS parity cannot be checked here")
-    try:
-        proc = subprocess.run(
-            [node, str(HARNESS), "darkwindow"],
-            input=json.dumps([case]), capture_output=True, text=True,
-            encoding="utf-8", timeout=120, cwd=str(ROOT),
-            env={**os.environ, "TZ": zone})
-    except OSError as exc:
-        pytest.skip(f"cannot spawn node here: {exc}")
-    assert proc.returncode == 0, proc.stderr[-1500:]
-    res = json.loads(proc.stdout)["windows"][0]
-
-    y, m, d = (int(x) for x in case["date"].split("-"))
-    tz_min_east = -res["zoneOffsetMin"]        # getTimezoneOffset is minutes west
-    py = night_window(y, m, d, tz_min_east, case["lat"], case["lon"])
-    assert res["level"] == py["level"], (zone, case, res, py)
-    for key in ("dusk", "dawn"):
-        got = datetime.fromisoformat(res[key].replace("Z", "+00:00"))
-        want = py[key].replace(tzinfo=timezone.utc)
-        # the two scans use different resolutions (10-min scan + refinement vs
-        # the web's own step), so allow a couple of minutes
-        assert abs((got - want).total_seconds()) < 180, (zone, case, key, got, want)
+# The python-side twilight tests (and the live Py<->JS dark-window comparison)
+# were removed in Phase C with app/planning.py. The web's own side of the
+# contract is pinned above (pick engine) and by the freeze-level assertions in
+# test_web_dark_window_levels_are_absolute below.
 
 
 # ------------------------------------------------------ scoring-model parity
@@ -549,17 +491,12 @@ def _assert_scoring_anchors(res: dict) -> None:
 
 # ------------------------------------------------------ cross-timezone planning
 # The open question from the audit: the web anchored its 48 h scan at
-# BROWSER-local midnight while the site lived in another zone. Measured below
-# (see test_web_cross_timezone_anchoring_is_site_based): the old anchor
-# produced a >24 h "night" with the site either EAST or WEST of the browser.
-# The open question from the audit: the web anchored its 48 h scan at
-# BROWSER-local midnight while the site lived in another zone. Derived
-# condition: the window, expressed in site-local time, is
-#     [D 00:00 - d, D+2 00:00 - d]   with d = siteOffset - browserOffset,
-# so once d exceeds ~+7.7 h (site far EAST of the browser) the previous
-# evening's dusk is inside the window and sunCrossings' "first descending /
-# last ascending" rule returns [dusk(D-1), dawn(D+1)] - a ~39 h "night".
-# Measuring it settles the sign disagreement in the earlier review.
+# BROWSER-local midnight while the site lived in another zone. The scan is now
+# anchored at the SITE's local noon (+30 h, the shared core policy), and the
+# cases below assert that ABSOLUTELY: the site's own night must resolve in both
+# directions (astronomical level, a < 20 h span), and the superseded
+# browser-anchored scan stays in the harness as the documented counter-example
+# for a site far EAST of the browser.
 
 def _crosszone(case, browser_zone):
     node = shutil.which("node")
@@ -579,25 +516,18 @@ def _crosszone(case, browser_zone):
 
 def test_web_cross_timezone_site_resolves_its_own_night():
     """Site far EAST of the browser (Honolulu browser, Berlin site)."""
-    from app.planning import night_window
     case = {"date": "2026-12-05", "lat": 52.52, "lon": 13.40,
             "tz": "Europe/Berlin"}
     res = _crosszone(case, "Pacific/Honolulu")
 
-    # the site-anchored scan (what app.js passes now) must equal the desktop's
-    py = night_window(2026, 12, 5, 60, case["lat"], case["lon"])
-    assert res["site"]["level"] == py["level"] == "astronomical"
-    for key in ("dusk", "dawn"):
-        got = datetime.fromisoformat(res["site"][key].replace("Z", "+00:00"))
-        want = py[key].replace(tzinfo=timezone.utc)
-        assert abs((got - want).total_seconds()) < 180, (key, got, want)
+    assert res["site"]["level"] == "astronomical", res
     assert res["site"]["spanH"] < 20, res["site"]
 
     # ... and the old browser-anchored scan is demonstrably broken here: with
-    # the Python pairing rule (Phase 2 concept 8) it no longer finds a pair at
-    # all inside its off-by-12h window, so it degrades to the fixed 'fallback'
-    # span - still not the site's night (the pre-fix scan instead paired the
-    # neighbouring night's dawn before dusk).
+    # the pairing rule it no longer finds a pair at all inside its off-by-12h
+    # window, so it degrades to the fixed 'fallback' span - still not the
+    # site's night (the pre-fix scan instead paired the neighbouring night's
+    # dawn before dusk).
     assert (res["browserAnchored"]["level"] == "fallback"
             or res["browserAnchored"]["dawn"] < res["browserAnchored"]["dusk"]), \
         res["browserAnchored"]
@@ -620,26 +550,18 @@ def test_web_cross_timezone_anchoring_is_site_based(browser_zone, case):
     far* the window edge misses, because the 48 h window started at
     browser-midnight, which in site-local time lands somewhere inside the
     neighbouring night. The scan is now anchored at the SITE's local noon
-    (+ 30 h, exactly like planning.py), so the counter-example only survives
-    in the east direction (browser noon ~12 h off the site's -> the
-    neighbouring night's dawn-before-dusk pair); a site WEST of the browser
-    (noon offset < ~2 h) accidentally resolves correctly, which is why the
-    site-anchored anchor is the only stable rule.
+    (+ 30 h), so the counter-example only survives in the east direction
+    (browser noon ~12 h off the site's -> the neighbouring night's
+    dawn-before-dusk pair); a site WEST of the browser (noon offset < ~2 h)
+    accidentally resolves correctly, which is why the site-anchored anchor is
+    the only stable rule.
     """
-    from app.planning import night_window
     res = _crosszone(case, browser_zone)
-    y, m, d = (int(x) for x in case["date"].split("-"))
-
-    py = night_window(y, m, d, res["siteOffsetMin"], case["lat"], case["lon"])
-    assert res["site"]["level"] == py["level"], (case, res["site"], py)
-    for key in ("dusk", "dawn"):
-        got = datetime.fromisoformat(res["site"][key].replace("Z", "+00:00"))
-        want = py[key].replace(tzinfo=timezone.utc)
-        assert abs((got - want).total_seconds()) < 180, (case, key, got, want)
+    assert res["site"]["level"] == "astronomical", (case, res["site"])
     assert res["site"]["spanH"] < 20, (case, res["site"])
     # the superseded browser-anchored behaviour, kept in the harness as the
     # documented counter-example: still wrong for a site EAST of the browser
-    # (after the concept-8 pairing fix it degrades to the fixed fallback span)
+    # (after the pairing fix it degrades to the fixed fallback span)
     if "Honolulu" in browser_zone:
         assert (res["browserAnchored"]["level"] == "fallback"
                 or res["browserAnchored"]["dawn"] < res["browserAnchored"]["dusk"]), \
@@ -754,29 +676,26 @@ def _darkwindow(case, browser_zone):
 
 
 @pytest.mark.parametrize("date,tz,lat,lon,bzone,site_tz,level", _POLAR_CASES)
-def test_web_dark_window_matches_planning_across_levels(
+def test_web_dark_window_levels_are_absolute(
         date, tz, lat, lon, bzone, site_tz, level):
     """E1+E2: for polar day, polar twilight, civil/nautical/astronomical nights
-    the web resolves the SAME window and level as app/planning.py. The
-    fallback cases are asserted nearly exactly (both sides construct the fixed
-    20:00-04:00 window); the crossing cases within the usual < 3 min scan
-    tolerance. The window the planner scores on is the window the "Dark time"
-    card must display, so the level is asserted too."""
-    from app.planning import night_window
+    the web resolves the LEVEL the hardcoded table names (the table is the
+    frozen oracle output, kept after app/planning.py was deleted). The fallback
+    is the fixed 20:00-04:00 span, i.e. an 8 h window; crossing cases must be
+    ordered with a sane span. The window the planner scores on is the window the
+    "Dark time" card must display, so the level is asserted too."""
     case = {"date": date, "lat": lat, "lon": lon}
     if site_tz:
         case["tz"] = site_tz
     res = _darkwindow(case, bzone)
-    y, m, d = (int(x) for x in date.split("-"))
-    py = night_window(y, m, d, tz, lat, lon)
 
-    assert res["level"] == level == py["level"], (date, res, py)
-    tol = 60 if level == "fallback" else 180
-    for key in ("dusk", "dawn"):
-        got = datetime.fromisoformat(res[key].replace("Z", "+00:00"))
-        want = py[key].replace(tzinfo=timezone.utc)
-        assert abs((got - want).total_seconds()) < tol, \
-            (date, key, got, want, res["level"])
+    assert res["level"] == level, (date, res)
+    dusk = datetime.fromisoformat(res["dusk"].replace("Z", "+00:00"))
+    dawn = datetime.fromisoformat(res["dawn"].replace("Z", "+00:00"))
+    span = (dawn - dusk).total_seconds()
+    assert 0 < span <= 24 * 3600, (date, res)
+    if level == "fallback":
+        assert abs(span - 8 * 3600) < 120, (date, res)   # 20:00 -> 04:00
 
 
 # ================================================== E3 frame coverage
@@ -990,23 +909,48 @@ def test_web_detail_visibility_predicate_cannot_drift():
 
 
 # ================================================== scrub-range policy
-# (ITEM 1: the scrub spans the planner's dusk..dawn by default, the full span
-#  only with viewFullDay. One shared policy in web/astro.js + static/js/derive.js.)
+# (ITEM 1, 0.6.13: the scrub spans the planner's sunset..sunrise by default,
+#  the full payload span only with viewFullDay. One shared policy in
+#  core/planning.js::scrubWindowMs, called by web/app.js and desktop
+#  derive.js::scrubWindowRange.)
+#
+# The expected windows and grid indices below were FROZEN from the retired
+# Python oracle (app/planning.py) before Phase C deleted it. They are goldens,
+# NOT derived from the JS engines under test.
+# name, night_start, night_end, payload_t0 (site-zoned local noon),
+# sunset, sunrise (None for the polar fallback), dusk, dawn,
+# exp_lo, exp_hi (sunset..sunrise indices), scoring_lo, scoring_hi (dusk..dawn)
 _SCRUB_SCENARIOS = [
-    # name, lat, lon, date, tz_min, expected twilight level
-    ("astronomical", 48.0, 11.0, date(2026, 1, 15), 60, "astronomical"),
-    ("nautical", 51.5, 0.0, date(2026, 6, 21), 60, "nautical"),
-    ("civil", 57.0, 0.0, date(2026, 6, 21), 60, "civil"),
-    ("polar fallback", 69.0, 18.0, date(2026, 6, 21), 120, "fallback"),
-    ("midnight-crossing", 60.0, 10.0, date(2026, 12, 21), 60, "astronomical"),
-    ("southern summer", -33.87, 151.21, date(2026, 1, 15), 660, "astronomical"),
-    ("southern winter", -33.87, 151.21, date(2026, 6, 21), 600, "astronomical"),
-    ("dst night", 52.52, 13.40, date(2026, 3, 29), 120, "astronomical"),
+    ("astronomical", 1768492103973, 1768546924236, 1768474800000,
+     1768492103973, 1768546924236, 1768498864235, 1768540180562,
+     49, 200, 67, 181),
+    ("nautical", 1782073130919, 1782099900444, 1782039600000,
+     1782073130919, 1782099900444, 1782080607186, 1782092430582,
+     94, 167, 114, 146),
+    ("civil", 1782075343105, 1782097693155, 1782039600000,
+     1782075343105, 1782097693155, 1782079616979, 1782093415860,
+     100, 161, 112, 149),
+    ("polar fallback", 1782064800000, 1782093600000, 1782036000000,
+     None, None, 1782064800000, 1782093600000,
+     80, 160, 80, 160),
+    ("midnight-crossing", 1797862253691, 1797927942275, 1797850800000,
+     1797862253691, 1797927942275, 1797872427406, 1797917768519,
+     32, 214, 61, 186),
+    ("southern summer", 1768468060793, 1768503706128, 1768438800000,
+     1768468060793, 1768503706128, 1768474140083, 1768497626744,
+     82, 180, 99, 163),
+    ("southern winter", 1782024695293, 1782075692034, 1782007200000,
+     1782024695293, 1782075692034, 1782030197300, 1782070242748,
+     49, 190, 64, 175),
+    ("dst night", 1774805538411, 1774846104454, 1774778400000,
+     1774805538411, 1774846104454, 1774812965201, 1774838710824,
+     76, 188, 97, 167),
 ]
 
 
-def _ms(dt):
-    return int(dt.replace(tzinfo=timezone.utc).timestamp() * 1000)
+def _iso_ms(value: int) -> str:
+    return datetime.fromtimestamp(value / 1000, timezone.utc).replace(
+        tzinfo=None).isoformat()
 
 
 def test_scrub_window_follows_the_planner_and_matches_between_apps():
@@ -1019,38 +963,26 @@ def test_scrub_window_follows_the_planner_and_matches_between_apps():
     desktop(derive.js) == web(astro.js) for every case. Probes outside the range
     must clamp to the nearest edge (turning the night range back on while sitting
     at 1 pm)."""
-    from app import planning
     cases = []
     expected = []
-    for name, lat, lon, d, tz, level in _SCRUB_SCENARIOS:
-        nw = planning.night_window(d.year, d.month, d.day, tz, lat, lon)
-        assert nw["level"] == level, (name, nw["level"])
-        # the scrub's night range is sunset..sunrise; the fallback (no crossing)
-        # is the planner's site-zoned 20:00-04:00 dusk/dawn
-        s_set, s_rise = nw["sunset"], nw["sunrise"]
-        if s_set is None or s_rise is None:
-            assert name == "polar fallback", name
-            s_set, s_rise = nw["dusk"], nw["dawn"]
-        else:
-            # it is genuinely the wider whole-night range, not the dark window
-            assert (s_set, s_rise) != (nw["dusk"], nw["dawn"]), name
-        night_start, night_end = _ms(s_set), _ms(s_rise)
+    for (name, n0, n1, _t0, _sset, _srise, _dusk, _dawn,
+         _elo, _ehi, _slo, _shi) in _SCRUB_SCENARIOS:
         # a deliberately WIDER "full day" span, never equal to the night range
-        full_start = night_start - 6 * 3600_000
-        full_end = night_end + 6 * 3600_000
+        full_start = n0 - 6 * 3600_000
+        full_end = n1 + 6 * 3600_000
         # probes: the exact edges, a mid-night instant, the full-span edges
         # (outside the night range), and 1 h beyond each side
-        probes = [night_start, night_end, (night_start + night_end) // 2,
+        probes = [n0, n1, (n0 + n1) // 2,
                   full_start, full_end, full_start - 3600_000,
                   full_end + 3600_000]
         for vfd in (False, True):
             cases.append({
                 "name": name, "viewFullDay": vfd,
-                "nightStart": night_start, "nightEnd": night_end,
+                "nightStart": n0, "nightEnd": n1,
                 "fullStart": full_start, "fullEnd": full_end,
                 "probes": probes,
             })
-            expected.append((night_start, night_end, full_start, full_end))
+            expected.append((n0, n1, full_start, full_end))
 
     res = _run_node("scrubwindow", cases)
     assert len(res) == len(cases)
@@ -1079,32 +1011,16 @@ def test_desktop_scrub_grid_maps_the_real_24h_payload():
     and the WHOLE grid with view_full_day; nightIndexRange() (SCORING) still
     selects the twilight-level dusk..dawn in both states. Every scenario at both
     toggle states, and the grid endpoints are the exact samples bracketing the
-    requested crossings."""
-    from app import planning
+    frozen crossings."""
     cases, expected = [], []
-    for name, lat, lon, d, tz, level in _SCRUB_SCENARIOS:
-        nw = planning.night_window(d.year, d.month, d.day, tz, lat, lon)
-        start = nw["t_start"]
-        times = [start + timedelta(minutes=6 * i) for i in range(241)]
-        assert times[-1] - times[0] == timedelta(hours=24)
-        iso = [t.isoformat() for t in times]
-
-        def first_ge(target):
-            return next((i for i, t in enumerate(times) if t >= target), len(times) - 1)
-
-        def last_le(target):
-            return next((i for i in range(len(times) - 1, -1, -1) if times[i] <= target), 0)
-
-        s_set, s_rise = nw["sunset"], nw["sunrise"]
-        if s_set is None or s_rise is None:
-            assert name == "polar fallback", name
-            s_set, s_rise = nw["dusk"], nw["dawn"]
-        exp_lo, exp_hi = first_ge(s_set), last_le(s_rise)
-        slo, shi = first_ge(nw["dusk"]), last_le(nw["dawn"])
-        base = {"times": iso, "step": 6,
-                "dusk": nw["dusk"].isoformat(), "dawn": nw["dawn"].isoformat(),
-                "sunset": nw["sunset"].isoformat() if nw["sunset"] else None,
-                "sunrise": nw["sunrise"].isoformat() if nw["sunrise"] else None}
+    for (name, _n0, _n1, t0, s_set, s_rise, dusk, dawn,
+         exp_lo, exp_hi, slo, shi) in _SCRUB_SCENARIOS:
+        times = [t0 + 6 * 60_000 * i for i in range(241)]
+        assert times[-1] - times[0] == 24 * 3600_000
+        base = {"times": [_iso_ms(t) for t in times], "step": 6,
+                "dusk": _iso_ms(dusk), "dawn": _iso_ms(dawn),
+                "sunset": _iso_ms(s_set) if s_set else None,
+                "sunrise": _iso_ms(s_rise) if s_rise else None}
         for vfd in (False, True):
             cases.append(dict(base, viewFullDay=vfd))
             expected.append((exp_lo, exp_hi, slo, shi, vfd))
