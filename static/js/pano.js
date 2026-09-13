@@ -145,11 +145,63 @@ function updateModeButtons() {
   if (s) s.classList.toggle("active", m === "sky");
 }
 
+/* Ruling C (DE-03/WE-02) - PURE state transitions, shared with the pin in
+ * tests/js/pano_mode_semantics.mjs so the shell and its test cannot drift.
+ * A DELIBERATE paint-mode switch is mode-specific for a record with NO strokes
+ * (the stored values were authored in the other mode), so the profile is
+ * re-derived for the new mode; the switch is ONE undoable step because the undo
+ * snapshot below carries the whole editable state. Neither helper runs on
+ * open/load/save. */
+
+/** Canonical blank for the record's CURRENT mode: obstacle = nothing blocks,
+ *  sky = every column fully blocked. The same values recomputeProfile()'s
+ *  stroke-less branch produces, and the same rule the web applies through core
+ *  clearMask(). */
+export function blankProfileForMode(rec) {
+  const sky = (rec.paint_mode === "sky");
+  rec.profile = new Array(NBIN).fill(sky ? 90 : -90);
+  rec.profile_top = sky ? new Array(NBIN).fill(90) : [];
+  return rec.profile;
+}
+
+/** Switch the record's paint mode. Returns true when it changed. */
+export function setEditableMode(rec, m) {
+  const want = (m === "sky") ? "sky" : "obstacle";
+  const cur = (rec.paint_mode === "sky") ? "sky" : "obstacle";
+  if (want === cur) return false;
+  rec.paint_mode = want;
+  if (!rec.strokes || rec.strokes.length === 0) blankProfileForMode(rec);
+  return true;
+}
+
+/** Undo snapshots carry the WHOLE editable state, not just the strokes: a mode
+ *  switch or a Clear must be undoable, and a stroke-less record's profile is
+ *  authoritative (an empty mask cannot re-derive it). */
+export function pushPanoUndo(rec, stack) {
+  if (!rec) return;
+  stack.push(JSON.stringify({
+    strokes: rec.strokes || [],
+    paint_mode: (rec.paint_mode === "sky") ? "sky" : "obstacle",
+    profile: rec.profile || [],
+    profile_top: rec.profile_top || [],
+  }));
+  if (stack.length > 60) stack.shift();
+}
+
+export function popPanoUndo(rec, stack) {
+  if (!rec || !stack.length) return false;
+  const s = JSON.parse(stack.pop());
+  rec.strokes = s.strokes;
+  rec.paint_mode = s.paint_mode;
+  rec.profile = s.profile;
+  rec.profile_top = s.profile_top;
+  return true;
+}
+
 function setPaintMode(m) {
   if (!Pano.cur || paintMode() === m) return;
-  Pano.cur.paint_mode = m;
-  Pano.cur.profile = [];
-  Pano.cur.profile_top = [];
+  pushPanoUndo(Pano.cur, Pano.undo);   // ruling C: the switch is ONE undoable step
+  setEditableMode(Pano.cur, m);        // mode + canonical blank for the new mode
   invalidateMask();
   updateModeButtons();
   recomputeProfile();
@@ -159,17 +211,13 @@ function setPaintMode(m) {
 /* ---------------- undo ---------------- */
 
 function pushUndo() {
-  if (!Pano.cur) return;
-  Pano.undo.push(JSON.stringify(Pano.cur.strokes));
-  if (Pano.undo.length > 60) Pano.undo.shift();
+  pushPanoUndo(Pano.cur, Pano.undo);
 }
 
 function undoPaint() {
-  if (!Pano.cur || !Pano.undo.length) return;
-  Pano.cur.strokes = JSON.parse(Pano.undo.pop());
-  Pano.cur.profile = [];
-  Pano.cur.profile_top = [];
+  if (!popPanoUndo(Pano.cur, Pano.undo)) return;
   invalidateMask();
+  updateModeButtons();
   render();
   scheduleSave();
 }
@@ -392,6 +440,7 @@ function dab(ev) {
 
 function clearMask() {
   if (!Pano.cur) return;
+  pushPanoUndo(Pano.cur, Pano.undo);   // Clear is undoable too (the ONE deliberate discard)
   Pano.cur.strokes = [];
   Pano.cur.profile = [];
   Pano.cur.profile_top = [];

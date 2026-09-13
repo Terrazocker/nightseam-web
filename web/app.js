@@ -9,7 +9,7 @@
  * All sky math runs client-side (astro.js, Meeus algorithms).
  */
 import * as E from './astro.js?v=12';
-import * as Hor from './horizon.js?v=43';
+import * as Hor from './horizon.js?v=44';
 import * as WS from './webstore.js?v=22';
 import { initDragWindows } from './dragwin.js?v=1';
 import { fmtSize, sizeArcmin, framePct, magVisible, skyClampZoom,

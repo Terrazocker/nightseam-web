@@ -137,3 +137,13 @@ def test_web_sky_band_complement_geometry():
     identical vertices on web + desktop."""
     out = run_node_harness("sky_band.mjs")
     assert "sky-band contract held" in out
+
+
+def test_pano_mode_semantics_ruling_c():
+    """DE-03/WE-02 under ruling C: a DELIBERATE paint-mode switch re-derives the
+    canonical blank for a stroke-less record in BOTH shells and is ONE undoable
+    step that restores the previous mode AND the authoritative profile;
+    open/load/save never blank it, and the mask-derived (stroke-y) path is left
+    to the strokes."""
+    out = run_node_harness("pano_mode_semantics.mjs")
+    assert "pano mode semantics contract held" in out

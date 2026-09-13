@@ -357,16 +357,27 @@ export function updatePano(p) {
  * the snapshot: it is derived from the strokes (or kept when there are none).
  */
 export function snapshotPano(p) {
-  return JSON.stringify({
+  const o = {
     a: p.azOffset, b: p.altBottom, t: p.altTop, f: p.fov,
     m: p.paintMode, s: p.strokes, o: p.blockAbove ? 1 : 0,
-  });
+  };
+  // Ruling C (DE-03/WE-02): with NO strokes the stored profile is AUTHORITATIVE
+  // and cannot be re-derived from an empty mask, so the snapshot must carry it -
+  // otherwise undo/Revert back to a stroke-less baseline leaves the discarded
+  // derived ceiling live in the record planning reads (and a deliberate
+  // paint-mode switch could not be undone either). Snapshots for stroke-y
+  // records stay profile-free: the mask reproduces those exactly.
+  if (!(Array.isArray(p.strokes) && p.strokes.length)) {
+    o.pr = p.profile; o.pt = p.profileTop;
+  }
+  return JSON.stringify(o);
 }
 
 export function applySnapshot(p, snap) {
   const o = JSON.parse(snap);
   p.azOffset = o.a; p.altBottom = o.b; p.altTop = o.t; p.fov = o.f;
   p.paintMode = o.m; p.strokes = o.s; p.blockAbove = !!o.o;
+  if (o.pr !== undefined) { p.profile = o.pr; p.profileTop = o.pt; }
   return p;
 }
 
@@ -1330,6 +1341,12 @@ function wireEditor(box, p, onChanged) {
   });
   $('#ed-mode', box).addEventListener('change', (ev) => {
     p.paintMode = ev.target.value;
+    // Ruling C (DE-03/WE-02): a DELIBERATE paint-mode switch is mode-specific for
+    // a record with no strokes - the stored values were authored in the other
+    // mode - so re-derive the canonical blank for the new mode. This is the ONLY
+    // place a mode switch may touch the profile (never on load, open or save),
+    // and the snapshot above makes the switch ONE undoable history entry.
+    if (!p.strokes.length) clearMask(p);
     rebuildMaskNow();
     overlay();
     commit();
