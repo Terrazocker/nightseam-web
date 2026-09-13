@@ -1,5 +1,10 @@
 [
  {
+  "version": "0.6.30",
+  "date": "2026-09-13",
+  "summary": "Target-list update, in both apps. The catalog now leads with a popularity tier (A to F) and sorts by it by default: the ordering is shown as a letter, while the underlying community score is never displayed. The Frame column shows the coverage as a percentage - green while the object fits in one frame, amber once it needs a mosaic - and a new Min visibility slider in the targets toolbar lets you decide when an object is dropped from the list: it hides targets whose share of tonight's dark window is below the percentage you pick, where 0% shows everything and the default 1% only drops objects that never rise. Your setting is remembered. Everything else is unchanged."
+ },
+ {
   "version": "0.6.29",
   "date": "2026-09-13",
   "summary": "Catalog update: nine more targets that OpenNGC's scope cannot carry - the Tulip Nebula, Simeis 147 (the Spaghetti Nebula), the Flying Bat Nebula with the Squid inside it, the Dolphin Head Nebula, the Lion Nebula, Barnard 150 (the Seahorse), LBN 437, LDN 1622 and the Pipe Nebula - so the catalog holds 12,176 objects. Every one of them is popular enough that the app's own ranking puts it straight into the 200-target default view, which means nine less-observed objects moved to advanced mode. Their positions come from SIMBAD and their sizes from the published catalogues, and no magnitude or description text is invented for them, so - like the Horsehead - they appear once the magnitude slider is at its maximum. Everything else is unchanged."
