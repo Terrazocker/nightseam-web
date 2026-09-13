@@ -1,5 +1,10 @@
 [
  {
+  "version": "0.6.32",
+  "date": "2026-09-13",
+  "summary": "Object photos now resolve for Messier objects, and the detail view no longer shows an empty Distance field. \"M101\" on Wikipedia is a disambiguation page (motorways, a rifle), not the galaxy - the app now looks the object up by its full designation (\"Messier 101\", or the NGC number), follows the redirect to the real article and skips disambiguation pages, so the photo and the Wikipedia link both land on the right page. A lookup that is only temporarily blocked is also no longer remembered as \"no photo there\". Distance is gone because the catalogue has none to give: OpenNGC's parallax column is a foreground star's value for galaxies (it puts Andromeda at 167 parsecs), and a redshift distance would put M101 at half its real distance. Everything else is unchanged."
+ },
+ {
   "version": "0.6.31",
   "date": "2026-09-13",
   "summary": "Target-list polish, in both apps. The catalog keeps its column widths while the visibility percentages fill in, and a running progress note (\"computing visibility...\") no longer nudges the page around: the count and the progress sit on their own fixed line, and the busy indicator has a reserved spot instead of pushing the toolbar. On a narrow screen the catalog table scrolls inside its card rather than stretching the page sideways. The popularity tier letter is now guaranteed to be the same object-for-object in the desktop and the web app, in standard and advanced mode alike. Everything else is unchanged."
