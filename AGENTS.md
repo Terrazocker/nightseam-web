@@ -577,6 +577,17 @@ tool works here, so measure before working around anything:
   `CATALOG_TOKEN = 5`, and the live copy reads 12,160 with no stale "197".
   Follow-up commit `408dab5` regenerated the tracked `landing/changelog.json`
   (**never moved the tag**).
+- **RELEASED as 0.6.27** - tag `v0.6.27` on the release commit (`348b015` the
+  popularity/label/migration work + `b7cf4de` the curated entry), staged
+  `dist/release/` (`NightSeam-0.6.27.zip` sha256 `383faa68...` + latest +
+  `version.json` + `ns-version.js`), `check_release.py` **0 errors at the tag**,
+  the FULL browser gate **19/19 on the staged build** and **13/13 including the
+  read-only production smoke** after the upload. Deployed `/downloads/`,
+  `/astro` (index.html last) and the landing; verified live (`/astro/version.json`
+  + `/downloads/version.json` + `ns-version.js` = 0.6.27, the deployed
+  `catalog.json` sha256 equals the local payload, the published zip equals the
+  staged artifact). Follow-up commit `f816a00` regenerated the tracked
+  `landing/changelog.json` (**never moved the tag**).
 - A bounded carry-over of non-reachable hardening/tooling/test-quality items
   remains (consume it in the next review pass): `CR2` malformed-horizon guards
   (all shipped producers normalize before preview), `DS4` worker/sync `ceil`
