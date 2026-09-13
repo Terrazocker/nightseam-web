@@ -203,6 +203,57 @@ def test_desktop_pref_handlers_survive_a_failed_settings_post():
                 "re-render")
 
 
+def test_desktop_loupe_and_chart_hover_invariants():
+    """DE-10 / DE-11 / DE-12: three "looks right, is wrong" one-liners.
+
+    The loupe mapped the cursor into the magnifier by the sample SCALE instead of
+    its DESTINATION size (so the marker never marked the sampled pixel); both
+    charts compared the hover by OBJECT identity against a freshly rebuilt point
+    array, which is always true (a full repaint - and a canvas reallocation - per
+    mousemove); and each legend's chips were rendered once, so a type toggled in
+    the other chart's legend was never reflected."""
+    pano = _read("static", "js", "pano.js")
+    loupe = _js_body(pano, "function updateLoupe() {")
+    assert "lcv.width / sw" in loupe and "lcv.height / sw" in loupe, (
+        "DE-10: the loupe marker must map by the destination size")
+    assert "/ Z;" not in loupe, "DE-10: the old sample-scale mapping is back"
+    sky = _read("static", "js", "skyview.js")
+    skymap = _read("static", "js", "skymap.js")
+    assert "if (key !== prev) { SKY_HOVER = best; renderSky(); }" in sky, (
+        "DE-11: the sky hover guard must compare by value, not object identity")
+    assert "if (key !== prev) { SM_HOVER = best; renderSkyMap(); }" in skymap, (
+        "DE-11: the sky-map hover guard must compare by value")
+    assert "syncTypeLegend();" in _js_body(sky, "export function renderSky() {"), (
+        "DE-12: the Sky View legend must resync on render")
+    assert "syncTypeLegend();" in _js_body(skymap, "export function renderSkyMap() {"), (
+        "DE-12: the Sky Map legend must resync on render")
+
+
+def test_desktop_dialog_and_worker_invariants():
+    """DE-13 / DE-14 / DE-15.
+
+    The library-edit dialog was the only modal with no Escape path; the detail
+    modal's "closed while fetching" guard compared against an identity no close
+    path ever cleared (so a full-size blob stayed decoded for the session); and
+    the worker allocated and filled a flat `ceil` buffer that was never posted or
+    transferred (~23 MB per advanced-mode build)."""
+    arch = _read("static", "js", "archive.js")
+    bind = _js_body(arch, "function bindArchive() {")
+    assert 'addEventListener("keydown"' in bind and "Escape" in bind, (
+        "DE-13: the library-edit dialog must close on Escape like every other one")
+    detail = _read("static", "js", "detail.js")
+    assert "S.currentId = null;" in _js_body(detail, "function closeDetail() {"), (
+        "DE-14: closing must DROP the identity so an in-flight fetch sees it")
+    assert detail.count("closeDetail();") >= 3, (
+        "DE-14: every close path must go through closeDetail()")
+    worker = _read("static", "js", "planning_worker.js")
+    assert "const ceil = new Float64Array" not in worker, (
+        "DE-15: the dead flat ceiling buffer is back")
+    assert "ceil[base + i]" not in worker
+    assert "ceil: ceils" in worker, (
+        "DE-15: the per-object ceilings (prefs rescore) must stay")
+
+
 def test_desktop_has_no_popularity_sort_mode():
     html = _read("static", "index.html")
     js = _read("static", "js", "targets.js")

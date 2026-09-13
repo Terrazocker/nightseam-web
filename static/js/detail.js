@@ -16,6 +16,21 @@ function revokeImgUrl() {
   if (_imgUrl) { URL.revokeObjectURL(_imgUrl); _imgUrl = null; }
 }
 
+/** Close the detail modal and DROP THE IDENTITY.
+ *
+ *  DE-14: the "modal closed while fetching" guard compared against `S.currentId`,
+ *  which no close path ever cleared - so the else branch was only reachable by
+ *  opening a DIFFERENT object, and closing the modal mid-fetch left the full-size
+ *  blob assigned to the hidden <img> (decoded, retained for the session). Clearing
+ *  it here makes both guards (`:49` image upgrade, `:67` detail loader) see the
+ *  close. */
+function closeDetail() {
+  $("#detailModal").classList.add("hidden");
+  DETAIL = null;
+  S.currentId = null;
+  revokeImgUrl();
+}
+
 export async function openDetail(id) {
   S.currentId = id;
   const m = S.meta[id];
@@ -118,28 +133,22 @@ function durStr(aIso, bIso) {
 
 export function bindDetail() {
   $("#dClose").addEventListener("click", () => {
-    $("#detailModal").classList.add("hidden");
-    DETAIL = null;
-    revokeImgUrl();
+    closeDetail();
   });
   // rig/filter/unit changes made elsewhere re-render the open modal
   document.addEventListener("detail:changed", () => {
     if (DETAIL && S.currentId) renderDetailMeta(S.meta[S.currentId], DETAIL);
   });
   $("#detailModal").addEventListener("mousedown", e => {
-    if (e.target.id === "detailModal") {
-      $("#detailModal").classList.add("hidden"); DETAIL = null; revokeImgUrl();
-    }
+    if (e.target.id === "detailModal") closeDetail();
   });
   $("#chkMoon").addEventListener("change", drawAltChart);
   window.addEventListener("resize", () => { if (DETAIL) drawAltChart(); });
 
   document.addEventListener("keydown", e => {
     if (e.key === "Escape") {
-      $("#detailModal").classList.add("hidden");
       $("#sitesModal").classList.add("hidden");
-      DETAIL = null;
-      revokeImgUrl();
+      closeDetail();
     }
     if (!DETAIL) return;
     if (e.key === "ArrowRight") stepDetail(+1);

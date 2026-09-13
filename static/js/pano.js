@@ -577,8 +577,12 @@ function updateLoupe() {
   ctx.fillRect(0, 0, lcv.width, lcv.height);
   ctx.imageSmoothingEnabled = false;
   try { ctx.drawImage(cv, sx, sy, sw, sw, 0, 0, lcv.width, lcv.height); } catch (_) {}
-  const ix = (p.x * dpr - sx) / Z;
-  const iy = (p.y * dpr - sy) / Z;
+  // DE-10: the sample is `sw` DEVICE px wide and is drawn into the loupe's fixed
+  // backing store, so the cursor's offset inside the sample maps by
+  // lcv.width/sw. The old `offset / Z` (Z = 3) put the marker ~10x too close to
+  // the origin - it never marked the sampled pixel.
+  const ix = (p.x * dpr - sx) * lcv.width / sw;
+  const iy = (p.y * dpr - sy) * lcv.height / sw;
   ctx.strokeStyle = "#ffffff"; ctx.lineWidth = 1.5;
   ctx.beginPath(); ctx.arc(ix, iy, 4, 0, 7); ctx.stroke();
 }

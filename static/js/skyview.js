@@ -241,7 +241,19 @@ function drawSkyBackdrop(ctx, cx, cy, R) {
   ctx.restore();
 }
 
+/** DE-12: the legend chips are rendered ONCE (in bindSky), so a type toggled off
+ *  in the OTHER chart's legend left this one claiming the type is shown - both
+ *  charts filter by the shared S.disabledTypes. Resync on every render, so the
+ *  legend and the chart can never disagree. */
+function syncTypeLegend() {
+  const lg = $("#typeLegend");
+  if (!lg) return;
+  lg.querySelectorAll("[data-type]").forEach(chip =>
+    chip.classList.toggle("off", S.disabledTypes.has(chip.dataset.type)));
+}
+
 export function renderSky() {
+  syncTypeLegend();
   const cv = $("#skyCanvas");
   if (!cv || !cv.clientWidth || !S.night) return;
   const dpr = window.devicePixelRatio || 1;
@@ -563,7 +575,13 @@ function skyHover(ev){
     const dx=p.x-bx,dy=p.y-by,d=dx*dx+dy*dy;
     if(d<bd){bd=d;best=p;}
   }
-  if(best!==SKY_HOVER){SKY_HOVER=best;renderSky();}
+  // DE-11: `best` is an element of the freshly REBUILT point array, so comparing
+  // object identity against the previous render's hover was always true and every
+  // mousemove repainted the whole chart. Compare the stable id - the tooltip
+  // already compares by value.
+  const key = best ? best.id : null;
+  const prev = SKY_HOVER ? SKY_HOVER.id : null;
+  if (key !== prev) { SKY_HOVER = best; renderSky(); }
   if(best){
     const o=S.night.objects.find(x=>x.id===best.id);
     const m=S.meta[best.id];

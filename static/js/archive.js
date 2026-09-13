@@ -452,4 +452,14 @@ export function bindArchive() {
   $("#libEditName").addEventListener("keydown", e => {
     if (e.key === "Enter") saveEdit();
   });
+  // DE-13: every other dialog in the shell closes on Escape (detail.js,
+  // weather.js) - this one was click-only, so a keyboard user had to Tab to
+  // Cancel. The shared focus trap only implements Tab.
+  document.addEventListener("keydown", e => {
+    if (e.key !== "Escape") return;
+    if ($("#libEditModal").classList.contains("hidden")) return;
+    e.preventDefault();
+    $("#libEditModal").classList.add("hidden");
+    _editTarget = null;
+  });
 }

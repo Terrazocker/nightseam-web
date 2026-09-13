@@ -149,7 +149,10 @@ async function runNight(m) {
 
   const ceilAt = lookup(m.profile), topAt = lookup(m.topProfile);
   const total = list.length * GRID_N;
-  const ceil = new Float64Array(total);
+  // DE-15: no flat `ceil` buffer. It was allocated (total * 8 bytes - ~23 MB in
+  // advanced mode) and filled per sample, but never posted nor transferred: the
+  // main thread derives every ceiling from `az` in bindWorkerNight. Only the
+  // per-object `ceils` below are needed (they back the prefs rescore).
   const altFlat = new Float64Array(total), azFlat = new Float64Array(total);
   const objects = new Array(list.length);
   S.meta = {};
@@ -167,7 +170,7 @@ async function runNight(m) {
       for (let i = 0; i < GRID_N; i++) {
         const a = tr.alt[k * tr.count + i], z = tr.az[k * tr.count + i];
         alts[i] = r1(a); azs[i] = r1(z); ceils[i] = r1(ceilAt(z));
-        altFlat[base + i] = alts[i]; azFlat[base + i] = azs[i]; ceil[base + i] = ceils[i];
+        altFlat[base + i] = alts[i]; azFlat[base + i] = azs[i];
         if (tops) tops[i] = r1(topAt(z));
       }
       const rec = { id: o.id, alt: alts, az: azs, ceil: ceils };

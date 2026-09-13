@@ -15,7 +15,17 @@ function xy(raH, decD, W, H) {
   return [raH / 24 * W, (1 - (decD + 90) / 180) * H];
 }
 
+/** DE-12: same rule as the Sky View legend - the chips are built once, so a
+ *  toggle made in the other chart must be reflected here on every render. */
+function syncTypeLegend() {
+  const lg = $("#smLegend");
+  if (!lg) return;
+  lg.querySelectorAll("[data-type]").forEach(chip =>
+    chip.classList.toggle("off", S.disabledTypes.has(chip.dataset.type)));
+}
+
 export function renderSkyMap() {
+  syncTypeLegend();
   const cv = $("#skymapCanvas");
   if (!cv || !cv.clientWidth) return;
   // fit the 2:1 chart into the viewport: never taller than the window
@@ -179,7 +189,12 @@ function onMove(ev) {
     const dx = p.x - mx, dy = p.y - my, d = dx * dx + dy * dy;
     if (d < bd) { bd = d; best = p; }
   }
-  if (best !== SM_HOVER) { SM_HOVER = best; renderSkyMap(); }
+  // DE-11: value comparison - `best` is rebuilt on every render, so the identity
+  // test was always true and this reallocated (width/height reassignment) a large
+  // canvas on EVERY mousemove.
+  const key = best ? best.name : null;
+  const prev = SM_HOVER ? SM_HOVER.name : null;
+  if (key !== prev) { SM_HOVER = best; renderSkyMap(); }
   const tip = $("#skymapTip");
   if (best) {
     const o = best.obj;
