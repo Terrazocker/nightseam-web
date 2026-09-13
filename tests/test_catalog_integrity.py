@@ -83,9 +83,11 @@ def test_catalog_ids_unique_and_token_safe():
 
 def test_openngc_objects_are_not_duplicated_by_designation():
     """NGC 651 is OpenNGC's `Dup` row for NGC 650 and M40 is a `**` double star:
-    both are dropped, so a designation is not shipped twice."""
+    both OpenNGC rows are dropped, so a designation is not shipped twice. (M40 is
+    still in the catalogue - from the supplement, which carries no NGC/IC
+    designation for it, hence the empty values here are skipped.)"""
     ids = {r["id"] for r in _adv_rows()}
-    ngcic = [r["ngcic"] for r in _adv_rows()]
+    ngcic = [r["ngcic"] for r in _adv_rows() if r["ngcic"]]
     assert len(ngcic) == len(set(ngcic))
     assert "ngc650" in ids and "ngc651" not in ids
 
@@ -151,9 +153,9 @@ def test_web_catalog_standard_split_matches_the_rule(tmp_path):
 # Every user-facing claim about the catalog size, with the text that carries it.
 # A claim is a PROMISE about the shipped data, so it is pinned to the data.
 ADVERTISED_SIZE = [
-    ("web/index.html", r"Catalog: OpenNGC \(([\d,]+) objects\)"),
+    ("web/index.html", r"Catalog: OpenNGC \+ supplement \(([\d,]+) objects\)"),
     ("web/app.js", r"search/sort across ([\d,]+) objects"),
-    ("landing/index.html", r"OpenNGC \(NGC/IC \+ addendum\): ([\d,]+) objects"),
+    ("landing/index.html", r"a small supplement: ([\d,]+) objects"),
     ("landing/index.html", r"computed entirely in your browser\. ([\d,]+) objects"),
     ("landing/about.html", r"<b>([\d,]+)</b><span>catalog objects</span>"),
 ]

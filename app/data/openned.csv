@@ -12160,3 +12160,10 @@ pgc88608;Sextans Dwarf Spheroidal;;PGC 88608;;galaxy;10.21747;-1.61472;10.4;30.2
 ugc4305;UGC 4305;;UGC 4305;2MASX J08190497+7043121,IRAS 08140+7052,MCG+12-08-033,PGC 023324,;galaxy;8.31805;70.72003;10.8;7.94x5.62;UMa;;;;ugc4305 | UGC 4305 | 2masx j08190497+7043121,iras 08140+7052,mcg+12-08-033,pgc 023324,
 ugc5373;Sextans B;;UGC 5373;MCG+01-26-005,PGC 028913,SDSS J100000.82+052009.5;galaxy;10.00003;5.33222;11.5;4.9x3.09;Sex;;;;ugc5373 | UGC 5373 | sextans b | mcg+01-26-005,pgc 028913,sdss j100000.82+052009.5
 ugc5470;Leo I;;UGC 5470;MCG+02-26-027,PGC 029488;galaxy;10.14114;12.30639;10.4;11.75x8.51;Leo;;;;ugc5470 | UGC 5470 | leo i | mcg+02-26-027,pgc 029488
+m40;Winnecke 4;M40;;WNC 4;asterism;12.37;58.083;8.4;0.8;UMa;;;;m40 | winnecke 4 | m40 | wnc 4
+m73;M73;M73;NGC 6994;;asterism;20.983;-12.633;8.9;2.8;Aqr;;;;m73 | NGC 6994 | m73 | m73
+mel20;Alpha Persei Cluster;;;Mel 20, Cr 39;open_cluster;3.37;49.0;1.2;185;Per;;;;mel20 | alpha persei cluster | mel 20, cr 39
+ic1318;Gamma Cygni Nebula (Sadr Region);;IC 1318;Butterfly Nebula;nebula;20.37;40.25;6.0;150x100;Cyg;;;;ic1318 | IC 1318 | gamma cygni nebula (sadr region) | butterfly nebula
+sh2-276;Barnard's Loop;;Sh2-276;;nebula;5.83;-3.0;5.0;600x30;Ori;;;;sh2-276 | Sh2-276 | barnard's loop
+abell21;Medusa Nebula;;Abell 21;PK 205+14.1;planetary;7.483;13.25;10.0;10x7;Gem;;;;abell21 | Abell 21 | medusa nebula | pk 205+14.1
+jones1;Headphone Nebula;;Jones-Emberson 1;PK 164+31.1;planetary;7.493;88.883;16.0;2.8;UMi;;;;jones1 | Jones-Emberson 1 | headphone nebula | pk 164+31.1

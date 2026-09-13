@@ -1,0 +1,16 @@
+# NightSeam supplement - objects OpenNGC cannot carry: the seven curated rows
+# that had no OpenNGC counterpart. OpenNGC either lacks them (Abell 21,
+# Jones-Emberson 1, Sh2-276, Mel 20) or classifies them as non-objects (IC 1318
+# is typed '*' for gamma Cyg, M73 'Other', M40 '**'), so the OpenNGC pipeline
+# drops them. Identity + astrometry are the project's own values from the
+# pre-0.6.26 curated list; distance/wiki/blurb are deliberately EMPTY (the
+# catalogue carries no prose). scripts/build_adv_catalog.py appends this file to
+# the OpenNGC rows and asserts id uniqueness across all three sources.
+# Columns: id;primary_name;messier;ngcic;other;otype;ra_hours;dec_deg;vmag;size_am;constellation;distance;wiki;blurb;search
+m40;Winnecke 4;M40;;WNC 4;asterism;12.37;58.083;8.4;0.8;UMa;;;;m40 | winnecke 4 | m40 | wnc 4
+m73;M73;M73;NGC 6994;;asterism;20.983;-12.633;8.9;2.8;Aqr;;;;m73 | NGC 6994 | m73 | m73
+mel20;Alpha Persei Cluster;;;Mel 20, Cr 39;open_cluster;3.37;49.0;1.2;185;Per;;;;mel20 | alpha persei cluster | mel 20, cr 39
+ic1318;Gamma Cygni Nebula (Sadr Region);;IC 1318;Butterfly Nebula;nebula;20.37;40.25;6.0;150x100;Cyg;;;;ic1318 | IC 1318 | gamma cygni nebula (sadr region) | butterfly nebula
+sh2-276;Barnard's Loop;;Sh2-276;;nebula;5.83;-3.0;5.0;600x30;Ori;;;;sh2-276 | Sh2-276 | barnard's loop
+abell21;Medusa Nebula;;Abell 21;PK 205+14.1;planetary;7.483;13.25;10.0;10x7;Gem;;;;abell21 | Abell 21 | medusa nebula | pk 205+14.1
+jones1;Headphone Nebula;;Jones-Emberson 1;PK 164+31.1;planetary;7.493;88.883;16.0;2.8;UMi;;;;jones1 | Jones-Emberson 1 | headphone nebula | pk 164+31.1

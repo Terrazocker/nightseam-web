@@ -57,13 +57,17 @@ def test_csv_rows_are_valid():
 def test_openngc_non_objects_are_not_shipped():
     """OpenNGC marks its own non-object rows: `Dup` (a duplicate that points at
     the master entry), `NonEx` (nonexistent), single/double stars, `Other`,
-    `Nova`. None of them is a plannable target, and NGC 651 (Dup of NGC 650) and
-    M40 (`**`) are the classic examples."""
+    `Nova`. None of those ROWS ships - NGC 651 (Dup of NGC 650) and OpenNGC's
+    M40 (`**`) / M73 (`Other`) / IC 1318 (`*`) rows are gone. The three notable
+    ones come back through `app/data/supplement.csv` instead, under their own
+    ids and with the project's own types (see tests/test_supplement.py)."""
     ids = {r["id"] for r in _rows()}
-    for oid in ("ngc651", "m40", "m73", "m102"):
+    for oid in ("ngc651", "ngc6994", "m102"):
         assert oid not in ids, oid
     assert "ngc650" in ids          # the master entry stays
     assert "b33" in ids             # Barnard 33 (Horsehead) - addendum, DrkN
+    # the supplement's replacements exist, and are NOT OpenNGC ids
+    assert {"m40", "m73", "ic1318"} <= ids
 
 
 def test_db_seeds_the_whole_catalog(tmp_path):

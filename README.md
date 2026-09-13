@@ -11,6 +11,11 @@ browser (or a native window). It ships with **no external runtime
 dependencies** on the target machine and works fully offline except for
 optional object example images (fetched from Wikipedia and cached locally).
 
+**Docs:** `CATALOG.md` - where the catalogue comes from and how to rebuild it
+(sources, the popularity table, the web payload, cache tokens). `DECISIONS.md` -
+why the app works the way it does and what was rejected. `AGENTS.md` - the
+invariants, commands, release and deploy reference.
+
 There is also a **web version** — the same night-planning core, running 100%
 in your browser with no server:
 
@@ -34,11 +39,14 @@ Two modes, switched with the top-right button:
 
 - **DSO catalog** - the complete OpenNGC catalog: NGC/IC plus the OpenNGC
   addendum, the notable objects with no NGC/IC number (Horsehead, Hyades,
-  Coalsack, Magellanic Clouds, Sculptor/Fornax dwarfs) - 12,160 objects to
-  magnitude 20. Standard mode shows the 200 MOST POPULAR of them (community
-  observing counts, as a silent ranking input); **advanced mode** (hamburger
-  menu) shows all 12,160. Each object carries its designations - search
-  "M101" or "NGC 5457" and you get the same object.
+  Coalsack, Magellanic Clouds, Sculptor/Fornax dwarfs), plus a small
+  supplement of seven objects OpenNGC cannot represent (the Medusa and
+  Headphone nebulae, Barnard's Loop, the Alpha Persei Cluster, the Sadr
+  region, M40 and M73) - 12,167 objects to magnitude 20. Standard mode shows
+  the 200 MOST POPULAR of them (community observing counts, as a silent
+  ranking input); **advanced mode** (hamburger menu) shows all 12,167. Each
+  object carries its designations - search "M101" or "NGC 5457" and you get
+  the same object.
 - **Location-aware visibility** - enter your observing site(s) once; every
   calculation is done for your exact coordinates and elevation, including
   atmospheric refraction and precession.

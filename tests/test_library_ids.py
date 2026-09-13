@@ -56,9 +56,12 @@ def test_legacy_id_map_targets_are_shipped_catalog_ids():
     assert LEGACY_ID_MAP["m42"] == "ngc1976"
     assert LEGACY_ID_MAP["m31"] == "ngc224"
     assert LEGACY_ID_MAP["lmc"] == "eso56-115"
-    # curated-only objects OpenNGC has no entry for stay unmapped on purpose
-    for absent in ("abell21", "jones1", "sh2-276"):
-        assert absent not in LEGACY_ID_MAP
+    # Curated-only objects are NOT in the map: five of them now ship under their
+    # own id from the supplement (app/data/supplement.csv), and a library entry
+    # for one resolves directly rather than by aliasing.
+    for own_id in ("abell21", "jones1", "sh2-276", "m40", "m73"):
+        assert own_id not in LEGACY_ID_MAP
+        assert own_id in ids
 
 
 # ------------------------------------------------------------- the migration
@@ -101,12 +104,29 @@ def test_migration_is_idempotent_and_leaves_custom_targets_alone(tmp_path):
     assert second.get_object(cid)["primary_name"] == "My Thing"
 
 
-def test_unmappable_legacy_id_still_displays_through_imglib(tmp_path):
-    """The stale id cannot be rewritten (no OpenNGC object), so the DISPLAY path
-    has to carry it - group_library re-resolves from the capture itself."""
-    imgs = [_img(object_id="abell21", object_name="Medusa Nebula",
+def test_stale_id_still_displays_through_imglib(tmp_path):
+    """A stored id the catalogue does not know (an id from a build that is gone,
+    or a hand-edited library) is re-resolved for DISPLAY from the capture itself:
+    name first, then coordinates. This is the safety net that let the curated ->
+    OpenNGC switch land without a data migration for every old row."""
+    imgs = [_img(object_id="sh2-999", object_name="Medusa Nebula",
                  ra_hours=7.4902, dec_deg=13.2586)]
-    groups = imglib.group_library(imgs, _catalog())
+    catalog = _catalog()
+    assert "sh2-999" not in {r["id"] for r in catalog}
+    groups = imglib.group_library(imgs, catalog)
     assert len(groups) == 1
-    assert groups[0]["name"] != "Unknown object"
-    assert groups[0]["otype"] is not None
+    assert groups[0]["name"] == "Medusa Nebula"       # resolved via the name hint
+    assert groups[0]["otype"] == "planetary"
+
+
+def test_supplement_ids_resolve_directly(tmp_path):
+    """The seven supplemented objects keep their old ids, so an existing library
+    entry needs no aliasing at all."""
+    catalog = _catalog()
+    ids = {r["id"] for r in catalog}
+    for oid in ("abell21", "jones1", "sh2-276", "m40", "m73", "mel20", "ic1318"):
+        assert oid in ids, oid
+    groups = imglib.group_library([_img(object_id="abell21",
+                                        object_name="Medusa Nebula")], catalog)
+    assert groups[0]["name"] == "Medusa Nebula"
+    assert groups[0]["otype"] == "planetary"

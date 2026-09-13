@@ -99,16 +99,16 @@ def test_coordinates_and_magnitudes_are_in_range():
 
 
 def test_messier_objects_openngc_carries_are_found_by_designation():
-    """107 of the 110 Messier numbers exist as OpenNGC objects. M40 and M73 are
-    not objects in OpenNGC's classification (`**` double star / `Other`) and
-    M102 is the disputed duplicate (`Dup`) - they are absent, deliberately, and
-    their absence is what 'OpenNGC only' means."""
+    """109 of the 110 Messier numbers exist: 107 come from OpenNGC (M40 and M73
+    are not objects in its classification - a `**` double star and an `Other`
+    asterism) and those two come from the supplement. M102 alone stays absent:
+    OpenNGC files NGC 5866 as a plain galaxy, and the disputed M102 identity is
+    deliberately not asserted."""
     rows = _rows()
     messiers = {r["messier"] for r in rows if r["messier"]}
-    assert len(messiers) == 107
-    for missing in ("M40", "M73", "M102"):
-        assert missing not in messiers
-    assert "M42" in messiers
+    assert len(messiers) == 109
+    assert "M102" not in messiers
+    assert {"M40", "M73"} <= messiers          # the supplement's two
 
 
 def test_search_blob_contains_designations():

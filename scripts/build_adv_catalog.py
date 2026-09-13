@@ -26,6 +26,12 @@ ROOT = Path(__file__).resolve().parents[1]
 SRC = Path(sys.argv[1]) if len(sys.argv) > 1 else ROOT / "data" / "NGC.csv"
 SRC_ADDENDUM = (Path(sys.argv[2]) if len(sys.argv) > 2
                 else SRC.with_name("addendum.csv"))
+# The project's OWN supplement (app/data/supplement.csv, committed): the seven
+# objects OpenNGC cannot carry - either absent (Abell 21, Jones-Emberson 1,
+# Sh2-276, Mel 20) or filed as non-objects (IC 1318 is typed `*`, M73 `Other`,
+# M40 `**`). It is already in the catalogue's column layout, so it is appended
+# as-is; only its id uniqueness is checked.
+SRC_SUPPLEMENT = ROOT / "app" / "data" / "supplement.csv"
 OUT = ROOT / "app" / "data" / "openned.csv"
 
 sys.path.insert(0, str(ROOT))
@@ -153,6 +159,31 @@ def build_rows(path: Path, source: str) -> list[dict]:
     return out
 
 
+def read_supplement(path: Path = SRC_SUPPLEMENT) -> list[dict]:
+    """The committed supplement, already in the catalogue's column layout."""
+    cols = ("id", "primary_name", "messier", "ngcic", "other", "otype", "ra_hours",
+            "dec_deg", "vmag", "size_am", "constellation", "distance", "wiki",
+            "blurb", "search")
+    out: list[dict] = []
+    with open(path, encoding="utf-8") as f:
+        for line in f:
+            if line.startswith("#") or not line.strip():
+                continue
+            vals = line.rstrip("\n").split(";")
+            if len(vals) != len(cols):
+                raise SystemExit(f"{path.name}: {len(vals)} columns, expected "
+                                 f"{len(cols)}: {line[:60]}")
+            d = dict(zip(cols, vals))
+            d["ra_hours"] = float(d["ra_hours"])
+            d["dec_deg"] = float(d["dec_deg"])
+            d["vmag"] = float(d["vmag"]) if d["vmag"] else None
+            if d["otype"] not in TYPE_MAP.values():
+                raise SystemExit(f"{path.name}: {d['id']} has unknown type "
+                                 f"{d['otype']!r}")
+            out.append(d)
+    return out
+
+
 def _disambiguate_names(rows: list[dict]) -> int:
     """Give a shared common name its designation: 'Eagle Nebula (IC 4703)'.
 
@@ -174,13 +205,15 @@ def _disambiguate_names(rows: list[dict]) -> int:
 
 
 def build_catalog() -> tuple[list[dict], dict[str, int]]:
-    """(all object rows, per-source counts) - NGC/IC first, then the addendum."""
+    """(all object rows, per-source counts) - OpenNGC first, then the supplement."""
     ngc = build_rows(SRC, "NGC.csv")
     addendum = build_rows(SRC_ADDENDUM, "addendum.csv")
-    rows = ngc + addendum
+    supplement = read_supplement()
+    rows = ngc + addendum + supplement
     _disambiguate_names(rows)
     _assert_global_unique(rows)
-    return rows, {"NGC/IC": len(ngc), "addendum": len(addendum)}
+    return rows, {"NGC/IC": len(ngc), "addendum": len(addendum),
+                  "supplement": len(supplement)}
 
 
 def _assert_global_unique(rows: list[dict]) -> None:
@@ -213,7 +246,8 @@ def main():
     for r in rows:
         types[r["otype"]] = types.get(r["otype"], 0) + 1
     print(f"wrote {OUT} with {len(rows)} objects "
-          f"({counts['NGC/IC']} NGC/IC + {counts['addendum']} addendum)")
+          f"({counts['NGC/IC']} NGC/IC + {counts['addendum']} addendum "
+          f"+ {counts['supplement']} supplement)")
     print("types:", types)
     print("with vmag:", sum(1 for r in rows if r["vmag"]),
           "| faintest:", max((r["vmag"] for r in rows if r["vmag"]), default="-"))
