@@ -514,3 +514,50 @@ def test_export_of_a_corrupt_library_is_importable_and_stays_finite(db, tmp_path
     row = db2.images()[0]
     for key in ("ra_hours", "dec_deg", "exposure"):
         assert row[key] is None or math.isfinite(float(row[key])), (key, row)
+
+
+# ------------------------------------------------- PY-01 / PY-03: import boundary
+
+def test_import_rejects_non_list_strokes(db, tmp_path):
+    """PY-03: `strokes` is the THIRD stored panorama array and had no shape check,
+    so `{}` / `"abc"` / 7 were persisted and BOTH editors iterate it - the desktop
+    threw `TypeError: ... is not iterable` for that record. Fail closed like the
+    two profile arrays, leaving the existing data untouched."""
+    _seed(db, tmp_path)
+    for bad in ({}, "abc", 7, ["not-a-stroke"], [1, 2]):
+        blob = _mutate_bundle(
+            build_export_zip(db),
+            lambda s, bad=bad: s["panoramas"].append(
+                {"id": "pstrokes", "name": "bad", "file": "bad.jpg",
+                 "strokes": bad, "profile": [], "profile_top": []}))
+        with pytest.raises(ValueError, match="strokes"):
+            apply_import_zip(db, blob)
+    assert all(isinstance(p["strokes"], list) for p in db.panoramas())
+    assert [i["file"] for i in db.images()]        # the library was not replaced
+
+
+def test_import_rejects_two_records_for_one_normalized_path(db, tmp_path):
+    """PY-01: `safe_rel` canonicalizes `a/./b`, `a//b` and `a/x/../b` to ONE path,
+    so a bundle could carry several records for one target - the restore loop wrote
+    every member there (ZIP order, last writer wins) while `import_bundle` had
+    already inserted all the rows and the summary counted all of them. That is a
+    silent frame loss plus phantom library rows, so the bundle is refused."""
+    _seed(db, tmp_path)
+    before = [i["file"] for i in db.images()]
+    blob = _mutate_bundle(
+        build_export_zip(db),
+        lambda s: s["images"].extend([
+            _image_row(file="M 31/dup.fit"),
+            _image_row(file="M 31/./dup.fit"),
+            _image_row(file="M 31/x/../dup.fit")]))
+    with pytest.raises(ValueError, match="same stored path"):
+        apply_import_zip(db, blob)
+    assert [i["file"] for i in db.images()] == before      # nothing was replaced
+    # and two DISTINCT normalized paths are still accepted
+    ok = _mutate_bundle(
+        build_export_zip(db),
+        lambda s: s["images"].extend([
+            _image_row(file="M 31/a.fit"),
+            _image_row(file="M 31/b.fit")]))
+    apply_import_zip(db, ok)
+    assert {"M 31/a.fit", "M 31/b.fit"} <= {i["file"] for i in db.images()}

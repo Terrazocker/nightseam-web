@@ -61,3 +61,39 @@ def test_browser_gate_is_browser_required_not_a_skip():
     agents = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
     assert "scripts/check_browser.py --all" in agents
     assert "HARD failure" in agents
+
+
+def test_browser_gate_driver_start_failure_is_exit_2(monkeypatch, capsys):
+    """TO-02: entering the Playwright DRIVER is infrastructure too.
+
+    `sync_playwright()` used to be entered OUTSIDE the handler that converts
+    start-up failures into exit 2, so a driver that cannot spawn (restricted
+    token, broken install, missing driver bundle) escaped as a traceback and the
+    process reported exit 1 - which the documented contract defines as "failed
+    check(s)", the signal a release wrapper keys on. Drive the harness with a
+    driver that raises and assert the contract."""
+    import sys
+    import types
+
+    # import the gate the way scripts/check_browser.py does: tests/browser on the
+    # path, then the suites, which self-register their checks
+    monkeypatch.syspath_prepend(str(ROOT / "tests" / "browser"))
+    import harness as gate_harness
+    import web_suite  # noqa: F401 - registers the web checks
+
+    class _Boom:
+        def start(self):
+            raise PermissionError("[WinError 5] Zugriff verweigert")
+
+    # stub the import target itself, so the pin needs no playwright install
+    pkg = types.ModuleType("playwright")
+    pkg.__path__ = []
+    sub = types.ModuleType("playwright.sync_api")
+    sub.sync_playwright = lambda: _Boom()
+    monkeypatch.setitem(sys.modules, "playwright", pkg)
+    monkeypatch.setitem(sys.modules, "playwright.sync_api", sub)
+
+    rc = gate_harness.run(targets=("web",), verbose=False)
+    out = capsys.readouterr().out
+    assert rc == 2, "a driver that cannot start is infrastructure (exit 2)"
+    assert "check_browser FATAL" in out and "driver" in out

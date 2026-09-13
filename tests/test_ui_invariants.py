@@ -101,8 +101,13 @@ def test_desktop_robustness_invariants():
     assert "!S.cfg.wizard_done" not in mainjs
     pano = _read("static", "js", "pano.js")
     assert "if (Pano.saveTimer) { clearTimeout(Pano.saveTimer); Pano.saveTimer = null; }" in pano
-    # recomputeProfile must keep a stroke-less record's stored profile
-    assert "if (!Pano.cur.strokes || Pano.cur.strokes.length === 0) {" in pano
+    # recomputeProfile must keep a stroke-less record's stored profile. Since
+    # PY-03 the test is the shared strokeList() guard, so a NON-ARRAY stored
+    # `strokes` also counts as stroke-less instead of crashing the editor - and
+    # both iteration sites must go through it.
+    assert "function strokeList(rec)" in pano
+    assert "if (strokeList(Pano.cur).length === 0) {" in pano
+    assert pano.count("for (const s of strokeList(Pano.cur)) {") == 2
     detail = _read("static", "js", "detail.js")
     assert "esc(constName(m.constellation))" in detail
     assert "esc(m.distance)" in detail

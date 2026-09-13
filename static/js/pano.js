@@ -170,7 +170,7 @@ export function setEditableMode(rec, m) {
   const cur = (rec.paint_mode === "sky") ? "sky" : "obstacle";
   if (want === cur) return false;
   rec.paint_mode = want;
-  if (!rec.strokes || rec.strokes.length === 0) blankProfileForMode(rec);
+  if (strokeList(rec).length === 0) blankProfileForMode(rec);
   return true;
 }
 
@@ -471,13 +471,20 @@ function stampDab(ctx, s, W, H, wraps) {
   }
 }
 
+/** PY-03: a stored `strokes` that is not an array (a hand-edited or legacy row)
+ *  must never crash the editor. The import and PUT boundaries reject the shape
+ *  now - this is the last-resort guard, shared by every consumer here. */
+function strokeList(rec) {
+  return (rec && Array.isArray(rec.strokes)) ? rec.strokes : [];
+}
+
 function buildMask(W, H) {
   const cv = document.createElement("canvas");
   cv.width = W; cv.height = H;
   const ctx = cv.getContext("2d");
   ctx.fillStyle = paintMode() === "sky" ? "#4fd97a" : "#ff5d5d";
   const wraps = (+$("#fovAz").value || 360) >= 359.5;
-  for (const s of Pano.cur.strokes) {
+  for (const s of strokeList(Pano.cur)) {
     ctx.globalCompositeOperation = s.m === "e" ? "destination-out" : "source-over";
     stampDab(ctx, s, W, H, wraps);
   }
@@ -698,7 +705,7 @@ function recomputeProfile() {
   // re-derive, so a stroke-less imported panorama must not be blanked just by
   // saving. clearMask()/setPaintMode() blank the profile explicitly first
   // (profile=[]), which the length check below turns into a canonical blank.
-  if (!Pano.cur.strokes || Pano.cur.strokes.length === 0) {
+  if (strokeList(Pano.cur).length === 0) {
     if (!Array.isArray(Pano.cur.profile) || Pano.cur.profile.length !== NBIN) {
       Pano.cur.profile = new Array(NBIN).fill(sky ? 90 : -90);
     }
@@ -716,7 +723,7 @@ function recomputeProfile() {
   const ctx = cv.getContext("2d");
   ctx.fillStyle = "#fff";
   const wraps = (+$("#fovAz").value || 360) >= 359.5;
-  for (const s of Pano.cur.strokes) {
+  for (const s of strokeList(Pano.cur)) {
     ctx.globalCompositeOperation = s.m === "e" ? "destination-out" : "source-over";
     stampDab(ctx, s, W2, H2, wraps);
   }

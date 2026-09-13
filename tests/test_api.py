@@ -1313,6 +1313,59 @@ def test_panorama_profile_length_and_types_are_validated(client):
         client.delete(f"/api/panorama/{pid}")
 
 
+def test_panorama_strokes_shape_is_validated(client):
+    """PY-03 (write half): both profile arrays were validated but `strokes` - the
+    THIRD stored array, and the one both editors iterate - accepted any list, so a
+    list of non-objects was persisted and the desktop editor then threw while
+    painting/saving that record."""
+    pid = client.post("/api/panorama",
+                      files={"file": ("p.jpg", b"fake jpeg", "image/jpeg")}
+                      ).json()["id"]
+    try:
+        # pydantic rejects a non-list body with 422 before the route runs; the
+        # route's own content rule (a list of stroke OBJECTS) is the 400 half.
+        for bad in ({}, "abc", 7):
+            assert client.put(f"/api/panorama/{pid}",
+                              json={"strokes": bad}).status_code in (400, 422), bad
+        for bad in (["not-a-stroke"], [1, 2], [None]):
+            assert client.put(f"/api/panorama/{pid}",
+                              json={"strokes": bad}).status_code == 400, bad
+        # a real stroke list, and the empty list, are fine
+        assert client.put(f"/api/panorama/{pid}", json={
+            "strokes": [{"m": "b", "x": 0.1, "y": 0.2, "r": 0.01}]}
+        ).status_code == 200
+        assert client.put(f"/api/panorama/{pid}",
+                          json={"strokes": []}).status_code == 200
+    finally:
+        client.delete(f"/api/panorama/{pid}")
+
+
+def test_malformed_stored_strokes_do_not_500_the_listing(client, db):
+    """PY-03 (read half): a row whose `strokes` column is not valid JSON (hand
+    edit, interrupted write, an older build) made `panoramas()` raise, so
+    /api/state and /api/panoramas answered 500 - and the desktop's FIRST boot
+    request is /api/state, i.e. the app was unbootable until the DB was repaired.
+    The column now falls back to its canonical empty value."""
+    db.conn.execute(
+        "INSERT INTO panoramas(id,name,file,az_offset,alt_bottom,alt_top,strokes,"
+        "profile,profile_top,active,fov,paint_mode,block_above) "
+        "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        ("pbad", "bad", "bad.jpg", 0, 0, 45, "{not json", "[]", "[]", 1, 360,
+         "obstacle", 0))
+    db.conn.commit()
+    try:
+        assert client.get("/api/state").status_code == 200
+        assert client.get("/api/panoramas").status_code == 200
+        row = [p for p in db.panoramas() if p["id"] == "pbad"][0]
+        assert row["strokes"] == []            # canonical empty, not a crash
+        # a non-JSON profile falls back the same way rather than 500ing
+        db.conn.execute("UPDATE panoramas SET profile=? WHERE id=?", ("{oops", "pbad"))
+        db.conn.commit()
+        assert client.get("/api/panoramas").status_code == 200
+    finally:
+        client.delete("/api/panorama/pbad")
+
+
 # ------------------------------------------------------------- site validation
 
 def test_site_coordinates_are_validated(client):

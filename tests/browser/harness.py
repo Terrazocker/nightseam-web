@@ -350,6 +350,18 @@ def run(channel: str = "chrome", targets=("web", "desktop"),
         return 2
 
     results: list[Result] = []
+    # TO-02: the Playwright DRIVER is infrastructure too. Entering it can fail
+    # before any browser exists (restricted token, broken install, missing driver
+    # bundle), and that must be the documented exit 2 with the FATAL line - not a
+    # traceback escaping `run()` as exit 1 ("failed check(s)"). Probe it once here,
+    # inside the handler that already converts target-start failures.
+    try:
+        _driver = sync_playwright().start()
+        _driver.stop()
+    except Exception as exc:
+        print(f"check_browser FATAL: the Playwright driver could not start "
+              f"({exc}).")
+        return 2
     try:
         with sync_playwright() as p:
             try:

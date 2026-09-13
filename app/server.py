@@ -225,6 +225,20 @@ def _check_profile(values, label: str) -> None:
         raise HTTPException(400, f"{label} must contain only finite numbers")
 
 
+def _check_strokes(values) -> None:
+    """PY-03: `strokes` is the third stored panorama array, and the ONE both
+    editors iterate (`for (const s of p.strokes)`).
+
+    Until this existed the import boundary accepted any JSON-encodable value for
+    it, so `{}` / `"abc"` / `7` could be stored and the desktop editor then threw
+    `TypeError: ... is not iterable` for that record. Same fail-closed rule as the
+    profile arrays; `None` counts as "not mentioned"."""
+    if values is None:
+        return
+    if not isinstance(values, list) or not all(isinstance(s, dict) for s in values):
+        raise HTTPException(400, "strokes must be a list of stroke objects")
+
+
 # ------------------------------------------------------------------ image prefetch
 
 _prefetch_started = False
@@ -611,6 +625,7 @@ def create_app(db: Database, *, prefetch: bool = True) -> FastAPI:
             raise HTTPException(400, "paint_mode must be 'obstacle' or 'sky'")
         _check_profile(body.profile, "profile")
         _check_profile(body.profile_top, "profile_top")
+        _check_strokes(body.strokes)
         for label in ("az_offset", "alt_bottom", "alt_top", "fov"):
             value = getattr(body, label)
             if value is not None:

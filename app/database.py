@@ -42,6 +42,44 @@ def _validate_import_profile(values, label: str) -> None:
             "numbers")
 
 
+def _validate_import_strokes(values) -> None:
+    """PY-03: `strokes` is the THIRD stored panorama array and had no shape check.
+
+    It holds the painted mask and BOTH editors iterate it (`for (const s of
+    p.strokes)`), so any JSON-encodable value was accepted - `{}`, `"abc"`, `7` -
+    and the desktop editor then threw `TypeError: ... is not iterable` for that
+    record. Fail closed at the boundary like the two profile arrays; `None`
+    counts as the empty stroke list.
+    """
+    if values is None:
+        return
+    if not isinstance(values, list) or not all(isinstance(s, dict) for s in values):
+        raise ValueError("panorama strokes must be a list of stroke objects")
+
+
+def _reject_duplicate_paths(records, label: str) -> None:
+    """PY-01: two bundle records must not normalize to ONE stored path.
+
+    `safe_rel` canonicalizes `a/./b`, `a//b` and `a/x/../b` to the same string, so
+    distinct records could share a target: the restore loop then wrote both
+    members to one file (ZIP order, last writer wins) while `import_bundle` had
+    already inserted both rows, and the summary counted both - a quiet frame loss.
+    No NightSeam export can produce that, so a bundle that does is refused instead.
+    """
+    seen: set[str] = set()
+    for rec in records or []:
+        if not isinstance(rec, dict):
+            continue
+        rel = safe_rel(rec.get("file"))
+        if rel is None:
+            continue            # unsafe path: dropped later, not a duplicate
+        if rel in seen:
+            raise ValueError(
+                f"imported {label} contain two records for the same stored path "
+                f"({rel}); refusing to let one overwrite the other")
+        seen.add(rel)
+
+
 # Numeric image/custom columns that are serialized into JSON responses with
 # `allow_nan=False`; ONE stored non-finite value makes the route 500 forever.
 _NUMERIC_RECORD_FIELDS = {
@@ -531,9 +569,20 @@ class Database:
             for r in self.conn.execute(
                     "SELECT * FROM panoramas ORDER BY rowid DESC"):
                 d = dict(r)
-                d["strokes"] = json.loads(d["strokes"])
-                d["profile"] = json.loads(d["profile"])
-                d["profile_top"] = json.loads(d["profile_top"])
+                # PY-03: a hand-edited or legacy row whose column is not valid
+                # JSON used to raise here, 500ing EVERY listing - and the desktop's
+                # first boot request is /api/state, so the app was unbootable until
+                # the DB was repaired. Fall back to the column's canonical empty
+                # value; the write boundaries (`_validate_import_*`, `_check_profile`,
+                # `_check_strokes`) are what keep malformed shapes out in the first
+                # place.
+                for key in ("strokes", "profile", "profile_top"):
+                    try:
+                        d[key] = json.loads(d[key])
+                    except (TypeError, ValueError):
+                        d[key] = []
+                if not isinstance(d["strokes"], list):
+                    d["strokes"] = []       # both editors iterate this
                 d["block_above"] = bool(d.get("block_above"))
                 out.append(d)
             return out
@@ -821,6 +870,8 @@ class Database:
                 _fin(f"panorama {key}", p.get(key))
             _validate_import_profile(p.get("profile"), "profile")
             _validate_import_profile(p.get("profile_top"), "profile_top")
+            # PY-03: the third stored array, iterated by both editors
+            _validate_import_strokes(p.get("strokes"))
         # PY04-F2 (review round 2): the image rows were the ONE record type the
         # boundary did not check, and `json.loads` happily produces the bare
         # tokens Infinity/NaN. `images[]` is read back by /api/library, so a
@@ -834,6 +885,11 @@ class Database:
         for c in customs:
             for key in _NUMERIC_RECORD_FIELDS["customs"]:
                 _fin(f"custom {key}", c.get(key))
+        # PY-01: `safe_rel` canonicalization can map several records onto one
+        # stored path; the restore loop would then overwrite and the summary would
+        # still over-count. Refuse the bundle (no export produces this shape).
+        _reject_duplicate_paths(images, "images")
+        _reject_duplicate_paths(panoramas, "panoramas")
         skipped = {"panoramas": 0, "images": 0}
         with self.lock:
             cur = self.conn.cursor()
