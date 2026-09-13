@@ -30,6 +30,11 @@ ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "landing" / "changelog.json"
 
 CURATED = {
+    # 0.6.27 is the catalog follow-up to 0.6.26: refreshed the popularity source
+    # popularity (re-ranks Standard mode), OpenNGC label mappings (Cl+N ->
+    # nebula, Se1/Se2 -> Ser, duplicate common names disambiguated) and the
+    # automatic migration of library ids the old catalogue handed out.
+    "0.6.27": "Catalog follow-up to the complete-OpenNGC switch. The target list now carries up-to-date community popularity, so Standard mode's 200 most popular objects are re-ranked (M42 still leads, M31 follows), and object labels follow the source more closely: the great star-forming nebulae OpenNGC classifies as a cluster with nebula (the Orion Nebula, IC 1396, the Heart and Soul nebulae, the Cocoon Nebula) are shown as nebulae instead of clusters, Serpens objects no longer display the catalogue's Se1/Se2 codes, and where OpenNGC gives one common name to two rows the designation is added - 'Eagle Nebula (NGC 6611)' beside 'Eagle Nebula (IC 4703)'. Your image library is migrated automatically: entries that pointed at the old catalogue's ids (M42, the Magellanic Clouds, Collinder 399 and about 110 more) are re-pointed at the objects OpenNGC names, and a capture whose object the new catalogue does not list at all keeps displaying its own name and coordinates.",
     # 0.6.26 replaces the hand-written 197-object list with the complete
     # OpenNGC catalogue (NGC/IC + its addendum): one catalog, one set of
     # positions/magnitudes/types, standard mode = the 200 most popular
