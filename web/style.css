@@ -79,6 +79,14 @@ body {
   display: inline-flex; align-items: center; gap: 6px;
   font-size: 11.5px; color: var(--muted); font-family: var(--mono);
 }
+/* Reserved slot (0.6.31): the busy chip is shown and hidden constantly, and as a
+   bare flex item it re-wrapped the topbar and pushed the whole app down. The slot
+   holds the space permanently (it only eats the flexible gap, so it is invisible
+   when idle) and the text ellipsizes instead of growing it. */
+.busy-slot { display: inline-flex; justify-content: flex-end; align-items: center;
+  flex: none; width: 168px; height: 20px; overflow: hidden; }
+.busy-slot #busy { max-width: 100%; }
+.busy-slot .busy-txt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #busy .busy-dot {
   width: 8px; height: 8px; border-radius: 50%; background: var(--amber);
   animation: busyPulse 1s ease-in-out infinite;
@@ -260,7 +268,19 @@ canvas#sky {
 }
 
 /* ---------- catalog ---------- */
-.cat-bar { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 14px; align-items: center; }
+.cat-bar { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 6px; align-items: center; }
+/* The count + live status sit on their OWN fixed-height row (0.6.31): inside the
+   wrapping bar above, "computing visibility… 42%" appearing/disappearing reflowed
+   the bar and pushed the table down. A fixed height + nowrap makes that
+   impossible - the text changes, the geometry never does. */
+.cat-stats {
+  display: flex; justify-content: space-between; align-items: center; gap: 12px;
+  height: 20px; margin: 0 0 12px; font-size: 12.5px; color: var(--muted);
+  white-space: nowrap; overflow: hidden;
+}
+.cat-stats .cat-count, #pct-status { font-variant-numeric: tabular-nums; }
+/* Progress must never resize the thing it reports on. */
+#pct-status { min-width: 150px; text-align: right; }
 .cat-bar input[type="search"] {
   flex: 1; min-width: 220px; background: var(--panel); border: 1px solid var(--line); color: var(--txt);
   border-radius: 10px; padding: 10px 14px; font-size: 14px;
@@ -269,7 +289,7 @@ canvas#sky {
 .chips { display: flex; gap: 6px; flex-wrap: wrap; }
 /* Min-visibility slider (0.6.30): a quiet list gate in the catalog bar. */
 .cat-bar .minvis { display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--muted); }
-.cat-bar .minvis b { font-family: var(--mono); color: var(--txt); min-width: 30px; text-align: right; }
+.cat-bar .minvis b { font-family: var(--mono); color: var(--txt); min-width: 40px; text-align: right; font-variant-numeric: tabular-nums; }
 .cat-bar .minvis input[type="range"] { width: 110px; }
 .chip {
   background: var(--panel); border: 1px solid var(--line); color: var(--muted); border-radius: 999px;
@@ -278,7 +298,17 @@ canvas#sky {
 .chip.on { color: var(--accent); border-color: rgba(124,196,255,.55); background: rgba(124,196,255,.1); }
 .cat-count { font-size: 12.5px; color: var(--muted); margin-left: auto; }
 
-table.cat { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+table.cat { width: 100%; border-collapse: collapse; font-size: 13.5px;
+  /* FIXED column widths (0.6.31): the % visibility column fills in cell by cell
+     ("…" -> "42%") and the Frame column switches between "—" and "158%"; under
+     auto layout every such update redistributed ALL column widths and the table
+     visibly jittered. Widths live on the header row, so content can never
+     resize a column again. */
+  table-layout: fixed; }
+table.cat th[data-k="name"] { width: 30%; }
+table.cat th[data-k="tier"] { width: 46px; }
+table.cat th.num, table.cat th.frame { width: 72px; }
+table.cat td { font-variant-numeric: tabular-nums; }
 /* The catalog table is 9-10 columns wide: on a narrow viewport it must scroll
    INSIDE its card (the desktop's `.tablewrap` does the same) instead of
    widening the page and giving the whole app a horizontal scrollbar. */
@@ -310,7 +340,9 @@ td.tier, th[data-k="tier"] { text-align: center; width: 42px; }
 .tier-badge.t-e { color: #8397b8; }
 .tier-badge.t-f { color: #6d7f9e; }
 .tags { font-family: var(--mono); font-size: 11.5px; color: var(--muted); }
-.tname { font-weight: 600; }
+/* one line per name: a wrapped long name would change the row height */
+.tname { font-weight: 600; display: inline-block; max-width: 100%; overflow: hidden;
+  text-overflow: ellipsis; vertical-align: bottom; white-space: nowrap; }
 .pager { display: flex; gap: 8px; align-items: center; justify-content: center; margin-top: 14px; font-size: 13px; color: var(--muted); }
 
 /* ---------- modal / detail ---------- */
@@ -542,6 +574,7 @@ td.pct { font-family: var(--mono); color: var(--green); white-space: nowrap; }
 @media (max-width: 640px) {
   .tagline { display: none; }
   #busy { position: absolute; right: 70px; top: 8px; }
+  .busy-slot { width: 0; overflow: visible; }
   .scrub strong { display: none; }
 }
 

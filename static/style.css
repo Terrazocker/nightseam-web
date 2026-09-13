@@ -316,7 +316,14 @@ td.tiercell { text-align: center; }
   radial-gradient(circle at 30% 30%, var(--thumb1), var(--thumb2)); display: block; }
 .wininfo { font-size: 12px; }
 .wininfo small { color: var(--dim); }
-#resultCount { margin-left: auto; color: var(--dim); font-size: 12.5px; }
+#resultCount { margin-left: auto; color: var(--dim); font-size: 12.5px;
+  /* fixed width + tabular figures (0.6.31): the count text changes on every
+     filter/slider move, and as a natural-width item it re-wrapped the filter bar
+     and pushed the table down. It can no longer change the bar's geometry. */
+  width: 250px; text-align: right; white-space: nowrap; overflow: hidden;
+  text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
+/* live value labels must not resize while they count up */
+#muaVal, #fMinVisVal { min-width: 40px; text-align: right; font-variant-numeric: tabular-nums; }
 
 /* ---------- sky view ---------- */
 .skytoolbar { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; }
@@ -476,6 +483,14 @@ tr.lib-sess td { background: var(--bg2) !important; cursor: default;
 /* busy indicator + toast notifications */
 #busy { display: inline-flex; align-items: center; gap: 8px;
   font-size: 12.5px; font-weight: 600; color: var(--text); white-space: nowrap; }
+/* Reserved slot (0.6.31): the chip is shown/hidden constantly, and as a bare flex
+   item in a wrapping topbar it pushed the whole app down while it computed. The
+   slot holds the space permanently (it only eats the flexible gap, so it is
+   invisible when idle) and the text ellipsizes instead of growing it. */
+.busy-slot { display: inline-flex; justify-content: flex-end; align-items: center;
+  flex: none; width: 168px; height: 20px; overflow: hidden; }
+.busy-slot #busy { max-width: 100%; }
+.busy-slot .busy-txt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #busy .busy-dot { width: 14px; height: 14px; flex: none;
   border: 2.5px solid color-mix(in srgb, var(--accent) 25%, transparent); border-top-color: var(--accent);
   border-radius: 50%; animation: spin .8s linear infinite;

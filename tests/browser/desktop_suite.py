@@ -224,6 +224,43 @@ def desktop_catalog_tier_minvis(c):
         """() => fetch('/api/settings', { method: 'POST',
              headers: { 'Content-Type': 'application/json' },
              body: JSON.stringify({ min_vis: 1 }) })""")
+
+    # ---- layout stability: progress and counts must not move anything -------
+    def desk_geometry():
+        return c.page.evaluate(
+            """() => { const tb = document.querySelector('#topbar');
+                 const t = document.querySelector('#targetTable');
+                 const ths = Array.from(t.querySelectorAll('thead th'))
+                              .map(th => Math.round(th.getBoundingClientRect().width));
+                 return { barH: Math.round(tb.getBoundingClientRect().height),
+                          cols: ths }; }""")
+
+    g0 = desk_geometry()
+    c.page.evaluate(
+        """() => { const b = document.querySelector('#busy');
+             b.classList.remove('hidden');
+             document.querySelector('#busy .busy-txt').textContent =
+               'computing visibility… 100%'; }""")
+    c.page.wait_for_timeout(200)
+    g1 = desk_geometry()
+    c.page.evaluate(
+        """() => { const b = document.querySelector('#busy');
+             b.classList.add('hidden');
+             document.querySelector('#busy .busy-txt').textContent = ''; }""")
+    c.page.wait_for_timeout(200)
+    g2 = desk_geometry()
+    c.expect(g0["barH"] == g1["barH"] == g2["barH"],
+             f"the busy chip moves the topbar: {g0['barH']} -> {g1['barH']} -> {g2['barH']}")
+    c.expect(g0["cols"] == g1["cols"],
+             f"the columns changed when the status appeared: {g0['cols']} -> {g1['cols']}")
+
+    c.page.evaluate(
+        """() => { document.querySelector('#resultCount').textContent =
+             '12,176 of 12,176 objects · 1,234 below 60% · filtered'; }""")
+    c.page.wait_for_timeout(200)
+    g3 = desk_geometry()
+    c.expect(g3["barH"] == g0["barH"],
+             f"the result count re-wrapped the filter bar: {g0['barH']} -> {g3['barH']}")
     c.assert_clean()
 
 

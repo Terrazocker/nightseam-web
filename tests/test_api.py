@@ -84,6 +84,25 @@ def test_timezone_setting_roundtrip(client):
     assert client.get("/api/state").json()["timezone"] == ""
 
 
+def test_min_vis_setting_roundtrips_and_clamps(client):
+    """`min_vis` is the target list's Min-visibility gate (0.6.30): a percentage
+    persisted like every other display setting. /api/state must carry it (the
+    desktop's filter bar is seeded from it) with a default of 1 and a 0..100
+    clamp, so a hand-edited settings row cannot wedge the slider."""
+    assert client.get("/api/state").json()["min_vis"] == 1        # default
+    assert client.post("/api/settings", json={"min_vis": 42}).status_code == 200
+    assert client.get("/api/state").json()["min_vis"] == 42
+    assert client.post("/api/settings", json={"min_vis": 0}).status_code == 200
+    assert client.get("/api/state").json()["min_vis"] == 0        # 0 = gate off
+    assert client.post("/api/settings", json={"min_vis": 150}).status_code == 200
+    assert client.get("/api/state").json()["min_vis"] == 100
+    assert client.post("/api/settings", json={"min_vis": -5}).status_code == 200
+    assert client.get("/api/state").json()["min_vis"] == 0
+    # it survives a reopen (the desktop reads it back at boot)
+    st = client.get("/api/state").json()
+    assert isinstance(st["min_vis"], int)
+
+
 def test_settings_rejects_bad_size_unit(client):
     r = client.post("/api/settings", json={"size_unit": "parsecs"})
     assert r.status_code == 400

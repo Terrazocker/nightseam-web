@@ -999,3 +999,26 @@ def test_popularity_tiers_are_rank_bands_and_never_the_score():
     r = _run_node("tier", [{"objs": [{"id": "nos", "popularity": 100},
                                      {"id": "mis"}, {"id": "zero", "popularity": 0}]}])[0]
     assert r["tiers"] == {"nos": "A", "mis": "F", "zero": "F"}, r
+
+
+def test_tier_letters_are_mode_independent_on_the_real_catalog():
+    """ALIGNMENT (0.6.31). The web ranks the set the current mode shows
+    (`assignPopularityTiers(activeCatalog())`) and the desktop ranks the same set
+    (`assignPopularityTiers(S.catalog)`), so the two apps cannot disagree about a
+    letter. That only works if ranking the standard subset reproduces the global
+    ranks - true because standard mode IS the top-N by popularity
+    (`catalog_data.standard_ids`, pinned by test_catalog.py). Proven here on the
+    REAL shipped payload: every standard row gets the same letter whether it is
+    ranked inside the 200 or inside all 12,176."""
+    rows = json.loads((ROOT / "web" / "catalog.json").read_text(encoding="utf-8"))
+    main = [{"id": r["id"], "popularity": r.get("popularity") or 0}
+            for r in rows if not r.get("_adv")]
+    whole = [{"id": r["id"], "popularity": r.get("popularity") or 0} for r in rows]
+    assert len(main) == 200 and len(whole) > 10000, (len(main), len(whole))
+    res = _run_node("tier", [{"objs": main}, {"objs": whole}])
+    in_main, in_whole = res[0]["tiers"], res[1]["tiers"]
+    mismatch = {k: (v, in_whole.get(k)) for k, v in in_main.items()
+                if in_whole.get(k) != v}
+    assert not mismatch, f"standard-mode tiers differ from the global ones: {mismatch}"
+    # and the standard set really is the most popular slice: A/B only
+    assert set(in_main.values()) <= {"A", "B"}, sorted(set(in_main.values()))

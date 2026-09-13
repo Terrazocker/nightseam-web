@@ -405,7 +405,7 @@ Image Catalog (FITS ingest + library). `README.md` has the feature list.
     `Get-CimInstance Win32_Process`).
   - If 8407 is briefly taken at boot, `free_port()` silently picks a RANDOM port
     (written to `instance.json`).
-- Tests: `python -m pytest tests/` (503). Single test:
+- Tests: `python -m pytest tests/` (507). Single test:
   `python -m pytest tests/test_js_parity.py -k name`. API tests use
   `create_app(db, prefetch=False)` (no image-cache thread). The `client` fixture
   must leave `data/panos` in the tmp dir it patches in.
@@ -415,7 +415,7 @@ Image Catalog (FITS ingest + library). `README.md` has the feature list.
     external `--basetemp` workaround does not restore a clean run either.
     `tests/conftest.py` therefore OVERRIDES the `tmp_path` fixture with a dir under
     the gitignored, sandbox-owned `logs/.pytest-tmp`, so a plain
-    `python -m pytest tests/` is clean: **503 pass with 0 assertion failures**
+    `python -m pytest tests/` is clean: **507 pass with 0 assertion failures**
     (the 0.6.24..0.6.26 sessions needed a scratch plugin for this; it is built in
     now).
 - JS checks (run after touching `static/` OR `web/`): `python scripts/check_js.py`
@@ -564,9 +564,9 @@ Image Catalog (FITS ingest + library). `README.md` has the feature list.
   `scripts/check_catalog_token.py`, wired into `scripts/check_js.py`, and pinned
   by `tests/test_cache_tokens.py` (mutation-tested). Do NOT add
   `{cache:'no-store'}` - the file must stay cacheable.
-  Current (0.6.31, unreleased): `app.js?v=77` (index.html) /
+  Current (0.6.31, unreleased): `app.js?v=78` (index.html) /
   `CATALOG_TOKEN = '8'`, `astro.js?v=15`, `horizon.js?v=47`, `format.js?v=22`,
-  `nightrank.js?v=13`, `webstore.js?v=25`, `dragwin.js?v=1`, `style.css?v=19`,
+  `nightrank.js?v=13`, `webstore.js?v=25`, `dragwin.js?v=1`, `style.css?v=21`,
   `themes.css?v=4`; the core stub is `web/core.js?v=23` (bump = re-bake,
   enforced by `scripts/check_core.py`). The CR3 fix (CO-01, 0.6.24 review)
   touched `core/horizon.js` + `core/index.js`, so the re-bake moved the stub
@@ -824,7 +824,23 @@ Image Catalog (FITS ingest + library). `README.md` has the feature list.
   the object needs a mosaic (the web's `.over`, the desktop's `st-low`). Pinned
   by the `tier` engine, `test_min_visibility_slider_gates_both_target_lists`,
   `test_desktop_frame_cell_is_green_until_it_needs_a_mosaic` and the
-  `web-catalog-tier-frame` browser check.
+  `web-catalog-tier-frame` browser check. **Both shells rank the set the CURRENT
+  MODE shows** (`assignPopularityTiers(activeCatalog())` on the web,
+  `assignPopularityTiers(S.catalog)` on the desktop), so they cannot disagree
+  about a letter; in standard mode that set is the top-N by popularity, so the
+  letters also equal the global ones - proven on the real payload by
+  `test_tier_letters_are_mode_independent_on_the_real_catalog` and pinned as a
+  rule by `test_both_shells_rank_the_same_set`.
+- **Progress never moves the layout (0.6.31):** a live status may change its
+  TEXT, never the geometry. The catalog's count/status live in a fixed-height
+  `.cat-stats` row with a reserved status width, the web table uses
+  `table-layout: fixed` so a cell filling in ("…" -> "42%") cannot resize a
+  column, and the busy chip sits in a reserved `.busy-slot` in the TOPBAR of
+  BOTH shells (as a bare flex item it re-wrapped the topbar and pushed the whole
+  app down while it computed). The desktop's `#resultCount` is a fixed-width
+  right-aligned block for the same reason. `test_progress_and_status_never_move_the_layout`
+  pins the rules and the browser checks MEASURE the geometry (table top, column
+  widths, stats height, topbar height) before/while/after progress runs.
 - "Free space per side" (web): `main` is
   `max-width: min(100%, max(320px, calc(100% - 2 * var(--edge,14px))))` with NO
   other px cap - a cap inside the `min()` silently defeats the slider. A CSS-only

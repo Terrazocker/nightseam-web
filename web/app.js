@@ -1361,6 +1361,10 @@ function renderCatalog() {
   // focus/caret in the search box must survive the re-render below
   const qHadFocus = !!document.activeElement && document.activeElement.id === 'cat-q';
   const qCaret = qHadFocus ? document.activeElement.selectionStart : null;
+  // same for the Min-visibility slider: it re-renders on 'change', and an
+  // arrow-key press fires one - without this the slider would lose focus after
+  // every step and keyboard stepping would stop at 1.
+  const mvHadFocus = !!document.activeElement && document.activeElement.id === 'cat-minvis';
   box.innerHTML = `
     <div class="cat-bar">
       <input type="search" id="cat-q" aria-label="Search the catalog" placeholder="Search: name, M 31, NGC 7000, galaxy, Cyg…" value="${esc(S.cat.q)}">
@@ -1373,8 +1377,10 @@ function renderCatalog() {
         <b id="cat-minvis-v">${minVis() > 0 ? minVis() + '%' : 'off'}</b>
         <input type="range" id="cat-minvis" min="0" max="100" step="1" value="${minVis()}" aria-label="Minimum visibility percent">
       </label>
+    </div>
+    <div class="cat-stats">
       <span class="cat-count">${list.length.toLocaleString()} of ${CAT.length.toLocaleString()} objects${advMode() ? '' : ' (standard mode)'}${hiddenNotVisible ? ` · ${hiddenNotVisible} below ${minVis()}%` : ''}</span>
-      <span class="cat-count" id="pct-status" style="margin-left:12px"></span>
+      <span class="cat-count" id="pct-status"></span>
     </div>
     <div class="card" style="padding:8px 10px">
       <div class="catwrap">
@@ -1440,6 +1446,7 @@ function renderCatalog() {
     const inp = $('#cat-q');
     if (inp) { inp.focus(); if (qCaret != null) inp.setSelectionRange(qCaret, qCaret); }
   }
+  if (mvHadFocus) { const el = $('#cat-minvis'); if (el) el.focus(); }
   fillPctCells(slice);
   // Warm whenever the list is gated or sorted by visibility - and never while
   // searching, because the gate is off then anyway.
@@ -2474,7 +2481,13 @@ async function boot() {
     const res = await fetch('catalog.json?v=' + CATALOG_TOKEN);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     CAT = await res.json();
-    TIER = assignPopularityTiers(CAT);
+    // ALIGNMENT (0.6.31): rank the set the CURRENT MODE shows - the desktop
+    // does exactly the same over `S.catalog` (static/js/targets.js), so the two
+    // apps cannot disagree about a letter. In standard mode that set is the
+    // top-N by popularity (`catalog_data.standard_ids`, pinned by
+    // test_catalog.py), so its ranks 1..N ARE the global ones - proven on the
+    // real payload by test_tier_letters_are_mode_independent_on_the_real_catalog.
+    TIER = assignPopularityTiers(activeCatalog());
     for (const o of CAT) byId.set(o.id, o);
     for (const c of new Set(CAT.map((o) => o.constellation).filter(Boolean))) CONSTELLATIONS.push(c);
     CONSTELLATIONS.sort((a, b) => a.localeCompare(b));

@@ -313,6 +313,35 @@ def test_min_visibility_slider_gates_both_target_lists():
         "the desktop gate must NOT live in passesFilters: skyview.js uses it")
 
 
+def test_both_shells_rank_the_same_set():
+    """ALIGNMENT (0.6.31): both shells compute the tier letters from the set the
+    CURRENT MODE shows - the web over `activeCatalog()`, the desktop over
+    `S.catalog` - so the two apps cannot disagree about a letter. In standard mode
+    that set is the top-N by popularity, so the letters also equal the global
+    ones; the numeric proof on the real payload is
+    `test_tier_letters_are_mode_independent_on_the_real_catalog`."""
+    assert "assignPopularityTiers(activeCatalog())" in _read("web", "app.js")
+    assert "assignPopularityTiers(S.catalog)" in _read("static", "js", "targets.js")
+
+
+def test_progress_and_status_never_move_the_layout():
+    """0.6.31: showing progress may change the TEXT, never the geometry. The
+    catalog's count/status live in a fixed-height row with a reserved status
+    width, the table has fixed column widths, and the busy chip sits in a reserved
+    slot on both shells (its appearing used to re-wrap the topbar and push the
+    whole app down). The browser checks measure the real geometry."""
+    web_css = _read("web", "style.css")
+    assert ".cat-stats {" in web_css and "height: 20px" in web_css
+    assert "table-layout: fixed" in web_css, "column jitter is back"
+    assert "min-width: 150px" in web_css, "the status slot lost its reserved width"
+    assert ".busy-slot {" in web_css
+    assert '<span class="busy-slot">' in _read("web", "index.html")
+    desk_css = _read("static", "style.css")
+    assert ".busy-slot {" in desk_css
+    assert "width: 250px" in desk_css, "the desktop count line can re-wrap again"
+    assert '<span class="busy-slot">' in _read("static", "index.html")
+
+
 def test_popularity_still_breaks_ties():
     """Removing the display must not remove the scoring."""
     web = _read("web", "app.js")

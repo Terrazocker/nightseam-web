@@ -561,6 +561,72 @@ def web_catalog_advanced_minvis(c):
     c.expect(box["doc"] <= box["win"] + 2,
              f"the catalog table widens the PAGE: {box['doc']}px vs {box['win']}px - "
              f"it must scroll inside its card instead")
+
+    # ---- layout stability: progress/status must not move anything -----------
+    c.page.set_viewport_size({"width": 1280, "height": 900})
+    c.page.wait_for_timeout(300)
+
+    def set_minvis(v):
+        # 'input' updates the preference (the render reads it), 'change' re-renders
+        c.page.eval_on_selector("#cat-minvis", """(el, val) => { el.value = val;
+            el.dispatchEvent(new Event('input', { bubbles: true }));
+            el.dispatchEvent(new Event('change', { bubbles: true })); }""", v)
+
+    def geometry():
+        return c.page.evaluate(
+            """() => { const t = document.querySelector('#view table.cat');
+                 const ths = Array.from(t.querySelectorAll('thead th'))
+                              .map(th => Math.round(th.getBoundingClientRect().width));
+                 const s = document.querySelector('#pct-status');
+                 return { cols: ths,
+                          top: Math.round(t.getBoundingClientRect().top),
+                          statusW: Math.round(s.getBoundingClientRect().width),
+                          statsH: Math.round(s.parentElement.getBoundingClientRect().height) }; }""")
+
+    base = geometry()
+    c.expect(base["statusW"] >= 100,
+             f"the status slot must be reserved before it has text: {base['statusW']}px")
+    c.page.evaluate("""() => { document.querySelector('#pct-status').textContent =
+        'computing visibility… 100%'; }""")
+    c.page.wait_for_timeout(150)
+    with_status = geometry()
+    c.page.evaluate("() => { document.querySelector('#pct-status').textContent = ''; }")
+    c.page.wait_for_timeout(150)
+    cleared = geometry()
+    for label, g in (("status shown", with_status), ("status cleared", cleared)):
+        c.expect(g["top"] == base["top"],
+                 f"{label}: the status line moved the table ({base['top']} -> {g['top']})")
+        c.expect(g["cols"] == base["cols"],
+                 f"{label}: the columns resized ({base['cols']} -> {g['cols']})")
+        c.expect(g["statsH"] == base["statsH"],
+                 f"{label}: the stats row changed height ({base['statsH']} -> {g['statsH']})")
+
+    # moving a slider re-renders the whole view: the geometry must not change
+    set_minvis(60)
+    c.page.wait_for_timeout(300)
+    after = geometry()
+    c.expect(after["cols"] == base["cols"],
+             f"re-rendering resized the columns ({base['cols']} -> {after['cols']})")
+    c.expect(after["top"] == base["top"],
+             f"re-rendering moved the table ({base['top']} -> {after['top']})")
+
+    # ... and neither may the busy chip: the topbar wraps, so an empty slot is a
+    # zero-height row and the whole app slides down when it fills
+    c.page.evaluate(
+        """() => { const b = document.querySelector('#busy');
+             b.classList.remove('hidden');
+             document.querySelector('#busy .busy-txt').textContent =
+               'computing visibility… 100%'; }""")
+    c.page.wait_for_timeout(200)
+    busy = geometry()
+    c.page.evaluate(
+        """() => { const b = document.querySelector('#busy');
+             b.classList.add('hidden');
+             document.querySelector('#busy .busy-txt').textContent = ''; }""")
+    c.page.wait_for_timeout(200)
+    idle = geometry()
+    c.expect(busy["top"] == base["top"] == idle["top"],
+             f"the busy chip moved the table: {base['top']} -> {busy['top']} -> {idle['top']}")
     c.assert_clean()
 @check("web-catalog-tier-frame", "web")
 def web_catalog_tier_frame(c):
