@@ -30,6 +30,11 @@ ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "landing" / "changelog.json"
 
 CURATED = {
+    # 0.6.26 replaces the hand-written 197-object list with the complete
+    # OpenNGC catalogue (NGC/IC + its addendum): one catalog, one set of
+    # positions/magnitudes/types, standard mode = the 200 most popular
+    # objects. No planning-number change beyond the catalog itself.
+    "0.6.26": "Catalog rebuild: the target list is now the complete OpenNGC catalogue. The NGC/IC catalogue plus OpenNGC's addendum of notable objects that have no NGC or IC number (the Horsehead, the Hyades, the Coalsack, the Magellanic Clouds, the Sculptor, Fornax and Sextans dwarf galaxies and Seyfert's Sextet among them) gives 12,160 objects, and the older hand-written 197-object list is gone, so every object now has one consistent set of positions, magnitudes, sizes and types. Objects that OpenNGC itself marks as duplicates or non-existent are no longer listed at all (for example NGC 651, a duplicate entry for NGC 650, and the double star M40). Standard mode shows the 200 most popular of these objects, and advanced mode shows all 12,160. Names follow OpenNGC, so an object the old list gave a nickname may now appear under its designation (M101 in place of a nickname), and the old one-line descriptions are gone. Your sites, rigs, panoramas and image library are untouched; a library entry that pointed at a former catalog id is matched again from the frame's own object name and coordinates.",
     # 0.6.25 ships the complete 0.6.24 review batch: 6 high, 10 medium and 26
     # low findings, each with a regression pin. Mostly robustness (import
     # boundary, backup/restore, panorama-editor save + undo, weather, charts)
