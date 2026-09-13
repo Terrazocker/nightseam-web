@@ -4,6 +4,11 @@
  * transit index too; the continuous score doubles are allowed the
  * owner-authorized precess-once drift (maxAlt <= 1e-5 deg, scores <= 2e-5).
  *
+ * The INPUT objects are part of the golden (`g.objects`, baked into the fixture
+ * when the curated catalog was removed): the proof must not silently re-point at
+ * different objects because web/catalog.json changed. The old engine rebuilt its
+ * inputs from the shipped catalog, so any catalog edit looked like a regression.
+ *
  * Usage: node tests/js/scoring_parity.mjs <goldens.json> [coreDir]
  * The mutation test passes a tampered core copy and expects exit != 0.
  */
@@ -14,11 +19,10 @@ const goldensPath = process.argv[2];
 const coreDir = process.argv[3] || fileURLToPath(new URL("../../core", import.meta.url));
 const g = JSON.parse(readFileSync(goldensPath, "utf8"));
 const C = await import(pathToFileURL(coreDir + "/index.js").href);
-const catalogPath = fileURLToPath(new URL("../../web/catalog.json", import.meta.url));
-const cat = JSON.parse(readFileSync(catalogPath, "utf8"));
-const curated = cat.filter((o) => !o._adv);
-const advanced = cat.filter((o) => o._adv);
-const objects = [...curated, ...advanced.slice(0, g.cases[0].stats.length - curated.length)];
+const objects = g.objects;
+if (!Array.isArray(objects) || !objects.length) {
+  throw new Error("the goldens carry no `objects` inputs - the parity proof needs them baked in");
+}
 
 const DISPLAY = ["n", "visN", "blocked", "bestRun", "bestStart", "pct", "blockedPct"];
 let ok = true;

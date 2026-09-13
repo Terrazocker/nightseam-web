@@ -4,6 +4,11 @@ The goldens (tests/fixtures/scoring_goldens.json) were captured from the
 pre-change per-sample-precession `nightStats`. The batched engine must keep
 every DISPLAYED field and the transit index bit-identical; only the continuous
 score doubles may drift by the authorized precess-once amount (<=2e-5).
+
+The fixture also carries the 697 INPUT objects the stats were captured for, and
+the engine reads them from there: the parity proof must not change when
+`web/catalog.json` does (it used to rebuild its inputs from the shipped catalog,
+so removing the curated list looked like a scoring regression).
 """
 
 import shutil

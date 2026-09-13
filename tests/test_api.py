@@ -18,6 +18,8 @@ from app.database import Database
 from app.server import create_app
 from _util import make_fits, m31_fits, unresolved_fits
 
+from app.catalog_data import STANDARD_TOP_N
+
 _DATE = "2026-08-24"
 _TZ = 120
 
@@ -128,8 +130,8 @@ def test_removed_planning_routes_answer_404(client):
         "date": _DATE, "tz_offset_min": _TZ}).status_code == 404
     assert client.get("/api/object/m31", params={
         "date": _DATE, "tz_offset_min": _TZ}).status_code == 404
-    # the image IO route is NOT planning and stays
-    assert client.get("/api/object/m31/image", params={
+    # the image IO route is NOT planning and stays (for an existing object)
+    assert client.get("/api/object/ngc224/image", params={
         "thumb": 1}).status_code == 200
 
 
@@ -137,9 +139,9 @@ def test_removed_planning_routes_answer_404(client):
 
 def test_catalog_counts(client, db):
     plain = client.get("/api/catalog").json()
-    assert len(plain) == 197
+    assert len(plain) == STANDARD_TOP_N
     adv = client.get("/api/catalog", params={"adv": "1"}).json()
-    assert len(adv) == 197 + db.advanced_count()
+    assert len(adv) == STANDARD_TOP_N + db.advanced_count()
     assert all("_adv" not in o for o in adv)
 
 
@@ -251,7 +253,7 @@ def test_ingest_fits(client, tmp_path):
     assert r.status_code == 200
     res = r.json()["results"][0]
     assert res["ok"] is True
-    assert res["object"]["id"] == "m31"
+    assert res["object"]["id"] == "ngc224"
     assert res["exposure"] == 300.0
     assert res["filter"] == "L"
 
@@ -388,11 +390,11 @@ def test_ingest_non_finite_coordinates_do_not_corrupt_the_library(client, db):
     # never a frame silently filed under an unrelated object.
     lib = client.get("/api/library").json()
     assert lib["total_images"] == 3
-    assert [o["object_id"] for o in lib["objects"]] == ["m31"]
+    assert [o["object_id"] for o in lib["objects"]] == ["ngc224"]
     for o in lib["objects"]:
         assert math.isfinite(float(o["total_exposure"]))
     for row in db.images():
-        assert row["object_id"] == "m31", row
+        assert row["object_id"] == "ngc224", row
         for value in (row["ra_hours"], row["dec_deg"]):
             assert value is not None and math.isfinite(value), row
 
@@ -449,7 +451,7 @@ def test_ingest_finite_coordinates_still_resolve(client, db):
                                       "application/octet-stream"))])
     assert r.status_code == 200
     res = r.json()["results"][0]
-    assert res["ok"] and res["object"]["id"] == "m31"
+    assert res["ok"] and res["object"]["id"] == "ngc224"
     assert res["exposure"] == 300.0
     row = db.images()[0]
     # OBJCTRA '00 42 44.3' -> 0.712 h and OBJCTDEC '+41 16 09' -> 41.269 deg,
@@ -565,7 +567,7 @@ def test_import_batches_recorded(client):
     assert batches[1]["total_exposure"] == 600.0
     assert batches[1]["slug"] == "Andromeda Galaxy"
     assert batches[1]["session"] == "2026-08-22_2000"
-    assert batches[1]["object_id"] == "m31"
+    assert batches[1]["object_id"] == "ngc224"
     assert batches[1]["image_dir"] == str(tmp_archive(client))
 
 
@@ -702,7 +704,7 @@ def test_reindex_adds_disk_files(client):
     by_typ = {i["imagetyp"]: i for i in imgs}
     assert by_typ["light"]["file"].replace("\\", "/") == "M 42/lights/m42a.fit"
     assert by_typ["dark"]["file"].replace("\\", "/") == "M 42/darks/d1.fit"
-    assert by_typ["light"]["object_id"] == "m42"
+    assert by_typ["light"]["object_id"] == "ngc1976"
 
     r2 = client.post("/api/library/reindex").json()
     assert r2["found"] == 2 and r2["added"] == 0 and r2["skipped"] == 2
@@ -759,7 +761,7 @@ def test_preview_endpoint(client):
                 files=[("files", ("m42.fit", m42_light_fits(),
                                   "application/octet-stream"))])
     lib = client.get("/api/library").json()
-    m42 = next(o for o in lib["objects"] if o["object_id"] == "m42")
+    m42 = next(o for o in lib["objects"] if o["object_id"] == "ngc1976")
     img_id = m42["images"][0]["id"]
     r = client.get(f"/api/images/{img_id}/preview")
     assert r.status_code == 200
@@ -906,7 +908,7 @@ def test_image_preview_still_serves_an_archived_frame(client, db, tmp_path):
                 files=[("files", ("m42.fit", m42_light_fits(),
                                   "application/octet-stream"))])
     lib = client.get("/api/library").json()
-    m42 = next(o for o in lib["objects"] if o["object_id"] == "m42")
+    m42 = next(o for o in lib["objects"] if o["object_id"] == "ngc1976")
     img_id = m42["images"][0]["id"]
     r = client.get(f"/api/images/{img_id}/preview")
     assert r.status_code == 200 and r.content.startswith(b"\x89PNG")

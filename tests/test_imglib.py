@@ -1,9 +1,32 @@
 """Tests for library logic: object resolution, grouping, sessions."""
 
-from app import imglib
-from app.catalog_data import rows
+import csv
+from pathlib import Path
 
-CATALOG = rows()
+from app import imglib
+
+CSV = Path(__file__).resolve().parents[1] / "app" / "data" / "openned.csv"
+COLS = ("id", "primary_name", "messier", "ngcic", "other", "otype", "ra_hours",
+        "dec_deg", "vmag", "size_am", "constellation", "distance", "wiki",
+        "blurb", "search")
+
+
+def _catalog() -> list[dict]:
+    """The shipped CSV in the shape the DB hands to imglib: real numbers, not the
+    strings the file holds."""
+    out = []
+    with open(CSV, encoding="utf-8") as f:
+        for line in f:
+            if line.startswith("#") or not line.strip():
+                continue
+            d = dict(zip(COLS, line.rstrip("\n").split(";")))
+            for k in ("ra_hours", "dec_deg", "vmag"):
+                d[k] = float(d[k]) if d[k] else None
+            out.append(d)
+    return out
+
+
+CATALOG = _catalog()
 
 
 def img(**kw):
@@ -19,7 +42,7 @@ def img(**kw):
 
 def test_resolve_by_messier_designation():
     r = imglib.resolve_object(CATALOG, "M31_300s_L_001")
-    assert r and r["id"] == "m31"
+    assert r and r["id"] == "ngc224"          # M31 as OpenNGC names it
     assert r["primary_name"] == "Andromeda Galaxy"
 
 
@@ -29,16 +52,31 @@ def test_resolve_by_ngc_designation():
 
 
 def test_resolve_by_common_name():
-    assert imglib.resolve_object(CATALOG, "Pinwheel Galaxy")["id"] == "m101"
-    assert imglib.resolve_object(CATALOG, "Andromeda_180s")["id"] == "m31"
+    assert imglib.resolve_object(CATALOG, "Andromeda_180s")["id"] == "ngc224"
+    # OpenNGC gives 'Eagle Nebula' to TWO rows (IC 4703 the nebula and NGC 6611
+    # the cluster, M16), so a common-name hint resolves to whichever the index
+    # saw first; the designations stay unambiguous.
+    assert imglib.resolve_object(CATALOG, "Eagle Nebula")["id"] in ("ic4703", "ngc6611")
+    assert imglib.resolve_object(CATALOG, "M16")["id"] == "ngc6611"
+    # OpenNGC carries no common name for NGC 5457, so a FITS header that only
+    # says "Pinwheel Galaxy" cannot be resolved any more (it says M101/NGC 5457)
+    assert imglib.resolve_object(CATALOG, "Pinwheel Galaxy") is None
+    assert imglib.resolve_object(CATALOG, "M101")["id"] == "ngc5457"
 
 
 def test_resolve_by_coordinates():
-    # near M31 (RA 0.712h, Dec +41.27)
-    r = imglib.resolve_object(CATALOG, "some_star_field", 0.70, 41.2)
-    assert r and r["id"] == "m31"
-    # far away -> no match
-    assert imglib.resolve_object(CATALOG, "some_star_field", 12.0, 0.0) is None
+    # near M31 (RA 0.712h, Dec +41.27); the hint carries no matching name token,
+    # so the coordinate path decides
+    r = imglib.resolve_object(CATALOG, "lights_0042", 0.70, 41.2)
+    assert r and r["id"] == "ngc224"
+    # a dense 12k catalog always has SOMETHING nearby, so the contract that
+    # matters is that the match is LOCAL (inside MATCH_RADIUS_DEG)
+    other = imglib.resolve_object(CATALOG, "lights_0042", 12.0, 0.0)
+    assert other is not None
+    assert imglib.angular_dist(12.0, 0.0, other["ra_hours"],
+                               other["dec_deg"]) <= imglib.MATCH_RADIUS_DEG
+    # nothing to go on -> no match
+    assert imglib.resolve_object(CATALOG, "lights_0042") is None
 
 
 def test_resolve_unmatched_returns_none():
@@ -80,6 +118,8 @@ def test_undated_frames_one_session():
 # ---------------------------------------------------------------- grouping
 
 def test_group_library_totals_and_designation():
+    """`object_id='m31'` is a STALE curated id: the group must still show the
+    object it names (re-resolved through the capture's own OBJECT header)."""
     imgs = [
         img(object_id="m31", object_name="M31", date_obs="2026-08-22T23:00:00",
             exposure=300, ra_hours=0.7, dec_deg=41.2),
@@ -94,7 +134,7 @@ def test_group_library_totals_and_designation():
     assert m31["name"] == "Andromeda Galaxy"
     assert m31["designation"] == "M31"
     assert m31["otype"] == "galaxy"
-    assert m31["size_am"] == "190x60"
+    assert m31["size_am"] == "177.83x69.66"      # OpenNGC's MajAx x MinAx
     assert m31["n_images"] == 2
     assert m31["total_exposure"] == 600.0
     assert m31["n_sessions"] == 1

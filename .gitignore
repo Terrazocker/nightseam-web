@@ -23,7 +23,11 @@ data/instance.json
 data/popularity_snapshot.json
 # popularity popularity matcher scratch tooling (regenerable)
 popularity_snapshot.json
-match_popularity.py
+# ROOT scratch copy only: `scripts/match_popularity.py` is TRACKED - it is the
+# generator for app/popularity_data.py, and a generated data file whose tool is
+# not in the repo cannot be regenerated (the old curated POPULARITY table had
+# exactly that problem).
+/match_popularity.py
 match_final.py
 check_unmatched.py
 check_unmatched2.py

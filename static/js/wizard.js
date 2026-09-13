@@ -22,7 +22,7 @@ const STEPS = [
     body: () => `
       <p>NightSeam plans deep-sky imaging sessions around <b>your</b> sky:</p>
       <ul style="margin:8px 0 0 18px;line-height:1.7">
-        <li>197 curated targets &mdash; plus your own custom objects</li>
+        <li>the 200 most popular targets &mdash; plus your own custom objects</li>
         <li>a painted horizon mask from a phone panorama</li>
         <li>altitude charts showing exactly where trees block your view</li>
         <li>framing previews for your camera + telescope</li>

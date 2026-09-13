@@ -117,9 +117,9 @@ Image Catalog (FITS ingest + library). `README.md` has the feature list.
 **Charts and units**
 - Magnitude limit is ONE rule `magVisible(vmag,limit,maxLimit)` in `derive.js` +
   `web/format.js` (`mag` engine): a known magnitude shows at `vmag <= limit`; a
-  no-magnitude object only at the slider maximum. It filters EVERY object, curated
-  included (8 of 197 curated are fainter than the default 10 and hidden, exactly
-  like desktop `#skyMag`); Sun/Moon, field stars, constellations, the min-alt ring
+  no-magnitude object only at the slider maximum. It filters EVERY object (the
+  standard-mode rows fainter than the default 10 are hidden, exactly like desktop
+  `#skyMag`); Sun/Moon, field stars, constellations, the min-alt ring
   and all scoring/ranking are untouched. Web twin `S.skyMag` (default 10, max 14 /
   20 in advanced mode), session-only, one `draw()` per input.
 - "Square" zoom is ONE geometry in `derive.js` + `web/format.js` (`skyzoom`
@@ -127,13 +127,28 @@ Image Catalog (FITS ingest + library). `README.md` has the feature list.
   `skyClampFocus`. The disc lives in a SQUARE W x H space; the visible window is
   the RECTANGLE `W/zoom x H/zoom` with ONE uniform scalar on both axes. The
   desktop canvas must NOT carry a `border-radius: 50%` clip - it hid that window.
-- Catalog identity is GLOBAL: an `id` must be unique across the curated `objects`
-  AND the advanced `advanced_objects` tables together, not just within each source.
-  `scripts/build_adv_catalog.py` expands a curated range designation
-  (`NGC 2237-2246`) to every member key and asserts global uniqueness before
-  writing; `tests/test_catalog_integrity.py` fails on any duplicate/unsafe id and
-  pins the `ngc2237`/`ngc7317` composites. Never hide a collision with a runtime
-  `Map`/lookup - fix the data.
+- Catalog identity is GLOBAL: an `id` must be unique across the two seeded tables
+  (`objects` + `advanced_objects`) together, not just within each one, because the
+  web `byId` map and `db.get_object()` must agree about which object an id names.
+  **The catalog IS OpenNGC**: `app/data/openned.csv` (built by
+  `scripts/build_adv_catalog.py` from `database_files/NGC.csv` + `addendum.csv`) is
+  the whole catalog, and the 197-row hand-curated list that used to live in
+  `app/catalog_data.py` is GONE (with it: every blurb/distance/Wikipedia field,
+  the curated ids `m42`/`m45`/`lmc`/..., and the curated-vs-advanced dedup).
+  Rows whose OpenNGC `Type` says they are not objects (`Dup` = duplicated entry
+  pointing at its master, `NonEx`, `*`/`**` stars, `Other`, `Nova`) are dropped -
+  that is why `ngc650` ships and `ngc651` (Dup) does not, and why M40/M73/M102 are
+  absent; `_build_row` RAISES on an unmapped type instead of letting the old
+  `TYPE_MAP.get(..., "galaxy")` fallback mislabel the addendum's dark nebulae.
+  **Standard mode is the `catalog_data.STANDARD_TOP_N` (200) most popular objects**
+  (`app/popularity_data.py`; deterministic score-desc/id-asc, never an unscored
+  row), `advanced_objects` holds the rest, and both are PURE SEED DATA rebuilt by
+  `Database.seed_catalog()` whenever the stored id sets differ from what the CSV +
+  popularity table select - that is how a catalog or popularity change re-selects
+  standard mode with no schema migration. `tests/test_catalog_integrity.py` fails
+  on any duplicate/unsafe id, pins the split AND pins every ADVERTISED catalog size
+  (the 6 sites in `web/` + `landing/`) against the shipped rows. Never hide a
+  collision with a runtime `Map`/lookup - fix the data.
 - Panorama profile/strokes invariant: strokes WIN when present (the profile is
   derived from the mask); with NO strokes the stored `profile`/`profileTop` are
   AUTHORITATIVE, so a stroke-less imported record is never blanked just by
@@ -353,7 +368,7 @@ Image Catalog (FITS ingest + library). `README.md` has the feature list.
     `Get-CimInstance Win32_Process`).
   - If 8407 is briefly taken at boot, `free_port()` silently picks a RANDOM port
     (written to `instance.json`).
-- Tests: `python -m pytest tests/` (480). Single test:
+- Tests: `python -m pytest tests/` (487). Single test:
   `python -m pytest tests/test_js_parity.py -k name`. API tests use
   `create_app(db, prefetch=False)` (no image-cache thread). The `client` fixture
   must leave `data/panos` in the tmp dir it patches in.
@@ -363,8 +378,10 @@ Image Catalog (FITS ingest + library). `README.md` has the feature list.
     documented external `--basetemp` no longer restores a clean run (the directory
     cannot be created there, and pytest re-creates a workspace one with the same
     owner-SID-only DACL); use a repo-internal `tmp_path` override plugin instead -
-    with one, 480 pass with 0 assertion failures (certified 0.6.24 review,
-    section 5.3).
+    with one, 487 pass with 0 assertion failures (0.6.24 review section 5.3; the
+    override used for that run lives at the gitignored `logs/pt_tmp_override.py`:
+    `$env:PYTHONPATH='logs'; python -m pytest tests/ -q -p no:cacheprovider -p
+    pt_tmp_override`).
 - JS checks (run after touching `static/` OR `web/`): `python scripts/check_js.py`
   runs all of them and exits non-zero on hard failures:
   - `check_js_imports.py` - broken relative ES-module imports / missing named exports
@@ -597,8 +614,8 @@ tool works here, so measure before working around anything:
   `scripts/check_catalog_token.py`, wired into `scripts/check_js.py`, and pinned
   by `tests/test_cache_tokens.py` (mutation-tested). Do NOT add
   `{cache:'no-store'}` - the file must stay cacheable.
-  Current (0.6.25): `app.js?v=66` (index.html) /
-  `CATALOG_TOKEN = '2'`, `astro.js?v=14`, `horizon.js?v=46`, `format.js?v=21`,
+  Current (post-0.6.25 tree): `app.js?v=70` (index.html) /
+  `CATALOG_TOKEN = '5'`, `astro.js?v=14`, `horizon.js?v=46`, `format.js?v=21`,
   `nightrank.js?v=11`, `webstore.js?v=24`, `dragwin.js?v=1`, `style.css?v=16`,
   `themes.css?v=4`; the core stub is `web/core.js?v=21` (bump = re-bake,
   enforced by `scripts/check_core.py`). The CR3 fix (CO-01, 0.6.24 review)
@@ -673,8 +690,14 @@ tool works here, so measure before working around anything:
   answer 404. `app/ingest.py` (streaming FITS ingest, 1 GiB cap), `app/backup.py`
   (export/import ZIP).
 - `app/database.py` - SQLite, schema created on init, catalog seeded from
-  `catalog_data.py`; `advanced_objects` bulk-seeded from `app/data/openned.csv`
-  (OpenNGC, CC BY-SA 4.0). `app/fits.py` - hand-written FITS parser; `parse_ra_hours`
+  `catalog_data.py` (policy only); BOTH catalog tables are seeded from
+  `app/data/openned.csv` (OpenNGC `database_files/NGC.csv` + `addendum.csv`,
+  CC BY-SA 4.0) by one `seed_catalog()`: `objects` = the standard-mode selection,
+  `advanced_objects` = the rest. The tables are pure seed data and are REBUILT when
+  the stored id sets no longer match the CSV + popularity rule, so a catalog or
+  popularity change reaches existing user databases with no migration, and an old
+  curated-era DB is re-partitioned on first open.
+  `app/fits.py` - hand-written FITS parser; `parse_ra_hours`
   / `parse_dec_deg` are the single coordinate parsers (imported by `server.py`).
   `app/imglib.py`, `app/paths.py` (source vs frozen), `app/images.py`
   (Wikipedia/Wikidata/DSS2 chain with on-disk cache + offline breaker).
@@ -701,10 +724,19 @@ tool works here, so measure before working around anything:
   parity/convergence anchors are the `tests/js/*.mjs` engines. Python is
   storage/platform/IO only - astronomy math must NOT reappear outside `core/`.
 
-## Advanced mode (12,000+ objects)
+## Catalog: OpenNGC only (12,160 objects; standard = the 200 most popular)
 
+- The catalog is `database_files/NGC.csv` (NGC/IC, 12,098 objects) PLUS
+  `database_files/addendum.csv` (62 - the notable objects with no NGC/IC
+  designation: Horsehead, Hyades, Coalsack, the Magellanic Clouds, the
+  Sculptor/Fornax/Sextans/Leo I dwarfs, Seyfert's Sextet, ...). The filenames
+  only describe the sources: `scripts/build_adv_catalog.py` writes ONE file,
+  `app/data/openned.csv`, and there is no curated list any more. Through 0.6.25
+  the addendum was NOT ingested while the copy still claimed "OpenNGC".
 - Toggled in the hamburger menu (`adv_mode`); changing it reloads the page.
-  Standard mode is the curated 197 objects.
+  Standard mode = the 200 most popular objects, advanced = all 12,160. Both come
+  from the same rows, so the toggle changes HOW MUCH you see, never WHAT an
+  object is.
 - `/api/catalog?adv=1` ships advanced objects as METADATA; `static/js/planning_client.js`
   (worker or sync) computes tracks for the whole catalog via core
   `computeNightTracks` (precession once/object at the grid midpoint, sidereal time
@@ -778,11 +810,24 @@ tool works here, so measure before working around anything:
   version line.
 - The catalog is ALWAYS derived: `python web/build_web.py catalog` reads
   `data/nightseam.db` and rewrites `web/catalog.json` byte-identically. Never
-  hand-edit it.
-- Popularity (The popularity source) is a SILENT ranking tiebreaker only (visibility decides,
-  popularity separates equals) and is INVISIBLE in the UI:
-  `tests/test_ui_invariants.py` fails if the number or a "Popular" criterion
-  (column/chip/sort/detail row) reappears in either app.
+  hand-edit it. The DB must reflect the current CSV: `Database(...)` re-seeds and
+  re-splits both catalog tables on open when they no longer match the CSV +
+  popularity rule, so a scratch DB (`Database(<tmp>/db)`) is the clean way to
+  regenerate the payload after a catalog change.
+- Popularity (The popularity source) is a SILENT ranking tiebreaker (visibility decides,
+  popularity separates equals) AND the standard-mode selector (the 200 highest
+  scores). Both uses are INVISIBLE: `tests/test_ui_invariants.py` fails if the
+  number or a "Popular" criterion (column/chip/sort/detail row) reappears in
+  either app, and `tests/test_catalog.py` pins the selection rule.
+  `app/popularity_data.py` is GENERATED by `python scripts/match_popularity.py`
+  (add `--cached` to use `data/popularity_snapshot.json`); the matcher must stay
+  deterministic - it scores the HIGHEST match over every designation of a row,
+  normalizes leading zeros (The popularity source pads 'PGC 17223', OpenNGC does not - the
+  old exact-key match silently dropped the LMC) and carries a small
+  `POPULARITY_ALIASES` table for the objects the popularity source keys under another
+  designation ('B 33' -> 'BARNARD 33', 'Mel 111' -> 'CL MELOTTE 111', ...).
+  The old code iterated a `set` and broke on the first hit, so scores depended on
+  PYTHONHASHSEED and the standard list was not reproducible.
 - Rig presets are a PICKER, not defaults - a fresh setup is EMPTY. Both lists must
   change together: `app/rig_presets.py::DEFAULT_RIGS` and `web/webstore.js::DEFAULT_RIGS`
   (`tests/test_rig_presets.py`). The framing `#rigSelect` lives in the TOPBAR next

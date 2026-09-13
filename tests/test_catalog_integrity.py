@@ -1,15 +1,21 @@
 """Catalog identity integrity.
 
-The shipped 0.6.11 catalog contained 12,116 rows but only 12,114 unique ids:
-the curated composites `ngc2237` (Rosette Nebula, NGC 2237-2246) and `ngc7317`
-(Stephan's Quintet, NGC 7317-7320) each collided with an advanced member row.
-The desktop `get_object()` returned the curated row while the web `byId` map
-could return the member - the same id named two different objects.
+The catalog IS OpenNGC (`app/data/openned.csv`, built from `NGC.csv` +
+`addendum.csv`) - there is no hand-curated list any more. Two identity rules are
+pinned here:
 
-These tests pin the fix: ids are globally unique across curated + advanced, are
-safe as URL/route tokens, and resolve to the intended object.
+  * an `id` is unique across the curated-era tables (now `objects` = the
+    standard-mode selection, `advanced_objects` = the rest) TOGETHER, not just
+    within each one, because the web `byId` map and `db.get_object()` must agree
+    about which object an id names. The 0.6.11 catalog shipped 12,116 rows with
+    only 12,114 unique ids: the curated composites `ngc2237` (Rosette) and
+    `ngc7317` (Stephan's Quintet) each collided with an advanced member.
+  * every ADVERTISED catalog size equals the shipped rows. The copy kept saying
+    12,116 for two releases after the dedup had made it 12,114, and no test,
+    guard or release check noticed.
 """
 
+import csv
 import importlib.util
 import json
 import re
@@ -17,16 +23,13 @@ from pathlib import Path
 
 import pytest
 
-from app.catalog_data import TYPE_LABELS, rows as curated_rows
+from app.catalog_data import STANDARD_TOP_N, standard_ids
 from app.database import Database
 
 ROOT = Path(__file__).resolve().parents[1]
 CSV = ROOT / "app" / "data" / "openned.csv"
 CATALOG_JSON = ROOT / "web" / "catalog.json"
 TOKEN = re.compile(r"[a-z0-9][a-z0-9_-]{0,63}")
-COLS = ("id", "primary_name", "messier", "ngcic", "other", "otype", "ra_hours",
-        "dec_deg", "vmag", "size_am", "constellation", "distance", "wiki",
-        "blurb", "search")
 
 
 def _gen():
@@ -37,97 +40,89 @@ def _gen():
     return mod
 
 
+CSV_COLS = ("id", "primary_name", "messier", "ngcic", "other", "otype",
+            "ra_hours", "dec_deg", "vmag", "size_am", "constellation",
+            "distance", "wiki", "blurb", "search")
+
+
 def _adv_rows():
     with open(CSV, encoding="utf-8") as f:
         for line in f:
             if line.startswith("#") or not line.strip():
                 continue
             vals = line.rstrip("\n").split(";")
-            assert len(vals) == len(COLS), line[:40]
-            yield dict(zip(COLS, vals))
+            assert len(vals) == len(CSV_COLS), line[:40]
+            yield dict(zip(CSV_COLS, vals))
 
 
 # ------------------------------------------------------------------ generator
 
-def test_generator_expands_curated_ranges_to_member_numbers():
-    gen = _gen()
-    assert gen._desig_keys("NGC 7317-7320") == \
-        {"ngc7317", "ngc7318", "ngc7319", "ngc7320"}
-    assert gen._desig_keys("NGC 2237-2246") == {f"ngc{n}" for n in range(2237, 2247)}
-    assert gen._desig_keys("NGC 650/651") == {"ngc650", "ngc651"}
-    assert gen._desig_keys("M31") == {"m31"}
-    assert gen._desig_keys("") == set()
-    assert gen._desig_keys("NGC 100-50") == {"ngc100"}   # broken range degrades
-
-
 def test_generator_global_uniqueness_guard_raises_on_collision():
     gen = _gen()
     with pytest.raises(SystemExit):
-        gen._assert_global_unique([{"id": "ngc2237"}])    # curated already owns it
-    gen._assert_global_unique([{"id": "zz9999"}])         # no collision -> no raise
+        gen._assert_global_unique([{"id": "ngc1976"}, {"id": "ngc1976"}])
+    gen._assert_global_unique([{"id": "ngc1976"}, {"id": "ngc224"}])   # no raise
+
+
+def test_generator_formats_openngc_designations():
+    gen = _gen()
+    assert gen.fmt_desig("NGC0224") == "NGC 224"
+    assert gen.fmt_desig("IC0001") == "IC 1"
+    assert gen.fmt_desig("ESO056-115") == "ESO 56-115"
+    assert gen.fmt_desig("Mel071") == "Mel 71"
 
 
 # --------------------------------------------------------------------- data
 
-def test_curated_ids_unique_and_token_safe():
-    ids = [r["id"] for r in curated_rows()]
-    assert len(ids) == len(set(ids))
-    for i in ids:
-        assert TOKEN.fullmatch(i), i
-
-
-def test_advanced_ids_unique_and_token_safe():
+def test_catalog_ids_unique_and_token_safe():
     ids = [r["id"] for r in _adv_rows()]
     assert len(ids) == len(set(ids))
     for i in ids:
         assert TOKEN.fullmatch(i), i
 
 
-def test_global_catalog_ids_unique():
-    ids = [r["id"] for r in curated_rows()] + [r["id"] for r in _adv_rows()]
-    dupes = sorted({i for i in ids if ids.count(i) > 1})
-    assert dupes == [], f"duplicate catalog ids: {dupes}"
-    assert len(ids) == len(set(ids))
+def test_openngc_objects_are_not_duplicated_by_designation():
+    """NGC 651 is OpenNGC's `Dup` row for NGC 650 and M40 is a `**` double star:
+    both are dropped, so a designation is not shipped twice."""
+    ids = {r["id"] for r in _adv_rows()}
+    ngcic = [r["ngcic"] for r in _adv_rows()]
+    assert len(ngcic) == len(set(ngcic))
+    assert "ngc650" in ids and "ngc651" not in ids
 
 
-def test_advanced_rows_wellformed():
+def test_rows_wellformed():
     for r in _adv_rows():
         assert r["primary_name"].strip(), r["id"]
         assert 0 <= float(r["ra_hours"]) < 24, r["id"]
         assert -90 <= float(r["dec_deg"]) <= 90, r["id"]
-        assert r["otype"] in TYPE_LABELS, (r["id"], r["otype"])
         if r["vmag"]:
             float(r["vmag"])
+        # OpenNGC rows carry no editorial text - blurbs/wiki/distance were a
+        # curated-catalog concept and are empty everywhere now
+        assert not (r["wiki"] or r["blurb"] or r["distance"]), r["id"]
 
 
 # ------------------------------------------------------- lookup / regression
 
-def test_colliding_ids_resolve_to_the_curated_composites(tmp_path):
-    """ngc2237 / ngc7317 must name the curated COMPOSITE in both apps, and the
-    advanced member rows must be absent from the data (not hidden by a map)."""
+def test_composite_and_former_curated_ids_are_plain_openngc_rows(tmp_path):
+    """`ngc2237`/`ngc7317` used to name curated COMPOSITES. They are now the
+    OpenNGC rows they always were, and every id resolves to exactly one object
+    in both the desktop DB and the web payload."""
     db = Database(tmp_path / "t.db")
-    assert db.get_object("ngc2237")["primary_name"] == "Rosette Nebula"
-    assert db.get_object("ngc7317")["primary_name"] == "Stephan's Quintet"
-    adv_ids = {o["id"] for o in db.all_objects(advanced=True) if o.get("_adv")}
-    assert "ngc2237" not in adv_ids
-    assert "ngc7317" not in adv_ids
+    assert db.get_object("ngc2237")["primary_name"] == "Rosette A"
+    assert db.get_object("ngc7317")["primary_name"] == "NGC 7317"
+    ids = [o["id"] for o in db.all_objects(advanced=True)]
+    assert len(ids) == len(set(ids))
 
 
-def test_existing_db_with_colliding_advanced_row_is_cleaned_on_start(tmp_path):
-    """A DB seeded before the fix still carries the member row; reopening must
-    drop it (the catalog-identity cleanup runs on every start)."""
-    p = tmp_path / "old.db"
-    db = Database(p)
-    db.conn.execute(
-        "INSERT OR IGNORE INTO advanced_objects(id,primary_name,otype,ra_hours,dec_deg) "
-        "VALUES('ngc2237','Rosetta A','nebula',6.5,5.0)")
-    db.conn.commit()
-    assert any(o["id"] == "ngc2237"
-               for o in db.all_objects(advanced=True) if o.get("_adv"))
-    db2 = Database(p)
-    assert not any(o["id"] == "ngc2237"
-                   for o in db2.all_objects(advanced=True) if o.get("_adv"))
-    assert db2.get_object("ngc2237")["primary_name"] == "Rosette Nebula"
+def test_curated_ids_are_gone_everywhere(tmp_path):
+    db = Database(tmp_path / "t.db")
+    for oid in ("m42", "m31", "m45", "lmc", "cr399"):
+        assert db.get_object(oid) is None, oid
+    # ... but the objects they named are present under their OpenNGC id
+    assert db.get_object("ngc1976") is not None      # M42
+    assert db.get_object("mel22") is not None        # M45
+    assert db.get_object("eso56-115") is not None    # LMC
 
 
 def test_web_catalog_ids_unique_and_resolve_like_desktop(tmp_path):
@@ -141,3 +136,52 @@ def test_web_catalog_ids_unique_and_resolve_like_desktop(tmp_path):
         got = db.get_object(o["id"])
         assert got is not None, o["id"]
         assert got["primary_name"] == o["primary_name"], o["id"]
+
+
+def test_web_catalog_standard_split_matches_the_rule(tmp_path):
+    """`_adv: false` is the standard-mode selection and nothing else."""
+    cat = json.loads(CATALOG_JSON.read_text(encoding="utf-8"))
+    standard = {o["id"] for o in cat if not o["_adv"]}
+    assert len(standard) == STANDARD_TOP_N
+    assert standard == standard_ids([o["id"] for o in cat])
+
+
+# ------------------------------------------------------- advertised catalog size
+
+# Every user-facing claim about the catalog size, with the text that carries it.
+# A claim is a PROMISE about the shipped data, so it is pinned to the data.
+ADVERTISED_SIZE = [
+    ("web/index.html", r"Catalog: OpenNGC \(([\d,]+) objects\)"),
+    ("web/app.js", r"search/sort across ([\d,]+) objects"),
+    ("landing/index.html", r"OpenNGC \(NGC/IC \+ addendum\): ([\d,]+) objects"),
+    ("landing/index.html", r"computed entirely in your browser\. ([\d,]+) objects"),
+    ("landing/about.html", r"<b>([\d,]+)</b><span>catalog objects</span>"),
+]
+ADVERTISED_SITES = 6          # web/index.html meta + footer, app.js, 2x landing, about
+
+
+def test_advertised_catalog_size_matches_the_shipped_catalog():
+    real = f"{sum(1 for _ in _adv_rows()):,}"
+    seen = []
+    for rel, pattern in ADVERTISED_SIZE:
+        text = (ROOT / rel).read_text(encoding="utf-8")
+        seen += [(rel, n) for n in re.findall(pattern, text)]
+    assert len(seen) == ADVERTISED_SITES, (
+        f"expected {ADVERTISED_SITES} advertised catalog size(s), found "
+        f"{len(seen)}: {seen}")
+    for rel, shown in seen:
+        assert shown == real, (
+            f"{rel} advertises {shown} catalog objects but the shipped catalog "
+            f"has {real} - the copy is stale or the data changed without it")
+
+
+def test_catalog_csv_and_web_payload_describe_the_same_catalog(tmp_path):
+    """The CSV (desktop seed) and web/catalog.json (web payload) must describe
+    the same catalog - the web file is generated FROM the CSV, so a divergence
+    means one of them was hand-edited."""
+    rows = list(_adv_rows())
+    cat = json.loads(CATALOG_JSON.read_text(encoding="utf-8"))
+    assert len(cat) == len(rows)
+    assert {o["id"] for o in cat} == {r["id"] for r in rows}
+    db = Database(tmp_path / "t.db")
+    assert db.advanced_count() + STANDARD_TOP_N == len(rows)

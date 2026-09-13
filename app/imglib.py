@@ -29,8 +29,12 @@ def name_key(s: str) -> str:
 
 
 def normalize_catalog(catalog: list[dict]) -> list[dict]:
-    """Map catalog rows to one shape whether they come from the database
-    (primary_name / size_am) or catalog_data.rows() (primary / size)."""
+    """Map catalog rows to one shape.
+
+    Both catalog tables (`objects` and `advanced_objects`) already carry the
+    `primary_name` / `otype` / `size_am` names; the `primary` / `type` / `size`
+    alternatives are accepted so a caller holding an older shape still works.
+    """
     out = []
     for o in catalog:
         out.append({
@@ -254,7 +258,20 @@ def group_library(images: list[dict], catalog: list[dict]) -> list[dict]:
     objects = []
     rows = normalize_catalog(catalog)
     for g in by_key.values():
-        row = _by_id(rows, g["object_id"]) if g["object_id"] else None
+        row = None
+        if g["object_id"]:
+            row = _by_id(rows, g["object_id"])
+            if row is None:
+                # A stored id can vanish when the CATALOG changes (the curated
+                # list was replaced by OpenNGC ids: an old capture resolved to
+                # 'm42', the catalog now names that object 'ngc1976').
+                # Re-resolve from the capture's own OBJECT header / coordinates -
+                # the same path an ingest takes - before calling a real capture
+                # "Unknown object". A capture that was never resolved
+                # (object_id is None) stays unresolved: that is user intent.
+                first = g["images"][0]
+                row = resolve_object(rows, first.get("object_name"),
+                                     first.get("ra_hours"), first.get("dec_deg"))
         if row:
             g["name"] = row["primary_name"] or g["object_id"]
             g["designation"] = designation_of(row, g["images"][0])

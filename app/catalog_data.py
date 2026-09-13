@@ -1,11 +1,19 @@
-"""Curated deep-sky catalog: 110 Messier objects + famous NGC/IC/other showpieces.
+"""Catalog policy: the object-type vocabulary and the standard-mode selection.
 
-Row format:
-(id, common_name, messier, ngc_ic, other_designations, object_type,
- ra_hours_j2000, dec_deg_j2000, vmag_or_None, size_arcmin_str,
- constellation_iau, distance_string, wikipedia_title_or_None, blurb)
+The catalog DATA is OpenNGC - `app/data/openned.csv`, built by
+`scripts/build_adv_catalog.py` from `database_files/NGC.csv` + `addendum.csv`.
+There is NO hand-curated object list any more (the 197-object list that used to
+live here was removed): every row in either mode is an OpenNGC object.
 
-Coordinates/magnitudes are standard published values (J2000).
+What this module owns is the policy both shells share:
+
+  * `TYPE_LABELS` - the object-type vocabulary an OpenNGC type is mapped into
+    (`core/catalog.js` documents the same palette), and
+  * `STANDARD_TOP_N` / `standard_ids()` - standard mode is the N MOST POPULAR
+    objects (`app/popularity_data.py`), advanced mode is the whole catalog.
+    Popularity itself stays INVISIBLE in both UIs (it is a silent ranking
+    tiebreaker, pinned by `tests/test_ui_invariants.py`) - it only decides
+    WHICH objects the standard list contains.
 """
 
 TYPE_LABELS = {
@@ -19,316 +27,24 @@ TYPE_LABELS = {
     "star_cloud": "Star cloud",
 }
 
-# The popularity source community popularity scores (193 of 197 curated objects matched;
-# the other 4 — ngc2244, abell21, jones1, smc — are absent from the popularity source).
-# Used as a silent tiebreaker in target ranking — objects with higher scores
-# rank first when all else (altitude, moon distance) is equal.
-POPULARITY = {
-    "m42": 165530, "m31": 161360, "m81": 121980, "ngc7000": 119690,
-    "m101": 114810, "m45": 114250, "m33": 111460, "m51": 109750,
-    "ic1396": 107420, "m43": 91260, "ic5070": 88370, "ngc6960": 87570,
-    "ic1805": 82580, "m16": 76360, "ngc6888": 75550, "m82": 74850,
-    "m27": 73260, "m13": 72460, "m8": 72180, "ngc6992": 66830,
-    "m20": 66220, "ngc281": 64760, "ngc1499": 64630, "ngc7023": 64340,
-    "ngc2024": 64110, "ic1848": 63650, "ngc7635": 62860, "ic405": 55980,
-    "m1": 54720, "m63": 49440, "ngc2264": 49050, "ngc7293": 49030,
-    "ngc6946": 47610, "m17": 46700, "m104": 45660, "m94": 41230,
-    "ic5146": 40370, "m57": 39790, "m64": 37300, "ngc3628": 37250,
-    "ngc2359": 28580, "m15": 27490, "ngc891": 27470, "m74": 27180,
-    "ngc253": 26910, "ic342": 26870, "ic1318": 26630, "ngc3372": 26580,
-    "m97": 25770, "ngc6543": 24550, "m83": 23200, "m44": 20400,
-    "m32": 20370, "m52": 20110, "sh2-276": 19840, "m77": 17490,
-    "sh2-155": 17330, "ngc5128": 17220, "ic4604": 16110, "m22": 15920,
-    "m102": 15880, "m76": 15660, "m108": 15190, "m87": 14550,
-    "ngc869": 13760, "ngc6334": 13180, "ngc5139": 13160, "m99": 12620,
-    "m24": 12480, "ngc884": 11450, "ngc6826": 11040, "m11": 10890,
-    "ngc7662": 10710, "ngc2392": 9940, "m37": 9880, "ngc1365": 9780,
-    "ngc4490": 9540, "m34": 9390, "ngc7317": 8820, "ngc7009": 8730, "ngc2070": 8530,
-    "m38": 8460, "m7": 8000, "lmc": 7940, "ngc104": 7780, "ngc6357": 7510,
-    "m29": 7470, "ngc2237": 7176, "m36": 7110, "m6": 6660, "ngc3242": 6590,
-    "ngc7789": 6240, "m106": 6016, "m110": 5495, "ngc3532": 5030,
-    "m50": 4920, "ngc40": 4310, "ngc6302": 4280, "cr399": 4010, "ic2602": 4000,
-    "m66": 3918, "ngc2419": 3910, "ngc5195": 3784, "mel25": 3750, "ngc1360": 3570,
-    "m65": 3545, "ngc7380": 3505, "mel111": 3490, "m3": 3419, "ngc4565": 3355,
-    "ngc2403": 3296, "m40": 3040, "m78": 2874, "ngc6752": 2800,
-    "m5": 2635, "m92": 2602, "mel20": 2580, "ngc7331": 2526, "m100": 2048,
-    "ngc2903": 2032, "ngc2362": 2020, "ngc6231": 2020, "m4": 1867,
-    "m109": 1754, "m12": 1637, "ngc2516": 1610, "m53": 1547,
-    "m96": 1513, "m2": 1476, "m86": 1472, "m10": 1414,
-    "ngc2174": 1353, "m21": 1241, "m35": 1202, "m95": 1171,
-    "m90": 1161, "m88": 1125, "m61": 1105, "b33": 1085,
-    "m56": 1061, "m84": 1014, "m14": 939, "m58": 938,
-    "m98": 915, "m39": 904, "m49": 888, "m71": 869,
-    "m60": 841, "m67": 770, "m85": 767, "m46": 739,
-    "ngc4449": 699, "m55": 664, "m105": 660, "m91": 649,
-    "m107": 639, "m30": 633, "m47": 633, "m41": 609,
-    "ngc4559": 606, "m103": 584, "m9": 577, "m80": 570,
-    "ngc6939": 549, "ngc3115": 534, "m28": 510, "m19": 498,
-    "m62": 498, "m48": 494, "m68": 488, "m79": 485,
-    "m59": 470, "m25": 468, "m23": 464, "m72": 458,
-    "m89": 427, "m75": 417, "m54": 382, "m18": 381,
-    "ic4665": 372, "m26": 355, "m93": 350, "ngc188": 338,
-    "m70": 322, "m69": 298, "ngc6633": 281, "ngc752": 273,
-    "m73": 270, "ngc2281": 243, "ngc6397": 222, "ngc2158": 207,
-    "ngc7006": 195, "ngc2451": 107,
-}
-
-_ROWS = [
-    # ------------------------- Messier catalog -------------------------
-    ("m1", "Crab Nebula", "M1", "NGC 1952", "Sh2-244", "supernova_remnant", 5.575, 22.017, 8.4, "6x4", "Tau", "6500 ly", "Crab Nebula", "Famous supernova remnant from AD 1054 with a pulsar at its heart."),
-    ("m2", "", "M2", "NGC 7089", "", "globular", 21.558, -0.823, 6.5, "16", "Aqr", "37,500 ly", None, "Rich, compact globular cluster that resolves well in medium apertures."),
-    ("m3", "", "M3", "NGC 5272", "", "globular", 13.705, 28.383, 6.2, "18", "CVn", "33,900 ly", None, "One of the finest northern globulars, densely packed with hundreds of thousands of stars."),
-    ("m4", "", "M4", "NGC 6121", "", "globular", 16.393, -26.526, 5.9, "26", "Sco", "7,200 ly", None, "Nearest globular cluster, loose and bright beside Antares."),
-    ("m5", "", "M5", "NGC 5904", "", "globular", 15.310, 2.083, 5.7, "23", "Ser", "24,500 ly", None, "Superb globular often rated equal to or finer than M13."),
-    ("m6", "Butterfly Cluster", "M6", "NGC 6405", "", "open_cluster", 17.668, -32.217, 4.2, "25", "Sco", "1,600 ly", None, "Bright open cluster whose star chains resemble a butterfly."),
-    ("m7", "Ptolemy Cluster", "M7", "NGC 6475", "", "open_cluster", 17.898, -34.793, 3.3, "80", "Sco", "980 ly", "Ptolemy Cluster", "Large, conspicuous naked-eye cluster known since antiquity."),
-    ("m8", "Lagoon Nebula", "M8", "NGC 6523", "", "nebula", 18.063, -24.383, 6.0, "45x30", "Sgr", "4,100 ly", "Lagoon Nebula", "Bright star-forming nebula split by a dark dust lane, with the cluster NGC 6530 embedded."),
-    ("m9", "", "M9", "NGC 6333", "", "globular", 17.320, -18.517, 7.7, "12", "Oph", "25,800 ly", None, "Small globular near the galactic center, partially dimmed by dust."),
-    ("m10", "", "M10", "NGC 6254", "", "globular", 16.952, -4.100, 6.6, "20", "Oph", "14,400 ly", None, "Fine globular with a slightly irregular, loose core."),
-    ("m11", "Wild Duck Cluster", "M11", "NGC 6705", "", "open_cluster", 18.852, -6.267, 6.3, "14", "Sct", "6,000 ly", "Wild Duck Cluster", "Dense, rich open cluster resembling a flock of ducks; one of the richest known."),
-    ("m12", "", "M12", "NGC 6218", "", "globular", 16.787, -1.950, 6.7, "16", "Oph", "15,700 ly", None, "Looser companion of M10 with easily resolved outer stars."),
-    ("m13", "Great Hercules Cluster", "M13", "NGC 6205", "", "globular", 16.695, 36.467, 5.8, "20", "Her", "22,200 ly", "Messier 13", "The great globular of the northern sky, resplendent in scopes of any size."),
-    ("m14", "", "M14", "NGC 6402", "", "globular", 17.627, -3.250, 7.6, "11", "Oph", "30,300 ly", None, "Elongated, modest-surface-brightness globular in Ophiuchus."),
-    ("m15", "", "M15", "NGC 7078", "", "globular", 21.500, 12.167, 6.2, "18", "Peg", "33,600 ly", None, "Extremely dense globular with one of the most brilliant cores known."),
-    ("m16", "Eagle Nebula", "M16", "NGC 6611", "", "nebula", 18.313, -13.783, 6.0, "35x25", "Ser", "7,000 ly", "Eagle Nebula", "Emission nebula with the young cluster NGC 6611; home of the Pillars of Creation."),
-    ("m17", "Omega / Swan Nebula", "M17", "NGC 6618", "", "nebula", 18.347, -16.183, 6.0, "20x10", "Sgr", "5,500 ly", "Omega Nebula", "Bright, sculpted H-II region resembling a swan or checkmark; superb imaging target."),
-    ("m18", "", "M18", "NGC 6613", "", "open_cluster", 18.332, -17.133, 6.9, "9", "Sgr", "4,200 ly", None, "Sparse young open cluster between M17 and M24."),
-    ("m19", "", "M19", "NGC 6273", "", "globular", 17.043, -26.267, 6.8, "17", "Oph", "28,000 ly", None, "Notably oblate globular close to the galactic center."),
-    ("m20", "Trifid Nebula", "M20", "NGC 6514", "", "nebula", 18.038, -23.033, 6.3, "28", "Sgr", "5,200 ly", "Trifid Nebula", "Colorful emission/reflection nebula divided into three lobes by dark lanes."),
-    ("m21", "", "M21", "NGC 6531", "", "open_cluster", 18.077, -22.500, 5.9, "13", "Sgr", "4,250 ly", None, "Compact young cluster just north of the Trifid Nebula."),
-    ("m22", "", "M22", "NGC 6656", "", "globular", 18.607, -23.900, 5.1, "24", "Sgr", "10,600 ly", "Messier 22", "Large, bright naked-eye globular, among the finest visible from mid-northern latitudes."),
-    ("m23", "", "M23", "NGC 6494", "", "open_cluster", 17.947, -19.017, 6.9, "27", "Sgr", "2,150 ly", None, "Loose, rich open cluster best in binoculars or low-power views."),
-    ("m24", "Sagittarius Star Cloud", "M24", "IC 4715", "", "star_cloud", 18.282, -18.483, 4.6, "90x60", "Sgr", "~10,000 ly", "Messier 24", "A dazzling window into the Milky Way's central bulge framed by dark nebulosity."),
-    ("m25", "", "M25", "IC 4725", "", "open_cluster", 18.527, -19.250, 4.6, "32", "Sgr", "2,000 ly", None, "Bright open cluster with a pleasing scattered arrangement of stars."),
-    ("m26", "", "M26", "NGC 6694", "", "open_cluster", 18.754, -9.400, 8.0, "15", "Sct", "5,000 ly", None, "Small open cluster with an intriguing wedge-shaped star void."),
-    ("m27", "Dumbbell Nebula", "M27", "NGC 6853", "", "planetary", 19.993, 22.717, 7.4, "8x5", "Vul", "1,360 ly", "Dumbbell Nebula", "Classic bipolar planetary nebula; the brightest of its class for small scopes."),
-    ("m28", "", "M28", "NGC 6626", "", "globular", 18.408, -24.867, 6.8, "11", "Sgr", "17,900 ly", None, "Compact, concentrated globular near M22."),
-    ("m29", "", "M29", "NGC 6913", "", "open_cluster", 20.398, 38.533, 6.6, "7", "Cyg", "4,000 ly", None, "Small group of hot stars set against the Cygnus star clouds."),
-    ("m30", "", "M30", "NGC 7099", "", "globular", 21.674, -23.183, 7.2, "12", "Cap", "26,100 ly", None, "Condensed globular with striking star chains radiating from its core."),
-    ("m31", "Andromeda Galaxy", "M31", "NGC 224", "UGC 454", "galaxy", 0.712, 41.269, 3.4, "190x60", "And", "2.5 Mly", "Andromeda Galaxy", "The nearest major spiral galaxy and the most distant object visible to the unaided eye."),
-    ("m32", "", "M32", "NGC 221", "", "galaxy", 0.712, 40.867, 8.1, "8x7", "And", "2.6 Mly", "Messier 32", "Compact elliptical satellite galaxy of M31."),
-    ("m33", "Triangulum Galaxy", "M33", "NGC 598", "", "galaxy", 1.564, 30.660, 5.7, "70x40", "Tri", "3.0 Mly", "Triangulum Galaxy", "Large face-on spiral with low surface brightness; rewarding under dark skies."),
-    ("m34", "", "M34", "NGC 1039", "", "open_cluster", 2.700, 42.783, 5.2, "35", "Per", "1,500 ly", None, "Coarse but pretty open cluster midway between Algol and Gamma Andromedae."),
-    ("m35", "", "M35", "NGC 2168", "", "open_cluster", 6.150, 24.333, 5.1, "28", "Gem", "2,800 ly", None, "Rich open cluster paired with the smaller NGC 2158 in the same field."),
-    ("m36", "", "M36", "NGC 1960", "", "open_cluster", 5.605, 34.133, 6.0, "12", "Aur", "4,100 ly", None, "Bright young cluster in Auriga with a pinwheel-like outline."),
-    ("m37", "", "M37", "NGC 2099", "", "open_cluster", 5.872, 32.550, 5.6, "24", "Aur", "4,500 ly", None, "The richest Auriga cluster, glowing with orange giant stars."),
-    ("m38", "", "M38", "NGC 1912", "", "open_cluster", 5.478, 35.833, 6.4, "21", "Aur", "4,200 ly", None, "Open cluster with a distinctive cross or Greek-letter shape; NGC 1907 sits nearby."),
-    ("m39", "", "M39", "NGC 7092", "", "open_cluster", 21.531, 48.450, 4.6, "32", "Cyg", "1,000 ly", None, "Large, sparse triangular cluster ideal for wide fields."),
-    ("m40", "Winnecke 4", "M40", "", "WNC 4", "asterism", 12.370, 58.083, 8.4, "0.8", "UMa", "~510 ly", None, "A mere double star that entered Messier's list by accident."),
-    ("m41", "", "M41", "NGC 2287", "", "open_cluster", 6.767, -20.733, 4.5, "38", "CMa", "2,300 ly", "Messier 41", "Bright winter open cluster just south of Sirius."),
-    ("m42", "Orion Nebula", "M42", "NGC 1976", "", "nebula", 5.588, -5.391, 4.0, "85x60", "Ori", "1,350 ly", "Orion Nebula", "The brightest diffuse nebula in the sky and a stellar nursery par excellence."),
-    ("m43", "de Mairan's Nebula", "M43", "NGC 1982", "", "nebula", 5.592, -5.270, 9.0, "20x15", "Ori", "1,600 ly", "Messier 43", "Comma-shaped lobe of nebulosity separated from M42 by a dark lane."),
-    ("m44", "Beehive Cluster / Praesepe", "M44", "NGC 2632", "Mel 88, Cr 189", "open_cluster", 8.673, 19.983, 3.1, "95", "Cnc", "577 ly", "Beehive Cluster", "Prominent naked-eye cluster also known as Praesepe."),
-    ("m45", "Pleiades / Seven Sisters", "M45", "", "Mel 22, Cr 42", "open_cluster", 3.792, 24.117, 1.2, "110", "Tau", "444 ly", "Pleiades", "Iconic naked-eye cluster wrapped in blue reflection nebulosity."),
-    ("m46", "", "M46", "NGC 2437", "", "open_cluster", 7.697, -14.817, 6.1, "27", "Pup", "4,900 ly", None, "Rich cluster containing the tiny planetary nebula NGC 2438."),
-    ("m47", "", "M47", "NGC 2422", "", "open_cluster", 7.611, -14.500, 4.4, "30", "Pup", "1,600 ly", None, "Bright, coarse cluster of mixed-magnitude stars."),
-    ("m48", "", "M48", "NGC 2548", "", "open_cluster", 8.230, -5.800, 5.8, "54", "Hya", "2,500 ly", None, "Large, loose open cluster in the Hydra wilderness."),
-    ("m49", "", "M49", "NGC 4472", "", "galaxy", 12.497, 8.000, 8.4, "10x8", "Vir", "56 Mly", "Messier 49", "Bright giant elliptical anchoring the southern Virgo cluster."),
-    ("m50", "", "M50", "NGC 2323", "", "open_cluster", 7.053, -8.333, 5.9, "16", "Mon", "3,200 ly", None, "Heart-shaped open cluster between Sirius and Procyon."),
-    ("m51", "Whirlpool Galaxy", "M51", "NGC 5194", "", "galaxy", 13.498, 47.195, 8.4, "11x7", "CVn", "23 Mly", "Whirlpool Galaxy", "Grand-design spiral interacting with companion NGC 5195; a showpiece face-on galaxy."),
-    ("m52", "", "M52", "NGC 7654", "", "open_cluster", 23.413, 61.583, 6.9, "13", "Cas", "5,000 ly", None, "Dense open cluster near the Bubble Nebula."),
-    ("m53", "", "M53", "NGC 5024", "", "globular", 13.215, 18.167, 7.6, "13", "Com", "58,000 ly", None, "Remote, tightly packed globular on the Coma-Virgo border."),
-    ("m54", "", "M54", "NGC 6715", "", "globular", 18.918, -30.483, 7.6, "9", "Sgr", "87,500 ly", None, "Extragalactic globular actually belonging to the Sagittarius dwarf galaxy."),
-    ("m55", "", "M55", "NGC 6809", "", "globular", 19.667, -30.967, 6.3, "19", "Sgr", "17,600 ly", None, "Large, loosely structured globular that is easy to resolve."),
-    ("m56", "", "M56", "NGC 6779", "", "globular", 19.277, 30.183, 8.3, "7", "Lyr", "33,000 ly", None, "Modest globular halfway between Albireo and Vega."),
-    ("m57", "Ring Nebula", "M57", "NGC 6720", "", "planetary", 18.893, 33.029, 8.8, "1.4", "Lyr", "2,300 ly", "Ring Nebula", "The archetypal ring-shaped planetary nebula between Beta and Gamma Lyrae."),
-    ("m58", "", "M58", "NGC 4579", "", "galaxy", 12.628, 11.817, 9.7, "5.5x4.5", "Vir", "62 Mly", None, "Barred spiral and one of the brightest Virgo cluster members."),
-    ("m59", "", "M59", "NGC 4621", "", "galaxy", 12.700, 11.650, 9.6, "5x3.5", "Vir", "52 Mly", None, "Compact elliptical in the Virgo cluster heart."),
-    ("m60", "", "M60", "NGC 4649", "", "galaxy", 12.728, 11.550, 8.8, "7x6", "Vir", "55 Mly", None, "Massive elliptical with the faint companion NGC 4647."),
-    ("m61", "", "M61", "NGC 4303", "", "galaxy", 12.365, 4.467, 9.7, "6x5.5", "Vir", "55 Mly", None, "Face-on barred spiral with prominent knotty arms."),
-    ("m62", "", "M62", "NGC 6266", "", "globular", 17.020, -30.117, 6.6, "14", "Oph", "22,000 ly", None, "Irregular, highly condensed globular distorted by tides."),
-    ("m63", "Sunflower Galaxy", "M63", "NGC 5055", "", "galaxy", 13.264, 42.033, 8.6, "12x8", "CVn", "29 Mly", "Sunflower Galaxy", "Flocculent spiral with petal-like arm fragments."),
-    ("m64", "Black Eye Galaxy", "M64", "NGC 4826", "", "galaxy", 12.945, 21.683, 8.5, "9x5", "Com", "17 Mly", "Black Eye Galaxy", "Spiral marked by a dramatic dark dust band hugging its nucleus."),
-    ("m65", "", "M65", "NGC 3623", "", "galaxy", 11.315, 13.083, 9.3, "10x3", "Leo", "35 Mly", None, "Tilted spiral forming the Leo Triplet with M66 and NGC 3628."),
-    ("m66", "", "M66", "NGC 3627", "", "galaxy", 11.337, 12.992, 9.0, "9x4", "Leo", "36 Mly", None, "Asymmetric spiral whose arms were warped by past encounters."),
-    ("m67", "", "M67", "NGC 2682", "", "open_cluster", 8.855, 11.817, 6.1, "30", "Cnc", "2,700 ly", "Messier 67", "Unusually old open cluster popular with stellar researchers."),
-    ("m68", "", "M68", "NGC 4590", "", "globular", 12.658, -26.750, 7.8, "11", "Hya", "33,000 ly", None, "Metal-poor globular with beautifully resolved fringes."),
-    ("m69", "", "M69", "NGC 6637", "", "globular", 18.524, -32.350, 7.6, "7", "Sgr", "29,700 ly", None, "Small, compact globular near M70."),
-    ("m70", "", "M70", "NGC 6681", "", "globular", 18.720, -32.300, 7.9, "8", "Sgr", "29,500 ly", None, "Tight, core-collapsed globular close to the galactic center."),
-    ("m71", "", "M71", "NGC 6838", "", "globular", 19.897, 18.783, 8.2, "7", "Sge", "12,000 ly", None, "Loose globular once misclassified as a dense open cluster."),
-    ("m72", "", "M72", "NGC 6981", "", "globular", 20.892, -12.533, 9.3, "6", "Aqr", "55,400 ly", None, "Faint, distant globular needing aperture to resolve."),
-    ("m73", "", "M73", "NGC 6994", "", "asterism", 20.983, -12.633, 8.9, "2.8", "Aqr", None, None, "Y-shaped asterism of four unrelated stars."),
-    ("m74", "Phantom Galaxy", "M74", "NGC 628", "", "galaxy", 1.612, 15.783, 9.4, "10x9", "Psc", "32 Mly", "Messier 74", "Perfect grand-design face-on spiral; grand in photos, subtle in eyepieces."),
-    ("m75", "", "M75", "NGC 6864", "", "globular", 20.102, -21.917, 8.5, "7", "Sgr", "67,500 ly", None, "Remote, strongly concentrated globular."),
-    ("m76", "Little Dumbbell Nebula", "M76", "NGC 650/651", "", "planetary", 1.706, 51.583, 10.1, "2.7x1.8", "Per", "2,500 ly", "Little Dumbbell Nebula", "Small bipolar planetary nebula; tougher cousin of M27."),
-    ("m77", "Cetus A", "M77", "NGC 1068", "", "galaxy", 2.712, -0.017, 8.9, "7x6", "Cet", "47 Mly", "Messier 77", "Bright Seyfert active galaxy with a luminous core."),
-    ("m78", "", "M78", "NGC 2068", "", "nebula", 5.780, 0.083, 8.3, "8x6", "Ori", "1,600 ly", "Messier 78", "Reflection nebula pair swept by dark dust in Orion."),
-    ("m79", "", "M79", "NGC 1904", "", "globular", 5.404, -24.517, 7.7, "9", "Lep", "41,000 ly", None, "Compact winter globular below Lepus."),
-    ("m80", "", "M80", "NGC 6093", "", "globular", 16.284, -22.983, 7.3, "10", "Sco", "32,600 ly", None, "Small, intensely bright globular resembling a fuzzy comet."),
-    ("m81", "Bode's Galaxy", "M81", "NGC 3031", "", "galaxy", 9.926, 69.067, 6.9, "27x14", "UMa", "12 Mly", "Bode's Galaxy", "Magnificent tilted spiral paired with the starburst galaxy M82 nearby."),
-    ("m82", "Cigar Galaxy", "M82", "NGC 3034", "", "galaxy", 9.931, 69.683, 8.4, "11x4", "UMa", "11.5 Mly", "Cigar Galaxy", "Violently star-forming galaxy crossed by dark lanes; superb astrophotography target."),
-    ("m83", "Southern Pinwheel", "M83", "NGC 5236", "", "galaxy", 13.617, -29.867, 7.5, "13x12", "Hya", "15 Mly", "Southern Pinwheel Galaxy", "Grand face-on southern spiral with a double nucleus and prolific supernova history."),
-    ("m84", "", "M84", "NGC 4374", "", "galaxy", 12.419, 12.883, 9.1, "6x6", "Vir", "60 Mly", None, "Round elliptical marking the Markarian Chain of Virgo galaxies."),
-    ("m85", "", "M85", "NGC 4382", "", "galaxy", 12.423, 18.183, 9.1, "7x5", "Com", "60 Mly", None, "Lenticular galaxy at the northern edge of the Virgo cluster."),
-    ("m86", "", "M86", "NGC 4406", "", "galaxy", 12.437, 12.950, 8.9, "12x9", "Vir", "52 Mly", None, "Luminous lenticular falling into the Virgo core at high speed."),
-    ("m87", "Virgo A", "M87", "NGC 4486", "Vir A", "galaxy", 12.514, 12.400, 8.6, "8x7", "Vir", "54 Mly", "Messier 87", "Giant elliptical hosting the first black hole ever imaged (Event Horizon Telescope)."),
-    ("m88", "", "M88", "NGC 4501", "", "galaxy", 12.534, 14.417, 9.6, "7x4", "Com", "47 Mly", None, "Multi-arm spiral seen at a steep inclination."),
-    ("m89", "", "M89", "NGC 4552", "", "galaxy", 12.596, 12.550, 9.8, "5x5", "Vir", "50 Mly", None, "Nearly perfect circular elliptical surrounded by globulars."),
-    ("m90", "", "M90", "NGC 4569", "", "galaxy", 12.614, 13.167, 9.5, "10x5", "Vir", "40 Mly", None, "Graceful spiral currently leaving the Virgo cluster."),
-    ("m91", "", "M91", "NGC 4548", "", "galaxy", 12.590, 14.500, 10.2, "5x4", "Com", "52 Mly", None, "Barred spiral that is the faintest Messier galaxy."),
-    ("m92", "", "M92", "NGC 6341", "", "globular", 17.286, 43.133, 6.4, "14", "Her", "26,700 ly", None, "Splendid globular overshadowed only by its neighbor M13."),
-    ("m93", "", "M93", "NGC 2447", "", "open_cluster", 7.742, -23.867, 6.2, "22", "Pup", "3,600 ly", None, "Compact open cluster with a fan-shaped outline."),
-    ("m94", "", "M94", "NGC 4736", "", "galaxy", 12.848, 41.117, 8.2, "11x9", "CVn", "16 Mly", None, "Cat's-eye spiral with a dazzling inner ring."),
-    ("m95", "", "M95", "NGC 3351", "", "galaxy", 10.733, 11.700, 9.7, "7x5", "Leo", "38 Mly", None, "Barred spiral encircled by an elegant inner ring."),
-    ("m96", "", "M96", "NGC 3368", "", "galaxy", 10.780, 11.817, 9.2, "7x5", "Leo", "38 Mly", None, "Asymmetric spiral leading the Leo I galaxy group."),
-    ("m97", "Owl Nebula", "M97", "NGC 3587", "", "planetary", 11.247, 55.017, 9.9, "3.4", "UMa", "2,000 ly", "Owl Nebula", "Round planetary whose two dark eyes give it its name; pairs with M108 nearby."),
-    ("m98", "", "M98", "NGC 4192", "", "galaxy", 12.230, 14.900, 10.1, "10x3", "Com", "44 Mly", None, "Edge-on spiral plunging toward the Virgo cluster."),
-    ("m99", "", "M99", "NGC 4254", "", "galaxy", 12.313, 14.417, 9.9, "5x5", "Com", "56 Mly", None, "Pinwheel-style spiral pulled askew by a high-speed encounter."),
-    ("m100", "", "M100", "NGC 4321", "", "galaxy", 12.381, 15.817, 9.3, "7x6", "Com", "55 Mly", None, "Grand-design spiral famous for Cepheid-based distance work."),
-    ("m101", "Pinwheel Galaxy", "M101", "NGC 5457", "UGC 8981", "galaxy", 14.053, 54.349, 7.9, "29x27", "UMa", "21 Mly", "Pinwheel Galaxy", "Enormous face-on spiral studded with pink H-II regions; a favorite of imagers."),
-    ("m102", "Spindle Galaxy", "M102", "NGC 5866", "", "galaxy", 15.108, 55.767, 9.9, "6x3", "Dra", "50 Mly", "Spindle Galaxy (NGC 5866)", "Sharp-edged lenticular galaxy with a fine equatorial dust lane."),
-    ("m103", "", "M103", "NGC 581", "", "open_cluster", 1.557, 60.650, 7.4, "6", "Cas", "8,500 ly", None, "Compact cluster dominated by a red giant and a striking double star."),
-    ("m104", "Sombrero Galaxy", "M104", "NGC 4594", "", "galaxy", 12.667, -11.617, 8.0, "9x4", "Vir", "29 Mly", "Sombrero Galaxy", "Edge-on spiral crowned by a vast dust lane and huge halo of globular clusters."),
-    ("m105", "", "M105", "NGC 3379", "", "galaxy", 10.797, 12.583, 9.3, "5x5", "Leo", "38 Mly", None, "Elliptical flanked by NGC 3384 and NGC 3389 in one field."),
-    ("m106", "", "M106", "NGC 4258", "", "galaxy", 12.317, 47.300, 8.4, "19x8", "CVn", "24 Mly", "Messier 106", "Active Seyfert spiral with anomalous extra arms visible in images."),
-    ("m107", "", "M107", "NGC 6171", "", "globular", 16.542, -13.050, 7.9, "10", "Oph", "20,900 ly", None, "Loose, dust-obscured globular added to the catalog in 1947."),
-    ("m108", "Surfboard Galaxy", "M108", "NGC 3556", "", "galaxy", 11.192, 55.667, 10.0, "8x2", "UMa", "45 Mly", None, "Thin edge-on spiral mottled with dust patches near the Owl Nebula."),
-    ("m109", "", "M109", "NGC 3992", "", "galaxy", 11.960, 53.383, 9.8, "8x7", "UMa", "55 Mly", None, "Barred spiral sitting southeast of Gamma Ursae Majoris."),
-    ("m110", "", "M110", "NGC 205", "", "galaxy", 0.673, 41.683, 8.1, "17x10", "And", "2.9 Mly", "Messier 110", "Larger elliptical companion of the Andromeda Galaxy."),
-
-    # ------------------------- Famous non-Messier objects -------------------------
-    # Open clusters
-    ("ngc869", "h Persei (Double Cluster)", "", "NGC 869", "Caldwell 14, Cr 24", "open_cluster", 2.333, 57.133, 5.3, "29", "Per", "7,500 ly", "Double Cluster", "Western half of the glorious Double Cluster."),
-    ("ngc884", "Chi Persei (Double Cluster)", "", "NGC 884", "Caldwell 14, Cr 25", "open_cluster", 2.367, 57.117, 6.1, "29", "Per", "7,500 ly", "Double Cluster", "Eastern half of the Double Cluster; both fit in wide-field views together."),
-    ("mel20", "Alpha Persei Cluster", "", "", "Mel 20, Cr 39", "open_cluster", 3.370, 49.000, 1.2, "185", "Per", "570 ly", "Alpha Persei Cluster", "Sprawling naked-eye cluster around Mirfak, best in binoculars."),
-    ("mel25", "Hyades", "", "", "Mel 25, Collinder 41", "open_cluster", 4.450, 15.870, 0.5, "330", "Tau", "153 ly", "Hyades", "The nearest open cluster, forming the V-shaped head of Taurus."),
-    ("mel111", "Coma Star Cluster", "", "", "Mel 111, Cr 256", "open_cluster", 12.375, 25.850, 1.8, "275", "Com", "280 ly", "Coma Star Cluster", "Wide Y-shaped scatter of stars visible to the naked eye in spring."),
-    ("cr399", "Coathanger / Brocchi's Cluster", "", "", "Collinder 399", "asterism", 19.423, 20.183, 3.6, "60", "Vul", "~2,000 ly", "Brocchi's Cluster", "Unmistakable coat-hanger pattern of ten stars in Vulpecula."),
-    ("ic2602", "Southern Pleiades", "", "IC 2602", "Theta Car Cluster, Cr 232", "open_cluster", 10.720, -64.400, 1.6, "50", "Car", "486 ly", "IC 2602", "Brilliant southern cluster surrounding Theta Carinae."),
-    ("ngc2451", "", "", "NGC 2451", "Cr 132", "open_cluster", 7.755, -37.970, 2.8, "45", "Pup", "850 ly", "NGC 2451", "Conspicuous bright-star cluster with an orange foreground giant."),
-    ("ngc2516", "", "", "NGC 2516", "Southern Beehive, Cr 141", "open_cluster", 7.968, -60.750, 3.8, "22", "Car", "1,300 ly", "NGC 2516", "Rich southern cluster nicknamed the Southern Beehive."),
-    ("ngc3532", "", "", "NGC 3532", "Football Cluster, Cr 242", "open_cluster", 11.095, -58.730, 3.0, "55", "Car", "1,300 ly", "NGC 3532", "Sparkling oval cluster near the Carina Nebula."),
-    ("ngc6231", "", "", "NGC 6231", "Northern Jewel Box, Cr 315", "open_cluster", 16.903, -41.830, 2.6, "15", "Sco", "5,900 ly", "NGC 6231", "Hot young super-cluster at the heart of Scorpius."),
-    ("ngc2244", "", "", "NGC 2244", "Cr 99", "open_cluster", 6.538, 4.950, 4.8, "24", "Mon", "5,200 ly", "Rosette Nebula", "Young cluster embedded in the Rosette Nebula."),
-    ("ngc2158", "", "", "NGC 2158", "", "open_cluster", 6.123, 24.100, 8.6, "5", "Gem", "9,000 ly", "NGC 2158", "Ancient, dense cluster hiding just southwest of M35."),
-    ("ngc2362", "Tau Canis Majoris Cluster", "", "NGC 2362", "Cr 140", "open_cluster", 7.312, -24.950, 4.1, "8", "CMa", "4,800 ly", "NGC 2362", "Jewel-like young cluster crowning the brilliant variable Tau CMa."),
-    ("ngc6633", "", "", "NGC 6633", "Cr 380", "open_cluster", 18.468, 6.500, 4.6, "27", "Oph", "1,040 ly", "NGC 6633", "Large bright cluster in Ophiuchus, lovely in binoculars."),
-    ("ic4665", "", "", "IC 4665", "Mel 179", "open_cluster", 17.770, 5.720, 4.2, "70", "Oph", "1,400 ly", "IC 4665", "Expansive, loose cluster north of Beta Ophiuchi."),
-    ("ngc752", "", "", "NGC 752", "Cr 23", "open_cluster", 1.962, 37.850, 5.7, "50", "And", "1,300 ly", "NGC 752", "Subtle old open cluster south of Almach."),
-    ("ngc2281", "", "", "NGC 2281", "Broken Heart Cluster, Cr 112", "open_cluster", 6.805, 41.070, 5.4, "15", "Aur", "1,800 ly", "NGC 2281", "Charming cluster with an arrowhead arrangement."),
-    ("ngc188", "", "", "NGC 188", "", "open_cluster", 0.740, 85.330, 8.1, "14", "Cep", "5,400 ly", "NGC 188", "One of the oldest known open clusters, near the north celestial pole."),
-    ("ngc7789", "Caroline's Rose", "", "NGC 7789", "White Rose Cluster", "open_cluster", 23.957, 56.430, 6.7, "16", "Cas", "8,000 ly", "NGC 7789", "Densely strewn cluster discovered by Caroline Herschel; resembles a rose in bloom."),
-    ("ngc6939", "", "", "NGC 6939", "", "open_cluster", 20.525, 60.650, 7.8, "8", "Cep", "4,000 ly", "NGC 6939", "Ancient rich cluster sharing the field with the Fireworks Galaxy."),
-
-    # Nebulae (emission / reflection)
-    ("ngc7000", "North America Nebula", "", "NGC 7000", "Cygnus Wall region", "nebula", 20.980, 44.330, 4.0, "120x100", "Cyg", "2,600 ly", "North America Nebula", "Vast emission complex shaped like the Americas; superb for wide-field imaging."),
-    ("ic5070", "Pelican Nebula", "", "IC 5070", "", "nebula", 20.857, 44.350, 5.0, "60x50", "Cyg", "1,800 ly", "Pelican Nebula", "Bird-shaped ionization front adjacent to NGC 7000."),
-    ("ic1318", "Gamma Cygni Nebula (Sadr Region)", "", "IC 1318", "Butterfly Nebula", "nebula", 20.370, 40.250, 6.0, "150x100", "Cyg", "3,700 ly", "Gamma Cygni", "Sprawling H-II region surrounding Sadr, rich in hydrogen detail."),
-    ("ngc6960", "Veil Nebula West", "", "NGC 6960", "Witch's Broom, Cygnus Loop", "supernova_remnant", 20.762, 30.720, 7.0, "70x6", "Cyg", "2,400 ly", "Veil Nebula", "Western arc of the ancient Cygnus Loop passing the star 52 Cygni."),
-    ("ngc6992", "Veil Nebula East", "", "NGC 6992", "Network Nebula, Cygnus Loop", "supernova_remnant", 20.940, 31.720, 7.0, "60x8", "Cyg", "2,400 ly", "Veil Nebula", "Brightest braided filaments of the great supernova remnant."),
-    ("ngc2237", "Rosette Nebula", "", "NGC 2237-2246", "Sh2-275", "nebula", 6.538, 5.050, 6.0, "80x60", "Mon", "5,200 ly", "Rosette Nebula", "Circular blossom of gas centered on the cluster NGC 2244."),
-    ("ngc2264", "Christmas Tree Cluster & Cone Nebula", "", "NGC 2264", "Snowflake Cluster", "open_cluster", 6.685, 9.880, 3.9, "20", "Mon", "2,300 ly", "Christmas Tree Cluster", "Star cluster shaped like a fir tree, topped by the Cone Nebula and Fox Fur Nebula."),
-    ("b33", "Horsehead Nebula", "", "Barnard 33", "in IC 434", "nebula", 5.682, -2.460, 6.4, "6x4", "Ori", "1,400 ly", "Horsehead Nebula", "Iconic dark silhouette against the glow of IC 434; challenging visually, classic photographically."),
-    ("ngc2024", "Flame Nebula", "", "NGC 2024", "Sh2-277", "nebula", 5.698, -1.850, 6.0, "30x10", "Ori", "1,400 ly", "Flame Nebula", "Flickering emission nebula split by a dark lane, just east of Alnitak."),
-    ("ngc1499", "California Nebula", "", "NGC 1499", "Sh2-220", "nebula", 4.055, 36.420, 5.0, "160x40", "Per", "1,000 ly", "California Nebula", "Enormous H-II sheet energized by Menkib; needs a wide field."),
-    ("ngc281", "Pacman Nebula", "", "NGC 281", "Sh2-184", "nebula", 0.880, 56.620, 7.4, "35x30", "Cas", "9,500 ly", "NGC 281", "Emission complex with dark Bok globules nibbling its western edge."),
-    ("ic1396", "Elephant's Trunk Nebula", "", "IC 1396", "Sh2-131", "nebula", 21.652, 57.500, 3.5, "170x140", "Cep", "2,400 ly", "Elephant's Trunk Nebula", "Immense Cepheus nebula whose trunk of cold dust makes a stunning narrowband target."),
-    ("ic1805", "Heart Nebula", "", "IC 1805", "Sh2-190", "nebula", 2.557, 61.450, 6.5, "150x150", "Cas", "7,500 ly", "Heart Nebula", "Emission complex with the Melotte 15 core; often paired with the Soul Nebula."),
-    ("ic1848", "Soul Nebula", "", "IC 1848", "Embryo Nebula, Sh2-199", "nebula", 2.863, 60.400, 6.5, "150x100", "Cas", "6,500 ly", "Soul Nebula", "Neighbor of the Heart Nebula filled with small star-forming pillars."),
-    ("ic405", "Flaming Star Nebula", "", "IC 405", "Sh2-229, Caldwell 31", "nebula", 5.270, 34.270, 6.0, "37x19", "Aur", "1,500 ly", "Flaming Star Nebula", "Runaway star AE Aurigae blazing through a mix of emission and reflection nebulosity."),
-    ("ngc2174", "Monkey Head Nebula", "", "NGC 2174", "Sh2-252", "nebula", 6.157, 20.500, 6.5, "40x30", "Ori", "6,400 ly", "Monkey Head Nebula", "Knotted H-II ridge above Orion's raised club."),
-    ("ngc2359", "Thor's Helmet", "", "NGC 2359", "Duck Nebula, Sh2-298", "nebula", 7.310, -13.200, 7.0, "9x6", "CMa", "12,000 ly", "Thor's Helmet", "Wolf-Rayet bubble sculpted into winged helmets by HD 45166."),
-    ("ngc7380", "Wizard Nebula", "", "NGC 7380", "Sh2-142", "nebula", 22.783, 58.100, 7.2, "25x25", "Cep", "7,200 ly", "NGC 7380", "Open cluster wrapped in a sorcerer-shaped emission shroud."),
-    ("ngc7635", "Bubble Nebula", "", "NGC 7635", "Sh2-162, Caldwell 11", "nebula", 23.345, 61.200, 7.0, "15x10", "Cas", "8,800 ly", "Bubble Nebula", "Stellar wind from SAO 20575 inflates a delicate sphere of gas."),
-    ("ngc6888", "Crescent Nebula", "", "NGC 6888", "Sh2-105, Caldwell 27", "nebula", 20.200, 38.350, 7.4, "18x13", "Cyg", "4,700 ly", "Crescent Nebula", "Shell of expelled material around the Wolf-Rayet star WR 136."),
-    ("sh2-155", "Cave Nebula", "", "Sh2-155", "Caldwell 9", "nebula", 22.947, 62.620, 7.7, "35x25", "Cep", "2,400 ly", "Sh2-155", "Sharp ionization rim carved into a dusty molecular cloud."),
-    ("ic5146", "Cocoon Nebula", "", "IC 5146", "Sh2-125, Caldwell 19", "nebula", 21.892, 47.270, 7.2, "12x10", "Cyg", "3,000 ly", "IC 5146", "Glowing cocoon capping the long dark Barnard 168 lane."),
-    ("ngc7023", "Iris Nebula", "", "NGC 7023", "Caldwell 4", "nebula", 21.027, 68.170, 6.8, "18x18", "Cep", "1,300 ly", "Iris Nebula", "Brilliant blue reflection bloom lit by the young star HD 200775."),
-    ("sh2-276", "Barnard's Loop", "", "Sh2-276", "", "nebula", 5.830, -3.000, 5.0, "600x30", "Ori", "1,600 ly", "Barnard's Loop", "Great arcing emission loop sweeping across Orion; ultra-wide-field fare."),
-    ("ic4604", "Rho Ophiuchi Nebula", "", "IC 4604", "Sh2-1 region", "nebula", 16.477, -24.530, 4.0, "90x60", "Oph", "460 ly", "Rho Ophiuchi cloud complex", "Colorful reflection clouds around Antares and Rho Oph, beloved by wide-field imagers."),
-    ("ngc6357", "Lobster Nebula", "", "NGC 6357", "War and Peace Nebula, Sh2-11", "nebula", 17.423, -34.330, 6.0, "50x40", "Sco", "5,900 ly", "NGC 6357", "Complex emission region containing some of the most massive known stars."),
-    ("ngc6334", "Cat's Paw Nebula", "", "NGC 6334", "Bear Claw Nebula", "nebula", 17.333, -35.750, 6.0, "20x15", "Sco", "5,500 ly", "Cat's Paw Nebula", "Toe-print-like star factories glowing in southern Scorpius."),
-
-    # Planetary nebulae
-    ("ngc7293", "Helix Nebula", "", "NGC 7293", "Eye of God, Caldwell 63", "planetary", 22.493, -20.800, 7.3, "16", "Aqr", "655 ly", "Helix Nebula", "The closest bright planetary, spanning half the Moon's width; large but surface-faint."),
-    ("abell21", "Medusa Nebula", "", "Abell 21", "PK 205+14.1", "planetary", 7.483, 13.250, 10.0, "10x7", "Gem", "1,600 ly", "Medusa Nebula (planetary nebula)", "Large, old planetary with sinuous O-III filaments in Gemini."),
-    ("ngc7009", "Saturn Nebula", "", "NGC 7009", "Caldwell 55", "planetary", 21.070, -11.370, 8.0, "1.7", "Aqr", "3,000 ly", "Saturn Nebula", "Green-blue planetary with ansae resembling Saturn's rings."),
-    ("ngc3242", "Ghost of Jupiter", "", "NGC 3242", "Eye Nebula, Caldwell 59", "planetary", 10.413, -18.650, 7.3, "0.8", "Hya", "1,400 ly", "NGC 3242", "Bright blue-green shell echoing Jupiter's size in the eyepiece."),
-    ("ngc2392", "Eskimo Nebula", "", "NGC 2392", "Clownface Nebula, Caldwell 39", "planetary", 7.487, 20.920, 9.1, "0.8", "Gem", "2,900 ly", "Eskimo Nebula", "Fur-hooded face formed by inner shell plus outer filaments."),
-    ("ngc6543", "Cat's Eye Nebula", "", "NGC 6543", "Caldwell 6", "planetary", 17.977, 66.630, 8.1, "1.2", "Dra", "3,300 ly", "Cat's Eye Nebula", "Intensely structured planetary revealed in Hubble imagery."),
-    ("ngc6826", "Blinking Planetary", "", "NGC 6826", "Caldwell 15", "planetary", 19.747, 50.520, 8.8, "0.6", "Cyg", "4,800 ly", "NGC 6826", "Appears to blink when stared at directly, thanks to its pulsar-bright core."),
-    ("ngc7662", "Blue Snowball", "", "NGC 7662", "Caldwell 22", "planetary", 23.432, 42.550, 8.3, "2.2", "And", "3,200 ly", "Blue Snowball", "High-surface-brightness planetary glowing icy blue."),
-    ("ngc40", "Bow Tie Nebula", "", "NGC 40", "Caldwell 2", "planetary", 0.217, 72.520, 11.0, "1.2", "Cep", "3,500 ly", "NGC 40", "Carbon-rich planetary with a bow-tie waistline."),
-    ("ngc6302", "Bug Nebula / Butterfly Nebula", "", "NGC 6302", "Caldwell 69", "planetary", 17.228, -37.100, 9.6, "2x4", "Sco", "3,400 ly", "Bug Nebula", "One of the hottest known central stars sculpts these butterfly wings."),
-    ("jones1", "Headphone Nebula", "", "Jones-Emberson 1", "PK 164+31.1", "planetary", 7.493, 88.883, 16.0, "2.8", "UMi", "1,600 ly", None, "Ultra-faint twin-lobe planetary near the pole; a true narrowband challenge."),
-    ("ngc1360", "Robin's Egg Nebula", "", "NGC 1360", "PK 534-3.1", "planetary", 3.565, -25.850, 9.4, "6x4", "For", "1,200 ly", "NGC 1360", "Large, smooth ovoid planetary glowing robin's-egg blue."),
-
-    # Galaxies
-    ("ngc253", "Silver Dollar / Sculptor Galaxy", "", "NGC 253", "Caldwell 65", "galaxy", 0.793, -25.290, 7.1, "27x7", "Scl", "11 Mly", "Sculptor Galaxy", "Dusty starburst spiral, one of the brightest galaxies beyond the Local Group."),
-    ("ngc891", "Silver Sliver Galaxy", "", "NGC 891", "Caldwell 23", "galaxy", 2.377, 42.350, 9.9, "13x3", "And", "30 Mly", "NGC 891", "Exquisite edge-on spiral sliced by a razor-thin dust lane."),
-    ("ngc2403", "", "", "NGC 2403", "Caldwell 7", "galaxy", 7.615, 65.600, 8.4, "22x12", "Cam", "10 Mly", "NGC 2403", "Flocculent spiral dotted with huge H-II regions."),
-    ("ngc2903", "", "", "NGC 2903", "", "galaxy", 9.537, 21.500, 9.0, "13x6", "Leo", "30 Mly", "NGC 2903", "Bright barred spiral overlooked by Messier but loved by imagers."),
-    ("ngc3115", "Spindle Galaxy (Sextans)", "", "NGC 3115", "Caldwell 53", "galaxy", 10.087, -7.720, 9.1, "7x3", "Sex", "32 Mly", "Spindle Galaxy (NGC 3115)", "Needle-thin lenticular galaxy hosting a billion-solar-mass black hole."),
-    ("ngc3628", "", "", "NGC 3628", "Hamburger Galaxy", "galaxy", 11.338, 13.020, 9.5, "15x3.5", "Leo", "35 Mly", "NGC 3628", "Third member of the Leo Triplet, an edge-on disk with a warped dust lane."),
-    ("ngc4565", "Needle Galaxy", "", "NGC 4565", "Caldwell 38", "galaxy", 12.605, 25.980, 9.6, "16x3", "Com", "40 Mly", "Needle Galaxy", "Perhaps the finest edge-on spiral in the sky, bulge and all."),
-    ("ngc4559", "", "", "NGC 4559", "Caldwell 36", "galaxy", 12.600, 27.960, 9.9, "11x6", "Com", "30 Mly", "NGC 4559", "Extended spiral with soft asymmetric arms."),
-    ("ngc4449", "", "", "NGC 4449", "Caldwell 21", "galaxy", 12.470, 44.080, 9.4, "6x4.5", "CVn", "12 Mly", "NGC 4449", "Starburst irregular reminiscent of a miniature Magellanic Cloud."),
-    ("ngc4490", "Cocoon Galaxy", "", "NGC 4490", "with NGC 4485", "galaxy", 12.510, 41.650, 9.5, "6x3", "CVn", "25 Mly", "NGC 4490", "Warped interacting pair resembling a cocoon."),
-    ("ngc5195", "", "", "NGC 5195", "companion of M51", "galaxy", 13.500, 47.270, 9.5, "5x4", "CVn", "25 Mly", "Messier 51", "The disturbed companion gravitationally stirring up the Whirlpool Galaxy."),
-    ("ngc7331", "", "", "NGC 7331", "Caldwell 30", "galaxy", 22.618, 34.420, 9.5, "11x4", "Peg", "40 Mly", "NGC 7331", "Majestic inclined spiral often called a twin of the Milky Way."),
-    ("ngc7317", "Stephan's Quintet", "", "NGC 7317-7320", "Hickson 92", "galaxy", 22.600, 33.970, 12.6, "4x3", "Peg", "280 Mly", "Stephan's Quintet", "Five galaxies locked in gravitational combat; famous from JWST's first image."),
-    ("ngc6946", "Fireworks Galaxy", "", "NGC 6946", "Caldwell 12", "galaxy", 20.582, 60.150, 8.8, "11x10", "Cep", "22 Mly", "Fireworks Galaxy", "Face-on spiral bursting with supernovae and star clusters."),
-    ("ic342", "Hidden Galaxy", "", "IC 342", "Caldwell 5", "galaxy", 3.780, 68.100, 8.4, "21x20", "Cam", "10 Mly", "IC 342", "Grand spiral obscured by our own galactic plane."),
-    ("ngc1365", "Great Barred Spiral", "", "NGC 1365", "Fornax propeller", "galaxy", 3.560, -36.130, 9.3, "11x6", "For", "60 Mly", "NGC 1365", "Showpiece barred spiral of the Fornax cluster."),
-    ("ngc5128", "Centaurus A", "", "NGC 5128", "NGC 5128 radio source", "galaxy", 13.425, -43.020, 6.8, "25x20", "Cen", "12 Mly", "Centaurus A", "Closest active galaxy, slashed by a dramatic equatorial dust band."),
-
-    # Globulars (non-Messier)
-    ("ngc5139", "Omega Centauri", "", "NGC 5139", "Caldwell 80", "globular", 13.447, -47.480, 3.7, "36", "Cen", "15,800 ly", "Omega Centauri", "The king of globulars: enormous, bright, and resolved even in binoculars."),
-    ("ngc104", "47 Tucanae", "", "NGC 104", "Caldwell 106", "globular", 0.402, -72.080, 4.0, "31", "Tuc", "13,000 ly", "47 Tucanae", "Second-brightest globular, a dense beehive beside the Small Magellanic Cloud."),
-    ("ngc6752", "", "", "NGC 6752", "Caldwell 93", "globular", 19.182, -59.980, 5.4, "20", "Pav", "13,000 ly", "NGC 6752", "Third-brightest globular, loosely concentrated and easy to resolve."),
-    ("ngc6397", "", "", "NGC 6397", "Caldwell 86", "globular", 17.678, -44.480, 5.5, "26", "Ara", "7,800 ly", "NGC 6397", "One of the nearest globulars, loose and glittering."),
-    ("ngc7006", "", "", "NGC 7006", "Caldwell 42", "globular", 21.070, 16.180, 10.4, "3.6", "Aqr", "135,000 ly", "NGC 7006", "Distant halo wanderer requiring patience and aperture."),
-    ("ngc2419", "Intergalactic Wanderer", "", "NGC 2419", "Caldwell 25", "globular", 7.635, 38.880, 10.3, "4.6", "Lyn", "275,000 ly", "NGC 2419", "Far-flung globular once thought to lie outside the Milky Way."),
-
-    # Southern highlights
-    ("lmc", "Large Magellanic Cloud", "", "", "LMC, PGC 17223", "galaxy", 5.393, -69.760, 0.9, "645x550", "Dor", "163,000 ly", "Large Magellanic Cloud", "Massive satellite galaxy of the Milky Way bristling with nebulae and clusters."),
-    ("smc", "Small Magellanic Cloud", "", "", "SMC, PGC 7589", "galaxy", 0.877, -72.800, 2.2, "320x185", "Tuc", "200,000 ly", "Small Magellanic Cloud", "Smaller companion galaxy linked to the LMC by the Magellanic Bridge."),
-    ("ngc2070", "Tarantula Nebula", "", "NGC 2070", "30 Doradus", "nebula", 5.643, -69.100, 8.0, "40x25", "Dor", "163,000 ly", "Tarantula Nebula", "The most active starburst region in the Local Group, anchored by R136."),
-    ("ngc3372", "Carina Nebula", "", "NGC 3372", "Grand Nebula, NGC 3372", "nebula", 10.752, -59.870, 1.0, "120x80", "Car", "8,500 ly", "Carina Nebula", "Home of hypergiant Eta Carinae; outshines Orion's nebula in scope and drama."),
-]
+# Standard mode = this many objects, by the popularity source popularity. Advanced mode
+# adds every other OpenNGC object; the two tables are disjoint, so the catalog
+# is exactly `openned.csv` either way.
+STANDARD_TOP_N = 200
 
 
-_ROWS_CACHE: list[dict] | None = None
+def standard_ids(ids, popularity=None, top_n: int = STANDARD_TOP_N) -> set[str]:
+    """The standard-mode id set: the `top_n` most popular objects.
 
+    Deterministic (score descending, then id ascending) and conservative: an
+    object with no score is not "popular" and never becomes standard, so a
+    catalog with fewer than `top_n` scored objects simply has a smaller standard
+    list rather than a list padded with unscored rows.
 
-def rows() -> list[dict]:
-    """The curated catalog as dicts - computed once, then cached (the data
-    is static; callers treat the result as read-only)."""
-    global _ROWS_CACHE
-    if _ROWS_CACHE is not None:
-        return _ROWS_CACHE
-    out = []
-    for (oid, common, messier, ngcic, other, otype,
-         ra_h, dec_d, mag, size_am, const, dist_ly, wiki, blurb) in _ROWS:
-        names = []
-        if messier:
-            names.append(messier)
-        if ngcic:
-            names.append(ngcic.split("/")[0])
-        if common:
-            names.append(common)
-        primary = common or messier or ngcic or oid.upper()
-        search_blob = " | ".join(n.lower() for n in names if n)
-        if other:
-            search_blob += " | " + other.lower()
-        search_blob += f" | {oid}"
-        out.append({
-            "id": oid,
-            "primary": primary,
-            "messier": messier,
-            "ngcic": ngcic,
-            "other": other,
-            "type": otype,
-            "ra_hours": ra_h,
-            "dec_deg": dec_d,
-            "mag": mag,
-            "size": size_am,
-            "constellation": const,
-            "distance": dist_ly,
-            "wiki": wiki,
-            "blurb": blurb,
-            "search": search_blob,
-            "popularity": POPULARITY.get(oid, 0),
-        })
-    _ROWS_CACHE = out
-    return out
+    `popularity` defaults to the shipped table - pass a dict to test the rule.
+    """
+    if popularity is None:
+        from .popularity_data import POPULARITY as popularity
+    ranked = sorted(((popularity.get(i, 0), i) for i in ids),
+                    key=lambda pair: (-pair[0], pair[1]))
+    return {oid for score, oid in ranked[:top_n] if score}

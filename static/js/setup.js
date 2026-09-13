@@ -227,7 +227,7 @@ export function bindSetup() {
       await refreshCatalogMeta(); renderCustomList(); renderTargets();
       // DE-01 (review 0.6.24): refreshCatalogMeta drops the planning caches but
       // nothing rebuilt S.night, so the new target stayed missing from Targets/
-      // Tonight/Sky (the counter even read "197 of 198 - filtered") until an
+      // Tonight/Sky (the counter even read "200 of 201 - filtered") until an
       // unrelated reload. Every sibling mutator above ends in loadNight().
       loadNight();
     } catch (err) { /* api() already toasted */ }

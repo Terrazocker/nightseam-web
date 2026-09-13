@@ -92,8 +92,8 @@ _VERIFIED_BASELINE_JSON = r"""
 {
  "modules": {
   "app.js": {
-   "sha256": "42896d0cfe49e38462145de1961addf5b68fb52594c07f42e06963680c90af54",
-   "token": "66"
+   "sha256": "5d57e3d8717d57a216801e78efb63765433cd2c3a9f1a058433f6476d28cb254",
+   "token": "70"
   },
   "astro.js": {
    "sha256": "c4b678d8562bf8bba8065d1d68cd6d045fff1b0a16f939f04b0c7039089b9be0",

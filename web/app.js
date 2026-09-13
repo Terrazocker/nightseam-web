@@ -3,7 +3,7 @@
  * Port of NightSeam (<archive>\Object-Astro) core features:
  *   • Tonight  — dark time, moon phase, ranked best targets
  *   • Sky map  — live polar all-dome chart with sun/moon/all catalog objects
- *   • Catalog  — search/sort across 12,116 objects (Messier + OpenNGC)
+ *   • Catalog  — search/sort across 12,160 objects (OpenNGC)
  *   • Detail   — meta + tonight rise/transit/set + altitude chart
  *   • Settings — sites, rigs, custom targets, backup/restore (webstore.js)
  * All sky math runs client-side (astro.js, Meeus algorithms).
@@ -25,7 +25,7 @@ import { popularityFactor as corePopularityFactor } from './core.js?v=21';
 // cacheable). Bump it in the SAME commit whenever web/catalog.json changes;
 // web/catalog.manifest.json records the bytes for the current token and
 // scripts/check_catalog_token.py enforces the pairing.
-const CATALOG_TOKEN = '2';
+const CATALOG_TOKEN = '5';
 
 /** Debounce timer for the catalog search box — re-renders at most every
  *  150 ms while typing instead of once per keystroke (12k-row filter). */
@@ -251,7 +251,7 @@ function nightAnchor() {
   return WS.effToday();
 }
 
-/** Standard vs advanced catalog (desktop parity: curated 197 vs full 12k). */
+/** Standard (the 200 most popular) vs advanced (all 12,160 OpenNGC objects). */
 function advMode() { return !!Hor.getPrefs().advMode; }
 function activeCatalog() {
   return advMode() ? CAT : CAT.filter((o) => !o._adv);
@@ -612,7 +612,7 @@ function renderTonight(silent) {
       moonAlt.push(ma); moonAz.push(maz);
     }
 
-    // Standard mode mirrors the desktop exactly: every curated object is a
+    // Standard mode mirrors the desktop exactly: every standard object is a
     // Tonight candidate (the desktop applies no magnitude gate here - its mag
     // filter belongs to the Targets view). The advanced catalog is the one
     // exception: 12k objects x 121 samples would make this view sluggish in the
@@ -839,8 +839,8 @@ function renderSky() {
   const tip = $('#tooltip');
 
   /* Curve objects / advanced pool by the shared magnitude rule (desktop parity):
-     EVERY object, curated included, is filtered by magnitude - at the default
-     limit 10 the handful of curated objects fainter than 10 are hidden, exactly
+     EVERY object is filtered by magnitude - at the default limit 10 the handful
+     of standard objects fainter than 10 are hidden, exactly
      as the desktop #skyMag does. Objects with no measured magnitude show only at
      the slider maximum. Advanced objects are additionally capped at 1400 by
      brightness for responsiveness. */

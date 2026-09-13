@@ -12,7 +12,7 @@ from datetime import datetime, UTC
 from pathlib import Path
 
 from . import catalog_data
-from .paths import safe_rel, safe_token
+from .paths import resource_dir, safe_rel, safe_token
 
 # Panorama obstruction arrays are exactly 720 numbers (0.5-degree world-azimuth
 # bins) or empty. This is the storage-format rule shared by the PUT route and
@@ -328,7 +328,6 @@ class Database:
             pass
         self.conn.commit()
         self.seed_catalog()
-        self.seed_advanced_catalog()
         self.apply_popularity()
         self.make_backup()
 
@@ -354,18 +353,66 @@ class Database:
     # ---------------- catalog ----------------
 
     def seed_catalog(self):
+        """Seed BOTH catalog tables from the bundled OpenNGC CSV.
+
+        Standard mode is the most popular `catalog_data.STANDARD_TOP_N` objects
+        and lives in `objects`; every other OpenNGC object lives in
+        `advanced_objects` (the two are disjoint, so advanced mode is the whole
+        catalog). There is no hand-curated list any more.
+
+        Both tables are PURE SEED DATA - user objects live in `custom_objects` -
+        so they are rebuilt whenever the stored split no longer matches what the
+        CSV + popularity table select. That is what makes a catalog rebuild or a
+        popularity change re-select standard mode WITHOUT a schema migration, and
+        it is why the rebuild compares the actual id sets, not just the counts
+        (a popularity change keeps 200 standard rows but changes WHICH 200)."""
+        csv_path = resource_dir() / "app" / "data" / "openned.csv"
+        rows = _read_catalog_csv(csv_path)
+        if not rows:
+            return
+        ids = [r["id"] for r in rows]
+        standard = catalog_data.standard_ids(ids)
+        by_id = {r["id"]: r for r in rows}
+        std_rows = [by_id[i] for i in ids if i in standard]
+        adv_rows = [by_id[i] for i in ids if i not in standard]
         with self.lock:
-            cur = self.conn.execute("SELECT COUNT(*) FROM objects")
-            if cur.fetchone()[0] >= len(catalog_data.rows()):
+            have_std = {r[0] for r in self.conn.execute("SELECT id FROM objects")}
+            have_adv = {r[0] for r in self.conn.execute(
+                "SELECT id FROM advanced_objects")}
+            if have_std == standard and have_adv == set(ids) - standard:
                 return
-            rows = catalog_data.rows()
-            self.conn.executemany(
-                """INSERT OR IGNORE INTO objects VALUES
-                   (:id,:primary_name,:messier,:ngcic,:other,:otype,:ra_hours,:dec_deg,
-                    :mag,:size,:constellation,:distance,:wiki,:blurb,:search,:popularity)""",
-                [dict(r, primary_name=r["primary"], otype=r["type"]) for r in rows],
-            )
+            self.conn.execute("DELETE FROM objects")
+            self.conn.execute("DELETE FROM advanced_objects")
+            for table, batch in (("objects", std_rows),
+                                 ("advanced_objects", adv_rows)):
+                self.conn.executemany(
+                    f"INSERT OR IGNORE INTO {table}(id,primary_name,messier,"
+                    f"ngcic,other,otype,ra_hours,dec_deg,vmag,size_am,"
+                    f"constellation,distance,wiki,blurb,search) VALUES "
+                    f"(:id,:primary_name,:messier,:ngcic,:other,:otype,"
+                    f":ra_hours,:dec_deg,:vmag,:size_am,:constellation,"
+                    f":distance,:wiki,:blurb,:search)",
+                    batch)
             self.conn.commit()
+
+    def advanced_count(self) -> int:
+        with self.lock:
+            r = self.conn.execute(
+                "SELECT COUNT(*) FROM advanced_objects").fetchone()
+            return r[0]
+
+    def apply_popularity(self) -> int:
+        """Stamp the popularity source scores onto the seeded rows (idempotent, runs
+        on every start so a DB seeded before a score existed catches up).
+        Returns the number of scored entries."""
+        from .popularity_data import POPULARITY
+        with self.lock:
+            for table in ("objects", "advanced_objects"):
+                self.conn.executemany(
+                    f"UPDATE {table} SET popularity = ? WHERE id = ?",
+                    [(s, o) for o, s in POPULARITY.items()])
+            self.conn.commit()
+        return len(POPULARITY)
 
     def all_objects(self, advanced: bool = False) -> list[dict]:
         with self.lock:
@@ -388,67 +435,6 @@ class Database:
             r = self.conn.execute(
                 "SELECT COUNT(*) FROM advanced_objects").fetchone()
             return r[0]
-
-    def seed_advanced_catalog(self):
-        """Bulk-load the bundled OpenNGC-derived catalog (app/data/openned.csv)
-        into advanced_objects, then enforce global catalog identity. Insert-only;
-        safe to run on every start."""
-        import csv as csvmod
-        from .paths import resource_dir
-        csv_path = resource_dir() / "app" / "data" / "openned.csv"
-        cols = ("id", "primary_name", "messier", "ngcic", "other", "otype",
-                "ra_hours", "dec_deg", "vmag", "size_am", "constellation",
-                "distance", "wiki", "blurb", "search")
-        if csv_path.exists() and self.advanced_count() < _csv_adv_count(csv_path):
-            rows = []
-            with open(csv_path, encoding="utf-8") as f:
-                for line in f:
-                    if line.startswith("#"):
-                        continue
-                    vals = line.rstrip("\n").split(";")
-                    if len(vals) != len(cols):
-                        continue
-                    d = dict(zip(cols, vals))
-                    try:
-                        d["ra_hours"] = float(d["ra_hours"]) if d["ra_hours"] else None
-                        d["dec_deg"] = float(d["dec_deg"]) if d["dec_deg"] else None
-                        d["vmag"] = float(d["vmag"]) if d["vmag"] else None
-                    except ValueError:
-                        continue      # malformed row - skip, don't crash boot
-                    rows.append(tuple(d[c] for c in cols))
-            with self.lock:
-                self.conn.executemany(
-                    "INSERT OR IGNORE INTO advanced_objects "
-                    f"({','.join(cols)}) VALUES ({','.join('?' * len(cols))})",
-                    rows)
-                self.conn.commit()
-        # Catalog identity is GLOBAL: an advanced row may never share an id with
-        # the curated catalog. The CSV is fixed, but a DB seeded before the fix
-        # (or via an older build) still carries the old member rows, and the
-        # UPDATE/seed above is skipped once the count matches - so clean up on
-        # EVERY start. These are seed tables, never user data.
-        with self.lock:
-            self.conn.execute(
-                "DELETE FROM advanced_objects WHERE id IN (SELECT id FROM objects)")
-            self.conn.commit()
-
-    def apply_popularity(self) -> int:
-        """Stamp the popularity source scores onto objects + advanced_objects
-        (idempotent, runs on every start so newly matched entries
-        propagate to DBs seeded before popularity existed). Returns the
-        total number of scored entries."""
-        from .adv_popularity_data import ADV_POPULARITY
-        from .catalog_data import POPULARITY
-        with self.lock:
-            # curated rows live in `objects`; advanced rows in `advanced_objects`
-            self.conn.executemany(
-                "UPDATE objects SET popularity = ? WHERE id = ?",
-                [(s, o) for o, s in POPULARITY.items()])
-            self.conn.executemany(
-                "UPDATE advanced_objects SET popularity = ? WHERE id = ?",
-                [(s, o) for o, s in ADV_POPULARITY.items()])
-            self.conn.commit()
-            return len(POPULARITY) + len(ADV_POPULARITY)
 
     def get_object(self, oid: str) -> dict | None:
         with self.lock:
@@ -1008,14 +994,32 @@ class Database:
         return skipped
 
 
-def _csv_adv_count(csv_path: Path) -> int:
-    n = 0
+def _read_catalog_csv(csv_path: Path) -> list[dict]:
+    """The bundled OpenNGC catalog as seed-ready dicts (empty when the file is
+    missing, so a broken install still boots). Malformed rows are skipped, never
+    fatal - the CSV is data, not code."""
+    if not csv_path.is_file():
+        return []
+    cols = ("id", "primary_name", "messier", "ngcic", "other", "otype",
+            "ra_hours", "dec_deg", "vmag", "size_am", "constellation",
+            "distance", "wiki", "blurb", "search")
+    rows: list[dict] = []
     with open(csv_path, encoding="utf-8") as f:
         for line in f:
             if line.startswith("#") or not line.strip():
                 continue
-            n += 1
-    return n
+            vals = line.rstrip("\n").split(";")
+            if len(vals) != len(cols):
+                continue
+            d = dict(zip(cols, vals))
+            try:
+                d["ra_hours"] = float(d["ra_hours"]) if d["ra_hours"] else None
+                d["dec_deg"] = float(d["dec_deg"]) if d["dec_deg"] else None
+                d["vmag"] = float(d["vmag"]) if d["vmag"] else None
+            except ValueError:
+                continue          # malformed row - skip, don't crash boot
+            rows.append(d)
+    return rows
 
 
 def new_id() -> str:

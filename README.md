@@ -32,12 +32,13 @@ Two modes, switched with the top-right button:
 
 ### Night Planner
 
-- **DSO catalog** - 197 prominent objects: the complete Messier catalog plus
-  famous NGC/IC/Caldwell showpieces (Double Cluster, North America Nebula,
-  Veil, Helix, Horsehead, Heart/Soul, Omega Centauri, Magellanic Clouds, ...).
-  Each object carries all its designations - search "M101", "NGC 5457" or
-  "Pinwheel" and you get the same object. An **advanced mode** (hamburger
-  menu) adds the complete NGC/IC catalog (~12,000 objects to magnitude 20).
+- **DSO catalog** - the complete OpenNGC catalog: NGC/IC plus the OpenNGC
+  addendum, the notable objects with no NGC/IC number (Horsehead, Hyades,
+  Coalsack, Magellanic Clouds, Sculptor/Fornax dwarfs) - 12,160 objects to
+  magnitude 20. Standard mode shows the 200 MOST POPULAR of them (community
+  observing counts, as a silent ranking input); **advanced mode** (hamburger
+  menu) shows all 12,160. Each object carries its designations - search
+  "M101" or "NGC 5457" and you get the same object.
 - **Location-aware visibility** - enter your observing site(s) once; every
   calculation is done for your exact coordinates and elevation, including
   atmospheric refraction and precession.
