@@ -75,29 +75,58 @@ def stub_text(hash_: str, names: list[str]) -> str:
             f"export {{ {', '.join(names)} }} from './core/{hash_}/index.js';\n")
 
 
+def retention_keep(hash_: str, previous: str | None) -> set[str]:
+    """The baked-core RETENTION POLICY, in one place (XL-02, 0.6.24 review).
+
+    Keep the CURRENT content-hashed dir plus the immediately previous one (N-1) so
+    a visitor holding a cached old `core.js` stub still resolves its tree; anything
+    older is stale and goes at the next re-bake. `check_core.py` enforces exactly
+    this set, so the documented policy cannot drift from the guard again."""
+    keep = {hash_}
+    if previous and previous != hash_:
+        keep.add(previous)
+    return keep
+
+
+def prune_baked_dirs(dest_root: Path, keep: set[str]) -> list[str]:
+    """Remove baked hash dirs that are not in `keep`; returns the removed names."""
+    removed: list[str] = []
+    if dest_root.is_dir():
+        for child in dest_root.iterdir():
+            if child.is_dir() and child.name not in keep:
+                shutil.rmtree(child)
+                removed.append(child.name)
+    return removed
+
+
 def main() -> int:
     if not CORE.is_dir():
         print("build_core: core/ is missing")
         return 1
     hash_, files = tree_hash()
     token = 1
+    previous = None
     if MANIFEST.is_file():
         try:
             old = json.loads(MANIFEST.read_text(encoding="utf-8"))
             token = int(old.get("token", 1))
-            if old.get("hash") and old["hash"] != hash_:
+            previous = old.get("hash") or None
+            if previous and previous != hash_:
                 token += 1
         except (OSError, ValueError):
             pass
+    if previous == hash_:
+        previous = None                 # same tree: there is no N-1 to retain
     names = export_names((CORE / "index.js").read_text(encoding="utf-8"))
     if not names:
         print("build_core: core/index.js has no explicit export list")
         return 1
+    keep = retention_keep(hash_, previous)
     for dest_root in (WEB_DIR / "core", STATIC_JS / "core"):
-        if dest_root.is_dir():
-            for child in dest_root.iterdir():
-                if child.is_dir():
-                    shutil.rmtree(child)
+        stale = prune_baked_dirs(dest_root, keep)
+        if stale:
+            print("build_core: pruned stale baked dir(s): "
+                  + ", ".join(sorted(stale)))
         dest = dest_root / hash_
         for p in core_files():
             target = dest / p.relative_to(CORE)
@@ -108,7 +137,8 @@ def main() -> int:
     (STATIC_JS / STUB_NAME).write_text(stub_text(hash_, names),
                                        encoding="utf-8", newline="\n")
     MANIFEST.write_text(
-        json.dumps({"hash": hash_, "token": token, "files": files}, indent=2) + "\n",
+        json.dumps({"hash": hash_, "token": token, "previous": previous,
+                    "files": files}, indent=2) + "\n",
         encoding="utf-8", newline="\n")
     print(f"build_core: hash={hash_} token={token} files={len(files)} "
           f"-> web/core/{hash_} + static/js/core/{hash_}")

@@ -92,6 +92,30 @@ def _read(path: Path) -> str:
     return path.read_text(encoding="utf-8")
 
 
+def baked_dir_problems(label: str, dest_root: Path, hash_: str,
+                       previous: str | None) -> list[str]:
+    """XL-02 (0.6.24 review): the baked hash dirs must be EXACTLY the policy set -
+    the current dir plus, when the manifest names one, the retained N-1 dir.
+
+    Before this the guard required exactly one dir, so the documented retention
+    policy (keep N-1 so a cached old `core.js` stub still resolves) was impossible
+    to satisfy: a maintainer who followed the docs failed the guard. The policy
+    itself lives in `build_core.retention_keep()` so baker and guard cannot drift."""
+    if not dest_root.is_dir():
+        return [f"{label}: baked core directory is missing"]
+    build = _load_build()
+    allowed = sorted(build.retention_keep(hash_, previous))
+    dirs = sorted(d.name for d in dest_root.iterdir() if d.is_dir())
+    if dirs == allowed:
+        return []
+    stale = sorted(set(dirs) - set(allowed))
+    if stale:
+        return [f"{label}: stale baked hash dir(s) {stale} - the retention policy "
+                f"keeps only {allowed} (current + N-1)"]
+    return [f"{label}: baked hash dirs {dirs} != {allowed} - run "
+            "scripts/build_core.py (the N-1 dir is kept on purpose)"]
+
+
 def scan() -> list[str]:
     problems: list[str] = []
     if not CORE.is_dir():
@@ -106,6 +130,7 @@ def scan() -> list[str]:
     hash_ = str(man.get("hash") or "")
     files = man.get("files") or {}
     token = man.get("token")
+    previous = str(man.get("previous") or "") or None
     build = _load_build()
 
     cur_hash, cur_files = build.tree_hash(CORE)
@@ -117,12 +142,7 @@ def scan() -> list[str]:
                         "re-run scripts/build_core.py")
 
     for label, dest_root in (("web", WEB_DIR / "core"), ("static", STATIC_JS / "core")):
-        if not dest_root.is_dir():
-            problems.append(f"{label}: baked core directory is missing")
-            continue
-        dirs = sorted(d.name for d in dest_root.iterdir() if d.is_dir())
-        if dirs != [hash_]:
-            problems.append(f"{label}: baked hash dirs {dirs} != ['{hash_}']")
+        problems.extend(baked_dir_problems(label, dest_root, hash_, previous))
         for rel, digest in sorted(files.items()):
             fp = dest_root / hash_ / rel
             if not fp.is_file():

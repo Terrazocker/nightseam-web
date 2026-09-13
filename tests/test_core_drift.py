@@ -171,3 +171,45 @@ def test_mutations_fail_the_guard(tmp_path):
 
     # the real repository was never touched
     assert _guard().scan() == []
+
+
+def test_baked_core_retention_keeps_current_and_n1(tmp_path):
+    """XL-02 (0.6.24 review): the documented N-1 retention policy is now the
+    code's BEHAVIOUR - a re-bake keeps the current content-hashed dir plus the
+    immediately previous one (a visitor holding a cached old `core.js` stub must
+    still resolve its tree) and removes anything older, while the guard accepts
+    exactly that set and reports a stale dir or a dropped N-1 dir.
+
+    Before this, `check_core.py` required exactly ONE dir, so a maintainer who
+    followed the documented policy failed the guard."""
+    guard = _guard()
+    build = guard._load_build()
+
+    # the policy itself
+    assert build.retention_keep("newhash", "prevhash") == {"newhash", "prevhash"}
+    assert build.retention_keep("newhash", None) == {"newhash"}
+    assert build.retention_keep("same", "same") == {"same"}
+
+    # the baker keeps current + N-1 and prunes the rest
+    root = tmp_path / "core"
+    for name in ("oldest", "prevhash", "newhash"):
+        (root / name).mkdir(parents=True)
+    removed = build.prune_baked_dirs(root, build.retention_keep("newhash", "prevhash"))
+    assert removed == ["oldest"]
+    assert sorted(d.name for d in root.iterdir()) == ["newhash", "prevhash"]
+
+    # the guard accepts exactly that state ...
+    assert guard.baked_dir_problems("web", root, "newhash", "prevhash") == []
+    # ... and fails on a stale dir, on a dropped N-1 dir, and on a missing tree
+    (root / "stale").mkdir()
+    problems = guard.baked_dir_problems("web", root, "newhash", "prevhash")
+    assert problems and "stale" in problems[0], problems
+    assert guard.baked_dir_problems("web", root, "newhash", None), (
+        "a dir that is neither current nor recorded N-1 must be reported")
+    assert guard.baked_dir_problems("web", tmp_path / "nope", "newhash", None)
+
+    # the wiring: both scripts must actually use the shared policy
+    import inspect
+    assert "prune_baked_dirs(" in inspect.getsource(build.main)
+    assert '"previous": previous' in inspect.getsource(build.main)
+    assert "baked_dir_problems(" in inspect.getsource(guard.scan)

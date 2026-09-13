@@ -353,15 +353,18 @@ Image Catalog (FITS ingest + library). `README.md` has the feature list.
     `Get-CimInstance Win32_Process`).
   - If 8407 is briefly taken at boot, `free_port()` silently picks a RANDOM port
     (written to `instance.json`).
-- Tests: `python -m pytest tests/` (436). Single test:
+- Tests: `python -m pytest tests/` (461). Single test:
   `python -m pytest tests/test_js_parity.py -k name`. API tests use
   `create_app(db, prefetch=False)` (no image-cache thread). The `client` fixture
   must leave `data/panos` in the tmp dir it patches in.
   - **WinError 5 in this sandbox:** the repo-local `.pytest-tmp` (see
     `pytest.ini`) can acquire an owner-SID-only DACL, so every `tmp_path` test
-    errors at fixture cleanup - an environment artifact, not a failure. Workaround
-    (no escalation needed): `python -m pytest tests/ -q --basetemp
-    C:\Users\<user>\AppData\Local\Temp\opencode\pt -p no:cacheprovider` -> 436/436.
+    errors at fixture cleanup - an environment artifact, not a failure. The
+    documented external `--basetemp` no longer restores a clean run (the directory
+    cannot be created there, and pytest re-creates a workspace one with the same
+    owner-SID-only DACL); use a repo-internal `tmp_path` override plugin instead -
+    with one, 461 pass with 0 assertion failures (certified 0.6.24 review,
+    section 5.3).
 - JS checks (run after touching `static/` OR `web/`): `python scripts/check_js.py`
   runs all of them and exits non-zero on hard failures:
   - `check_js_imports.py` - broken relative ES-module imports / missing named exports
@@ -450,18 +453,25 @@ Image Catalog (FITS ingest + library). `README.md` has the feature list.
   Batch 2 (0.6.22) shipped every USER-REACHABLE finding with a
   failing-before/passing-after pin; `BATCH3-REPORT.md` records Batch 3
   (Python + web hardening shipped; the rule/table lists every item).
-- **The program is closed for user-reachable findings.** A bounded carry-over
-  of non-reachable hardening/tooling/test-quality items remains (consume it in
-  the next review pass): `CR2` malformed-horizon guards (all shipped producers
-  normalize before preview), `CR3` FOV-edge half-bin (changes a
-  rendering/scoring boundary = user-visible, needs its own release decision),
-  `DS4` worker/sync `max_alt` (one-sample/0.05 deg near ties, cosmetic), `DS5`
-  worker revive (sync fallback always planned), `TL3` catalog committed-change
-  check, `TL4` `--specpath` + PyInstaller pin, `TL5` stale `web/version.json`
-  hard error, `TS4` untested exports, `TS7` fixture `has()` gating, `E15`
-  per-module token discipline, `PY6` TLS-redirect hardening (same trust
-  boundary, image bytes only), `WB7` bundle-version check (forward-compat
-  choice). Baked-core retention is documented in "Versioning and release".
+- **The 0.6.20 program is closed; the 0.6.24 review's batch has shipped.** The
+  review itself is COMMITTED at `reviews/0.6.24/` - `REVIEW-0.6.24.md`, the five
+  lane reports, `70-verification.md`, `07-findings.json` and the passing gate
+  `80-report-review.md`. The follow-up batch on `master` fixed, each with a
+  failing-before/passing-after pin: `PY-04` plus its storage boundary and the
+  custom-target `vmag` route (T6-F1), `DE-01`, `XL-01` (the cache-token guard),
+  `CR3`/`CO-01`, `DE-03`/`WE-02` (ruling C), `PY-01`, `PY-03`, `PY-06`/`PY6`,
+  `TO-02`, `DE-02`, `DE-07`, `DE-08`, `WE-01` and `XL-02`. Nothing is TAGGED yet:
+  the release checklist still requires the browser gate.
+- A bounded carry-over of non-reachable hardening/tooling/test-quality items
+  remains (consume it in the next review pass): `CR2` malformed-horizon guards
+  (all shipped producers normalize before preview), `DS4` worker/sync `ceil`
+  (max_alt agrees; the residual is a one-bin `ceil` divergence on 516 of 19280
+  samples, cosmetic), `DS5` worker revive (sync fallback always planned), `TL3`
+  catalog committed-change check, `TL4` `--specpath` + PyInstaller pin, `TL5`
+  stale `web/version.json` (a deliberate WARNING, not a hard error), `TS4`
+  untested exports, `TS7` fixture `has()` gating, `WB7` bundle-version check
+  (forward-compat choice). The 26 lows from the 0.6.24 review are still open.
+  Baked-core retention is documented in "Versioning and release".
 
 ## Versioning and release
 
@@ -543,11 +553,17 @@ Image Catalog (FITS ingest + library). `README.md` has the feature list.
   shape, CRLF handling, the `--update` refusal and the hint gating), which
   `scan()` re-runs once per process - so `scripts/check_js.py` and the collected
   `tests/test_pre_tag_check.py` test both fail if the detector regresses.
-- **Baked-core retention policy:** keep the CURRENT content-hashed dir plus the
-  immediately previous one (N-1) so a visitor holding a cached old `core.js`
-  stub still resolves its tree; remove anything older at the next re-bake.
-  `check_core.py` only requires the current dir. The deployed `/astro` tree
-  must match.
+- **Baked-core retention policy (ENFORCED since the 0.6.24 review, XL-02):**
+  keep the CURRENT content-hashed dir plus the immediately previous one (N-1) so a
+  visitor holding a cached old `core.js` stub still resolves its tree; remove
+  anything older at the next re-bake. `scripts/build_core.py` records the retained
+  hash as `previous` in `core/core.manifest.json` and prunes anything older, and
+  `check_core.py` FAILS on a stale dir or on a dropped N-1 dir. The policy lives
+  in ONE function (`build_core.retention_keep`) so baker and guard cannot drift,
+  pinned by `tests/test_core_drift.py::test_baked_core_retention_keeps_current_and_n1`.
+  The deployed `/astro` tree is written by `uploadtree`, which never deletes, so it
+  can retain dirs older than this policy allows - reconciling that is a deploy
+  task, not a guard exemption.
 - **Never publish `index.html` before the modules it names.** Deploys are not
   atomic and the page carries the tokens; `ftps_deploy.py::upload_order()` sorts
   HTML last (`index.html` very last), pinned by `tests/test_deploy_order.py`. Keep
