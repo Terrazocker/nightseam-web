@@ -433,7 +433,15 @@ def test_the_build_writes_its_spec_outside_the_tracked_file():
     import re
 
     ps1 = (ROOT / "build.ps1").read_text(encoding="utf-8")
-    assert "--specpath dist" in ps1, "build.ps1 must not overwrite the tracked spec"
+    assert "--specpath" in ps1, "build.ps1 must not overwrite the tracked spec"
+    # with --specpath the spec sits in dist/, and PyInstaller resolves --add-data
+    # sources relative to the SPEC DIR - a relative "static" became dist\static and
+    # the 0.6.25 build died. Every source path must be absolute.
+    for flag in ("--add-data", "--icon"):
+        hits = [l for l in ps1.splitlines() if l.strip().startswith(flag)]
+        assert hits, f"{flag} not found in build.ps1"
+        assert all("$PSScriptRoot" in l for l in hits), (
+            f"{flag} must use an absolute ($PSScriptRoot) source path: {hits}")
     req = (ROOT / "requirements-dev.txt").read_text(encoding="utf-8")
     assert re.search(r"^pyinstaller==", req, re.M), (
         "PyInstaller must be pinned exactly, not '>=6.0'")

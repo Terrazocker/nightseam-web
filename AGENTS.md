@@ -353,7 +353,7 @@ Image Catalog (FITS ingest + library). `README.md` has the feature list.
     `Get-CimInstance Win32_Process`).
   - If 8407 is briefly taken at boot, `free_port()` silently picks a RANDOM port
     (written to `instance.json`).
-- Tests: `python -m pytest tests/` (479). Single test:
+- Tests: `python -m pytest tests/` (480). Single test:
   `python -m pytest tests/test_js_parity.py -k name`. API tests use
   `create_app(db, prefetch=False)` (no image-cache thread). The `client` fixture
   must leave `data/panos` in the tmp dir it patches in.
@@ -363,7 +363,7 @@ Image Catalog (FITS ingest + library). `README.md` has the feature list.
     documented external `--basetemp` no longer restores a clean run (the directory
     cannot be created there, and pytest re-creates a workspace one with the same
     owner-SID-only DACL); use a repo-internal `tmp_path` override plugin instead -
-    with one, 479 pass with 0 assertion failures (certified 0.6.24 review,
+    with one, 480 pass with 0 assertion failures (certified 0.6.24 review,
     section 5.3).
 - JS checks (run after touching `static/` OR `web/`): `python scripts/check_js.py`
   runs all of them and exits non-zero on hard failures:
@@ -469,6 +469,42 @@ Image Catalog (FITS ingest + library). `README.md` has the feature list.
   query, an absolute `--user-data-dir` inside the workspace, and `S` (state.js)
   is not global - probe the DOM/API.
 
+## Agent sessions in this environment (measured 2026-09-13, workspace-write)
+
+Commands an agent runs go through a sandbox TOKEN. That is what decides whether a
+tool works here, so measure before working around anything:
+
+- **Works sandboxed:** `python -m pytest`, every `scripts/check_*.py` guard, git,
+  node, PowerShell pipelines (`... | Select-Object`), `subprocess` with
+  `capture_output=True`, `python web/build_web.py version`, FTPS deploy, and
+  scratch dirs under the gitignored `logs/` (created AND deleted freely).
+- **Needs ONE unsandboxed command** (`sandbox_permissions: danger-full-access`,
+  which raises an approval prompt for the user):
+  * **the browser gate.** Chromium's mojo IPC needs NAMED PIPES, which the sandbox
+    token refuses (`FATAL platform_channel.cc ... Zugriff verweigert (0x5)`), so no
+    Chromium flag combination helps. Measured unsandboxed:
+    `python scripts/check_browser.py --web` => **12/12 passed, exit 0**. Sandboxed,
+    `check_browser.py` reports exit 2 (infrastructure) honestly, because
+    `run_gate()` converts the driver failure - see TO-02.
+  * **removing repo-root scratch dirs that an EARLIER sandbox token created.**
+    They deny even listing, and `takeown` needs admin. `logs/` never has this
+    problem, which is why the rule is "scratch under `logs/`, never the repo root".
+- **The Playwright driver cannot spawn sandboxed:** asyncio needs OVERLAPPED pipes
+  (`_winapi.CreatePipe`, WinError 5) even though plain pipes work. Never "probe"
+  it with a throw-away start - `check_browser.run_gate()` owns the exit-2
+  conversion and the harness starts the driver exactly ONCE
+  (`tests/test_browser_gate.py` pins both).
+- **Long commands:** run them as background jobs and read the output later; the
+  browser gate is ~20 s for `--web`, a few minutes for `--all` (which also needs a
+  fresh `dist\NightSeam.exe`).
+- **Release work from an agent session**, in order: add the curated
+  `CURATED[X.Y.Z]` entry and commit it with the release -> `python
+  scripts/pre_tag_check.py X.Y.Z` -> `git tag vX.Y.Z` -> `scripts/make_release.py`
+  + `web/build_web.py version` (at the tag, clean tree) -> `scripts/check_release.py`
+  -> `python scripts/check_browser.py --all` (unsandboxed) -> FTPS uploads
+  (`uploadtree web /astro`, the `/downloads/` artifacts, `landing` last) ->
+  regenerate and commit `landing/changelog.json`.
+
 ## Code review record and status
 
 - `CODE-REVIEW-0.6.20.md` (tracked) - the 0.6.20 review; Batch 1 (0.6.21) and
@@ -556,7 +592,7 @@ Image Catalog (FITS ingest + library). `README.md` has the feature list.
   `scripts/check_catalog_token.py`, wired into `scripts/check_js.py`, and pinned
   by `tests/test_cache_tokens.py` (mutation-tested). Do NOT add
   `{cache:'no-store'}` - the file must stay cacheable.
-  Current (unreleased, after the CR3 fix): `app.js?v=66` (index.html) /
+  Current (0.6.25): `app.js?v=66` (index.html) /
   `CATALOG_TOKEN = '2'`, `astro.js?v=14`, `horizon.js?v=46`, `format.js?v=21`,
   `nightrank.js?v=11`, `webstore.js?v=24`, `dragwin.js?v=1`, `style.css?v=16`,
   `themes.css?v=4`; the core stub is `web/core.js?v=21` (bump = re-bake,

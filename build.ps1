@@ -177,16 +177,24 @@ if (-not $bakedText.Contains("BAKED_VERSION = '$ver'")) {
 Write-Host "Baking version '$ver' into the build" -ForegroundColor Green
 
 New-Item -ItemType Directory -Force -Path dist | Out-Null
+# TO-08 follow-up (found by actually building 0.6.25): with --specpath the spec
+# lives in dist/, and PyInstaller resolves --add-data / --icon sources RELATIVE TO
+# THE SPEC DIRECTORY - so a relative "static" looked for dist\static and the build
+# died with "Unable to find ...dist\static". Every source path is absolute now
+# ($PSScriptRoot), and dist/work/spec are pinned so the build no longer depends on
+# the caller's working directory.
 & $py -m PyInstaller --clean --noconfirm --onefile --noconsole `
-    --specpath dist `
+    --specpath "$PSScriptRoot\dist" `
+    --distpath "$PSScriptRoot\dist" `
+    --workpath "$PSScriptRoot\build" `
     --name NightSeam `
-    --icon "assets\app.ico" `
-    --add-data "static;static" `
-    --add-data "app\data;app\data" `
+    --icon "$PSScriptRoot\assets\app.ico" `
+    --add-data "$PSScriptRoot\static;static" `
+    --add-data "$PSScriptRoot\app\data;app\data" `
     --collect-all uvicorn `
     --collect-all webview `
     --hidden-import python_multipart `
-    main.py
+    "$PSScriptRoot\main.py"
 
 if ($LASTEXITCODE -ne 0) {
     throw "PyInstaller failed with exit code $LASTEXITCODE"

@@ -38,3 +38,6 @@ logs/
 # browser-gate failure artifacts (screenshots + DOM dumps): regenerable, and a
 # failing run must not leave repo noise behind.
 tests/browser/artifacts/
+
+# DSH AgentTeams harness state (task/mailbox bookkeeping, not repo content)
+.agent-teams/
