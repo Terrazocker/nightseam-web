@@ -309,6 +309,12 @@ function renderList() {
 
 async function select(rec) {
   Pano.cur = rec;
+  // DE-02: the offscreen mask cache belongs to ONE record, but `render()` only
+  // rebuilds it when the canvas SIZE changes - so two panoramas with the same
+  // aspect reused the previous mask. `select()` writes the calibration fields
+  // programmatically (no `input` event), so the gesture-path invalidation never
+  // ran here either. Drop the cache with the record it belongs to.
+  invalidateMask();
   Pano.crop = null;
   // a pending auto-save belongs to the PREVIOUS panorama (its scheduleSave
   // captured Pano.cur); cancel it so a delayed save cannot write the old

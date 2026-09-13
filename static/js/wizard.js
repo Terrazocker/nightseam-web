@@ -120,6 +120,11 @@ export function openWizard() {
     bind();
   }
   _step = 0;
+  // DE-07: `_formState` survived the first run, so a replay restored the FIRST
+  // run's typed coordinates and skipped the active-site prefill - `validate()`
+  // then PUT them onto whatever site is active NOW, silently overwriting its
+  // location. A fresh run starts from the active site again.
+  _formState = {};
   renderStep();
 }
 

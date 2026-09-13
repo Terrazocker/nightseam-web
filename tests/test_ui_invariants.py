@@ -113,6 +113,32 @@ def test_desktop_robustness_invariants():
     assert "esc(m.distance)" in detail
 
 
+def _js_body(src: str, header: str) -> str:
+    """Body of a top-level JS function, up to its first closing brace."""
+    start = src.index(header)
+    return src[start:src.index("\n}", start)]
+
+
+def test_desktop_ownership_invariants():
+    """DE-02 / DE-07 / DE-08: three ownership contracts, each a single statement.
+
+    A handler or a cache belonged to the WRONG owner: the mask cache survived a
+    panorama switch, the dismiss button bubbled into the notice's own action, and
+    the wizard's typed values survived the run that should have replaced them.
+    The pin slices the function BODY (a whole-file grep would pass on an
+    unrelated copy elsewhere)."""
+    pano = _read("static", "js", "pano.js")
+    assert "invalidateMask();" in _js_body(pano, "async function select(rec) {"), (
+        "DE-02: select() must drop the previous panorama's mask cache")
+    util = _read("static", "js", "util.js")
+    toast_body = _js_body(util, "export function toast(msg")
+    assert "stopPropagation()" in toast_body, (
+        "DE-08: the toast's dismiss button must not bubble to the toast body")
+    wiz = _read("static", "js", "wizard.js")
+    assert "_formState = {};" in _js_body(wiz, "export function openWizard() {"), (
+        "DE-07: a wizard replay must not reuse the first run's coordinates")
+
+
 def test_desktop_has_no_popularity_sort_mode():
     html = _read("static", "index.html")
     js = _read("static", "js", "targets.js")

@@ -151,7 +151,11 @@ export function toast(msg, type = "err", timeout = 7000) {
   box.appendChild(span);
   const x = document.createElement("button");
   x.className = "ghost"; x.textContent = "\u00D7";
-  x.addEventListener("click", () => box.remove());
+  // DE-08: callers bind click handlers to the WHOLE box (the update notice opens
+  // the download page), and removing the element during dispatch does not abort
+  // propagation - so dismissing a notice also ran the notice's own action.
+  // Dismissal is not a click on the notice.
+  x.addEventListener("click", (ev) => { ev.stopPropagation(); box.remove(); });
   box.appendChild(x);
   $("#toasts").appendChild(box);
   if (timeout) setTimeout(() => box.remove(), timeout);
