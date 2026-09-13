@@ -333,12 +333,16 @@ def desktop_pano_crop_fov(c):
     for x0, x1, want_fov, want_az in cases:
         c.page.set_input_files("#panoFile", png)
         # wait for the NEW panorama to be selected (a stale id means the upload
-        # round-trip has not landed yet) and its image decoded
+        # round-trip has not landed yet) and its image decoded.
+        # 90 s, not 30: the upload/decode round-trip occasionally overshoots 30 s
+        # in a full-suite run (measured 31.9 s on two consecutive full runs, then
+        # 2.9 s on the next one with the SAME preceding checks - a flaky budget,
+        # not an ordering rule), while the check alone lands in ~3 s.
         c.page.wait_for_function(
             """(prev) => window.Pano && window.Pano.cur
                  && window.Pano.cur.id !== prev
                  && window.Pano.img && window.Pano.img.complete""",
-            arg=prev, timeout=30000)
+            arg=prev, timeout=90000)
         pid = c.page.evaluate("() => window.Pano.cur.id")
         prev = pid
         c.expect(pid, "a panorama must be selected after upload")
