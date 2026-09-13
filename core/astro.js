@@ -7,7 +7,10 @@
  * Saemundsson refraction and topocentric alt/az, plus the desktop batch
  * altazFrame/altazFrameApply fast path for advanced-track synthesis.
  *
- * Python app/astro.py is the oracle (fixtures tests/fixtures/core_fixtures.json).
+ * This module IS the implementation. The retired Python oracle (app/astro.py,
+ * deleted in Phase C/0.6.20) survives only as the FROZEN regression fixtures
+ * tests/fixtures/core_fixtures.json; the CORRECTNESS authority is
+ * tests/js/reference_anchors.mjs (published IAU 2006 / Meeus / ERFA values).
  */
 
 const D2R = Math.PI / 180;
@@ -45,8 +48,10 @@ export function gmstDeg(jd) {
 
 /** Precess ICRS/J2000 coords to mean equinox of date (Meeus ch.21).
  *  Z(zeta) -> Y(theta) -> Z(z): the MIDDLE rotation is about the Y axis.
- *  `app/astro.py` is the oracle and implements the same equations;
- *  tests/test_js_parity.py compares both shells against published values. */
+ *  This is the ONE implementation (both shells re-export it); the retired
+ *  app/astro.py implemented the same equations. tests/test_js_parity.py compares
+ *  both shells against published values; tests/js/reference_anchors.mjs is the
+ *  correctness authority. */
 export function precessJ2000ToDate(raDeg, decDeg, jd) {
   const t = (jd - J2000) / 36525.0;
   const zeta = (2306.2181 * t + 0.30188 * t * t + 0.017998 * t ** 3) * ASEC2DEG;
@@ -160,7 +165,8 @@ export function altazFrameApply(frame, raDeg, decDeg, i) {
 
 /* ---------------------------------------------------------------- sun/moon
  * Phase 2, concept 7: the solar/lunar series the web shell used to carry.
- * Python app/astro.py is the oracle (Class P fixtures). */
+ * This module IS the implementation; the retired Python app/astro.py survives
+ * only as the FROZEN "Class P" fixtures in tests/fixtures/core_fixtures.json. */
 
 /** Geometric solar position -> RA/Dec in J2000 equivalents (Meeus ch.25). */
 export function sunRaDec(jd) {

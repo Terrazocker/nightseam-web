@@ -8,16 +8,16 @@
  *   • Settings — sites, rigs, custom targets, backup/restore (webstore.js)
  * All sky math runs client-side (astro.js, Meeus algorithms).
  */
-import * as E from './astro.js?v=12';
-import * as Hor from './horizon.js?v=44';
-import * as WS from './webstore.js?v=22';
+import * as E from './astro.js?v=13';
+import * as Hor from './horizon.js?v=45';
+import * as WS from './webstore.js?v=23';
 import { initDragWindows } from './dragwin.js?v=1';
 import { fmtSize, sizeArcmin, framePct, magVisible, skyClampZoom,
-         skyViewMatrix, skyScreenToBase, skyClampFocus } from './format.js?v=19';
-import { nightStats, sampleVisible } from './nightrank.js?v=9';
+         skyViewMatrix, skyScreenToBase, skyClampFocus } from './format.js?v=20';
+import { nightStats, sampleVisible } from './nightrank.js?v=10';
 import { TYPE_LABELS, TYPE_COLORS, searchBlob as coreSearchBlob }
-  from './core.js?v=19';
-import { popularityFactor as corePopularityFactor } from './core.js?v=19';
+  from './core.js?v=20';
+import { popularityFactor as corePopularityFactor } from './core.js?v=20';
 
 // Cache-bust token for the ~4 MB data file web/catalog.json. It is NOT a JS
 // module, so it cannot carry a ?v= in an import: this named token IS its
@@ -137,9 +137,9 @@ function computeObs(obj, jd0, jd1, step, minAlt, pano, lat, lon) {
 }
 /* ONE definition of the night window behind every visibility number, so the
    catalog % column and the Tonight ranking can never disagree with each other
-   or with the desktop: astronomical twilight first (app/planning.py), then
-   nautical, then civil, then sunset/sunrise, sampled every 6 minutes
-   (nightcalc.py's night grid). */
+   or with the desktop: astronomical twilight first, then nautical, then civil,
+   then sunset/sunrise, sampled every 6 minutes - all of it core/planning.js
+   (the retired app/planning.py + nightcalc.py were deleted in Phase C). */
 const NIGHT_STEP_MIN = 6;
 
 /** The real instant of the SITE's local noon for a calendar date whose
@@ -155,9 +155,9 @@ function nightWindow() {
   const { lat, lon } = S.site;
   const info = E.nightInfo(nightAnchor(), lat, lon, siteNoon(nightAnchor()));
   const d = (S.date && S.date instanceof Date) ? S.date : WS.effToday();
-  // pickDarkWindow applies the polar-day/polar-twilight fallback (fixed
-  // 20:00 -> 04:00 in the SITE's zone) itself, the same one app/planning.py
-  // uses - anchored at the site's local noon so a site in another timezone
+  // core/planning.js::pickDarkWindow applies the polar-day/polar-twilight
+  // fallback (fixed 20:00 -> 04:00 in the SITE's zone) itself - anchored at the
+  // site's local noon so a site in another timezone
   // gets ITS fallback hours, never the browser's
   const w = E.pickDarkWindow(info, d, siteNoon(nightAnchor()));
   return {
@@ -1993,7 +1993,7 @@ async function renderSettings() {
             <label class="btn" for="set-import" style="text-align:center">⬆ Import backup</label>
             <input type="file" id="set-import" accept="application/json,.json" class="vhidden">
           </div>
-          <p class="sub" style="margin-top:8px">Layout (free space per side) lives in the hamburger menu under <b>Layout</b>.</p>
+          <p class="sub" style="margin-top:8px">Free space per side lives in the hamburger menu under <b>Display</b>.</p>
         </div>
       </div>
     </div>`;

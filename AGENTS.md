@@ -353,7 +353,7 @@ Image Catalog (FITS ingest + library). `README.md` has the feature list.
     `Get-CimInstance Win32_Process`).
   - If 8407 is briefly taken at boot, `free_port()` silently picks a RANDOM port
     (written to `instance.json`).
-- Tests: `python -m pytest tests/` (461). Single test:
+- Tests: `python -m pytest tests/` (462). Single test:
   `python -m pytest tests/test_js_parity.py -k name`. API tests use
   `create_app(db, prefetch=False)` (no image-cache thread). The `client` fixture
   must leave `data/panos` in the tmp dir it patches in.
@@ -363,14 +363,16 @@ Image Catalog (FITS ingest + library). `README.md` has the feature list.
     documented external `--basetemp` no longer restores a clean run (the directory
     cannot be created there, and pytest re-creates a workspace one with the same
     owner-SID-only DACL); use a repo-internal `tmp_path` override plugin instead -
-    with one, 461 pass with 0 assertion failures (certified 0.6.24 review,
+    with one, 462 pass with 0 assertion failures (certified 0.6.24 review,
     section 5.3).
 - JS checks (run after touching `static/` OR `web/`): `python scripts/check_js.py`
   runs all of them and exits non-zero on hard failures:
   - `check_js_imports.py` - broken relative ES-module imports / missing named exports
   - `check_dom_ids.py` - `$('#id')` missing from that app's `index.html`
-  - `check_js_syntax.py` - `node --check` on every shipped module (static/js, web/
-    and the core source + baked trees) via temp `.mjs`
+  - `check_js_syntax.py` - `node --check` via a temp `.mjs` on every shipped
+    module: `static/js/*.js` + `web/*.js` (flat) AND, recursively, `core/*.js`
+    plus both baked trees `web/core/<hash>/` + `static/js/core/<hash>/` (58
+    modules; TO-06, 0.6.24 review - the scope used to be the flat two only)
   - `check_encoding.py` - the encoding guard above
   - `check_catalog_token.py` - `web/catalog.json` + `catalog.manifest.json` pair with `CATALOG_TOKEN` in `web/app.js`
   - `check_js_tokens.py` - every tokenized `web/` module (`index.html` `app.js?v=`,
@@ -520,13 +522,16 @@ Image Catalog (FITS ingest + library). `README.md` has the feature list.
   `scripts/check_catalog_token.py`, wired into `scripts/check_js.py`, and pinned
   by `tests/test_cache_tokens.py` (mutation-tested). Do NOT add
   `{cache:'no-store'}` - the file must stay cacheable.
-  Current (unreleased, after the CR3 fix): `app.js?v=64` (index.html) /
-  `CATALOG_TOKEN = '2'`, `astro.js?v=12`, `horizon.js?v=44`, `format.js?v=19`,
-  `nightrank.js?v=9`, `webstore.js?v=22`, `dragwin.js?v=1`, `style.css?v=16`,
-  `themes.css?v=4`; the core stub is `web/core.js?v=19` (bump = re-bake,
+  Current (unreleased, after the CR3 fix): `app.js?v=65` (index.html) /
+  `CATALOG_TOKEN = '2'`, `astro.js?v=13`, `horizon.js?v=45`, `format.js?v=20`,
+  `nightrank.js?v=10`, `webstore.js?v=23`, `dragwin.js?v=1`, `style.css?v=16`,
+  `themes.css?v=4`; the core stub is `web/core.js?v=20` (bump = re-bake,
   enforced by `scripts/check_core.py`). The CR3 fix (CO-01, 0.6.24 review)
   touched `core/horizon.js` + `core/index.js`, so the re-bake moved the stub
-  17 -> 19 and changed the bytes of every module importing it => that cascade.
+  17 -> 19 and changed the bytes of every module importing it => that cascade;
+  the WE-03 comment corrections moved it 19 -> 20 the same way, and that re-bake
+  exercised the N-1 retention policy (the manifest now records a `previous` hash
+  and BOTH trees stay in place).
   The tagged v0.6.24 register was 60/10/41/17/7/20 with stub 17; 0.6.23 (live)
   was 59/9/40/16/6/19.
 - **A missed bump is now a hard failure (XL-01, 0.6.24).** The v0.6.24 tag

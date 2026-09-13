@@ -1,7 +1,8 @@
 /*
  * NightSeam Web — astronomy engine.
- * Faithful JS port of NightSeam's pure-Python engine
- * (app/astro.py + planning.py + nightcalc.py concepts).
+ * Thin wrapper over the SHARED core (core/astro.js + core/planning.js), which is
+ * the ONE implementation; the retired pure-Python engine (app/astro.py +
+ * planning.py + nightcalc.py) was deleted in Phase C/0.6.20.
  * Algorithms: Meeus, "Astronomical Algorithms" (2nd ed.):
  *  solar coords ch.25 (~0.01 deg), lunar ch.47 truncated (~0.3 deg),
  *  sidereal time ch.12, precession ch.21, Saemundsson/Bennett refraction.
@@ -29,7 +30,7 @@ import {
   sunRaDec, moonRaDec, moonIllumination, moonAge, sunAlt,
   sunCrossings, nightInfo, pickDarkWindow, scrubWindowMs,
   scrubBounds, scrubClamp, sepDeg,
-} from './core.js?v=19';
+} from './core.js?v=20';
 
 export {
   julianDay, dateFromJD, gmstDeg, precessJ2000ToDate, precessDateToJ2000,
@@ -49,7 +50,7 @@ export {
  * target) is a different question and does NOT belong here.
  */
 /** Apparent-altitude visibility predicate - shared in core/ (Phase 2). */
-export { aboveHorizon } from './core.js?v=19';
+export { aboveHorizon } from './core.js?v=20';
 
 /** Sun/moon elongation angle in degrees and phase label. */
 export function moonPhase(jd) {
@@ -70,8 +71,8 @@ export function moonPhase(jd) {
 
 /**
  * Sun/Moon apparent altitude+azimuth at a selected time. sunRaDec/moonRaDec
- * return RA already in DEGREES, exactly like app/astro.py's sun_ra_dec /
- * moon_ra_dec, and altaz() takes degrees - these wrappers exist so a caller can
+ * return RA in DEGREES (the core/astro.js convention, like the retired
+ * app/astro.py), and altaz() takes degrees - these wrappers exist so a caller can
  * never again treat the result as hours (the chart used `ra * 15`, which put the
  * Sun high in the sky all night). Use these everywhere the chart, scoring or the
  * detail panel needs a Sun/Moon position.
@@ -98,7 +99,7 @@ export function moonAltAz(jd, lat, lon) {
 export {
   MOON_TYPE_FACTOR, moonSensitivity, moonMinDist,
   effectiveMoonGlow, moonPenalty, bortleMoonFactor,
-} from './core.js?v=19';
+} from './core.js?v=20';
 
 /** Sample an object's altitude over [jd0, jd1] at stepMin minutes. */
 export function objectTrack(raDeg, decDeg, jd0, jd1, lat, lon, stepMin = 4) {

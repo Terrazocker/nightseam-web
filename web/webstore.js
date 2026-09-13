@@ -10,7 +10,7 @@
  * the app moved to nightseam.de, so every visitor starts on a fresh origin.
  */
 
-import { offsetEastMin, wallFromUtcMs, utcFromWallMs } from './core.js?v=19';
+import { offsetEastMin, wallFromUtcMs, utcFromWallMs } from './core.js?v=20';
 
 const DB_NAME = 'nightseam-db-v1';
 const DB_VER = 1;

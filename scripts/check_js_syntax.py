@@ -7,8 +7,12 @@ undefined identifiers are all text matching - so a module with a syntax error
 looked clean. The measured case: a duplicate `const` in `web/app.js` survived
 `check_js.py` and was only found by a manual `node --check`.
 
-Covers the same two graphs as the sibling checkers: the desktop UI
-(`static/js/*.js`) and the web app (`web/*.js`).
+Covers the desktop UI (`static/js/*.js`), the web app (`web/*.js`) - the same
+two graphs as the sibling checkers - plus the SHARED CORE source (`core/*.js`)
+and both baked, content-hashed trees (`web/core/<hash>/`,
+`static/js/core/<hash>/`), which are copies the browser loads verbatim.
+(TO-06, 0.6.24 review: this docstring and AGENTS.md claimed the core coverage
+while `ROOTS` excluded it.)
 
 Usage:
     python scripts/check_js_syntax.py                  # everything that ships
@@ -33,8 +37,13 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
 
-# the JS that actually ships: the desktop UI and the web twin
+# the JS that actually ships: the desktop UI and the web twin (flat modules)
 ROOTS = [REPO / "static" / "js", REPO / "web"]
+
+# ... plus the shared core and its baked copies, which are scanned RECURSIVELY:
+# `core/` is the authored source and `<app>/core/<hash>/` are byte-for-byte copies
+# the browser loads, so a syntax error in any of them ships (TO-06).
+CORE_ROOTS = [REPO / "core", REPO / "web" / "core", REPO / "static" / "js" / "core"]
 
 # never shipped / never ours (a --path can point at one of these by accident)
 IGNORED_DIRS = {"node_modules", "whale", "dev"}
@@ -82,13 +91,25 @@ def discover(root: Path) -> list[Path]:
     return [p for p in found if not _ignored(p, root)]
 
 
+def discover_tree(root: Path) -> list[Path]:
+    """Every `*.js` UNDER `root`, recursively.
+
+    The baked core trees live one level down (`<root>/<hash>/*.js`), which the
+    flat `discover()` cannot see - the scope gap TO-06 recorded."""
+    if not root.is_dir():
+        return []
+    return [p for p in sorted(root.rglob("*.js")) if not _ignored(p, root)]
+
+
 def collect(paths: list[str]) -> list[Path]:
     """Modules for the given CLI paths ([] = the default ship set)."""
     if not paths:
         files: list[Path] = []
         for root in ROOTS:
             files += discover(root)
-        return files
+        for root in CORE_ROOTS:
+            files += discover_tree(root)
+        return list(dict.fromkeys(files))
     files = []
     for raw in paths:
         files += discover(Path(raw))
