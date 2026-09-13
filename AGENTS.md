@@ -523,12 +523,17 @@ tool works here, so measure before working around anything:
   `TO-02`, `XL-02`, `DE-02`, `DE-07`, `DE-08`, `WE-01`. Lows: `PY-02`, `PY-05`,
   `PY-07`, `CO-03`, `CO-04`, `WE-03`, `WE-04`, `DE-04`-`DE-15` and
   `TO-03`-`TO-11` (`TO-07` stays a deliberate WARNING that names the re-bake).
-  Nothing is TAGGED yet. The browser gate DOES run here: under an unsandboxed
-  command Chrome starts and `python scripts/check_browser.py --web` reports
-  **12/12 passed / exit 0** on this tree; sandboxed, Chromium cannot start at all
-  (mojo named pipes) and `TO-02` makes that report exit 2 honestly instead of a
-  fake "failed check(s)". `--desktop` still needs a FRESH `dist\NightSeam.exe`
-  (the one in dist/ predates this batch, so it would test old code).
+  **RELEASED as 0.6.25** - tag `v0.6.25` on the release commit (the curated entry
+  and the build fix live in it), staged artifacts in `dist/release/`
+  (`NightSeam-0.6.25.zip` + `NightSeam-latest.zip` + `version.json` +
+  `ns-version.js`), `check_release.py` 0 errors, the FULL browser gate **19/19 on
+  the staged build** (12 web + 7 desktop against the fresh exe), and after the
+  upload the live site passes the read-only production smoke (**13/13**,
+  `check_browser.py --web --prod-url https://nightseam.de/astro/`). Deployed:
+  `/downloads/` (zip, latest, version.json, ns-version.js), `/astro` (whole tree,
+  index.html last) and the landing (with the regenerated changelog.json). The gate
+  needs ONE unsandboxed command (Chromium's mojo named pipes); sandboxed, `TO-02`
+  makes it report exit 2 honestly instead of a fake "failed check(s)".
 - A bounded carry-over of non-reachable hardening/tooling/test-quality items
   remains (consume it in the next review pass): `CR2` malformed-horizon guards
   (all shipped producers normalize before preview), `DS4` worker/sync `ceil`
