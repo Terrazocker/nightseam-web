@@ -30,6 +30,11 @@ ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "landing" / "changelog.json"
 
 CURATED = {
+    # 0.6.32 removes the always-empty Distance field and makes the Wikipedia
+    # lookup use the object's DESIGNATION (a bare "M101" is a disambiguation
+    # page), skipping disambiguation pages and remembering only a definitive
+    # "no photo" instead of 30 days of it.
+    "0.6.32": "Object photos now resolve for Messier objects, and the detail view no longer shows an empty Distance field. \"M101\" on Wikipedia is a disambiguation page (motorways, a rifle), not the galaxy - the app now looks the object up by its full designation (\"Messier 101\", or the NGC number), follows the redirect to the real article and skips disambiguation pages, so the photo and the Wikipedia link both land on the right page. A lookup that is only temporarily blocked is also no longer remembered as \"no photo there\". Distance is gone because the catalogue has none to give: OpenNGC's parallax column is a foreground star's value for galaxies (it puts Andromeda at 167 parsecs), and a redshift distance would put M101 at half its real distance. Everything else is unchanged.",
     # 0.6.31 is the layout/ranking polish on top of 0.6.30: progress never moves
     # the page, the catalog table keeps its column widths and stays inside its
     # card on narrow screens, and both apps agree on the tier letter.
