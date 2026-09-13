@@ -13,11 +13,29 @@ import zipfile
 from datetime import UTC, datetime
 from pathlib import Path
 
-from .database import Database
+from .database import Database, finite_or_none
 from .paths import data_dir, safe_join, safe_rel
 from .version import app_version
 
 APP_VERSION = app_version()
+
+
+def _finite_records(rows, fields):
+    """Rows with non-finite numbers in `fields` nulled out (PY04-F2).
+
+    `json.dumps` writes a bare `Infinity`/`NaN` token for a non-finite float,
+    which no strict JSON parser accepts - so a library that already carries
+    such a row (however it got there) produced an export that could not be
+    re-imported. Emitting NULL for an unusable number keeps the user's own
+    export importable and can never restore the corruption."""
+    out = []
+    for row in rows:
+        rec = dict(row)
+        for key in fields:
+            if key in rec:
+                rec[key] = finite_or_none(rec[key])
+        out.append(rec)
+    return out
 
 
 def _safe_join(root: Path, rel: str) -> Path | None:
@@ -64,8 +82,9 @@ def _export_zip_to(db: Database, target) -> int:
         "sites": db.sites(),
         "rigs": db.rigs(),
         "panoramas": db.panoramas(),
-        "customs": db.customs(),
-        "images": db.images(),
+        "customs": _finite_records(db.customs(), ("ra_hours", "dec_deg", "vmag")),
+        "images": _finite_records(db.images(),
+                                  ("ra_hours", "dec_deg", "exposure")),
     }
     with zipfile.ZipFile(target, "w", zipfile.ZIP_DEFLATED) as z:
         z.writestr("setup.json", json.dumps(setup, indent=1))

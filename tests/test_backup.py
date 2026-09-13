@@ -7,6 +7,7 @@ repo's real `data/`.
 
 import io
 import json
+import math
 import zipfile
 
 import pytest
@@ -430,3 +431,86 @@ def _zip_with(app_name: str, setup: dict, files: dict | None = None) -> bytes:
         for name, data in (files or {}).items():
             z.writestr(name, data)
     return buf.getvalue()
+
+
+# ------------------------------------------------- PY04-F2: the storage boundary
+
+def _image_row(**overrides) -> dict:
+    row = {"file": "M 31/2026-08-22_2314/lights/m31.fit",
+           "orig_name": "m31.fit", "object_id": None, "object_name": "M 31",
+           "ra_hours": 0.712, "dec_deg": 41.269, "exposure": 300.0,
+           "date_obs": "2026-08-22T23:14:05", "filter": "L",
+           "telescope": "Seestar S50", "imagetyp": "light",
+           "ingested_at": "2026-08-22T23:20:00"}
+    row.update(overrides)
+    return row
+
+
+def test_import_rejects_nonfinite_image_numbers(db, tmp_path):
+    """PY04-F2 (review round 2): the image rows were the ONE record type the
+    import boundary did not check, and `json.loads` accepts the bare tokens
+    Infinity/NaN - so a crafted bundle stored `inf`, and /api/library then
+    answered 500 on EVERY later request. Fail closed before any write."""
+    _seed(db, tmp_path)
+    for bad in ({"exposure": float("inf")}, {"ra_hours": float("nan")},
+                {"dec_deg": float("-inf")}):
+        blob = _mutate_bundle(build_export_zip(db),
+                              lambda s, bad=bad: s["images"][0].update(bad))
+        with pytest.raises(ValueError, match="image .* finite number"):
+            apply_import_zip(db, blob)
+    assert db.images()[0]["exposure"] == 300.0      # nothing was replaced
+    assert db.images()[0]["ra_hours"] == 0.712
+    # a custom target's numbers reach /api/catalog, so they fail closed too
+    blob = _mutate_bundle(
+        build_export_zip(db),
+        lambda s: s["customs"][0].update({"ra_hours": float("inf")}))
+    with pytest.raises(ValueError, match="custom .* finite number"):
+        apply_import_zip(db, blob)
+    assert len(db.customs()) == 1
+
+
+def test_add_image_cannot_store_a_nonfinite_number(db):
+    """PY04-F2: the guard sits at the single storage boundary, so NO caller can
+    put a non-finite ra/dec/exposure into the images table - a stored `inf` is
+    what makes /api/library (allow_nan=False) 500 forever."""
+    img_id = db.add_image(_image_row(
+        ra_hours=float("inf"), dec_deg=float("nan"), exposure=float("-inf")))
+    row = db.image(img_id)
+    assert row["ra_hours"] is None and row["dec_deg"] is None
+    assert row["exposure"] is None
+    # finite values (int or float) and non-numeric values are untouched
+    ok_id = db.add_image(_image_row(ra_hours=5, dec_deg=-27.958, exposure=60.0))
+    ok = db.image(ok_id)
+    assert ok["ra_hours"] == 5 and ok["dec_deg"] == -27.958
+    assert ok["exposure"] == 60.0
+
+
+def test_export_of_a_corrupt_library_is_importable_and_stays_finite(db, tmp_path):
+    """PY04-F2 recovery: a database that ALREADY carries a non-finite row (from
+    an older build) used to export a bare `Infinity` token - un-parseable by a
+    strict JSON reader and, re-imported, the corruption came back. The export
+    now writes NULL for an unusable number, so the user's own backup restores
+    cleanly and the stored values are finite."""
+    _seed(db, tmp_path)
+    # simulate the pre-existing corruption (bypasses add_image's guard)
+    db.conn.execute("UPDATE images SET ra_hours=?, exposure=?",
+                    (float("inf"), float("nan")))
+    db.conn.commit()
+
+    blob = build_export_zip(db)
+    raw = zipfile.ZipFile(io.BytesIO(blob)).read("setup.json").decode("utf-8")
+    assert "Infinity" not in raw and "NaN" not in raw
+
+    def _no_constant(token):
+        raise AssertionError(f"non-standard JSON token {token!r}")
+
+    setup = json.loads(raw, parse_constant=_no_constant)   # strict parse
+    assert setup["images"][0]["exposure"] is None
+    assert setup["images"][0]["ra_hours"] is None
+
+    db2 = Database(tmp_path / "other.db")
+    db2.set_setting("image_dir", str(tmp_path / "archive"))
+    apply_import_zip(db2, blob)                          # must not raise
+    row = db2.images()[0]
+    for key in ("ra_hours", "dec_deg", "exposure"):
+        assert row[key] is None or math.isfinite(float(row[key])), (key, row)

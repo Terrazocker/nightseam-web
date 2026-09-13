@@ -1,0 +1,490 @@
+{
+  "review": "NightSeam 0.6.24 full review",
+  "verifier": "t7 verifier",
+  "subject": {
+    "head": "9596878",
+    "describe": "v0.6.24-2-g9596878",
+    "tracked_tree": "clean (git status --porcelain = ?? .agent-teams/ + ?? reviews/)"
+  },
+  "generated_by": "reviews/0.6.24/70-verification.md (authoritative) + this mirror",
+  "counts": {
+    "filed_findings": 42,
+    "unique_after_merge": 41,
+    "confirmed": 42,
+    "refuted": 0,
+    "upgraded": 6,
+    "downgraded": 0,
+    "static_only_unranked": 1,
+    "refuted_subclaims_or_evidence_lines": 15
+  },
+  "findings": [
+    {
+      "id": "PY-01", "lane": "python", "title": "A restore with two bundle records that normalize to one path silently clobbers the file and leaves duplicate DB rows",
+      "severity_asserted": "medium", "severity_verified": "medium",
+      "file": "app/backup.py", "line": 184,
+      "rule": "route contract comment app/backup.py:200-201 (records rejected are not part of the restored set)",
+      "evidence_cmd": "python reviews/0.6.24/evidence/v7_probe_import.py (v7-out-import.txt)",
+      "repro_class": "repro", "regression": "pre-existing", "introducing_commit": "b5339b2 (AstroPilot 0.3.0)",
+      "verdict": "CONFIRMED",
+      "verdict_note": "Mechanism narrowed: byte loss needs filesystem-alias rels (a.fit vs A.FIT, b'SECOND' wins, FIRST gone); canonical-equal rels only duplicate rows. Cited database.py:505-527 is wrong (panoramas() is 492-503)."
+    },
+    {
+      "id": "PY-02", "lane": "python", "title": "The pre-restore safety copy is written before the restore transaction, and its failure is swallowed",
+      "severity_asserted": "low", "severity_verified": "low",
+      "file": "app/backup.py", "line": 137,
+      "rule": "docstring contract app/backup.py:113-117 (never destroys the pre-import data)",
+      "evidence_cmd": "python reviews/0.6.24/evidence/v7_probe_backup.py (directory at <db>.backup-auto.zip -> import 200 auto_backup:null, sites replaced, no zip)",
+      "repro_class": "repro", "regression": "pre-existing", "introducing_commit": null,
+      "verdict": "CONFIRMED",
+      "verdict_note": "Lane's static-only chain promoted to a real repro. Sub-claim refuted: setup.js:189-191 does read auto_backup (no warning is surfaced, which is the defect)."
+    },
+    {
+      "id": "PY-03", "lane": "python", "title": "The import boundary validates profile/profile_top but not strokes; a junk shape breaks the desktop editor and a non-JSON value 500s every listing",
+      "severity_asserted": "medium", "severity_verified": "medium",
+      "file": "app/database.py", "line": 826,
+      "rule": "fail-closed panorama-array rule stated at app/database.py:24-28 / app/server.py:203-210",
+      "evidence_cmd": "python reviews/0.6.24/evidence/v7_probe_import.py (strokes {} -> 200; profile=[1,2] -> 400); node for (const s of {}) -> TypeError",
+      "repro_class": "repro", "regression": "pre-existing", "introducing_commit": null,
+      "verdict": "CONFIRMED",
+      "verdict_note": "Import half reproduced; 500 half needs hand-edited storage (lane says so). Sub-claim refuted: PUT /api/panorama/{pid} rejects a non-list strokes with 422."
+    },
+    {
+      "id": "PY-04", "lane": "python", "title": "Non-finite FITS header numbers are accepted: OBJCTRA/DEC=inf 500s the ingest and EXPTIME=1e400 corrupts the library",
+      "severity_asserted": "high", "severity_verified": "high",
+      "file": "app/fits.py", "line": 108,
+      "rule": "code's own finiteness convention: app/server.py:194-200 (_finite) and app/database.py:24-32",
+      "evidence_cmd": "python reviews/0.6.24/evidence/v7-py-nonfinite-probe.py (cases A/B 500 nothing written; case C 500 with file+images+batches inf, /api/library 500, imports 500, export 200 Infinity)",
+      "repro_class": "repro", "regression": "pre-existing", "introducing_commit": null,
+      "verdict": "CONFIRMED",
+      "verdict_note": "Reproduced twice independently. nan-shift mechanism corrected (min(1.0,nan)=1.0 -> acos=0 -> first catalog row wins deterministically); blocker reading rejected (uncommon header class, recoverable)."
+    },
+    {
+      "id": "PY-05", "lane": "python", "title": "POST /api/settings accepts any string as active_pano_id, including values the panorama routes reject",
+      "severity_asserted": "low", "severity_verified": "low",
+      "file": "app/server.py", "line": 391,
+      "rule": "AGENTS.md untrusted paths/imports: record ids go through paths.safe_token()",
+      "evidence_cmd": "POST /api/settings {\"active_pano_id\":\"../../evil\"} -> 200; /api/state reports it; image/PUT routes 404",
+      "repro_class": "repro", "regression": "pre-existing", "introducing_commit": null,
+      "verdict": "CONFIRMED",
+      "verdict_note": "No file operation reachable. Addendum: set_active_panorama also runs UPDATE panoramas SET active=0 (database.py:519), deactivating the real panorama."
+    },
+    {
+      "id": "PY-06", "lane": "python", "title": "PY6 carry-over: the unverified TLS context is applied to the CDS host, then urllib follows a redirect to any host with that same context",
+      "severity_asserted": "medium", "severity_verified": "medium",
+      "file": "app/images.py", "line": 108,
+      "rule": "app/images.py:55-58 host allow-list control; carry-over row PY6",
+      "evidence_cmd": "python reviews/0.6.24/evidence/v7_probe_tls.py (302 from allow-listed host executed with ctx is _INSECURE_CTX -> True; non-listed first hop ctx=None)",
+      "repro_class": "repro", "regression": "pre-existing", "introducing_commit": "653e7f1 (host allow-list, NightSeam 0.6.9)",
+      "verdict": "CONFIRMED",
+      "verdict_note": "Local reproduction replaces the lane's static-only chain. Medium stands (needs the CDS host to redirect/be compromised; image bytes only)."
+    },
+    {
+      "id": "PY-07", "lane": "python", "title": "The rolling .backup copy is made from the live SQLite file with shutil.copyfile (non-atomic, may capture a torn page set)",
+      "severity_asserted": "low", "severity_verified": "low",
+      "file": "app/database.py", "line": 266,
+      "rule": "general data-integrity standard; manual-recovery artifact promise",
+      "evidence_cmd": "python reviews/0.6.24/evidence/v7_probe_backup.py (33/633 torn copies with one committer, distinct_v=2 vs quiescent control 1)",
+      "repro_class": "repro", "regression": "pre-existing", "introducing_commit": null,
+      "verdict": "CONFIRMED",
+      "verdict_note": "Torn-copy mechanism reproduced, but the lane's trigger (on every boot while the server writes) is REFUTED: make_backup() runs in Database.__init__ before main.py starts uvicorn. Reachable trigger = a second process during the boot window."
+    },
+    {
+      "id": "CO-01", "lane": "core", "title": "The FOV-edge coverage rule drops the frame's first partial half-degree bin, so a painted band there reads as unobstructed (and sky mode reads fully blocked)",
+      "severity_asserted": "medium", "severity_verified": "high",
+      "file": "core/horizon.js", "line": 109,
+      "rule": "core/horizon.js:381-383 (outside the calibrated FOV = unblocked) applied to azimuths inside the FOV; AGENTS.md sky-band/scoring boundary",
+      "evidence_cmd": "node reviews/0.6.24/evidence/v7-verify-co01.mjs (fov45 azOff0.06: prof[0]=-90, prof[1]=45, ceilFor(0.07/0.28)=-90, ceilFor(0.51)=45); v7-co01b/c.mjs (scoreNightTracks visN=1 pct=50 inside the painted band)",
+      "repro_class": "repro", "regression": "pre-existing", "introducing_commit": null,
+      "verdict": "UPGRADED",
+      "verdict_note": "Mechanism REPLACED: the lane's right-edge far-column story is refuted; the real defect is the bin-left-edge coverage rule vs the scorer's continuous gate, reachable after any crop whose azOffset is not a multiple of 0.5 deg. Verified high (unsafe direction, systematic); a medium reading is defensible (window <=0.5 deg)."
+    },
+    {
+      "id": "CO-02", "lane": "core", "title": "The documented baked-core N-1 retention policy is contradicted by the baker and the guard (merged with TO-01 as XL-02)",
+      "severity_asserted": "low", "severity_verified": "medium",
+      "file": "scripts/build_core.py", "line": 96,
+      "rule": "AGENTS.md baked-core retention policy (keep current + N-1)",
+      "evidence_cmd": "scripts/check_core.py on a staged copy with N-1 -> exit 1 \"baked hash dirs [...] != ['97c2e182fb0a5630']\"; git ls-tree v0.6.23/v0.6.24:web/core; ftps_deploy list /astro/core",
+      "repro_class": "repro", "regression": "pre-existing", "introducing_commit": null,
+      "verdict": "UPGRADED",
+      "verdict_note": "Merged into XL-02. Verified medium (charter's own medium example: a guard that only checks the current baked-core dir); tooling pass preferred low because the live deploy still serves N-1 (200) and N-2."
+    },
+    {
+      "id": "CO-03", "lane": "core", "title": "The moved-concept and stale-token guards only scan the top level of web/ and static/js/, so a re-implementation in a subdirectory passes",
+      "severity_asserted": "low", "severity_verified": "low",
+      "file": "scripts/check_core.py", "line": 141,
+      "rule": "AGENTS.md shared-core guard (moved concept must not be re-implemented outside core/)",
+      "evidence_cmd": "staged copy: web/lib/geom.js + static/js/lib/geom.js -> check_core OK; top-level control web/zzcontrol.js -> exit 1 'ceilFor() must live in core/ only'",
+      "repro_class": "repro", "regression": "pre-existing", "introducing_commit": null,
+      "verdict": "CONFIRMED",
+      "verdict_note": "Latent: no non-core .js subdirectory exists today. Also invisible: a subdirectory './core.js?v=' importer (regex requires the literal './')."
+    },
+    {
+      "id": "CO-04", "lane": "core", "title": "visibleSkyBands (and profileSegments) dereference a missing record/profile while the sibling geometry entry points degrade gracefully",
+      "severity_asserted": "low", "severity_verified": "low",
+      "file": "core/horizon.js", "line": 203,
+      "rule": "CR2 carry-over; AGENTS.md sky-band invariant naming visibleSkyBands",
+      "evidence_cmd": "node reviews/0.6.24/evidence/v7-co04.mjs (null/{} throw; siblings return {-90,null}/null/[])",
+      "repro_class": "static-only", "regression": "pre-existing", "introducing_commit": null,
+      "verdict": "CONFIRMED",
+      "verdict_note": "Behaviour reproduced with a synthetic record, but no shipped producer can emit that shape, so it is NOT admitted to the ranked list; carries the CR2 row. Corrections: profileSegments also throws; normalizeProfileBins early-returns on profileBins==='world'."
+    },
+    {
+      "id": "XL-01", "lane": "web+tooling", "title": "The v0.6.24 tag was cut with stale per-module cache tokens; the bump is a post-tag commit and no guard can catch it",
+      "severity_asserted": "high", "severity_verified": "high",
+      "file": "web/index.html", "line": 211,
+      "rule": "AGENTS.md Versioning and release: bump every changed module's token in the SAME commit",
+      "evidence_cmd": "git grep -n \"?v=\" v0.6.24 -- web/index.html web/app.js (59/9/40/19/16/6/17) vs HEAD (60/10/41/20/17/7/17); git tag --contains 208f7d6 empty; live app.js sha256 == HEAD",
+      "repro_class": "repro", "regression": "regression-0.6.24", "introducing_commit": "7e73d98 (behaviour + re-bake, tokens stale); fixed post-tag in 208f7d6",
+      "verdict": "CONFIRMED",
+      "verdict_note": "Blocker claim rejected on evidence: the live deploy names app.js?v=60 and its bytes equal HEAD byte-for-byte, so no wrong artifact reached users. Guard gap (E15) is pre-existing."
+    },
+    {
+      "id": "WE-01", "lane": "web", "title": "The Sky View strokes the obstruction silhouette in sky mode, which the desktop deliberately suppresses",
+      "severity_asserted": "medium", "severity_verified": "medium",
+      "file": "web/app.js", "line": 942,
+      "rule": "AGENTS.md sky-chart silhouette: sky mode NEVER strokes the outline; outline is obstacle-mode only in BOTH apps",
+      "evidence_cmd": "node reviews/0.6.24/evidence/v7-probe-we.mjs (111/181 sampled az points at r=0, path crosses the centre twice) vs static/js/skyview.js:285",
+      "repro_class": "repro", "regression": "pre-existing", "introducing_commit": null,
+      "verdict": "CONFIRMED",
+      "verdict_note": "Cosmetic (no number changes) but user-visible and a parity break; the web side is unpinned (the cross-app test checks the desktop file only)."
+    },
+    {
+      "id": "WE-02", "lane": "web", "title": "The web panorama editor never re-derives the profile when the editable state loses its strokes (undo/Revert, paint-mode switch)",
+      "severity_asserted": "high", "severity_verified": "high",
+      "file": "web/horizon.js", "line": 366,
+      "rule": "AGENTS.md panorama profile/strokes invariant; web editor model (Revert/dirty baseline)",
+      "evidence_cmd": "node reviews/0.6.24/evidence/v7-probe-we.mjs (afterUndo=29.916 expected -90 with historyDirty=false; survives save+reload; mode switch leaves -90 while the preview says blocked)",
+      "repro_class": "repro", "regression": "pre-existing", "introducing_commit": null,
+      "verdict": "CONFIRMED",
+      "verdict_note": "Two reachable gestures (undo first stroke / Revert; or create -> Sky band -> Save unpainted). Unsafe direction; planning follows the stale ceiling and flushHorizonEdits persists it."
+    },
+    {
+      "id": "WE-03", "lane": "web", "title": "Stale comments in the web shell still describe the Python modules deleted in Phase C",
+      "severity_asserted": "low", "severity_verified": "low",
+      "file": "web/app.js", "line": 140,
+      "rule": "AGENTS.md Phase C (modules deleted); code contract comments",
+      "evidence_cmd": "git ls-files | Select-String 'nightcalc|app/astro\\.py|app/planning\\.py' -> empty",
+      "repro_class": "static-only", "regression": "pre-existing", "introducing_commit": null,
+      "verdict": "CONFIRMED",
+      "verdict_note": "Same class also in core/ source (core/astro.js:10,48,163; core/planning.js:4,14,61,84) - a core-lane coverage gap, not a second finding."
+    },
+    {
+      "id": "WE-04", "lane": "web", "title": "The Setup > Backup hint sends the user to a menu group that does not exist (Layout vs Display)",
+      "severity_asserted": "low", "severity_verified": "low",
+      "file": "web/app.js", "line": 1988,
+      "rule": "AGENTS.md UI philosophy: menu groups/labels in BOTH apps",
+      "evidence_cmd": "web/index.html h4 groups = Appearance/Display/Advanced/Data/About (no Layout)",
+      "repro_class": "static-only", "regression": "pre-existing", "introducing_commit": null,
+      "verdict": "CONFIRMED",
+      "verdict_note": "Lane evidence line wrong: grep 'Layout' static/ is not empty (20 CSS-class hits); the narrower claim holds."
+    },
+    {
+      "id": "DE-01", "lane": "desktop", "title": "Adding a custom target never rebuilds the night plan, so the new target is missing from Targets/Tonight/Sky",
+      "severity_asserted": "medium", "severity_verified": "high",
+      "file": "static/js/setup.js", "line": 216,
+      "rule": "the module's own mutator contract (sibling paths call loadNight)",
+      "evidence_cmd": "read setup.js:216 vs targets.js:117-135; grep every loadNight call site (setup.js:55,171,332,338; header.js:18,21; pano.js:303,314; wizard.js:73; main.js:165)",
+      "repro_class": "static-only", "regression": "pre-existing", "introducing_commit": null,
+      "verdict": "UPGRADED",
+      "verdict_note": "Verified high: the plan silently omits the just-added target in Targets/Tonight/Sky (and prints a phantom 'filtered' count) until an unrelated reload; the lane's medium understates a wrong core output."
+    },
+    {
+      "id": "DE-02", "lane": "desktop", "title": "Switching panorama reuses the previous panorama's mask overlay",
+      "severity_asserted": "medium", "severity_verified": "medium",
+      "file": "static/js/pano.js", "line": 460,
+      "rule": "editor overlay correctness; invalidateMask is the documented reset",
+      "evidence_cmd": "read pano.js:447-462 (W/H from aspect; maskCv reused by size) and select() :262-295 (no invalidateMask)",
+      "repro_class": "static-only", "regression": "pre-existing", "introducing_commit": null,
+      "verdict": "CONFIRMED",
+      "verdict_note": "Stored data unaffected; wrong overlay until an edit invalidates the canvas."
+    },
+    {
+      "id": "DE-03", "lane": "desktop", "title": "setPaintMode() discards a stroke-less record's stored profile, contradicting the clearMask-is-the-one-place invariant",
+      "severity_asserted": "medium", "severity_verified": "high",
+      "file": "static/js/pano.js", "line": 148,
+      "rule": "AGENTS.md panorama profile/strokes invariant ('Deliberate clearing goes through clearMask(), the one place')",
+      "evidence_cmd": "read pano.js:148-157 + recomputeProfile :643-662 (canonical blank) + scheduleSave(0)",
+      "repro_class": "static-only", "regression": "pre-existing", "introducing_commit": null,
+      "verdict": "UPGRADED",
+      "verdict_note": "Pinned-invariant violation that silently overwrites stored data and persists; obstacle-mode blank = all -90 (unsafe direction). Probe S2 drove the real module: mode click -> 720x90 profile, PUT body carried it. Line error: ':10-13 the mode buttons' is wrong (index.html:360-361, bound pano.js:35-38). Unfiled twin site undoPaint:167-175. CROSS-LANE CONFLICT: WE-02 argues the opposite direction (that the web is wrong for keeping the stored profile); the owner must rule which side is intended."
+    },
+    {
+      "id": "DE-04", "lane": "desktop", "title": "A panorama edit made inside the 900 ms auto-save debounce is silently lost on switch or app close",
+      "severity_asserted": "low", "severity_verified": "low",
+      "file": "static/js/pano.js", "line": 266,
+      "rule": "AGENTS.md web-editor flush rule applied to the desktop shell (never lose an edit)",
+      "evidence_cmd": "read pano.js:735-737/:266-268; grep beforeunload|pagehide|onunload static/ -> no match",
+      "repro_class": "static-only", "regression": "pre-existing", "introducing_commit": null,
+      "verdict": "CONFIRMED",
+      "verdict_note": "Cancel-without-flush; the pinned cancel (test_ui_invariants.py:102-103) is the older fix, so a repair must flush before cancelling."
+    },
+    {
+      "id": "DE-05", "lane": "desktop", "title": "scheduleSave's post-await block is outside the try: unhandled rejection and a Pano.cur rebind that can drop a newer panorama's unsaved strokes",
+      "severity_asserted": "low", "severity_verified": "low",
+      "file": "static/js/pano.js", "line": 758,
+      "rule": "general async error-handling standard; the module's own comment at :756",
+      "evidence_cmd": "read pano.js:735-762 (try covers only the PUT; :759-761 outside)",
+      "repro_class": "static-only", "regression": "pre-existing", "introducing_commit": null,
+      "verdict": "CONFIRMED",
+      "verdict_note": "Narrow: needs a failing /api/panoramas or a switch inside the in-flight save; Pano.cur can be null after deleteCurrent :309."
+    },
+    {
+      "id": "DE-06", "lane": "desktop", "title": "A weather response is written to shared state without checking that its site is still the active one",
+      "severity_asserted": "low", "severity_verified": "low",
+      "file": "static/js/weather.js", "line": 52,
+      "rule": "module contract weather.js:117-118 (data is for the active site)",
+      "evidence_cmd": "read weather.js:34-36/:52-57/:119-121 + header.js:19",
+      "repro_class": "static-only", "regression": "pre-existing", "introducing_commit": null,
+      "verdict": "CONFIRMED",
+      "verdict_note": "Two in-flight requests can land out of order; decorative data only, no persistence."
+    },
+    {
+      "id": "DE-07", "lane": "desktop", "title": "Replaying the wizard restores the first run's coordinates and PUTs them onto the currently active site",
+      "severity_asserted": "low", "severity_verified": "medium",
+      "file": "static/js/wizard.js", "line": 228,
+      "rule": "module contract wizard.js:227-228 (prefill the active site on replay)",
+      "evidence_cmd": "read wizard.js:11/122/179/217/228/62-66; grep _formState -> 11,200,204,228 (never cleared)",
+      "repro_class": "static-only", "regression": "pre-existing", "introducing_commit": null,
+      "verdict": "UPGRADED",
+      "verdict_note": "Verified medium: a replay silently overwrites the ACTIVE site's stored name/lat/lon/elev with the first-run site's, and all planning then uses it; visible in the fields before Next, which is why it is not high."
+    },
+    {
+      "id": "DE-08", "lane": "desktop", "title": "The update toast's own dismiss button also opens the download page",
+      "severity_asserted": "low", "severity_verified": "medium",
+      "file": "static/js/updater.js", "line": 43,
+      "rule": "toast contract util.js:146-159 (the x removes the box)",
+      "evidence_cmd": "read util.js:152-155 (no stopPropagation) + updater.js:42-45 (listener on the box)",
+      "repro_class": "static-only", "regression": "pre-existing", "introducing_commit": null,
+      "verdict": "UPGRADED",
+      "verdict_note": "Verified medium per the ladder (low is reserved for 'no behavioural impact'): dismissing the update notice deterministically opens an external browser tab. No data or product function affected. Lane's util.js:156 is off by one (appendChild :155)."
+    },
+    {
+      "id": "DE-09", "lane": "desktop", "title": "Preference toggles lose their re-derive when the settings POST fails",
+      "severity_asserted": "low", "severity_verified": "low",
+      "file": "static/js/header.js", "line": 77,
+      "rule": "general async error-handling standard; sibling handlers in the same files do catch",
+      "evidence_cmd": "read header.js:75-81 (await api without catch; prefs:changed dispatch at :80) + setup.js:114-144",
+      "repro_class": "static-only", "regression": "pre-existing", "introducing_commit": null,
+      "verdict": "CONFIRMED",
+      "verdict_note": "Needs a local server failure; the toggle then looks applied while the ranking is not re-derived."
+    },
+    {
+      "id": "DE-10", "lane": "desktop", "title": "The loupe's crosshair marks the wrong point in the magnifier",
+      "severity_asserted": "low", "severity_verified": "low",
+      "file": "static/js/pano.js", "line": 513,
+      "rule": "code contract pano.js:492-493 (a magnifier indicates the sampled point)",
+      "evidence_cmd": "read pano.js:501-517 (sw vs lcv.width never assigned; crosshair factor /Z instead of lcv.width/sw) + index.html:392",
+      "repro_class": "static-only", "regression": "pre-existing", "introducing_commit": null,
+      "verdict": "CONFIRMED",
+      "verdict_note": "At dpr=1 the true factor is 3.18 vs Z=3; wrong by more at dpr=2. Cosmetic."
+    },
+    {
+      "id": "DE-11", "lane": "desktop", "title": "The chart hover 'only redraw on change' test can never be true, so both charts fully redraw on every mousemove",
+      "severity_asserted": "low", "severity_verified": "low",
+      "file": "static/js/skymap.js", "line": 182,
+      "rule": "the handler's own identity test; general performance standard",
+      "evidence_cmd": "read skymap.js:111/:173-182/:26-30 and skyview.js:523/:566",
+      "repro_class": "static-only", "regression": "pre-existing", "introducing_commit": null,
+      "verdict": "CONFIRMED",
+      "verdict_note": "Points are rebuilt per render so the identity comparison always differs; the Sky Map additionally reallocates the canvas."
+    },
+    {
+      "id": "DE-12", "lane": "desktop", "title": "The two object-type legends never resync with the shared S.disabledTypes set",
+      "severity_asserted": "low", "severity_verified": "low",
+      "file": "static/js/skyview.js", "line": 127,
+      "rule": "legend contract skyview.js:116 (the chip state shown must match the filter applied)",
+      "evidence_cmd": "read skyview.js:127-139 + skymap.js:229-240 + main.js:24-40 (tab activation renders only)",
+      "repro_class": "static-only", "regression": "pre-existing", "introducing_commit": null,
+      "verdict": "CONFIRMED",
+      "verdict_note": "Cosmetic divergence between the two charts' legends; no data effect."
+    },
+    {
+      "id": "DE-13", "lane": "desktop", "title": "The library-edit dialog cannot be dismissed with Escape",
+      "severity_asserted": "low", "severity_verified": "low",
+      "file": "static/js/archive.js", "line": 436,
+      "rule": "keyboard accessibility (WCAG 2.1.1) + the app's own Escape convention",
+      "evidence_cmd": "grep -n Escape static/js/*.js -> detail.js:137-143, weather.js:144-145 only; archive.js:436-455 click-only",
+      "repro_class": "static-only", "regression": "pre-existing", "introducing_commit": null,
+      "verdict": "CONFIRMED",
+      "verdict_note": "Keyboard-only impact; no data effect."
+    },
+    {
+      "id": "DE-14", "lane": "desktop", "title": "The detail image's 'modal closed while fetching' guard cannot detect a close, so a blob is retained",
+      "severity_asserted": "low", "severity_verified": "low",
+      "file": "static/js/detail.js", "line": 49,
+      "rule": "code contract detail.js:50 (modal closed while fetching - never leak)",
+      "evidence_cmd": "read detail.js:40-53 (:49 tests S.currentId) + close paths :120-124/:129-133/:137-143 (never clear S.currentId)",
+      "repro_class": "static-only", "regression": "pre-existing", "introducing_commit": null,
+      "verdict": "CONFIRMED",
+      "verdict_note": "Bounded: the URL is revoked on the next open/close (revokeImgUrl :40), so no permanent leak."
+    },
+    {
+      "id": "DE-15", "lane": "desktop", "title": "The worker allocates and fills a flat ceil array that is never sent",
+      "severity_asserted": "low", "severity_verified": "low",
+      "file": "static/js/planning_worker.js", "line": 152,
+      "rule": "general resource standard (dead allocation)",
+      "evidence_cmd": "read planning_worker.js:152/:170 vs the transfer list :195-196 (altFlat, azFlat only)",
+      "repro_class": "repro", "regression": "pre-existing", "introducing_commit": null,
+      "verdict": "CONFIRMED",
+      "verdict_note": "~23 MB per build at 12k objects x 241 samples (advanced mode) allocated and discarded."
+    },
+    {
+      "id": "TO-01", "lane": "tooling", "title": "The baked-core N-1 retention policy cannot be satisfied: the guard requires exactly one hash dir (merged with CO-02 as XL-02)",
+      "severity_asserted": "medium", "severity_verified": "medium",
+      "file": "scripts/check_core.py", "line": 123,
+      "rule": "AGENTS.md baked-core retention policy",
+      "evidence_cmd": "staged copy with N-1 -> check_core exit 1; live /astro/core carries 3 dirs (list); bogus hash 404",
+      "repro_class": "repro", "regression": "pre-existing", "introducing_commit": null,
+      "verdict": "CONFIRMED",
+      "verdict_note": "Merged into XL-02; verified medium (doc/guard contradiction + policy-following release step blocked). Tooling pass argued low on live-deploy evidence."
+    },
+    {
+      "id": "TO-02", "lane": "tooling", "title": "The browser gate's exit-2 contract is bypassed when the Playwright driver cannot start",
+      "severity_asserted": "medium", "severity_verified": "medium",
+      "file": "tests/browser/harness.py", "line": 354,
+      "rule": "scripts/check_browser.py:13 / AGENTS.md: a browser that cannot launch is a HARD failure (exit 2), never a skip",
+      "evidence_cmd": "python scripts/check_browser.py --web -> exit 1, uncaught PermissionError WinError 5 at asyncio/windows_utils.py:144, 0 FATAL lines",
+      "repro_class": "repro", "regression": "pre-existing", "introducing_commit": null,
+      "verdict": "CONFIRMED",
+      "verdict_note": "sync_playwright() (:354) and the playwright import (:326) sit outside the attempted block; only the inner launch returns 2. The WinError 5 is the sandbox artifact, the defect is not."
+    },
+    {
+      "id": "TO-03", "lane": "tooling", "title": "check_js_syntax.py reports OK (exit 0) when node is missing, contradicting the repo's missing-node rule",
+      "severity_asserted": "low", "severity_verified": "low",
+      "file": "scripts/check_js_syntax.py", "line": 233,
+      "rule": "AGENTS.md: a missing node is a hard failure (same rule as the browser gate)",
+      "evidence_cmd": "PATH=C:\\Windows\\System32 python scripts/check_js_syntax.py -> 'node not installed - syntax check skipped', exit 0",
+      "repro_class": "repro", "regression": "pre-existing", "introducing_commit": null,
+      "verdict": "CONFIRMED",
+      "verdict_note": "Reachability narrowed: a node-less box already fails the pytest suite, so check_js.py alone can be green while the syntax check silently skips."
+    },
+    {
+      "id": "TO-04", "lane": "tooling", "title": "check_catalog_token.py's committed-change branch silently no-ops when git is unusable (TL3)",
+      "severity_asserted": "low", "severity_verified": "low",
+      "file": "scripts/check_catalog_token.py", "line": 86,
+      "rule": "carry-over TL3; the guard's own contract",
+      "evidence_cmd": "probe: _git->None gives _git_ok()=False and scan()=[] silently; a real catalog diff without a token bump does raise",
+      "repro_class": "repro", "regression": "pre-existing", "introducing_commit": null,
+      "verdict": "CONFIRMED",
+      "verdict_note": "Branch works when git answers but is never entered by a test (test_cache_tokens.py:71-76 leaves ROOT real)."
+    },
+    {
+      "id": "TO-05", "lane": "tooling", "title": "Mutation-proof coverage is incomplete for four of the six JS guards, and the browser-gate pin is a source grep",
+      "severity_asserted": "low", "severity_verified": "low",
+      "file": "tests/test_browser_gate.py", "line": 56,
+      "rule": "charter S7 / guard-credibility standard",
+      "evidence_cmd": "grep tests/ for check_js_imports|check_dom_ids -> 0 hits; test_encoding.py:24-26 is a real-tree pin; test_browser_gate.py:56-60 asserts source strings",
+      "repro_class": "repro", "regression": "pre-existing", "introducing_commit": null,
+      "verdict": "CONFIRMED",
+      "verdict_note": "The other guard pins (core drift a-h, syntax, catalog token, release, pre-tag, deploy order) are real mutation/document proofs."
+    },
+    {
+      "id": "TO-06", "lane": "tooling", "title": "AGENTS.md's tooling claims are stale: test count and the syntax checker's scope",
+      "severity_asserted": "low", "severity_verified": "low",
+      "file": "AGENTS.md", "line": 356,
+      "rule": "AGENTS.md commands section (436 tests; syntax checker covers core + baked trees)",
+      "evidence_cmd": "python -m pytest tests/ -q --collect-only -> 437 collected; check_js_syntax.py:37 ROOTS=[static/js, web], non-recursive",
+      "repro_class": "repro", "regression": "pre-existing", "introducing_commit": null,
+      "verdict": "CONFIRMED",
+      "verdict_note": "Both halves verified; the count was already stale at the tag (no tests/ change in v0.6.24..HEAD). Addendum: the documented pytest workaround (--basetemp ... -p no:cacheprovider) no longer restores a clean run either (t7: 295 passed / 142 errors / 0 failed), so AGENTS.md's '-> 436/436' claim is stale too."
+    },
+    {
+      "id": "TO-07", "lane": "tooling", "title": "A stale web/version.json is only a WARNING, so the re-bake-on-every-deploy rule has no hard gate (TL5)",
+      "severity_asserted": "low", "severity_verified": "low",
+      "file": "scripts/check_release.py", "line": 592,
+      "rule": "AGENTS.md release order step: re-bake web/version.json on every deploy",
+      "evidence_cmd": "check_release.py:586-591 ahead=ERROR / :592-597 behind=WARNING; test_web_version_behind_is_only_a_warning PASS",
+      "repro_class": "repro", "regression": "pre-existing", "introducing_commit": null,
+      "verdict": "CONFIRMED",
+      "verdict_note": "Open by design; the carry-over row's 'hard error' wording is wrong (it is a deliberate WARNING)."
+    },
+    {
+      "id": "TO-08", "lane": "tooling", "title": "build.ps1 writes the tracked NightSeam.spec into the repo root (--specpath absent) and pins PyInstaller only as >=6.0 (TL4)",
+      "severity_asserted": "low", "severity_verified": "low",
+      "file": "build.ps1", "line": 179,
+      "rule": "AGENTS.md: the committed NightSeam.spec is an artifact, not the source of truth",
+      "evidence_cmd": "grep specpath build.ps1 -> none; git ls-files NightSeam.spec -> tracked; requirements-dev.txt:5 pyinstaller>=6.0",
+      "repro_class": "static-only", "regression": "pre-existing", "introducing_commit": null,
+      "verdict": "CONFIRMED",
+      "verdict_note": "A regenerated spec dirties the tree -> git describe --dirty -> release abort; conditional on a PyInstaller upgrade changing the emitted spec."
+    },
+    {
+      "id": "TO-09", "lane": "tooling", "title": "Eight exported core functions are never named by any test (TS4)",
+      "severity_asserted": "low", "severity_verified": "low",
+      "file": "core/index.js", "line": 1,
+      "rule": "carry-over TS4 (untested exports)",
+      "evidence_cmd": "probe over tests/**/*: 85 exported names (73 functions); 12 never named; untested functions clipProfileToFov, fmtFov, fmtFovPair, isCustomId, searchBlob, sizeArcmin, sunAlt, sunCrossings",
+      "repro_class": "repro", "regression": "pre-existing", "introducing_commit": null,
+      "verdict": "CONFIRMED",
+      "verdict_note": "List reproduced independently twice with a broader corpus."
+    },
+    {
+      "id": "TO-10", "lane": "tooling", "title": "Fixture sections skip silently when a core export disappears (TS7)",
+      "severity_asserted": "low", "severity_verified": "low",
+      "file": "tests/js/core_fixtures.mjs", "line": 24,
+      "rule": "carry-over TS7 (fixture has() gating)",
+      "evidence_cmd": "rename julianDay -> jd section drops AND test_moved_list_* fails; drop the re-export only -> jd drops with both MOVED tests green",
+      "repro_class": "repro", "regression": "pre-existing", "introducing_commit": null,
+      "verdict": "CONFIRMED",
+      "verdict_note": "Mitigation only partial: gmstDeg/precessJ2000ToDate fixture comparisons can vanish silently; low because reference_anchors.mjs is the correctness authority."
+    },
+    {
+      "id": "TO-11", "lane": "tooling", "title": "The encoding guard's repo-wide scope includes the review workspace, so a non-shipped artifact can turn the release JS guard red",
+      "severity_asserted": "low", "severity_verified": "low",
+      "file": "scripts/check_encoding.py", "line": 28,
+      "rule": "AGENTS.md: the guard rejects bad encodings **in shipped text**",
+      "evidence_cmd": "python scripts/check_js.py -> product checks OK, check_encoding: FAIL (31 file(s)), all under reviews/0.6.24/evidence/v7-*",
+      "repro_class": "repro", "regression": "pre-existing", "introducing_commit": null,
+      "verdict": "CONFIRMED",
+      "verdict_note": "Reproduced live by this review's own scratch; SKIP_TOP has no reviews entry while :54 rglobs the root."
+    }
+  ],
+  "merged": [
+    {
+      "id": "XL-02", "parts": ["CO-02", "TO-01"], "lanes": ["core", "tooling"],
+      "title": "The baked-core N-1 retention policy is unsatisfiable: the baker deletes every old hash dir and check_core requires exactly one, while the live deploy carries N-1 (and N-2)",
+      "severity_verified": "medium", "verdict": "CONFIRMED",
+      "file": "scripts/build_core.py", "line": 96,
+      "evidence_cmd": "check_core on a staged copy with N-1 -> exit 1; git ls-tree v0.6.23/v0.6.24:web/core; ftps_deploy list /astro/core -> 784ef08ceaafccf7, 97c2e182fb0a5630, 79ad99ef15810ca2",
+      "repro_class": "repro", "regression": "pre-existing",
+      "verdict_note": "Verified medium per the charter's own medium example; not high because the live deploy satisfies the stated purpose. AGENTS.md:518's 'only requires the current dir' and the '/astro must match' sentence are both false. Residuals beyond the lane: the live tree also carries 784ef08ceaafccf7 (older than N-1, which AGENTS.md says to remove at the next re-bake and check_core.py cannot see), and a wiped/re-uploaded /astro would lose the N-1 fallback because the repo cannot carry it."
+    }
+  ],
+  "cross_lane_twins": [
+    { "pair": ["CO-02", "TO-01"], "ruling": "one defect", "result": "merged as XL-02", "reason": "same unsatisfiable N-1 retention policy; t3 owns the baker+deploy half, t6 the guard wiring and the false AGENTS.md:518 sentence" },
+    { "pair": ["XL-01", "E15"], "ruling": "not duplicates", "result": "XL-01 is the ranked finding; E15 stays a carry-over row resolving against it", "reason": "E15 is the standing per-module token-discipline gap whose pin (test_cache_tokens.py:40-61) is doc==source only" },
+    { "pair": ["DE-03", "WE-02"], "ruling": "two findings, kept separate", "result": "both ranked (high) with cross-reference; ruling required before either is fixed", "reason": "same invariant violated in opposite directions on the two shells: the web keeps a mode-invalid stroke-less stored profile, the desktop discards it (data loss). The 'clearMask() is the one place' sentence supports the web's keep; the sky-mode 90 sentinel supports the desktop's re-blank" },
+    { "pair": ["PY-03", "WE-02"], "ruling": "distinct", "result": "both ranked", "reason": "PY-03 is the storage/import boundary accepting a junk strokes shape (desktop consumer throws at pano.js:670, web twin guarded by Array.isArray at core/horizon.js:264); WE-02 is the editor failing to re-derive when strokes disappear" }
+  ],
+  "carry_over": [
+    { "item": "CR2", "owner": ["core", "web", "desktop"], "lane_verdict": "STILL OPEN low", "verified": "STILL OPEN (low, static-only)", "evidence": "CO-04; core/horizon.js:139/174/203; producers normalize at web/horizon.js:128/255-269" },
+    { "item": "CR3", "owner": ["core", "desktop"], "lane_verdict": "STILL OPEN medium", "verified": "STILL OPEN (high, mechanism corrected)", "evidence": "CO-01; v7-verify-co01.mjs; desktop re-implementation static/js/pano.js:683" },
+    { "item": "DS4", "owner": ["desktop"], "lane_verdict": "CLOSED", "verified": "STILL OPEN (low, scope corrected)", "evidence": "max_alt agrees (r1 monotone; 0 diffs over 240x241), but the binder re-derives ceil from the worker's r1-rounded az (planning_client.js:256 <- planning_worker.js:169-170) while sync uses raw z (:407) -> ceil/ceil_top diverge on 516/19280 samples (80/80 objects, worst 20 deg), visBits/score diffs 0" },
+    { "item": "DS5", "owner": ["desktop"], "lane_verdict": "STILL OPEN low", "verified": "STILL OPEN (low, dev-hook only)", "evidence": "planning_client.js:63-67/97-107; sync fallback always plans" },
+    { "item": "TL3", "owner": ["tooling"], "lane_verdict": "STILL OPEN (partially superseded) low", "verified": "STILL OPEN (low)", "evidence": "TO-04; check_catalog_token.py:40-50/85-93" },
+    { "item": "TL4", "owner": ["tooling"], "lane_verdict": "STILL OPEN low", "verified": "STILL OPEN (low)", "evidence": "TO-08; build.ps1:179-187; requirements-dev.txt:5; tracked NightSeam.spec" },
+    { "item": "TL5", "owner": ["tooling"], "lane_verdict": "STILL OPEN by design low", "verified": "STILL OPEN (low); record wording wrong", "evidence": "TO-07; check_release.py:592-597 (WARNING)" },
+    { "item": "TS4", "owner": ["tooling"], "lane_verdict": "STILL OPEN low", "verified": "STILL OPEN (low)", "evidence": "TO-09; 12 names / 8 functions" },
+    { "item": "TS7", "owner": ["tooling"], "lane_verdict": "STILL OPEN mitigated low", "verified": "STILL OPEN (low); mitigation partial", "evidence": "TO-10; core_fixtures.mjs:24; test_core_fixtures.py:56-58" },
+    { "item": "E15", "owner": ["web", "tooling"], "lane_verdict": "STILL OPEN medium", "verified": "STILL OPEN (medium)", "evidence": "XL-01; test_cache_tokens.py:40-61 (doc==source only)" },
+    { "item": "PY6", "owner": ["python"], "lane_verdict": "STILL OPEN medium", "verified": "STILL OPEN (medium)", "evidence": "PY-06; app/images.py:56-65/104-128; v7_probe_tls.py" },
+    { "item": "WB7", "owner": ["web"], "lane_verdict": "STILL OPEN deliberate low", "verified": "STILL OPEN (low, deliberate)", "evidence": "web/webstore.js:295 vs :336-339; missing-pano half closed at web/app.js:2103" }
+  ],
+  "refuted_subclaims": [
+    { "id": "R1", "target": "CO-01", "what": "right-edge 'extra bin / far column 719' mechanism", "evidence": "v7-verify-co01.mjs + v7-co01.mjs: extra=[]; ceilFor(azOff+fov) not gated; col 719 is the frame's own edge" },
+    { "id": "R2", "target": "XL-01", "what": "blocker / shipped-stale-module claim", "evidence": "live /astro/index.html names app.js?v=60 and sha256(live app.js) == HEAD" },
+    { "id": "R3", "target": "PY-01", "what": "cited app/database.py:505-527 as panoramas()", "evidence": "panoramas() is 492-503; 505-527 is active_panorama/set_active_panorama" },
+    { "id": "R4", "target": "PY-03", "what": "PUT /api/panorama/{pid} hands any strokes shape through", "evidence": "non-list strokes -> 422 (server.py:157 Optional[list])" },
+    { "id": "R5", "target": "PY-04", "what": "nan -> matcher returns None / two different objects", "evidence": "min(1.0,nan)=1.0 -> acos=0 -> first catalog row wins deterministically (abell21)" },
+    { "id": "R6", "target": "PY-07", "what": "trigger 'on every boot while the server writes'", "evidence": "make_backup() only call site database.py:266 in __init__, before main.py:248-249 starts uvicorn" },
+    { "id": "R7", "target": "WE-04", "what": "grep 'Layout' static/ is empty", "evidence": "20 CSS-class hits in static/" },
+    { "id": "R8", "target": "TO-03", "what": "a release can pass all guards with node missing", "evidence": "the pytest suite fails on a node-less box (test_reference_anchors.py)" },
+    { "id": "R9", "target": "TO-10", "what": "test_core_drift fully replaces the lost fixture bite", "evidence": "dropping a core/index.js re-export removes the section with both MOVED tests green" },
+    { "id": "R10", "target": "charter H5", "what": "six scratch scripts + one JSON are committed", "evidence": "git ls-files prints nothing; git check-ignore -v matches .gitignore:25-32" },
+    { "id": "R11", "target": "20-core.md coverage", "what": "core/index.js export surface is 54 names", "evidence": "8 export blocks / 85 unique names == web/core.js" },
+    { "id": "R12", "target": "CO-04", "what": "reachable as a ranked defect", "evidence": "only a hand-edited IndexedDB record reaches the throw; all shipped producers normalize" },
+    { "id": "R13", "target": "CAR-DS4", "what": "'CLOSED' resolution", "evidence": "max_alt closes, but planning_client.js:256 feeds the worker's r1-rounded az to ceilAt while sync :407 passes raw z -> ceil/ceil_top differ on 516/19280 samples (cosmetic)" },
+    { "id": "R14", "target": "DE-11", "what": "'both charts fully redraw on every mousemove'", "evidence": "off-point moves keep best=null===*_HOVER (no redraw); the render side compares by value (skyview.js:462, skymap.js:69)" },
+    { "id": "R15", "target": "DE-03", "what": "':10-13 the mode buttons' line reference", "evidence": "buttons are static/index.html:360-361, bound pano.js:35-38; the same review found the unfiled twin site undoPaint:167-175" }
+  ]
+}

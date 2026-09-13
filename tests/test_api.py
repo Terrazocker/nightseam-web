@@ -7,6 +7,7 @@ prefetch=False so no image-cache thread hits the network.
 
 import io
 import json
+import math
 import zipfile
 
 import pytest
@@ -179,6 +180,68 @@ def test_custom_target_comma_decimals(client):
     assert client.delete(f"/api/catalog/custom/{cid}").status_code == 200
 
 
+def test_custom_target_rejects_non_finite_vmag(client, db):
+    """T6-F1 (review of t6, high): the LIVE create route was unguarded.
+
+    POST /api/catalog/custom with `vmag: 1e400` (a valid strict-JSON number
+    literal that Python parses to inf) - or with the bare `Infinity` token -
+    returned 200 and stored custom_objects.vmag = inf. GET /api/catalog then
+    answered 500 on EVERY later request (Starlette serializes with
+    allow_nan=False) and the desktop shell fetches that route at boot. This is
+    the certified PY-04 failure mode reached with no FITS file and no bundle.
+    """
+    shapes = {
+        "1e400 literal": '{"name":"Zzz","ra":"1.0","dec":"1.0","vmag":1e400}',
+        "bare Infinity token":
+            '{"name":"Zzz","ra":"1.0","dec":"1.0","vmag":Infinity}',
+        "bare -Infinity token":
+            '{"name":"Zzz","ra":"1.0","dec":"1.0","vmag":-Infinity}',
+        "bare NaN token": '{"name":"Zzz","ra":"1.0","dec":"1.0","vmag":NaN}',
+    }
+    for label, body in shapes.items():
+        r = client.post("/api/catalog/custom", content=body,
+                        headers={"Content-Type": "application/json"})
+        assert 400 <= r.status_code < 500, (label, r.status_code, r.text)
+        # nothing was stored ...
+        assert not any(c["primary_name"] == "Zzz" for c in db.customs()), label
+        for c in db.customs():
+            for key in ("vmag", "ra_hours", "dec_deg"):
+                assert c[key] is None or math.isfinite(float(c[key])), (label, c)
+        # ... and the route the desktop awaits at boot still answers
+        cat = client.get("/api/catalog")
+        assert cat.status_code == 200, (label, cat.status_code)
+        text = cat.content.decode("utf-8")
+        assert "Infinity" not in text and "NaN" not in text, label
+
+
+def test_database_add_custom_refuses_non_finite_numbers(db):
+    """The storage boundary holds for ANY caller, not just the route: a
+    non-finite vmag/ra/dec is refused instead of persisted. A refusal (not a
+    silent NULL) is the right shape here - silently nulling would change what
+    the caller asked to store."""
+    for key, bad in (("vmag", float("inf")), ("vmag", float("nan")),
+                     ("ra_hours", float("inf")), ("dec_deg", float("-inf"))):
+        with pytest.raises(ValueError, match="finite"):
+            db.add_custom({"id": "u_bad", "primary_name": "Bad target",
+                           "otype": "galaxy", "ra_hours": 1.0, "dec_deg": 1.0,
+                           "vmag": 9.5, key: bad})
+    assert not any(c["primary_name"] == "Bad target" for c in db.customs())
+
+
+def test_custom_target_accepts_large_finite_vmag(client, db):
+    """The fix must not be a blanket refusal: legitimate large-but-finite
+    magnitudes still create the target."""
+    for vmag in (30.0, 99.9):
+        r = client.post("/api/catalog/custom", json={
+            "name": f"Faint {vmag}", "ra": "1.0", "dec": "1.0", "vmag": vmag})
+        assert r.status_code == 200, (vmag, r.status_code, r.text)
+        stored = next(c for c in db.customs()
+                      if c["primary_name"] == f"Faint {vmag}")
+        assert stored["vmag"] == vmag
+        assert math.isfinite(float(stored["vmag"]))
+    assert client.get("/api/catalog").status_code == 200
+
+
 # ------------------------------------------------------------------ ingest / library
 
 def test_ingest_fits(client, tmp_path):
@@ -230,6 +293,170 @@ def test_ingest_rejects_bad_files(client):
     assert results[0]["error"] == "not a .fit/.fits file"
     assert results[1]["error"] == "not a FITS file (SIMPLE keyword missing)"
     assert client.get("/api/library").json()["total_images"] == 0
+
+
+# --------------------------------------------------- PY-04 non-finite headers
+#
+# Review 0.6.24, PY-04: a FITS header is untrusted input. '1e400' in EXPTIME
+# parsed to `inf`, which was streamed to disk AND stored in the images and
+# import_batches rows; the ingest response then failed to serialize (`inf` is
+# not JSON) and, because the history row is committed before the response is
+# rendered, every later /api/library and /api/library/imports request answered
+# 500 while /api/library/export?format=json emitted the bare token `Infinity`.
+# OBJCTRA/OBJCTDEC = 'Infinity' raised inside math.sin() and 500ed the whole
+# multi-file request; 'nan' answered 200 but silently filed the frame under an
+# unrelated catalog object.
+
+def nonfinite_fits(**cards) -> bytes:
+    """Minimal M 31 frame with overridable header cards (values are raw
+    FITS-card text so '1e400'/'nan'/'Infinity' go through the real parser)."""
+    base = {
+        "OBJECT": "'M 31'",
+        "EXPTIME": "300.0",
+        "OBJCTRA": "'00 42 44.3'",
+        "OBJCTDEC": "'+41 16 09'",
+        "NAXIS": "2",
+    }
+    base.update(cards)
+    return make_fits([("SIMPLE", "T")] + list(base.items()))
+
+
+def test_ingest_extreme_exptime_leaves_a_healthy_library(client, db, tmp_path):
+    """PY-04 regression (fails before the fix): EXPTIME='1e400'.
+
+    Before: ingest 500 + frame file + images/import_batches rows with exposure
+    `inf`, then /api/library and /api/library/imports 500 forever.
+    After: 200, exposure None, no stored infinity anywhere, every library route
+    200 and the export is strict JSON."""
+    r = client.post("/api/images/ingest",
+                    files=[("files", ("huge.fit", nonfinite_fits(EXPTIME="1e400"),
+                                      "application/octet-stream"))])
+    assert r.status_code == 200
+    res = r.json()["results"][0]
+    assert res["ok"] is True, res
+    assert res["exposure"] is None
+
+    # the row that used to hold `inf` is clean and finite
+    rows = db.images()
+    assert len(rows) == 1
+    exp = rows[0]["exposure"]
+    assert exp is None or (isinstance(exp, float) and math.isfinite(exp))
+    for b in db.import_batches():
+        assert math.isfinite(float(b["total_exposure"])), b
+
+    # ... and every route that used to 500 answers 200
+    for route in ("/api/library", "/api/library/imports"):
+        assert client.get(route).status_code == 200, route
+    lib = client.get("/api/library").json()
+    assert lib["total_images"] == 1
+    assert math.isfinite(lib["total_exposure"])
+
+    exp_r = client.get("/api/library/export?format=json")
+    assert exp_r.status_code == 200
+    text = exp_r.content.decode("utf-8")            # strict parser must accept it
+    assert "Infinity" not in text and "NaN" not in text
+    json.loads(text)
+
+
+def test_ingest_non_finite_coordinates_do_not_corrupt_the_library(client, db):
+    """PY-04 coordinate half: 'Infinity' used to 500 (math.sin(inf)) and 'nan'
+    silently mis-filed the frame. Both are now unparseable coordinates (None),
+    so the ingest is all-or-nothing and the library stays healthy.
+
+    NOTE: this case resolves the frame by its OBJECT name ('M 31'), so it passes
+    on the pre-fix tree as well - it RECORDS the intended behaviour rather than
+    pinning the certified 500. The failing-before pin for the certified path is
+    the whole-ingest half of test_ingest_extreme_exptime_leaves_a_healthy_library
+    and, for the coordinate 500 itself, the parser pins in tests/test_fits.py
+    plus the unresolved-object case in
+    test_ingest_unresolved_object_with_non_finite_coordinates (below)."""
+    r = client.post("/api/images/ingest", files=[
+        ("files", ("inf.fit", nonfinite_fits(OBJCTRA="'Infinity'"),
+                   "application/octet-stream")),
+        ("files", ("nan.fit", nonfinite_fits(OBJCTRA="'nan'", OBJCTDEC="'nan'"),
+                   "application/octet-stream")),
+        ("files", ("ovf.fit", nonfinite_fits(OBJCTDEC="'1e400'"),
+                   "application/octet-stream")),
+    ])
+    assert r.status_code == 200
+    results = r.json()["results"]
+    assert all(x["ok"] for x in results), results
+
+    # The non-finite coordinate is unparseable (None), so the header OBJECT
+    # resolves the frame by name and the STORED coordinates are the catalog
+    # object's own finite values - never an inf/nan handed to math.sin(), and
+    # never a frame silently filed under an unrelated object.
+    lib = client.get("/api/library").json()
+    assert lib["total_images"] == 3
+    assert [o["object_id"] for o in lib["objects"]] == ["m31"]
+    for o in lib["objects"]:
+        assert math.isfinite(float(o["total_exposure"]))
+    for row in db.images():
+        assert row["object_id"] == "m31", row
+        for value in (row["ra_hours"], row["dec_deg"]):
+            assert value is not None and math.isfinite(value), row
+
+
+def test_ingest_unresolved_object_with_non_finite_coordinates(client, db):
+    """PY-04, certified path: an OBJECT name that resolves to NO catalog row,
+    with OBJCTRA/DEC = 'Infinity'/'1e400'/'nan'.
+
+    This is the shape the 0.6.24 review probed: with no name match the ingest
+    falls back to the coordinate matcher, and app/imglib.py::angular_dist then
+    called math.sin(inf) on the pre-fix tree ->
+    `ValueError: expected a finite input, got inf` -> HTTP 500 for the whole
+    request, with the frame already on disk. (Verified against a `git archive
+    HEAD` shadow before the fix.) Post-fix the non-finite cards parse to None,
+    so the frame is stored UNRESOLVED with NULL coordinates and every library
+    route still answers: 200, frame stored, coordinates NULL or finite."""
+    r = client.post("/api/images/ingest", files=[
+        ("files", ("c1.fit", nonfinite_fits(OBJECT="'Comet Zzz 9'",
+                                            OBJCTRA="'Infinity'"),
+                   "application/octet-stream")),
+        ("files", ("c2.fit", nonfinite_fits(OBJECT="'Comet Zzz 9'",
+                                            OBJCTDEC="'1e400'"),
+                   "application/octet-stream")),
+        ("files", ("c3.fit", nonfinite_fits(OBJECT="'Comet Zzz 9'",
+                                            OBJCTRA="'nan'", OBJCTDEC="'nan'"),
+                   "application/octet-stream")),
+    ])
+    assert r.status_code == 200
+    results = r.json()["results"]
+    assert all(x["ok"] for x in results), results
+
+    rows = db.images()
+    assert len(rows) == 3
+    for row in rows:
+        assert row["object_id"] is None, row           # unresolved, not mis-filed
+        assert row["object_name"] == "Comet Zzz 9", row
+        for value in (row["ra_hours"], row["dec_deg"], row["exposure"]):
+            assert value is None or math.isfinite(value), row
+
+    lib = client.get("/api/library").json()
+    assert lib["total_images"] == 3
+    assert [o["name"] for o in lib["objects"]] == ["Comet Zzz 9"]
+    assert lib["objects"][0]["object_id"] is None
+    text = client.get("/api/library/export?format=json").content.decode("utf-8")
+    assert "Infinity" not in text and "NaN" not in text
+    json.loads(text)
+
+
+def test_ingest_finite_coordinates_still_resolve(client, db):
+    """Guard against over-rejecting: a normal frame keeps its parsed
+    coordinates and still matches the catalog through them."""
+    r = client.post("/api/images/ingest",
+                    files=[("files", ("good.fit", nonfinite_fits(),
+                                      "application/octet-stream"))])
+    assert r.status_code == 200
+    res = r.json()["results"][0]
+    assert res["ok"] and res["object"]["id"] == "m31"
+    assert res["exposure"] == 300.0
+    row = db.images()[0]
+    # OBJCTRA '00 42 44.3' -> 0.712 h and OBJCTDEC '+41 16 09' -> 41.269 deg,
+    # i.e. the coordinate matcher resolved the catalog object (its stored
+    # values), exactly as before the fix.
+    assert 0.70 < row["ra_hours"] < 0.72
+    assert 41.2 < row["dec_deg"] < 41.4
 
 
 def test_ingest_size_cap(client, monkeypatch):
@@ -941,6 +1168,38 @@ def test_import_rejects_hostile_settings_and_keeps_state_alive(client):
     st = client.get("/api/state")
     assert st.status_code == 200
     assert st.json()["bortle"] == 4
+
+
+def test_import_rejects_nonfinite_image_numbers_and_keeps_library_alive(client):
+    """PY04-F2 (review round 2): a crafted bundle whose images[0] carries the
+    bare JSON token Infinity/NaN was stored verbatim, so /api/library then
+    answered 500 on every request (Starlette serializes with allow_nan=False).
+    The import must be a defined 400-class error with nothing persisted, and
+    the library route must stay alive."""
+    for bad in ({"exposure": float("inf")},
+                {"ra_hours": float("nan")},
+                {"dec_deg": float("-inf")}):
+        image = {"file": "M 31/2026-08-22_2314/lights/m31.fit",
+                 "orig_name": "m31.fit", "object_id": None,
+                 "object_name": "M 31", "ra_hours": 0.712, "dec_deg": 41.269,
+                 "exposure": 300.0, "date_obs": "2026-08-22T23:14:05",
+                 "filter": "L", "telescope": "Seestar S50",
+                 "imagetyp": "light", "ingested_at": "2026-08-22T23:20:00"}
+        image.update(bad)
+        out = io.BytesIO()
+        with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as dst:
+            dst.writestr("setup.json", json.dumps(
+                {"app": "NightSeam", "version": "test", "settings": {},
+                 "sites": [], "rigs": [], "panoramas": [], "customs": [],
+                 "images": [image]}))
+        r = client.post("/api/import", files={
+            "file": ("backup.zip", out.getvalue(), "application/zip")})
+        assert r.status_code == 400, (bad, r.status_code, r.text)
+        assert "finite number" in r.json()["detail"]
+        lib = client.get("/api/library")
+        assert lib.status_code == 200, (bad, lib.status_code)
+        assert lib.json()["total_images"] == 0      # nothing was persisted
+        assert client.get("/api/library/imports").status_code == 200
 
 
 # -------------------------------------------------- request guard (middleware)

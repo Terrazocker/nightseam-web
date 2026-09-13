@@ -41,3 +41,19 @@ def test_main_exit_codes(monkeypatch):
     assert m.main() == 1
     monkeypatch.setattr(sys, "argv", ["pre_tag_check.py"])
     assert m.main() == 2
+
+
+# ------------------------------------------------ cache tokens (XL-01, 0.6.24)
+
+def test_token_guard_is_wired_and_would_block_a_stale_tag(monkeypatch, capsys):
+    """The v0.6.24 tag shipped the 0.6.23 module tokens; a release must not be
+    taggable in that state. The gate runs the same guard check_js.py runs."""
+    m = _mod()
+    monkeypatch.setattr(sys, "argv", ["pre_tag_check.py", "0.6.24"])
+    assert m.main() == 0, "the pre-tag gate must pass at HEAD"
+    # simulate the stale-token state the guard detects
+    monkeypatch.setattr(m, "token_problems",
+                        lambda: ["web/app.js changed but its cache token is "
+                                 "still ?v=59"])
+    assert m.main() != 0
+    assert "still ?v=59" in capsys.readouterr().out

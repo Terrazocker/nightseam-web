@@ -142,6 +142,14 @@ class CustomIn(BaseModel):
     ra: str                      # decimal hours or "5h 34.5m" / "5 34 30"
     dec: str                     # decimal degrees or "+22 01"
     otype: str = "galaxy"
+    # T6-F1 (review of t6): a non-finite magnitude used to be stored verbatim,
+    # which made GET /api/catalog answer 500 forever (allow_nan=False). It is
+    # rejected by the explicit `_finite(body.vmag, "Magnitude")` check in
+    # api_add_custom rather than by a pydantic `allow_inf_nan=False` here: a
+    # model-level rejection produces a 422 whose error body ECHOES the offending
+    # `inf` in `detail[0].input`, and serializing that response 500s again
+    # (`ValueError: Out of range float values are not JSON compliant: inf`).
+    # The route check yields the clean 400 the API promises.
     vmag: Optional[float] = None
     size_am: Optional[str] = ""
     constellation: Optional[str] = ""
@@ -681,6 +689,12 @@ def create_app(db: Database, *, prefetch: bool = True) -> FastAPI:
             raise HTTPException(400, "RA must be 0-24 h (decimal or '5h 34.5m')")
         if dec is None or not (-90 <= dec <= 90):
             raise HTTPException(400, "Dec must be -90..+90 (decimal or '+22 01')")
+        # T6-F1 (review of t6): the create route was the last unguarded door to
+        # the certified PY-04 failure mode - a non-finite vmag was stored
+        # verbatim and every later GET /api/catalog answered 500. This is the
+        # boundary that yields the clean 400 (see the CustomIn note above for
+        # why a pydantic allow_inf_nan=False is NOT used).
+        vmag = _finite(body.vmag, "Magnitude") if body.vmag is not None else None
         oid = "u_" + new_id()
         db.add_custom({
             "id": oid,
@@ -690,7 +704,7 @@ def create_app(db: Database, *, prefetch: bool = True) -> FastAPI:
                 "supernova_remnant", "star_cloud", "asterism") else "galaxy",
             "ra_hours": round(ra, 5),
             "dec_deg": round(dec, 5),
-            "vmag": body.vmag,
+            "vmag": vmag,
             "size_am": body.size_am,
             "constellation": body.constellation.upper()[:3],
             "blurb": body.blurb,

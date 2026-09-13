@@ -22,6 +22,10 @@ const makeEl = (sel) => ({
   querySelector(s) { return (this._q[s] ||= makeEl(s)); },
   querySelectorAll: () => [],
   dataset: {}, style: {},
+  reset() { this._reset = true; },
+  focus() {},
+  appendChild() {},
+  options: [],
 });
 globalThis.document = {
   querySelector(sel) {
@@ -113,4 +117,55 @@ const clampHi = S.tIdx === 19;
 console.log(nightWin && scoring && fullWin && clampLo && clampHi
   ? 'E9 handler: scrub window (sunset..sunrise) + scoring window held'
   : `E9 handler: FAILED ${JSON.stringify({ nightWin, scoring, fullWin, clampLo, clampHi, min: slider9.min, max: slider9.max, tIdx: S.tIdx })}`);
+
+/* ------------------------------- DE-01 ------------------------------- */
+// Adding a custom target must REBUILD the plan, exactly like the sibling
+// mutators (site add/use/delete) that already end in loadNight(): with the
+// caches dropped but no rebuild, the new id never reaches S.night, so Targets/
+// Tonight/Sky keep the pre-add snapshot while the counter has already grown.
+// The plan is rebuilt for real by planning_client's synchronous path, so the
+// observable is the contract itself: the new id present in S.night.objects.
+const iso3 = Array.from({ length: 241 }, (_, i) =>
+  `2026-09-10T${String(Math.floor(i / 10) % 24).padStart(2, '0')}:` +
+  `${String((i * 6) % 60).padStart(2, '0')}:00`);
+S.catalog = [];
+S.meta = {};
+S.panos = [];
+S.filteredIds = [];
+S.cfg = { ...(S.cfg || {}), bortle: 4, adv_mode: false, sites: [] };
+S.activeSiteId = 1;
+S.minAlt = 25;
+S.night = { timeline: { times_iso: iso3, n: 241, step_min: 6 }, objects: [] };
+const siteSelect = document.querySelector('#siteSelect');
+siteSelect.options = [{ value: '1' }];
+siteSelect.value = '1';
+document.querySelector('#dateInput').value = '2026-09-10';
+globalThis.fetch = async (url) => {
+  const u = String(url);
+  const body = u.includes('/api/catalog/custom') ? { id: 'u_pin' }
+    : u.includes('/api/catalog') ? [{ id: 'u_pin', primary_name: 'Pin',
+                                      ra_hours: 1, dec_deg: 1, otype: 'galaxy' }]
+    : u.includes('/api/sites') ? [{ id: 1, name: 'Home', lat: 50, lon: 7.8, elev: 150 }]
+    : [];
+  return { ok: true, status: 200, json: async () => body, text: async () => JSON.stringify(body) };
+};
+const { bindSetup } = await import(new URL('../../static/js/setup.js', import.meta.url).href);
+bindSetup();
+const customForm = els['#customForm'] || document.querySelector('#customForm');
+// the real form exposes its named controls as properties (f.ra.value, ...)
+for (const n of ['name', 'ra', 'dec', 'otype', 'vmag']) {
+  if (!customForm[n]) customForm[n] = makeEl(`#customForm [name=${n}]`);
+}
+customForm.name.value = 'Pin';
+customForm.ra.value = '1';
+customForm.dec.value = '1';
+customForm.otype.value = 'galaxy';
+customForm.vmag.value = '';
+customForm.dispatch('submit');
+await new Promise((r) => setTimeout(r, 400));       // let the deferred load land
+const planIds = (S.night && S.night.objects || []).map((o) => o.id);
+console.log(planIds.includes('u_pin')
+  ? 'DE-01 handler: custom target add rebuilds the plan held'
+  : `DE-01 handler: FAILED (new target absent from the plan: ${JSON.stringify(planIds)})`);
+
 process.exit(0);

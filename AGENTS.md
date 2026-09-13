@@ -370,6 +370,11 @@ Image Catalog (FITS ingest + library). `README.md` has the feature list.
     and the core source + baked trees) via temp `.mjs`
   - `check_encoding.py` - the encoding guard above
   - `check_catalog_token.py` - `web/catalog.json` + `catalog.manifest.json` pair with `CATALOG_TOKEN` in `web/app.js`
+  - `check_js_tokens.py` - every tokenized `web/` module (`index.html` `app.js?v=`,
+    each `./x.js?v=` in `app.js`, `style.css`/`themes.css` and the generated
+    `core.js` stub) against the guard's embedded VERIFIED BASELINE: bytes changed
+    while the token still equals the baseline token = hard failure (see
+    "Versioning and release"; XL-01, 0.6.24)
   - `check_core.py` - baked core drift, stub/token pairing and the core purity +
     moved-concept guards (see "Shared core" invariant)
   - `check_js_defs.py` - heuristic, always exits 0
@@ -469,8 +474,9 @@ Image Catalog (FITS ingest + library). `README.md` has the feature list.
   1. add the curated CURATED entry for `X.Y.Z` to `scripts/build_changelog.py`
      and **commit it with the release** (it must live in the tagged commit).
   2. **pre-tag gate:** `python scripts/pre_tag_check.py X.Y.Z` must exit 0
-     (fails if the CURATED entry is missing; also pinned by
-     `tests/test_pre_tag_check.py`). Do NOT tag until it passes.
+     (fails if the CURATED entry is missing AND if any shipped web module's
+     bytes changed without its `?v=` token being bumped - XL-01, 0.6.24; also
+     pinned by `tests/test_pre_tag_check.py`). Do NOT tag until it passes.
   3. `git tag vX.Y.Z` on the release commit.
   4. `scripts/make_release.py` and `web/build_web.py version` **while HEAD is
      exactly at the tag and the tree is clean** (both call `git describe
@@ -512,6 +518,30 @@ Image Catalog (FITS ingest + library). `README.md` has the feature list.
   bytes of EVERY module that imports it (app/astro/format/nightrank/webstore)
   plus `horizon.js` (crop UI) => 60/10/41/17/7/20. 0.6.23 (live) was
   59/9/40/16/6/19.
+- **A missed bump is now a hard failure (XL-01, 0.6.24).** The v0.6.24 tag
+  shipped the 0.6.23 tokens naming 0.6.24 bytes (`index.html app.js?v=59`,
+  imports astro 9 / horizon 40 / webstore 19 / format 16 / nightrank 6), so
+  returning visitors kept every old module; the bump had to be repaired in the
+  post-tag commit `208f7d6`, and no guard could see it. `scripts/check_js_tokens.py`
+  (wired into `check_js.py` AND `pre_tag_check.py`) compares each tokenized
+  `web/` module against a **VERIFIED BASELINE**: a generated
+  `{module: {token, sha256}}` block embedded in the guard itself
+  (`# --- BEGIN/END GENERATED VERIFIED BASELINE ---`), which records the last
+  state in which the bytes/token pairing was confirmed. The rule is one-way:
+  **bytes differ from the baseline while the token still equals the baseline
+  token = FAIL**, regardless of how the token compares to any tag. A token that
+  moved over unchanged bytes is the legitimate post-tag repair shape (that is
+  what `208f7d6` looks like) and leaves the baseline to be refreshed.
+  Refresh ONLY with `python scripts/check_js_tokens.py --update`, which
+  **REFUSES while any missed bump is present** (bump the token in the same
+  change first) and rewrites only the rows whose token actually moved - so the
+  documented remedy can never record an unbumped token and bless the defect.
+  The stale-baseline hint is never printed alongside a missed-bump finding, and
+  hashes are line-ending-normalized (`core.autocrlf=true`), so a CRLF checkout
+  is not a finding. Pinned by the guard's built-in `--self-test` (the 0.6.25
+  shape, CRLF handling, the `--update` refusal and the hint gating), which
+  `scan()` re-runs once per process - so `scripts/check_js.py` and the collected
+  `tests/test_pre_tag_check.py` test both fail if the detector regresses.
 - **Baked-core retention policy:** keep the CURRENT content-hashed dir plus the
   immediately previous one (N-1) so a visitor holding a cached old `core.js`
   stub still resolves its tree; remove anything older at the next re-bake.

@@ -77,16 +77,20 @@ def test_desktop_window_contract():
 
 
 def test_desktop_preference_and_scrub_handlers():
-    """E5/E8: the real header.js Bortle/min-alt handlers re-derive the Bortle
-    default live and let an explicit value win, and the real main.js keydown
-    handler scrubs by one 6-min sample (Shift = 60 min), clamped. Driven
-    through a stub DOM because headless browsers cannot run in this sandbox;
-    the pure helpers are pinned separately in tests/test_js_parity.py."""
+    """E5/E8/E9 + DE-01: the real header.js Bortle/min-alt handlers re-derive the
+    Bortle default live and let an explicit value win, the real main.js keydown
+    handler scrubs by one 6-min sample (Shift = 60 min), clamped, and the real
+    setup.js custom-target add rebuilds the night plan (review 0.6.24, DE-01:
+    it dropped the planning caches but never re-ran the build, so the new target
+    was missing from Targets/Tonight/Sky). Driven through a stub DOM because
+    headless browsers cannot run in this sandbox; the pure helpers are pinned
+    separately in tests/test_js_parity.py."""
     out = run_node_harness("dom_handlers.mjs")
     assert "E5 handler: bortle re-derives min-alt held" in out
     assert "E5 handler: explicit min-alt survives bortle held" in out
     assert "E8 handler: 6/60-min steps + clamp held" in out
     assert "E9 handler: scrub window (sunset..sunrise) + scoring window held" in out
+    assert "DE-01 handler: custom target add rebuilds the plan held" in out
 
 
 def test_web_panorama_geometry():

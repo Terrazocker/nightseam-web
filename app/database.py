@@ -42,6 +42,29 @@ def _validate_import_profile(values, label: str) -> None:
             "numbers")
 
 
+# Numeric image/custom columns that are serialized into JSON responses with
+# `allow_nan=False`; ONE stored non-finite value makes the route 500 forever.
+_NUMERIC_RECORD_FIELDS = {
+    "images": ("ra_hours", "dec_deg", "exposure"),
+    "customs": ("ra_hours", "dec_deg", "vmag"),
+}
+
+
+def finite_or_none(value):
+    """The storage boundary never accepts a non-finite number (PY04-F2).
+
+    `images.ra_hours/dec_deg/exposure` are read back into `/api/library`, which
+    Starlette serializes with `allow_nan=False` - so a stored `inf`/`nan` makes
+    the route answer 500 on every later request, and re-importing the user's own
+    export could re-introduce it. A non-finite float carries no usable
+    information; store NULL, exactly how the FITS parsers represent an
+    unparseable card. Non-float values are passed through unchanged, so ints,
+    strings and `None` keep their existing behaviour."""
+    if isinstance(value, float) and not math.isfinite(value):
+        return None
+    return value
+
+
 _BOOL_SETTINGS = ("moon_aware", "adv_mode", "weather_auto", "view_full_day",
                   "wizard_done")
 _STR_SETTINGS = ("timezone", "theme")
@@ -397,6 +420,19 @@ class Database:
     # ---------------- custom objects ----------------
 
     def add_custom(self, d: dict) -> str:
+        # T6-F1 (review of t6): the numeric columns are read back into
+        # /api/catalog, which Starlette serializes with `allow_nan=False` - one
+        # stored inf/nan 500s that route forever. Refuse rather than sanitize:
+        # silently NULLing would change what the caller asked to store (the
+        # same rule the import boundary applies via `_fin`).
+        for key in _NUMERIC_RECORD_FIELDS["customs"]:
+            value = d.get(key)
+            if value is None:
+                continue
+            if isinstance(value, bool) or not isinstance(value, (int, float)) \
+                    or not math.isfinite(float(value)):
+                raise ValueError(
+                    f"custom target {key} must be a finite number")
         search = " | ".join(filter(None, [
             d["primary_name"].lower(),
             (d.get("otype") or "").lower(),
@@ -603,9 +639,10 @@ class Database:
                 "ra_hours,dec_deg,exposure,date_obs,filter,telescope,imagetyp,"
                 "ingested_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
                 (rec["file"], rec["orig_name"], rec.get("object_id"),
-                 rec["object_name"], rec.get("ra_hours"), rec.get("dec_deg"),
-                 rec.get("exposure"), rec.get("date_obs"), rec.get("filter"),
-                 rec.get("telescope"), rec.get("imagetyp"),
+                 rec["object_name"], finite_or_none(rec.get("ra_hours")),
+                 finite_or_none(rec.get("dec_deg")),
+                 finite_or_none(rec.get("exposure")), rec.get("date_obs"),
+                 rec.get("filter"), rec.get("telescope"), rec.get("imagetyp"),
                  rec["ingested_at"]))
             self.conn.commit()
             return c.lastrowid
@@ -784,6 +821,19 @@ class Database:
                 _fin(f"panorama {key}", p.get(key))
             _validate_import_profile(p.get("profile"), "profile")
             _validate_import_profile(p.get("profile_top"), "profile_top")
+        # PY04-F2 (review round 2): the image rows were the ONE record type the
+        # boundary did not check, and `json.loads` happily produces the bare
+        # tokens Infinity/NaN. `images[]` is read back by /api/library, so a
+        # crafted - or self-exported - bundle could store `inf` and 500 that
+        # route forever. Fail closed BEFORE the transaction, like the records
+        # above; the custom target numbers get the same treatment because
+        # /api/catalog serializes them too.
+        for im in images:
+            for key in _NUMERIC_RECORD_FIELDS["images"]:
+                _fin(f"image {key}", im.get(key))
+        for c in customs:
+            for key in _NUMERIC_RECORD_FIELDS["customs"]:
+                _fin(f"custom {key}", c.get(key))
         skipped = {"panoramas": 0, "images": 0}
         with self.lock:
             cur = self.conn.cursor()

@@ -69,6 +69,55 @@ def test_parse_dec_deg():
     assert fits.parse_dec_deg(None) is None
 
 
+# ------------------------------------------------------- PY-04 non-finite
+
+def test_parse_value_rejects_non_finite_numbers():
+    """PY-04 (review 0.6.24): a FITS card is untrusted input - 'Infinity',
+    'nan' and an overflowing literal ('1e400' == inf) must come back as None
+    (unparseable), never as a non-finite float. `int()` cannot produce one, so
+    the numeric branch is the only source."""
+    assert fits._parse_value("Infinity") is None
+    assert fits._parse_value("-Infinity") is None
+    assert fits._parse_value("nan") is None
+    assert fits._parse_value("1e400") is None
+    assert fits._parse_value("inf") is None
+    # finite values (int and float) are untouched
+    assert fits._parse_value("300.0") == 300.0
+    assert fits._parse_value("2") == 2
+    # a QUOTED 'Infinity' stays a string - no number is handed up the stack
+    assert fits._parse_value("'Infinity'") == "Infinity"
+
+
+def test_parsers_reject_non_finite_coordinates():
+    """PY-04: `parse_ra_hours`/`parse_dec_deg` are the single coordinate
+    parsers (used by ingest AND reindex). A non-finite input used to reach
+    `math.sin()` in imglib.angular_dist and 500 the whole ingest request."""
+    import math
+    for bad in ("Infinity", "-Infinity", "inf", "nan", "1e400", "  nan  ",
+                float("inf"), float("nan")):
+        for fn in (fits.parse_ra_hours, fits.parse_dec_deg):
+            got = fn(bad)
+            assert got is None, (fn.__name__, bad, got)
+            assert not (isinstance(got, float) and not math.isfinite(got))
+    # finite decimal/sexagesimal values are unchanged
+    assert fits.parse_ra_hours("5.575") == 5.575
+    assert fits.parse_dec_deg("-27.958") == -27.958
+    assert fits.parse_ra_hours("00 42 44.3") == 42 / 60 + 44.3 / 3600
+    assert fits.parse_dec_deg("+41 16 09") == 41 + 16 / 60 + 9 / 3600
+
+
+def test_read_fits_header_non_finite_exptime_is_none():
+    """The ingest path reads EXPTIME through read_fits_header: one '1e400'
+    card used to become a stored `inf` (images + import_batches rows) and 500
+    every later /api/library response."""
+    hdr = fits.read_fits_header(make_fits([
+        ("SIMPLE", "T"), ("OBJECT", "'M 31'"), ("EXPTIME", "1e400")]))
+    assert hdr["EXPTIME"] is None
+    hdr2 = fits.read_fits_header(make_fits([
+        ("SIMPLE", "T"), ("EXPTIME", "300.0")]))
+    assert hdr2["EXPTIME"] == 300.0
+
+
 def test_parse_date_obs():
     assert fits.parse_date_obs("2026-08-22T23:14:05.123") == \
         "2026-08-22T23:14:05"
