@@ -37,9 +37,10 @@ records *why* the rules below exist.
    `ldn1622`, `pipe` (Pipe Nebula). Their astrometry is SIMBAD ICRS/J2000 and
    their sizes are published values (Sharpless 1959, Lynds 1965 LBN, Wikipedia);
    `DECISIONS.md` records the selection rule and the `vmag` policy. In BOTH
-   batches `distance`/`wiki`/`blurb` are empty, because the catalogue carries no
-   prose; batch 2 additionally leaves `vmag` empty - an extended or dark nebula
-   has no credible integrated V magnitude, so those rows follow the app's
+   batches `wiki`/`blurb` are empty, because the catalogue carries no prose, and
+   there is no distance field at all (0.6.32: OpenNGC has none - see
+   `DECISIONS.md`); batch 2 additionally leaves `vmag` empty - an extended or dark
+   nebula has no credible integrated V magnitude, so those rows follow the app's
    magnitude rule and appear only at the slider's maximum, exactly like the
    shipped `b33` (Horsehead), `c9` and `c99`.
 

@@ -1022,3 +1022,32 @@ def test_tier_letters_are_mode_independent_on_the_real_catalog():
     assert not mismatch, f"standard-mode tiers differ from the global ones: {mismatch}"
     # and the standard set really is the most popular slice: A/B only
     assert set(in_main.values()) <= {"A", "B"}, sorted(set(in_main.values()))
+
+
+def test_wiki_titles_avoid_the_messier_disambiguation_trap():
+    """0.6.32, the M101 report: an image lookup keyed on the DISPLAY NAME lands
+    on a disambiguation page - "M101" is motorways, highways and a rifle - so the
+    full "Messier 101" is tried first, then the NGC/IC designation, then the
+    display name. A stored `wiki` title (which the catalogue no longer ships)
+    would still win, and every list is deduped and non-empty."""
+    cases = [
+        {"obj": {"messier": "M101", "ngcic": "NGC 5457", "primary_name": "M101"}},
+        {"obj": {"messier": "M31", "ngcic": "NGC 224",
+                 "primary_name": "Andromeda Galaxy"}},
+        {"obj": {"messier": "", "ngcic": "NGC 7000", "wiki": "",
+                 "primary_name": "North America Nebula"}},
+        {"obj": {"messier": "M42", "ngcic": "NGC 1976", "wiki": "Orion Nebula",
+                 "primary_name": "Great Orion Nebula"}},
+        {"obj": {"messier": "", "ngcic": "", "primary_name": "u_my target"}},
+    ]
+    got = _run_node("wikititles", cases)
+    assert got[0] == ["Messier 101", "NGC 5457", "M101"], got[0]
+    assert got[1] == ["Messier 31", "NGC 224", "Andromeda Galaxy"], got[1]
+    assert got[2] == ["NGC 7000", "North America Nebula"], got[2]
+    assert got[3] == ["Orion Nebula", "Messier 42", "NGC 1976",
+                      "Great Orion Nebula"], got[3]
+    assert got[4] == ["u_my target"], got[4]        # custom targets resolve too
+    for row, case in zip(got, cases):
+        assert row, f"no candidate for {case['obj']}"
+        assert len(row) == len(set(row)), f"duplicate candidate: {row}"
+        assert row[0] != "M101", "the disambiguation form must never be first"

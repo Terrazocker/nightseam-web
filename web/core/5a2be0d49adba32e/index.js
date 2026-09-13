@@ -25,7 +25,8 @@ export {
 } from './format.js';
 
 export {
-  TYPE_LABELS, TYPE_COLORS, isCustomId, searchBlob,
+  TYPE_LABELS, TYPE_COLORS, isCustomId, searchBlob, wikiTitles,
+  TIER_BANDS, TIER_ORDER, tierForRank, assignPopularityTiers,
 } from './catalog.js';
 
 export {

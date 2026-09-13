@@ -39,6 +39,31 @@ export function searchBlob(o) {
     .filter(Boolean).join(' ').toLowerCase();
 }
 
+/** Wikipedia page titles for an object, best first (0.6.32).
+ *
+ * The catalogue carries no `wiki` field - it went with the curated list in
+ * 0.6.26 - so a lookup keyed on the DISPLAY NAME lands on a disambiguation page
+ * for every Messier row without a common name: `M101` is a disambiguation page
+ * (motorways, highways, a rifle), while `Messier 101` is the galaxy. The
+ * designation form is what the encyclopaedia actually files these objects under,
+ * so try it first; `ngcic` (`NGC 5457`) resolves as well, and the display name
+ * is the last resort (with a disambiguation guard at the fetch site).
+ * `app/images.py` builds the same list for the desktop. */
+export function wikiTitles(o) {
+  const out = [];
+  const push = (t) => {
+    const s = String(t || '').trim();
+    if (s && !out.includes(s)) out.push(s);
+  };
+  push(o.wiki);
+  const m = String(o.messier || '').trim();
+  const digits = m.replace(/[^0-9]/g, '');
+  if (digits && /^m/i.test(m)) push(`Messier ${parseInt(digits, 10)}`);
+  push(o.ngcic);
+  push(o.primary_name);
+  return out;
+}
+
 /* ------------------------- popularity TIERS -------------------------------
  * The popularity source score stays a SILENT ranking input: its VALUE is never
  * rendered anywhere (owner rule). The catalog shows a TIER letter instead,

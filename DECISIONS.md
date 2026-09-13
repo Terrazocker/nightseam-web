@@ -10,6 +10,75 @@ for history, never as instructions.
 
 ---
 
+## 0.6.32 — No distance field, and the image lookup uses the designation
+
+**Decision (a).** `distance` is gone from the catalogue: out of
+`build_adv_catalog.py`'s row layout, out of the CSV and the hand-kept supplement,
+out of the seeder's INSERT and column reader, out of the API payload and both
+detail views. `Database._drop_retired_fields()` strips it from `SELECT *`
+results, so an existing user database (whose table still carries the column -
+user schemas are never re-shaped) cannot ship it either.
+
+**Why.** It was ALWAYS empty - the curated list that once filled it was deleted in
+0.6.26 - and OpenNGC has no distance column. Measured on the shipped sources:
+`Pax` exists for 709 of 12,160 rows and for galaxies it is a foreground star's
+parallax (M31: 6.0 mas => 167 pc against a true 780 kpc); `Redshift` covers 10,626
+rows but is not a distance - M101's z gives 11 Mly against a true 23 Mly, M31 and
+M33 are blueshifted (a naive conversion yields a negative distance), and 2,893
+rows sit below z = 0.01 where peculiar motion dominates. A field that can only be
+filled with a wrong number is worse than no field.
+
+**Rejected.** (a) Filling it from `Pax` for the ~630 plausible rows: nothing tells
+the user whether a parallax belongs to the object or to a star in front of it.
+(b) Filling it from redshift with H0 = 70: defensible for distant galaxies, wrong
+by 2x for exactly the famous nearby ones. (c) Keeping the empty column "for
+later" - the empty column is what prompted the question.
+
+**Decision (b).** The Wikipedia lookup tries the full designation first.
+`core/catalog.js::wikiTitles()` returns the stored `wiki` title (none ships any
+more), then `Messier N`, then the NGC/IC designation, then the display name; both
+shells skip DISAMBIGUATION pages, and the detail view's Wikipedia link uses the
+same first candidate (the web then rewrites it to the canonical title the API
+returns, post-redirect).
+
+**Why.** The display name of a Messier row without a common name IS the bare
+`M101`, and `M101` on Wikipedia is a disambiguation page (motorways, highways, a
+rifle). Measured: `Messier 101` and `NGC 5457` return BOTH a Wikidata P18 image
+and a Wikipedia thumbnail; `M101` returns a Wikidata image but no page image - so
+the old single-shot lookup gave up and the user saw "no photo on Wikipedia".
+
+**Rejected.** (a) Free-text search - the module's own history (unrelated pages for
+"M29") and the repo's rule against fuzzy matching. (b) Remembering a rate-limited
+attempt as "no photo": probing showed the 6th rapid request returns HTTP 429, and
+the web used to cache that as definitive for 30 days; it now stores only a
+definitive failure and says "unavailable right now" otherwise.
+
+**Enforced by.** `test_wiki_titles_avoid_the_messier_disambiguation_trap` (the
+`wikititles` engine), `tests/test_catalog_integrity.py` (no editorial columns in
+the CSV), `tests/test_supplement.py`, and the `data`/`col` test tuples.
+
+## 0.6.31 — Progress must not move the layout
+
+**Decision.** A live status may change its TEXT, never the geometry. The
+catalog's count and progress live in a fixed-height row with a reserved status
+width; the web table uses `table-layout: fixed` so a cell filling in ("…" → "42%")
+cannot resize a column; the busy chip sits in a reserved `.busy-slot` in the
+topbar of BOTH shells, and the slot reserves its HEIGHT as well as its width
+(because at 1366 px the topbar already wraps, so an empty slot is a zero-height
+row); the desktop's `#resultCount` is a fixed-width right-aligned block.
+
+**Why.** Measured before/after: the desktop topbar grew 93 → 111 px whenever the
+busy chip appeared, pushing the whole app down; the catalog table widened the PAGE
+to 721 px at a 360 px viewport; the percentage columns redistributed on every
+cell update. Only reserving WIDTH is not enough - the wrapping topbar made the
+slot's height the real culprit.
+
+**Enforced by.** `test_progress_and_status_never_move_the_layout` plus the browser
+checks, which MEASURE table top, column widths, stats-row height and topbar height
+before/while/after progress runs.
+
+---
+
 ## 0.6.29 — Supplement batch 2: the popular targets OpenNGC's *scope* excludes
 
 **Decision.** `app/data/supplement.csv` gained nine rows (16 total, catalogue

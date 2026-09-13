@@ -164,7 +164,6 @@ CREATE TABLE IF NOT EXISTS objects (
     ra_hours REAL, dec_deg REAL,
     vmag REAL, size_am TEXT,
     constellation TEXT,
-    distance TEXT,
     wiki TEXT,
     blurb TEXT,
     search TEXT
@@ -260,7 +259,6 @@ CREATE TABLE IF NOT EXISTS advanced_objects (
     ra_hours REAL, dec_deg REAL,
     vmag REAL, size_am TEXT,
     constellation TEXT,
-    distance TEXT,
     wiki TEXT,
     blurb TEXT,
     search TEXT,
@@ -389,10 +387,10 @@ class Database:
                 self.conn.executemany(
                     f"INSERT OR IGNORE INTO {table}(id,primary_name,messier,"
                     f"ngcic,other,otype,ra_hours,dec_deg,vmag,size_am,"
-                    f"constellation,distance,wiki,blurb,search) VALUES "
+                    f"constellation,wiki,blurb,search) VALUES "
                     f"(:id,:primary_name,:messier,:ngcic,:other,:otype,"
                     f":ra_hours,:dec_deg,:vmag,:size_am,:constellation,"
-                    f":distance,:wiki,:blurb,:search)",
+                    f":wiki,:blurb,:search)",
                     batch)
             self.conn.commit()
 
@@ -461,7 +459,7 @@ class Database:
                 for r in adv:
                     r["_adv"] = True
                 out.extend(adv)
-        return out
+        return _drop_retired_fields(out)
 
     def advanced_count(self) -> int:
         with self.lock:
@@ -487,9 +485,9 @@ class Database:
         # normalize to the shape the rest of the app expects
         for k in ("messier", "ngcic", "other"):
             d.setdefault(k, "")
-        for k in ("distance", "wiki"):
+        for k in ("wiki",):
             d.setdefault(k, None)
-        return d
+        return _drop_retired_fields([d])[0]
 
     # ---------------- custom objects ----------------
 
@@ -1027,6 +1025,22 @@ class Database:
         return skipped
 
 
+# Columns an older database still carries and the catalogue no longer ships.
+# `distance` was ALWAYS empty - OpenNGC has no distance column (its `Pax` is a
+# parallax, and for galaxies a foreground star's: M31 reads 6.0 mas => 167 pc)
+# and redshift is not a distance - so 0.6.32 removed the field (DECISIONS.md).
+# The tables are `SELECT *`ed, so without this an existing user database would
+# put the retired column straight back into /api/catalog and the web payload.
+_RETIRED_COLUMNS = ("distance",)
+
+
+def _drop_retired_fields(rows: list[dict]) -> list[dict]:
+    for r in rows:
+        for col in _RETIRED_COLUMNS:
+            r.pop(col, None)
+    return rows
+
+
 def _read_catalog_csv(csv_path: Path) -> list[dict]:
     """The bundled OpenNGC catalog as seed-ready dicts (empty when the file is
     missing, so a broken install still boots). Malformed rows are skipped, never
@@ -1035,7 +1049,7 @@ def _read_catalog_csv(csv_path: Path) -> list[dict]:
         return []
     cols = ("id", "primary_name", "messier", "ngcic", "other", "otype",
             "ra_hours", "dec_deg", "vmag", "size_am", "constellation",
-            "distance", "wiki", "blurb", "search")
+            "wiki", "blurb", "search")
     rows: list[dict] = []
     with open(csv_path, encoding="utf-8") as f:
         for line in f:

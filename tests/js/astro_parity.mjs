@@ -18,7 +18,7 @@ const engine = process.argv[2];
 if (!["desktop", "web", "window", "darkwindow", "pick", "crosszone",
      "scoring", "ceil", "size", "status", "frame", "advice", "minalt",
      "shortcut", "nightstats", "mag", "skyzoom", "abovehorizon",
-     "scrubwindow", "scrubgrid", "timezone", "tier"].includes(engine)) {
+     "scrubwindow", "scrubgrid", "timezone", "tier", "wikititles"].includes(engine)) {
   console.error("usage: node astro_parity.mjs <engine>");
   process.exit(2);
 }
@@ -295,6 +295,14 @@ if (engine === "size") {
     return cov ? { pct: cov.pct, fits: cov.fits, frames: +cov.frames.toFixed(2) }
                : { pct: null };
   })));
+} else if (engine === "wikititles") {
+  /* Wikipedia page candidates (0.6.32): the stored `wiki` title if any, then the
+   * full "Messier N" (a bare "M101" is a DISAMBIGUATION page - motorways,
+   * highways), then the NGC/IC designation, then the display name. Deduped, and
+   * never empty for a real object. The same list is built in app/images.py for
+   * the desktop, whose chain then also skips disambiguation pages. */
+  const core = await import(new URL("../../web/core.js", import.meta.url).href);
+  process.stdout.write(JSON.stringify(cases.map((c) => core.wikiTitles(c.obj))));
 } else if (engine === "tier") {
   /* Popularity TIERS (0.6.30): the catalog exposes a letter, never the score.
    * The bands are RANK bands, because the score distribution is far too

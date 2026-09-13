@@ -7,7 +7,7 @@ from app import imglib
 
 CSV = Path(__file__).resolve().parents[1] / "app" / "data" / "openned.csv"
 COLS = ("id", "primary_name", "messier", "ngcic", "other", "otype", "ra_hours",
-        "dec_deg", "vmag", "size_am", "constellation", "distance", "wiki",
+        "dec_deg", "vmag", "size_am", "constellation", "wiki",
         "blurb", "search")
 
 

@@ -8,16 +8,16 @@
  *   • Settings — sites, rigs, custom targets, backup/restore (webstore.js)
  * All sky math runs client-side (astro.js, Meeus algorithms).
  */
-import * as E from './astro.js?v=15';
-import * as Hor from './horizon.js?v=47';
-import * as WS from './webstore.js?v=25';
+import * as E from './astro.js?v=16';
+import * as Hor from './horizon.js?v=48';
+import * as WS from './webstore.js?v=26';
 import { initDragWindows } from './dragwin.js?v=1';
 import { fmtSize, sizeArcmin, framePct, magVisible, skyClampZoom,
-         skyViewMatrix, skyScreenToBase, skyClampFocus } from './format.js?v=22';
-import { nightStats, nightStatsBatch, sampleVisible } from './nightrank.js?v=13';
+         skyViewMatrix, skyScreenToBase, skyClampFocus } from './format.js?v=23';
+import { nightStats, nightStatsBatch, sampleVisible } from './nightrank.js?v=14';
 import { TYPE_LABELS, TYPE_COLORS, searchBlob as coreSearchBlob,
-         TIER_ORDER, assignPopularityTiers } from './core.js?v=23';
-import { popularityFactor as corePopularityFactor } from './core.js?v=23';
+         TIER_ORDER, assignPopularityTiers, wikiTitles } from './core.js?v=24';
+import { popularityFactor as corePopularityFactor } from './core.js?v=24';
 
 // Cache-bust token for the ~4 MB data file web/catalog.json. It is NOT a JS
 // module, so it cannot carry a ?v= in an import: this named token IS its
@@ -25,7 +25,7 @@ import { popularityFactor as corePopularityFactor } from './core.js?v=23';
 // cacheable). Bump it in the SAME commit whenever web/catalog.json changes;
 // web/catalog.manifest.json records the bytes for the current token and
 // scripts/check_catalog_token.py enforces the pairing.
-const CATALOG_TOKEN = '8';
+const CATALOG_TOKEN = '9';
 
 /** Debounce timer for the catalog search box — re-renders at most every
  *  150 ms while typing instead of once per keystroke (12k-row filter). */
@@ -470,27 +470,47 @@ async function loadWikiThumb(o, imgEl, phEl) {
     phEl.textContent = 'no photo on Wikipedia — see the link below';
     return;
   }
-  const title = o.wiki || o.primary_name;
+  const title = wikiTitles(o)[0] || o.primary_name;
   phEl.textContent = 'loading Wikipedia photo…';
-  let definitive = false;
+  // CANDIDATE PAGES, best first, and a DISAMBIGUATION GUARD (0.6.32). Looking up
+  // the display name alone lands on a disambiguation page for every Messier row
+  // without a common name - "M101" is motorways, highways and a rifle, not the
+  // galaxy - and the old single-shot lookup then gave up. "Messier 101" is the
+  // article (it redirects to Pinwheel Galaxy), and "NGC 5457" resolves too.
+  const titles = wikiTitles(o);
+  let page = title;
+  let resolvedSrc = null;
+  let transient = false;                  // rate limited / offline: stay retryable
   const ac = new AbortController();
   const to = setTimeout(() => ac.abort(), 12000);
   try {
-    const r = await fetch(WIKI_API + encodeURIComponent(title), { signal: ac.signal });
-    if (r.status === 404 || r.status === 410) { definitive = true; throw new Error('no-page'); }
-    if (!r.ok) throw new Error('err-' + r.status);
-    const j = await r.json();
-    const src = j && j.thumbnail && j.thumbnail.source;
-    if (!src) { definitive = true; throw new Error('no-thumb'); }
-    const ir = await fetch(src, { signal: ac.signal });
-    if (!ir.ok) { definitive = true; throw new Error('no-img'); }
+    for (const t of titles) {
+      const r = await fetch(WIKI_API + encodeURIComponent(t), { signal: ac.signal });
+      if (r.status === 404 || r.status === 410) continue;   // no such page
+      if (!r.ok) { transient = true; continue; }            // 429/5xx: try later
+      const j = await r.json();
+      if (j && j.type === 'disambiguation') continue;       // never a photo of it
+      if (j && j.title) page = j.title;                     // canonical (post-redirect)
+      const cand = j && j.thumbnail && j.thumbnail.source;
+      if (cand) { resolvedSrc = cand; break; }
+    }
+    if (!resolvedSrc) throw new Error('no-thumb');
+    const ir = await fetch(resolvedSrc, { signal: ac.signal });
+    if (!ir.ok) { transient = true; throw new Error('no-img'); }
     const blob = await ir.blob();
-    if (!blob.type.startsWith('image/')) { definitive = true; throw new Error('bad-type'); }
+    if (!blob.type.startsWith('image/')) throw new Error('bad-type');
     await idbSet(key, { blob, ts: Date.now() });
+    const link = document.querySelector('#d-wikilink');
+    if (link) link.href = 'https://en.wikipedia.org/wiki/' + encodeURIComponent(page.replace(/ /g, '_'));
     showBlob(blob);
   } catch {
+    // only a DEFINITIVE answer is remembered: caching a rate-limited attempt as
+    // "no photo" hid every photo for 30 days after one bad minute.
+    const definitive = !transient;
     if (definitive) await idbSet(key, { missing: true, ts: Date.now() });
-    phEl.textContent = definitive ? 'no photo on Wikipedia — see the link below' : 'photo unavailable (offline?) — see the link below';
+    phEl.textContent = definitive
+      ? 'no photo on Wikipedia — see the link below'
+      : 'photo unavailable right now — see the link below';
   } finally {
     clearTimeout(to);
   }
@@ -1550,7 +1570,9 @@ function openDetail(id) {
   };
 
   const tags = [o.messier, o.ngcic, o.other].filter(Boolean).map(esc).join(' · ');
-  const wiki = o.wiki || o.primary_name;
+  // the article that actually documents this object - NOT the bare display name,
+  // which is a disambiguation page for a Messier row without a common name
+  const wiki = wikiTitles(o)[0] || o.primary_name;
 
   modal.innerHTML = `
     <div class="modal" role="dialog" aria-modal="true" aria-labelledby="m-title">
@@ -1570,7 +1592,6 @@ function openDetail(id) {
             <dt>Magnitude</dt><dd>${o.vmag != null ? o.vmag.toFixed(1) : '—'}</dd>
             <dt>Size</dt><dd>${esc(fmtSizeU(o.size_am)) || '—'}</dd>
             <dt>Constellation</dt><dd>${esc(o.constellation || '—')}</dd>
-            <dt>Distance</dt><dd>${esc(o.distance || '—')}</dd>
             <dt>RA / Dec (J2000)</dt><dd>${E.formatRA(o.ra_hours)} · ${E.formatDec(o.dec_deg)}</dd>
             <dt>Right now</dt><dd>alt ${altNow.toFixed(1)}°, az ${azNow.toFixed(0)}°</dd>
             <dt>Tonight</dt><dd>rises ${fmtClock(dayInfo.rise)} · transits ${fmtClock(dayInfo.transit)} · sets ${fmtClock(dayInfo.set)} · peaks ${dayInfo.maxAlt.toFixed(0)}°</dd>
@@ -1579,7 +1600,7 @@ function openDetail(id) {
             <dt>Observable</dt><dd id="d-obs">—</dd>
           </dl>
           ${o.blurb ? `<p class="blurb">${esc(o.blurb)}</p>` : ''}
-          <p class="blurb" style="margin-top:8px;font-size:13px"><a class="wiki" href="https://en.wikipedia.org/wiki/${encodeURIComponent(wiki)}" target="_blank" rel="noopener">Wikipedia ↗</a></p>
+          <p class="blurb" style="margin-top:8px;font-size:13px"><a class="wiki" id="d-wikilink" href="https://en.wikipedia.org/wiki/${encodeURIComponent(wiki.replace(/ /g, '_'))}" target="_blank" rel="noopener">Wikipedia ↗</a></p>
           ${o.custom ? '<button class="btn small" id="m-del" style="margin-top:10px" title="remove this custom target">🗑 delete target</button>' : ''}
         </div>
       </div>
@@ -2386,10 +2407,9 @@ async function saveTargetForm() {
     size_am: $('#sf-target-size').value.trim(),
     constellation: $('#sf-target-con').value.trim(),
     blurb: $('#sf-target-blurb').value.trim(),
-    distance: null, wiki: null, messier: null, ngcic: null, other: '',
+    wiki: null, messier: null, ngcic: null, other: '',
     _adv: false,
-  };
-  await WS.saveTargetRec(rec);
+  };  await WS.saveTargetRec(rec);
   upsertTarget(rec);
   renderSettings();
 }

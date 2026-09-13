@@ -22,7 +22,7 @@ import {
   overhangRuns, assumedOpenRuns, assumedOpenHatchPolys,
   CROP_MIN_FOV, cropPano, cropKeptBand, cropStrokes, clipProfileToFov,
   effectiveMinAlt as coreMinAlt,
-} from './core.js?v=23';
+} from './core.js?v=24';
 
 export {
   NO_BLOCK, BINS, MASK_W, MASK_H,

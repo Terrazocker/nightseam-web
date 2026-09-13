@@ -107,7 +107,7 @@ def test_desktop_robustness_invariants():
     - pano.js select() must cancel a pending auto-save (it belongs to the
       previous panorama) and must not blank a stored profile for a stroke-less
       record.
-    - detail.js must escape the constellation and distance sinks."""
+    - detail.js must escape the constellation and the catalogue chips."""
     mainjs = _read("static", "js", "main.js")
     assert "if (!S.cfg.sites.length) {" in mainjs
     assert "!S.cfg.wizard_done" not in mainjs
@@ -127,7 +127,7 @@ def test_desktop_robustness_invariants():
     assert pano.count("for (const s of strokeList(Pano.cur)) {") == 2
     detail = _read("static", "js", "detail.js")
     assert "esc(constName(m.constellation))" in detail
-    assert "esc(m.distance)" in detail
+    assert "esc(m.ngcic)" in detail
 
 
 def _js_body(src: str, header: str) -> str:

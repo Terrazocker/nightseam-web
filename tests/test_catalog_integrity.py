@@ -42,7 +42,7 @@ def _gen():
 
 CSV_COLS = ("id", "primary_name", "messier", "ngcic", "other", "otype",
             "ra_hours", "dec_deg", "vmag", "size_am", "constellation",
-            "distance", "wiki", "blurb", "search")
+            "wiki", "blurb", "search")
 
 
 def _adv_rows():
@@ -101,7 +101,7 @@ def test_rows_wellformed():
             float(r["vmag"])
         # OpenNGC rows carry no editorial text - blurbs/wiki/distance were a
         # curated-catalog concept and are empty everywhere now
-        assert not (r["wiki"] or r["blurb"] or r["distance"]), r["id"]
+        assert not (r["wiki"] or r["blurb"]), r["id"]
 
 
 # ------------------------------------------------------- lookup / regression

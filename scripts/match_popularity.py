@@ -254,10 +254,9 @@ def read_csv():
                 "vmag": parts[8],
                 "size_am": parts[9] if len(parts) > 9 else "",
                 "constellation": parts[10] if len(parts) > 10 else "",
-                "distance": parts[11] if len(parts) > 11 else "",
-                "wiki": parts[12] if len(parts) > 12 else "",
-                "blurb": parts[13] if len(parts) > 13 else "",
-                "search": parts[14] if len(parts) > 14 else "",
+                "wiki": parts[11] if len(parts) > 11 else "",
+                "blurb": parts[12] if len(parts) > 12 else "",
+                "search": parts[13] if len(parts) > 13 else "",
             }
             rows.append(row)
     return rows

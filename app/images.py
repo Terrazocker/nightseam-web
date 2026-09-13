@@ -216,6 +216,12 @@ def _wikidata_thumb(title: str):
 def _wikipedia_thumb(title: str):
     """Summary-thumbnail URL, or None when the title has no usable image.
 
+    A DISAMBIGUATION page is never an image of the object (0.6.32): "M101" is a
+    disambiguation page for motorways and highways, and its summary carries a
+    picture of none of them. Skipping it lets the caller try the next candidate
+    ("Messier 101", then "NGC 5457") instead of falling straight through to the
+    survey cutout.
+
     Like `_wikidata_thumb`, a TEMPORARY failure propagates: swallowing it here
     made a pure network outage look like "this object has no image", which then
     poisoned the 24 h negative cache."""
@@ -223,6 +229,8 @@ def _wikipedia_thumb(title: str):
         data = _http_json(
             "https://en.wikipedia.org/api/rest_v1/page/summary/"
             + urllib.parse.quote(title.replace(" ", "_")))
+        if (data.get("type") or "") == "disambiguation":
+            return None
         thumb = data.get("thumbnail", {}).get("source")
         if thumb and thumb.startswith("http"):
             big = thumb.replace("/330px-", "/500px-")

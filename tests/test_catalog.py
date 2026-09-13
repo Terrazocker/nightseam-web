@@ -18,7 +18,7 @@ CSV = Path(__file__).resolve().parents[1] / "app" / "data" / "openned.csv"
 VALID_TYPES = set(TYPE_LABELS.keys())
 CSV_COLS = ("id", "primary_name", "messier", "ngcic", "other", "otype",
             "ra_hours", "dec_deg", "vmag", "size_am", "constellation",
-            "distance", "wiki", "blurb", "search")
+            "wiki", "blurb", "search")
 
 
 def _rows() -> list[dict]:

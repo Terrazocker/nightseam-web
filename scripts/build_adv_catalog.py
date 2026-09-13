@@ -136,7 +136,7 @@ def _build_row(r: dict, oid: str, ngcic: str) -> dict | None:
         "ra_hours": round(ra_h, 5), "dec_deg": round(dec_d, 5),
         "vmag": vmag, "size_am": size,
         "constellation": CONSTELLATION_MAP.get(const, const),
-        "distance": "", "wiki": "", "blurb": "", "search": search,
+        "wiki": "", "blurb": "", "search": search,
     }
 
 
@@ -162,7 +162,7 @@ def build_rows(path: Path, source: str) -> list[dict]:
 def read_supplement(path: Path = SRC_SUPPLEMENT) -> list[dict]:
     """The committed supplement, already in the catalogue's column layout."""
     cols = ("id", "primary_name", "messier", "ngcic", "other", "otype", "ra_hours",
-            "dec_deg", "vmag", "size_am", "constellation", "distance", "wiki",
+            "dec_deg", "vmag", "size_am", "constellation", "wiki",
             "blurb", "search")
     out: list[dict] = []
     with open(path, encoding="utf-8") as f:
@@ -236,14 +236,14 @@ def main():
                 "+ supplement.csv (this project's data for the 16 objects "
                 "OpenNGC cannot carry) | "
                 "Columns: id;primary_name;messier;ngcic;other;otype;"
-                "ra_hours;dec_deg;vmag;size_am;constellation;distance;"
+                "ra_hours;dec_deg;vmag;size_am;constellation;"
                 "wiki;blurb;search\n")
         w = csv.writer(f, delimiter=";", lineterminator="\n")
         for r in rows:
             w.writerow([r["id"], r["primary_name"], r["messier"], r["ngcic"],
                         r["other"], r["otype"], r["ra_hours"], r["dec_deg"],
                         r["vmag"], r["size_am"], r["constellation"],
-                        r["distance"], r["wiki"], r["blurb"], r["search"]])
+                        r["wiki"], r["blurb"], r["search"]])
     types = {}
     for r in rows:
         types[r["otype"]] = types.get(r["otype"], 0) + 1

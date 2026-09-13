@@ -104,7 +104,6 @@ function renderDetailMeta(m, d) {
     ["Constellation", esc(constName(m.constellation))],
     ["RA (J2000)", `<span class="mono">${d.meta.ra_hms}</span>`],
     ["Dec (J2000)", `<span class="mono">${d.meta.dec_dms}</span>`],
-    ["Distance", m.distance ? esc(m.distance) : "\u2014"],
     ["Observable time", nObj && nObj.obs_pct != null
         ? `<b>${nObj.obs_pct}%</b> of tonight's window` : "\u2014"],
     ["Max altitude tonight", `${d.max_alt.toFixed(1)}\u00B0 at ${fmtHM(d.max_time)}`],

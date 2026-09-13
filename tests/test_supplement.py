@@ -23,7 +23,7 @@ ROOT = Path(__file__).resolve().parents[1]
 SUPPLEMENT = ROOT / "app" / "data" / "supplement.csv"
 CATALOG = ROOT / "app" / "data" / "openned.csv"
 COLS = ("id", "primary_name", "messier", "ngcic", "other", "otype", "ra_hours",
-        "dec_deg", "vmag", "size_am", "constellation", "distance", "wiki", "blurb", "search")
+        "dec_deg", "vmag", "size_am", "constellation", "wiki", "blurb", "search")
 
 # The exception set, by name - adding a seventeenth object must be a deliberate
 # edit here (and in the copy that advertises the count).
@@ -80,7 +80,7 @@ def test_supplement_rows_carry_no_editorial_text():
     """The catalogue has no prose (the 0.6.26 decision): the supplement must not
     smuggle the old curated blurbs/distance/wiki titles back in."""
     for r in _rows(SUPPLEMENT):
-        assert not (r["distance"] or r["wiki"] or r["blurb"]), r["id"]
+        assert not (r["wiki"] or r["blurb"]), r["id"]
 
 
 def test_extended_nebulae_carry_no_invented_magnitude():
@@ -143,7 +143,7 @@ def test_supplement_rows_are_shipped_and_searchable():
     shipped = {r["id"]: r for r in _rows()}
     for oid in EXPECTED:
         assert oid in shipped, oid
-        assert not (shipped[oid]["distance"] or shipped[oid]["wiki"]
+        assert not (shipped[oid]["wiki"]
                     or shipped[oid]["blurb"]), oid
         blob = shipped[oid]["search"].lower()
         assert oid in blob, oid
