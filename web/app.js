@@ -1377,6 +1377,7 @@ function renderCatalog() {
       <span class="cat-count" id="pct-status" style="margin-left:12px"></span>
     </div>
     <div class="card" style="padding:8px 10px">
+      <div class="catwrap">
       <table class="cat">
         <thead><tr>${th('name', 'Name')}${th('tier', 'Tier')}${th('mag', 'Mag', true)}${th('pct', '% visibility', true)}${th('type', 'Type')}${th('con', 'Con')}${th('size', 'Size', true)}${showFrame ? `<th class="frame" title="object size vs the active rig's frame width">Frame</th>` : ''}${th('ra', 'RA', true)}${th('dec', 'Dec', true)}</tr></thead>
         <tbody>
@@ -1400,6 +1401,7 @@ function renderCatalog() {
           }).join('')}
         </tbody>
       </table>
+      </div>
     </div>
     <div class="pager">
       <button class="btn" id="pg-prev" ${S.cat.page === 0 ? 'disabled' : ''}>← prev</button>

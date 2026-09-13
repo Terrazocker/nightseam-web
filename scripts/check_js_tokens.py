@@ -92,8 +92,8 @@ _VERIFIED_BASELINE_JSON = r"""
 {
  "modules": {
   "app.js": {
-   "sha256": "f3ba3032817e227ac7e9c7475780119231f152d1d97cd417b8061dbfa9b3cf32",
-   "token": "76"
+   "sha256": "52c23d8a14a0e7670a4f7fedc8ba3be26d4bbf24ece8064d0909243d28583b37",
+   "token": "77"
   },
   "astro.js": {
    "sha256": "35c320a8c3c92a835534b2173880ea170f73828e93bc37052535ab6dda33d04a",
@@ -120,8 +120,8 @@ _VERIFIED_BASELINE_JSON = r"""
    "token": "13"
   },
   "style.css": {
-   "sha256": "8e939926f78c26b28000f112ccf7fc65e81a04f84f8c3f6bbd60f9b89bc24ef6",
-   "token": "18"
+   "sha256": "d555bf3a954cd8087cbda00715886b975073f76123beb034d0237b8332715b3c",
+   "token": "19"
   },
   "themes.css": {
    "sha256": "97d90884f18ae987aea1f966a081ef09d90d52a361c49c7c934a55482d375a69",

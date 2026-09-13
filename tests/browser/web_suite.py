@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import re
+import time
 from pathlib import Path
 
 from harness import ROOT, WEB_DIR, check
@@ -516,6 +517,51 @@ def frame_cells(c):
         " span: e.firstElementChild ? e.firstElementChild.className : '' }))")
 
 
+@check("web-catalog-advanced-minvis", "web")
+def web_catalog_advanced_minvis(c):
+    """ADVANCED mode + the Min-visibility gate: the whole 12k list has to warm
+    through core's nightStatsBatch and then filter, and the WIDE table must not
+    push itself out of its card at a narrow viewport (the Tier column is new)."""
+    c.goto("/")
+    c.page.evaluate(
+        """() => { const raw = JSON.parse(localStorage.getItem('nightseam_prefs_v1') || '{}');
+             raw.advMode = true;
+             localStorage.setItem('nightseam_prefs_v1', JSON.stringify(raw)); }""")
+    boot(c)
+    t0 = time.time()          # includes the click + first render, so this is an
+    tab(c, "catalog")         # UPPER bound on the 12k warm (the honest number)
+    head = c.page.inner_text("#view .cat-count:not(#pct-status)")
+    c.expect(re.search(r"of 12,\d{3} objects", head),
+             f"advanced mode must list the full catalogue: {head!r}")
+
+    c.page.wait_for_function(
+        """() => /below 1%/.test(document.querySelector('.cat-count')?.textContent || '')""",
+        timeout=300000)
+    warm = time.time() - t0
+    print(f"        advanced-mode visibility warm: {warm:.1f}s")
+    c.expect(warm < 90, f"the 12k warm took {warm:.1f}s - too slow to be the default")
+
+    pcts = c.page.eval_on_selector_all(
+        "#view table.cat td.pct",
+        "els => els.map(e => parseInt(e.textContent, 10)).filter(v => Number.isFinite(v))")
+    c.expect(pcts and min(pcts) >= 1,
+             f"a never-visible row survived in advanced mode: {sorted(pcts)[:5]}")
+
+    c.page.set_viewport_size({"width": 360, "height": 900})
+    c.page.wait_for_timeout(400)
+    box = c.page.evaluate(
+        """() => { const t = document.querySelector('#view table.cat');
+                   const card = t && t.closest('.card');
+                   return { table: t ? t.scrollWidth : 0,
+                            card: card ? card.clientWidth : 0,
+                            doc: document.documentElement.scrollWidth,
+                            win: window.innerWidth }; }""")
+    print(f"        narrow viewport: table {box['table']}px in a {box['card']}px card, "
+          f"page {box['doc']}px vs {box['win']}px")
+    c.expect(box["doc"] <= box["win"] + 2,
+             f"the catalog table widens the PAGE: {box['doc']}px vs {box['win']}px - "
+             f"it must scroll inside its card instead")
+    c.assert_clean()
 @check("web-catalog-tier-frame", "web")
 def web_catalog_tier_frame(c):
     """0.6.30: the catalog's DEFAULT sort is the popularity TIER - the letters

@@ -564,9 +564,9 @@ Image Catalog (FITS ingest + library). `README.md` has the feature list.
   `scripts/check_catalog_token.py`, wired into `scripts/check_js.py`, and pinned
   by `tests/test_cache_tokens.py` (mutation-tested). Do NOT add
   `{cache:'no-store'}` - the file must stay cacheable.
-  Current (0.6.30): `app.js?v=76` (index.html) /
+  Current (0.6.31, unreleased): `app.js?v=77` (index.html) /
   `CATALOG_TOKEN = '8'`, `astro.js?v=15`, `horizon.js?v=47`, `format.js?v=22`,
-  `nightrank.js?v=13`, `webstore.js?v=25`, `dragwin.js?v=1`, `style.css?v=18`,
+  `nightrank.js?v=13`, `webstore.js?v=25`, `dragwin.js?v=1`, `style.css?v=19`,
   `themes.css?v=4`; the core stub is `web/core.js?v=23` (bump = re-bake,
   enforced by `scripts/check_core.py`). The CR3 fix (CO-01, 0.6.24 review)
   touched `core/horizon.js` + `core/index.js`, so the re-bake moved the stub

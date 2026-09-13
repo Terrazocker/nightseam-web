@@ -279,6 +279,10 @@ canvas#sky {
 .cat-count { font-size: 12.5px; color: var(--muted); margin-left: auto; }
 
 table.cat { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+/* The catalog table is 9-10 columns wide: on a narrow viewport it must scroll
+   INSIDE its card (the desktop's `.tablewrap` does the same) instead of
+   widening the page and giving the whole app a horizontal scrollbar. */
+.catwrap { overflow-x: auto; }
 table.cat th {
   text-align: left; color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .8px;
   padding: 8px 10px; border-bottom: 1px solid var(--line); cursor: pointer; user-select: none; white-space: nowrap;
