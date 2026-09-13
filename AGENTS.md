@@ -437,7 +437,10 @@ Image Catalog (FITS ingest + library). `README.md` has the feature list.
   through Playwright + system Chrome - `--web` (static `web/`, no exe) or
   `--desktop` (the packed `dist/NightSeam.exe`, copied into a temp dir so the
   user's data is never touched). A browser that cannot launch is a HARD failure
-  (exit 2), never a skip - same rule as a missing node. It is part of the
+  (exit 2), never a skip - same rule as a missing node. A freshly built onefile
+  exe can exceed a check's 30 s wait on its FIRST launch (PyInstaller unpacks to
+  %TEMP%; measured 32.5 s timeout then 3.1 s pass on the re-run) - re-run the gate
+  before investigating. It is part of the
   release checklist: run it on the STAGED build before upload
   (`--prod-url https://nightseam.de/astro/` adds a read-only production smoke).
   Deterministic: UTC, pinned clock, empty storage per check; `-p no` pytest
@@ -607,6 +610,22 @@ tool works here, so measure before working around anything:
   `catalog.json` sha256 equals the local payload, the published zip equals the
   staged artifact). Follow-up commit `f816a00` regenerated the tracked
   `landing/changelog.json` (**never moved the tag**).
+- **RELEASED as 0.6.28** - tag `v0.6.28` on the release commit (`4bcbcd9` the
+  7-object supplement + the CATALOG.md/DECISIONS.md docs, `e3bcb38` the curated
+  entry), staged `dist/release/` (`NightSeam-0.6.28.zip` sha256 `57b47519...` +
+  latest + `version.json` + `ns-version.js`), `check_release.py` **0 errors at the
+  tag**, the FULL browser gate **19/19 on the staged build** and **13/13 including
+  the read-only production smoke** after the upload. Deployed `/downloads/`,
+  `/astro` (index.html last) and the landing; verified live (`/astro/version.json`
+  + `/downloads/version.json` + `ns-version.js` = 0.6.28, the deployed
+  `catalog.json` equals the local payload AND carries all seven supplement ids,
+  the published zip equals the staged artifact). Follow-up commit `f45b1d0`
+  regenerated the tracked `landing/changelog.json` (**never moved the tag**).
+  **Gate note:** the first `--all` run on the freshly built onefile exe failed
+  `desktop-pano-crop-fov` with a 30 s wait timeout (32.5 s) because PyInstaller
+  unpacks the ~20 MB exe to %TEMP% on first launch; the immediate re-run passed
+  7/7 (3.1 s). A cold-start timeout right after a build is that, not a regression -
+  re-run the gate before investigating.
 - A bounded carry-over of non-reachable hardening/tooling/test-quality items
   remains (consume it in the next review pass): `CR2` malformed-horizon guards
   (all shipped producers normalize before preview), `DS4` worker/sync `ceil`
