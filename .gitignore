@@ -7,6 +7,11 @@ build/
 dist/
 .pytest-tmp/
 .pytest_cache/
+# review/agent-teams scratch (locked by an earlier sandbox token's DACL, so it
+# cannot be deleted without admin - ignoring it stops git warning on every
+# status while it exists)
+.rv-run/
+.agent-teams/
 app/_version_baked.py
 *.spec.bak
 data/*.db
