@@ -83,3 +83,30 @@ Newest first.
   `STANDARD_TOP_N = 200`, accepted deliberately (see `DECISIONS.md`).
   Follow-up commit `809de12` regenerated the tracked `landing/changelog.json`
   (**never moved the tag**); `RELEASES.md` record in the next commit.
+- **RELEASED as 0.6.30** - tag `v0.6.30` on the release commit (`d47d019`: the popularity
+  TIER column + frame-coverage colours + Min-visibility slider in BOTH apps, plus the
+  curated entry in the same commit). Staged `dist/release/`
+  (`NightSeam-0.6.30.zip` sha256
+  `4204eda2668057e73093c8312a0cc2cb1f5778e74c710fcf52ab6c2b0c60d576`, 20.5 MB, + latest +
+  `NightSeam.exe` + `version.json` + `ns-version.js`), `check_release.py` **0 errors at the
+  tag**, the FULL browser gate **21/21 on the staged build** (13 web + 8 desktop - the
+  desktop suite gained `desktop-catalog-tier-minvis`, and the web check now drives the
+  slider too) and **14/14 including the read-only production smoke** after the upload.
+  Deployed `/downloads/` (zip, latest, exe, version.json, ns-version.js), `/astro` (whole
+  tree, index.html last) and the landing. Verified live, not assumed:
+  `/astro/version.json` + `/downloads/version.json` + `/downloads/ns-version.js` all read
+  0.6.30, `landing/changelog.json`'s newest entry is 0.6.30, the deployed `catalog.json`
+  sha256 equals the local payload (`c44fd26a...`, 12,176 rows / 200 standard - the payload
+  itself did not change in this release), the live `index.html` carries `app.js?v=76`, the
+  live `app.js` carries `CATALOG_TOKEN = '8'` plus the new `cat-minvis` control, `style.css`
+  the `.tier-badge`/`.over` rules and `nightrank.js` the `nightStatsBatch` re-export, and the
+  published zip sha256 equals the staged artifact.
+  The core was re-baked twice (stub 21 -> 23, the tier helpers), so the token cascade touched
+  every web module - final register: app 76 / astro 15 / horizon 47 / format 22 / nightrank 13
+  / webstore 25 / style 18 / core 23. **503 tests.** Follow-up commit `c16e54f` regenerated
+  the tracked `landing/changelog.json` (**never moved the tag**).
+  **Gate note:** `dist/NightSeam.exe` was rebuilt with `-AllowDirty` mid-work to verify the
+  desktop UI in a real browser before the release (it reported `0.6.29-2-ge4e92c1-dirty`), and
+  the first `--all` run on that build hit the documented PyInstaller cold-start timeout on
+  `desktop-pano-crop-fov`; the immediate re-run passed (2.9 s). The released exe was then
+  rebuilt CLEAN at the tag (`0.6.30`) and the staged gate passed 21/21 first time.
