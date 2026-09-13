@@ -30,6 +30,10 @@ ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "landing" / "changelog.json"
 
 CURATED = {
+    # 0.6.31 is the layout/ranking polish on top of 0.6.30: progress never moves
+    # the page, the catalog table keeps its column widths and stays inside its
+    # card on narrow screens, and both apps agree on the tier letter.
+    "0.6.31": "Target-list polish, in both apps. The catalog keeps its column widths while the visibility percentages fill in, and a running progress note (\"computing visibility...\") no longer nudges the page around: the count and the progress sit on their own fixed line, and the busy indicator has a reserved spot instead of pushing the toolbar. On a narrow screen the catalog table scrolls inside its card rather than stretching the page sideways. The popularity tier letter is now guaranteed to be the same object-for-object in the desktop and the web app, in standard and advanced mode alike. Everything else is unchanged.",
     # 0.6.30 brings the two apps to ONE target-list method: a popularity TIER
     # (A-F rank bands) as the default sort, the frame coverage as a percentage
     # (green fits / amber mosaic), and a user-controlled Min visibility gate.
