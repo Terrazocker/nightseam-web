@@ -141,3 +141,29 @@ Newest first.
   dir; the four stale dirs from <= 0.6.26 are still unpruned. Follow-up commit
   `80f362f` regenerated the tracked `landing/changelog.json` (**never moved the
   tag**).
+- **RELEASED as 0.6.32** - tag `v0.6.32` on the release commit (`2966a3c`: the
+  `distance` removal + the designation-based Wikipedia lookup, with the curated
+  entry). Staged `dist/release/` (`NightSeam-0.6.32.zip` sha256
+  `41882ffc82b5c109bee1ca790ec828d4e4a9e248e29fe279585a06143b508e00`, 20.5 MB, +
+  latest + `NightSeam.exe` + `version.json` + `ns-version.js`), `check_release.py`
+  **0 errors at the tag**, the browser gate **22/22 on the staged build** and
+  **15/15 including the read-only production smoke** after the upload. Deployed
+  `/downloads/`, `/astro` and the landing; verified live: the version endpoints and
+  `changelog.json` all read 0.6.32, the live `index.html` names `app.js?v=80`, the
+  live `app.js` carries `CATALOG_TOKEN = '9'` AND `wikiTitles`, the deployed
+  `catalog.json` sha256 equals the local payload (`ae002a9a...`, 12,176 rows, **no
+  `distance` field**), and the published zips equal the staged ones.
+  **A real deploy defect was caught here:** the first `/astro` tree upload stalled
+  mid-way (the documented ProFTPD reuse behaviour) and left `core.js` pointing at
+  the PREVIOUS baked tree, so a returning visitor would have loaded a core without
+  `wikiTitles` and the app would have died on the missing named export. The verify
+  pass found it, `core.js` + `catalog.json` were re-uploaded on fresh connections,
+  and a new check (`logs/verify_tokens_live.py`) now compares EVERY live module and
+  the whole baked core tree byte-for-byte against the repo - it passes with
+  `STALE: none`.
+  Also noted: `desktop-pano-crop-fov` timed out at 30 s on two consecutive full gate
+  runs (31.9 s) and then passed in 2.9 s on the next one with the SAME preceding
+  checks, and in 2.9 s standalone - the upload/decode budget is flaky, so its wait
+  is 90 s now (`d6ace7a`, a post-tag test-only commit; the staged artifacts were
+  built at the clean tag and are unaffected). Follow-up `4d8ce4d` regenerated the
+  tracked `landing/changelog.json` (**never moved the tag**).
