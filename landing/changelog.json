@@ -1,5 +1,10 @@
 [
  {
+  "version": "0.6.25",
+  "date": "2026-09-13",
+  "summary": "Reliability and interface-fix release: 42 issues found by an independent review of the previous version are fixed, each with an automated regression test. Editing a panorama is safe around switches and shutdowns - an edit made moments before you open another panorama or close the app is saved instead of silently lost, the editor always shows the selected panorama's own horizon mask, and undoing back to an unpainted horizon restores the stored mask rather than a blank one. Replaying the introduction no longer overwrites the active site's coordinates. Weather for one site can no longer appear under another site's name. Dismissing the update notice no longer opens the download page, the library's edit dialog closes with Escape, the magnifier's crosshair marks the exact pixel it samples, and both sky charts redraw smoothly while you hover. In sky mode the Sky View no longer draws a spurious centre ring and spokes, and each chart's object-type legend stays in sync with the other. Importing a damaged backup is refused with a clear message instead of quietly losing a frame, a failed safety copy of your previous data is now reported, the rolling database backup is a consistent snapshot, and a malformed stored horizon can no longer stop the app from starting. Images are still fetched only from the two astronomy hosts the app allows. Every displayed planning number is unchanged."
+ },
+ {
   "version": "0.6.24",
   "date": "2026-09-12",
   "summary": "Panorama crop. In the web planner you can now trim a panorama to the azimuth band you want by dragging the band to keep: the horizon keeps its paint (the photo is not modified) and the crop is a single undo step. The Windows app's crop tool now stores the correct field of view - it previously stored the removed portion, so an off-centre crop was stretched; a panorama cropped in an older Windows version can be fixed by re-cropping, or by correcting the field of view directly in the editor. Every displayed planning number is unchanged."
