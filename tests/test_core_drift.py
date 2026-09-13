@@ -190,6 +190,13 @@ def test_baked_core_retention_keeps_current_and_n1(tmp_path):
     assert build.retention_keep("newhash", None) == {"newhash"}
     assert build.retention_keep("same", "same") == {"same"}
 
+    # XL-02: an IDEMPOTENT re-bake carries the recorded previous forward (a no-op
+    # bake must not forget - and then prune - the dir a cached stub may need)
+    assert build.next_previous("newhash", "prevhash", "newhash") == "prevhash"
+    assert build.next_previous("oldhash", None, "newhash") == "oldhash"
+    assert build.next_previous(None, None, "newhash") is None
+    assert build.next_previous("newhash", "newhash", "newhash") is None
+
     # the baker keeps current + N-1 and prunes the rest
     root = tmp_path / "core"
     for name in ("oldest", "prevhash", "newhash"):
@@ -213,3 +220,31 @@ def test_baked_core_retention_keeps_current_and_n1(tmp_path):
     assert "prune_baked_dirs(" in inspect.getsource(build.main)
     assert '"previous": previous' in inspect.getsource(build.main)
     assert "baked_dir_problems(" in inspect.getsource(guard.scan)
+
+
+def test_a_moved_concept_in_a_shell_subdirectory_is_caught():
+    """CO-03 (0.6.24 review): the importer/token and MOVED scans used
+    `glob("*.js")` - one level only - so a core concept re-implemented in a NEW
+    subdirectory (`web/lib/`, `static/js/lib/`, ...) passed BOTH, while the guard's
+    contract is that a moved concept cannot be re-implemented outside `core/`.
+
+    The scratch directory is created and removed here; the real tree is restored
+    before the final assertion."""
+    guard = _guard()
+    assert guard.scan() == []
+    lib = guard.WEB_DIR / "lib"
+    lib.mkdir()
+    planted = lib / "geom.js"
+    try:
+        planted.write_text("export function ceilFor(p, az) { return 0; }\n",
+                           encoding="utf-8")
+        assert guard.scan(), "a moved concept under web/lib/ must FAIL the guard"
+        # a subdirectory importer names the stub through '../'
+        planted.write_text("import { $ } from '../core.js?v=99';\nexport const x = $;\n",
+                           encoding="utf-8")
+        problems = guard.scan()
+        assert any("core token" in p for p in problems), problems
+    finally:
+        planted.unlink()
+        lib.rmdir()
+    assert guard.scan() == []

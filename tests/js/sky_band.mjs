@@ -246,6 +246,26 @@ if (H.assumedOpenRuns({ paintMode: "sky" }, 2).length !== 0) fail("assumedOpenRu
 if (H.assumedOpenHatchPolys({ paintMode: "sky" }, 720, 56, 0, 90).length !== 0) {
   fail("assumedOpenHatchPolys malformed");
 }
+/* CO-04: the INVARIANT's own entry point must degrade like its siblings. It used
+   to throw before any FOV/paint-mode logic (null record) and, in sky mode, on a
+   record with a MISSING profileTop - while ceilFor/overhangRuns/
+   assumedOpenHatchPolys all return an empty degrade. "No usable record" = nothing
+   visible, so the caller draws nothing. */
+if (H.visibleSkyBands(null, 0, 90).length !== 0) fail("visibleSkyBands(null) must degrade to []");
+if (H.visibleSkyBands(undefined, 0, 90).length !== 0) fail("visibleSkyBands(undefined) must degrade");
+if (H.visibleSkyBands({}, 0, 90).length !== 0) fail("visibleSkyBands({}) must degrade");
+if (H.visibleSkyBands({ profile: "nope", paintMode: "sky" }, 0, 90).length !== 0) {
+  fail("visibleSkyBands with a non-array profile must degrade");
+}
+/* a VALID profile with NO profileTop is still a full 720-column answer in sky
+   mode (the old code threw on `undefined[col]`) */
+const noTop = H.visibleSkyBands(
+  { profile: fill(0, BINS, 20), paintMode: "sky", blockAbove: true }, 0, 90);
+if (noTop.length !== BINS) fail("a missing profileTop must not change the column count");
+if (noTop[0].vis === null) fail("a missing profileTop must cap nothing (open above)");
+if (noTop[0].vis && noTop[0].vis[1] !== 90) {
+  fail("a missing profileTop must leave the sky open to the zenith");
+}
 
 console.log(ok ? "sky-band contract held" : "sky-band contract FAILED");
 process.exit(ok ? 0 : 1);

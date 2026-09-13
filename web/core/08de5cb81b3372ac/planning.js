@@ -1,11 +1,14 @@
 /*
  * NightSeam core - twilight / night-window planning (pure).
  *
- * Phase 2, concept 8. `app/planning.py` is the authoritative oracle: the same
- * noon+30 h scan, the same 10-minute scan with linear refinement, the same
- * astronomical -> nautical -> civil cascade and the same fixed 20:00-04:00
- * polar fallback (see tests/fixtures/core_fixtures.json; the twilight section
- * of tests/test_core_fixtures.py compares every site/date at 180 s).
+ * Phase 2, concept 8. This module IS the implementation: the noon+30 h scan,
+ * the 10-minute scan with linear refinement, the astronomical -> nautical ->
+ * civil cascade and the fixed 20:00-04:00 polar fallback. The retired Python
+ * oracle (`app/planning.py`, deleted in Phase C/0.6.20) survives only as the
+ * FROZEN regression golden tests/fixtures/core_fixtures.json - the twilight
+ * section of tests/test_core_fixtures.py compares every site/date at 180 s -
+ * and the CORRECTNESS authority is tests/js/reference_anchors.mjs. Never read
+ * this module as a port of a live oracle; there is none.
  *
  * Pairing rule (mirrors planning.py::find_twilight): a dawn only exists AFTER
  * the evening crossing, and it is the FIRST such ascent. A grazing polar day
@@ -57,8 +60,8 @@ export function sunCrossings(scanStartUTC, lat, lon, thresholdDeg) {
  *  then started before the previous local noon, so "first descending crossing"
  *  is not tonight's dusk. */
 export function nightInfo(localDate, lat, lon, localNoon) {
-  // Scan window: the SITE's local noon of the target date + 30 h - the same
-  // anchor as app/planning.py (local_utc(y, m, d, tz, 12) + 30 h), so the
+  // Scan window: the SITE's local noon of the target date + 30 h - the anchor
+  // the retired app/planning.py used (local_utc(y, m, d, tz, 12) + 30 h), so the
   // first descending crossing is always the TARGET evening's dusk (a
   // midnight-anchored window can report the previous night's dusk at
   // twilight-edge latitudes, see sunCrossings). `new Date(y, m, d, 12)`
@@ -81,7 +84,8 @@ export function nightInfo(localDate, lat, lon, localNoon) {
 
 /** Pick the dark window used for every visibility number.
  *
- *  Desktop parity (app/planning.py `night_window`): use the ASTRONOMICAL night
+ *  Desktop/web parity (the retired app/planning.py `night_window`): use the
+ *  ASTRONOMICAL night
  *  when the sun reaches -18 deg, else nautical (-12), else civil (-6). When no
  *  twilight level is reached at all (polar day, polar twilight - the sun may
  *  still set without ever crossing -6 deg) the same fixed evening-to-morning

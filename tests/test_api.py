@@ -1366,6 +1366,18 @@ def test_malformed_stored_strokes_do_not_500_the_listing(client, db):
         client.delete("/api/panorama/pbad")
 
 
+def test_settings_rejects_a_non_token_active_pano_id(client):
+    """PY-05: this boundary accepted ANY string as `active_pano_id` while every
+    id-consuming route rejects a non-token id (`_pano_or_404`) - so /api/state
+    advertised an "active panorama" that no route could ever resolve."""
+    assert client.post("/api/settings",
+                       json={"active_pano_id": "../../evil"}).status_code == 400
+    # "" and null legitimately mean "no active panorama"
+    assert client.post("/api/settings",
+                       json={"active_pano_id": ""}).status_code == 200
+    assert client.get("/api/state").json()["active_pano_id"] in (None, "")
+
+
 # ------------------------------------------------------------- site validation
 
 def test_site_coordinates_are_validated(client):

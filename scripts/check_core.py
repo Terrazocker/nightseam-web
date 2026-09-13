@@ -116,6 +116,24 @@ def baked_dir_problems(label: str, dest_root: Path, hash_: str,
             "scripts/build_core.py (the N-1 dir is kept on purpose)"]
 
 
+def shell_sources(base: Path) -> list[Path]:
+    """Every `*.js` in a shell tree, RECURSIVELY, minus the baked core copies.
+
+    CO-03 (0.6.24 review): the importer/token and MOVED scans used `glob("*.js")`,
+    so a shared concept re-implemented in a NEW subdirectory (`web/lib/`,
+    `static/js/lib/`, ...) passed BOTH - while the guard's contract is that a
+    moved concept cannot be re-implemented outside `core/`. The baked
+    `core/<hash>/` trees are copies of `core/`, checked through their source
+    digests, so they are skipped here; the top-level `core.js` stub is kept."""
+    out = []
+    for p in sorted(base.rglob("*.js")):
+        parts = p.relative_to(base).parts
+        if len(parts) > 1 and parts[0] == "core":
+            continue
+        out.append(p)
+    return out
+
+
 def scan() -> list[str]:
     problems: list[str] = []
     if not CORE.is_dir():
@@ -158,19 +176,21 @@ def scan() -> list[str]:
             problems.append(f"{label}: {stub.name} stub does not point at {hash_}")
 
     importers = []
-    for p in sorted(WEB_DIR.glob("*.js")):
+    for p in shell_sources(WEB_DIR):
         if p.name == "core.js":
             continue
-        for m in re.finditer(r"['\"]\./core\.js\?v=(\d+)['\"]", _read(p)):
-            importers.append((p.name, int(m.group(1))))
+        rel = p.relative_to(WEB_DIR).as_posix()
+        for m in re.finditer(r"['\"](?:\.\.?/)+core\.js\?v=(\d+)['\"]", _read(p)):
+            importers.append((rel, int(m.group(1))))
     if not importers:
         problems.append("web: no './core.js?v=' import found")
-    for name, tok in importers:
+    for rel, tok in importers:
         if tok != token:
-            problems.append(f"web/{name}: core token {tok} != manifest token {token}")
+            problems.append(
+                f"web/{rel}: core token {tok} != manifest token {token}")
 
     static_edge = any(re.search(r"['\"]\./core\.js['\"]", _read(p))
-                      for p in sorted(STATIC_JS.glob("*.js")) if p.name != "core.js")
+                      for p in shell_sources(STATIC_JS) if p.name != "core.js")
     if not static_edge:
         problems.append("static: no './core.js' import found")
 
@@ -181,7 +201,7 @@ def scan() -> list[str]:
                 problems.append(f"core/{p.name}: forbidden pattern {pattern}")
 
     for base in (WEB_DIR, STATIC_JS):
-        for p in sorted(base.glob("*.js")):
+        for p in shell_sources(base):
             if p.name == "core.js":
                 continue
             text = _read(p)

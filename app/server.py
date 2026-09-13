@@ -415,7 +415,16 @@ def create_app(db: Database, *, prefetch: bool = True) -> FastAPI:
         if body.active_site_id is not None:
             db.set_setting("active_site_id", body.active_site_id)
         if body.active_pano_id is not None:
-            db.set_active_panorama(body.active_pano_id)
+            # PY-05: this boundary accepted ANY string while every id-consuming
+            # route rejects a non-token id (`_pano_or_404`, `api_delete_pano`), so
+            # /api/state advertised an "active panorama" that no route could ever
+            # resolve. Apply the documented token rule here too; "" / null mean
+            # "no active panorama".
+            pid = body.active_pano_id or None
+            if pid is not None and safe_token(pid) is None:
+                raise HTTPException(
+                    400, "active_pano_id must be a plain panorama id")
+            db.set_active_panorama(pid)
         if body.min_useful_alt is not None:
             db.set_setting("min_useful_alt",
                            _finite(body.min_useful_alt, "min_useful_alt"))

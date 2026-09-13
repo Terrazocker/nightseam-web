@@ -561,3 +561,65 @@ def test_import_rejects_two_records_for_one_normalized_path(db, tmp_path):
             _image_row(file="M 31/b.fit")]))
     apply_import_zip(db, ok)
     assert {"M 31/a.fit", "M 31/b.fit"} <= {i["file"] for i in db.images()}
+
+
+def test_import_rejects_a_non_token_active_pano_id(db, tmp_path):
+    """PY-05: `active_pano_id` is a record id interpolated into URLs by the
+    panorama routes, so the import boundary applies the same token rule - a
+    bundle could otherwise install an "active panorama" that /api/state
+    advertises and no id-taking route ever resolves."""
+    _seed(db, tmp_path)
+    blob = _mutate_bundle(
+        build_export_zip(db),
+        lambda s: s["settings"].update({"active_pano_id": "../../evil"}))
+    with pytest.raises(ValueError, match="plain panorama id"):
+        apply_import_zip(db, blob)
+
+
+def test_a_failed_safety_copy_is_reported_not_swallowed(db, tmp_path, monkeypatch):
+    """PY-02: the safety copy is best-effort by design, but its failure used to be
+    a bare `None` - indistinguishable in the summary from "not attempted" - so
+    the documented promise ("before touching anything, the CURRENT setup is
+    written to <db>.backup-auto.zip") could be silently absent."""
+    import app.backup as backup
+
+    _seed(db, tmp_path)
+    blob = build_export_zip(db)          # build BEFORE patching the writer
+
+    def boom(*a, **k):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(backup, "_export_zip_to", boom)
+    summary = apply_import_zip(db, blob)      # the restore itself still succeeds
+    assert summary["ok"] is True
+    assert summary["auto_backup"] is None
+    assert summary.get("auto_backup_error"), "the degradation must be visible"
+    assert "disk full" in summary.get("auto_backup_error", "")
+
+
+def test_rolling_backup_is_a_consistent_sqlite_snapshot(db, tmp_path):
+    """PY-07: `make_backup` used `shutil.copyfile` on the LIVE database with no
+    lock, so a write landing mid-copy could leave a torn page set in the only
+    recovery artifact. It now takes a SQLite backup snapshot, which must open
+    cleanly and contain the data."""
+    import sqlite3
+    import inspect
+    from pathlib import Path as _P
+
+    # the MECHANISM is the point: a torn copy is not reliably reproducible, so the
+    # pin also asserts the snapshot API is what writes the artifact
+    assert "self.conn.backup(" in inspect.getsource(Database.make_backup), (
+        "PY-07: make_backup must use SQLite's backup API, not a byte copy")
+    # the docstring explains the old bug, so assert on the CALL, not the word
+    assert "shutil.copyfile(self.path" not in inspect.getsource(Database.make_backup)
+
+    db.add_site("Home", 50.0, 7.8, 150)
+    db.make_backup()
+    bak = _P(str(db.path) + ".backup")
+    assert bak.is_file() and bak.stat().st_size > 0
+    conn = sqlite3.connect(str(bak))
+    try:
+        assert conn.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
+        assert conn.execute("SELECT COUNT(*) FROM sites").fetchone()[0] == 1
+    finally:
+        conn.close()

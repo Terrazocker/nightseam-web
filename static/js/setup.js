@@ -197,7 +197,9 @@ export function bindSetup() {
       const res = await api("/api/import", { method:"POST", body:fd, timeout: 0 });
       const safety = res.auto_backup
         ? " Your previous data was kept in a safety copy next to the database."
-        : "";
+        : (res.auto_backup_error
+           ? " WARNING: the safety copy of your previous data could NOT be written."
+           : "");
       toast(`Imported ${res.sites} locations, ${res.rigs} rigs, ` +
             `${res.panoramas} panoramas, ${res.images} library images. Reloading...` + safety,
             "info", 8000);

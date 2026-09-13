@@ -107,18 +107,23 @@ def build_export_zip(db: Database) -> bytes:
     return buf.getvalue()
 
 
-def _write_safety_copy(db: Database, dest: Path) -> str | None:
+def _write_safety_copy(db: Database, dest: Path) -> tuple[str | None, str | None]:
     """Best-effort streaming safety copy of the CURRENT setup to `dest`.
 
     Streams the ZIP straight to disk (never a second full copy in RAM), so
     even a multi-GB image library cannot double the import's memory peak.
-    Returns the path string on success, None on any failure."""
+    Returns `(path, None)` on success and `(None, reason)` on failure.
+
+    PY-02: the failure used to be a bare `None`, indistinguishable in the summary
+    the client sees from "not attempted" - so the documented recovery promise
+    ("before touching anything, the CURRENT setup is written to
+    `<db>.backup-auto.zip`") could be absent with no signal at all."""
     try:
         with open(dest, "wb") as f:
             _export_zip_to(db, f)
-        return str(dest)
-    except Exception:  # noqa: BLE001 - best-effort safety net
-        return None
+        return str(dest), None
+    except Exception as exc:  # noqa: BLE001 - best-effort safety net
+        return None, f"{type(exc).__name__}: {exc}"
 
 
 def apply_import_zip(db: Database, blob: bytes | Path) -> dict:
@@ -153,7 +158,7 @@ def apply_import_zip(db: Database, blob: bytes | Path) -> dict:
     # handle makes the route's spool unlink fail, turning a clean 400 into a
     # 500 (FIX-4 exposes this through the new validation errors).
     try:
-        safety = _write_safety_copy(db, safety_path)
+        safety, safety_error = _write_safety_copy(db, safety_path)
 
         sites = setup.get("sites", [])
         rigs = setup.get("rigs", [])
@@ -223,7 +228,11 @@ def apply_import_zip(db: Database, blob: bytes | Path) -> dict:
                    "customs": len(customs),
                    "images": len(images) - skipped.get("images", 0),
                    "library_files": image_files,
-                   "auto_backup": safety}
+                   "auto_backup": safety,
+                   # PY-02: non-null ONLY when the safety copy could not be
+                   # written, so the client can say so instead of the documented
+                   # promise silently degrading to "recoverable if it worked".
+                   "auto_backup_error": safety_error}
         if imported_image_dir:
             summary["image_dir_ignored"] = str(imported_image_dir)[:200]
         return summary

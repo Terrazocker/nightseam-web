@@ -219,6 +219,13 @@ export function profileSegments(prof, W, H, ab, at, azOff, fov, skipAbove = 90.5
  *  Per column, visible U blocked == [altBottom, zenith] and visible n blocked
  *  == {} - the visible mask is the EXACT complement of the blocked mask. */
 export function visibleSkyBands(p, altBottom = null, zenith = 90) {
+  // CO-04: degrade like the sibling entry points instead of throwing. `p == null`
+  // failed before any FOV/paint-mode logic ("Cannot read properties of null"),
+  // and a sky-mode record with a MISSING profileTop threw on `p.profileTop[col]`,
+  // while ceilFor/overhangRuns/assumedOpenHatchPolys all return an empty degrade.
+  // "No usable record" means "nothing visible": the caller draws nothing.
+  if (!p || !Array.isArray(p.profile)) return [];
+  const top = Array.isArray(p.profileTop) ? p.profileTop : null;
   const ab = Number.isFinite(altBottom) ? altBottom : Number(p.altBottom);
   const mk = (vis, blocked) => ({
     vis: vis && vis[1] > vis[0] ? vis : null,
@@ -229,7 +236,7 @@ export function visibleSkyBands(p, altBottom = null, zenith = 90) {
     const e = p.profile[col];
     if (p.paintMode === 'sky') {
       if (e != null && e > NO_BLOCK + 0.5 && e < zenith) {
-        const t = p.profileTop[col];
+        const t = top ? top[col] : null;
         // the band top caps the visible sky ONLY with blockAbove; otherwise
         // everything above the painted band is free (open above, default)
         const hi = (p.blockAbove && t != null && t > NO_BLOCK + 0.5 && t !== 90.5)

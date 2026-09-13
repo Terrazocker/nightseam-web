@@ -75,6 +75,19 @@ def stub_text(hash_: str, names: list[str]) -> str:
             f"export {{ {', '.join(names)} }} from './core/{hash_}/index.js';\n")
 
 
+def next_previous(old_hash: str | None, old_previous: str | None,
+                  new_hash: str) -> str | None:
+    """The retained N-1 hash after a bake (XL-02).
+
+    A CHANGED tree makes the old hash the new N-1. An IDEMPOTENT re-bake (same
+    tree) must CARRY the recorded previous forward instead of forgetting it -
+    otherwise the prune step would delete a directory that a visitor holding a
+    cached older `core.js` stub may still need."""
+    if old_hash == new_hash:
+        return old_previous if old_previous != new_hash else None
+    return old_hash
+
+
 def retention_keep(hash_: str, previous: str | None) -> set[str]:
     """The baked-core RETENTION POLICY, in one place (XL-02, 0.6.24 review).
 
@@ -106,17 +119,18 @@ def main() -> int:
     hash_, files = tree_hash()
     token = 1
     previous = None
+    old_hash = None
     if MANIFEST.is_file():
         try:
             old = json.loads(MANIFEST.read_text(encoding="utf-8"))
             token = int(old.get("token", 1))
-            previous = old.get("hash") or None
-            if previous and previous != hash_:
-                token += 1
+            old_hash = old.get("hash") or None
+            previous = old.get("previous") or None
         except (OSError, ValueError):
             pass
-    if previous == hash_:
-        previous = None                 # same tree: there is no N-1 to retain
+    previous = next_previous(old_hash, previous, hash_)
+    if old_hash and old_hash != hash_:
+        token += 1
     names = export_names((CORE / "index.js").read_text(encoding="utf-8"))
     if not names:
         print("build_core: core/index.js has no explicit export list")

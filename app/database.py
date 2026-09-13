@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import math
-import shutil
 import sqlite3
 import threading
 import time
@@ -125,6 +124,13 @@ def _validate_import_settings(settings: dict) -> None:
     if "active_pano_id" in settings and settings["active_pano_id"] is not None \
             and not isinstance(settings["active_pano_id"], str):
         raise ValueError("settings.active_pano_id must be a string or null")
+    # PY-05: the same token rule the routes apply. Without it a bundle could
+    # install an "active panorama" that /api/state advertises and no id-taking
+    # route ever resolves.
+    _pid = settings.get("active_pano_id")
+    if _pid and safe_token(_pid) is None:
+        raise ValueError(
+            "settings.active_pano_id must be a plain panorama id")
     for key, lo, hi in (("bortle", 1, 9), ("edge_space", 0, 1000)):
         if key in settings:
             v = settings[key]
@@ -327,11 +333,22 @@ class Database:
         self.make_backup()
 
     def make_backup(self) -> None:
-        """Keep one rolling backup of the user database next to the original."""
+        """Keep one rolling backup of the user database next to the original.
+
+        PY-07: this used `shutil.copyfile`, a byte copy taken with no lock while
+        the server thread keeps committing - a write landing mid-copy could leave
+        a torn, unusable recovery artifact and nothing detected it. SQLite's own
+        backup API reads a consistent snapshot under its locking."""
         try:
-            if self.path.exists() and self.path.stat().st_size > 0:
-                shutil.copyfile(self.path, str(self.path) + ".backup")
-        except OSError:
+            if not (self.path.exists() and self.path.stat().st_size > 0):
+                return
+            dest = sqlite3.connect(str(self.path) + ".backup")
+            try:
+                with self.lock:
+                    self.conn.backup(dest)
+            finally:
+                dest.close()
+        except (OSError, sqlite3.Error):
             pass
 
     # ---------------- catalog ----------------
