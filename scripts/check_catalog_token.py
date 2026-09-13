@@ -98,6 +98,13 @@ def main() -> int:
     problems = scan()
     for p in problems:
         print("  catalog-token: " + p)
+    if not _git_ok():
+        # TO-04 (TL3): the committed-change rule is the ONLY check for "manifest
+        # bumped, CATALOG_TOKEN not", and git being missing/denied used to make it
+        # vanish without a word - the guard then printed OK for a check that never
+        # ran. Say so instead.
+        print("  catalog-token: NOTE - git is unavailable, so the committed-change "
+              "check (web/catalog.json vs HEAD + CATALOG_TOKEN) did NOT run")
     print("check_catalog_token:", "FAIL (%d)" % len(problems) if problems else "OK")
     return 1 if problems else 0
 

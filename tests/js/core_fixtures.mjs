@@ -26,6 +26,23 @@ const iso = (d) => (d ? new Date(d).toISOString() : null);
 const norm360 = (x) => ((x % 360) + 360) % 360;
 const out = {};
 
+/* TO-10 (0.6.24 review): report WHICH core export a section is missing, so the
+   Python side can FAIL with an actionable message instead of skipping. The
+   "concept not extracted yet" scaffolding is gone: the core is complete, so a
+   missing section means a renamed/removed export. */
+const NEEDS = {
+  jd: ["julianDay"], gmst: ["gmstDeg"], precession: ["precessJ2000ToDate"],
+  altaz: ["altaz"], sun: ["sunRaDec"],
+  moon: ["moonRaDec", "moonIllumination", "moonAge"],
+  twilight: ["nightInfo", "pickDarkWindow"],
+};
+const missing = {};
+for (const [section, names] of Object.entries(NEEDS)) {
+  const gone = names.filter((n) => !has(n));
+  if (gone.length) missing[section] = gone;
+}
+out.missing = missing;
+
 if (has("julianDay")) {
   out.jd = fx.jd.map((c) => C.julianDay(new Date(c.iso)));
 }

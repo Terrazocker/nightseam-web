@@ -175,26 +175,32 @@ def test_no_scratch_files_survive_a_run(scratch, capsys):
 # --------------------------------------------------------------------------
 # graceful degradation + CLI contract
 # --------------------------------------------------------------------------
-def test_skips_cleanly_without_node(monkeypatch, capsys):
+# --------------------------------------------------------------------------
+# a missing node is a HARD failure (TO-03), not a silent skip
+# --------------------------------------------------------------------------
+def test_fails_hard_without_node(monkeypatch, capsys):
+    """TO-03: the repo rule is "a missing node is a HARD failure, never a skip"
+    (the same rule as a browser that cannot launch). Returning 0 let check_js.py
+    report OK while the only JS parser in the bundle did nothing."""
     monkeypatch.setattr(SYN, "find_node", lambda: None)
 
     code = SYN.main([])
     out = capsys.readouterr().out
 
-    assert code == 0, out                    # a node-less machine is not a failure
-    assert "node" in out and "skipped" in out
+    assert code == 2, out
+    assert "FATAL" in out and "node" in out
     assert leftovers() == []
 
 
-def test_skips_cleanly_when_node_cannot_be_run(monkeypatch, capsys):
+def test_fails_hard_when_node_cannot_be_run(monkeypatch, capsys):
     monkeypatch.setattr(SYN, "find_node", lambda: "node")
     monkeypatch.setattr(SYN, "node_usable", lambda node: "spawn denied")
 
     code = SYN.main([])
     out = capsys.readouterr().out
 
-    assert code == 0, out
-    assert "skipped" in out
+    assert code == 2, out
+    assert "FATAL" in out and "spawn denied" in out
 
 
 def test_bad_usage_exits_nonzero(capsys):
@@ -210,7 +216,7 @@ def test_main_ignores_the_embedding_process_argv(monkeypatch, capsys):
     monkeypatch.setattr(sys, "argv", ["check_js.py", "--path", "nonexistent"])
     monkeypatch.setattr(SYN, "find_node", lambda: None)  # stop after discovery
 
-    assert SYN.main() == 0
+    assert SYN.main() == 2          # the missing-node FATAL (TO-03), not a clean 0
     out = capsys.readouterr().out
     assert "no such file or directory" not in out
 

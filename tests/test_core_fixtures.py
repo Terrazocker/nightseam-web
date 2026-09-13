@@ -54,9 +54,37 @@ def _close(a, b, tol):
 
 
 def _section(got, fixtures, name):
+    """TS7 / TO-10 (0.6.24 review): a section the harness did not produce is a
+    FAILURE, not a skip.
+
+    The gating existed while the harness landed before Phase 2 ("concept not
+    extracted yet"); the core is complete now, so a missing section can only mean
+    a renamed, removed or no-longer-function export - and a silently skipped
+    fixture comparison is exactly what this file exists to prevent."""
     if name not in got:
-        pytest.skip(f"core has no {name} functions yet (concept not extracted)")
+        gone = (got.get("missing") or {}).get(name) or []
+        pytest.fail(
+            f"core/{name} fixtures were not produced - missing export(s): "
+            f"{', '.join(gone) or 'unknown'}. A rename/removal must be an explicit "
+            "decision, not a silent skip.")
     return fixtures[name], got[name]
+
+
+def test_a_missing_section_fails_instead_of_skipping():
+    """TO-10 (TS7): the harness reports WHICH core export vanished, and the Python
+    side must FAIL - a silently skipped fixture comparison is exactly what this
+    file exists to prevent.
+
+    Written with an explicit `except BaseException` so a reverted `pytest.skip`
+    FAILS this pin instead of skipping it (proved by mutation)."""
+    try:
+        _section({"missing": {"jd": ["julianDay"]}}, {"jd": []}, "jd")
+    except pytest.fail.Exception as exc:               # the exception itself
+        assert "julianDay" in str(exc), str(exc)
+    except BaseException as exc:                       # Skipped included
+        pytest.fail(f"a missing section must FAIL, not {type(exc).__name__}: {exc}")
+    else:
+        pytest.fail("a missing section must FAIL")
 
 
 def test_jd_matches_the_oracle(fixtures, got):

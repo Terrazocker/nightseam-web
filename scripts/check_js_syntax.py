@@ -20,9 +20,11 @@ Usage:
     python scripts/check_js_syntax.py --path web/app.js
 
 Exit codes: 0 = every module parses, 1 = at least one syntax error, 2 = the
-command line was wrong. When `node` is missing (or cannot be run at all) the
-check prints one clear line and exits 0 - a node-less machine must not break
-the JS workflow.
+command line was wrong OR the check could not run at all. A missing node, a node
+that cannot be spawned and an unwritable scratch directory are all HARD failures
+with a FATAL line - never a silent skip: the aggregate `check_js.py` must not
+report OK while the only JS parser in the bundle did nothing (TO-03, 0.6.24
+review; the same rule as "a browser that cannot launch is a hard failure").
 """
 
 from __future__ import annotations
@@ -253,17 +255,22 @@ def main(argv=None) -> int:
 
     node = find_node()
     if not node:
-        print("check_js_syntax: node not installed - syntax check skipped")
-        return 0
+        # TO-03: the repo rule is "a missing node is a HARD failure, never a skip"
+        # (AGENTS.md, the same rule as a browser that cannot launch). Returning 0
+        # let the aggregate check_js.py report OK while the only JS *parser* in the
+        # bundle did nothing.
+        print("check_js_syntax FATAL: node is not installed - the JS syntax check "
+              "cannot run")
+        return 2
     reason = node_usable(node)
     if reason:
-        print(f"check_js_syntax: cannot run node ({reason}) - syntax check skipped")
-        return 0
+        print(f"check_js_syntax FATAL: cannot run node ({reason})")
+        return 2
 
     scratch = _scratch_dir()
     if scratch is None:
-        print("check_js_syntax: no writable scratch directory - syntax check skipped")
-        return 0
+        print("check_js_syntax FATAL: no writable scratch directory")
+        return 2
 
     capture = scratch / CAPTURE_NAME
     errors = 0

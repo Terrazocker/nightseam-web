@@ -24,3 +24,22 @@ def _load():
 def test_no_non_utf8_or_double_encoded_text():
     problems = _load().scan()
     assert problems == [], "\n".join("%s: %s" % (p.as_posix(), r) for p, r in problems)
+
+
+def test_the_review_workspace_is_not_policed(tmp_path):
+    """TO-11: `reviews/` is not shipped text (charter 1.1 keeps it outside the
+    product), so a BOM or a UTF-16LE PowerShell capture written there by a review
+    probe must not turn the release JS guard red - while the same bytes in shipped
+    text still must."""
+    mod = _load()
+    ship = tmp_path / "web"
+    ship.mkdir()
+    (ship / "bad.js").write_bytes(b"\xef\xbb\xbfconst a = 1;\n")        # UTF-8 BOM
+    rev = tmp_path / "reviews" / "0.6.24" / "evidence"
+    rev.mkdir(parents=True)
+    (rev / "probe.txt").write_bytes(b"\xef\xbb\xbfscratch\n")
+    (rev / "capture.txt").write_bytes(b"\xff\xfeh\x00i\x00")            # UTF-16LE
+
+    problems = [p.as_posix() for p, _ in mod.scan(tmp_path)]
+    assert "web/bad.js" in problems, "shipped text must still be policed"
+    assert not [p for p in problems if p.startswith("reviews/")], problems

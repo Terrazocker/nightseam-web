@@ -36,6 +36,13 @@ def test_night_load_supersession_invariant():
     assert "supersession invariant held" in out
 
 
+def test_core_exports_that_no_other_test_named():
+    """TO-09 (carry-over TS4): eight exported core functions were referenced
+    nowhere under tests/; this drives each through a contract property."""
+    out = run_node_harness("core_exports.mjs")
+    assert "core exports contract held" in out
+
+
 def test_worker_lifecycle_prefs_during_build():
     """FIX-1: a preference change during an in-flight worker build must not
     cancel the build; the finished plan carries the new preference and the busy

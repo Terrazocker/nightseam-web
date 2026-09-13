@@ -37,6 +37,52 @@ def test_catalog_token_matches_bytes_and_single_fetch_site():
     assert hashlib.sha256((WEB / "catalog.json").read_bytes()).hexdigest() == man["sha256"]
 
 
+def test_committed_catalog_change_requires_a_token_bump(monkeypatch):
+    """TO-04 (TL3): the branch that compares the tree against HEAD is the ONLY
+    check for "manifest bumped, CATALOG_TOKEN not" - and nothing proved it runs
+    (the existing mutation copies the files but leaves ROOT real, so git sees a
+    clean repository). Simulate the committed shape instead."""
+    import types
+
+    guard = _guard()
+
+    def fake_git(args):
+        if args[:2] == ["diff", "--quiet"]:
+            return types.SimpleNamespace(returncode=1, stdout="")   # differs
+        if args[0] == "diff":
+            return types.SimpleNamespace(returncode=0, stdout="- const OTHER = 1;\n")
+        return types.SimpleNamespace(returncode=0, stdout="")
+
+    monkeypatch.setattr(guard, "_git", fake_git)
+    monkeypatch.setattr(guard, "_git_ok", lambda: True)
+
+    problems = guard.scan()
+    assert any("CATALOG_TOKEN" in p for p in problems), problems
+
+    # the same catalog change WITH the token bumped in app.js is clean
+    def fake_git_bumped(args):
+        if args[:2] == ["diff", "--quiet"]:
+            return types.SimpleNamespace(returncode=1, stdout="")
+        if args[0] == "diff":
+            return types.SimpleNamespace(
+                returncode=0, stdout="- const CATALOG_TOKEN = '2';\n+ const CATALOG_TOKEN = '3';\n")
+        return types.SimpleNamespace(returncode=0, stdout="")
+
+    monkeypatch.setattr(guard, "_git", fake_git_bumped)
+    assert not [p for p in guard.scan() if "CATALOG_TOKEN" in p]
+
+
+def test_an_unusable_git_is_reported_not_silent(monkeypatch, capsys):
+    """TO-04 (TL3): without git the committed-change rule cannot run at all - it
+    used to vanish without a word, so the guard printed OK for a check that never
+    executed."""
+    guard = _guard()
+    monkeypatch.setattr(guard, "_git_ok", lambda: False)
+    guard.main()
+    out = capsys.readouterr().out
+    assert "did NOT run" in out, out
+
+
 def test_web_token_register_matches_the_sources():
     """FIX-7 (review TL2/F2): the AGENTS.md 'Current:' register is the only
     place the per-module cache tokens are tracked, and it had gone stale

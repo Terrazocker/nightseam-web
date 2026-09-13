@@ -176,7 +176,9 @@ if (-not $bakedText.Contains("BAKED_VERSION = '$ver'")) {
 }
 Write-Host "Baking version '$ver' into the build" -ForegroundColor Green
 
+New-Item -ItemType Directory -Force -Path dist | Out-Null
 & $py -m PyInstaller --clean --noconfirm --onefile --noconsole `
+    --specpath dist `
     --name NightSeam `
     --icon "assets\app.ico" `
     --add-data "static;static" `

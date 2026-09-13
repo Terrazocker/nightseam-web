@@ -417,6 +417,26 @@ def test_web_version_behind_is_only_a_warning():
     findings = CR.evaluate(state(web={"version": "0.6.8", "describe": "v0.6.8"}))
     assert errors(findings) == []
     assert "web" in checks(findings, CR.WARNING)
+    # TO-07 (TL5): the classification is DELIBERATE, and the warning must name the
+    # repair (re-bake web/version.json) so an operator knows what to do before the
+    # next deploy - the record was corrected to say exactly that.
+    msg = " ".join(str(getattr(f, "message", getattr(f, "msg", ""))) for f in findings)
+    assert "build_web.py version" in msg, msg
+
+
+def test_the_build_writes_its_spec_outside_the_tracked_file():
+    """TO-08 (TL4): without `--specpath` PyInstaller writes NightSeam.spec into the
+    repo root, overwriting the TRACKED artifact - so a PyInstaller upgrade that
+    emits a different spec makes `git describe --dirty` report -dirty after a
+    successful build and aborts make_release.py. The build now writes the spec into
+    the gitignored `dist/`, and the toolchain is pinned."""
+    import re
+
+    ps1 = (ROOT / "build.ps1").read_text(encoding="utf-8")
+    assert "--specpath dist" in ps1, "build.ps1 must not overwrite the tracked spec"
+    req = (ROOT / "requirements-dev.txt").read_text(encoding="utf-8")
+    assert re.search(r"^pyinstaller==", req, re.M), (
+        "PyInstaller must be pinned exactly, not '>=6.0'")
 
 
 def test_web_version_internally_inconsistent_is_an_error():

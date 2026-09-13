@@ -27,7 +27,12 @@ ROOT = Path(__file__).resolve().parent.parent
 # Never shipped text / generated / scratch (see .gitignore for the last few).
 SKIP_TOP = {".git", ".venv-build", ".venv", ".pytest-tmp", ".pytest_cache",
             "__pycache__", "build", "data", "dist", "logs", "node_modules",
-            "theme-preview", "whale", "dev"}
+            "theme-preview", "whale", "dev",
+            # TO-11 (0.6.24 review): the review workspace is NOT shipped text
+            # (charter 1.1 keeps reviews/ outside the product). A BOM or a
+            # UTF-16LE PowerShell capture written there by a review probe used to
+            # turn the release JS guard red with a message about a scratch file.
+            "reviews"}
 EXTS = {".js", ".mjs", ".cjs", ".py", ".html", ".css", ".json", ".md", ".ps1",
         ".txt", ".spec", ".cfg", ".ini", ".yml", ".yaml", ".svg", ".csv"}
 # Written by build.ps1 with a PowerShell BOM - not repo content.

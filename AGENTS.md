@@ -353,7 +353,7 @@ Image Catalog (FITS ingest + library). `README.md` has the feature list.
     `Get-CimInstance Win32_Process`).
   - If 8407 is briefly taken at boot, `free_port()` silently picks a RANDOM port
     (written to `instance.json`).
-- Tests: `python -m pytest tests/` (462). Single test:
+- Tests: `python -m pytest tests/` (479). Single test:
   `python -m pytest tests/test_js_parity.py -k name`. API tests use
   `create_app(db, prefetch=False)` (no image-cache thread). The `client` fixture
   must leave `data/panos` in the tmp dir it patches in.
@@ -363,7 +363,7 @@ Image Catalog (FITS ingest + library). `README.md` has the feature list.
     documented external `--basetemp` no longer restores a clean run (the directory
     cannot be created there, and pytest re-creates a workspace one with the same
     owner-SID-only DACL); use a repo-internal `tmp_path` override plugin instead -
-    with one, 462 pass with 0 assertion failures (certified 0.6.24 review,
+    with one, 479 pass with 0 assertion failures (certified 0.6.24 review,
     section 5.3).
 - JS checks (run after touching `static/` OR `web/`): `python scripts/check_js.py`
   runs all of them and exits non-zero on hard failures:
@@ -371,8 +371,9 @@ Image Catalog (FITS ingest + library). `README.md` has the feature list.
   - `check_dom_ids.py` - `$('#id')` missing from that app's `index.html`
   - `check_js_syntax.py` - `node --check` via a temp `.mjs` on every shipped
     module: `static/js/*.js` + `web/*.js` (flat) AND, recursively, `core/*.js`
-    plus both baked trees `web/core/<hash>/` + `static/js/core/<hash>/` (58
-    modules; TO-06, 0.6.24 review - the scope used to be the flat two only)
+    plus both baked trees `web/core/<hash>/` + `static/js/core/<hash>/` (76
+    modules with the retained N-1 tree; TO-06, 0.6.24 review - the scope used to
+    be the flat two only)
   - `check_encoding.py` - the encoding guard above
   - `check_catalog_token.py` - `web/catalog.json` + `catalog.manifest.json` pair with `CATALOG_TOKEN` in `web/app.js`
   - `check_js_tokens.py` - every tokenized `web/` module (`index.html` `app.js?v=`,
@@ -455,25 +456,34 @@ Image Catalog (FITS ingest + library). `README.md` has the feature list.
   Batch 2 (0.6.22) shipped every USER-REACHABLE finding with a
   failing-before/passing-after pin; `BATCH3-REPORT.md` records Batch 3
   (Python + web hardening shipped; the rule/table lists every item).
-- **The 0.6.20 program is closed; the 0.6.24 review's batch has shipped.** The
-  review itself is COMMITTED at `reviews/0.6.24/` - `REVIEW-0.6.24.md`, the five
-  lane reports, `70-verification.md`, `07-findings.json` and the passing gate
-  `80-report-review.md`. The follow-up batch on `master` fixed, each with a
-  failing-before/passing-after pin: `PY-04` plus its storage boundary and the
+- **The 0.6.20 program is closed; the 0.6.24 review's batch has shipped
+  COMPLETE.** The review itself is COMMITTED at `reviews/0.6.24/` -
+  `REVIEW-0.6.24.md`, the five lane reports, `70-verification.md`,
+  `07-findings.json` and the passing gate `80-report-review.md`. Every finding
+  (6 high, 10 medium, 26 low) now has a fix with a pin proven failing-before -
+  or, for the pure coverage additions (`TO-05`, `TO-09`), proven by mutating the
+  guarded thing. Highs/mediums: `PY-04` plus its storage boundary and the
   custom-target `vmag` route (T6-F1), `DE-01`, `XL-01` (the cache-token guard),
   `CR3`/`CO-01`, `DE-03`/`WE-02` (ruling C), `PY-01`, `PY-03`, `PY-06`/`PY6`,
-  `TO-02`, `DE-02`, `DE-07`, `DE-08`, `WE-01` and `XL-02`. Nothing is TAGGED yet:
-  the release checklist still requires the browser gate.
+  `TO-02`, `XL-02`, `DE-02`, `DE-07`, `DE-08`, `WE-01`. Lows: `PY-02`, `PY-05`,
+  `PY-07`, `CO-03`, `CO-04`, `WE-03`, `WE-04`, `DE-04`-`DE-15` and
+  `TO-03`-`TO-11` (`TO-07` stays a deliberate WARNING that names the re-bake).
+  Nothing is TAGGED yet: the release checklist still requires the browser gate,
+  which cannot run in this sandbox - the Playwright driver needs a pipe the
+  restricted token denies, and `TO-02` makes that report exit 2 honestly.
 - A bounded carry-over of non-reachable hardening/tooling/test-quality items
   remains (consume it in the next review pass): `CR2` malformed-horizon guards
   (all shipped producers normalize before preview), `DS4` worker/sync `ceil`
   (max_alt agrees; the residual is a one-bin `ceil` divergence on 516 of 19280
-  samples, cosmetic), `DS5` worker revive (sync fallback always planned), `TL3`
-  catalog committed-change check, `TL4` `--specpath` + PyInstaller pin, `TL5`
-  stale `web/version.json` (a deliberate WARNING, not a hard error), `TS4`
-  untested exports, `TS7` fixture `has()` gating, `WB7` bundle-version check
-  (forward-compat choice). The 26 lows from the 0.6.24 review are still open.
-  Baked-core retention is documented in "Versioning and release".
+  samples, cosmetic), `DS5` worker revive (sync fallback always planned), `WB7`
+  bundle-version check (forward-compat choice). The other rows were closed by
+  this batch: `TL3` (the committed-change branch is mutation-proven and its
+  absence is now REPORTED, not silent), `TL4` (`--specpath dist` + an exact
+  `pyinstaller==6.22.2` pin), `TS4` (`tests/js/core_exports.mjs` drives the eight
+  exports no test named), `TS7` (a missing fixture section FAILS and names the
+  missing export instead of skipping) and `TL5` (kept a deliberate WARNING, which
+  now says so in the record). Baked-core retention is documented in "Versioning
+  and release".
 
 ## Versioning and release
 
