@@ -212,6 +212,31 @@ def test_the_insecure_tls_context_is_limited_to_exact_cds_hosts():
     assert img._context_for("https://commons.wikimedia.org/x") is None
 
 
+def test_py6_a_redirect_off_the_allow_list_is_refused():
+    """PY6: the unverified context is per-OPENER, and urllib follows redirects on
+    that opener without re-checking the host - so an allow-listed CDS host could
+    hand the relaxed context to any third party, whose bytes we would then cache
+    and serve as the object's image. The guard refuses every hop that leaves the
+    exact allow-list, while hops that stay on it are still followed."""
+    import inspect
+    import urllib.request as urlreq
+
+    guard = img._AllowListRedirects()
+    req = urlreq.Request("https://alasky.cds.unistra.fr/hips2fits")
+
+    def hop(url):
+        return guard.redirect_request(req, None, 302, "Found",
+                                      {"Location": url}, url)
+
+    with pytest.raises(urllib.error.HTTPError) as exc:
+        hop("https://evil.example/x.jpg")
+    assert "allow-list" in str(exc.value)
+    assert hop("https://cds.unistra.fr/other").full_url == \
+        "https://cds.unistra.fr/other"
+    # the guarded opener must actually be wired into the byte fetch
+    assert "_urlopen(req, timeout)" in inspect.getsource(img._http_bytes)
+
+
 def test_image_download_reads_are_capped(monkeypatch):
     """Third-party bytes are cached, so an oversized response must be refused
     instead of buffered whole."""

@@ -139,6 +139,18 @@ def test_desktop_ownership_invariants():
         "DE-07: a wizard replay must not reuse the first run's coordinates")
 
 
+def test_sky_view_outline_is_obstacle_mode_only_in_both_apps():
+    """WE-01: in sky mode a fully blocked column sits at 90 deg, which the radius
+    mapping sends to the zenith CENTRE - so stroking the silhouette alternated
+    between the painted band edge and the centre (a spurious inner ring with
+    radial connectors). AGENTS.md requires the outline to be obstacle-mode only in
+    BOTH apps; the desktop gates it, and the web Sky View did not."""
+    assert "if (pano.paintMode !== 'sky') {" in _read("web", "app.js"), (
+        "WE-01: the web Sky View must not stroke the silhouette in sky mode")
+    assert 'if (activePaintMode() !== "sky") {' in _read("static", "js", "skyview.js"), (
+        "WE-01: the desktop gate this parity relies on")
+
+
 def test_desktop_has_no_popularity_sort_mode():
     html = _read("static", "index.html")
     js = _read("static", "js", "targets.js")

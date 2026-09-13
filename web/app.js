@@ -938,10 +938,18 @@ function renderSky() {
       ctx.closePath();
       ctx.fill();
       // stroke ONLY the ceiling curve: stroking the closed polygon drew a
-      // radial chord at the az 0 seam (the reported "line to the north")
-      ctx.beginPath();
-      ceilPts.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
-      ctx.stroke();
+      // radial chord at the az 0 seam (the reported "line to the north").
+      // WE-01: OBSTACLE MODE ONLY. In sky mode a fully blocked column has
+      // ceil 90, which radiusFor() maps to the zenith CENTRE, so the curve
+      // alternated between the painted band edge and the centre - the spurious
+      // inner ring with radial connectors. The desktop suppresses exactly this
+      // (static/js/skyview.js: `activePaintMode() !== "sky"`), and AGENTS.md
+      // requires the outline to be obstacle-mode only in BOTH apps.
+      if (pano.paintMode !== 'sky') {
+        ctx.beginPath();
+        ceilPts.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
+        ctx.stroke();
+      }
 
       // sky mode. DEFAULT: everything above the painted band is FREE (open
       // above) - hinted with a hatch + legend, never shaded as blocked. Only

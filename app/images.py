@@ -65,6 +65,42 @@ def _context_for(url: str):
     return _INSECURE_CTX if host in _INSECURE_HOSTS else None
 
 
+class _AllowListRedirects(urllib.request.HTTPRedirectHandler):
+    """PY6: refuse a redirect hop that leaves the exact allow-list.
+
+    The unverified TLS context is attached to the OPENER, and urllib follows
+    redirects on that same opener without re-checking the host - so one of the
+    allow-listed CDS hosts could hand the relaxed context to any third party,
+    whose bytes we would then cache and serve as the object's image. The
+    documented control is the hostname check, and a redirect walked around it."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        nxt = super().redirect_request(req, fp, code, msg, headers, newurl)
+        if nxt is None:
+            return None
+        host = (urllib.parse.urlsplit(nxt.full_url).hostname or "").lower()
+        if host not in _INSECURE_HOSTS:
+            raise urllib.error.HTTPError(
+                newurl, code,
+                f"redirect left the CDS allow-list ({host or 'no host'})",
+                headers, fp)
+        return nxt
+
+
+def _urlopen(req, timeout: float):
+    """Open `req`, installing the redirect guard for the allow-listed hosts whose
+    TLS chain is deliberately unverified (PY6). Every other host keeps the normal,
+    certificate-verifying opener (a redirect there is fine - the hop is verified
+    like any other HTTPS request)."""
+    host = (urllib.parse.urlsplit(req.full_url).hostname or "").lower()
+    if host in _INSECURE_HOSTS:
+        opener = urllib.request.build_opener(
+            urllib.request.HTTPSHandler(context=_INSECURE_CTX),
+            _AllowListRedirects())
+        return opener.open(req, timeout=timeout)
+    return urllib.request.urlopen(req, timeout=timeout)
+
+
 class Temporary(Exception):
     """Rate limits / server hiccups / network issues -> must NOT be cached."""
 
@@ -104,8 +140,7 @@ def _http_json(url: str, timeout: float = 6.0):
 def _http_bytes(url: str, timeout: float = 10.0):
     req = urllib.request.Request(url, headers=UA)
     try:
-        with urllib.request.urlopen(req, timeout=timeout,
-                                    context=_context_for(url)) as r:
+        with _urlopen(req, timeout) as r:
             ctype = r.headers.get("Content-Type", "image/jpeg")
             # read with a cap: these are third-party hosts and the bytes are
             # cached on disk, so an oversized/hostile response must not be
