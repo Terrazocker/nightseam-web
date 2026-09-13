@@ -110,12 +110,17 @@ export function bindSetup() {
   $("#btnRigPickCancel").addEventListener("click", hideRigAdd);
   $("#btnRigFormCancel").addEventListener("click", hideRigAdd);
 
-  // preferences that live in the popover but persist through settings
+  // preferences that live in the popover but persist through settings.
+  // DE-09: `api()` toasts and RETHROWS, so each handler catches the failed POST
+  // and STILL re-renders - the local cfg is already applied, and skipping the
+  // render left the visible list on the old preference.
   $("#sizeUnit").addEventListener("change", async e => {
     S.cfg.size_unit = e.target.value;
-    await api("/api/settings", { method:"POST",
-      headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({ size_unit: e.target.value })});
+    try {
+      await api("/api/settings", { method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({ size_unit: e.target.value })});
+    } catch { /* api() toasted; the local value stays applied */ }
     renderTargets();
     if ($("#libUnit")) $("#libUnit").value = e.target.value;
     document.dispatchEvent(new CustomEvent("detail:changed"));
@@ -123,9 +128,11 @@ export function bindSetup() {
   $("#rigSelect").addEventListener("change", async e => {
     const id = e.target.value ? +e.target.value : null;
     S.cfg.active_rig_id = id;
-    await api("/api/settings", { method:"POST",
-      headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({ active_rig_id: id === null ? 0 : id })});
+    try {
+      await api("/api/settings", { method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({ active_rig_id: id === null ? 0 : id })});
+    } catch { /* api() toasted; the local value stays applied */ }
     renderTargets();
     document.dispatchEvent(new CustomEvent("detail:changed"));
   });
@@ -135,9 +142,11 @@ export function bindSetup() {
                         narrowband_ha:$("#fltHa").checked,
                         narrowband_oiii:$("#fltOiii").checked };
       S.cfg.filters = filters;
-      await api("/api/settings", { method:"POST",
-        headers:{"Content-Type":"application/json"},
-        body: JSON.stringify({ filters })});
+      try {
+        await api("/api/settings", { method:"POST",
+          headers:{"Content-Type":"application/json"},
+          body: JSON.stringify({ filters })});
+      } catch { /* api() toasted; the local value stays applied */ }
       renderTargets();
       document.dispatchEvent(new CustomEvent("detail:changed"));
     });
@@ -364,9 +373,13 @@ function renderRigsTable() {
 
   tb.querySelectorAll("[data-ur]").forEach(b => b.addEventListener("click", async () => {
     S.cfg.active_rig_id = +b.dataset.ur;
-    await api("/api/settings", { method:"POST",
-      headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({ active_rig_id:+b.dataset.ur })});
+    // DE-09 (same class as the popover handlers): the local value is applied
+    // first, so a failed POST must not skip the re-render below.
+    try {
+      await api("/api/settings", { method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({ active_rig_id:+b.dataset.ur })});
+    } catch { /* api() toasted; the local value stays applied */ }
     refreshRigUI(); renderRigsTable(); renderTargets();
     document.dispatchEvent(new CustomEvent("detail:changed"));
   }));

@@ -26,9 +26,16 @@ function activeSite() {
   return S.cfg.sites.find(s => s.id === S.cfg.active_site_id) || S.cfg.sites[0] || null;
 }
 
+// DE-06: every request carries a generation. The panel is labelled with the
+// CURRENT site, so a response that lands after the user changed the site is
+// DROPPED - otherwise the chip/panel showed one site's name over another site's
+// numbers, and a late failure nulled a newer success.
+let _wxGen = 0;
+
 async function loadWeather() {
   const chip = $("#wxChip");
   if (!chip) return;
+  const gen = ++_wxGen;
   WX_STATE.loading = true; WX_STATE.error = false;
   wxRenderChip();
   const site = activeSite();
@@ -49,12 +56,15 @@ async function loadWeather() {
     const r = await fetch(url, { signal: ac.signal });
     clearTimeout(to);
     if (!r.ok) throw new Error("HTTP " + r.status);
+    if (gen !== _wxGen) return;             // superseded by a newer site
     WX_STATE.data = await r.json();
   } catch {
+    if (gen !== _wxGen) return;             // a stale failure must not win
     WX_STATE.error = true; WX_STATE.data = null;
   } finally {
-    WX_STATE.loading = false;
+    if (gen === _wxGen) WX_STATE.loading = false;
   }
+  if (gen !== _wxGen) return;
   wxRenderChip();
   const panel = $("#weatherPanel");
   if (panel && !panel.classList.contains("hidden")) wxRenderPanel();

@@ -74,9 +74,15 @@ export function bindHeader() {
   });
   $("#moonAware").addEventListener("change", async e => {
     S.cfg.moon_aware = e.target.checked;
-    await api("/api/settings", { method:"POST",
-      headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({ moon_aware: e.target.checked })});
+    // DE-09: the local cfg is applied first, so the re-derive must still run when
+    // the POST fails. `api()` toasts and RETHROWS; without this catch the
+    // prefs:changed dispatch below was skipped, leaving the visible scores on the
+    // old ranking while the checkbox showed the new value.
+    try {
+      await api("/api/settings", { method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({ moon_aware: e.target.checked })});
+    } catch { /* api() already toasted; the local value stays applied */ }
     document.dispatchEvent(new CustomEvent("prefs:changed"));
   });
   // View full day: widen the scrub to the whole payload grid; off (default)

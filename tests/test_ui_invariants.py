@@ -100,7 +100,12 @@ def test_desktop_robustness_invariants():
     assert "if (!S.cfg.sites.length) {" in mainjs
     assert "!S.cfg.wizard_done" not in mainjs
     pano = _read("static", "js", "pano.js")
-    assert "if (Pano.saveTimer) { clearTimeout(Pano.saveTimer); Pano.saveTimer = null; }" in pano
+    # DE-04 changed this contract on purpose: select() now FLUSHES the captured
+    # payload instead of cancelling the timer (the cancel silently dropped a
+    # gesture whose 900 ms window had not elapsed). The ownership test below pins
+    # the flush and the unload guard; the cancel itself must be gone.
+    assert "await flushSave();" in pano
+    assert "if (Pano.saveTimer) { clearTimeout(Pano.saveTimer); Pano.saveTimer = null; }" not in pano
     # recomputeProfile must keep a stroke-less record's stored profile. Since
     # PY-03 the test is the shared strokeList() guard, so a NON-ARRAY stored
     # `strokes` also counts as stroke-less instead of crashing the editor - and
@@ -128,8 +133,20 @@ def test_desktop_ownership_invariants():
     The pin slices the function BODY (a whole-file grep would pass on an
     unrelated copy elsewhere)."""
     pano = _read("static", "js", "pano.js")
-    assert "invalidateMask();" in _js_body(pano, "async function select(rec) {"), (
+    select_body = _js_body(pano, "async function select(rec) {")
+    assert "invalidateMask();" in select_body, (
         "DE-02: select() must drop the previous panorama's mask cache")
+    assert "await flushSave();" in select_body, (
+        "DE-04: a panorama switch must FLUSH the pending auto-save, not drop it")
+    assert "clearTimeout(Pano.saveTimer)" not in select_body, (
+        "DE-04: the cancel-only path is what silently lost the edit")
+    flush_body = _js_body(pano, "async function flushSave() {")
+    assert "S.panos[idx] = upd;" in flush_body, (
+        "DE-05: refresh ONLY the record that was saved, never the whole array")
+    assert "if (Pano.cur === job.rec)" in flush_body, (
+        "DE-05: never rebind a record the user has already left")
+    assert 'addEventListener("pagehide"' in pano and "keepalive: true" in pano, (
+        "DE-04: the unload guard must survive the window close")
     util = _read("static", "js", "util.js")
     toast_body = _js_body(util, "export function toast(msg")
     assert "stopPropagation()" in toast_body, (
@@ -149,6 +166,41 @@ def test_sky_view_outline_is_obstacle_mode_only_in_both_apps():
         "WE-01: the web Sky View must not stroke the silhouette in sky mode")
     assert 'if (activePaintMode() !== "sky") {' in _read("static", "js", "skyview.js"), (
         "WE-01: the desktop gate this parity relies on")
+
+
+def test_desktop_weather_drops_a_superseded_response():
+    """DE-06: the weather panel is labelled with the CURRENT site, so a response
+    that lands after the user changed the site must be dropped. It used to be
+    written unconditionally - one site's name over another site's numbers - and a
+    late failure nulled a newer success."""
+    body = _js_body(_read("static", "js", "weather.js"),
+                    "async function loadWeather() {")
+    assert "const gen = ++_wxGen;" in body
+    assert body.count("if (gen !== _wxGen) return;") >= 2, (
+        "DE-06: the success AND the failure path must drop a stale response")
+    assert "if (gen === _wxGen) WX_STATE.loading = false;" in body, (
+        "DE-06: a superseded request must not clear the newer one's spinner")
+
+
+def test_desktop_pref_handlers_survive_a_failed_settings_post():
+    """DE-09: `api()` toasts and RETHROWS. A preference handler that mutates
+    `S.cfg` and then awaits the POST without catching skipped its own re-render,
+    so the visible ranking/list kept the OLD preference while the control showed
+    the new one. Every await preceded by an `S.cfg.` write must be guarded."""
+    for parts in (("static", "js", "header.js"), ("static", "js", "setup.js")):
+        lines = _read(*parts).splitlines()
+        for i, line in enumerate(lines):
+            if 'await api("/api/settings"' not in line:
+                continue
+            mutates = any(prev.strip().startswith("S.cfg.")
+                          for prev in lines[max(0, i - 10):i])
+            if not mutates:
+                continue
+            window = "\n".join(lines[i:i + 8])
+            assert "catch" in window, (
+                f"DE-09: {parts[-1]}:{i + 1} mutates S.cfg then awaits "
+                "/api/settings with no catch - a failed save would skip the "
+                "re-render")
 
 
 def test_desktop_has_no_popularity_sort_mode():

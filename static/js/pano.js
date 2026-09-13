@@ -20,6 +20,7 @@ export const Pano = {
   crop: null,       // side-band selection in canvas px
   tool: "b",
   saveTimer: null,
+  pending: null,    // {rec, fields} captured by scheduleSave, flushed on switch/close
   undo: [],         // stroke snapshots for undo
   loupeOn: true,
   lastPos: null,    // last pointer position over canvas (css px)
@@ -308,6 +309,12 @@ function renderList() {
 }
 
 async function select(rec) {
+  // DE-04: a pending auto-save belongs to the PREVIOUS panorama, and its payload
+  // is captured when it is scheduled - so FLUSH it before switching instead of
+  // cancelling it. The old clearTimeout dropped a gesture whose 900 ms timer had
+  // not fired; because the payload carries its own record, the flush can never
+  // write into the record we are switching to (the reason the cancel existed).
+  await flushSave();
   Pano.cur = rec;
   // DE-02: the offscreen mask cache belongs to ONE record, but `render()` only
   // rebuilds it when the canvas SIZE changes - so two panoramas with the same
@@ -316,10 +323,8 @@ async function select(rec) {
   // ran here either. Drop the cache with the record it belongs to.
   invalidateMask();
   Pano.crop = null;
-  // a pending auto-save belongs to the PREVIOUS panorama (its scheduleSave
-  // captured Pano.cur); cancel it so a delayed save cannot write the old
-  // strokes/profile into the record we are switching to
-  if (Pano.saveTimer) { clearTimeout(Pano.saveTimer); Pano.saveTimer = null; }
+  // a pending auto-save belongs to the PREVIOUS panorama: FLUSHED above (DE-04),
+  // never cancelled - the captured payload cannot leak into this record
   // undo history belongs to ONE panorama: without this, undoing after a switch
   // wrote the previous panorama's strokes into this one and auto-saved them
   Pano.undo = [];
@@ -798,32 +803,79 @@ function recomputeProfile() {
 
 /* ---------------- persistence ---------------- */
 
+/** The editable fields a save sends for `rec`, captured when the save is
+ *  SCHEDULED - so a flush after the user switched panoramas still sends the
+ *  values of the record it belongs to (DE-04). */
+function currentPanoFields(rec) {
+  return {
+    az_offset: +$("#azOffset").value,
+    alt_bottom: +$("#altBottom").value,
+    alt_top: +$("#altTop").value,
+    fov: +$("#fovAz").value,
+    strokes: rec.strokes,
+    profile: rec.profile,
+    profile_top: rec.profile_top || [],
+    paint_mode: paintMode(),
+    block_above: !!rec.block_above,
+  };
+}
+
 function scheduleSave(delay = 900) {
   clearTimeout(Pano.saveTimer);
-  Pano.saveTimer = setTimeout(async () => {
-    if (!Pano.cur) return;
-    recomputeProfile();
-    let saved = true;
-    try {
-      await api("/api/panorama/" + Pano.cur.id, { method: "PUT",
-        headers: {"Content-Type":"application/json"},
-        body: JSON.stringify({
-          az_offset: +$("#azOffset").value,
-          alt_bottom: +$("#altBottom").value,
-          alt_top: +$("#altTop").value,
-          fov: +$("#fovAz").value,
-          strokes: Pano.cur.strokes,
-          profile: Pano.cur.profile,
-          profile_top: Pano.cur.profile_top || [],
-          paint_mode: paintMode(),
-          block_above: !!Pano.cur.block_above,
-        })});
-    } catch {
-      saved = false;      // api() already toasted; keep the local painting
-    }
-    if (!saved) return;
-    S.panos = await api("/api/panoramas");
-    const upd = S.panos.find(p => p.id === Pano.cur.id);
-    if (upd) Pano.cur = upd;
-  }, delay);
+  const rec = Pano.cur;
+  if (!rec) return;
+  // derive the profile NOW: the flush may run when the DOM - and this record -
+  // are already gone (a panorama switch or a window close)
+  recomputeProfile();
+  Pano.pending = { rec, fields: currentPanoFields(rec) };
+  Pano.saveTimer = setTimeout(() => { void flushSave(); }, delay);
 }
+
+/** Persist the pending edit (no-op when there is none). Called by the debounce
+ *  timer, by a panorama switch and by the unload guard.
+ *
+ *  DE-05: the WHOLE continuation is inside the guard. `api()` rethrows, so the
+ *  list refresh used to reject the timer callback with nothing to catch it; it
+ *  also replaced the entire `S.panos` array and rebound `Pano.cur`, which threw
+ *  once the record had been deleted (`deleteCurrent` nulls `Pano.cur`) and could
+ *  discard a DIFFERENT panorama's unsaved strokes. The merge below touches only
+ *  the record that was actually saved, and only while the user is still on it. */
+async function flushSave() {
+  clearTimeout(Pano.saveTimer);
+  Pano.saveTimer = null;
+  const job = Pano.pending;
+  Pano.pending = null;
+  if (!job) return;
+  try {
+    await api("/api/panorama/" + job.rec.id, { method: "PUT",
+      headers: {"Content-Type":"application/json"},
+      body: JSON.stringify(job.fields)});
+    const list = await api("/api/panoramas");
+    const upd = list.find(p => p.id === job.rec.id);
+    if (upd) {
+      const idx = S.panos.findIndex(p => p.id === job.rec.id);
+      if (idx >= 0) S.panos[idx] = upd;
+      if (Pano.cur === job.rec) Pano.cur = upd;
+    }
+  } catch {
+    // api() already toasted; keep the local painting
+  }
+}
+
+// DE-04: closing the window inside the debounce window used to discard the edit
+// with no trace at all. `pagehide` is the event that fires on a WebView2 /
+// app-mode window close, and `keepalive` lets the request outlive the document.
+window.addEventListener("pagehide", () => {
+  const job = Pano.pending;
+  if (!job) return;
+  Pano.pending = null;
+  try {
+    fetch("/api/panorama/" + job.rec.id, {
+      method: "PUT", keepalive: true,
+      headers: {"Content-Type":"application/json"},
+      body: JSON.stringify(job.fields),
+    });
+  } catch {
+    /* the document is going away; there is nothing useful to report */
+  }
+});
