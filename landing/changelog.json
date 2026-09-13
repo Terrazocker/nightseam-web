@@ -1,5 +1,10 @@
 [
  {
+  "version": "0.6.28",
+  "date": "2026-09-13",
+  "summary": "Catalog follow-up: the seven objects OpenNGC cannot carry are back - the Medusa and Headphone nebulae, Barnard's Loop, the Alpha Persei Cluster, the Sadr region (IC 1318) and the Messier objects M40 and M73 - so the catalog holds 12,167 objects. Standard mode still shows the 200 most popular, and the four of the seven the community ranks highly join that list. Their positions, sizes and magnitudes are the app's own published values, and they carry no description text, in line with the rest of the catalog. Everything else is unchanged."
+ },
+ {
   "version": "0.6.27",
   "date": "2026-09-13",
   "summary": "Catalog follow-up to the complete-OpenNGC switch. The target list now carries up-to-date community popularity, so Standard mode's 200 most popular objects are re-ranked (M42 still leads, M31 follows), and object labels follow the source more closely: the great star-forming nebulae OpenNGC classifies as a cluster with nebula (the Orion Nebula, IC 1396, the Heart and Soul nebulae, the Cocoon Nebula) are shown as nebulae instead of clusters, Serpens objects no longer display the catalogue's Se1/Se2 codes, and where OpenNGC gives one common name to two rows the designation is added - 'Eagle Nebula (NGC 6611)' beside 'Eagle Nebula (IC 4703)'. Your image library is migrated automatically: entries that pointed at the old catalogue's ids (M42, the Magellanic Clouds, Collinder 399 and about 110 more) are re-pointed at the objects OpenNGC names, and a capture whose object the new catalogue does not list at all keeps displaying its own name and coordinates."
