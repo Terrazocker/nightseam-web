@@ -59,3 +59,27 @@ Newest first.
   unpacks the ~20 MB exe to %TEMP% on first launch; the immediate re-run passed
   7/7 (3.1 s). A cold-start timeout right after a build is that, not a regression -
   re-run the gate before investigating.
+- **RELEASED as 0.6.29** - tag `v0.6.29` on the release commit (`365dc0e`: the
+  nine-object supplement batch 2 + the copy/doc updates; the curated entry is in
+  the same commit). Catalogue **12,167 -> 12,176** (supplement 7 -> 16), staged
+  `dist/release/` (`NightSeam-0.6.29.zip` sha256 `c43e85a41f4f87015a7cb1e0ef308f59dc1385a02662f634ddbc2bcc6a6744dc`,
+  20,483,677 bytes, + latest + `NightSeam.exe` + `version.json` + `ns-version.js`),
+  `check_release.py` **0 errors at the tag**, the FULL browser gate **19/19 on the
+  staged build** (12 web + 7 desktop against the fresh exe - no cold-start timeout
+  this time) and **13/13 including the read-only production smoke** after the
+  upload. Deployed `/downloads/` (zip, latest, exe, version.json, ns-version.js),
+  `/astro` (whole tree, index.html last) and the landing. Verified live, not
+  assumed: `/astro/version.json` + `/downloads/version.json` +
+  `/downloads/ns-version.js` all read 0.6.29, the deployed `catalog.json` sha256
+  **equals the local payload** (`c44fd26a...`, 12,176 rows / 200 standard) AND
+  carries all nine new ids with the `Squid` alias intact, and the published zip
+  sha256 equals the staged artifact. Tokens: `app.js?v=74` (index.html) /
+  `CATALOG_TOKEN = 8` + manifest, baseline refreshed for the one moved token.
+  Popularity 7,645 -> **7,654** (the nine new rows; no existing score touched).
+  All nine entered Standard mode on their own scores (29,490 / 25,230 / 22,630 /
+  14,110 / 9,790 / 8,230 / 6,780 / 5,200 / 2,188, cut 1,751), displacing nine
+  members: `ngc6526`, `ngc3992` (M109), `ngc6121` (M4), `ic63`, `ic1871`,
+  `ngc2246`, `ngc6905`, `ngc2362`, `ngc6231` - the documented consequence of
+  `STANDARD_TOP_N = 200`, accepted deliberately (see `DECISIONS.md`).
+  Follow-up commit `809de12` regenerated the tracked `landing/changelog.json`
+  (**never moved the tag**); `RELEASES.md` record in the next commit.
