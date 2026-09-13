@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>NightSeam Web — night-planning in your browser</title>
-<meta name="description" content="NightSeam Web: tonight's best deep-sky targets, live polar sky map and per-object altitude charts — computed entirely in your browser. Catalog: OpenNGC + supplement (12,167 objects).">
+<meta name="description" content="NightSeam Web: tonight's best deep-sky targets, live polar sky map and per-object altitude charts — computed entirely in your browser. Catalog: OpenNGC + supplement (12,176 objects).">
 <script>
 /* apply the saved theme before first paint (synchronous, no server).
    Glass is the default look; "Classic" is the older flat blue look. */
@@ -102,7 +102,7 @@
         <div class="menu-section">
           <h4>Advanced</h4>
           <label class="inline"><input type="checkbox" id="advMode"> Advanced mode</label>
-          <p class="hint">Standard mode shows the 200 most popular targets; advanced adds the full OpenNGC catalog — NGC/IC plus its addendum and a 7-object supplement OpenNGC cannot carry (12,167 objects to magnitude 20). Changing this reloads the app.</p>
+          <p class="hint">Standard mode shows the 200 most popular targets; advanced adds the full OpenNGC catalog — NGC/IC plus its addendum and a 16-object supplement OpenNGC cannot carry (12,176 objects to magnitude 20). Changing this reloads the app.</p>
           <div class="hidden" id="tzSection">
             <label class="inline">Timezone
               <select id="tzSelect" style="width:100%">
@@ -202,12 +202,12 @@
 </main>
 
 <footer class="foot">
-  <p>NightSeam Web — browser port of NightSeam. Catalog: OpenNGC + supplement (12,167 objects) · <a href="https://github.com/mattiaverga/OpenNGC" target="_blank" rel="noopener" style="color:var(--muted)">OpenNGC</a> <a href="https://creativecommons.org/licenses/by-sa/4.0/" target="_blank" rel="noopener" style="color:var(--muted)">CC BY-SA 4.0</a> · images: <a href="https://commons.wikimedia.org/" target="_blank" rel="noopener" style="color:var(--muted)">Wikimedia Commons</a> · weather: <a href="https://open-meteo.com" target="_blank" rel="noopener" style="color:var(--muted)">Open-Meteo</a>. Runs 100% client-side — no server involved. <span class="foot-ver" id="foot-ver">…</span></p>
+  <p>NightSeam Web — browser port of NightSeam. Catalog: OpenNGC + supplement (12,176 objects) · <a href="https://github.com/mattiaverga/OpenNGC" target="_blank" rel="noopener" style="color:var(--muted)">OpenNGC</a> <a href="https://creativecommons.org/licenses/by-sa/4.0/" target="_blank" rel="noopener" style="color:var(--muted)">CC BY-SA 4.0</a> · images: <a href="https://commons.wikimedia.org/" target="_blank" rel="noopener" style="color:var(--muted)">Wikimedia Commons</a> · weather: <a href="https://open-meteo.com" target="_blank" rel="noopener" style="color:var(--muted)">Open-Meteo</a>. Runs 100% client-side — no server involved. <span class="foot-ver" id="foot-ver">…</span></p>
 </footer>
 
 <div class="modal-wrap" id="modal" hidden></div>
 <div class="tooltip" id="tooltip" hidden></div>
 
-<script type="module" src="app.js?v=73"></script>
+<script type="module" src="app.js?v=74"></script>
 </body>
 </html>

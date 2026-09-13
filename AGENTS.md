@@ -143,10 +143,13 @@ Image Catalog (FITS ingest + library). `README.md` has the feature list.
   **The catalog IS OpenNGC, plus ONE documented supplement**:
   `app/data/openned.csv` (built by `scripts/build_adv_catalog.py` from
   `database_files/NGC.csv` + `addendum.csv` + the hand-kept
-  `app/data/supplement.csv`) is the whole catalog - 12,167 objects, of which 7
-  are the supplement (Medusa and Headphone nebulae, Barnard's Loop, Alpha Persei
-  Cluster, the Sadr region IC 1318, M40, M73 - objects OpenNGC lacks or files as
-  non-objects). The 197-row hand-curated list that used to live in
+  `app/data/supplement.csv`) is the whole catalog - 12,176 objects, of which 16
+  are the supplement: batch 1 (0.6.28 - Medusa and Headphone nebulae, Barnard's
+  Loop, Alpha Persei Cluster, the Sadr region IC 1318, M40, M73 - objects
+  OpenNGC lacks or files as non-objects) and batch 2 (0.6.29 - the popular
+  targets outside OpenNGC's SCOPE: Tulip, Simeis 147, Flying Bat, Dolphin Head,
+  Lion, Seahorse, LBN 437, LDN 1622, Pipe Nebula; `vmag` deliberately empty,
+  see `DECISIONS.md`). The 197-row hand-curated list that used to live in
   `app/catalog_data.py` is GONE (with it: every blurb/distance/Wikipedia field,
   the curated ids `m42`/`m45`/`lmc`/`...`, and the curated-vs-advanced dedup);
   the supplement is DATA in the catalogue's own column layout, and
@@ -169,7 +172,7 @@ Image Catalog (FITS ingest + library). `README.md` has the feature list.
   `catalog_data.LEGACY_ID_MAP` + `Database.migrate_legacy_object_ids()` rewrite
   the library ids the pre-0.6.26 catalogue handed out at ingest time (`m42` ->
   `ngc1976`, 114 entries, `images` + `import_batches` only). The seven
-  supplement objects deliberately kept their OLD curated ids, so a library entry
+  batch-1 supplement objects deliberately kept their OLD curated ids, so a library entry
   for one resolves directly with no aliasing; an id the catalogue cannot name at
   all (a build that is gone, a hand-edited library) is re-resolved for display by
   `app/imglib.py` from the frame's own OBJECT header/coordinates - both paths are
@@ -402,7 +405,7 @@ Image Catalog (FITS ingest + library). `README.md` has the feature list.
     `Get-CimInstance Win32_Process`).
   - If 8407 is briefly taken at boot, `free_port()` silently picks a RANDOM port
     (written to `instance.json`).
-- Tests: `python -m pytest tests/` (497). Single test:
+- Tests: `python -m pytest tests/` (500). Single test:
   `python -m pytest tests/test_js_parity.py -k name`. API tests use
   `create_app(db, prefetch=False)` (no image-cache thread). The `client` fixture
   must leave `data/panos` in the tmp dir it patches in.
@@ -412,7 +415,7 @@ Image Catalog (FITS ingest + library). `README.md` has the feature list.
     external `--basetemp` workaround does not restore a clean run either.
     `tests/conftest.py` therefore OVERRIDES the `tmp_path` fixture with a dir under
     the gitignored, sandbox-owned `logs/.pytest-tmp`, so a plain
-    `python -m pytest tests/` is clean: **497 pass with 0 assertion failures**
+    `python -m pytest tests/` is clean: **500 pass with 0 assertion failures**
     (the 0.6.24..0.6.26 sessions needed a scratch plugin for this; it is built in
     now).
 - JS checks (run after touching `static/` OR `web/`): `python scripts/check_js.py`
@@ -561,8 +564,8 @@ Image Catalog (FITS ingest + library). `README.md` has the feature list.
   `scripts/check_catalog_token.py`, wired into `scripts/check_js.py`, and pinned
   by `tests/test_cache_tokens.py` (mutation-tested). Do NOT add
   `{cache:'no-store'}` - the file must stay cacheable.
-  Current (0.6.28): `app.js?v=73` (index.html) /
-  `CATALOG_TOKEN = '7'`, `astro.js?v=14`, `horizon.js?v=46`, `format.js?v=21`,
+  Current (0.6.29): `app.js?v=74` (index.html) /
+  `CATALOG_TOKEN = '8'`, `astro.js?v=14`, `horizon.js?v=46`, `format.js?v=21`,
   `nightrank.js?v=11`, `webstore.js?v=24`, `dragwin.js?v=1`, `style.css?v=16`,
   `themes.css?v=4`; the core stub is `web/core.js?v=21` (bump = re-bake,
   enforced by `scripts/check_core.py`). The CR3 fix (CO-01, 0.6.24 review)
@@ -671,7 +674,7 @@ Image Catalog (FITS ingest + library). `README.md` has the feature list.
   parity/convergence anchors are the `tests/js/*.mjs` engines. Python is
   storage/platform/IO only - astronomy math must NOT reappear outside `core/`.
 
-## Catalog: OpenNGC + a 7-object supplement (12,167; standard = the 200 most popular)
+## Catalog: OpenNGC + a 16-object supplement (12,176; standard = the 200 most popular)
 
 - Three sources, ONE generated file (`app/data/openned.csv` -
   `scripts/build_adv_catalog.py` writes it; never hand-edit):
@@ -679,11 +682,14 @@ Image Catalog (FITS ingest + library). `README.md` has the feature list.
   (2) `database_files/addendum.csv` - 62 notable objects with no NGC/IC number
   (Horsehead, Hyades, Coalsack, the Magellanic Clouds, the Local Group dwarfs,
   Seyfert's Sextet, ...), and
-  (3) `app/data/supplement.csv` - the 7 objects OpenNGC cannot carry (see the
-  catalog-identity invariant). Through 0.6.25 the addendum was NOT ingested
-  while the copy still claimed "OpenNGC"; 0.6.28 added the supplement.
+  (3) `app/data/supplement.csv` - the 16 objects OpenNGC cannot carry: 7 that
+  it lacks or files as non-objects (0.6.28), plus 9 outside its SCOPE (0.6.29
+  - Sharpless/Barnard/LDN/LBN, `vmag` empty; see the catalog-identity
+  invariant and `DECISIONS.md`). Through 0.6.25 the addendum was NOT ingested
+  while the copy still claimed "OpenNGC"; 0.6.28 added batch 1, 0.6.29
+  batch 2.
 - Toggled in the hamburger menu (`adv_mode`); changing it reloads the page.
-  Standard mode = the 200 most popular objects, advanced = all 12,167. Both come
+  Standard mode = the 200 most popular objects, advanced = all 12,176. Both come
   from the same rows, so the toggle changes HOW MUCH you see, never WHAT an
   object is.
 - `/api/catalog?adv=1` ships advanced objects as METADATA; `static/js/planning_client.js`
@@ -780,7 +786,8 @@ Image Catalog (FITS ingest + library). `README.md` has the feature list.
   `--cached` to refresh from the live source (0.6.27 did: 17,007 source entries,
   7,640 shipped scores, 535 of them moved); 0.6.28 replayed the SAME cache after
   adding the supplement and only gained entries (7,645, five of the seven) with no
-  existing score touched. The tests pin the ranking IDENTITY (M42 first, M31
+  existing score touched; 0.6.29 replayed it again for the nine batch-2 rows
+  (7,654 shipped scores, all nine above the Standard-mode cut). The tests pin the ranking IDENTITY (M42 first, M31
   second), never the numbers, precisely because a refresh moves them.
 - Rig presets are a PICKER, not defaults - a fresh setup is EMPTY. Both lists must
   change together: `app/rig_presets.py::DEFAULT_RIGS` and `web/webstore.js::DEFAULT_RIGS`

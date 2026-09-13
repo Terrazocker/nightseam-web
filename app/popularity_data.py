@@ -17,6 +17,7 @@ result does not depend on set/hash order and the standard-mode selection is
 reproducible.
 """
 POPULARITY = {
+    'b150': 9790,
     'b33': 1091,
     'c14': 18770,
     'c9': 17700,
@@ -1706,6 +1707,8 @@ POPULARITY = {
     'ic997': 1,
     'ic998': 1,
     'jones1': 14980,
+    'lbn437': 8230,
+    'ldn1622': 6780,
     'm40': 3060,
     'm73': 275,
     'mel111': 3490,
@@ -7659,7 +7662,13 @@ POPULARITY = {
     'pgc25886': 19,
     'pgc29653': 320,
     'pgc3853': 9,
+    'pipe': 5200,
+    'sh2-101': 29490,
+    'sh2-129': 22630,
+    'sh2-132': 2188,
+    'sh2-240': 25230,
     'sh2-276': 19910,
+    'sh2-308': 14110,
     'ugc5373': 260,
     'ugc5470': 2580,
 }

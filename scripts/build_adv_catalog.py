@@ -232,7 +232,9 @@ def main():
     with open(OUT, "w", encoding="utf-8", newline="") as f:
         f.write("# NightSeam catalog - derived from OpenNGC "
                 "(https://github.com/mattiaverga/OpenNGC, CC BY-SA 4.0)\n")
-        f.write("# NGC.csv (NGC/IC) + addendum.csv (notable non-NGC/IC objects) | "
+        f.write("# NGC.csv (NGC/IC) + addendum.csv (notable non-NGC/IC objects) "
+                "+ supplement.csv (this project's data for the 16 objects "
+                "OpenNGC cannot carry) | "
                 "Columns: id;primary_name;messier;ngcic;other;otype;"
                 "ra_hours;dec_deg;vmag;size_am;constellation;distance;"
                 "wiki;blurb;search\n")

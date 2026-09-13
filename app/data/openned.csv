@@ -1,5 +1,5 @@
 # NightSeam catalog - derived from OpenNGC (https://github.com/mattiaverga/OpenNGC, CC BY-SA 4.0)
-# NGC.csv (NGC/IC) + addendum.csv (notable non-NGC/IC objects) | Columns: id;primary_name;messier;ngcic;other;otype;ra_hours;dec_deg;vmag;size_am;constellation;distance;wiki;blurb;search
+# NGC.csv (NGC/IC) + addendum.csv (notable non-NGC/IC objects) + supplement.csv (this project's data for the 16 objects OpenNGC cannot carry) | Columns: id;primary_name;messier;ngcic;other;otype;ra_hours;dec_deg;vmag;size_am;constellation;distance;wiki;blurb;search
 ic2;IC 2;;IC 2;2MASX J00110081-1249206,IRAS 00084-1306,MCG -02-01-031,PGC 000778;galaxy;0.18358;-12.82286;15.5;0.98x0.32;Cet;;;;ic2 | IC 2 | 2masx j00110081-1249206,iras 00084-1306,mcg -02-01-031,pgc 000778
 ic3;IC 3;;IC 3;2MASX J00120604-0024543,MCG +00-01-038,PGC 000836,SDSS J001206.08-002454.7,SDSS J001206.09-002454.7,SDSS J001206.09-002454.8,SDSS J001206.10;galaxy;0.20169;-0.41522;14.8;0.93x0.67;Psc;;;;ic3 | IC 3 | 2masx j00120604-0024543,mcg +00-01-038,pgc 000836,sdss j001206.08-002454.7,sdss j001206.09-002454.7,sdss j001206.09-002454.8,sdss j001206.10
 ic4;IC 4;;IC 4;2MASX J00132695+1729111,IRAS 00108+1712,MCG +03-01-029,PGC 000897,UGC 00123;galaxy;0.22415;17.48644;14.1;1.17x0.84;Peg;;;;ic4 | IC 4 | 2masx j00132695+1729111,iras 00108+1712,mcg +03-01-029,pgc 000897,ugc 00123
@@ -12167,3 +12167,12 @@ ic1318;Gamma Cygni Nebula (Sadr Region);;IC 1318;Butterfly Nebula;nebula;20.37;4
 sh2-276;Barnard's Loop;;Sh2-276;;nebula;5.83;-3.0;5.0;600x30;Ori;;;;sh2-276 | Sh2-276 | barnard's loop
 abell21;Medusa Nebula;;Abell 21;PK 205+14.1;planetary;7.483;13.25;10.0;10x7;Gem;;;;abell21 | Abell 21 | medusa nebula | pk 205+14.1
 jones1;Headphone Nebula;;Jones-Emberson 1;PK 164+31.1;planetary;7.493;88.883;16.0;2.8;UMi;;;;jones1 | Jones-Emberson 1 | headphone nebula | pk 164+31.1
+sh2-101;Tulip Nebula;;Sh2-101;SH 2-101, LBN 168, Ced 173;nebula;19.99861;35.27667;;16x9;Cyg;;;;sh2-101 | Sh2-101 | tulip nebula | sh 2-101,lbn 168,ced 173
+sh2-129;Flying Bat Nebula;;Sh2-129;SH 2-129, LBN 428, Ou 4, Squid Nebula;nebula;21.19667;59.95;;140;Cep;;;;sh2-129 | Sh2-129 | flying bat nebula | sh 2-129,lbn 428,ou 4,squid nebula
+sh2-132;Lion Nebula;;Sh2-132;SH 2-132, LBN 473;nebula;22.31917;56.07917;;42x30;Cep;;;;sh2-132 | Sh2-132 | lion nebula | sh 2-132,lbn 473
+sh2-240;Simeis 147 (Spaghetti Nebula);;Sh2-240;SH 2-240, Simeis 147, SNR G180.0-01.7;supernova_remnant;5.685;28.08333;;180;Tau;;;;sh2-240 | Sh2-240 | simeis 147 (spaghetti nebula) | sh 2-240,simeis 147,snr g180.0-01.7
+sh2-308;Dolphin Head Nebula;;Sh2-308;SH 2-308, RCW 11, LBN 1052, EZ CMa;nebula;6.90362;-23.92834;;35x35;CMa;;;;sh2-308 | Sh2-308 | dolphin head nebula | sh 2-308,rcw 11,lbn 1052,ez cma
+b150;Seahorse Nebula;;B 150;Barnard 150, LDN 1082;nebula;20.85167;60.18333;;20x20;Cep;;;;b150 | B 150 | seahorse nebula | barnard 150,ldn 1082
+lbn437;LBN 437;;LBN 437;DG 187, LBN 096.26-14.97;nebula;22.53667;40.58333;;75x20;Lac;;;;lbn437 | LBN 437 | lbn 437 | dg 187,lbn 096.26-14.97
+ldn1622;LDN 1622;;LDN 1622;Lynds 1622, Boogeyman Nebula;nebula;5.90778;1.80333;;;Ori;;;;ldn1622 | LDN 1622 | ldn 1622 | lynds 1622,boogeyman nebula
+pipe;Pipe Nebula;;;LDN 1773, Barnard 59, Barnard 65, Barnard 67, Barnard 78;nebula;17.5;-25.0;;240x180;Oph;;;;pipe | Pipe Nebula | pipe nebula | ldn 1773,barnard 59,barnard 65,barnard 67,barnard 78

@@ -8,8 +8,8 @@ records *why* the rules below exist.
 
 | File | Status | What it is |
 |---|---|---|
-| `app/data/openned.csv` | **generated** | THE catalogue (12,167 rows). Never hand-edit. |
-| `app/data/supplement.csv` | **hand-kept** | The only non-OpenNGC data: 7 objects (below). |
+| `app/data/openned.csv` | **generated** | THE catalogue (12,176 rows). Never hand-edit. |
+| `app/data/supplement.csv` | **hand-kept** | The only non-OpenNGC data: 16 objects in two batches (below). |
 | `app/popularity_data.py` | **generated** | the popularity source scores, one per catalogue id. |
 | `web/catalog.json` | **generated** | The web payload, derived from the DB. |
 | `web/catalog.manifest.json` | generated | Bytes for the current `CATALOG_TOKEN`. |
@@ -25,12 +25,23 @@ records *why* the rules below exist.
 2. **OpenNGC `database_files/addendum.csv`** (64 rows upstream) → 62 objects: the
    notable objects with no NGC/IC number (Horsehead, Hyades, Coalsack, the
    Magellanic Clouds, the Local Group dwarfs, …).
-3. **`app/data/supplement.csv`** → 7 objects OpenNGC cannot carry, either absent
-   from it or filed as non-objects: `abell21` (Medusa Nebula), `jones1`
-   (Headphone Nebula), `sh2-276` (Barnard's Loop), `mel20` (Alpha Persei
-   Cluster), `ic1318` (Sadr region), `m40` (Winnecke 4), `m73`. Identity and
-   astrometry are the project's own values from the pre-0.6.26 curated list;
-   distance/wiki/blurb are empty, because the catalogue carries no prose.
+3. **`app/data/supplement.csv`** → 16 objects OpenNGC cannot carry, in two
+   batches. **Batch 1 (0.6.28, 7 rows)** is either absent from OpenNGC or filed
+   as a non-object: `abell21` (Medusa Nebula), `jones1` (Headphone Nebula),
+   `sh2-276` (Barnard's Loop), `mel20` (Alpha Persei Cluster), `ic1318` (Sadr
+   region), `m40` (Winnecke 4), `m73`; identity and astrometry are the project's
+   own values from the pre-0.6.26 curated list. **Batch 2 (0.6.29, 9 rows)** is
+   outside OpenNGC's *scope* (Sharpless/Barnard/LDN/LBN designations):
+   `sh2-101` Tulip Nebula, `sh2-240` Simeis 147, `sh2-129` Flying Bat,
+   `sh2-308` Dolphin Head, `sh2-132` Lion Nebula, `b150` Seahorse, `lbn437`,
+   `ldn1622`, `pipe` (Pipe Nebula). Their astrometry is SIMBAD ICRS/J2000 and
+   their sizes are published values (Sharpless 1959, Lynds 1965 LBN, Wikipedia);
+   `DECISIONS.md` records the selection rule and the `vmag` policy. In BOTH
+   batches `distance`/`wiki`/`blurb` are empty, because the catalogue carries no
+   prose; batch 2 additionally leaves `vmag` empty - an extended or dark nebula
+   has no credible integrated V magnitude, so those rows follow the app's
+   magnitude rule and appear only at the slider's maximum, exactly like the
+   shipped `b33` (Horsehead), `c9` and `c99`.
 
 ## Rebuild, in order
 

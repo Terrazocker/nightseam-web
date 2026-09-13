@@ -30,6 +30,11 @@ ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "landing" / "changelog.json"
 
 CURATED = {
+    # 0.6.29 adds supplement batch 2 (9 rows): the popular targets outside
+    # OpenNGC's SCOPE (Sharpless/Barnard/LDN/LBN). Every one already ranks above
+    # the Standard-mode cut, so the 200-target default view changes. No
+    # popularity refresh and no invented magnitudes - see DECISIONS.md.
+    "0.6.29": "Catalog update: nine more targets that OpenNGC's scope cannot carry - the Tulip Nebula, Simeis 147 (the Spaghetti Nebula), the Flying Bat Nebula with the Squid inside it, the Dolphin Head Nebula, the Lion Nebula, Barnard 150 (the Seahorse), LBN 437, LDN 1622 and the Pipe Nebula - so the catalog holds 12,176 objects. Every one of them is popular enough that the app's own ranking puts it straight into the 200-target default view, which means nine less-observed objects moved to advanced mode. Their positions come from SIMBAD and their sizes from the published catalogues, and no magnitude or description text is invented for them, so - like the Horsehead - they appear once the magnitude slider is at its maximum. Everything else is unchanged.",
     # 0.6.28 adds the 7-object supplement (app/data/supplement.csv): the
     # objects OpenNGC cannot carry. No refresh, no re-ranking beyond the new
     # rows' own scores.

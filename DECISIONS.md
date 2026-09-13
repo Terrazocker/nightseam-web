@@ -10,11 +10,70 @@ for history, never as instructions.
 
 ---
 
-## 0.6.28 — The catalogue is OpenNGC *plus* a documented 7-object supplement
+## 0.6.29 — Supplement batch 2: the popular targets OpenNGC's *scope* excludes
 
-**Decision.** `app/data/supplement.csv` holds exactly seven objects OpenNGC
+**Decision.** `app/data/supplement.csv` gained nine rows (16 total, catalogue
+12,176): the Tulip Nebula (`sh2-101`), Simeis 147 / Spaghetti (`sh2-240`), the
+Flying Bat + Squid (`sh2-129`), the Dolphin Head (`sh2-308`), the Lion Nebula
+(`sh2-132`), Barnard 150 / Seahorse (`b150`), LBN 437, LDN 1622 and the Pipe
+Nebula (`pipe`).
+
+**Why these nine.** They are the first tier of a checklist of ~70 famous hobby
+targets the shipped catalogue could not answer for. Every one is absent from
+OpenNGC **structurally** (Sharpless/Barnard/LDN/LBN designations are outside its
+NGC/IC + addendum scope) rather than dropped by the type filter, and the popularity source
+already ranks every one of them - all nine above the Standard-mode cut
+(`STANDARD_TOP_N` = 200), so the app's own popularity data selects them into
+Standard mode with no hand-made rule. The same checklist cleared the catalogues
+everybody asks about: Messier is 109/110 (M102 is upstream `Dup` of M101),
+Caldwell's non-NGC members are already in the addendum (`c9` Cave, `c41` Hyades,
+`c99` Coalsack, plus `c14` as a pair row), the Small Magellanic Cloud is
+`ngc292`, M24 is `ic4715` and the Witch Head is `ngc1909` (upstream's IC 2118 is
+the `Dup` pointer at it).
+
+**Magnitude policy: `vmag` stays EMPTY.** An extended or dark nebula has no
+credible integrated V magnitude, and the pre-0.6.26 curated list's proxies
+(Barnard's Loop "5.0") are exactly the editorial data 0.6.26 removed. Empty is
+also what the shipped addendum already does for `b33` (Horsehead), `c9`, `c99`
+and `mel111`. The consequence is intended, not a bug: per `magVisible`, a row
+with no magnitude appears only once the magnitude slider is at its maximum, so
+these are plan-able at full depth and never at a brighter limit.
+
+**Naming rule (id care).** Use the object's own catalogue designation when it has
+one (`sh2-101`, `b150`, `lbn437`, `ldn1622`); use a NAME token when the identity
+*is* a proper name with no single catalogue number (`pipe`). Every alternative
+designation goes into `other`, so search still finds it. Never add an id whose
+hyphen/space-stripped form equals another row's id: `M2-9` (Minkowski's
+Butterfly) normalizes to `m29` = NGC 6913, so it is NOT usable as an id and needs
+the alias treatment if it is ever added.
+
+**Provenance.** Astrometry is SIMBAD ICRS/J2000 (`Sh2-101`, `Sh2-240`, `Sh2-129`,
+`Sh2-308`, `Sh2-132`, `Barnard 150`, `LDN 1622`, `LBN 437`, and `NAME the Pipe
+Nebula`, whose 240x180 arcmin size is a measurement citing 2018MNRAS.474.4672L).
+Sizes are published values (Sharpless 1959, Lynds 1965 LBN, Wikipedia); LDN 1622
+has NO published angular size, so its `size_am` is empty (like `c99`).
+`distance`/`wiki`/`blurb` stay empty - the catalogue carries no prose.
+
+**Rejected.** (a) Leaving the objects out because OpenNGC does not list them -
+the app is a planner, not an OpenNGC mirror. (b) Bulk-importing Sharpless/LDN:
+Sh2 alone is 313 objects and LDN is 1,800+, their positions come from papers with
+their own licensing (not OpenNGC's CC BY-SA), and they are overwhelmingly not
+hobby targets. (c) Inventing magnitudes to make them visible at the default limit
+(see the magnitude policy). (d) Raising `STANDARD_TOP_N` so the nine displace
+nobody - rejected for now: 200 is the documented promise, and the ranking is what
+makes the displacement defensible (these nine are genuinely more observed than
+the nine they replace).
+
+**Enforced by.** `tests/test_supplement.py` (membership, types, no editorial
+text, no invented magnitude, searchable designations, the normalization guard),
+the advertised size in `tests/test_catalog_integrity.py`, `CATALOG.md`.
+
+## 0.6.28 — The catalogue is OpenNGC *plus* a documented supplement (batch 1)
+
+**Decision.** `app/data/supplement.csv` was introduced with seven objects OpenNGC
 cannot represent (Medusa Nebula, Headphone Nebula, Barnard's Loop, Alpha Persei
-Cluster, Sadr region/IC 1318, M40, M73). Total catalogue: 12,167.
+Cluster, Sadr region/IC 1318, M40, M73) - objects it either lacks or files as
+non-objects. 0.6.29 added batch 2 above; total catalogue: 12,176.
 
 **Why.** They are real, plan-able targets that the pre-0.6.26 curated list
 carried, and OpenNGC either lacks them or files them as non-objects (`IC 1318`

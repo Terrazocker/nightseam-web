@@ -3,7 +3,7 @@
  * Port of NightSeam (<archive>\Object-Astro) core features:
  *   • Tonight  — dark time, moon phase, ranked best targets
  *   • Sky map  — live polar all-dome chart with sun/moon/all catalog objects
- *   • Catalog  — search/sort across 12,167 objects (OpenNGC + supplement)
+ *   • Catalog  — search/sort across 12,176 objects (OpenNGC + supplement)
  *   • Detail   — meta + tonight rise/transit/set + altitude chart
  *   • Settings — sites, rigs, custom targets, backup/restore (webstore.js)
  * All sky math runs client-side (astro.js, Meeus algorithms).
@@ -25,7 +25,7 @@ import { popularityFactor as corePopularityFactor } from './core.js?v=21';
 // cacheable). Bump it in the SAME commit whenever web/catalog.json changes;
 // web/catalog.manifest.json records the bytes for the current token and
 // scripts/check_catalog_token.py enforces the pairing.
-const CATALOG_TOKEN = '7';
+const CATALOG_TOKEN = '8';
 
 /** Debounce timer for the catalog search box — re-renders at most every
  *  150 ms while typing instead of once per keystroke (12k-row filter). */

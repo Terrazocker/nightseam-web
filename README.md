@@ -40,11 +40,13 @@ Two modes, switched with the top-right button:
 - **DSO catalog** - the complete OpenNGC catalog: NGC/IC plus the OpenNGC
   addendum, the notable objects with no NGC/IC number (Horsehead, Hyades,
   Coalsack, Magellanic Clouds, Sculptor/Fornax dwarfs), plus a small
-  supplement of seven objects OpenNGC cannot represent (the Medusa and
+  supplement of sixteen objects OpenNGC cannot represent (the Medusa and
   Headphone nebulae, Barnard's Loop, the Alpha Persei Cluster, the Sadr
-  region, M40 and M73) - 12,167 objects to magnitude 20. Standard mode shows
+  region, M40, M73, and the Tulip, Lion, Flying Bat/Squid, Dolphin Head,
+  Simeis 147 and Seahorse nebulae, LBN 437, LDN 1622 and the Pipe Nebula) -
+  12,176 objects to magnitude 20. Standard mode shows
   the 200 MOST POPULAR of them (community observing counts, as a silent
-  ranking input); **advanced mode** (hamburger menu) shows all 12,167. Each
+  ranking input); **advanced mode** (hamburger menu) shows all 12,176. Each
   object carries its designations - search "M101" or "NGC 5457" and you get
   the same object.
 - **Location-aware visibility** - enter your observing site(s) once; every
