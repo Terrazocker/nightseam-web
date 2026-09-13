@@ -551,6 +551,20 @@ tool works here, so measure before working around anything:
   index.html last) and the landing (with the regenerated changelog.json). The gate
   needs ONE unsandboxed command (Chromium's mojo named pipes); sandboxed, `TO-02`
   makes it report exit 2 honestly instead of a fake "failed check(s)".
+- **RELEASED as 0.6.26** - tag `v0.6.26` on the release commit (`d412998` catalog
+  rebuild + `ea86a3a` the curated entry), staged `dist/release/`
+  (`NightSeam-0.6.26.zip` sha256 `cd0d2bc5...` + `NightSeam-latest.zip` +
+  `version.json` + `ns-version.js`), `check_release.py` **0 errors at the tag**,
+  the FULL browser gate **19/19 on the staged build** and **13/13 including the
+  read-only production smoke** after the upload. Deployed `/downloads/` (zip,
+  latest, exe, version.json, ns-version.js), `/astro` (whole tree, index.html
+  last) and the landing. Verified live, not assumed: `/astro/version.json` +
+  `/downloads/version.json` + `/downloads/ns-version.js` all read 0.6.26, the
+  deployed `catalog.json` sha256 equals the local payload, the published zip
+  equals the staged artifact, the live tokens are `app.js?v=70` /
+  `CATALOG_TOKEN = 5`, and the live copy reads 12,160 with no stale "197".
+  Follow-up commit `408dab5` regenerated the tracked `landing/changelog.json`
+  (**never moved the tag**).
 - A bounded carry-over of non-reachable hardening/tooling/test-quality items
   remains (consume it in the next review pass): `CR2` malformed-horizon guards
   (all shipped producers normalize before preview), `DS4` worker/sync `ceil`
@@ -614,7 +628,7 @@ tool works here, so measure before working around anything:
   `scripts/check_catalog_token.py`, wired into `scripts/check_js.py`, and pinned
   by `tests/test_cache_tokens.py` (mutation-tested). Do NOT add
   `{cache:'no-store'}` - the file must stay cacheable.
-  Current (post-0.6.25 tree): `app.js?v=70` (index.html) /
+  Current (0.6.26): `app.js?v=70` (index.html) /
   `CATALOG_TOKEN = '5'`, `astro.js?v=14`, `horizon.js?v=46`, `format.js?v=21`,
   `nightrank.js?v=11`, `webstore.js?v=24`, `dragwin.js?v=1`, `style.css?v=16`,
   `themes.css?v=4`; the core stub is `web/core.js?v=21` (bump = re-bake,
