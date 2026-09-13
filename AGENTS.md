@@ -421,34 +421,53 @@ Image Catalog (FITS ingest + library). `README.md` has the feature list.
     (`--yes` mandatory; the webspace root is refused). uploadtree/uploadmany
     refuse to publish pages that still contain template placeholders
     (`landing/impressum.html`) unless `--force`.
-- Sandbox shell gotchas (cost real attempts):
-  - Piping one command's stdout into another PowerShell command dies with
-    "Zugriff verweigert" (named-pipe EPERM): `... | Select-Object` never runs, for
-    python and git alike. Run the tool bare, or have a Python wrapper write to a
-    FILE inside the repo and read that.
-  - Any tool that shells out with `capture_output=True`/piped stdio dies the same
-    way. Concretely `python web/build_web.py version` fails from
-    `_winapi.CreatePipe` - a release step, run that one with full access, or bake
-    `web/version.json` by hand (`{"version","describe","built"}`,
-    `version = describe.lstrip("v")`, `built` = ISO-8601 UTC).
+- Sandbox shell gotchas (RE-MEASURED 2026-09-13, workspace-write mode):
+  - Plain pipes are FINE here: `subprocess.run(..., capture_output=True)` works,
+    PowerShell `... | Select-Object` works, and `python web/build_web.py version`
+    exits 0 (it wrote web/version.json). The blanket "piped stdio dies" notes below
+    were true of the older read-only mode - MEASURE before working around a
+    restriction.
+  - What IS denied: NAMED pipes and asyncio's OVERLAPPED pipes
+    (`_winapi.CreatePipe` WinError 5). The first stops Chromium (mojo IPC) and the
+    second stops the Playwright DRIVER - even though plain subprocess pipes work.
+    Anything that needs a browser or an asyncio subprocess must run UNSANDBOXED
+    (see the browser note below).
+  - If a release step does fail from `_winapi.CreatePipe`, bake `web/version.json`
+    by hand (`{"version","describe","built"}`, `version = describe.lstrip("v")`,
+    `built` = ISO-8601 UTC) or re-run it with full access.
   - Heredocs / inline `python -c` with quotes break - write probe scripts to
     `C:\Users\<user>\AppData\Local\Temp\opencode\` and run them.
+  - **Scratch dirs in the REPO ROOT are a trap:** a pytest tmp dir or review
+    scratch created there can get an owner-SID-only DACL that the SANDBOXED token
+    cannot even list, and `icacls`/`takeown`/`robocopy`/`rd` cannot repair it
+    (no WRITE_DAC, not admin). An UNSANDBOXED delete removes them normally
+    (measured: all 20 `pt-*`/`.rv-*` dirs gone in one escalated command), but the
+    durable rule is to keep scratch under the gitignored `logs/`, whose dirs the
+    sandbox can create AND delete.
 - `git commit`/`git tag` work, but git's background auto-maintenance then prints
   pack-objects pipe errors AND pops a harmless Windows dialog on the user's
   desktop (a detached `git maintenance run --auto` child cannot init under the
   restricted token). This repo's LOCAL config sets `maintenance.auto=false` +
   `gc.auto=0` to stop it (invisible to `git status`, costs no release window).
   Never run `git gc` from the sandboxed shell.
-- **Browser automation works here now (the old "no browser" note was stale).**
-  Playwright drives system Chrome / Edge / bundled Chromium - that is how
-  `scripts/check_browser.py` runs the `web/` and packed-exe checks. Raw headless
-  Chrome/Edge without Playwright could still return exit 0 with zero bytes, so
-  prefer the gate. For a manual look, the DEPLOYED app is verified via FTP
-  download + `Get-FileHash` against the local file, plus an HTTP fetch of
-  `/astro/version.json` and `/astro/index.html`. If driving CDP by hand: Chrome
-  needs `--remote-allow-origins=*`, `Network.setCacheDisabled` + a `?v=` query,
-  an absolute `--user-data-dir` inside the workspace, and `S` (state.js) is not
-  global - probe the DOM/API.
+- **Browser automation needs an UNSANDBOXED command (measured, 2026-09-13).**
+  Under the workspace-write sandbox token NO Chromium can start: its mojo IPC
+  creates NAMED PIPES, so every variant (`--headless=new`, `--headless`,
+  `--no-sandbox`, `--single-process`, `--in-process-gpu`) dies with
+  `FATAL:mojo\public\cpp\platform\platform_channel.cc: Check failed: . :
+  Zugriff verweigert (0x5)`. Playwright's own driver cannot even spawn - asyncio
+  needs OVERLAPPED pipes (`_winapi.CreatePipe` WinError 5), while plain pipes are
+  fine (that is why `subprocess.run(..., capture_output=True)` works). Under an
+  unsandboxed command the gate runs: `python scripts/check_browser.py --web` =>
+  **12/12 passed, exit 0** on the 0.6.24 tree. Firefox stays alive headless but
+  never opens its remote-debugging port. So run the gate with a one-shot
+  escalation or from a normal shell; `--desktop` additionally needs a FRESH
+  `dist\NightSeam.exe` (`build.ps1`). For a manual look, the DEPLOYED app is
+  verified via FTP download + `Get-FileHash` against the local file, plus an HTTP
+  fetch of `/astro/version.json` and `/astro/index.html`. If driving CDP by hand:
+  Chrome needs `--remote-allow-origins=*`, `Network.setCacheDisabled` + a `?v=`
+  query, an absolute `--user-data-dir` inside the workspace, and `S` (state.js)
+  is not global - probe the DOM/API.
 
 ## Code review record and status
 
@@ -468,9 +487,12 @@ Image Catalog (FITS ingest + library). `README.md` has the feature list.
   `TO-02`, `XL-02`, `DE-02`, `DE-07`, `DE-08`, `WE-01`. Lows: `PY-02`, `PY-05`,
   `PY-07`, `CO-03`, `CO-04`, `WE-03`, `WE-04`, `DE-04`-`DE-15` and
   `TO-03`-`TO-11` (`TO-07` stays a deliberate WARNING that names the re-bake).
-  Nothing is TAGGED yet: the release checklist still requires the browser gate,
-  which cannot run in this sandbox - the Playwright driver needs a pipe the
-  restricted token denies, and `TO-02` makes that report exit 2 honestly.
+  Nothing is TAGGED yet. The browser gate DOES run here: under an unsandboxed
+  command Chrome starts and `python scripts/check_browser.py --web` reports
+  **12/12 passed / exit 0** on this tree; sandboxed, Chromium cannot start at all
+  (mojo named pipes) and `TO-02` makes that report exit 2 honestly instead of a
+  fake "failed check(s)". `--desktop` still needs a FRESH `dist\NightSeam.exe`
+  (the one in dist/ predates this batch, so it would test old code).
 - A bounded carry-over of non-reachable hardening/tooling/test-quality items
   remains (consume it in the next review pass): `CR2` malformed-horizon guards
   (all shipped producers normalize before preview), `DS4` worker/sync `ceil`
@@ -505,8 +527,10 @@ Image Catalog (FITS ingest + library). `README.md` has the feature list.
      --dirty`, so any uncommitted change leaks into the exe/zip/`version.json`).
   5. `scripts/check_release.py` must exit 0 with 0 errors.
   6. browser gate on the STAGED build: `python scripts/check_browser.py --all`
-     (add `--prod-url https://nightseam.de/astro/` once the code is live); then
-     upload the changed `web/` tree LAST (index.html very last).
+     (in a normal shell or with a one-shot escalation - see the browser note under
+     "Sandbox shell gotchas"; add `--prod-url https://nightseam.de/astro/` once the
+     code is live); then upload the changed `web/` tree LAST (index.html very
+     last).
   7. `scripts/build_changelog.py` regenerates the TRACKED `landing/changelog.json`;
      commit that as its own follow-up commit after the tag (**never move the tag**).
   `check_release.py` verifies the staged zip sha256/size vs `version.json`, the

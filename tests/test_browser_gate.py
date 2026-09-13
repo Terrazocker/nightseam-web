@@ -66,34 +66,40 @@ def test_browser_gate_is_browser_required_not_a_skip():
 def test_browser_gate_driver_start_failure_is_exit_2(monkeypatch, capsys):
     """TO-02: entering the Playwright DRIVER is infrastructure too.
 
-    `sync_playwright()` used to be entered OUTSIDE the handler that converts
-    start-up failures into exit 2, so a driver that cannot spawn (restricted
-    token, broken install, missing driver bundle) escaped as a traceback and the
-    process reported exit 1 - which the documented contract defines as "failed
-    check(s)", the signal a release wrapper keys on. Drive the harness with a
-    driver that raises and assert the contract."""
+    `sync_playwright()` is entered outside the handler that converts start-up
+    failures into exit 2, so a driver that cannot spawn (restricted token, broken
+    install, missing driver bundle) escaped as a traceback and the process reported
+    exit 1 - which the documented contract defines as "failed check(s)", the signal
+    a release wrapper keys on. The conversion lives in the owner of that contract,
+    `check_browser.run_gate()`."""
+    import importlib.util
     import sys
-    import types
 
-    # import the gate the way scripts/check_browser.py does: tests/browser on the
-    # path, then the suites, which self-register their checks
-    monkeypatch.syspath_prepend(str(ROOT / "tests" / "browser"))
-    import harness as gate_harness
-    import web_suite  # noqa: F401 - registers the web checks
+    spec = importlib.util.spec_from_file_location(
+        "gate_runner", ROOT / "scripts" / "check_browser.py")
+    gate = importlib.util.module_from_spec(spec)
+    sys.modules["gate_runner"] = gate          # annotations resolve through this
+    spec.loader.exec_module(gate)              # imports the suites (self-register)
 
-    class _Boom:
-        def start(self):
-            raise PermissionError("[WinError 5] Zugriff verweigert")
+    def boom(**kwargs):
+        raise PermissionError("[WinError 5] Zugriff verweigert")
 
-    # stub the import target itself, so the pin needs no playwright install
-    pkg = types.ModuleType("playwright")
-    pkg.__path__ = []
-    sub = types.ModuleType("playwright.sync_api")
-    sub.sync_playwright = lambda: _Boom()
-    monkeypatch.setitem(sys.modules, "playwright", pkg)
-    monkeypatch.setitem(sys.modules, "playwright.sync_api", sub)
-
-    rc = gate_harness.run(targets=("web",), verbose=False)
+    monkeypatch.setattr(gate.harness, "run", boom)
+    rc = gate.run_gate(targets=("web",), verbose=False)
     out = capsys.readouterr().out
     assert rc == 2, "a driver that cannot start is infrastructure (exit 2)"
-    assert "check_browser FATAL" in out and "driver" in out
+    assert "check_browser FATAL" in out and "infrastructure" in out
+
+
+def test_browser_harness_starts_the_driver_exactly_once():
+    """The TO-02 conversion must NOT be implemented by probing the driver.
+
+    A throw-away `sync_playwright().start()` leaves the first instance's asyncio
+    task pending, and the real gate then exited 1 after passing every check
+    (observed: 12/12 passed, exit 1). One start, in the `with` that uses it."""
+    src = (ROOT / "tests" / "browser" / "harness.py").read_text(encoding="utf-8")
+    assert src.count("with sync_playwright() as p:") == 1, (
+        "harness.py must start the Playwright driver exactly once")
+    assert "_driver = sync_playwright().start()" not in src, (
+        "the throw-away driver probe is back - it left the gate exiting 1 "
+        "after every check passed")

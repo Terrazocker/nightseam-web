@@ -38,6 +38,23 @@ import web_suite  # noqa: E402,F401  (import registers the checks)
 import desktop_suite  # noqa: E402,F401
 
 
+def run_gate(**kwargs) -> int:
+    """Run the harness, converting an INFRASTRUCTURE failure into exit 2.
+
+    TO-02 (0.6.24 review): the Playwright DRIVER can fail to start before any
+    browser exists (restricted token, broken install, missing driver bundle).
+    The contract documented at the top of this file defines that as exit 2
+    ("infrastructure could not start"), NOT exit 1 ("failed check(s)") - an
+    escaping traceback used to report the latter, which is the signal a release
+    wrapper keys on. Handled here, at the owner of the exit-code contract."""
+    try:
+        return harness.run(**kwargs)
+    except Exception as exc:                       # noqa: BLE001
+        print(f"check_browser FATAL: browser infrastructure could not start "
+              f"({type(exc).__name__}: {exc}).")
+        return 2
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="NightSeam real-browser gate")
     ap.add_argument("--web", action="store_true", help="only the web shell")
@@ -70,7 +87,7 @@ def main() -> int:
     else:
         targets = ("web", "desktop")
 
-    return harness.run(
+    return run_gate(
         channel=args.channel, targets=targets, exe=Path(args.exe),
         only=args.only, headed=args.headed, prod_url=args.prod_url,
     )
