@@ -140,6 +140,19 @@ Image Catalog (FITS ingest + library). `README.md` has the feature list.
   that is why `ngc650` ships and `ngc651` (Dup) does not, and why M40/M73/M102 are
   absent; `_build_row` RAISES on an unmapped type instead of letting the old
   `TYPE_MAP.get(..., "galaxy")` fallback mislabel the addendum's dark nebulae.
+  Display mappings are applied at build time, each documented in
+  `scripts/build_adv_catalog.py`: OpenNGC's `Cl+N` ("star cluster + nebula")
+  becomes `nebula` - its famous members are M42/Orion, IC 1396, IC 1805 Heart,
+  IC 1848 Soul, IC 5146 Cocoon, so "Open cluster" was simply wrong for them;
+  Serpens' `Se1`/`Se2` codes become `Ser`; and a common name OpenNGC gives to
+  more than one row gets its designation appended ("Eagle Nebula (NGC 6611)",
+  "Antennae Galaxies (NGC 4038)") with the bare name kept in `search`.
+  `catalog_data.LEGACY_ID_MAP` + `Database.migrate_legacy_object_ids()` rewrite
+  the library ids the pre-0.6.26 catalogue handed out at ingest time (`m42` ->
+  `ngc1976`, 114 entries, `images` + `import_batches` only); the 7 curated-only
+  objects OpenNGC has no entry for (Abell 21, Jones-Emberson 1, Barnard's Loop,
+  M40/M73/Mel 20/IC 1318) keep their stale id and are re-resolved at display
+  time by `app/imglib.py` from the frame's own OBJECT header/coordinates.
   **Standard mode is the `catalog_data.STANDARD_TOP_N` (200) most popular objects**
   (`app/popularity_data.py`; deterministic score-desc/id-asc, never an unscored
   row), `advanced_objects` holds the rest, and both are PURE SEED DATA rebuilt by
@@ -368,20 +381,19 @@ Image Catalog (FITS ingest + library). `README.md` has the feature list.
     `Get-CimInstance Win32_Process`).
   - If 8407 is briefly taken at boot, `free_port()` silently picks a RANDOM port
     (written to `instance.json`).
-- Tests: `python -m pytest tests/` (487). Single test:
+- Tests: `python -m pytest tests/` (491). Single test:
   `python -m pytest tests/test_js_parity.py -k name`. API tests use
   `create_app(db, prefetch=False)` (no image-cache thread). The `client` fixture
   must leave `data/panos` in the tmp dir it patches in.
   - **WinError 5 in this sandbox:** the repo-local `.pytest-tmp` (see
     `pytest.ini`) can acquire an owner-SID-only DACL, so every `tmp_path` test
-    errors at fixture cleanup - an environment artifact, not a failure. The
-    documented external `--basetemp` no longer restores a clean run (the directory
-    cannot be created there, and pytest re-creates a workspace one with the same
-    owner-SID-only DACL); use a repo-internal `tmp_path` override plugin instead -
-    with one, 487 pass with 0 assertion failures (0.6.24 review section 5.3; the
-    override used for that run lives at the gitignored `logs/pt_tmp_override.py`:
-    `$env:PYTHONPATH='logs'; python -m pytest tests/ -q -p no:cacheprovider -p
-    pt_tmp_override`).
+    errors at fixture cleanup - an environment artifact, not a failure, and the
+    external `--basetemp` workaround does not restore a clean run either.
+    `tests/conftest.py` therefore OVERRIDES the `tmp_path` fixture with a dir under
+    the gitignored, sandbox-owned `logs/.pytest-tmp`, so a plain
+    `python -m pytest tests/` is clean: **491 pass with 0 assertion failures**
+    (the 0.6.24..0.6.26 sessions needed a scratch plugin for this; it is built in
+    now).
 - JS checks (run after touching `static/` OR `web/`): `python scripts/check_js.py`
   runs all of them and exits non-zero on hard failures:
   - `check_js_imports.py` - broken relative ES-module imports / missing named exports
@@ -628,8 +640,8 @@ tool works here, so measure before working around anything:
   `scripts/check_catalog_token.py`, wired into `scripts/check_js.py`, and pinned
   by `tests/test_cache_tokens.py` (mutation-tested). Do NOT add
   `{cache:'no-store'}` - the file must stay cacheable.
-  Current (0.6.26): `app.js?v=70` (index.html) /
-  `CATALOG_TOKEN = '5'`, `astro.js?v=14`, `horizon.js?v=46`, `format.js?v=21`,
+  Current (0.6.27): `app.js?v=72` (index.html) /
+  `CATALOG_TOKEN = '6'`, `astro.js?v=14`, `horizon.js?v=46`, `format.js?v=21`,
   `nightrank.js?v=11`, `webstore.js?v=24`, `dragwin.js?v=1`, `style.css?v=16`,
   `themes.css?v=4`; the core stub is `web/core.js?v=21` (bump = re-bake,
   enforced by `scripts/check_core.py`). The CR3 fix (CO-01, 0.6.24 review)
@@ -841,7 +853,11 @@ tool works here, so measure before working around anything:
   `POPULARITY_ALIASES` table for the objects the popularity source keys under another
   designation ('B 33' -> 'BARNARD 33', 'Mel 111' -> 'CL MELOTTE 111', ...).
   The old code iterated a `set` and broke on the first hit, so scores depended on
-  PYTHONHASHSEED and the standard list was not reproducible.
+  PYTHONHASHSEED and the standard list was not reproducible. Run it WITHOUT
+  `--cached` to refresh from the live source (0.6.27 did: 17,007 source entries,
+  7,640 shipped scores, 535 of them moved) - the tests pin the ranking IDENTITY
+  (M42 first, M31 second), never the numbers, precisely because a refresh moves
+  them.
 - Rig presets are a PICKER, not defaults - a fresh setup is EMPTY. Both lists must
   change together: `app/rig_presets.py::DEFAULT_RIGS` and `web/webstore.js::DEFAULT_RIGS`
   (`tests/test_rig_presets.py`). The framing `#rigSelect` lives in the TOPBAR next

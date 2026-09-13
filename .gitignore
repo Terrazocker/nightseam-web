@@ -21,20 +21,13 @@ data/panos/*
 data/imgcache/
 data/instance.json
 data/popularity_snapshot.json
-# popularity popularity matcher scratch tooling (regenerable)
+# The popularity source popularity tooling: the CACHE is regenerable (fetched), but
+# `scripts/match_popularity.py` is TRACKED - it generates the committed
+# `app/popularity_data.py`, and a generated data file whose tool is not in the
+# repo cannot be regenerated (the old curated POPULARITY table had exactly that
+# problem). Only a stray ROOT copy stays ignored.
 popularity_snapshot.json
-# ROOT scratch copy only: `scripts/match_popularity.py` is TRACKED - it is the
-# generator for app/popularity_data.py, and a generated data file whose tool is
-# not in the repo cannot be regenerated (the old curated POPULARITY table had
-# exactly that problem).
 /match_popularity.py
-match_final.py
-check_unmatched.py
-check_unmatched2.py
-debug_matches.py
-verify_matches.py
-scripts/adv_popularity.py
-PROMPT_popularity_integration.md
 theme-preview/
 .dsh-vision-toolkit/
 dist/release/

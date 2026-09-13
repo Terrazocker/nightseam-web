@@ -25,7 +25,7 @@ import { popularityFactor as corePopularityFactor } from './core.js?v=21';
 // cacheable). Bump it in the SAME commit whenever web/catalog.json changes;
 // web/catalog.manifest.json records the bytes for the current token and
 // scripts/check_catalog_token.py enforces the pairing.
-const CATALOG_TOKEN = '5';
+const CATALOG_TOKEN = '6';
 
 /** Debounce timer for the catalog search box — re-renders at most every
  *  150 ms while typing instead of once per keystroke (12k-row filter). */

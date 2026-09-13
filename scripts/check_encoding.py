@@ -37,8 +37,6 @@ EXTS = {".js", ".mjs", ".cjs", ".py", ".html", ".css", ".json", ".md", ".ps1",
         ".txt", ".spec", ".cfg", ".ini", ".yml", ".yaml", ".svg", ".csv"}
 # Written by build.ps1 with a PowerShell BOM - not repo content.
 BOM_OK = {"app/_version_baked.py"}
-# Gitignored scratch (see .gitignore) - not shipped, not ours to police.
-SKIP_FILES = {"scripts/adv_popularity.py"}
 
 # cp1252's "special" slots: what a byte in 0x80-0x9F decodes to.
 _CP1252_HIGH = ("\u20ac\u201a\u0192\u201e\u2026\u2020\u2021\u02c6\u2030"
@@ -60,7 +58,7 @@ def scan(root: Path = ROOT) -> list[tuple[Path, str]]:
         if not path.is_file() or path.suffix.lower() not in EXTS:
             continue
         rel = path.relative_to(root)
-        if (rel.parts and rel.parts[0] in SKIP_TOP) or rel.as_posix() in SKIP_FILES:
+        if rel.parts and rel.parts[0] in SKIP_TOP:
             continue
         raw = path.read_bytes()
         try:

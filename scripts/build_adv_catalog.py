@@ -48,12 +48,22 @@ def _load_source(path: Path) -> list[dict]:
 
 TYPE_MAP = {
     "G": "galaxy", "GPair": "galaxy", "GTrpl": "galaxy", "GGroup": "galaxy",
-    "GCl": "globular", "OCl": "open_cluster", "Cl+N": "open_cluster",
+    "GCl": "globular", "OCl": "open_cluster",
+    # OpenNGC's `Cl+N` is "star cluster + nebula": the famous members are the
+    # nebulae (M42/Orion, IC 1396, IC 1805 Heart, IC 1848 Soul, IC 5146 Cocoon,
+    # IC 2944, NGC 1333), and labelling those "Open cluster" was plain wrong.
+    # NightSeam has no cluster+nebula type, so they show as nebulae; the few
+    # obscure cluster-dominated rows lose nothing but a colour.
+    "Cl+N": "nebula",
     "PN": "planetary", "SNR": "supernova_remnant",
     "Neb": "nebula", "HII": "nebula", "EmN": "nebula", "RfN": "nebula",
     "DrkN": "nebula",                        # addendum-only (Horsehead, Coalsack)
     "*Ass": "asterism",
 }
+# OpenNGC writes Serpens as `Se1` (Caput) / `Se2` (Cauda) - see NGC_guide.txt.
+# Every other code is the 3-letter IAU abbreviation, and the two halves are the
+# same constellation to a user, so both display as `Ser` (148 rows).
+CONSTELLATION_MAP = {"Se1": "Ser", "Se2": "Ser"}
 # OpenNGC's own non-object types (see NGC_guide.txt): Dup = "Duplicated object
 # (see NGC or IC columns to find the master object)", NonEx = "Nonexistent
 # object", `*`/`**` = single/double stars, Other, Nova.
@@ -113,11 +123,13 @@ def _build_row(r: dict, oid: str, ngcic: str) -> dict | None:
     ids = (r["Identifiers"] or "").strip()[:140]
     search = " | ".join(x for x in (
         oid, ngcic, common.lower(), messier.lower(), ids.lower()) if x)
+    const = (r["Const"] or "").strip()
     return {
         "id": oid, "primary_name": primary[:120], "messier": messier,
         "ngcic": ngcic, "other": ids, "otype": otype,
         "ra_hours": round(ra_h, 5), "dec_deg": round(dec_d, 5),
-        "vmag": vmag, "size_am": size, "constellation": (r["Const"] or "").strip(),
+        "vmag": vmag, "size_am": size,
+        "constellation": CONSTELLATION_MAP.get(const, const),
         "distance": "", "wiki": "", "blurb": "", "search": search,
     }
 
@@ -141,11 +153,32 @@ def build_rows(path: Path, source: str) -> list[dict]:
     return out
 
 
+def _disambiguate_names(rows: list[dict]) -> int:
+    """Give a shared common name its designation: 'Eagle Nebula (IC 4703)'.
+
+    OpenNGC hands the SAME common name to more than one row - the two Antennae
+    galaxies, IC 4703 + NGC 6611 ("Eagle Nebula"), the two Eastern Veil knots,
+    the two Butterfly galaxies and the two Eyes. Showing one label twice in
+    Standard mode looks like a duplicate; the designation stays visible instead.
+    The bare name remains in `search`, so searching for it still finds every
+    row it names.
+    """
+    from collections import Counter
+    shared = {n for n, c in Counter(r["primary_name"] for r in rows).items() if c > 1}
+    n = 0
+    for r in rows:
+        if r["primary_name"] in shared:
+            r["primary_name"] = f"{r['primary_name']} ({r['ngcic']})"
+            n += 1
+    return n
+
+
 def build_catalog() -> tuple[list[dict], dict[str, int]]:
     """(all object rows, per-source counts) - NGC/IC first, then the addendum."""
     ngc = build_rows(SRC, "NGC.csv")
     addendum = build_rows(SRC_ADDENDUM, "addendum.csv")
     rows = ngc + addendum
+    _disambiguate_names(rows)
     _assert_global_unique(rows)
     return rows, {"NGC/IC": len(ngc), "addendum": len(addendum)}
 

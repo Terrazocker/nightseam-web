@@ -329,6 +329,7 @@ class Database:
         self.conn.commit()
         self.seed_catalog()
         self.apply_popularity()
+        self.migrate_legacy_object_ids()
         self.make_backup()
 
     def make_backup(self) -> None:
@@ -413,6 +414,38 @@ class Database:
                     [(s, o) for o, s in POPULARITY.items()])
             self.conn.commit()
         return len(POPULARITY)
+
+    def migrate_legacy_object_ids(self) -> int:
+        """Rewrite library ids that came from the pre-0.6.26 curated catalog.
+
+        A capture stores the catalogue id it resolved to at INGEST time, and the
+        OpenNGC switch renamed objects (`m42` -> `ngc1976`), so without this an
+        existing library would show them all as unresolved. `catalog_data.
+        LEGACY_ID_MAP` holds the old -> new ids; the rewrite touches only the two
+        tables that name catalog objects (never custom targets, whose ids are
+        `u_*`) and is idempotent - afterwards no row carries an old id. Objects
+        OpenNGC has no entry for (Abell 21, Barnard's Loop, ...) keep their stale
+        id on purpose: `app/imglib.py` re-resolves those from the frame's own
+        OBJECT header/coordinates at display time."""
+        from .catalog_data import LEGACY_ID_MAP
+        if not LEGACY_ID_MAP:
+            return 0
+        olds = list(LEGACY_ID_MAP)
+        marks = ",".join("?" * len(olds))
+        moved = 0
+        with self.lock:
+            for table in ("images", "import_batches"):
+                if not self.conn.execute(
+                        f"SELECT 1 FROM {table} WHERE object_id IN ({marks}) "
+                        f"LIMIT 1", olds).fetchone():
+                    continue
+                for old in olds:
+                    cur = self.conn.execute(
+                        f"UPDATE {table} SET object_id=? WHERE object_id=?",
+                        (LEGACY_ID_MAP[old], old))
+                    moved += cur.rowcount or 0
+            self.conn.commit()
+        return moved
 
     def all_objects(self, advanced: bool = False) -> list[dict]:
         with self.lock:

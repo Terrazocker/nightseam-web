@@ -39,9 +39,13 @@ def test_standard_mode_is_the_most_popular_objects():
     assert cutoff > 0, "an unscored object must never be standard"
     outside = [i for i in ids if i not in std]
     assert max(POPULARITY.get(i, 0) for i in outside) <= cutoff
-    # the classic showpieces are the ones users expect to see first
-    assert POPULARITY["ngc1976"] == 165530 and "ngc1976" in std     # M42
-    assert POPULARITY["ngc224"] == 161360 and "ngc224" in std       # M31
+    # The classic showpieces lead the list. The NUMBER comes from the popularity source and
+    # moves when the table is refreshed (`scripts/match_popularity.py`), so the
+    # test pins the identity and the ORDER, not the score.
+    ranked = sorted(POPULARITY, key=lambda i: (-POPULARITY[i], i))
+    assert ranked[0] == "ngc1976"          # M42
+    assert ranked[1] == "ngc224"           # M31
+    assert {"ngc1976", "ngc224", "mel22"} <= std
 
 
 def test_standard_selection_is_deterministic_and_skips_unscored():
