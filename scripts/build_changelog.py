@@ -30,6 +30,10 @@ ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "landing" / "changelog.json"
 
 CURATED = {
+    # 0.6.28 adds the 7-object supplement (app/data/supplement.csv): the
+    # objects OpenNGC cannot carry. No refresh, no re-ranking beyond the new
+    # rows' own scores.
+    "0.6.28": "Catalog follow-up: the seven objects OpenNGC cannot carry are back - the Medusa and Headphone nebulae, Barnard's Loop, the Alpha Persei Cluster, the Sadr region (IC 1318) and the Messier objects M40 and M73 - so the catalog holds 12,167 objects. Standard mode still shows the 200 most popular, and the four of the seven the community ranks highly join that list. Their positions, sizes and magnitudes are the app's own published values, and they carry no description text, in line with the rest of the catalog. Everything else is unchanged.",
     # 0.6.27 is the catalog follow-up to 0.6.26: refreshed the popularity source
     # popularity (re-ranks Standard mode), OpenNGC label mappings (Cl+N ->
     # nebula, Se1/Se2 -> Ser, duplicate common names disambiguated) and the
