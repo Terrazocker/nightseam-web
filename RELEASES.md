@@ -110,3 +110,34 @@ Newest first.
   the first `--all` run on that build hit the documented PyInstaller cold-start timeout on
   `desktop-pano-crop-fov`; the immediate re-run passed (2.9 s). The released exe was then
   rebuilt CLEAN at the tag (`0.6.30`) and the staged gate passed 21/21 first time.
+- **RELEASED as 0.6.31** - tag `v0.6.31` on the release commit (`93dccde`: the
+  ranking-alignment + progress/layout-stability work plus the curated entry).
+  Staged `dist/release/` (`NightSeam-0.6.31.zip` sha256
+  `5a0fa461571800e78ab8600fa66ba616c59c17124f3de62600d37d335f37b633`, 20.5 MB, +
+  latest + `NightSeam.exe` + `version.json` + `ns-version.js`), `check_release.py`
+  **0 errors at the tag**, the FULL browser gate **22/22 on the staged build** (14
+  web + 8 desktop, first run - no cold-start timeout) and **15/15 including the
+  read-only production smoke** after the upload. Deployed `/downloads/` (zip,
+  latest, exe, version.json, ns-version.js), `/astro` (whole tree, index.html
+  last) and the landing. Verified live: `/astro/version.json` +
+  `/downloads/version.json` + `ns-version.js` all read 0.6.31, the newest
+  `changelog.json` entry is 0.6.31, the deployed `catalog.json` sha256 equals the
+  local payload (`c44fd26a...`, 12,176 / 200 - unchanged again this release), the
+  live `index.html` names `app.js?v=78` and `style.css?v=21`, the live `app.js`
+  carries `cat-minvis`/`cat-stats`, `style.css` carries `.busy-slot` and
+  `table-layout: fixed`, `nightrank.js` re-exports `nightStatsBatch`, and the
+  published zip sha256 equals the staged artifact.
+  What it fixes, all MEASURED in a real browser before/after: the catalog table
+  used to widen the PAGE on a narrow viewport (page 721 px at a 360 px viewport ->
+  now 360, scrolling inside its card); progress text ("computing visibility…") and
+  the busy chip used to move the layout (the desktop topbar grew 93 -> 111 px and
+  pushed the app down -> now constant via a reserved `.busy-slot` whose HEIGHT is
+  reserved too, because at 1366 px the topbar already wraps); the catalog's
+  percentage columns used to resize as cells filled in (`table-layout: fixed`).
+  Also aligned: both shells now rank the tier over the set the current mode shows
+  (`activeCatalog()` / `S.catalog`), proven on the real payload by
+  `test_tier_letters_are_mode_independent_on_the_real_catalog`. **507 tests.**
+  No core re-bake in this release (stub stays 23), so `/astro/core` gained no new
+  dir; the four stale dirs from <= 0.6.26 are still unpruned. Follow-up commit
+  `80f362f` regenerated the tracked `landing/changelog.json` (**never moved the
+  tag**).
