@@ -24,7 +24,14 @@ const binOf = (az) => Math.min(BINS - 1,
   Math.floor((((az % 360) + 360) % 360) / 0.5));
 const representativeCol = (i, azOff, fov) => {
   const rel = (((i * 0.5 - azOff) % 360) + 360) % 360;
-  return rel > fov ? -1 : Math.min(BINS - 1, Math.floor(rel * BINS / fov));
+  if (rel <= fov) return Math.min(BINS - 1, Math.floor(rel * BINS / fov));
+  // CR3: the bin STRADDLING the frame start (its wrapped left edge is in
+  // [359.5,360), so it covers azimuths azOffset..) is in frame and is
+  // represented by the midpoint of its wrapped overlap, not by column 719.
+  if (rel + 0.5 > 360) {
+    return Math.min(BINS - 1, Math.floor(((rel + 0.5 - 360) / 2) * BINS / fov));
+  }
+  return -1;
 };
 
 const CASES = [
@@ -33,6 +40,11 @@ const CASES = [
   { fov: 180, azOffset: 90 },
   { fov: 120, azOffset: 350 },
   { fov: 300, azOffset: 45 },
+  // CR3: azOffsets that are NOT multiples of 0.5 (normal after a crop) put a
+  // bin on the frame start - the case the old left-edge rule got wrong.
+  { fov: 45, azOffset: 0.25 },
+  { fov: 120, azOffset: 349.75 },
+  { fov: 200, azOffset: 12.3 },
 ];
 
 /* slanted band: every mask column has its own top row, so a wrong bin/column
@@ -156,6 +168,41 @@ for (const { fov, azOffset } of CASES) {
   const xs = polys.flat().map((q) => q[0]);
   if (polys.length !== 1 || Math.min(...xs) !== 0 || Math.max(...xs) !== 719) {
     fail("hatch must cover the full world width");
+  }
+}
+
+/* ---- 7. CR3: EVERY in-frame azimuth must read a COVERED bin ----
+ * The scorer gates per azimuth continuously (`ceilFor`: inside while
+ * 0 <= az - azOffset <= fov), so the producer must cover the bin that straddles
+ * the frame start when azOffset is not a multiple of 0.5. Pre-CR3 that bin kept
+ * the mode sentinel, so a painted band read CLEAR in obstacle mode and fully
+ * BLOCKED in sky mode, and the bin's representative column wrapped to 719 - the
+ * opposite edge of the mask. This section asserts the property directly instead
+ * of re-deriving the formula. */
+for (const { fov, azOffset } of CASES) {
+  const p = { paintMode: "obstacle", fov, azOffset, altBottom: 0, altTop: 60 };
+  const { prof } = H.profileFromMask(p, mask);
+  for (let d = 0; d <= fov; d += 0.1) {
+    const az = (((azOffset + d) % 360) + 360) % 360;
+    const bin = binOf(az);
+    if (prof[bin] === H.NO_BLOCK) {
+      fail(`CR3: in-frame az ${az.toFixed(2)} (fov=${fov} azOff=${azOffset}) reads the uncovered sentinel at bin ${bin}`);
+      break;
+    }
+    if (H.ceilFor({ ...p, profile: prof, profileTop: new Array(BINS).fill(H.NO_BLOCK) }, az).ceil === H.NO_BLOCK) {
+      fail(`CR3: ceilFor disagrees with the profile at az ${az.toFixed(2)} (fov=${fov} azOff=${azOffset})`);
+      break;
+    }
+  }
+  // the frame-start bin must not clamp to the FAR mask column
+  const startBin = binOf((((azOffset + 0.05) % 360) + 360) % 360);
+  const far = H.altOf(p, 40 + ((719 * 7) % 60));
+  const want = H.altOf(p, 40 + ((representativeCol(startBin, azOffset, fov) * 7) % 60));
+  if (!near(prof[startBin], want, 1e-9)) {
+    fail(`CR3: frame-start bin ${startBin} != its own mask column (fov=${fov} azOff=${azOffset})`);
+  }
+  if (near(prof[startBin], far, 1e-9)) {
+    fail(`CR3: frame-start bin ${startBin} clamped to the far mask column (fov=${fov})`);
   }
 }
 

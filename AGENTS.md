@@ -510,14 +510,15 @@ Image Catalog (FITS ingest + library). `README.md` has the feature list.
   `scripts/check_catalog_token.py`, wired into `scripts/check_js.py`, and pinned
   by `tests/test_cache_tokens.py` (mutation-tested). Do NOT add
   `{cache:'no-store'}` - the file must stay cacheable.
-  Current (0.6.24): `app.js?v=60` (index.html) / `CATALOG_TOKEN = '2'`,
-  `astro.js?v=10`, `horizon.js?v=41`, `format.js?v=17`, `nightrank.js?v=7`,
-  `webstore.js?v=20`, `dragwin.js?v=1`, `style.css?v=16`, `themes.css?v=4`; the
-  core stub is `web/core.js?v=17` (bump = re-bake, enforced by
-  `scripts/check_core.py`). 0.6.24 re-baked core (16->17), which changed the
-  bytes of EVERY module that imports it (app/astro/format/nightrank/webstore)
-  plus `horizon.js` (crop UI) => 60/10/41/17/7/20. 0.6.23 (live) was
-  59/9/40/16/6/19.
+  Current (unreleased, after the CR3 fix): `app.js?v=62` (index.html) /
+  `CATALOG_TOKEN = '2'`, `astro.js?v=12`, `horizon.js?v=43`, `format.js?v=19`,
+  `nightrank.js?v=9`, `webstore.js?v=22`, `dragwin.js?v=1`, `style.css?v=16`,
+  `themes.css?v=4`; the core stub is `web/core.js?v=19` (bump = re-bake,
+  enforced by `scripts/check_core.py`). The CR3 fix (CO-01, 0.6.24 review)
+  touched `core/horizon.js` + `core/index.js`, so the re-bake moved the stub
+  17 -> 19 and changed the bytes of every module importing it => that cascade.
+  The tagged v0.6.24 register was 60/10/41/17/7/20 with stub 17; 0.6.23 (live)
+  was 59/9/40/16/6/19.
 - **A missed bump is now a hard failure (XL-01, 0.6.24).** The v0.6.24 tag
   shipped the 0.6.23 tokens naming 0.6.24 bytes (`index.html app.js?v=59`,
   imports astro 9 / horizon 40 / webstore 19 / format 16 / nightrank 6), so

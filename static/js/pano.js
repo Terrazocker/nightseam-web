@@ -5,7 +5,7 @@
 import { $, clamp, esc, api, toast, num } from "./util.js";
 import { S } from "./state.js";
 import { loadNight } from "./night.js";
-import { profileSegments, cropKeptBand } from "./core.js";
+import { profileSegments, cropKeptBand, fovBinRel } from "./core.js";
 
 export { profileSegments };
 
@@ -678,9 +678,13 @@ function recomputeProfile() {
   const prof = [];
   const profTop = [];
   for (let i = 0; i < NBIN; i++) {
-    // azimuth of this bin; only within [azOff, azOff+fov] is the image valid
-    const rel = (((i * 0.5 - azOff) % 360) + 360) % 360;
-    if (rel > fov) {
+    // FOV-relative position from the ONE core rule (CR3): a bin is in frame when
+    // any part of its span overlaps [0, fov], so the bin straddling the frame
+    // start maps to the left edge of the image instead of wrapping to 359.x and
+    // clamping to the far column - which made an in-frame azimuth read the
+    // out-of-frame sentinel for any azOffset that is not a multiple of 0.5.
+    const rel = fovBinRel(i, azOff, fov);
+    if (rel === null) {
       // outside the image: unblocked in obstacle mode, blocked in sky mode
       prof.push(sky ? 90 : -99);
       profTop.push(sky ? 90 : 90);

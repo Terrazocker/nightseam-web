@@ -31,6 +31,31 @@ const worldBin = (azDeg) => {
   return Math.min(BINS - 1, Math.floor(a / BIN_DEG));
 };
 
+/** FOV-relative position (deg in [0, fov]) of world bin `i` inside the
+ *  calibrated frame [0, fov], or null when the bin lies entirely outside it.
+ *
+ *  ONE coverage rule, shared by the profile producers, the preview and the
+ *  crop, and it MUST agree with the scorer, which gates per azimuth
+ *  continuously (`ceilFor`: inside while `0 <= az - azOffset <= fov`). A bin is
+ *  therefore in frame when ANY part of its 0.5 deg span overlaps the frame:
+ *  - a bin that starts inside keeps its left-edge position (unchanged mapping);
+ *  - the bin that STRADDLES the frame start (its wrapped left edge is in
+ *    [359.5, 360), so rel > fov yet the bin covers azimuths azOffset..) is
+ *    represented by the midpoint of its wrapped overlap.
+ *  The old left-edge-only rule left that straddler at the mode sentinel AND
+ *  wrapped its representative column to 719, so for any azOffset that is not a
+ *  multiple of 0.5 (normal after a crop) an in-frame azimuth read the
+ *  out-of-frame sentinel: a painted band read clear in obstacle mode and fully
+ *  blocked in sky mode. That is CR3/CO-01 from the 0.6.24 review. */
+export function fovBinRel(i, azOff, fov) {
+  const rel = (((i * BIN_DEG - azOff) % 360) + 360) % 360;
+  if (rel <= fov) return rel;                 // starts inside the frame
+  if (rel + BIN_DEG > 360) {                  // straddles the frame start
+    return (rel + BIN_DEG - 360) / 2;
+  }
+  return null;                                // entirely outside the frame
+}
+
 /** Rebuild the binary mask (Uint8Array MASK_W*MASK_H) from the stroke list.
  *  `wrap` connects the azimuth seam of a full 360 deg panorama by also painting
  *  each dab shifted one mask width left/right (the out-of-range parts clip to
@@ -92,9 +117,10 @@ export const wrapsFor = (p) => Number(p.fov) >= 359.5;
  *
  *  D1: the mask is FOV-relative (column 0 = azOffset); the produced profile is
  *  WORLD-AZIMUTH, exactly like the desktop editor and the Python server. Each
- *  world bin i takes the mask column at the azimuth of its centre
- *  (`rel = i*0.5 - azOffset`), so the 720-mask-column vs 0.5-deg-bin
- *  oversampling cannot disagree with the desktop representative. Bins outside
+ *  world bin i takes the mask column of its FOV-relative position through the
+ *  ONE rule `fovBinRel()` (see above), which also covers the bin straddling the
+ *  frame start, so the 720-mask-column vs 0.5-deg-bin oversampling cannot
+ *  disagree with the desktop representative. Bins outside
  *  the calibrated FOV keep the mode sentinel (sky = 90 blocked, obstacle =
  *  NO_BLOCK). Marks the record's bin space so the adapter never converts it
  *  twice. */
@@ -105,8 +131,8 @@ export function profileFromMask(p, mask) {
   const prof = new Array(BINS).fill(sky ? 90 : NO_BLOCK);
   const top = new Array(BINS).fill(NO_BLOCK);
   for (let i = 0; i < BINS; i++) {
-    const rel = (((i * BIN_DEG - azOff) % 360) + 360) % 360;
-    if (rel > fov) continue;                 // outside the calibrated FOV
+    const rel = fovBinRel(i, azOff, fov);
+    if (rel === null) continue;              // outside the calibrated FOV
     const col = Math.min(BINS - 1, Math.floor(rel * BINS / fov));
     let minRow = -1, maxRow = -1;
     for (let row = 0; row < MASK_H; row++) {
@@ -146,8 +172,8 @@ export function normalizeProfileBins(p) {
   const wtop = new Array(BINS).fill(NO_BLOCK);
   if (prof) {
     for (let i = 0; i < BINS; i++) {
-      const rel = (((i * BIN_DEG - azOff) % 360) + 360) % 360;
-      if (rel > fov) continue;
+      const rel = fovBinRel(i, azOff, fov);
+      if (rel === null) continue;
       const col = Math.min(BINS - 1, Math.floor(rel * BINS / fov));
       wprof[i] = prof[col];
       if (tops) wtop[i] = tops[col];
@@ -172,8 +198,8 @@ export function profileSegments(prof, W, H, ab, at, azOff, fov, skipAbove = 90.5
   const span = at - ab || 1;
   for (let i = 0; i < BINS; i++) {
     const e = Number(prof[i]);
-    const rel = (((i * 0.5 - azOff) % 360) + 360) % 360;
-    if (!Number.isFinite(e) || rel > fov || e <= ab - 5 || e >= skipAbove) {
+    const rel = fovBinRel(i, azOff, fov);
+    if (!Number.isFinite(e) || rel === null || e <= ab - 5 || e >= skipAbove) {
       seg = null; prevX = null; continue;
     }
     const x = rel / fov * W;
@@ -232,9 +258,9 @@ export function skyBandPolygons(p, W, H, ab, at, azOff, fov) {
   const polys = [];
   let run = null, prevX = null;
   for (let col = 0; col < BINS; col++) {
-    const rel = (((col * 0.5 - azOff) % 360) + 360) % 360;
+    const rel = fovBinRel(col, azOff, fov);
     const vis = bands[col].vis;
-    if (!vis || rel > fov) { run = null; prevX = null; continue; }
+    if (!vis || rel === null) { run = null; prevX = null; continue; }
     const x = rel / fov * W;
     if (run && prevX != null && x < prevX - W * 0.5) run = null;   // 360 seam
     if (!run) { run = []; polys.push(run); }
@@ -350,8 +376,7 @@ export function clipProfileToFov(p) {
     p.profileTop = new Array(BINS).fill(NO_BLOCK);
   }
   for (let i = 0; i < BINS; i++) {
-    const rel = (((i * BIN_DEG - azOff) % 360) + 360) % 360;
-    if (rel <= fov) continue;
+    if (fovBinRel(i, azOff, fov) !== null) continue;
     p.profile[i] = sky ? 90 : NO_BLOCK;
     p.profileTop[i] = NO_BLOCK;
   }

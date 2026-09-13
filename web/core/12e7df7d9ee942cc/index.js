@@ -11,7 +11,7 @@
 export {
   NO_BLOCK, BINS, BIN_DEG, MASK_W, MASK_H, WORLD_BINS,
   rebuildMask, altOf, rowOfAlt, xOfAz, azOfX, wrapsFor,
-  profileFromMask, normalizeProfileBins, profileSegments,
+  profileFromMask, normalizeProfileBins, profileSegments, fovBinRel,
   visibleSkyBands, skyBandPolygons,
   computeProfile, clearMask, ceilFor, bandTopFor,
   overhangRuns, assumedOpenRuns, assumedOpenHatchPolys,

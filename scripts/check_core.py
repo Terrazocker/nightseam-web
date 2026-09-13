@@ -37,7 +37,7 @@ SCRIPTS_DIR = ROOT / "scripts"
 # and `popularityFactor` (the shells wrap it to resolve m.popularity first).
 MOVED = (
     "rebuildMask", "altOf", "rowOfAlt", "xOfAz", "azOfX", "wrapsFor",
-    "profileFromMask", "normalizeProfileBins", "profileSegments",
+    "profileFromMask", "normalizeProfileBins", "profileSegments", "fovBinRel",
     "visibleSkyBands", "skyBandPolygons", "computeProfile",
     "ceilFor", "bandTopFor", "overhangRuns", "assumedOpenRuns",
     "assumedOpenHatchPolys",
