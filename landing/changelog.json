@@ -1,5 +1,10 @@
 [
  {
+  "version": "0.6.29",
+  "date": "2026-09-13",
+  "summary": "Catalog update: nine more targets that OpenNGC's scope cannot carry - the Tulip Nebula, Simeis 147 (the Spaghetti Nebula), the Flying Bat Nebula with the Squid inside it, the Dolphin Head Nebula, the Lion Nebula, Barnard 150 (the Seahorse), LBN 437, LDN 1622 and the Pipe Nebula - so the catalog holds 12,176 objects. Every one of them is popular enough that the app's own ranking puts it straight into the 200-target default view, which means nine less-observed objects moved to advanced mode. Their positions come from SIMBAD and their sizes from the published catalogues, and no magnitude or description text is invented for them, so - like the Horsehead - they appear once the magnitude slider is at its maximum. Everything else is unchanged."
+ },
+ {
   "version": "0.6.28",
   "date": "2026-09-13",
   "summary": "Catalog follow-up: the seven objects OpenNGC cannot carry are back - the Medusa and Headphone nebulae, Barnard's Loop, the Alpha Persei Cluster, the Sadr region (IC 1318) and the Messier objects M40 and M73 - so the catalog holds 12,167 objects. Standard mode still shows the 200 most popular, and the four of the seven the community ranks highly join that list. Their positions, sizes and magnitudes are the app's own published values, and they carry no description text, in line with the rest of the catalog. Everything else is unchanged."
