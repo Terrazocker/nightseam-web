@@ -92,44 +92,44 @@ _VERIFIED_BASELINE_JSON = r"""
 {
  "modules": {
   "app.js": {
-   "sha256": "7167a1897b8bfbd51274d04a4c2d6000e2f41559d119c563c097e113e406e767",
-   "token": "74"
+   "sha256": "f3ba3032817e227ac7e9c7475780119231f152d1d97cd417b8061dbfa9b3cf32",
+   "token": "76"
   },
   "astro.js": {
-   "sha256": "c4b678d8562bf8bba8065d1d68cd6d045fff1b0a16f939f04b0c7039089b9be0",
-   "token": "14"
+   "sha256": "35c320a8c3c92a835534b2173880ea170f73828e93bc37052535ab6dda33d04a",
+   "token": "15"
   },
   "core.js": {
-   "sha256": "51a51cbb83664e3b1ed7f5a5e53e51901fe1ade393acc23152fd216fd41349cb",
-   "token": "21"
+   "sha256": "33058ac7a763d8eebc5392341c3e2f40eb6473d5874d855c505f15c4627c25a6",
+   "token": "23"
   },
   "dragwin.js": {
    "sha256": "d8b316eaf6b7d9eeb9f8397ed8df232990992c5d3d3c9830fe160f832a3d529c",
    "token": "1"
   },
   "format.js": {
-   "sha256": "e31b50e0693cf64789eac4cd5d18d392a25cecf5bf3b447089cfe5592f272ac7",
-   "token": "21"
+   "sha256": "2a2c7f2f1a282bfa12ac330654f3f2e0e5b9976fe930c05048e9fe4ec6db34df",
+   "token": "22"
   },
   "horizon.js": {
-   "sha256": "c4601119bd6326bbb1374f4731b164ac60d32cdf0d0b959724145135454939c0",
-   "token": "46"
+   "sha256": "a44e7986273ee899088c8dfd6c92d69a9956b38c772c4fe83a4aaf69b8f46c95",
+   "token": "47"
   },
   "nightrank.js": {
-   "sha256": "86dd341e4d4d9f6c9bead1b329f969e57de2e7552122b25affc7ee4694e8b5c0",
-   "token": "11"
+   "sha256": "ce2c57f0ed34fadaffff10b6d4fc35e90a0a358616dd77fdd8607566ba0062e3",
+   "token": "13"
   },
   "style.css": {
-   "sha256": "3af454fb1887508048f6e8b2b36f1c9ae08fbeed7e4fbe7916a399b5285567d2",
-   "token": "16"
+   "sha256": "8e939926f78c26b28000f112ccf7fc65e81a04f84f8c3f6bbd60f9b89bc24ef6",
+   "token": "18"
   },
   "themes.css": {
    "sha256": "97d90884f18ae987aea1f966a081ef09d90d52a361c49c7c934a55482d375a69",
    "token": "4"
   },
   "webstore.js": {
-   "sha256": "86f1ba836426aa55dc32209e70349a33e0ef823258c2642d7ec5a9f6295554bf",
-   "token": "24"
+   "sha256": "4da51912bc8b8bc80a4f41c9935395ec73fc6508d5424f18faf2ead97a03c9e1",
+   "token": "25"
   }
  }
 }

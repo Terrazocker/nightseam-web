@@ -18,7 +18,7 @@ const engine = process.argv[2];
 if (!["desktop", "web", "window", "darkwindow", "pick", "crosszone",
      "scoring", "ceil", "size", "status", "frame", "advice", "minalt",
      "shortcut", "nightstats", "mag", "skyzoom", "abovehorizon",
-     "scrubwindow", "scrubgrid", "timezone"].includes(engine)) {
+     "scrubwindow", "scrubgrid", "timezone", "tier"].includes(engine)) {
   console.error("usage: node astro_parity.mjs <engine>");
   process.exit(2);
 }
@@ -294,6 +294,21 @@ if (engine === "size") {
     const cov = desk.frameCoverage({ size_am: c.sizeAm });
     return cov ? { pct: cov.pct, fits: cov.fits, frames: +cov.frames.toFixed(2) }
                : { pct: null };
+  })));
+} else if (engine === "tier") {
+  /* Popularity TIERS (0.6.30): the catalog exposes a letter, never the score.
+   * The bands are RANK bands, because the score distribution is far too
+   * heavy-tailed for score cut-offs (rank 1 = 166,350; rank 1,500 = 19; the last
+   * ~4,000 rows sit at 1-4). Case: {rank} -> {tier}, or
+   * {objs:[{id,popularity}]} -> {tiers:{id:tier}, order}. Imported through the
+   * SHIPPED stub, so this also proves the baked core carries the helpers. */
+  const core = await import(new URL("../../web/core.js", import.meta.url).href);
+  process.stdout.write(JSON.stringify(cases.map((c) => {
+    if (c.objs) {
+      const m = core.assignPopularityTiers(c.objs);
+      return { tiers: Object.fromEntries(m), order: core.TIER_ORDER };
+    }
+    return { tier: core.tierForRank(c.rank) };
   })));
 } else if (engine === "advice") {
   /* E7: the filter recommendation model - desktop derive.js filterAdvice vs

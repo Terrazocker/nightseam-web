@@ -296,6 +296,11 @@ export function applyCfgToUI() {
     $("#bortle").value = S.cfg.bortle ?? 4;
     $("#bortleVal").textContent = S.cfg.bortle ?? 4;
   }
+  if ($("#fMinVis")) {
+    const mv = Math.max(0, Math.min(100, Math.round(Number(S.cfg.min_vis ?? 1))));
+    $("#fMinVis").value = mv;
+    $("#fMinVisVal").textContent = mv > 0 ? `${mv}%` : "off";
+  }
   $("#fMag").max = S.cfg.adv_mode ? 20 : 16;
   if (+$("#fMag").value > +$("#fMag").max) {
     $("#fMag").value = $("#fMag").max;

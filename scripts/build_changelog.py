@@ -30,6 +30,10 @@ ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "landing" / "changelog.json"
 
 CURATED = {
+    # 0.6.30 brings the two apps to ONE target-list method: a popularity TIER
+    # (A-F rank bands) as the default sort, the frame coverage as a percentage
+    # (green fits / amber mosaic), and a user-controlled Min visibility gate.
+    "0.6.30": "Target-list update, in both apps. The catalog now leads with a popularity tier (A to F) and sorts by it by default: the ordering is shown as a letter, while the underlying community score is never displayed. The Frame column shows the coverage as a percentage - green while the object fits in one frame, amber once it needs a mosaic - and a new Min visibility slider in the targets toolbar lets you decide when an object is dropped from the list: it hides targets whose share of tonight's dark window is below the percentage you pick, where 0% shows everything and the default 1% only drops objects that never rise. Your setting is remembered. Everything else is unchanged.",
     # 0.6.29 adds supplement batch 2 (9 rows): the popular targets outside
     # OpenNGC's SCOPE (Sharpless/Barnard/LDN/LBN). Every one already ranks above
     # the Standard-mode cut, so the 200-target default view changes. No

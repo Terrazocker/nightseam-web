@@ -952,3 +952,50 @@ def test_desktop_scrub_grid_maps_the_real_24h_payload():
             assert (r["lo"], r["hi"]) == (elo, ehi), (c["sunset"], c["sunrise"], r)
         assert (r["scoringLo"], r["scoringHi"]) == (slo, shi), r
         assert r["lo"] <= r["hi"]
+
+
+# ======================================== popularity TIERS (0.6.30, web table)
+def test_popularity_tiers_are_rank_bands_and_never_the_score():
+    """The catalog exposes a TIER letter (A-F) and never the popularity source score.
+
+    The bands are RANK bands because the shipped score distribution is far too
+    heavy-tailed for score cut-offs: measured on `web/catalog.json`, rank 1 =
+    166,350, rank 100 = 9,910, rank 250 = 1,163, rank 1,500 = 19, and the last
+    ~4,000 rows all sit at 1-4. Any score threshold would put nearly the whole
+    catalog in one bucket.
+
+    The engine imports the SHIPPED core stub (`web/core.js`), so this also proves
+    the baked core actually carries the helpers the shell calls.
+    """
+    edges = [(1, "A"), (100, "A"), (101, "B"), (200, "B"), (250, "B"),
+             (251, "C"), (600, "C"), (601, "D"), (1500, "D"), (1501, "E"),
+             (3500, "E"), (3501, "F"), (7654, "F"), (0, "F")]
+    res = _run_node("tier", [{"rank": n} for n, _ in edges])
+    for (rank, want), r in zip(edges, res):
+        assert r["tier"] == want, (rank, r)
+
+    # Why B ends at 250: A+B must cover the standard-mode shortlist
+    # (`STANDARD_TOP_N` = 200) with a margin, so the default view is A/B only.
+    assert _run_node("tier", [{"rank": 200}])[0]["tier"] == "B"
+    assert _run_node("tier", [{"rank": 251}])[0]["tier"] == "C"
+
+    # Ranking mirrors the SERVER's standard-mode rule: score DESC, then id ASC.
+    # 120 equally-scored objects, so the rank order is purely the id tie-break:
+    # o000..o099 are the first hundred (A), o100..o119 the next band (B).
+    objs = [{"id": f"o{i:03d}", "popularity": 42} for i in range(120)]
+    r = _run_node("tier", [{"objs": objs}])[0]
+    assert r["order"] == ["A", "B", "C", "D", "E", "F"]
+    for oid, want in (("o000", "A"), ("o099", "A"), ("o100", "B"), ("o119", "B")):
+        assert r["tiers"][oid] == want, (oid, r["tiers"][oid])
+    assert sum(1 for t in r["tiers"].values() if t == "A") == 100
+    assert sum(1 for t in r["tiers"].values() if t == "B") == 20
+
+    # A higher score outranks a lower one regardless of id ...
+    r = _run_node("tier", [{"objs": [{"id": "aaa", "popularity": 5},
+                                     {"id": "zzz", "popularity": 900}]}])[0]
+    assert r["tiers"] == {"aaa": "A", "zzz": "A"}      # only two scored rows
+    # ... and BOTH kinds of "no popularity" land in F, so the column always sorts
+    # A-F instead of leaving a hole: missing field and explicit zero.
+    r = _run_node("tier", [{"objs": [{"id": "nos", "popularity": 100},
+                                     {"id": "mis"}, {"id": "zero", "popularity": 0}]}])[0]
+    assert r["tiers"] == {"nos": "A", "mis": "F", "zero": "F"}, r

@@ -255,12 +255,16 @@ if(x.status===200){var t=JSON.parse(x.responseText).theme;if(t)document.document
       <label class="inline">Mag &le; <span id="magVal">11.0</span>
         <input type="range" id="fMag" min="1" max="16" step="0.5" value="11">
       </label>
+      <label class="inline" title="Hide targets whose share of tonight's dark window is below this. 0% shows every object, visible or not.">Min vis <span id="fMinVisVal">1%</span>
+        <input type="range" id="fMinVis" min="0" max="100" step="1" value="1">
+      </label>
       <label class="inline"><input type="checkbox" id="fUnblocked" checked> clear window only</label>
       <label class="inline"><input type="checkbox" id="fFav"> &#9733; session</label>
       <select id="fConst" title="constellation filter">
         <option value="">All constellations</option>
       </select>
       <select id="fSort">
+        <option value="tier">Sort: popularity tier</option>
         <option value="score">Sort: imaging quality</option>
         <option value="pct">Sort: observable night %</option>
         <option value="maxalt">Sort: max altitude</option>
@@ -273,7 +277,7 @@ if(x.status===200){var t=JSON.parse(x.responseText).theme;if(t)document.document
     <div class="tablewrap">
       <table id="targetTable">
         <thead><tr>
-          <th></th><th>Object</th><th>Type</th><th>Mag</th><th>Size</th>
+          <th></th><th>Object</th><th>Tier</th><th>Type</th><th>Mag</th><th>Size</th>
           <th class="col-opt">Frame</th><th>Max alt</th><th>Night %</th>
           <th>Clear window (best)</th><th>Status now</th>
         </tr></thead>

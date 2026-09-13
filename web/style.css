@@ -267,6 +267,10 @@ canvas#sky {
 }
 .cat-bar input[type="search"]:focus { outline: 1px solid var(--accent); }
 .chips { display: flex; gap: 6px; flex-wrap: wrap; }
+/* Min-visibility slider (0.6.30): a quiet list gate in the catalog bar. */
+.cat-bar .minvis { display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--muted); }
+.cat-bar .minvis b { font-family: var(--mono); color: var(--txt); min-width: 30px; text-align: right; }
+.cat-bar .minvis input[type="range"] { width: 110px; }
 .chip {
   background: var(--panel); border: 1px solid var(--line); color: var(--muted); border-radius: 999px;
   padding: 6px 13px; font-size: 12.5px; cursor: pointer;
@@ -285,7 +289,22 @@ table.cat tr { cursor: pointer; }
 table.cat tbody tr:hover { background: rgba(124,196,255,.07); }
 td.num, th.num { text-align: right; font-family: var(--mono); }
 td.frame, th.frame { text-align: right; font-family: var(--mono); font-size: 11.5px; white-space: nowrap; }
-td.frame .fit { color: var(--green); }
+td.frame .fit { color: var(--green); }          /* fits in one frame */
+td.frame .over { color: var(--amber); }         /* over 100%: needs a mosaic */
+td.tier, th[data-k="tier"] { text-align: center; width: 42px; }
+/* Popularity tier letter. Deliberately NOT the score: the ramp is decoration for
+   an ordering, so it stays muted and never competes with the frame colours. */
+.tier-badge {
+  display: inline-block; min-width: 17px; padding: 1px 4px; border-radius: 4px;
+  font-family: var(--mono); font-size: 11.5px; font-weight: 600;
+  color: #9fb4d8; background: rgba(124,196,255,.07);
+}
+.tier-badge.t-a { color: var(--green); }
+.tier-badge.t-b { color: #b9e8c9; }
+.tier-badge.t-c { color: #cfd9ee; }
+.tier-badge.t-d { color: #9fb4d8; }
+.tier-badge.t-e { color: #8397b8; }
+.tier-badge.t-f { color: #6d7f9e; }
 .tags { font-family: var(--mono); font-size: 11.5px; color: var(--muted); }
 .tname { font-weight: 600; }
 .pager { display: flex; gap: 8px; align-items: center; justify-content: center; margin-top: 14px; font-size: 13px; color: var(--muted); }

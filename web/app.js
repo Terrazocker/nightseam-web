@@ -8,16 +8,16 @@
  *   • Settings — sites, rigs, custom targets, backup/restore (webstore.js)
  * All sky math runs client-side (astro.js, Meeus algorithms).
  */
-import * as E from './astro.js?v=14';
-import * as Hor from './horizon.js?v=46';
-import * as WS from './webstore.js?v=24';
+import * as E from './astro.js?v=15';
+import * as Hor from './horizon.js?v=47';
+import * as WS from './webstore.js?v=25';
 import { initDragWindows } from './dragwin.js?v=1';
 import { fmtSize, sizeArcmin, framePct, magVisible, skyClampZoom,
-         skyViewMatrix, skyScreenToBase, skyClampFocus } from './format.js?v=21';
-import { nightStats, sampleVisible } from './nightrank.js?v=11';
-import { TYPE_LABELS, TYPE_COLORS, searchBlob as coreSearchBlob }
-  from './core.js?v=21';
-import { popularityFactor as corePopularityFactor } from './core.js?v=21';
+         skyViewMatrix, skyScreenToBase, skyClampFocus } from './format.js?v=22';
+import { nightStats, nightStatsBatch, sampleVisible } from './nightrank.js?v=13';
+import { TYPE_LABELS, TYPE_COLORS, searchBlob as coreSearchBlob,
+         TIER_ORDER, assignPopularityTiers } from './core.js?v=23';
+import { popularityFactor as corePopularityFactor } from './core.js?v=23';
 
 // Cache-bust token for the ~4 MB data file web/catalog.json. It is NOT a JS
 // module, so it cannot carry a ?v= in an import: this named token IS its
@@ -67,6 +67,7 @@ function applyActiveSite(site) {
 }
 
 let CAT = null;                 // array of catalog objects
+let TIER = new Map();           // id -> popularity TIER letter (A-F); scores are never rendered
 const byId = new Map();         // id -> object
 const searchCache = new Map();  // object -> lowercase search blob
 const S = {
@@ -77,7 +78,7 @@ const S = {
   playing: false,
   view: 'tonight',
   detailId: null,
-  cat: { q: '', chip: 'all', con: '', sort: 'mag', up: true, page: 0 },
+  cat: { q: '', chip: 'all', con: '', sort: 'tier', up: true, page: 0 },
 };
 
 const $ = (s) => document.querySelector(s);
@@ -1266,8 +1267,9 @@ let skyResizeHandler = null;
 
 /* ----------------------------- catalog ----------------------------- */
 
-/* Chip row for the catalog. Popularity is deliberately NOT a chip: it is a
- * hidden scoring input (see popularityFactor), never a user-facing criterion. */
+/* Chip row for the catalog. Popularity is deliberately NOT a chip, and its
+ * SCORE is never rendered anywhere: the catalog exposes a TIER letter (A-F, see
+ * assignPopularityTiers) whose ordering is the only thing it reveals. */
 const CHIP_LABELS = { all: 'All', messier: 'Messier', bright: 'Bright <8', galaxies: 'Galaxies', nebulae: 'Nebulae', clusters: 'Clusters', custom: 'Custom' };
 const CHIP_FILTERS = {
   all: () => true,
@@ -1278,6 +1280,22 @@ const CHIP_FILTERS = {
   clusters: (o) => ['open_cluster', 'globular', 'asterism'].includes(o.otype),
   custom: (o) => !!o.custom,
 };
+
+/* The Min-visibility threshold is the user's OWN gate on this list (the slider
+ * in the catalog bar, both modes): a row below it is omitted. It is a
+ * preference, persisted with the other display settings; 0 disables it. */
+function minVis() {
+  const v = Number(Hor.getPrefs().minVis);
+  return Number.isFinite(v) ? Math.min(100, Math.max(0, Math.round(v))) : 1;
+}
+let hiddenNotVisible = 0;      // rows the list dropped for being below the threshold
+
+/** Tooltip for a tier cell - says what the letter means, without the number. */
+function tierTitle(o, tier) {
+  return (o.popularity || 0) > 0
+    ? `tier ${tier} of A-F: community observing popularity (A = most observed)`
+    : `tier ${tier}: no popularity data for this object`;
+}
 
 function filteredCatalog() {
   const f = S.cat;
@@ -1300,9 +1318,30 @@ function filteredCatalog() {
       const pb = (obsCache.get(obsKey(pctG, b.id)) || {}).pct ?? -1;
       v = pa - pb;
     }
+    else if (col === 'tier') {
+      v = TIER_ORDER.indexOf(TIER.get(a.id) || 'F') - TIER_ORDER.indexOf(TIER.get(b.id) || 'F');
+      // inside a tier, the more observed object first (still never the number)
+      if (v === 0) v = (b.popularity || 0) - (a.popularity || 0);
+    }
     else v = (a.vmag ?? 99) - (b.vmag ?? 99);
     return f.up ? v : -v;
   });
+  // The Min-visibility threshold gates MEMBERSHIP: a row whose share of tonight's
+  // dark window is KNOWN and below it is omitted instead of being parked at 0%.
+  // A row whose % has not arrived yet is KEPT, so the first paint can never show a
+  // wrong verdict; warmPct() finishes the job and re-renders. An active SEARCH
+  // bypasses the gate - the catalog is also a lookup tool, and hiding the object
+  // you just typed would be a bug.
+  hiddenNotVisible = 0;
+  const mv = minVis();
+  if (mv > 0 && !q) {
+    const before = out.length;
+    out = out.filter((o) => {
+      const v = obsCache.get(obsKey(pctG, o.id));
+      return !v || v.pct >= mv;
+    });
+    hiddenNotVisible = before - out.length;
+  }
   return out;
 }
 
@@ -1330,25 +1369,31 @@ function renderCatalog() {
         <option value="">All constellations</option>
         ${CONSTELLATIONS.map((c) => `<option value="${esc(c)}"${S.cat.con === c ? ' selected' : ''}>${esc(c)}</option>`).join('')}
       </select>
-      <span class="cat-count">${list.length.toLocaleString()} of ${CAT.length.toLocaleString()} objects${advMode() ? '' : ' (standard mode)'}</span>
+      <label class="minvis" title="Hide objects whose share of tonight's dark window is below this. 0% shows every object, visible or not.">Min visibility
+        <b id="cat-minvis-v">${minVis() > 0 ? minVis() + '%' : 'off'}</b>
+        <input type="range" id="cat-minvis" min="0" max="100" step="1" value="${minVis()}" aria-label="Minimum visibility percent">
+      </label>
+      <span class="cat-count">${list.length.toLocaleString()} of ${CAT.length.toLocaleString()} objects${advMode() ? '' : ' (standard mode)'}${hiddenNotVisible ? ` · ${hiddenNotVisible} below ${minVis()}%` : ''}</span>
       <span class="cat-count" id="pct-status" style="margin-left:12px"></span>
     </div>
     <div class="card" style="padding:8px 10px">
       <table class="cat">
-        <thead><tr>${th('name', 'Name')}${th('mag', 'Mag', true)}${th('pct', '% visibility', true)}${th('type', 'Type')}${th('con', 'Con')}${th('size', 'Size', true)}${showFrame ? `<th class="frame" title="frame coverage with the active rig">Frame</th>` : ''}${th('ra', 'RA', true)}${th('dec', 'Dec', true)}</tr></thead>
+        <thead><tr>${th('name', 'Name')}${th('tier', 'Tier')}${th('mag', 'Mag', true)}${th('pct', '% visibility', true)}${th('type', 'Type')}${th('con', 'Con')}${th('size', 'Size', true)}${showFrame ? `<th class="frame" title="object size vs the active rig's frame width">Frame</th>` : ''}${th('ra', 'RA', true)}${th('dec', 'Dec', true)}</tr></thead>
         <tbody>
           ${slice.map((o) => {
             const tags = [o.messier, o.ngcic].filter(Boolean).join(' · ');
             const fOwn = filterAdviceBadge(o);
             const fp = showFrame ? rigFramePct(o) : null;
+            const tier = TIER.get(o.id) || 'F';
             return `<tr data-id="${esc(o.id)}">
               <td><span class="tname">${esc(o.primary_name)}</span> ${tags ? `<span class="tags">${esc(tags)}</span>` : ''}${fOwn}</td>
+              <td class="tier"><span class="tier-badge t-${tier.toLowerCase()}" title="${tierTitle(o, tier)}">${tier}</span></td>
               <td class="num">${o.vmag != null ? o.vmag.toFixed(1) : '—'}</td>
               <td class="num pct" data-objid="${escAttr(o.id)}">${cachedPctText(o.id)}</td>
               <td><span class="tag-dot" style="color:${typeColor(o)}">●</span> ${esc(TYPE_LABELS[o.otype] || o.otype || "")}</td>
               <td>${esc(o.constellation)}</td>
               <td class="num">${esc(fmtSizeU(o.size_am))}</td>
-              ${showFrame ? `<td class="frame">${fp == null ? '—' : fp <= 100 ? '<span class="fit">fits</span>' : `<span title="too large for one frame: needs ~${(fp / 100).toFixed(1)} frames">${fp}%</span>`}</td>` : ''}
+              ${showFrame ? `<td class="frame">${fp == null ? '—' : `<span class="${fp > 100 ? 'over' : 'fit'}" title="${fp > 100 ? `too large for one frame: needs ~${(fp / 100).toFixed(1)} frames` : `object spans ${fp}% of the frame width`}">${fp}%</span>`}</td>` : ''}
               <td class="num">${E.formatRA(o.ra_hours)}</td>
               <td class="num">${E.formatDec(o.dec_deg)}</td>
             </tr>`;
@@ -1380,16 +1425,32 @@ function renderCatalog() {
   $('#pg-prev').addEventListener('click', () => { if (S.cat.page > 0) { S.cat.page--; renderCatalog(); } });
   $('#pg-next').addEventListener('click', () => { if (S.cat.page < pages - 1) { S.cat.page++; renderCatalog(); } });
   $('#cat-con').addEventListener('change', (ev) => { S.cat.con = ev.target.value; S.cat.page = 0; renderCatalog(); });
+  // The slider updates its label + the preference live, but only RE-RENDERS on
+  // 'change': renderCatalog() rebuilds this whole bar, which would tear the
+  // element out from under the pointer mid-drag.
+  $('#cat-minvis').addEventListener('input', (ev) => {
+    const v = Math.round(Number(ev.target.value));
+    $('#cat-minvis-v').textContent = v > 0 ? `${v}%` : 'off';
+    Hor.setPrefs({ minVis: v });
+  });
+  $('#cat-minvis').addEventListener('change', () => { S.cat.page = 0; renderCatalog(); });
   if (qHadFocus) {                       // typing must not be interrupted
     const inp = $('#cat-q');
     if (inp) { inp.focus(); if (qCaret != null) inp.setSelectionRange(qCaret, qCaret); }
   }
   fillPctCells(slice);
-  if (S.cat.sort === 'pct') warmPct(list);
+  // Warm whenever the list is gated or sorted by visibility - and never while
+  // searching, because the gate is off then anyway.
+  if (!S.cat.q.trim() && (S.cat.sort === 'pct' || minVis() > 0)) warmPct(list);
 }
 
 /** Compute visibility for every row of the current filter (background chunks),
- *  then re-render so the % visibility sort is correct across the whole list. */
+ *  then re-render so the min-visibility gate and the % sort see the whole list.
+ *
+ *  Batched through core's `nightStatsBatch`: ONE precession/frame setup per chunk
+ *  instead of one per object, with the 14 ms budget still checked between chunks,
+ *  so even advanced mode's 12k rows stay responsive (and finish in a few seconds
+ *  rather than tens). */
 function warmPct(list) {
   const g = obsNightGrid();
   if (!(g.jd1 > g.jd0) || !list.length) return;
@@ -1397,14 +1458,18 @@ function warmPct(list) {
   const status = document.querySelector('#pct-status');
   const total = missing.length;
   if (!total) return;
+  const CHUNK = 250;
   busy(true, 'computing visibility…');
   let i = 0;
   const tick = () => {
     const t0 = performance.now();
     while (i < missing.length && performance.now() - t0 < 14) {
-      const o = missing[i];
-      obsCache.set(obsKey(g, o.id), computeObs(o, g.jd0, g.jd1, g.step, g.minAlt, g.pano, g.lat, g.lon));
-      i++;
+      const chunk = missing.slice(i, i + CHUNK);
+      const stats = nightStatsBatch(chunk, g.jd0, g.jd1, g.step, g.minAlt,
+                                    g.pano, g.lat, g.lon);
+      chunk.forEach((o, k) => obsCache.set(obsKey(g, o.id),
+        { pct: stats[k].pct, blk: stats[k].blockedPct }));
+      i += chunk.length;
     }
     if (status) status.textContent = `computing visibility… ${Math.round(100 * i / total)}%`;
     if (i < missing.length) setTimeout(tick, 0);
@@ -2407,6 +2472,7 @@ async function boot() {
     const res = await fetch('catalog.json?v=' + CATALOG_TOKEN);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     CAT = await res.json();
+    TIER = assignPopularityTiers(CAT);
     for (const o of CAT) byId.set(o.id, o);
     for (const c of new Set(CAT.map((o) => o.constellation).filter(Boolean))) CONSTELLATIONS.push(c);
     CONSTELLATIONS.sort((a, b) => a.localeCompare(b));

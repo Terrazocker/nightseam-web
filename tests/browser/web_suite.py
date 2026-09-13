@@ -489,3 +489,110 @@ def web_pano_crop_recalibrate(c):
     c.expect(active_profile(c) == saved,
              "the blocked profile must match the pre-save geometry")
     c.assert_clean()
+
+
+# ---------------------------------------------------- catalog table (0.6.30)
+
+def seed_rig(c, fov_w: float):
+    """Give the shell an ACTIVE rig (IndexedDB record + prefs) so the Frame
+    column renders at all. Written through the app's own store, so the record
+    shape is the shipped one - never a guess."""
+    c.page.evaluate(
+        """async (fov) => {
+             const ws = await import('./webstore.js');
+             await ws.saveRigRec({ id: 'r-browser', name: 'Browser rig',
+                                   fov_w: fov, fov_h: fov * 0.7,
+                                   fov_unit: 'arcmin' });
+             const raw = JSON.parse(localStorage.getItem('nightseam_prefs_v1') || '{}');
+             raw.activeRigId = 'r-browser';
+             localStorage.setItem('nightseam_prefs_v1', JSON.stringify(raw));
+           }""", fov_w)
+
+
+def frame_cells(c):
+    return c.page.eval_on_selector_all(
+        "#view table.cat td.frame",
+        "els => els.map(e => ({ text: e.textContent.trim(),"
+        " span: e.firstElementChild ? e.firstElementChild.className : '' }))")
+
+
+@check("web-catalog-tier-frame", "web")
+def web_catalog_tier_frame(c):
+    """0.6.30: the catalog's DEFAULT sort is the popularity TIER - the letters
+    A-F, never the popularity source score - and the Frame cell shows a PERCENTAGE
+    (green inside one frame, amber once the object needs a mosaic) instead of
+    the word 'fits'. Rendered DOM, not source text."""
+    boot(c)
+    seed_rig(c, 2)            # 2 arcmin: any real object is over 100%
+    boot(c)
+    tab(c, "catalog")
+
+    head = c.page.inner_text('#view table.cat thead th[data-k="tier"]')
+    shown = head.encode("ascii", "backslashreplace").decode()   # console-safe
+    c.expect("tier" in head.lower(), f"the Tier column must exist: {shown!r}")
+    c.expect("\u25B2" in head, f"tier must be the DEFAULT sort, ascending: {shown!r}")
+
+    tiers = c.page.eval_on_selector_all(
+        "#view table.cat tbody .tier-badge",
+        "els => els.map(e => e.textContent.trim())")
+    c.expect(len(tiers) >= 10, f"expected a page of tier letters, got {len(tiers)}")
+    c.expect(set(tiers) <= set("ABCDEF"), f"tier letters must be A-F: {set(tiers)}")
+    order = {t: i for i, t in enumerate("ABCDEF")}
+    c.expect([order[t] for t in tiers] == sorted(order[t] for t in tiers),
+             f"the default view must be sorted A->F: {tiers[:12]}")
+
+    cells = frame_cells(c)
+    c.expect(cells, "the Frame column must render once a rig is active")
+    c.expect(all(re.fullmatch(r"\d+%|\u2014", x["text"]) for x in cells),
+             f"Frame must be a percentage, never 'fits': {[x['text'] for x in cells[:6]]}")
+    c.expect(any(x["span"] == "over" for x in cells),
+             "an object bigger than the frame must render as over 100% (amber)")
+
+    seed_rig(c, 3000)         # 50 degrees: nothing can overflow
+    boot(c)
+    tab(c, "catalog")
+    cells = frame_cells(c)
+    c.expect(all(re.fullmatch(r"\d+%|\u2014", x["text"]) for x in cells),
+             "Frame must stay a percentage at any FOV")
+    c.expect(any(x["span"] == "fit" for x in cells),
+             "an object inside the frame must render green")
+    c.expect(not any(x["span"] == "over" for x in cells),
+             "nothing can be over 100% inside a 50-degree frame")
+
+    # ---- Min visibility: the user's own gate on the list -------------------
+    c.expect(c.page.eval_on_selector("#cat-minvis", "el => el.value") == "1",
+             "the slider must default to 1% (drop what is never visible)")
+
+    def shown_total() -> int:
+        """The leading number of the count line ('N of M objects'): the page
+        itself always refills to 60 rows, so the FILTERED total is the evidence."""
+        m = re.match(r"\s*([\d,]+) of",
+                     c.page.inner_text("#view .cat-count:not(#pct-status)"))
+        return int(m.group(1).replace(",", "")) if m else -1
+
+    before = shown_total()
+    c.expect(before > 0, "the count line must report a filtered total")
+
+    def set_minvis(v):
+        # 'input' updates the preference (the render reads it), 'change' re-renders
+        c.page.eval_on_selector("#cat-minvis", """(el, val) => { el.value = val;
+            el.dispatchEvent(new Event('input', { bubbles: true }));
+            el.dispatchEvent(new Event('change', { bubbles: true })); }""", v)
+
+    set_minvis(60)
+    c.page.wait_for_function(
+        """() => /below 60%/.test(document.querySelector('.cat-count')?.textContent || '')""",
+        timeout=30000)
+    pcts = c.page.eval_on_selector_all(
+        "#view table.cat td.pct",
+        "els => els.map(e => parseInt(e.textContent, 10)).filter(v => Number.isFinite(v))")
+    c.expect(pcts and min(pcts) >= 60,
+             f"a row below the threshold survived the gate: {sorted(pcts)[:5]}")
+    c.expect(shown_total() < before, "the 60% gate must remove rows from the list")
+
+    set_minvis(0)             # 0 disables the gate
+    c.page.wait_for_function(
+        """() => !/below/.test(document.querySelector('.cat-count')?.textContent || '')""",
+        timeout=30000)
+    c.expect(shown_total() >= before, "0% must show every row again")
+    c.assert_clean()

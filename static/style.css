@@ -293,6 +293,16 @@ table { border-collapse: collapse; width: 100%; }
 .objcell b { display: block; }
 .objcell span { color: var(--dim); font-size: 11.5px; }
 .typebadge { font-size: 11px; padding: 2px 7px; border-radius: var(--r-pill); border: 1px solid var(--border); color: var(--dim); white-space: nowrap; }
+/* Popularity tier letter - an ORDERING, never the score (0.6.30). The ramp is
+   decoration for the ordering, so it stays muted. */
+.tierbadge { display: inline-block; min-width: 17px; text-align: center; font-family: var(--font-mono); font-size: 11.5px; font-weight: 600; padding: 2px 5px; border-radius: var(--r-pill); background: color-mix(in srgb, var(--accent) 8%, transparent); color: var(--dim); }
+.tierbadge.t-a { color: var(--good); }
+.tierbadge.t-b { color: #9fe0b8; }
+.tierbadge.t-c { color: var(--text); }
+.tierbadge.t-d { color: var(--dim); }
+.tierbadge.t-e { color: var(--dim); opacity: .8; }
+.tierbadge.t-f { color: var(--dim); opacity: .6; }
+td.tiercell { text-align: center; }
 .statuspill { font-size: 11.5px; font-weight: 600; padding: 2px 9px; border-radius: var(--r-pill); white-space: nowrap; }
 .fbadge { font-size: 10.5px; font-weight: 600; padding: 2px 8px; border-radius: var(--r-pill); white-space: nowrap; }
 .fbadge.ok { background: color-mix(in srgb, var(--good) 15%, transparent); color: var(--good); }

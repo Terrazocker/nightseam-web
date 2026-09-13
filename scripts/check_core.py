@@ -44,7 +44,7 @@ MOVED = (
     "cropKeptBand", "cropStrokes", "clipProfileToFov", "cropPano",
     "fmtSize", "sizeArcmin", "fmtFov", "fmtFovPair", "framePct", "magVisible",
     "skyClampZoom", "skyViewMatrix", "skyScreenToBase", "skyClampFocus",
-    "searchBlob", "isCustomId",
+    "searchBlob", "isCustomId", "tierForRank", "assignPopularityTiers",
     "offsetEastMin", "zoneOffsetAtLocalNoon", "wallFromUtcMs", "utcFromWallMs",
     "aboveHorizon", "sampleVisible", "statusOf", "effectiveMinAlt",
     "moonSensitivity", "moonMinDist", "effectiveMoonGlow", "moonPenalty",

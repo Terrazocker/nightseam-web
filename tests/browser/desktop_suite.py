@@ -160,6 +160,73 @@ def desktop_advanced_mode(c):
     c.assert_clean()
 
 
+@check("desktop-catalog-tier-minvis", "desktop")
+def desktop_catalog_tier_minvis(c):
+    """0.6.30: the targets table leads with the popularity TIER (A-F letters, and
+    the tier sort is the DEFAULT) and the Min-visibility slider gates the LIST.
+    Same method as the web, and the popularity source SCORE never appears."""
+    boot(c)
+    heads = c.page.evaluate(
+        """() => Array.from(document.querySelectorAll('#targetTable thead th'))
+                   .map(th => th.textContent.trim())""")
+    c.expect("Tier" in heads, f"the targets table must have a Tier column: {heads}")
+    c.expect(c.page.evaluate("() => document.querySelector('#fSort').value") == "tier",
+             "the tier sort must be the default")
+
+    tiers = c.page.evaluate(
+        """() => Array.from(document.querySelectorAll('#targetRows .tierbadge'))
+                   .map(e => e.textContent.trim())""")
+    c.expect(len(tiers) >= 10, f"expected tier letters in the table, got {len(tiers)}")
+    c.expect(set(tiers) <= set("ABCDEF"), f"tier letters must be A-F: {set(tiers)}")
+    order = {t: i for i, t in enumerate("ABCDEF")}
+    c.expect([order[t] for t in tiers] == sorted(order[t] for t in tiers),
+             f"the default view must be sorted A->F: {tiers[:12]}")
+
+    # the score itself must never be rendered: the top popularity values cannot
+    # collide with a magnitude/size/percentage, so finding one in a row is a leak
+    leaked = c.page.evaluate(
+        """async () => {
+             const txt = Array.from(document.querySelectorAll('#targetRows tr'))
+                              .slice(0, 25).map(tr => tr.textContent).join(' ');
+             const cat = await (await fetch('/api/catalog')).json();
+             const top = cat.map(o => Number(o.popularity) || 0)
+                            .sort((a, b) => b - a).slice(0, 50).map(String);
+             return top.filter(p => p.length >= 5 && txt.includes(p));
+           }""")
+    c.expect(not leaked, f"a popularity SCORE leaked into the table: {leaked[:3]}")
+
+    before = rows(c)
+    c.page.evaluate(
+        """() => { const el = document.querySelector('#fMinVis');
+                   el.value = 60;
+                   el.dispatchEvent(new Event('input', { bubbles: true })); }""")
+    c.page.wait_for_function(
+        """() => /below 60%/.test(document.querySelector('#resultCount')?.textContent || '')""",
+        timeout=60000)
+    pcts = c.page.evaluate(
+        """() => Array.from(document.querySelectorAll('#targetRows tr'))
+                   .map(tr => parseInt(tr.children[8]?.textContent || '', 10))
+                   .filter(v => Number.isFinite(v))""")
+    c.expect(pcts and min(pcts) >= 60,
+             f"a row below the threshold survived the gate: {sorted(pcts)[:5]}")
+    c.expect(rows(c) < before, "the 60% gate must remove rows")
+
+    # 0 disables the gate again
+    c.page.evaluate(
+        """() => { const el = document.querySelector('#fMinVis');
+                   el.value = 0;
+                   el.dispatchEvent(new Event('input', { bubbles: true })); }""")
+    c.page.wait_for_function(
+        """() => !/below/.test(document.querySelector('#resultCount')?.textContent || '')""",
+        timeout=60000)
+    c.expect(rows(c) >= before, "0% must show every row again")
+    c.page.evaluate(
+        """() => fetch('/api/settings', { method: 'POST',
+             headers: { 'Content-Type': 'application/json' },
+             body: JSON.stringify({ min_vis: 1 }) })""")
+    c.assert_clean()
+
+
 @check("desktop-scrub-window", "desktop")
 def desktop_scrub_window(c):
     """View-full-day widens the scrub to the whole day and clamps."""

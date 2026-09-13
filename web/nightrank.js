@@ -6,4 +6,4 @@
  * them so app.js and the "nightstats" engine keep their import surface.
  * The desktop's equivalent derived loop stays in static/js/derive.js.
  */
-export { sampleVisible, nightStats } from './core.js?v=21';
+export { sampleVisible, nightStats, nightStatsBatch } from './core.js?v=23';

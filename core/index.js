@@ -26,6 +26,7 @@ export {
 
 export {
   TYPE_LABELS, TYPE_COLORS, isCustomId, searchBlob,
+  TIER_BANDS, TIER_ORDER, tierForRank, assignPopularityTiers,
 } from './catalog.js';
 
 export {

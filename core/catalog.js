@@ -38,3 +38,49 @@ export function searchBlob(o) {
           o.constellation, o.blurb, o.distance]
     .filter(Boolean).join(' ').toLowerCase();
 }
+
+/* ------------------------- popularity TIERS -------------------------------
+ * The popularity source score stays a SILENT ranking input: its VALUE is never
+ * rendered anywhere (owner rule). The catalog shows a TIER letter instead,
+ * which carries the ordering without exposing the number.
+ *
+ * Tiers are RANK bands, deliberately not score bands. The score distribution is
+ * extremely heavy-tailed - rank 1 = 166,350, rank 100 = 9,910, rank 250 = 1,163,
+ * rank 1,500 = 19, and the last ~4,000 rows all sit at 1-4 - so ANY score
+ * cut-off would drop almost the whole catalog into one bucket.
+ *
+ * Bands (owner decision, 0.6.30): A = the 100 most observed objects; B ends at
+ * 250 so that A+B covers the standard-mode shortlist (`STANDARD_TOP_N` = 200)
+ * with a margin; each later band is ~2.4x wider, which keeps A-F populated
+ * instead of collapsing the tail.
+ */
+export const TIER_BANDS = [
+  ['A', 100], ['B', 250], ['C', 600], ['D', 1500], ['E', 3500], ['F', Infinity],
+];
+
+/** The tier alphabet in order (A first), for sorting by index. */
+export const TIER_ORDER = TIER_BANDS.map(([tier]) => tier);
+
+/** Tier letter for a 1-based popularity rank; unknown/0 ranks land in F. */
+export function tierForRank(rank) {
+  const r = rank > 0 ? rank : Infinity;
+  for (const [tier, top] of TIER_BANDS) if (r <= top) return tier;
+  return 'F';
+}
+
+/** `id -> tier letter` for a catalog array. The ranking mirrors the SERVER's
+ *  standard-mode rule exactly - score descending, then id ASCENDING - so the
+ *  web tier and the desktop/server selection can never disagree about which
+ *  object is #1. Rows with no popularity entry get F (the title says "no
+ *  popularity data"), so the column always sorts A-F. */
+export function assignPopularityTiers(objs) {
+  const tiers = new Map();
+  const scored = objs
+    .filter((o) => (o.popularity || 0) > 0)
+    .slice()
+    .sort((a, b) => (b.popularity - a.popularity)
+      || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  scored.forEach((o, i) => tiers.set(o.id, tierForRank(i + 1)));
+  for (const o of objs) if (!tiers.has(o.id)) tiers.set(o.id, 'F');
+  return tiers;
+}

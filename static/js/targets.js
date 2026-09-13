@@ -5,9 +5,49 @@ import { S, IMG_VER } from "./state.js";
 import { statusOf, windowText, desigLine,
          objScore, filterAdvice, frameCoverage, coverageCell,
          popularityFactor } from "./derive.js";
+import { assignPopularityTiers, TIER_ORDER } from "./core.js";
 
 const PAGE_SIZE = 250;
 let _page = 0;
+
+/* Popularity TIERS (A-F) - the same method as the web: the ORDER is shown as a
+ * letter, the score never is. The map is built over S.catalog, which IS the 200
+ * most popular rows in standard mode (so their ranks 1..200 are the global ones)
+ * and the whole catalogue in advanced mode; it is rebuilt whenever that array is
+ * replaced (catalog reload / advanced-mode toggle). */
+let _tiers = null, _tiersFor = null;
+function tiers() {
+  if (_tiersFor !== S.catalog) {
+    _tiers = assignPopularityTiers(S.catalog);
+    _tiersFor = S.catalog;
+  }
+  return _tiers;
+}
+function tierOf(m) { return tiers().get(m.id) || "F"; }
+function tierIdx(m) {
+  const i = TIER_ORDER.indexOf(tierOf(m));
+  return i < 0 ? TIER_ORDER.length : i;
+}
+function tierTitle(m) {
+  return (m.popularity || 0) > 0
+    ? `tier ${tierOf(m)} of A-F: community observing popularity (A = most observed)`
+    : `tier ${tierOf(m)}: no popularity data for this object`;
+}
+
+/* Min visibility (0.6.30): the user's own gate on the TARGET LIST - the slider
+ * in the filter bar, 0 = off. Deliberately NOT part of `passesFilters`, which
+ * the sky chart also uses: this control says "omit from the list". */
+function minVisPct() {
+  const el = $("#fMinVis");
+  const raw = el ? el.value : (S.cfg && S.cfg.min_vis != null ? S.cfg.min_vis : 1);
+  const v = Number(raw);
+  return Number.isFinite(v) ? Math.max(0, Math.min(100, Math.round(v))) : 1;
+}
+function minVisHides(o) {
+  const mv = minVisPct();
+  return mv > 0 && !$("#fSearch").value.trim() &&
+         o.obs_pct != null && o.obs_pct < mv;
+}
 
 function resetPage() { _page = 0; }
 
@@ -19,6 +59,21 @@ export function bindFilters() {
   $("#fType").addEventListener("change", () => { resetPage(); renderTargets(); });
   $("#fMag").addEventListener("input", e => {
     $("#magVal").textContent = (+e.target.value).toFixed(1);
+    resetPage(); renderTargets();
+  });
+  // Min visibility: the list re-renders live (it only replaces #targetRows, so
+  // the slider itself survives the drag), the setting is persisted debounced.
+  let _mvPersist = null;
+  $("#fMinVis").addEventListener("input", e => {
+    const v = Math.round(+e.target.value);
+    $("#fMinVisVal").textContent = v > 0 ? `${v}%` : "off";
+    if (S.cfg) S.cfg.min_vis = v;
+    clearTimeout(_mvPersist);
+    _mvPersist = setTimeout(() => api("/api/settings", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" }, silent: true,
+      body: JSON.stringify({ min_vis: v })
+    }).catch(() => {}), 400);
     resetPage(); renderTargets();
   });
   $("#fUnblocked").addEventListener("change", () => { resetPage(); renderTargets(); });
@@ -93,9 +148,12 @@ export function populateConstFilter() {
 
 function sortObjects(list) {
   const mode = $("#fSort").value;
-  // popularity is never a sort mode of its own - it only breaks ties inside
-  // "imaging quality" (see derive.js), so it stays invisible in the UI
+  // The popularity SCORE is never a sort mode of its own - it only breaks ties
+  // inside "imaging quality" and inside the tier ordering (see derive.js), so it
+  // stays invisible in the UI. The TIER is the ordering the UI may expose.
   const cmp = {
+    tier:    (a,b) => tierIdx(a.m) - tierIdx(b.m) ||
+                      popularityFactor(b.m) - popularityFactor(a.m),
     score:   (a,b) => {
       const d = objScore(b.o) - objScore(a.o);
       return d !== 0 ? d : popularityFactor(b.m) - popularityFactor(a.m);
@@ -121,21 +179,25 @@ export function renderTargets(fromPager = false) {
     rows = S.lastRows;
   } else {
     rows = [];
+    let hiddenVis = 0;
     for (const o of S.night.objects) {
       const m = S.meta[o.id];
       if (!m) continue;
       if (!passesFilters(m, o)) continue;
+      if (minVisHides(o)) { hiddenVis++; continue; }
       rows.push({o, m});
     }
     sortObjects(rows);
     S.filteredIds = rows.map(r => r.m.id);
     S.lastRows = rows;
+    S.hiddenVis = hiddenVis;
     // NB: the page is NOT reset here - scrub re-renders must keep it.
     // resetPage() runs in the filter/sort handlers instead.
   }
   $("#resultCount").textContent =
     `${rows.length} of ${S.catalog.length} objects` +
-    (rows.length < S.catalog.length ? " \u00B7 filtered" : "");
+    (rows.length < S.catalog.length ? " \u00B7 filtered" : "") +
+    (S.hiddenVis ? ` \u00B7 ${S.hiddenVis} below ${minVisPct()}%` : "");
 
   const pages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
   if (_page >= pages) _page = pages - 1;
@@ -153,6 +215,7 @@ export function renderTargets(fromPager = false) {
     return `<tr data-id="${m.id}">
       <td>${thumbHTML(m.id)}</td>
       <td class="objcell"><button class="starbtn${fav?" on":""}" data-fav="${m.id}" title="mark for session">&#9733;</button><b>${esc(m.primary_name)}</b><span>${esc(desigLine(m))}${m.constellation?" \u00B7 "+esc(constName(m.constellation)):""}</span></td>
+      <td class="tiercell"><span class="tierbadge t-${tierOf(m).toLowerCase()}" title="${tierTitle(m)}">${tierOf(m)}</span></td>
       <td><span class="typebadge" style="color:${TYPE_COLOR[m.otype] || "#9ca5b5"};border-color:${(TYPE_COLOR[m.otype] || "#9ca5b5")}55">${esc(TYPE_LABEL[m.otype]||m.otype)}</span>${adv ? " " + adv.pill : ""}</td>
       <td>${m.vmag!=null?m.vmag.toFixed(1):"&mdash;"}</td>
       <td>${fmtSize(m.size_am, unit)}</td>

@@ -377,7 +377,10 @@ export function frameCoverage(m) {
 
 export function coverageCell(cov) {
   if (!cov) return '<span class="hint">&mdash;</span>';
-  const cls = !cov.fits ? "st-blk" : cov.pct > 85 ? "st-low" : "st-vis";
+  // GREEN while the object fits in one frame, AMBER once it needs a mosaic
+  // (0.6.30, the same method as the web). The old ramp went red above 100% and
+  // amber above 85%, which flagged a merely-full frame as a problem.
+  const cls = cov.pct > 100 ? "st-low" : "st-vis";
   const tip = cov.fits
     ? `object spans ${cov.pct}% of the frame`
     : `too large for one frame: needs ~${cov.frames.toFixed(1)} frames`;
