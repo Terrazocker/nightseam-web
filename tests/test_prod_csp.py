@@ -40,7 +40,10 @@ def test_the_repo_ships_a_policy_and_it_passes_its_own_check():
     assert htaccess.is_file(), (
         "web/.htaccess is missing - the static shell then has no CSP at all")
     text = htaccess.read_text(encoding="utf-8")
-    m = re.search(r'Content-Security-Policy "([^"]+)"', text)
+    # only a real directive: prose that merely NAMES the header must not be
+    # parsed (a placeholder in a comment once hijacked this assertion)
+    m = re.search(r'^\s*Header\s+\S+\s+set\s+Content-Security-Policy\s+"([^"]+)"',
+                  text, re.M)
     assert m, ".htaccess must set a Content-Security-Policy header"
     policy = m.group(1)
     assert _csp_problems(policy) == []
