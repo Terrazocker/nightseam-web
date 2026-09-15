@@ -1,0 +1,3 @@
+modules the guard looks at: ['app.js', 'astro.js', 'core.js', 'dragwin.js', 'format.js', 'horizon.js', 'nightrank.js', 'style.css', 'themes.css', 'webstore.js']
+'newmod.js' seen by the guard: False
+scan() findings: ['web/app.js changed but its cache token is still ?v=80 (bump every module whose bytes changed in the same commit, then re-check the verified baseline)']

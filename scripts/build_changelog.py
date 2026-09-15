@@ -30,6 +30,11 @@ ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "landing" / "changelog.json"
 
 CURATED = {
+    # 0.6.33 is the review batch plus the shell-unification pass: the web
+    # "tonight" list gained the 45 bright nebulae it was silently filtering out,
+    # the desktop panorama editor gained Redo, and the web shell now ships a
+    # Content-Security-Policy. Written for users, not for the changelog reader.
+    "0.6.33": "Bright nebulae are back in the web target list, and a long list of smaller things got fixed. The web app's \"tonight\" suggestions were quietly skipping every object whose brightness the catalogue does not record - which is exactly the case for the big emission nebulae: IC 1396, the Running Man, NGC 281, the Flame, the Tulip, Simeis 147, the Double Cluster and the Pipe Nebula could never show up there, while the desktop app listed them all along. Both apps now use one and the same rule (an object with no recorded magnitude counts as bright, never as invisible), so the two lists agree. Undo in the desktop panorama editor also gained a matching Redo, so a stroke you took back is no longer gone for good. Everything else in this release is repair work: visibility percentages and clear-window times are measured over the same window in both apps; a blocked-horizon object is no longer reported as observable at selected times; civil twilight is no longer mistaken for full darkness; timezone and daylight-saving offsets are right on the days the clock changes; the two seeded catalogues can no longer disagree about an object; long site and target names no longer run out of their panel; the view no longer shifts while a percentage fills in; and photo loading, the update check and the web deployment are all a little more careful about what they trust. The popularity source, the source of the popularity ranking, is no longer contacted at all: the ranking ships with the app and stays local. The web app now also sends the browser security headers it should have had from the start. Everything else is unchanged.",
     # 0.6.32 removes the always-empty Distance field and makes the Wikipedia
     # lookup use the object's DESIGNATION (a bare "M101" is a disambiguation
     # page), skipping disambiguation pages and remembering only a definitive
@@ -175,20 +180,33 @@ def git(*args):
             pass
 
 
+def has_summary(curated: dict, version: str) -> bool:
+    """True when `version` has a CURATED entry carrying REAL text.
+
+    TR-05 (0.6.32 review): the curation gates tested MEMBERSHIP (`v in curated`)
+    while `build_entries` tested truthiness (`if summary:`), so
+    `CURATED["0.6.33"] = ""` - the "add the key now, write the text later" slip -
+    passed `pre_tag_check.py`, passed `check_release.py` and reported `--check`
+    OK, while the generated `landing/changelog.json` silently omitted the shipped
+    release. ONE predicate now decides both."""
+    return bool(str(curated.get(version) or "").strip())
+
+
 def split_uncurated(tags, curated):
     """Split uncurated tags into (since the newest curated entry, older).
 
     `tags` is newest-first (git tag --sort=-version:refname). Only the first
     list matters for release integrity: those are the releases that happened
     AFTER the newest entry the public changelog knows about. Everything older
-    is the historical backlog (pre-0.4.2 tags) and is never curated.
-    """
+    is the historical backlog (pre-0.4.2 tags) and is never curated. An EMPTY
+    curated value is uncurated (TR-05 - it generates no entry)."""
     versions = [t.lstrip("v") for t in tags]
-    newest = next((i for i, v in enumerate(versions) if v in curated), None)
+    newest = next((i for i, v in enumerate(versions) if has_summary(curated, v)),
+                  None)
     if newest is None:
         return list(versions), []
-    return ([v for v in versions[:newest] if v not in curated],
-            [v for v in versions[newest + 1:] if v not in curated])
+    return ([v for v in versions[:newest] if not has_summary(curated, v)],
+            [v for v in versions[newest + 1:] if not has_summary(curated, v)])
 
 
 def build_entries(tags, dates, curated=None):
@@ -198,7 +216,7 @@ def build_entries(tags, dates, curated=None):
     for t in tags:
         ver = t.lstrip("v")
         summary = curated.get(ver)
-        if summary:
+        if has_summary(curated, ver):
             entries.append({"version": ver, "date": dates(t), "summary": summary})
     return entries
 

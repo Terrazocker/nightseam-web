@@ -14,6 +14,26 @@ from harness import check
 COUNT_RE = r"filtered"
 READY = "#targetRows tr[data-id]"
 
+# TR-04 (0.6.32 review): installed BEFORE the app boots so the wrapper sees the
+# worker the app really creates. `__NS_KILL_WORKER` claims to terminate it and
+# null it out; counting real `terminate()` calls (and later `new Worker()` calls)
+# is what makes the sync-fallback check able to fail.
+WATCH_WORKERS = """
+(() => {
+  const Orig = window.Worker;
+  window.__nsWorkerCtor = 0;
+  window.__nsWorkerTerm = 0;
+  if (typeof Orig !== 'function') return;
+  window.Worker = function (...args) {
+    const w = new Orig(...args);
+    const term = w.terminate.bind(w);
+    w.terminate = () => { window.__nsWorkerTerm++; return term(); };
+    window.__nsWorkerCtor++;
+    return w;
+  };
+})();
+"""
+
 
 def boot(c):
     c.goto("/")
@@ -94,17 +114,39 @@ def desktop_worker_date_change(c):
 
 @check("desktop-worker-kill-sync-fallback", "desktop")
 def desktop_worker_kill_sync_fallback(c):
-    """A dead worker must fall back to the in-thread build, not hang."""
+    """A dead worker must fall back to the in-thread build, not hang.
+
+    TR-04 (0.6.32 review): this check could not fail. It asserted
+    `killed is False or killed is True` (true for any bool) and then ran the
+    plain date-change sequence `desktop-worker-date-change` already covers -
+    a no-op `__NS_KILL_WORKER` was undetectable. It now asserts the hook's REAL
+    effect (the live Worker instance is terminated), that the fallback still
+    produced a plan, and that after `__NS_REVIVE_WORKER` the next build
+    constructs a FRESH worker - which is only true if the kill truly disposed of
+    the old one (a no-op kill leaves it alive and is reused)."""
+    c.page.add_init_script(WATCH_WORKERS)
     boot(c)
     c.page.evaluate("() => { window.__NS_DEBUG_WORKER = true; }")
     killed = c.page.evaluate("() => window.__NS_KILL_WORKER()")
-    c.expect(killed is False or killed is True,
-             "the dev kill hook must be callable when armed")
+    c.expect(killed is True, "the dev kill hook must report that it ran when armed")
+    terminated = c.page.evaluate("() => window.__nsWorkerTerm")
+    c.expect(terminated >= 1,
+             f"the kill hook must TERMINATE the live worker, not just claim it "
+             f"(terminate() calls: {terminated})")
     arm_night_loaded(c)
     set_date(c, "2026-08-17")
     wait_night_loaded(c)
     c.expect(rows(c) > 0, "the sync fallback must still produce a plan")
-    c.page.evaluate("() => window.__NS_REVIVE_WORKER()")
+    c.expect("of" in count_text(c), f"the count must be populated: {count_text(c)!r}")
+    revived = c.page.evaluate("() => window.__NS_REVIVE_WORKER()")
+    c.expect(revived is True, "the dev revive hook must report that it ran")
+    constructed = c.page.evaluate("() => window.__nsWorkerCtor")
+    arm_night_loaded(c)
+    set_date(c, "2026-08-18")
+    wait_night_loaded(c)
+    c.expect(c.page.evaluate("() => window.__nsWorkerCtor") > constructed,
+             "after the revive the next build must construct a FRESH worker - "
+             "proof the kill really disposed of the old one")
     c.assert_clean()
 
 
@@ -312,6 +354,34 @@ def _wide_png(w: int = 1024, h: int = 16) -> Path:
     return p
 
 
+PANO_READY = """(prev) => window.Pano && window.Pano.cur
+     && window.Pano.cur.id !== prev
+     && window.Pano.img && window.Pano.img.complete"""
+
+
+def upload_pano(c, png, prev, timeout: float = 180000.0, attempts: int = 2):
+    """Upload `png` and wait for the NEW panorama to be selected and DECODED.
+
+    TR-12 (0.6.32 review): the first upload round-trip on a COLD exe overshot
+    even the 90 s budget this check was raised to (measured 91.9 s on a first
+    launch, then 3.0 s on an immediate re-run of the same check), so the release
+    gate could go red for a cold machine and pass on a re-run. Two changes make
+    the wait robust instead of lucky: a generous 180 s budget (above the measured
+    worst case) and ONE retry, which is safe because the wait asks for a
+    DIFFERENT panorama id than `prev` - a second upload is simply another id."""
+    last = None
+    for _ in range(attempts):
+        c.page.set_input_files("#panoFile", png)
+        try:
+            c.page.wait_for_function(PANO_READY, arg=prev, timeout=timeout)
+            return c.page.evaluate("() => window.Pano.cur.id")
+        except Exception as exc:  # noqa: BLE001 - retried once, then raised
+            last = exc
+    raise AssertionError(
+        f"the panorama upload/decode round-trip did not land after {attempts} "
+        f"attempt(s) of {timeout / 1000:.0f} s: {last}")
+
+
 @check("desktop-pano-crop-fov", "desktop")
 def desktop_pano_crop_fov(c):
     """The desktop crop must store the KEPT-band FOV (via the shared core
@@ -329,21 +399,13 @@ def desktop_pano_crop_fov(c):
         (0.1, 0.9, 288.0, 36.0),   # center 80%
         (0.3, 0.5, 72.0, 108.0),   # off-center 20%
     ]
-    prev = None
+    # TR-12: pay the COLD first-upload/decode cost ONCE, outside the timed cases
+    # (a fresh onefile exe unpacks to %TEMP% on first launch; measured 91.9 s on
+    # the old 90 s budget, 3.0 s once warm).
+    prev = upload_pano(c, png, None, timeout=240000.0, attempts=2)
+    c.expect(prev, "a panorama must be selected after the warm-up upload")
     for x0, x1, want_fov, want_az in cases:
-        c.page.set_input_files("#panoFile", png)
-        # wait for the NEW panorama to be selected (a stale id means the upload
-        # round-trip has not landed yet) and its image decoded.
-        # 90 s, not 30: the upload/decode round-trip occasionally overshoots 30 s
-        # in a full-suite run (measured 31.9 s on two consecutive full runs, then
-        # 2.9 s on the next one with the SAME preceding checks - a flaky budget,
-        # not an ordering rule), while the check alone lands in ~3 s.
-        c.page.wait_for_function(
-            """(prev) => window.Pano && window.Pano.cur
-                 && window.Pano.cur.id !== prev
-                 && window.Pano.img && window.Pano.img.complete""",
-            arg=prev, timeout=90000)
-        pid = c.page.evaluate("() => window.Pano.cur.id")
+        pid = upload_pano(c, png, prev)
         prev = pid
         c.expect(pid, "a panorama must be selected after upload")
         # default full-frame calibration for this fresh image

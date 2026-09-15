@@ -26,18 +26,32 @@ borders, one lavender accent, soft glows, rounded corners. Calm, restrained,
 
 ## 2. Palette — use the tokens, never raw hex
 
-| Role | Token | Value |
-|---|---|---|
-| Page background | `--bg` | `#070a15` |
-| Panel base (translucent) | `--panel` | `rgba(13,19,38,0.82)` |
-| Hairline borders | `--border` / `--border-soft` | `#1e2848` / `rgba(255,255,255,0.06–0.09)` |
-| Text | `--text` | `#dfe7ff` |
-| Secondary text | `--dim` | `#93a3cc` |
-| Tertiary text | `--faint` | `#7a8bb5` |
-| **Accent (lavender)** | `--accent` | `#8f7bff` |
-| Secondary accent (teal) | `--accent2` | `#4fd9c1` |
-| Accent on dark | `--accent-ink` | `#0a0d1a` |
-| Gold / good / warn / bad | `--gold --good --warn --bad` | `#ffd166` / `#45d6a0` / `#ffb454` / `#ff6b7a` |
+| Role | Desktop / landing token | Web app token | Value |
+|---|---|---|---|
+| Page background | `--bg` | `--bg` | `#070a15` |
+| Panel base (translucent) | `--panel` | `--panel` | `rgba(13,19,38,0.82)` |
+| Hairline borders | `--border` / `--border-soft` | `--line` | `#1e2848` / `rgba(255,255,255,0.06–0.09)` |
+| Text | `--text` | `--txt` | `#dfe7ff` |
+| Secondary text | `--dim` | `--muted` | `#93a3cc` |
+| Tertiary text | `--faint` | *(none — the web has two text steps)* | `#7a8bb5` |
+| **Accent (lavender)** | `--accent` | `--accent` | `#8f7bff` |
+| Secondary accent (teal) | `--accent2` | *(none)* | `#4fd9c1` |
+| Accent on dark | `--accent-ink` | *(none)* | `#0a0d1a` |
+| Gold | `--gold` | `--amber` | `#ffd166` |
+| Good | `--good` | `--green` | `#45d6a0` |
+| Warn | `--warn` | `--amber` (the web's warn is its amber) | `#ffb454` |
+| Bad | `--bad` | *(none — the web writes `var(--bad, #ff8a8a)`)* | `#ff6b7a` |
+| Mono font | `--font-mono` | `--mono` | Consolas / Cascadia Mono |
+| UI font | `--font-ui` | *(none — the web `body` sets the system stack)* | Segoe UI / system-ui |
+
+**The web app names its tokens differently.** `web/style.css` +
+`web/themes.css` define `--bg --bg2 --panel --line --txt --muted --accent
+--amber --green --radius --mono`; the long names in the middle column above
+exist only in the desktop (`static/`) and landing stylesheets. A rule in `web/`
+written with `var(--text)`, `var(--dim)`, `var(--border)`, `var(--faint)`,
+`var(--good)` or `var(--bad)` resolves to nothing and the declaration is
+dropped (the web's `--bad` uses a literal fallback). Same roles, same Glass
+values — use the column that matches the stylesheet you are editing.
 
 
 Rules: hardcoded colors are only allowed for **data-driven** values (type

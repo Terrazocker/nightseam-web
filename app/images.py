@@ -30,6 +30,20 @@ NEG_VERSION = 2              # bump to invalidate failure markers from older log
 CACHE_VERSION = 2            # bump to invalidate stored IMAGES (e.g. wrongly
                              # resolved ones cached by earlier resolver logic)
 
+# ---- retention (SP-10, 0.6.32 review) --------------------------------------
+# CACHE_DIR used to grow forever: every detail view (and the boot prefetch)
+# leaves a `<slug>.bin` + `<slug>.json` pair and nothing ever evicted one
+# (measured 440 files / 24.8 MB; the advanced catalog is 12,176 objects, so
+# browsing it reaches ~1.3 GB). Policy: an LRU-ish BYTE cap over the cached
+# payloads, enforced opportunistically ON CACHE WRITE only - the request path
+# pays one integer increment and nothing else.
+CACHE_MAX_BYTES = 384 * 1024 * 1024   # ceiling for .bin payloads in CACHE_DIR
+CACHE_MAX_AGE = 180 * 24 * 3600       # plus: drop payloads untouched for 180 d
+CACHE_MIN_AGE = 300                   # never evict a file younger than 5 min:
+                                      # it may be the one the current request is
+                                      # about to serve (and the prefetch wrote it)
+CACHE_CHECK_EVERY = 64                # prune at most once per N cache writes
+
 # ---- offline handling -------------------------------------------------------
 # After repeated network failures we stop trying for a while so an offline
 # machine does not sit through timeout after timeout.
@@ -284,6 +298,110 @@ def _parse_size(size_str: str | None):
 
 _fetch_lock = __import__("threading").Lock()
 
+# SP-10: cheap write counter for the opportunistic retention check. One integer
+# increment per cache write; the directory scan happens at most every
+# CACHE_CHECK_EVERY writes.
+_cache_writes_since_check = 0
+
+
+def _cache_files() -> list:
+    """Every regular file in CACHE_DIR as (path, size, mtime)."""
+    try:
+        entries = list(CACHE_DIR.iterdir())
+    except OSError:
+        return []
+    found = []
+    for p in entries:
+        try:
+            if not p.is_file():
+                continue
+            st = p.stat()
+        except OSError:
+            continue
+        found.append((p, st.st_size, st.st_mtime))
+    return found
+
+
+def _unlink_quietly(path) -> None:
+    try:
+        path.unlink()
+    except OSError:
+        pass
+
+
+def _cache_total_bytes() -> int:
+    return sum(size for _p, size, _t in _cache_files())
+
+
+def prune_cache(max_bytes: int | None = None, now: float | None = None) -> int:
+    """Enforce the cache cap; returns the number of removed files.
+
+    Oldest-first (by mtime, i.e. least recently written) and only over files
+    older than `CACHE_MIN_AGE`, so a file the app has just written - or is about
+    to serve for a request that resolved its slug before the prune - is never
+    deleted. Stale negative markers (a `.json` with no `.bin` beside it) are
+    dropped as housekeeping whenever they are in the eviction set: the marker
+    itself is re-created on the next failure, and once it is past NEG_TTL it no
+    longer blocks a retry anyway.
+    """
+    cap = CACHE_MAX_BYTES if max_bytes is None else max_bytes
+    now = time.time() if now is None else now
+    files = _cache_files()
+    if not files:
+        return 0
+    total = sum(size for _p, size, _t in files)
+    removed = 0
+    done = set()
+    if total > cap:
+        evictable = sorted((f for f in files if now - f[2] > CACHE_MIN_AGE),
+                           key=lambda f: f[2])       # oldest first
+        for path, size, _mtime in evictable:
+            if total <= cap:
+                break
+            _unlink_quietly(path)
+            done.add(path)
+            total -= size
+            removed += 1
+    # age cap: a payload nobody asked for in half a year is dead weight, cap or
+    # no cap (this is what actually keeps a long-lived install bounded)
+    for path, size, mtime in files:
+        if path in done:
+            continue
+        if now - mtime > CACHE_MAX_AGE and now - mtime > CACHE_MIN_AGE:
+            _unlink_quietly(path)
+            total -= size
+            removed += 1
+    return removed
+
+
+def clear_cache() -> int:
+    """Delete the whole image cache (the `clear cached images` API action).
+
+    Returns the number of bytes removed. Bounded retention is automatic; this is
+    the explicit user-triggered path. Callers must not hold `_fetch_lock`.
+    """
+    files = _cache_files()
+    freed = sum(size for _p, size, _t in files)
+    for path, _size, _mtime in files:
+        try:
+            path.unlink()
+        except OSError:
+            pass
+    return freed
+
+
+def _prune_cache_opportunistically() -> None:
+    """Called after a cache write; does the real work at most every N writes."""
+    global _cache_writes_since_check
+    _cache_writes_since_check += 1
+    if _cache_writes_since_check < CACHE_CHECK_EVERY:
+        return
+    _cache_writes_since_check = 0
+    try:
+        prune_cache()
+    except Exception:                       # noqa: BLE001 - never break a fetch
+        pass
+
 
 def fetch_image_cached(obj: dict):
     """Cache-only lookup for table thumbnails - never touches the network.
@@ -420,12 +538,14 @@ def fetch_image(obj: dict, ignore_negative: bool = False):
             cache_path.write_bytes(blob)
             meta_path.write_text(json.dumps({"ctype": ctype, "v": CACHE_VERSION}))
             _note_success()
+            _prune_cache_opportunistically()   # SP-10: cheap counter + rare prune
             return blob, ctype
 
         # only remember failures that are the object's fault; network hiccups retry
         if not temporary_failure:
             meta_path.write_text(json.dumps({"none": True, "ts": time.time(),
                                              "v": NEG_VERSION}))
+            _prune_cache_opportunistically()   # negative markers count too
         else:
             _note_failure()
         return None, None

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import csv
 import json
 import math
 import sqlite3
@@ -107,6 +108,20 @@ _BOOL_SETTINGS = ("moon_aware", "adv_mode", "weather_auto", "view_full_day",
 _STR_SETTINGS = ("timezone", "theme")
 _SIZE_UNITS = ("arcmin", "arcsec", "deg")
 
+# Settings stored as a number but read back through an int()/float() coercion.
+# The importer refuses a value it cannot coerce (fail closed) and `/api/state`
+# additionally clamps/falls back (defence in depth for a row that got in some
+# other way) - PY-02.
+_NUM_SETTINGS = (("bortle", 1, 9), ("edge_space", 0, 1000), ("min_vis", 0, 100))
+
+
+def _finalize_num_setting(value, lo, hi):
+    """A finite int in [lo, hi], or None when the stored value is unusable."""
+    if value is None or isinstance(value, bool) \
+            or not isinstance(value, (int, float)) or not math.isfinite(float(value)):
+        return None
+    return max(lo, min(hi, int(value)))
+
 
 def _validate_import_settings(settings: dict) -> None:
     """Validate the settings shapes that server code reads.
@@ -131,7 +146,12 @@ def _validate_import_settings(settings: dict) -> None:
     if _pid and safe_token(_pid) is None:
         raise ValueError(
             "settings.active_pano_id must be a plain panorama id")
-    for key, lo, hi in (("bortle", 1, 9), ("edge_space", 0, 1000)):
+    # PY-02: `min_vis` is the FOURTH int-coerced setting and had no check at
+    # all, so `"min_vis": "abc"` imported cleanly and then made every
+    # `/api/state` answer 500 (`int(db.setting("min_vis", 1))`) - the desktop
+    # awaits that route before rendering anything, so one crafted bundle
+    # bricked it at every boot. Same rule as bortle/edge_space.
+    for key, lo, hi in _NUM_SETTINGS:
         if key in settings:
             v = settings[key]
             if isinstance(v, bool) or not isinstance(v, (int, float)) \
@@ -267,6 +287,47 @@ CREATE TABLE IF NOT EXISTS advanced_objects (
 """
 
 
+def _accepted_records(panoramas: list, images: list) -> dict:
+    """The records `import_bundle` will really store, with their canonical path.
+
+    ONE predicate, used by the insert loops below AND by `app/backup.py` to
+    decide which payload files to write (PY-06, SP-05): the restore used to
+    iterate the RAW bundle list, so a record whose id failed `safe_token` never
+    became a row but still had its payload written - an orphan file in
+    `data/panos`, never cleaned, reported as `pano_images: 1` beside
+    `panoramas: 0`.
+    """
+    acc_panos = []
+    for p in panoramas:
+        rel = safe_rel(p.get("file"))
+        # the ID is interpolated into a filename by the crop route, so an id
+        # that could act as a path is dropped too
+        pid_ok = safe_token(p.get("id"))
+        if rel is None or pid_ok is None:
+            continue
+        acc_panos.append({"id": pid_ok, "file": rel, "raw": p})
+    acc_images = []
+    for im in images:
+        rel = safe_rel(im.get("file"))
+        if rel is None:
+            continue
+        acc_images.append({"file": rel, "raw": im})
+    return {"panoramas": acc_panos, "images": acc_images,
+            "skipped": {"panoramas": len(panoramas) - len(acc_panos),
+                        "images": len(images) - len(acc_images)}}
+
+
+def _reject_duplicate_custom_ids(customs: list) -> None:
+    """PY-07: two bundle targets sharing an id become ONE row (INSERT OR
+    REPLACE) while the summary reports both - the silent-loss shape PY-01 was
+    fixed for, in its record-id form. No NightSeam export can produce it."""
+    ids = [c.get("id") for c in customs]
+    if len(set(ids)) != len(ids):
+        raise ValueError(
+            "imported customs contain two records with the same id; "
+            "refusing to let one replace the other")
+
+
 class Database:
     def __init__(self, db_path: Path):
         self.path = db_path
@@ -395,6 +456,9 @@ class Database:
             self.conn.commit()
 
     def advanced_count(self) -> int:
+        """How many rows `advanced_objects` holds (CD-04: this accessor was
+        defined twice in the class; the second definition silently shadowed the
+        first, so an edit to the dead copy changed nothing)."""
         with self.lock:
             r = self.conn.execute(
                 "SELECT COUNT(*) FROM advanced_objects").fetchone()
@@ -460,12 +524,6 @@ class Database:
                     r["_adv"] = True
                 out.extend(adv)
         return _drop_retired_fields(out)
-
-    def advanced_count(self) -> int:
-        with self.lock:
-            r = self.conn.execute(
-                "SELECT COUNT(*) FROM advanced_objects").fetchone()
-            return r[0]
 
     def get_object(self, oid: str) -> dict | None:
         with self.lock:
@@ -742,14 +800,21 @@ class Database:
             return dict(r) if r else None
 
     def rename_images(self, old_name: str, new_name: str, otype: str | None,
-                      new_folder: str):
+                      new_folder: str, moved: dict[str, str] | None = None):
         """Rename an unresolved object group (name, type and stored paths).
 
         Matching is whitespace/case-insensitive, mirroring the library grouping
         (`imglib.name_key`), so one rename cannot leave sibling spellings behind
-        pointing at a folder that was moved away."""
+        pointing at a folder that was moved away.
+
+        `moved` is the map the disk move returned ({old relative path: new
+        relative path}). PY-01: the stored path now becomes the file's REAL
+        destination, so a frame that had to be uniquified when the rename merged
+        into an existing folder is not left aliased with the frame it would have
+        overwritten."""
         from .imglib import name_key          # local import: keeps the
         target = name_key(old_name)           # module import graph acyclic
+        moved = moved or {}
         with self.lock:
             cur = self.conn.cursor()
             rows = [dict(r) for r in cur.execute(
@@ -762,10 +827,16 @@ class Database:
             for r in rows:
                 if r["id"] not in ids:
                     continue
-                parts = r["file"].split("/", 1)
-                if len(parts) == 2 and parts[0] != new_folder:
+                if r["file"] in moved:
+                    new_file = moved[r["file"]]
+                else:
+                    parts = r["file"].split("/", 1)
+                    new_file = (f"{new_folder}/{parts[1]}"
+                                if len(parts) == 2 and parts[0] != new_folder
+                                else r["file"])
+                if new_file != r["file"]:
                     cur.execute("UPDATE images SET file=? WHERE id=?",
-                                (f"{new_folder}/{parts[1]}", r["id"]))
+                                (new_file, r["id"]))
             self.conn.commit()
 
     # ---------------- observations (journal) ----------------
@@ -850,7 +921,8 @@ class Database:
     def import_bundle(self, settings: dict, sites: list, rigs: list,
                       panoramas: list, customs: list | None = None,
                       images: list | None = None,
-                      observations: list | None = None) -> dict:
+                      observations: list | None = None,
+                      accepted: dict | None = None) -> dict:
         """Replace all user data with an imported bundle (catalog untouched).
 
         The replace runs inside ONE transaction and rolls back on any failure:
@@ -871,7 +943,15 @@ class Database:
         `images[].file` goes through `paths.safe_rel`, which rejects absolute,
         drive/UNC and `..` paths. A record with such a value is dropped instead
         of stored (it would otherwise be resolved by the read/delete routes
-        long after the import). Returns the number of dropped records.
+        long after the import). Returns `{"panoramas": n, "images": n}`, the
+        number of dropped records.
+
+        `accepted` (PY-06/SP-05) is an out-parameter: the caller can pass a dict
+        and receive `{"panoramas": [...], "images": [...]}` - the records that
+        really reached the tables, with their canonical `file`. `app/backup.py`
+        drives its payload writes from `_accepted_records` (the SAME predicate),
+        so a bundle record whose id failed `safe_token` cannot leave an orphan
+        file behind and the summary cannot report a pair that was never stored.
         """
         customs = customs or []
         images = images or []
@@ -880,6 +960,16 @@ class Database:
                 isinstance(x, list)
                 for x in (sites, rigs, panoramas, customs, images)):
             raise ValueError("malformed setup bundle")
+        # PY-04: a non-dict entry used to blow up as an AttributeError DEEP in
+        # the transaction, which the route reported as an opaque 500. Every
+        # collection holds records, so check the shape here: a ValueError is the
+        # documented 400.
+        for label, records in (("sites", sites), ("rigs", rigs),
+                               ("panoramas", panoramas),
+                               ("customs", customs), ("images", images)):
+            if not all(isinstance(r, dict) for r in records):
+                raise ValueError(f"malformed setup bundle: {label} "
+                                 "must be a list of objects")
         # FIX-4 (review PY1/PY2): fail closed BEFORE any write. A malformed
         # profile would fail open at planning time and a hostile setting could
         # brick /api/state at every boot; the transaction below is never entered.
@@ -924,7 +1014,16 @@ class Database:
         # still over-count. Refuse the bundle (no export produces this shape).
         _reject_duplicate_paths(images, "images")
         _reject_duplicate_paths(panoramas, "panoramas")
-        skipped = {"panoramas": 0, "images": 0}
+        # PY-07: two targets sharing an id would collapse to one row under
+        # INSERT OR REPLACE while the summary still reported both.
+        _reject_duplicate_custom_ids(customs)
+        # ONE acceptance pass (PY-06/SP-05): the caller's payload loop and the
+        # inserts below must agree on which records exist.
+        store = _accepted_records(panoramas, images)
+        panoramas, images = store["panoramas"], store["images"]
+        skipped = store["skipped"]
+        accepted_panos: list[dict] = []
+        accepted_images: list[dict] = []
         with self.lock:
             cur = self.conn.cursor()
             try:
@@ -948,20 +1047,15 @@ class Database:
                         (r.get("id"), r.get("name"), r.get("focal_mm"),
                          r.get("sensor_w"), r.get("sensor_h"),
                          r.get("fov_w"), r.get("fov_h")))
-                for p in panoramas:
-                    rel = safe_rel(p.get("file"))
-                    # the ID is interpolated into a filename by the crop route,
-                    # so an id that could act as a path is dropped too
-                    pid_ok = safe_token(p.get("id"))
-                    if rel is None or pid_ok is None:
-                        skipped["panoramas"] += 1
-                        continue
+                for acc in panoramas:
+                    p = acc["raw"]
+                    accepted_panos.append(acc)
                     cur.execute(
                         "INSERT INTO panoramas(id,name,file,az_offset,alt_bottom,"
                         "alt_top,strokes,profile,profile_top,active,fov,paint_mode,"
                         "block_above) "
                         "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                        (pid_ok, p.get("name"), rel,
+                        (acc["id"], p.get("name"), acc["file"],
                          p.get("az_offset", 0), p.get("alt_bottom", 0),
                          p.get("alt_top", 45), json.dumps(p.get("strokes", [])),
                          json.dumps(p.get("profile", [])),
@@ -991,17 +1085,15 @@ class Database:
                              str(c.get("primary_name", "")).lower(),
                              str(c.get("otype", "")).lower(), "custom",
                              str(c.get("id", ""))]))))
-                for im in images:
-                    rel = safe_rel(im.get("file"))
-                    if rel is None:
-                        skipped["images"] += 1
-                        continue
+                for acc in images:
+                    im = acc["raw"]
+                    accepted_images.append(acc)
                     cur.execute(
                         "INSERT OR REPLACE INTO images"
                         "(id,file,orig_name,object_id,object_name,otype,ra_hours,"
                         "dec_deg,exposure,date_obs,filter,telescope,imagetyp,"
                         "ingested_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                        (im.get("id"), rel, im.get("orig_name", ""),
+                        (im.get("id"), acc["file"], im.get("orig_name", ""),
                          im.get("object_id"), im.get("object_name", ""),
                          im.get("otype"), im.get("ra_hours"), im.get("dec_deg"),
                          im.get("exposure"), im.get("date_obs"),
@@ -1022,6 +1114,9 @@ class Database:
             except Exception:
                 self.conn.rollback()
                 raise
+        if accepted is not None:
+            accepted["panoramas"] = accepted_panos
+            accepted["images"] = accepted_images
         return skipped
 
 
@@ -1044,21 +1139,34 @@ def _drop_retired_fields(rows: list[dict]) -> list[dict]:
 def _read_catalog_csv(csv_path: Path) -> list[dict]:
     """The bundled OpenNGC catalog as seed-ready dicts (empty when the file is
     missing, so a broken install still boots). Malformed rows are skipped, never
-    fatal - the CSV is data, not code."""
+    fatal - the CSV is data, not code.
+
+    CD-03 (0.6.32 review): parsed with the `csv` module, NOT `line.split(";")`.
+    The generator (`scripts/build_adv_catalog.py`) writes with
+    `csv.writer(..., delimiter=";")`, which QUOTES a field containing `;`, `"`
+    or a newline - a naive split mis-counts such a row and it was silently
+    dropped here. The comment/blank-line/field-count behaviour is unchanged
+    (a short comment line is exactly one field, so it is skipped by the count
+    check as before; `csv.reader` also handles a quoted embedded newline, which
+    the line-by-line split could not). `scripts/match_popularity.py` keeps an
+    identical copy of this loop - both readers are pinned by
+    `tests/test_catalog_csv_readers.py`.
+    """
     if not csv_path.is_file():
         return []
     cols = ("id", "primary_name", "messier", "ngcic", "other", "otype",
             "ra_hours", "dec_deg", "vmag", "size_am", "constellation",
             "wiki", "blurb", "search")
     rows: list[dict] = []
-    with open(csv_path, encoding="utf-8") as f:
-        for line in f:
-            if line.startswith("#") or not line.strip():
+    with open(csv_path, encoding="utf-8", newline="") as f:
+        for parts in csv.reader(f, delimiter=";"):
+            if not parts:
+                continue                      # blank line -> [] (was skipped)
+            if parts[0].startswith("#"):
+                continue                      # comment line
+            if len(parts) != len(cols):
                 continue
-            vals = line.rstrip("\n").split(";")
-            if len(vals) != len(cols):
-                continue
-            d = dict(zip(cols, vals))
+            d = dict(zip(cols, parts))
             try:
                 d["ra_hours"] = float(d["ra_hours"]) if d["ra_hours"] else None
                 d["dec_deg"] = float(d["dec_deg"]) if d["dec_deg"] else None

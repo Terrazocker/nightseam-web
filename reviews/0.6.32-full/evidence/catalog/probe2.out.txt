@@ -1,0 +1,15 @@
+rebuilt counts: {'NGC/IC': 12098, 'addendum': 62, 'supplement': 16} total 12176
+rebuilt types: {'galaxy': 10792, 'nebula': 302, 'asterism': 66, 'open_cluster': 664, 'planetary': 132, 'supernova_remnant': 12, 'globular': 208}
+body identical: True
+rebuilt sha256: 06613b03cc19a996e5ba391bc0993c18178495108d5d470c09a3179ee73901d4
+shipped body sha256: 06613b03cc19a996e5ba391bc0993c18178495108d5d470c09a3179ee73901d4
+
+NGC rows=13970 raw types={'**': 243, 'G': 10482, 'Dup': 651, 'Other': 419, 'RfN': 38, 'HII': 82, 'NonEx': 10, '*': 546, 'GPair': 231, '*Ass': 62, 'OCl': 652, 'GTrpl': 26, 'PN': 130, 'Neb': 94, 'Cl+N': 67, 'SNR': 11, 'GGroup': 11, 'GCl': 204, 'Nova': 3, 'EmN': 8}
+  types neither mapped nor skipped: []
+  rows dropped as non-objects: 1872
+  expected objects = 13970 - 1872 = 12098
+
+addendum rows=64 raw types={'DrkN': 2, 'HII': 1, '*Ass': 2, 'OCl': 11, 'G': 40, 'GCl': 4, 'GGroup': 2, '**': 1, 'Dup': 1}
+  types neither mapped nor skipped: []
+  rows dropped as non-objects: 2
+  expected objects = 64 - 2 = 62

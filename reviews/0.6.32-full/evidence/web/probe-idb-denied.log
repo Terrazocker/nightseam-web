@@ -1,0 +1,12 @@
+== P4 IndexedDB denied (mode=throw-open) ==========================
+  ..    WS.getSites() -> SecurityError: SecurityError: access to IndexedDB is denied
+  PASS  all() rejects when IndexedDB is unavailable (get/set/del swallow it, all() does not)
+  ..    boot() -> SecurityError: SecurityError: access to IndexedDB is denied
+  ..    #splash.style.display="" | #splash-text="catalog ready · 0 objects"
+  PASS  boot() rejects - it has no catch around the user-data load
+  PASS  the splash is NEVER hidden: the app stays a spinner with no view and no retry  [expected FAIL = defect]
+  ..    window 'unhandledrejection' handler registered inside boot(): true
+  ..    error banner shown for 15s with: "⚠ SecurityError: SecurityError: access to IndexedDB is denied"
+  PASS  the only feedback is a 15 s banner over a frozen splash
+
+== P4 summary: 4 passed, 0 failed ==

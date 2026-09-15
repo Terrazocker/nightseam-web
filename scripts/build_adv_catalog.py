@@ -26,11 +26,14 @@ ROOT = Path(__file__).resolve().parents[1]
 SRC = Path(sys.argv[1]) if len(sys.argv) > 1 else ROOT / "data" / "NGC.csv"
 SRC_ADDENDUM = (Path(sys.argv[2]) if len(sys.argv) > 2
                 else SRC.with_name("addendum.csv"))
-# The project's OWN supplement (app/data/supplement.csv, committed): the seven
-# objects OpenNGC cannot carry - either absent (Abell 21, Jones-Emberson 1,
-# Sh2-276, Mel 20) or filed as non-objects (IC 1318 is typed `*`, M73 `Other`,
-# M40 `**`). It is already in the catalogue's column layout, so it is appended
-# as-is; only its id uniqueness is checked.
+# The project's OWN supplement (app/data/supplement.csv, committed): the SIXTEEN
+# objects OpenNGC cannot carry, in two batches. Batch 1 (7) is either absent
+# (Abell 21, Jones-Emberson 1, Sh2-276, Mel 20) or filed as a non-object
+# (IC 1318 is typed `*`, M73 `Other`, M40 `**`); batch 2 (9) lives outside
+# OpenNGC's SCOPE (Sharpless/Barnard/LDN/LBN designations, `vmag` deliberately
+# empty). The file uses the catalogue's own column layout, but it is PARSED here
+# (see `read_supplement`) and re-emitted through the same writer as the OpenNGC
+# rows; only id uniqueness is checked across all sources.
 SRC_SUPPLEMENT = ROOT / "app" / "data" / "supplement.csv"
 OUT = ROOT / "app" / "data" / "openned.csv"
 
@@ -160,7 +163,12 @@ def build_rows(path: Path, source: str) -> list[dict]:
 
 
 def read_supplement(path: Path = SRC_SUPPLEMENT) -> list[dict]:
-    """The committed supplement, already in the catalogue's column layout."""
+    """Parse the committed supplement - `;`-separated, the catalogue's columns.
+
+    Not an "appended as-is" copy: the numeric columns are cast, an empty `vmag`
+    stays None (batch 2 has no credible magnitude) and an unknown type is a hard
+    error. The 16 rows and their two batches are documented in the file header.
+    """
     cols = ("id", "primary_name", "messier", "ngcic", "other", "otype", "ra_hours",
             "dec_deg", "vmag", "size_am", "constellation", "wiki",
             "blurb", "search")

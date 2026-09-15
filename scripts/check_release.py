@@ -651,13 +651,14 @@ def check_changelog(state: State, version: str, allow_dirty: bool = False):
     # publishes no tag, so there is no released version to curate.
     needs_curation = is_exact_tag(state.describe) or (
         allow_dirty and is_dirty_tag(state.describe))
-    if needs_curation and released not in state.curated:
+    if needs_curation and not str(state.curated.get(released) or "").strip():
         findings.append(Finding(
             ERROR, "changelog",
             f"no curated summary for '{released}' in scripts/build_changelog.py "
             "CURATED — the public changelog would ship this release with "
-            "nothing to show. Add a plain-words entry (and commit it BEFORE "
-            "tagging: a post-tag edit makes every published version '-dirty')."))
+            "nothing to show. An EMPTY string is not an entry either (TR-05): "
+            "add the real text, and commit it BEFORE tagging — a post-tag edit "
+            "makes every published version '-dirty'."))
     return findings
 
 
@@ -889,6 +890,24 @@ def check_core_findings(root: Path = ROOT):
     return [Finding(ERROR, "core", problem) for problem in mod.scan()]
 
 
+def check_catalog_findings(root: Path = ROOT):
+    """TR-01 (0.6.32 review): the catalog DATA token guard was run by
+    `check_js.py` alone - neither this gate nor `pre_tag_check.py` called it, so
+    a COMMITTED catalog change with an unbumped `CATALOG_TOKEN` could reach a
+    released build and keep serving the old ~4 MB file. Same shape as
+    `check_core_findings`: real repo only, keeps evaluate() pure."""
+    root = Path(root)
+    if root.resolve() != ROOT.resolve():
+        return []
+    script = root / "scripts" / "check_catalog_token.py"
+    if not script.is_file():
+        return []
+    spec = importlib.util.spec_from_file_location("check_catalog_token", script)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return [Finding(ERROR, "catalog-token", problem) for problem in mod.scan()]
+
+
 def run(allow_dirty: bool = False, include_stage: bool = True,
         root: Path = ROOT, stream=sys.stdout):
     """Collect, evaluate, print the report.  Returns the process exit code."""
@@ -896,6 +915,7 @@ def run(allow_dirty: bool = False, include_stage: bool = True,
     findings = evaluate(state, allow_dirty=allow_dirty,
                         include_stage=include_stage)
     findings += check_core_findings(root)
+    findings += check_catalog_findings(root)
     describe = state.describe or "<git describe failed>"
     print(console_safe(f"NightSeam release check - {root}"), file=stream)
     print(console_safe(

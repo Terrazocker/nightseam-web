@@ -8,16 +8,17 @@
  *   • Settings — sites, rigs, custom targets, backup/restore (webstore.js)
  * All sky math runs client-side (astro.js, Meeus algorithms).
  */
-import * as E from './astro.js?v=16';
-import * as Hor from './horizon.js?v=48';
-import * as WS from './webstore.js?v=26';
+import * as E from './astro.js?v=21';
+import * as Hor from './horizon.js?v=54';
+import * as WS from './webstore.js?v=31';
 import { initDragWindows } from './dragwin.js?v=1';
 import { fmtSize, sizeArcmin, framePct, magVisible, skyClampZoom,
-         skyViewMatrix, skyScreenToBase, skyClampFocus } from './format.js?v=23';
-import { nightStats, nightStatsBatch, sampleVisible } from './nightrank.js?v=14';
+         skyViewMatrix, skyScreenToBase, skyClampFocus } from './format.js?v=28';
+import { nightStats, nightStatsBatch, sampleVisible } from './nightrank.js?v=20';
 import { TYPE_LABELS, TYPE_COLORS, searchBlob as coreSearchBlob,
-         TIER_ORDER, assignPopularityTiers, wikiTitles } from './core.js?v=24';
-import { popularityFactor as corePopularityFactor } from './core.js?v=24';
+         TIER_ORDER, assignPopularityTiers, wikiTitles,
+         inTonightPool } from './core.js?v=33';
+import { popularityFactor as corePopularityFactor } from './core.js?v=33';
 
 // Cache-bust token for the ~4 MB data file web/catalog.json. It is NOT a JS
 // module, so it cannot carry a ?v= in an import: this named token IS its
@@ -25,7 +26,7 @@ import { popularityFactor as corePopularityFactor } from './core.js?v=24';
 // cacheable). Bump it in the SAME commit whenever web/catalog.json changes;
 // web/catalog.manifest.json records the bytes for the current token and
 // scripts/check_catalog_token.py enforces the pairing.
-const CATALOG_TOKEN = '9';
+const CATALOG_TOKEN = '10';
 
 /** Debounce timer for the catalog search box — re-renders at most every
  *  150 ms while typing instead of once per keystroke (12k-row filter). */
@@ -85,35 +86,19 @@ const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const typeColor = (o) => TYPE_COLORS[o.otype] || '#9fb4d8';
 
-/* Hidden popularity scoring — log-scale normalization of the popularity source data.
-   M42 (165k) → ~1.0, dim object (100) → ~0.3, no data → 0. */
-let _popMap = null;   // normalized-name -> score, from the live the popularity source fetch
-
-/* the popularity source keys Messier objects with a space ("M 42") while the catalog
-   stores "M42", so both sides are normalized before lookup - otherwise the
-   live values were never found and the baked fallback silently won. */
-const popKey = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9]/g, "");
-async function loadPopularity() {
-  try {
-    const r = await fetch('https://popularity-source.invalid/');
-    if (r.ok) {
-      const raw = await r.json();
-      _popMap = {};
-      for (const [k, v] of Object.entries(raw)) _popMap[popKey(k)] = v;
-    }
-  } catch (_) { /* offline or blocked — scoring still works without it */ }
-}
+/* Hidden popularity scoring - log-scale normalization of the popularity source
+   community scores BAKED into the catalog payload (`app/popularity_data.py` ->
+   `web/catalog.json`). The web app makes NO request to the popularity source: that
+   snapshot was fetched once (see `scripts/match_popularity.py`, which is
+   offline by default) and ships with the catalog, so ranking works fully
+   offline and no visitor contacts a third party. M42 (165k) -> ~1.0, dim
+   object (100) -> ~0.3, no data -> 0. */
 function popularityOf(o) {
-  /* Prefer the live the popularity source fetch; fall back to the baked catalog
-     field (from the DB via build_web.py) when offline/blocked. */
-  if (_popMap) {
-    const keys = [o.messier, o.ngcic, o.primary_name].filter(Boolean);
-    for (const k of keys) {
-      const v = _popMap[popKey(k)];
-      if (v) return v;
-    }
-  }
-  return o.popularity || 0;
+  /* SP-06 (0.6.32 review): the baked field is the ONLY source now, so a
+     non-numeric value would feed NaN into the log-scale curve and then into the
+     ranking comparator (engine-defined order). Guard it here. */
+  const v = Number(o.popularity);
+  return Number.isFinite(v) ? v : 0;
 }
 function popularityFactor(o) {
   return corePopularityFactor(popularityOf(o));
@@ -219,7 +204,15 @@ function ms(d) { return d instanceof Date && !isNaN(d) ? d.getTime() : null; }
 function clampSkyTime() {
   if (!S.site) return null;
   const r = scrubRange();
+  const before = S.skyTime.getTime();
   S.skyTime = new Date(E.scrubClamp(S.skyTime.getTime(), r.start.getTime(), r.end.getTime()));
+  // WE-07 (0.6.32 review): a site/date change moves the selected instant, but the
+  // always-visible topbar scrub only re-syncs on the `sky:time` broadcast - so it
+  // kept showing the PREVIOUS night's time (probe: S.skyTime 19:17, label 19:51).
+  // Announce the clamp so the slider position and label follow.
+  if (S.skyTime.getTime() !== before) {
+    window.dispatchEvent(new CustomEvent('sky:time'));
+  }
   return r;
 }
 
@@ -252,7 +245,7 @@ function nightAnchor() {
   return WS.effToday();
 }
 
-/** Standard (the 200 most popular) vs advanced (all 12,160 OpenNGC objects). */
+/** Standard (the 200 most popular) vs advanced (all 12,176 OpenNGC + supplement objects). */
 function advMode() { return !!Hor.getPrefs().advMode; }
 function activeCatalog() {
   return advMode() ? CAT : CAT.filter((o) => !o._adv);
@@ -362,7 +355,7 @@ async function loadWeather() {
 function wxChipText() {
   if (WX_STATE.loading) return '⏳ loading weather…';
   if (WX_STATE.error) return '⚠️ weather unavailable — click to retry';
-  if (!WX_STATE.data) return '☁️ Weather — click to load';
+  if (!WX_STATE.data) return '☁️ Weather';
   const c = WX_STATE.data.current;
   const [icon] = wxInfo(c.weather_code);
   return `${icon} ${Math.round(c.temperature_2m)}°C · ${Math.round(c.wind_speed_10m)} km/h`;
@@ -503,10 +496,15 @@ async function loadWikiThumb(o, imgEl, phEl) {
     const link = document.querySelector('#d-wikilink');
     if (link) link.href = 'https://en.wikipedia.org/wiki/' + encodeURIComponent(page.replace(/ /g, '_'));
     showBlob(blob);
-  } catch {
-    // only a DEFINITIVE answer is remembered: caching a rate-limited attempt as
-    // "no photo" hid every photo for 30 days after one bad minute.
-    const definitive = !transient;
+  } catch (err) {
+    // Only a DEFINITIVE answer from Wikipedia is remembered: "no such page /
+    // no thumbnail" (`no-thumb`) or "those bytes are not an image" (`bad-type`).
+    // Every NETWORK failure must stay retryable - offline, DNS, a rejected
+    // fetch, or the 12 s timeout aborting the request. 0.6.32 regressed here: a
+    // rejected fetch never set `transient`, so a single offline open cached
+    // "no photo on Wikipedia" for 30 days and the 0.6.31 behaviour was lost.
+    const reason = String((err && err.message) || '');
+    const definitive = !transient && (reason === 'no-thumb' || reason === 'bad-type');
     if (definitive) await idbSet(key, { missing: true, ts: Date.now() });
     phEl.textContent = definitive
       ? 'no photo on Wikipedia — see the link below'
@@ -533,6 +531,23 @@ function splashText(t) { const el = $('#splash-text'); if (el) el.textContent = 
 function hideSplash() {
   const sp = $('#splash');
   if (sp) sp.style.display = 'none';
+}
+
+/** A dead end must never be silent (WE-06, 0.6.32 review): the app used to sit
+ *  on the splash forever when storage was blocked or the catalog failed to load,
+ *  with the tabs inert and only a 15 s banner. Hide the splash, say what is
+ *  wrong, and give the user a way out. */
+function bootFailure(title, detail) {
+  const view = $('#view');
+  hideSplash();
+  if (!view) return;
+  view.innerHTML = `<div class="card" style="max-width:560px;margin:48px auto;padding:22px 24px;text-align:center">
+      <h2 style="font-size:18px;margin-bottom:10px">${esc(title)}</h2>
+      <p style="color:var(--muted);font-size:13px;line-height:1.65">${esc(detail)}</p>
+      <p style="margin-top:18px"><button class="ghost" id="boot-reload">Reload</button></p>
+    </div>`;
+  const b = $('#boot-reload');
+  if (b) b.addEventListener('click', () => location.reload());
 }
 
 function route() {
@@ -639,8 +654,13 @@ function renderTonight(silent) {
     // exception: 12k objects x 121 samples would make this view sluggish in the
     // browser, so the web caps advanced candidates at mag 9 (documented
     // intentional difference; the desktop filters those in Targets instead).
+    // The pool rule is core/visibility.js::inTonightPool - ONE implementation,
+    // because the inline `o.vmag != null` this replaced silently dropped the 45
+    // standard-mode rows whose magnitude OpenNGC leaves empty (IC 1396, the
+    // Running Man, NGC 281, the Flame, the Tulip, Simeis 147, the Double
+    // Cluster, the Pipe Nebula, ...) while the comment claimed desktop parity.
     const candidates = activeCatalog().filter(
-      (o) => o.vmag != null && (!o._adv || o.vmag <= 9));
+      (o) => inTonightPool(o.vmag, !!o._adv));
     const rows = [];
     for (const o of candidates) {
       const tf = tfOf(o);
@@ -737,7 +757,7 @@ function renderTonight(silent) {
         <div class="card"><h3>Rising later tonight</h3><ul class="pick">${risingLater.length ? risingLater.map((r) => `<li data-id="${esc(r.o.id)}">
           <span class="dot" style="background:${typeColor(r.o)}"></span>
           <span><span class="p-name">${esc(r.o.primary_name)}</span>${r.o.messier ? `<span class="p-tags">${esc(r.o.messier)}</span>` : ''}</span>
-          <span class="p-right"><b>transit ${fmtClock(E.dateFromJD(r.transitJd))}</b>peaks ${r.maxAlt.toFixed(0)}°</span>
+          <span class="p-right">transit ${fmtClock(E.dateFromJD(r.transitJd))}<b>peaks ${r.maxAlt.toFixed(0)}°</b></span>
         </li>`).join('') : '<li style="cursor:default">everything already up or setting</li>'}</ul></div>
       </div>
       <p class="cat-count" style="margin-top:10px;text-align:center">night of ${dateKey(nightAnchor())} · ${esc(S.site.label || `${S.site.lat.toFixed(2)}, ${S.site.lon.toFixed(2)}`)} · horizon: ${pano ? esc(pano.name) : 'none'} · click any target for details</p>`;
@@ -860,16 +880,24 @@ function renderSky() {
   const tip = $('#tooltip');
 
   /* Curve objects / advanced pool by the shared magnitude rule (desktop parity):
-     EVERY object is filtered by magnitude - at the default limit 10 the handful
-     of standard objects fainter than 10 are hidden, exactly
+     EVERY object is filtered by magnitude through ONE predicate - at the default
+     limit 10 the handful of standard objects fainter than 10 are hidden, exactly
      as the desktop #skyMag does. Objects with no measured magnitude show only at
      the slider maximum. Advanced objects are additionally capped at 1400 by
-     brightness for responsiveness. */
-  const computeCandidates = () => [
-    ...base.filter((o) => !o._adv && magVisible(o.vmag, S.skyMag, magMax)),
-    ...base.filter((o) => o._adv && o.vmag != null && magVisible(o.vmag, S.skyMag, magMax))
-      .sort((a, b) => (a.vmag ?? 99) - (b.vmag ?? 99)).slice(0, 1400),
-  ];
+     brightness for responsiveness.
+     CO-10 (0.6.32 review): the advanced branch used to add `o.vmag != null`
+     before the shared rule, which excluded every no-magnitude ADVANCED row at
+     every slider position - so the 9 batch-2 supplement objects (`vmag`
+     deliberately empty, advanced-only) could never reach the chart even at the
+     maximum, contradicting the rule stated right here and in AGENTS.md. */
+  const computeCandidates = () => {
+    const passes = (o) => magVisible(o.vmag, S.skyMag, magMax);
+    return [
+      ...base.filter((o) => !o._adv && passes(o)),
+      ...base.filter((o) => o._adv && passes(o))
+        .sort((a, b) => (a.vmag ?? 99) - (b.vmag ?? 99)).slice(0, 1400),
+    ];
+  };
   let candidates = computeCandidates();
 
   let _dpr = 1;
@@ -1919,6 +1947,26 @@ function upsertTarget(t) {
   else { CAT.push(t); byId.set(t.id, t); }
 }
 
+/** Make CAT/byId's custom targets match the STORE exactly.
+ *
+ *  WE-04 (0.6.32 review): a backup import REPLACES the custom-target records, but
+ *  the old code only ADDED what it read back (`upsertTarget`), so a custom the
+ *  bundle dropped stayed in CAT/byId - still listed, searchable, drawn on the sky
+ *  chart and openable from the detail view until a page reload, while Setup
+ *  showed the truth. Remove what is no longer stored, then add/update. */
+function syncCustomTargets(stored) {
+  const keep = new Set((stored || []).map((t) => t.id));
+  for (let i = CAT.length - 1; i >= 0; i--) {
+    const o = CAT[i];
+    if (o.custom && !keep.has(o.id)) {
+      CAT.splice(i, 1);
+      byId.delete(o.id);
+      searchCache.delete(o);
+    }
+  }
+  for (const t of (stored || [])) upsertTarget(t);
+}
+
 const objName = (o) => o.primary_name || o.id;
 
 /** Setup dialog — tabs mirror the desktop app: Sites / Rigs / Targets / Backup.
@@ -1948,7 +1996,7 @@ async function reloadRigs() {
   RIGS.push(...rigs);
   const rsSel = $('#rigSelect');
   if (rsSel) {
-    rsSel.innerHTML = '<option value="">None — no frame coverage shown</option>' +
+    rsSel.innerHTML = '<option value="">None — no coverage</option>' +
       rigs.map((r) => `<option value="${esc(r.id)}">${esc(r.name)}</option>`).join('');
     // keep the active choice when the rig still exists; a deleted rig falls
     // back to "none". (refreshMenuUI is local to boot(), so this must not call it.)
@@ -2422,7 +2470,7 @@ function closeModal() {
 /** Re-read user data after a backup import (sites, targets, rigs). */
 async function reinitUserData() {
   SITES = await WS.getSites();
-  for (const t of await WS.getTargets()) upsertTarget(t);
+  syncCustomTargets(await WS.getTargets());
   await reloadRigs();
   let sid = Hor.getPrefs().activeSiteId;
   if (!SITES.some((s) => s.id === sid)) sid = SITES.length ? SITES[0].id : null;
@@ -2497,6 +2545,17 @@ async function boot() {
   const tipEl = $('#tooltip');
   S.detailResize = null;
   try {
+    // WE-06: probe storage BEFORE anything renders. If it is blocked, say so and
+    // stop - the old path rejected inside `WS.getSites()` and left the splash up
+    // forever with inert tabs.
+    if (!(await WS.storageOk())) {
+      bootFailure('Local storage is unavailable',
+        'NightSeam keeps your sites, rigs, custom targets and horizons in this '
+        + 'browser\'s IndexedDB, and it cannot open it here. That usually means '
+        + 'private/incognito mode, "block cookies", or a hardened profile. Allow '
+        + 'site data for this page and reload.');
+      return;
+    }
     splashText('loading catalog…');
     const res = await fetch('catalog.json?v=' + CATALOG_TOKEN);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -2513,12 +2572,16 @@ async function boot() {
     CONSTELLATIONS.sort((a, b) => a.localeCompare(b));
     splashText(`catalog ready · ${CAT.length.toLocaleString()} objects`);
   } catch (err) {
-    splashText(`catalog failed to load: ${err.message}`);
+    // WE-06: a failed catalog fetch used to leave the splash up with no way
+    // forward. Explain it and offer a reload.
+    bootFailure('The catalog could not be loaded',
+      `NightSeam could not fetch its catalog (${String((err && err.message) || err)}). `
+      + 'Check the connection and reload the page.');
     return;
   }
 
-  // load the popularity source popularity scores in background (non-blocking)
-  loadPopularity();
+  // popularity ranks from the BAKED catalog field - no network request here
+  // (the popularity source snapshot is shipped; see popularityOf above)
 
   // ---- user data: sites (with first-run welcome), custom targets ----
   SITES = await WS.getSites();
@@ -2542,7 +2605,7 @@ async function boot() {
   applyActiveSite(SITES.find((s) => s.id === sid) || SITES[0]);
 
   // custom targets join the catalog
-  for (const t of await WS.getTargets()) upsertTarget(t);
+  syncCustomTargets(await WS.getTargets());
   applyEdge();
   const ver = await WS.loadVersion();
   const fv = $('#foot-ver');

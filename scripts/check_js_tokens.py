@@ -92,44 +92,44 @@ _VERIFIED_BASELINE_JSON = r"""
 {
  "modules": {
   "app.js": {
-   "sha256": "186f1f284089327ec5085d60ceef17e9fef0d61d7e2edd250ccd94bfea6d59da",
-   "token": "80"
+   "sha256": "6763c0121ef29f9570a42249883ce4019e8436c25262de159d4fab543621916a",
+   "token": "87"
   },
   "astro.js": {
-   "sha256": "a443fa4cedc23cf5230022dcc4a647556c8bf09e45b3b1b46f0ad8bfdf7714c5",
-   "token": "16"
+   "sha256": "b033f45f9711ea0273d77109c91907d885bba2615c4cda853686e42ea58479c4",
+   "token": "21"
   },
   "core.js": {
-   "sha256": "d3e6dd91ed5bcf8a4494efcceda07886e7c96174673bfad972391a436252c400",
-   "token": "24"
+   "sha256": "a8fbf6077e1caf78ad8df0963e9ed8747c3cd7dda0f61909c6d8f9e95ce7c09b",
+   "token": "33"
   },
   "dragwin.js": {
    "sha256": "d8b316eaf6b7d9eeb9f8397ed8df232990992c5d3d3c9830fe160f832a3d529c",
    "token": "1"
   },
   "format.js": {
-   "sha256": "f1227503877a386f57d1d5e857405bc7d0e82e97cecc48c9f3bb856acda4a11b",
-   "token": "23"
+   "sha256": "d00014d2fa4decab8bdaeed7f22b40c8584d3af159bbfccfeeae648a9f88ace1",
+   "token": "28"
   },
   "horizon.js": {
-   "sha256": "e108d741572976c662a0ccfe2fac3166299736eed3ac876165c8b7b50cb2e0c7",
-   "token": "48"
+   "sha256": "91cd977bc49035d14a9bc0caef53587d0600c01657ae5a1b1b3774deadd4af5e",
+   "token": "54"
   },
   "nightrank.js": {
-   "sha256": "5c9e0c0d1f8ff7368472a83f9abe2262a513bba00dc71896f8fafbe7a5a6561f",
-   "token": "14"
+   "sha256": "f8dbb32260629274bcec0b7deba1293168df2b895ec49b53d348425bef2df9c5",
+   "token": "20"
   },
   "style.css": {
-   "sha256": "a1b7e07b5580d94ffb0c573ae151b0d97491dce5c1485fbd0d3af147b969387f",
-   "token": "21"
+   "sha256": "e0790dfbbeb284f52f5e1b74ad800181fe6afca5a81ec046e4bc8d3d6b28e612",
+   "token": "24"
   },
   "themes.css": {
-   "sha256": "97d90884f18ae987aea1f966a081ef09d90d52a361c49c7c934a55482d375a69",
-   "token": "4"
+   "sha256": "2be0515629e11c8175644d1db76f6e435cf943c48673e25044559b9f9669c4d0",
+   "token": "5"
   },
   "webstore.js": {
-   "sha256": "d95ba51e542e3bf8c05de972030a951f9f87edf304d010f6b4d4cdc733d6cff5",
-   "token": "26"
+   "sha256": "820efcfc3c1b99da998e0c9e51d29e38329d986d99e9ed85d7d8e7de7f639993",
+   "token": "31"
   }
  }
 }
@@ -648,7 +648,17 @@ def detector_ok() -> bool:
 
 
 def main(argv: list[str] | None = None) -> int:
-    args = list(sys.argv[1:] if argv is None else argv)
+    """argv is explicit on purpose (TR-06, 0.6.32 review).
+
+    scripts/check_js.py embeds this module and calls `main()` with no arguments;
+    falling back to `list(sys.argv[1:])` made the EMBEDDING process's flags leak
+    in, so `python scripts/check_js.py --self-test` printed the guard's own
+    self-test (and `check_js: OK`) instead of running the missed-bump scan - and
+    `check_js.py --update` would have rewritten this tracked guard's baseline.
+    `check_js_syntax.main()` deliberately does the same thing (pinned by
+    tests/test_js_syntax_check.py); the `__main__` block below passes sys.argv
+    explicitly, so the CLI still accepts the flags."""
+    args = list(argv or [])
     if "--self-test" in args:
         return _self_test()
     if "--update" in args:
@@ -678,4 +688,4 @@ def main(argv: list[str] | None = None) -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(main(sys.argv[1:]))

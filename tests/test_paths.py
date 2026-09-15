@@ -47,6 +47,23 @@ def test_safe_rel_accepts_and_normalizes(value, expected):
     assert safe_rel(value) == expected
 
 
+@pytest.mark.parametrize("value", [
+    "a\x01b.jpg",            # C0 control - Windows: OSError 22 at write time
+    "a\nb.jpg",
+    "a\tb.jpg",
+    "a\x1bb.jpg",
+    "sub/\x7fdel.jpg",       # DEL
+    "\x0bx.jpg",
+])
+def test_safe_rel_rejects_control_characters(value):
+    """SP-05 (review 0.6.32): `safe_rel` rejected NUL, `..`, absolutes and
+    device names but let every OTHER control character through, and Windows
+    refuses those at write time (`OSError: [Errno 22] Invalid argument`). A
+    crafted bundle therefore stored a row that could never resolve AND aborted
+    the restore with a 500 after the database had been replaced."""
+    assert safe_rel(value) is None
+
+
 def test_safe_join_keeps_legitimate_paths_inside(tmp_path):
     root = tmp_path / "root"
     (root / "sub").mkdir(parents=True)

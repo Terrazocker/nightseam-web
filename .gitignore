@@ -14,18 +14,18 @@ dist/
 .agent-teams/
 app/_version_baked.py
 *.spec.bak
-data/*.db
-data/*.db.backup
-data/*.backup-auto.zip
-# downloaded catalog inputs (OpenNGC etc.) are regenerable, not repo content:
-# scripts/build_adv_catalog.py fetches them, and a stray `git add -A` must not
-# commit a multi-MB third-party CSV
-data/*.csv
+# user data / runtime state (SP-04). The rule is "never commit data/" - the
+# old file enumerated artefacts (`data/*.db`, `data/*.csv`, ...) and therefore
+# missed `data/.export-<hex>.zip` (the spool of a GET /api/export that was
+# aborted) and `data/*.db-journal`, both of which hold user data. Ignore the
+# whole folder and re-include the one tracked placeholder.
+data/
+!data/panos/
 data/panos/*
 !data/panos/.gitkeep
-data/imgcache/
-data/instance.json
-data/popularity_snapshot.json
+# downloaded catalog inputs (OpenNGC etc.) are regenerable, not repo content:
+# scripts/build_adv_catalog.py fetches them, and a stray `git add -A` must not
+# commit a multi-MB third-party CSV. Covering `data/` above covers them.
 # The popularity source popularity tooling: the CACHE is regenerable (fetched), but
 # `scripts/match_popularity.py` is TRACKED - it generates the committed
 # `app/popularity_data.py`, and a generated data file whose tool is not in the
@@ -40,6 +40,11 @@ logs/
 # browser-gate failure artifacts (screenshots + DOM dumps): regenerable, and a
 # failing run must not leave repo noise behind.
 tests/browser/artifacts/
+# sandbox-created scratch copies inside the review evidence: the DACL on these
+# makes them unreadable to the current user, so git cannot even traverse them
+# (`git add -A` aborts with "could not open directory"). They are throwaway
+# copies of repo files, never evidence.
+reviews/*/evidence/scratch/
 
 # DSH AgentTeams harness state (task/mailbox bookkeeping, not repo content)
 .agent-teams/

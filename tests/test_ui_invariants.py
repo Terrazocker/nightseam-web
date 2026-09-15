@@ -23,9 +23,17 @@ ROOT = Path(__file__).resolve().parent.parent
 
 
 def _read(*parts) -> str:
+    """Read a subject file, FAILING when it is missing.
+
+    TR-07 (0.6.32 review): this used to `pytest.skip`, so renaming a subject file
+    (e.g. `web/app.js`) silently retired ~25 text invariants - including "the
+    popularity score is never rendered" - with a GREEN run. The project rule
+    (FIX-9b/TS6) is that a green run must never mean "not checked", so a missing
+    subject is a failure that names the file."""
     path = ROOT.joinpath(*parts)
     if not path.is_file():
-        pytest.skip(f"{path} is not present")
+        pytest.fail(f"{path} is missing - this invariant cannot be checked "
+                    f"(a missing subject file is a FAILURE, never a skip)")
     return path.read_text(encoding="utf-8")
 
 
@@ -324,6 +332,61 @@ def test_both_shells_rank_the_same_set():
     assert "assignPopularityTiers(S.catalog)" in _read("static", "js", "targets.js")
 
 
+def test_the_tonight_candidate_pool_is_one_shared_rule():
+    """SHELL-UNIFICATION: which objects may reach the Tonight list is ONE rule,
+    core/visibility.js::inTonightPool, called by both shells. The web used to
+    filter `o.vmag != null` inline, which dropped the 45 of the 200 standard-mode
+    rows whose OpenNGC magnitude is empty (IC 1396, the Running Man, NGC 281,
+    the Flame, the Tulip, Simeis 147, the Double Cluster, the Pipe Nebula, ...)
+    while the comment above it claimed desktop parity - and the desktop applied
+    no magnitude test there at all. There must be no second inline magnitude
+    expression in either shell's candidate path, and the advanced-mode cap must
+    stay the web's own documented PERFORMANCE parameter."""
+    core_vis = _read("core", "visibility.js")
+    body = _js_body(core_vis, "export function inTonightPool(")
+    assert "vmagKnownAndUnder(vmag, advCap)" in body and "!isAdv" in body, body
+    # the unknown-magnitude answer is YES, and it is written as such
+    known = _js_body(core_vis, "export function vmagKnownAndUnder(")
+    assert "vmag == null" in known and "return true" in known, known
+    assert "ADV_TONIGHT_MAG_CAP = 9" in core_vis
+    assert "TONIGHT_MAG_UNCAPPED = Infinity" in core_vis
+
+    web = _read("web", "app.js")
+    assert "inTonightPool(o.vmag, !!o._adv)" in web, (
+        "the web Tonight pool must go through the shared rule")
+    assert "o.vmag != null && (!o._adv" not in web, (
+        "the inline candidate filter is back - it drops the 45 no-magnitude "
+        "standard rows again")
+
+    desk = _read("static", "js", "tonight.js")
+    assert "inTonightPool(" in desk and "TONIGHT_MAG_UNCAPPED" in desk, (
+        "the desktop Tonight pool must call the same shared rule (uncapped: its "
+        "payload is built for the whole catalog)")
+
+
+def test_the_scoring_loop_is_shared_and_the_window_is_a_parameter():
+    """SHELL-UNIFICATION (CO-07 follow-up): both shells score through
+    core/scoring.js::scoreNightTracks, and the scoring span is the `range`
+    parameter. The desktop keeps its 241-sample noon->noon payload the charts
+    draw and clips the numbers to dusk..dawn by passing `range`; the web's grid
+    already IS the dark window and passes none. Before this, the desktop owned a
+    second aggregation loop (`derive.js::recomputeNightDerived`) that could drift
+    from core - the drift was CO-07."""
+    scoring = _read("core", "scoring.js")
+    assert "const win = Array.isArray(ctx.range) ? ctx.range : null;" in scoring
+    assert "const nightN = winHi - winLo + 1;" in scoring, (
+        "the % denominator must be the scoring range, not the grid")
+    derive = _read("static", "js", "derive.js")
+    assert "scoreNightTracks(tracks, N.objects, jd0, step, minAlt, pano, ctx)" in derive
+    assert "range: [i0, i1]" in derive, "the desktop must pass its dusk..dawn range"
+    assert "range: null" not in derive, (
+        "one scoring pass per recompute - no second, unclipped pass")
+    # the shell's local aggregation must be gone, not kept beside the core call
+    body = _js_body(derive, "export function recomputeNightDerived() {")
+    assert "effectiveMoonGlow(" not in body and "moonPenalty(" not in body, (
+        "the desktop still aggregates the moon penalty itself")
+
+
 def test_progress_and_status_never_move_the_layout():
     """0.6.31: showing progress may change the TEXT, never the geometry. The
     catalog's count/status live in a fixed-height row with a reserved status
@@ -494,7 +557,18 @@ def test_web_hold_right_click_erases_and_sky_chart_has_no_chord():
     assert "gestureErase" in js and "strokeAt(x, y, gestureErase)" in js, \
         "pointermove must continue the right-button erase gesture"
     assert "if (ev.button !== 0) return;" in js
-    assert "already erased" in js, \
+    # TR-11 (0.6.32 review): this used to assert the COMMENT text "already
+    # erased", which only a prose edit could break while the behaviour it names
+    # could come back green. Pin the HANDLER shape instead: the contextmenu
+    # listener must only suppress the browser menu - a re-added one-shot erase
+    # would call strokeAt() there.
+    handler = re.search(
+        r"cvs\.addEventListener\('contextmenu',\s*\(ev\)\s*=>\s*\{(.*?)\}\)",
+        js, re.S)
+    assert handler, "the contextmenu handler is gone"
+    assert "preventDefault" in handler.group(1), \
+        "contextmenu must suppress the browser menu"
+    assert "strokeAt" not in handler.group(1), \
         "contextmenu must not perform a separate one-shot erase"
     assert "export function overhangRuns" in _read("core", "horizon.js"), \
         "overhangRuns helper missing from core"
@@ -544,7 +618,12 @@ def test_desktop_sky_view_respects_block_above_and_hatches_open_above():
     sky = _read("static", "js", "skyview.js")
     assert "activeBandTop" in sky, "sky view must read the raw band top"
     assert "hatchPoly" in sky, "the assumed-open area must be hatched on the desktop"
-    assert "open above" in sky
+    # TR-11 (0.6.32 review): `assert "open above" in sky` was satisfied by a
+    # COMMENT in skyview.js. Pin the legend's real condition instead: the hatch
+    # legend is emitted only in sky mode with a band top and WITHOUT block-above.
+    assert 'const openAbove = mode === "sky" && !!activeBandTop() ' \
+           '&& !activeTopProfile();' in sky, \
+        "the assumed-open legend must require sky mode and no block-above"
     assert "activePaintMode() !== \"sky\"" in sky, \
         "sky mode must not stroke the fully-blocked 89-deg ring"
     assert "skyPanoLegend" in sky and "blocked by horizon" in sky

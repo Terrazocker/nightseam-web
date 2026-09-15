@@ -11,8 +11,8 @@
 (function(){try{var t=localStorage.getItem('nightseam_theme')||'dome';document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 </script>
 <link rel="icon" type="image/png" href="app.png">
-<link rel="stylesheet" href="style.css?v=21">
-<link rel="stylesheet" href="themes.css?v=4">
+<link rel="stylesheet" href="style.css?v=24">
+<link rel="stylesheet" href="themes.css?v=5">
 </head>
 <body>
 
@@ -53,7 +53,7 @@
     <div id="nightInfo" class="nightinfo"></div>
     <div class="popwrap weatherwrap">
       <button id="btnWeather" class="ghost weatherbtn" title="Weather for the active site — click to load">
-        <span id="wxChip">☁️ Weather — click to load</span>
+        <span id="wxChip">☁️ Weather</span>
       </button>
       <div id="weatherPanel" class="popover weather-panel hidden">
         <div class="menu-section">
@@ -177,7 +177,7 @@
         <div class="menu-section">
           <h4>About</h4>
           <p class="hint">NightSeam <span id="aboutVersion" class="mono">…</span> &mdash; deep-sky night planning.<br>
-          MIT licensed. Catalog: <a href="https://github.com/mattiaverga/OpenNGC" target="_blank" rel="noopener">OpenNGC</a> (CC BY-SA 4.0). Images: <a href="https://commons.wikimedia.org/" target="_blank" rel="noopener">Wikimedia Commons</a>. Weather: <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a>.<br>
+          MIT licensed. Catalog: <a href="https://github.com/mattiaverga/OpenNGC" target="_blank" rel="noopener">OpenNGC</a> (CC BY-SA 4.0). Images: <a href="https://commons.wikimedia.org/" target="_blank" rel="noopener">Wikimedia Commons</a>. Weather: <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a>. Popularity: the popularity source (one-time snapshot, baked into the catalog).<br>
           Runs 100% client-side &mdash; your data stays in this browser.</p>
         </div>
       </div>
@@ -202,12 +202,12 @@
 </main>
 
 <footer class="foot">
-  <p>NightSeam Web — browser port of NightSeam. Catalog: OpenNGC + supplement (12,176 objects) · <a href="https://github.com/mattiaverga/OpenNGC" target="_blank" rel="noopener" style="color:var(--muted)">OpenNGC</a> <a href="https://creativecommons.org/licenses/by-sa/4.0/" target="_blank" rel="noopener" style="color:var(--muted)">CC BY-SA 4.0</a> · images: <a href="https://commons.wikimedia.org/" target="_blank" rel="noopener" style="color:var(--muted)">Wikimedia Commons</a> · weather: <a href="https://open-meteo.com" target="_blank" rel="noopener" style="color:var(--muted)">Open-Meteo</a>. Runs 100% client-side — no server involved. <span class="foot-ver" id="foot-ver">…</span></p>
+  <p>NightSeam Web — browser port of NightSeam. Catalog: OpenNGC + supplement (12,176 objects) · <a href="https://github.com/mattiaverga/OpenNGC" target="_blank" rel="noopener" style="color:var(--muted)">OpenNGC</a> <a href="https://creativecommons.org/licenses/by-sa/4.0/" target="_blank" rel="noopener" style="color:var(--muted)">CC BY-SA 4.0</a> · images: <a href="https://commons.wikimedia.org/" target="_blank" rel="noopener" style="color:var(--muted)">Wikimedia Commons</a> · weather: <a href="https://open-meteo.com" target="_blank" rel="noopener" style="color:var(--muted)">Open-Meteo</a> · popularity: the popularity source (one-time snapshot, shipped with the catalog). Runs 100% client-side — no server involved. <span class="foot-ver" id="foot-ver">…</span></p>
 </footer>
 
 <div class="modal-wrap" id="modal" hidden></div>
 <div class="tooltip" id="tooltip" hidden></div>
 
-<script type="module" src="app.js?v=80"></script>
+<script type="module" src="app.js?v=87"></script>
 </body>
 </html>

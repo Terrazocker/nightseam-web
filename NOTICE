@@ -24,6 +24,18 @@ original catalog, 18th century).
 Changes made to the OpenNGC-derived data: field selection and light
 normalization to the application's data model; no object data was invented.
 
+Popularity data — the popularity source
+-----------------------------
+The community popularity counts that rank the catalog (and select the 200
+"standard mode" targets) originate from the popularity source:
+
+    https://popularity-source.invalid/
+
+They are shipped as a ONE-TIME snapshot baked into the application's catalog
+data (`app/popularity_data.py` -> `web/catalog.json`). Neither NightSeam shell
+contacts the popularity source at runtime; the snapshot is refreshed deliberately by the
+maintainers with `scripts/match_popularity.py --live`.
+
 Astronomy algorithms
 --------------------
 Sun/moon positions, twilight, refraction and precession are implemented

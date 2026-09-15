@@ -131,7 +131,10 @@ def test_catalog_change_without_token_bump_fails_and_matched_bump_passes(
     (tmp_path / "catalog.json").write_bytes(cat0 + b" ")
     assert guard.scan() != [], "a bare catalog change must FAIL the guard"
 
-    # (b) bump the token AND the manifest sha together -> PASS
+    # (b) bump the token AND the manifest sha together -> the PAIRING is new, so
+    # the embedded verified baseline is stale and must be refreshed in the same
+    # change (TR-01, 0.6.32 review made the rule git-state independent, exactly
+    # like check_js_tokens.py); it must NOT be reported as a missed bump.
     new_token = str(int(token0) + 1)
     (tmp_path / "app.js").write_text(
         app0.replace(f"const CATALOG_TOKEN = '{token0}'",
@@ -139,9 +142,54 @@ def test_catalog_change_without_token_bump_fails_and_matched_bump_passes(
     new_sha = hashlib.sha256((tmp_path / "catalog.json").read_bytes()).hexdigest()
     (tmp_path / "catalog.manifest.json").write_text(
         json.dumps({"token": new_token, "sha256": new_sha}), encoding="utf-8")
-    assert guard.scan() == [], "a matched token+manifest bump must PASS"
+    problems = guard.scan()
+    assert any("baseline is stale" in p for p in problems), problems
+    assert not any("still" in p and "CATALOG_TOKEN" in p for p in problems), \
+        f"a matched bump must not be called a missed bump: {problems}"
+
+    # ... and `--update` refreshes it -> PASS
+    monkeypatch.setattr(guard, "load_baseline",
+                        lambda src=None: {"token": new_token,
+                                          "sha256": new_sha})
+    assert guard.scan() == [], "a matched bump with a refreshed baseline must PASS"
 
     # the real repository was never touched
     assert (WEB / "catalog.json").read_bytes() == cat0
     assert hashlib.sha256((WEB / "catalog.json").read_bytes()).hexdigest() == sha0
     assert (WEB / "app.js").read_text(encoding="utf-8") == app0
+
+
+def test_committed_catalog_change_without_a_bump_fails(monkeypatch, tmp_path):
+    """TR-01 (0.6.32 review): the git rule only fires while the change is
+    UNCOMMITTED (`git diff HEAD` is empty once it is committed) and the
+    manifest/token pair is self-consistent as soon as the manifest sha is
+    refreshed - which is exactly what the documented workflow asks for. A
+    COMMITTED catalog change with an unbumped CATALOG_TOKEN therefore passed, and
+    neither `pre_tag_check.py` nor `check_release.py` ran this guard at all. The
+    embedded baseline makes the rule independent of the git state."""
+    import types
+
+    for name in ("app.js", "catalog.json", "catalog.manifest.json"):
+        shutil.copy(WEB / name, tmp_path / name)
+    guard = _guard()
+    monkeypatch.setattr(guard, "APP", tmp_path / "app.js")
+    monkeypatch.setattr(guard, "CATALOG", tmp_path / "catalog.json")
+    monkeypatch.setattr(guard, "MANIFEST", tmp_path / "catalog.manifest.json")
+    # the COMMITTED shape: git reports a clean tree (nothing to diff against)
+    monkeypatch.setattr(guard, "_git_ok", lambda: True)
+    monkeypatch.setattr(
+        guard, "_git",
+        lambda args: types.SimpleNamespace(returncode=0, stdout=""))
+    assert guard.scan() == [], "the copied tree must start clean"
+
+    # catalog bytes change and the manifest sha is refreshed (as documented),
+    # but CATALOG_TOKEN is NOT bumped -> must FAIL on a clean tree
+    cat = tmp_path / "catalog.json"
+    cat.write_bytes(cat.read_bytes() + b" ")
+    app = (tmp_path / "app.js").read_text(encoding="utf-8")
+    token0 = re.search(r"const CATALOG_TOKEN = '(\d+)'", app).group(1)
+    (tmp_path / "catalog.manifest.json").write_text(json.dumps(
+        {"token": token0,
+         "sha256": hashlib.sha256(cat.read_bytes()).hexdigest()}), encoding="utf-8")
+    problems = guard.scan()
+    assert any("CATALOG_TOKEN" in p and "still" in p for p in problems), problems

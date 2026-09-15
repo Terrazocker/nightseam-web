@@ -34,6 +34,14 @@ export {
 } from './time.js';
 
 export {
+  HISTORY_KEYS, HISTORY_KEYS_DESKTOP, HISTORY_LIMIT,
+  snapshot as snapshotPanoState, applySnapshot as applyPanoState,
+  newHistory, historyCommit, historyCanUndo, historyCanRedo,
+  historyUndo, historyRedo, historyMarkSaved, historyDirty,
+} from './panohistory.js';
+export { HISTORY_LIMIT as PANO_HISTORY_LIMIT } from './panohistory.js';
+
+export {
   julianDay, dateFromJD, gmstDeg, precessJ2000ToDate, precessDateToJ2000,
   refractionDeg, altaz, altazFrame, altazFrameApply,
   sunRaDec, moonRaDec, moonIllumination, moonAge, sunAlt, sepDeg,
@@ -46,6 +54,7 @@ export {
 
 export {
   aboveHorizon, sampleVisible, statusOf, effectiveMinAlt,
+  ADV_TONIGHT_MAG_CAP, TONIGHT_MAG_UNCAPPED, vmagKnownAndUnder, inTonightPool,
 } from './visibility.js';
 
 export {

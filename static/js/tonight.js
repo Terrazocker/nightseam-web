@@ -4,6 +4,7 @@ import { $, esc, parseUTC, fmtHM, fmtT, TYPE_LABEL, phaseName } from "./util.js"
 import { S, IMG_VER } from "./state.js";
 import { statusOf, objScore, windowText, desigLine,
          curTimeISO, popularityFactor } from "./derive.js";
+import { inTonightPool, TONIGHT_MAG_UNCAPPED } from "./core.js";
 import { openDetail } from "./detail.js";
 
 export function bindTonight() {
@@ -36,7 +37,15 @@ function cardHTML({o, m}) {
 export function renderTonight() {
   if (!S.night) return;
   const N = S.night;
-  const objs = N.objects.map(o => ({o, m:S.meta[o.id]})).filter(x => x.m);
+  // The candidate pool is core/visibility.js::inTonightPool - ONE rule shared
+  // with the web, so the two apps cannot disagree about which objects may reach
+  // the headline list. `TONIGHT_MAG_UNCAPPED`: the desktop's payload is built
+  // for the whole catalog, so it has no browser-scoring reason to cap it (the
+  // web passes its own ADV_TONIGHT_MAG_CAP there).
+  const objs = N.objects
+    .filter(o => inTonightPool((S.meta[o.id] || {}).vmag, !!(o.adv || (S.meta[o.id] || {})._adv),
+                               TONIGHT_MAG_UNCAPPED))
+    .map(o => ({o, m:S.meta[o.id]})).filter(x => x.m);
   const visCount = objs.filter(x => x.o.best && x.o.best[1]-x.o.best[0] >= 5).length;
   const darkH = N.dusk && N.dawn ? (() => {
     const mins = Math.max(0, Math.round((new Date(N.dawn+"Z") - new Date(N.dusk+"Z"))/60000));

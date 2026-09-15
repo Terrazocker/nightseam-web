@@ -350,8 +350,18 @@ export function cropKeptBand(fovOld, azOffOld, sel, W) {
 }
 
 /** Transform + clip FOV-relative strokes into a kept-band crop. Horizontal
- *  only: y and radius are unchanged. A dab whose circle overlaps the kept band
- *  is kept even when its centre lands just outside; rebuildMask clips it. */
+ *  only: y is unchanged. A dab whose circle overlaps the kept band is kept even
+ *  when its centre lands just outside; rebuildMask clips it.
+ *
+ *  CO-08 (0.6.32 review): the radius MUST scale with the horizontal stretch. A
+ *  crop narrows the FOV to the kept band, which is then stretched back over the
+ *  whole 720-bin mask, so an x is scaled by 1/frac - and the same angular brush
+ *  radius now covers 1/frac times as many bins. Leaving `r` alone made every dab
+ *  angularly smaller than the user painted, so gaps opened between dabs that had
+ *  overlapped: the probe lost 11 of 91 in-frame bins and a column that read
+ *  "Blocked" (ceil 37.10) came back as "Observable" (ceil -90) - a blocked
+ *  target planned as visible, which is the one thing this editor exists to
+ *  prevent. */
 export function cropStrokes(strokes, sel, W) {
   const w = Number(sel && sel.w) || 0;
   const frac = (W > 0) ? w / W : 1;
@@ -361,9 +371,9 @@ export function cropStrokes(strokes, sel, W) {
   const out = [];
   for (const s of strokes || []) {
     const nx = (s.x - x0) * scale;
-    const r = Number(s.r) || 0;
+    const r = (Number(s.r) || 0) * scale;      // scale WITH the stretch (CO-08)
     if (nx < -r || nx > MASK_W + r) continue;
-    out.push({ ...s, x: nx });
+    out.push({ ...s, x: nx, r });
   }
   return out;
 }

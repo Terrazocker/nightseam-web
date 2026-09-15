@@ -48,6 +48,13 @@ MOVED = (
     "tierForRank", "assignPopularityTiers",
     "offsetEastMin", "zoneOffsetAtLocalNoon", "wallFromUtcMs", "utcFromWallMs",
     "aboveHorizon", "sampleVisible", "statusOf", "effectiveMinAlt",
+    "vmagKnownAndUnder", "inTonightPool",
+    # core/panohistory.js - the panorama editor's snapshot/undo model. These
+    # names used to be re-implemented per shell (the desktop's pushPanoUndo
+    # built its own snapshot object), which is what the guard prevents.
+    "snapshot", "applySnapshot", "newHistory", "historyCommit",
+    "historyCanUndo", "historyCanRedo", "historyUndo", "historyRedo",
+    "historyMarkSaved", "historyDirty",
     "moonSensitivity", "moonMinDist", "effectiveMoonGlow", "moonPenalty",
     "bortleMoonFactor", "nightStatsBatch",
     "computeNightTracks", "scoreNightTracks",
@@ -74,11 +81,42 @@ RETIRED_PY_MODULES = ("astro.py", "planning.py", "nightcalc.py")
 # definition of them is NOT a moved-concept violation. `clearMask` and
 # `popularityFactor` are not in MOVED at all (documented above).
 SHELL_WRAPPERS = {"fmtSize", "statusOf", "effectiveMinAlt"}
+# SHELL-UNIFICATION PASS: the web's panorama-history functions became thin
+# delegates to core/panohistory.js (the desktop calls the core snapshot/apply
+# helpers from its own undo stack under different local names). A `function
+# name(...)` wrapper is legitimate ONLY while it actually delegates - so the
+# plain-function exemption is granted per name and its body must contain the
+# core call. A shell that re-implements one instead of calling core still fails.
+SHELL_WRAPPER_DELEGATES = {
+    "snapshot": ("coreSnapshotPano",),
+    "applySnapshot": ("coreApplySnapshot",),
+    "newHistory": ("coreSnapshotPano",),
+    "historyCommit": ("coreHistoryCommit",),
+    "historyCanUndo": ("coreHistoryCanUndo",),
+    "historyCanRedo": ("coreHistoryCanRedo",),
+    "historyUndo": ("coreHistoryUndo",),
+    "historyRedo": ("coreHistoryRedo",),
+    "historyMarkSaved": ("coreHistoryMarkSaved",),
+    "historyDirty": ("coreHistoryDirty",),
+}
+# CO-03 (0.6.32 review): the purity list named CAPABILITIES but no LOADER, so
+# `eval(...)`, `new Function(...)`, `importScripts(...)` and a dynamic
+# `import('data:text/javascript,...')` all passed inside core/. A `data:`-URL
+# import is a code-injection path with no identifier the old list knew.
 FORBIDDEN = (
     r"\bdocument\s*\.", r"\bwindow\s*\.", r"\blocalStorage\b",
     r"\bsessionStorage\b", r"\bindexedDB\b", r"\bXMLHttpRequest\b",
     r"\bprocess\s*\.", r"node:", r"\bfetch\s*\(",
+    r"\beval\s*\(", r"\bnew\s+Function\b", r"\bimportScripts\s*\(",
+    r"\bimport\s*\(",
 )
+
+# CO-01 (0.6.32 review): both shells ship a live inline `<script>`
+# (`web/index.html`, `static/index.html`), so a moved concept pasted into a page
+# was invisible to the `*.js`-only scan. `.mjs` is scanned for the same reason -
+# both are code a shell can ship.
+SHELL_SUFFIXES = (".js", ".mjs", ".html")
+_SCRIPT_BODY_RE = re.compile(r"<script\b[^>]*>(.*?)</script>", re.S | re.I)
 
 
 def _load_build():
@@ -118,7 +156,12 @@ def baked_dir_problems(label: str, dest_root: Path, hash_: str,
 
 
 def shell_sources(base: Path) -> list[Path]:
-    """Every `*.js` in a shell tree, RECURSIVELY, minus the baked core copies.
+    """Every CODE file in a shell tree, RECURSIVELY, minus the baked core copies.
+
+    CO-01 (0.6.32 review): the scan covered `*.js` only, while BOTH shells ship a
+    live inline `<script>` in `index.html` - so math pasted into the page passed
+    every guard. `.mjs` is scanned for the same reason (it is code a shell can
+    ship); `source_text()` extracts the script bodies from HTML.
 
     CO-03 (0.6.24 review): the importer/token and MOVED scans used `glob("*.js")`,
     so a shared concept re-implemented in a NEW subdirectory (`web/lib/`,
@@ -127,12 +170,27 @@ def shell_sources(base: Path) -> list[Path]:
     `core/<hash>/` trees are copies of `core/`, checked through their source
     digests, so they are skipped here; the top-level `core.js` stub is kept."""
     out = []
-    for p in sorted(base.rglob("*.js")):
+    for p in sorted(base.rglob("*")):
+        if not p.is_file() or p.suffix.lower() not in SHELL_SUFFIXES:
+            continue
         parts = p.relative_to(base).parts
         if len(parts) > 1 and parts[0] == "core":
             continue
         out.append(p)
     return out
+
+
+def source_text(path: Path) -> str:
+    """The JavaScript a shell file really ships.
+
+    A module is scanned whole; an HTML page contributes ONLY its `<script>`
+    bodies, because the MOVED patterns are substring regexes over identifiers and
+    a whole-file scan would fire on ordinary prose (`index.html` describes the
+    concepts in words)."""
+    text = _read(path)
+    if path.suffix.lower() != ".html":
+        return text
+    return "\n".join(_SCRIPT_BODY_RE.findall(text))
 
 
 def scan() -> list[str]:
@@ -181,7 +239,8 @@ def scan() -> list[str]:
         if p.name == "core.js":
             continue
         rel = p.relative_to(WEB_DIR).as_posix()
-        for m in re.finditer(r"['\"](?:\.\.?/)+core\.js\?v=(\d+)['\"]", _read(p)):
+        for m in re.finditer(r"['\"](?:\.\.?/)+core\.js\?v=(\d+)['\"]",
+                             source_text(p)):
             importers.append((rel, int(m.group(1))))
     if not importers:
         problems.append("web: no './core.js?v=' import found")
@@ -190,7 +249,7 @@ def scan() -> list[str]:
             problems.append(
                 f"web/{rel}: core token {tok} != manifest token {token}")
 
-    static_edge = any(re.search(r"['\"]\./core\.js['\"]", _read(p))
+    static_edge = any(re.search(r"['\"]\./core\.js['\"]", source_text(p))
                       for p in shell_sources(STATIC_JS) if p.name != "core.js")
     if not static_edge:
         problems.append("static: no './core.js' import found")
@@ -205,27 +264,45 @@ def scan() -> list[str]:
         for p in shell_sources(base):
             if p.name == "core.js":
                 continue
-            text = _read(p)
+            text = source_text(p)
             for name in MOVED:
                 # `function name(`, any assignment `name =` (const/let/var,
-                # reassignment, comment-separated arrow) and method-style
-                # `name(...) {` - an arrow or method re-implementation must not
-                # slip past the guard (TS3, review). The documented shell
-                # wrappers are exempt from the non-function forms only.
+                # reassignment, comment-separated arrow), an OBJECT PROPERTY
+                # (`name: (…) => …`, `name: function …`) and a method/getter
+                # (`name(…) {`, `get name() {`) - an arrow, property or method
+                # re-implementation must not slip past the guard (TS3, review;
+                # CO-02/TR-02, 0.6.32 review: the property/method positions were
+                # missed, so `{ julianDay(dt) {…} }` and `{ get gmstDeg() {…} }`
+                # passed). The documented shell wrappers are exempt from the
+                # non-function forms only.
                 plain = re.search(r"(export\s+)?(async\s+)?function\s+"
                                   + name + r"\b", text)
+                delegated = False
+                if plain:
+                    calls = SHELL_WRAPPER_DELEGATES.get(name)
+                    if calls is None or not any(c in text for c in calls):
+                        problems.append(
+                            f"{p.name}: {name}() must live in core/ only")
+                        continue
+                    # a documented DELEGATE: the wrapper form is accepted, but
+                    # the sneak check below still applies to the same name
+                    delegated = True
                 sneak = None
-                if name not in SHELL_WRAPPERS:
-                    # only FUNCTION-VALUED assignments (or method definitions):
-                    # MOVED names are also natural local variable names
-                    # (`const moonAge = ...`, `const sunAlt = []`).
+                if name not in SHELL_WRAPPERS and not delegated:
+                    # only FUNCTION-VALUED assignments (or property/method
+                    # definitions): MOVED names are also natural local variable
+                    # names (`const moonAge = ...`, `const sunAlt = []`).
                     sneak = re.search(
                         r"(?<![\w.$=!<>])" + name +
                         r"\s*=\s*(?:/\*[\s\S]*?\*/\s*)?"
                         r"(?:\(|async\b|function\b|[\w$]+\s*=>)", text) or \
-                        re.search(r"(?:^|[;}\n])\s*" + name
-                                  + r"\s*\([^)]*\)\s*\{", text, re.M)
-                if plain or sneak:
+                        re.search(
+                            r"(?:^|[{,;}\n])\s*" + name + r"\s*:\s*"
+                            r"(?:\(|async\b|function\b|[\w$]+\s*=>)", text) or \
+                        re.search(r"(?:^|[{,;}\n])\s*"
+                                  r"(?:get\s+|set\s+|async\s+|\*\s*)?"
+                                  + name + r"\s*\([^)]*\)\s*\{", text)
+                if sneak or (plain and not delegated):
                     problems.append(f"{p.name}: {name}() must live in core/ only")
 
     # Phase C: Python is IO/platform only - no astronomy/planning math may be

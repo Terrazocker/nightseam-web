@@ -22,7 +22,12 @@ import {
   overhangRuns, assumedOpenRuns, assumedOpenHatchPolys,
   CROP_MIN_FOV, cropPano, cropKeptBand, cropStrokes, clipProfileToFov,
   effectiveMinAlt as coreMinAlt,
-} from './core.js?v=24';
+  snapshotPanoState as coreSnapshotPano, applyPanoState as coreApplySnapshot,
+  historyCommit as coreHistoryCommit, historyCanUndo as coreHistoryCanUndo,
+  historyCanRedo as coreHistoryCanRedo, historyUndo as coreHistoryUndo,
+  historyRedo as coreHistoryRedo, historyMarkSaved as coreHistoryMarkSaved,
+  historyDirty as coreHistoryDirty, PANO_HISTORY_LIMIT as coreHISTORY_LIMIT,
+} from './core.js?v=33';
 
 export {
   NO_BLOCK, BINS, MASK_W, MASK_H,
@@ -356,74 +361,54 @@ export function updatePano(p) {
  * on pointer up), so a drag is a single undo step. The profile is not stored in
  * the snapshot: it is derived from the strokes (or kept when there are none).
  */
+/* The panorama editor's history model lives ONCE in core/panohistory.js and is
+   shared with the desktop (shell-unification pass): the two shells had separate
+   undo implementations - a bounded stack with no redo and no dirty state on the
+   desktop, this step-list-with-baseline here - so "is this edit saved?" could
+   be answered differently. The wrappers below keep this module's public surface
+   (and the `pano_ui` / `web_backup` engines) intact. */
+const HISTORY_KEYS = {
+  azOffset: 'azOffset', altBottom: 'altBottom', altTop: 'altTop', fov: 'fov',
+  paintMode: 'paintMode', strokes: 'strokes', blockAbove: 'blockAbove',
+  profile: 'profile', profileTop: 'profileTop',
+};
+
+/** JSON snapshot of a panorama's EDITABLE state (strokes + calibration + paint
+ *  mode; the stored profile only when there are no strokes, because a mask
+ *  reproduces a stroke-y profile exactly while a stroke-less one is
+ *  AUTHORITATIVE - ruling C, DE-03/WE-02). */
 export function snapshotPano(p) {
-  const o = {
-    a: p.azOffset, b: p.altBottom, t: p.altTop, f: p.fov,
-    m: p.paintMode, s: p.strokes, o: p.blockAbove ? 1 : 0,
-  };
-  // Ruling C (DE-03/WE-02): with NO strokes the stored profile is AUTHORITATIVE
-  // and cannot be re-derived from an empty mask, so the snapshot must carry it -
-  // otherwise undo/Revert back to a stroke-less baseline leaves the discarded
-  // derived ceiling live in the record planning reads (and a deliberate
-  // paint-mode switch could not be undone either). Snapshots for stroke-y
-  // records stay profile-free: the mask reproduces those exactly.
-  if (!(Array.isArray(p.strokes) && p.strokes.length)) {
-    o.pr = p.profile; o.pt = p.profileTop;
-  }
-  return JSON.stringify(o);
+  return coreSnapshotPano(p, HISTORY_KEYS);
 }
 
 export function applySnapshot(p, snap) {
-  const o = JSON.parse(snap);
-  p.azOffset = o.a; p.altBottom = o.b; p.altTop = o.t; p.fov = o.f;
-  p.paintMode = o.m; p.strokes = o.s; p.blockAbove = !!o.o;
-  if (o.pr !== undefined) { p.profile = o.pr; p.profileTop = o.pt; }
-  return p;
+  return coreApplySnapshot(p, snap, HISTORY_KEYS);
 }
 
-export const HISTORY_LIMIT = 60;
+export const HISTORY_LIMIT = coreHISTORY_LIMIT;
 
 /** New history for a panorama: one entry (the current state) + saved baseline. */
 export function newHistory(p) {
   const snap = snapshotPano(p);
-  return { entries: [snap], index: 0, baseline: snap };
+  return { entries: [snap], index: 0, baseline: snap, keys: HISTORY_KEYS };
 }
 
-/** Record the current state as a new history entry (no-op when unchanged).
- *  Drops any redo entries. Returns true when a new entry was added. */
 export function historyCommit(h, p, limit = HISTORY_LIMIT) {
-  const snap = snapshotPano(p);
-  if (snap === h.entries[h.index]) return false;
-  h.entries = h.entries.slice(0, h.index + 1);
-  h.entries.push(snap);
-  if (h.entries.length > limit) h.entries.shift();
-  h.index = h.entries.length - 1;
-  return true;
+  return coreHistoryCommit(h, p, limit);
 }
 
-export function historyCanUndo(h) { return h.index > 0; }
-export function historyCanRedo(h) { return h.index < h.entries.length - 1; }
+export function historyCanUndo(h) { return coreHistoryCanUndo(h); }
+export function historyCanRedo(h) { return coreHistoryCanRedo(h); }
 
-export function historyUndo(h, p) {
-  if (!historyCanUndo(h)) return false;
-  h.index -= 1;
-  applySnapshot(p, h.entries[h.index]);
-  return true;
-}
-
-export function historyRedo(h, p) {
-  if (!historyCanRedo(h)) return false;
-  h.index += 1;
-  applySnapshot(p, h.entries[h.index]);
-  return true;
-}
+export function historyUndo(h, p) { return coreHistoryUndo(h, p); }
+export function historyRedo(h, p) { return coreHistoryRedo(h, p); }
 
 /** Mark the current state as saved: the dirty baseline moves to it. */
-export function historyMarkSaved(h, p) { h.baseline = snapshotPano(p); }
+export function historyMarkSaved(h, p) { return coreHistoryMarkSaved(h, p); }
 
 /** True when the current state differs from the last saved state. Undoing all
  *  the way back to the baseline therefore clears it. */
-export function historyDirty(h, p) { return snapshotPano(p) !== h.baseline; }
+export function historyDirty(h, p) { return coreHistoryDirty(h, p); }
 
 /* Editor zoom is presentation-only (never touches stored geometry). W/H are the
  * LOGICAL mask size (720x360), so the same transform drives drawing, hit
@@ -557,13 +542,34 @@ export function renderHorizon(box, onChanged) {
       if (note) note.textContent = '😕 could not create horizon: ' + err.message;
     }
   };
+  /* SP-07 (0.6.32 review): an uploaded panorama is decoded to a data URL and held
+   *  for the whole session, so an unbounded photo costs several times its own size
+   *  in RAM (a 60 MB JPEG measured ~80 MB of base64 string plus ~200 MB of decoded
+   *  bitmap). Cap it and say why, instead of freezing the tab. */
+  const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
+  function acceptUpload(f) {
+    const note = $('#pano-note');
+    if (!f.type || !f.type.startsWith('image/')) {
+      if (note) note.textContent = '😕 that is not an image file — pick a JPEG or PNG';
+      return false;
+    }
+    if (f.size > MAX_UPLOAD_BYTES) {
+      const mb = (f.size / 1048576).toFixed(1);
+      if (note) note.textContent = `😕 that image is ${mb} MB — the limit is `
+        + `${MAX_UPLOAD_BYTES / 1048576} MB, because the whole photo is decoded and `
+        + `kept in memory while the editor is open.`;
+      return false;
+    }
+    return true;
+  }
+
   $('#pano-blank').addEventListener('click', () => mk(null));
   // the upload button is a <label for="pano-file"> — the browser opens the
   // file picker natively (no JS click involved, works in every browser);
   // drag & drop onto the page is wired once per view container below.
   $('#pano-file').addEventListener('change', (ev) => {
     const f = ev.target.files && ev.target.files[0];
-    if (!f) return;
+    if (!f || !acceptUpload(f)) return;
     const rd = new FileReader();
     rd.onload = () => mk(rd.result);
     rd.onerror = () => { const n = $('#pano-note'); if (n) n.textContent = '😕 could not read the file'; };
@@ -576,8 +582,9 @@ export function renderHorizon(box, onChanged) {
     });
     box.addEventListener('drop', (ev) => {
       const f = ev.dataTransfer && ev.dataTransfer.files && ev.dataTransfer.files[0];
-      if (!f || !f.type.startsWith('image/')) return;
+      if (!f) return;
       ev.preventDefault();
+      if (!acceptUpload(f)) return;
       const rd = new FileReader();
       rd.onload = () => mk(rd.result);
       rd.readAsDataURL(f);
@@ -799,7 +806,17 @@ function wireEditor(box, p, onChanged) {
   const maskCtx = maskCanvas.getContext('2d');
 
   const view = { zoom: 1, fx: null, fy: null };
-  const hist = newHistory(p);
+  /* WE-05 (0.6.32 review): re-rendering the SAME panorama must NOT reset the
+     history baseline. `newHistory(p)` makes the CURRENT state - including
+     unsaved paint - the "saved" baseline, so any `refreshView()` while the
+     editor was open (a min-alt, site, date, rig, Bortle, filter, size-unit,
+     moon-aware or timezone change) flipped the chip to "Saved", made
+     `horizonUnsaved()` false, and silently disarmed BOTH the `flushHorizonEdits()`
+     call on navigating away AND the `beforeunload` guard: the paint was lost on
+     reload. Only a DIFFERENT panorama (switch or create) starts a new history. */
+  const samePano = !!(activeSession && activeSession.panoId
+                      && activeSession.panoId === p.id && activeSession.hist);
+  const hist = samePano ? activeSession.hist : newHistory(p);
   let status = 'saved';                    // 'saved' | 'saving' | 'failed'
   const paintMode = () => p.paintMode;
   const paintRGB = () => (p.paintMode === 'obstacle' ? [255, 80, 80] : [120, 230, 140]);
@@ -896,9 +913,16 @@ function wireEditor(box, p, onChanged) {
     ctx.font = '10px system-ui';
     const ab = Number(p.altBottom), at = Number(p.altTop);
     for (let alt = Math.ceil(ab / altStep) * altStep; alt <= at + 1e-6; alt += altStep) {
-      const y = rowOfAlt(p, alt);
-      if (y < 6 || y > MASK_H - 2) continue;
       const base = Math.abs(alt) < 1e-6;
+      let y = rowOfAlt(p, alt);
+      // UI-06 (0.6.32 review): the alt-0 line is the horizon the user calibrates
+      // against and the ONE guide the legend colours green - but the guard below
+      // skipped it whenever it landed on the frame, which is exactly the default
+      // case (altBottom 0 puts it on the bottom edge), so the editor appeared to
+      // draw no horizon guide at all. Keep the base line visible; other lines
+      // still skip when they fall outside.
+      if (base) y = Math.min(Math.max(y, 6), MASK_H - 6);
+      else if (y < 6 || y > MASK_H - 2) continue;
       ctx.strokeStyle = base ? 'rgba(123,241,168,.6)' : 'rgba(124,196,255,.16)';
       ctx.lineWidth = base ? 1.4 : 1;
       ctx.setLineDash(base ? [7, 5] : []);
@@ -1392,7 +1416,7 @@ function wireEditor(box, p, onChanged) {
 
   // swap out any ResizeObserver from the previous editor, then observe this one
   if (activeSession && activeSession.disconnect) activeSession.disconnect();
-  activeSession = { dirty, revert: revertSession, save: saveSession };
+  activeSession = { panoId: p.id, hist, dirty, revert: revertSession, save: saveSession };
   if (typeof ResizeObserver !== 'undefined') {
     const ro = new ResizeObserver(() => fitCanvas());
     ro.observe(boxEl);

@@ -1,0 +1,13 @@
+== P8 horizon editor: unsaved state across a view re-render =====
+  PASS  a panorama is created and active
+  PASS  the freshly opened editor is not unsaved
+  ..    stored strokes=0
+  PASS  painting marks the editor unsaved (the chip says "Unsaved changes")
+  ..    stored strokes=0 (still the pre-paint state, persisted only on Save)
+  ..    after the re-render: horizonUnsaved()=false, stored strokes=0
+  FAIL  the re-render keeps the unsaved state  [expected FAIL = defect]
+  ..    after route()'s flushHorizonEdits(): stored strokes=0
+  FAIL  leaving the editor persists the paint (flushHorizonEdits is not a no-op)  [expected FAIL = defect]
+  FAIL  a reload keeps the paint (stored strokes=0)  [expected FAIL = defect]
+
+== P8 summary: 3 passed, 3 failed ==

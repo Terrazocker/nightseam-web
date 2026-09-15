@@ -31,14 +31,26 @@ _NOON_GOLDENS = {
     ("Europe/Berlin", "2026-10-25"): 60,        # fall-back day, noon is CET
     ("Europe/Berlin", "2026-12-21"): 60,
     ("America/Los_Angeles", "2026-01-15"): -480,
-    # transition-day quirk, PRESERVED from the desktop algorithm: the UTC-noon
-    # iteration walks "UTC + east", which for western zones samples just before
-    # the 10:00Z switch, so the spring-forward day reports the pre-switch -480
-    # (Berlin, an eastern zone, reports the post-switch value). Characterized,
-    # not "fixed": this phase allows no user-visible change.
-    ("America/Los_Angeles", "2026-03-08"): -480,
+    # DST-transition days, CORRECTED in the 0.6.32 review (DE-02). This used to be
+    # a documented "quirk, PRESERVED": zoneOffsetAtLocalNoon iterated
+    # `noonUTC + east`, i.e. UTC + TWICE the offset, which for a western zone
+    # samples ~21 h away - past the 10:00Z switch - so the spring-forward day
+    # reported the pre-switch -480 and the fall-back day the pre-switch -420.
+    # The iteration now uses `noonUTC - east` and converges on the true
+    # local-noon instant, so a transition day reports the offset actually in
+    # force at noon: 2026-03-08 is PDT (-420, the switch is 10:00Z) and
+    # 2026-11-01 is PST (-480, the switch is 09:00Z). That is a real
+    # user-visible correction (the desktop day grid was anchored an hour off for
+    # those zones and dates), and it is why these two values swapped.
+    # Audited against Node's Intl tz database - 19/19 goldens now true.
+    ("America/Los_Angeles", "2026-03-08"): -420,
     ("America/Los_Angeles", "2026-06-21"): -420,
-    ("America/Los_Angeles", "2026-11-01"): -420,
+    ("America/Los_Angeles", "2026-11-01"): -480,
+    # DE-02's actual trigger (the review blamed the `:30` regex, which was already
+    # correct): a 30-min zone whose DST boundary falls late in the UTC day, so the
+    # old shifted instant landed on the other side of it. Pinned now.
+    ("Australia/Lord_Howe", "2026-10-03"): 630,   # +10:30 on its DST-start day
+    ("Australia/Adelaide", "2026-10-03"): 570,    # +09:30 on its DST-start day
     ("Australia/Sydney", "2026-01-15"): 660,
     ("Australia/Sydney", "2026-04-05"): 600,
     ("Australia/Sydney", "2026-06-21"): 600,

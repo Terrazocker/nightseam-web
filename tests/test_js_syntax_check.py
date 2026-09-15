@@ -38,7 +38,9 @@ GOOD_JS = "export const answer = 42;\n"
 # the real-world failure: a second declaration of the same binding
 BAD_JS = "const a = 1;\nconst a = 2;\n"
 
-# node is optional - the checker degrades to a skip, so must these tests
+# node is required for the syntax check itself (a missing node is a HARD exit-2
+# failure, TO-03, never a skip); these tests skip only when the environment
+# cannot run node at all, which is the same condition the checker reports.
 NODE = SYN.find_node()
 NODE_REASON = "" if NODE else "node is not installed"
 if NODE and not NODE_REASON:

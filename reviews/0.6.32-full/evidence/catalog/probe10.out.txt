@@ -1,0 +1,10 @@
+seed 0: rc=0 ['POPULARITY (7654 scored entries)', 'wrote <workspace>\\AstroPilot-local\\reviews\\0.6.32-full\\evidence\\catalog\\popularity_shadow_0.py (7654 entries)']
+  shadow module entries: 7654
+  sha256: d8d6cb116bb3b2922d7a392d8ad52d5403b05c6573ad293a6cf72140517356cd
+  == shipped popularity_data.py: True
+seed 99991: rc=0 ['POPULARITY (7654 scored entries)', 'wrote <workspace>\\AstroPilot-local\\reviews\\0.6.32-full\\evidence\\catalog\\popularity_shadow_99991.py (7654 entries)']
+  shadow module entries: 7654
+  sha256: d8d6cb116bb3b2922d7a392d8ad52d5403b05c6573ad293a6cf72140517356cd
+  == shipped popularity_data.py: True
+shipped popularity_data.py sha256: d8d6cb116bb3b2922d7a392d8ad52d5403b05c6573ad293a6cf72140517356cd
+data/popularity_snapshot.json unchanged: ada822a9482a4320

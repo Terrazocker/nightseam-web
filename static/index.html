@@ -125,8 +125,9 @@ if(x.status===200){var t=JSON.parse(x.responseText).theme;if(t)document.document
           <h4>Advanced</h4>
           <label class="inline"><input type="checkbox" id="advMode"> Advanced mode</label>
           <p class="hint">Standard mode shows the 200 most popular targets;
-          advanced adds the complete OpenNGC catalog - NGC/IC plus its addendum
-          (12,160 objects to magnitude 20). Changing this reloads the app.</p>
+          advanced adds the complete catalog - NGC/IC plus its addendum and a
+          16-object supplement OpenNGC cannot carry (12,176 objects to
+          magnitude 20). Changing this reloads the app.</p>
           <div class="hidden" id="tzSection">
             <label class="inline">Timezone
               <select id="tzSelect" style="width:100%">
@@ -378,6 +379,7 @@ if(x.status===200){var t=JSON.parse(x.responseText).theme;if(t)document.document
             <button id="toolErase" class="tool">Eraser</button>
             <input type="range" id="brushSize" min="4" max="60" value="18" title="brush size">
             <button id="btnUndo" class="ghost" title="Ctrl+Z">Undo</button>
+            <button id="btnRedo" class="ghost" title="Ctrl+Y" disabled>Redo</button>
             <button id="btnClearMask" class="danger ghost">Clear</button>
           </div>
           <div class="rowbtns">

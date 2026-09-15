@@ -72,6 +72,22 @@ def test_moved_staleness_is_detected():
     assert "scrubWindowMs" in missing
 
 
+def test_shell_sources_scan_pages_and_modules():
+    """CO-01 (0.6.32 review): both shells ship a LIVE inline `<script>` in
+    `index.html`, so the moved-concept scan must read the pages too (`.mjs` is
+    code a shell can ship as well). An HTML page contributes only its script
+    BODIES - the MOVED patterns are substring regexes, so scanning the prose
+    would fire on it."""
+    guard = _guard()
+    web = {p.name for p in guard.shell_sources(ROOT / "web")}
+    assert "index.html" in web, "web/index.html must be scanned (inline script)"
+    assert "app.js" in web
+    src = guard.source_text(ROOT / "web" / "index.html")
+    assert "<script" not in src, "only the script BODIES may be scanned"
+    assert "nightseam_theme" in src, "the inline script body must be scanned"
+    assert "Catalog: OpenNGC" not in src, "the page prose must not be scanned"
+
+
 def _stage(tmp_path: Path):
     """A full, minimal core copy: core/, both baked trees, both stubs and the
     two shell modules that import them."""
@@ -151,19 +167,39 @@ def test_mutations_fail_the_guard(tmp_path):
     assert guard.scan(), "Python astronomy math outside core/ must FAIL the guard"
 
     # ... or the re-implementation evades the plain patterns (h): an ARROW
-    # shell definition, a comment-separated arrow and an `async def` Python
-    # one (TS3, review + adversarial verification).
+    # shell definition, a comment-separated arrow, an OBJECT-PROPERTY, a
+    # same-line method, an accessor and an `async def` Python one (TS3, review
+    # + adversarial verification; CO-02/TR-02, 0.6.32 review: the property,
+    # method and getter positions used to slip past).
     (guard.SCRIPTS_DIR / "bake.py").unlink()
     shell = guard.WEB_DIR / "horizon.js"
     for evasion in ("\nconst profileSegments = () => [];\n",
                     "\nconst profileSegments = /* c */ (a) => [];\n",
                     "\nprofileSegments = (a) => [];\n",
-                    "\nfunction profileSegments(a) { return []; }\n"):
+                    "\nfunction profileSegments(a) { return []; }\n",
+                    "\nconst H = { profileSegments: (a) => [] };\n",
+                    "\nconst H = { ra: 0, profileSegments(a) { return []; } };\n",
+                    "\nconst H = { profileSegments: function (a) { return []; } };\n",
+                    "\nconst H = { get profileSegments() { return []; } };\n",
+                    "\nconst H = { async profileSegments(a) { return []; } };\n"):
         shell.write_text(shell.read_text(encoding="utf-8") + evasion,
                          encoding="utf-8")
         assert guard.scan(), f"evasion not detected: {evasion!r}"
         shutil.copy(ROOT / "web" / "horizon.js", shell)
         assert guard.scan() == []
+
+    # ... or in an INLINE <script> of a shell PAGE (CO-01, 0.6.32 review: the
+    # MOVED scan read `*.js` only, while both shells ship a live inline script).
+    page = guard.WEB_DIR / "index.html"
+    shutil.copy(ROOT / "web" / "index.html", page)
+    assert guard.scan() == []
+    page.write_text(page.read_text(encoding="utf-8").replace(
+        "</head>",
+        "<script>function julianDay(d){return 2451545.0}</script></head>"),
+        encoding="utf-8")
+    assert guard.scan(), "an inline-script re-implementation must FAIL the guard"
+    page.unlink()
+    assert guard.scan() == []
     (guard.SCRIPTS_DIR / "bake.py").write_text(
         "async def altaz(ra, dec):\n    return 0\n", encoding="utf-8")
     assert guard.scan(), "an async Python astronomy re-implementation must FAIL"

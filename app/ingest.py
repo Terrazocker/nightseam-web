@@ -37,8 +37,14 @@ def classify_frame(imagetyp: str | None) -> str:
     """Normalize a FITS IMAGETYP value into 'light'/'bias'/'dark'/'flat'.
 
     Handles the multi-word spellings capture software writes ("Dark Frame",
-    "Flat Field", "Bias Frame") as well as the single-word ones."""
+    "Flat Field", "Bias Frame") as well as the single-word ones, and the
+    "Master ..." qualifier stacking apps write on stacked calibration frames
+    (PY-09: "Master Dark"/"Master Flat" used to fall through to `light`, so
+    master calibration frames were archived under `lights/` and counted as
+    light frames)."""
     t = re.sub(r"[^a-z]", "", str(imagetyp or "").lower())
+    if t.startswith("master"):
+        t = t[len("master"):]
     if t in ("", "l", "science") or t.startswith("light"):
         return "light"
     if t.startswith(("bias", "zero")):
@@ -74,6 +80,25 @@ def _session_dir(db: Database, archive: Path, slug: str, object_id,
     return archive / slug / session_folder_name(start)
 
 
+def _unique_path(path: Path) -> Path:
+    """`path`, or its first free `stem_2`/`stem_3`/... variant.
+
+    The ONE uniquify rule for the archive: `_archive_target` uses it for a new
+    ingest and `rename_archive_folder` uses it when a rename merges into a
+    folder that already holds a same-named frame (PY-01) - an existing file is
+    never replaced."""
+    if not path.exists():
+        return path
+    suffix = path.suffix
+    stem = path.stem
+    n = 2
+    while True:
+        candidate = path.with_name(f"{stem}_{n}{suffix}")
+        if not candidate.exists():
+            return candidate
+        n += 1
+
+
 def _archive_target(archive: Path, name: str, slug: str,
                     session: Path, frame: str) -> Path:
     """Unique destination <archive>/<slug>/<session>/<frames>/<stem>..."""
@@ -84,11 +109,7 @@ def _archive_target(archive: Path, name: str, slug: str,
     for t in FRAME_TYPES.values():      # keep all four frame folders beside it
         (session / t).mkdir(parents=True, exist_ok=True)
     target = sub / f"{stem}{suffix}"
-    n = 2
-    while target.exists():
-        target = sub / f"{stem}_{n}{suffix}"
-        n += 1
-    return target
+    return _unique_path(target)
 
 
 async def ingest_one(db: Database, catalog: list[dict], archive: Path,
@@ -160,6 +181,15 @@ async def ingest_one(db: Database, catalog: list[dict], archive: Path,
         log.warning("ingest: cannot write %s: %s", target, exc)
         return {"file": name, "ok": False,
                 "error": f"could not write to the archive: {exc.strerror or exc}"}
+    except BaseException:
+        # PY-08: the header is written and the body streamed, so ANY other
+        # failure - a client that vanishes mid-upload (Starlette raises
+        # ClientDisconnect, not OSError), a cancellation - used to leave a
+        # half-written .fit in the archive. There is no DB row for it, but the
+        # next /api/library/reindex records it as a normal capture with missing
+        # pixels, so the partial file must go before the error propagates.
+        target.unlink(missing_ok=True)
+        raise
     if stored is None:
         target.unlink(missing_ok=True)
         return {"file": name, "ok": False,
@@ -202,33 +232,52 @@ async def _stream_to(archive: Path, target: Path, f, first_chunk: bytes) -> str 
     return str(target.relative_to(archive)).replace("\\", "/")
 
 
-def rename_archive_folder(archive: Path, old_name: str, new_name: str) -> bool:
+def rename_archive_folder(archive: Path, old_name: str,
+                          new_name: str) -> dict[str, str] | None:
     """Move <archive>/<old slug> to <archive>/<new slug>, merging if the new
-    folder already exists. Returns False when the move could not be completed -
-    the caller must then NOT rewrite the stored paths, or every frame of the
-    group would point at a folder that does not exist."""
+    folder already exists. Returns the map of moved frames ({old relative path:
+    new relative path}, forward slashes) - `{}` when there was nothing to move -
+    or None when the move could not be completed, in which case the caller must
+    NOT rewrite the stored paths, or every frame of the group would point at a
+    folder that does not exist.
+
+    A frame whose name already exists in the destination is UNIQUIFIED
+    (`Light_001.fit` -> `Light_001_2.fit`), exactly like `_archive_target` does
+    for a new ingest. It used to be `replace`d in place, which silently
+    destroyed those pixels while the DB kept two rows aliasing one file
+    (PY-01, blocker). The returned map is what the caller feeds to
+    `db.rename_images`, so the stored paths name the files that really exist."""
     old = archive / obj_slug(old_name)
     new = archive / obj_slug(new_name)
     if old == new or not old.is_dir():
-        return True
+        return {}
+    moved: dict[str, str] = {}
+
+    def _rel(p: Path) -> str:
+        return str(p.relative_to(archive)).replace("\\", "/")
+
     try:
         if new.exists():
-            for f in old.rglob("*"):
-                if f.is_file():
-                    rel = f.relative_to(old)
-                    dest = new / rel
-                    dest.parent.mkdir(parents=True, exist_ok=True)
-                    f.replace(dest)
+            for f in sorted(old.rglob("*")):
+                if not f.is_file():
+                    continue
+                dest = _unique_path(new / f.relative_to(old))
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                f.replace(dest)
+                moved[_rel(f)] = _rel(dest)
             for d in sorted([p for p in old.rglob("*") if p.is_dir()],
                             key=lambda p: len(p.parts), reverse=True):
                 d.rmdir()
             old.rmdir()
         else:
             old.rename(new)
+            for f in sorted(new.rglob("*")):
+                if f.is_file():
+                    moved[_rel(f)] = _rel(f)
     except OSError as exc:
         log.warning("rename: could not move %s -> %s: %s", old, new, exc)
-        return False
-    return True
+        return None
+    return moved
 
 
 def _norm_rel(rel) -> str:

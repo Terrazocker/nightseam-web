@@ -10,7 +10,7 @@
  * the app moved to nightseam.de, so every visitor starts on a fresh origin.
  */
 
-import { offsetEastMin, wallFromUtcMs, utcFromWallMs } from './core.js?v=24';
+import { offsetEastMin, wallFromUtcMs, utcFromWallMs } from './core.js?v=33';
 
 const DB_NAME = 'nightseam-db-v1';
 const DB_VER = 1;
@@ -80,19 +80,55 @@ export async function del(store, key) {
   } catch { return false; }
 }
 
-/** All entries of a store: [{ key, val }] sorted by key. */
+/** All entries of a store: [{ key, val }] sorted by key.
+ *
+ *  A failing read must not reject into the boot path: `boot()` awaits this
+ *  before anything renders, and an unhandled rejection left the whole app on the
+ *  splash (WE-06, 0.6.32 review). Storage that is genuinely unavailable is
+ *  detected up front by `storageOk()`, which shows an actionable message; here a
+ *  failure degrades to "no records" so the UI still comes up. */
 export async function all(store) {
-  const db = await open();
-  return await new Promise((resolve, reject) => {
-    const t = db.transaction(store, 'readonly').objectStore(store).openCursor();
-    const out = [];
-    t.onsuccess = () => {
-      const c = t.result;
-      if (c) { out.push({ key: c.key, val: c.value }); c.continue(); }
-      else resolve(out);
-    };
-    t.onerror = () => reject(t.error);
-  });
+  try {
+    const db = await open();
+    return await new Promise((resolve, reject) => {
+      const t = db.transaction(store, 'readonly').objectStore(store).openCursor();
+      const out = [];
+      t.onsuccess = () => {
+        const c = t.result;
+        if (c) { out.push({ key: c.key, val: c.value }); c.continue(); }
+        else resolve(out);
+      };
+      t.onerror = () => reject(t.error);
+    });
+  } catch (err) {
+    warnStorageOnce(err);
+    return [];
+  }
+}
+
+/** Can this browser give us IndexedDB at all? (private mode, blocked cookies,
+ *  a hardened profile). Probed once, before any view renders. */
+export async function storageOk() {
+  try {
+    const db = await open();
+    if (!db) return false;
+    await new Promise((resolve, reject) => {
+      const t = db.transaction('sites', 'readonly').objectStore('sites').count();
+      t.onsuccess = () => resolve();
+      t.onerror = () => reject(t.error);
+    });
+    return true;
+  } catch (err) {
+    warnStorageOnce(err);
+    return false;
+  }
+}
+
+let _storageWarned = false;
+function warnStorageOnce(err) {
+  if (_storageWarned) return;
+  _storageWarned = true;
+  try { console.warn('NightSeam: local storage unavailable —', err); } catch (_) {}
 }
 
 export async function clearStore(store) {
@@ -349,12 +385,25 @@ export function stageBackup(data) {
     numbers: ['ra_hours', 'dec_deg', 'vmag'],
     strings: ['primary_name', 'otype', 'size_am', 'constellation', 'blurb'],
   });
+  // WE-02 (0.6.32 review): the panorama section must be validated HERE, with
+  // everything else. It used to be accepted as opaque, so a bundle with an
+  // unusable pano section was rejected only AFTER the caller had cleared and
+  // rewritten the sites/rigs/targets (`Hor.normalizePanos` runs later) - which
+  // contradicts the "stages/validates the whole bundle BEFORE any write"
+  // contract in AGENTS.md and could leave the rejected bundle's records behind.
+  let panos = null;
+  if (data.panos && typeof data.panos === 'object') {
+    if (!Array.isArray(data.panos.panos)) {
+      throw new Error('backup panorama section is not a list of panoramas');
+    }
+    panos = data.panos;
+  }
   return {
     sites: (Array.isArray(data.sites) ? data.sites : []).map(siteOf).filter(Boolean),
     rigs: (Array.isArray(data.rigs) ? data.rigs : []).map(rigOf).filter(Boolean),
     targets: (Array.isArray(data.targets) ? data.targets : []).map(targetOf).filter(Boolean),
     prefs: (data.prefs && typeof data.prefs === 'object') ? data.prefs : null,
-    panos: (data.panos && typeof data.panos === 'object') ? data.panos : null,
+    panos,
     // must match currentTheme(); ignore an unknown/legacy value rather than
     // writing junk into the theme key
     theme: (data.theme === 'classic' || data.theme === 'dome') ? data.theme : null,
@@ -365,7 +414,15 @@ export function stageBackup(data) {
  *  Throws if ANY individual write fails (storage full / unavailable), so a
  *  caller can roll back instead of silently losing records. */
 export async function writeStaged(staged) {
-  await Promise.all(STORES.filter((s) => s !== 'meta').map((s) => clearStore(s)));
+  // WE-03 (0.6.32 review): the clear results used to be discarded, so a failed
+  // clear() with successful puts reported SUCCESS and silently merged the old
+  // records into the restored ones (probe: sites=["evil","keep"]). Treat a
+  // failed clear as a failed restore so the caller's rollback engages.
+  const clears = await Promise.all(
+    STORES.filter((s) => s !== 'meta').map((s) => clearStore(s)));
+  if (clears.some((ok) => ok === false)) {
+    throw new Error('could not clear the previous records (storage full or unavailable)');
+  }
   const jobs = [];
   for (const rec of staged.sites) jobs.push(set('sites', rec.id, rec));
   for (const rec of staged.rigs) jobs.push(set('rigs', rec.id, rec));

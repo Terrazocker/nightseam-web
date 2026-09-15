@@ -150,31 +150,81 @@ def test_web_catalog_standard_split_matches_the_rule(tmp_path):
 
 # ------------------------------------------------------- advertised catalog size
 
-# Every user-facing claim about the catalog size, with the text that carries it.
+# Every user-facing claim about the catalog size, with the text that carries it:
+#   (file, expected number of claims in that file, [regex, ...])
 # A claim is a PROMISE about the shipped data, so it is pinned to the data.
+#
+# CD-08 (0.6.32 review): this table used to list five patterns and then assert
+# that the TOTAL number of matches was exactly 6. `static/index.html`'s own
+# desktop hint was never registered, so it advertised 12,160 objects for two
+# releases while the guard stayed green - and the gap was invisible BY
+# CONSTRUCTION: an unregistered file contributes no match (nothing to check),
+# while a SECOND claim in a registered file changed the total instead of being
+# value-checked. Every file now carries its own expected claim count, so a new
+# or edited claim fails where the value is checked; registering a file is the
+# way to cover a new surface. `landing/features.html`'s "12,000 objects" is a
+# deliberate rounding (a feature blurb, not a catalogue count) and is not pinned.
 ADVERTISED_SIZE = [
-    ("web/index.html", r"Catalog: OpenNGC \+ supplement \(([\d,]+) objects\)"),
-    ("web/app.js", r"search/sort across ([\d,]+) objects"),
-    ("landing/index.html", r"a small supplement: ([\d,]+) objects"),
-    ("landing/index.html", r"computed entirely in your browser\. ([\d,]+) objects"),
-    ("landing/about.html", r"<b>([\d,]+)</b><span>catalog objects</span>"),
+    ("web/index.html", 3, [r"Catalog: OpenNGC \+ supplement \(([\d,]+) objects\)",
+                           r"supplement OpenNGC\s+cannot carry \(([\d,]+)\s+objects"]),
+    ("web/app.js", 1, [r"search/sort across ([\d,]+) objects"]),
+    ("landing/index.html", 2, [r"a small supplement: ([\d,]+) objects",
+                               r"computed entirely in your browser\. ([\d,]+) objects"]),
+    ("landing/about.html", 1, [r"<b>([\d,]+)</b><span>catalog objects</span>"]),
+    ("static/index.html", 1, [r"supplement OpenNGC cannot carry \(([\d,]+)\s+objects"]),
+    ("README.md", 2, [r"([\d,]+) objects to magnitude 20",
+                      r"shows all ([\d,]+)\."]),
 ]
-ADVERTISED_SITES = 6          # web/index.html meta + footer, app.js, 2x landing, about
+
+
+def _advertised_mismatches(root: Path) -> list[str]:
+    """Every registered advertised size that disagrees with the shipped rows,
+    plus any file whose claim COUNT drifted. `root` is the tree the claims are
+    read from (a copy in the mutation test); the shipped catalog is always the
+    real CSV, and so is the expected size."""
+    real = f"{sum(1 for _ in _adv_rows()):,}"
+    problems: list[str] = []
+    seen = []
+    for rel, expected, patterns in ADVERTISED_SIZE:
+        text = (root / rel).read_text(encoding="utf-8")
+        found = [n for pat in patterns for n in re.findall(pat, text)]
+        if len(found) != expected:
+            problems.append(
+                f"{rel} must carry {expected} advertised catalog size(s), found "
+                f"{len(found)}: {found} - register a new/changed claim in "
+                f"ADVERTISED_SIZE instead of letting it drift")
+        seen += [(rel, n) for n in found]
+    for rel, shown in seen:
+        if shown != real:
+            problems.append(
+                f"{rel} advertises {shown} catalog objects but the shipped "
+                f"catalog has {real} - the copy is stale or the data changed "
+                f"without it")
+    return problems
 
 
 def test_advertised_catalog_size_matches_the_shipped_catalog():
-    real = f"{sum(1 for _ in _adv_rows()):,}"
-    seen = []
-    for rel, pattern in ADVERTISED_SIZE:
-        text = (ROOT / rel).read_text(encoding="utf-8")
-        seen += [(rel, n) for n in re.findall(pattern, text)]
-    assert len(seen) == ADVERTISED_SITES, (
-        f"expected {ADVERTISED_SITES} advertised catalog size(s), found "
-        f"{len(seen)}: {seen}")
-    for rel, shown in seen:
-        assert shown == real, (
-            f"{rel} advertises {shown} catalog objects but the shipped catalog "
-            f"has {real} - the copy is stale or the data changed without it")
+    problems = _advertised_mismatches(ROOT)
+    assert not problems, "\n".join(problems)
+
+
+def test_advertised_size_guard_catches_a_drifted_desktop_hint(tmp_path):
+    """CD-08 (0.6.32 review) mutation proof, on a COPY of every claimed file: the
+    desktop hint that actually drifted (12,160 against the shipped 12,176) must
+    be reported - before this fix the file was not registered at all, so the
+    guard never looked at it."""
+    import shutil
+    for rel, _expected, _patterns in ADVERTISED_SIZE:
+        dest = tmp_path / rel
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy(ROOT / rel, dest)
+    hint = tmp_path / "static" / "index.html"
+    hint.write_text(hint.read_text(encoding="utf-8").replace("12,176", "12,160"),
+                    encoding="utf-8")
+    problems = _advertised_mismatches(tmp_path)
+    assert any("static/index.html" in p and "12,160" in p for p in problems), \
+        f"the drifted desktop hint must be reported: {problems}"
+    assert _advertised_mismatches(ROOT) == [], "the real tree must be clean"
 
 
 def test_catalog_csv_and_web_payload_describe_the_same_catalog(tmp_path):
@@ -187,3 +237,21 @@ def test_catalog_csv_and_web_payload_describe_the_same_catalog(tmp_path):
     assert {o["id"] for o in cat} == {r["id"] for r in rows}
     db = Database(tmp_path / "t.db")
     assert db.advanced_count() + STANDARD_TOP_N == len(rows)
+
+
+def test_advanced_count_is_defined_once():
+    """CD-04 (review 0.6.32): `Database.advanced_count` existed TWICE in the
+    class body (app/database.py:397 and :464), so the second definition silently
+    shadowed the first - a future edit to the dead copy (a filter, a cached
+    count) would take effect or not depending on which one the editor happened
+    to open. One accessor."""
+    import ast
+    import inspect
+
+    from app.database import Database
+
+    tree = ast.parse(inspect.getsource(Database).lstrip())
+    cls = next(n for n in tree.body if isinstance(n, ast.ClassDef))
+    names = [n.name for n in cls.body
+             if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))]
+    assert names.count("advanced_count") == 1, names

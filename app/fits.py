@@ -74,10 +74,21 @@ def read_fits_header(data: bytes) -> dict:
             break
         for i in range(0, _BLOCK, _REC):
             rec = block[i:i + _REC].decode("latin-1", "replace")
-            if rec.startswith("END"):
+            if _is_end_card(rec):
                 return _parse_records(records)
             records.append(rec)
     return _parse_records(records)
+
+
+def _is_end_card(rec: str) -> bool:
+    """True for the FITS header terminator: the standalone `END` card.
+
+    PY-10: the test used to be a bare `startswith("END")`, so any keyword whose
+    name merely begins with END (`ENDTIME`, ...) truncated the header and every
+    later card - EXPTIME, OBJECT, DATE-OBS, the coordinates - was dropped. The
+    standard reserves the keyword `END` with no value, so require exactly that.
+    """
+    return rec[:3] == "END" and not rec[3:].strip()
 
 
 def _parse_records(records: list[str]) -> dict:
@@ -263,7 +274,7 @@ def header_size(data: bytes) -> int:
         if len(block) < _REC:
             return (blk + 1) * _BLOCK
         for i in range(0, _BLOCK, _REC):
-            if block[i:i + _REC].startswith(b"END"):
+            if _is_end_card(block[i:i + _REC].decode("latin-1", "replace")):
                 return (blk + 1) * _BLOCK
     return _MAX_BLOCKS * _BLOCK
 

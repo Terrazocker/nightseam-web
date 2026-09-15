@@ -1,5 +1,5 @@
-"""Pre-tag gate: a release version MUST already have a CURATED entry before the
-tag is created - and the tag must not ship a stale cache token.
+"""Pre-tag gate: a release version MUST already have a NON-EMPTY CURATED entry
+before the tag is created - and the tag must not ship a stale cache token.
 
 Committing the curated entry AFTER tagging leaves HEAD past the tag (describe
 becomes `vX.Y.Z-N-g<sha>`, and the tree reads `-dirty` at bake time) and
@@ -7,14 +7,20 @@ becomes `vX.Y.Z-N-g<sha>`, and the tree reads `-dirty` at bake time) and
 gate prevents. The token half is XL-01 (review 0.6.24): the v0.6.24 tag shipped
 the 0.6.23 per-module `?v=` tokens naming 0.6.24 bytes, so the web cache served
 old modules and the bump had to be repaired after the tag. `check_js_tokens.py`
-is run here as well, so a release cannot be tagged in that state. Run it BEFORE
-`git tag`:
+is run here as well, so a release cannot be tagged in that state. TR-01 (0.6.32
+review) added the catalog DATA file's guard: its old rule only compared the
+working tree against HEAD, so a COMMITTED `web/catalog.json` change with an
+unbumped `CATALOG_TOKEN` was invisible, and no release gate ran that guard at
+all. TR-05 (same review) makes an EMPTY curated entry (`CURATED["0.6.33"] = ""`)
+fail here instead of passing while the changelog silently omits the release.
+
+Run it BEFORE `git tag`:
 
     python scripts/pre_tag_check.py 0.6.12
 
-Exits 0 only when `scripts/build_changelog.py::CURATED` has an entry for the
-version AND every shipped web module's bytes match its cache token; non-zero
-otherwise (and when no version is given).
+Exits 0 only when `scripts/build_changelog.py::CURATED` has a non-empty entry for
+the version AND every shipped web module's bytes plus `web/catalog.json` match
+their cache token; non-zero otherwise (and when no version is given).
 """
 
 from __future__ import annotations
@@ -46,9 +52,25 @@ def token_problems() -> list[str]:
         return [f"cache-token guard failed to run: {exc}"]
 
 
+def catalog_problems() -> list[str]:
+    """TR-01 (0.6.32 review): the ~4 MB catalog DATA file's token guard must run
+    before a tag too. Its old rule compared the working tree against HEAD, so a
+    COMMITTED catalog change with an unbumped `CATALOG_TOKEN` was invisible; the
+    guard now carries a verified bytes/token baseline, and this gate blocks a tag
+    in that state."""
+    try:
+        return list(_load("check_catalog_token").scan())
+    except Exception as exc:  # noqa: BLE001 - a broken guard must not pass
+        return [f"catalog-token guard failed to run: {exc}"]
+
+
 def check(version) -> bool:
+    """A CURATED entry must be present AND carry real text (TR-05, 0.6.32
+    review): `CURATED["0.6.33"] = ""` (the "add the key now, write the text
+    later" slip) used to pass this gate while `build_entries` skipped the empty
+    summary, so a shipped release never appeared in the public changelog."""
     v = str(version).lstrip("v").strip()
-    return bool(v) and v in curated()
+    return bool(v) and bool(str(curated().get(v) or "").strip())
 
 
 def main() -> int:
@@ -59,15 +81,16 @@ def main() -> int:
     failures: list[str] = []
     if not check(v):
         failures.append(
-            f"no CURATED entry for '{v}' in scripts/build_changelog.py - add it "
-            f"and COMMIT it BEFORE creating the tag")
+            f"no CURATED entry for '{v}' in scripts/build_changelog.py (or it is "
+            f"EMPTY) - add the real text and COMMIT it BEFORE creating the tag")
     failures += token_problems()
+    failures += catalog_problems()
     if failures:
         for f in failures:
             print("pre_tag_check: FAIL - " + f)
         return 1
     print(f"pre_tag_check: OK - '{v}' has a curated changelog entry and every "
-          f"shipped web module matches its cache token")
+          f"shipped web module and the catalog match their cache token")
     return 0
 
 

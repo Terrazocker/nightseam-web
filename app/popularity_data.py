@@ -8,8 +8,7 @@ One entry per catalog id, used for TWO things:
 
 GENERATED - do not hand-edit. Re-run:
 
-    python scripts/match_popularity.py            # fetch + rewrite this file
-    python scripts/match_popularity.py --cached   # use data/popularity_snapshot.json
+    python scripts/match_popularity.py            # offline, from the frozen snapshot
 
 Every designation of every `app/data/openned.csv` row is matched against
 the popularity source table and the HIGHEST score wins (`match_objects`), so the
@@ -6375,7 +6374,7 @@ POPULARITY = {
     'ngc654': 202,
     'ngc6540': 32,
     'ngc6541': 139,
-    'ngc6542': 3,
+    'ngc6542': 115,
     'ngc6543': 24660,
     'ngc6544': 225,
     'ngc6545': 1,

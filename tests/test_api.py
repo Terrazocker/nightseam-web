@@ -304,6 +304,56 @@ def test_ingest_unresolved_and_library_edit(client, tmp_path):
     assert any((tmp_path / "archive" / "Renamed 42").rglob("lights/t42.fit"))
 
 
+def test_library_edit_rename_never_overwrites_a_colliding_frame(client, tmp_path):
+    """PY-01 (blocker, review 0.6.32): renaming an unresolved group into a name
+    whose folder ALREADY holds a same-named frame used `Path.replace(dest)` with
+    no uniquify - the colliding frame's pixels were destroyed while both DB rows
+    were rewritten to that one path (two rows aliasing one file; nothing else
+    held those bytes, `make_backup` copies only the DB).
+
+    Follows the ingest convention (`_archive_target` uniquifies to `stem_2`), so
+    the assertion is implementation-neutral on purpose: what must hold is that BOTH
+    frames still exist, on DISTINCT stored paths, with their own bytes."""
+    def frame(obj: str, exposure: float) -> bytes:
+        return make_fits([
+            ("SIMPLE", "T"), ("OBJECT", f"'{obj}'"),
+            ("EXPTIME", str(exposure)),
+        ])
+
+    for obj, exposure in (("ArchiveOne", 60.0), ("ArchiveTwo", 120.0)):
+        r = client.post("/api/images/ingest", files=[
+            ("files", ("Light_001.fit", frame(obj, exposure),
+                       "application/octet-stream"))])
+        assert r.status_code == 200 and r.json()["results"][0]["ok"] is True
+
+    archive = tmp_path / "archive"
+    lib = client.get("/api/library").json()
+    assert {o["name"] for o in lib["objects"]} == {"ArchiveOne", "ArchiveTwo"}
+
+    first = archive / "ArchiveOne/undated/lights/Light_001.fit"
+    second = archive / "ArchiveTwo/undated/lights/Light_001.fit"
+    assert first.read_bytes() == frame("ArchiveOne", 60.0)
+    assert second.read_bytes() == frame("ArchiveTwo", 120.0)
+
+    r = client.post("/api/library/edit",
+                    json={"name": "ArchiveTwo", "new_name": "ArchiveOne"})
+    assert r.status_code == 200, r.text
+
+    # the two frames are still two distinct files carrying their own bytes
+    files = sorted(p for p in archive.rglob("*.fit") if p.is_file())
+    assert len(files) == 2, [str(p) for p in files]
+    assert {p.read_bytes() for p in files} == {frame("ArchiveOne", 60.0),
+                                               frame("ArchiveTwo", 120.0)}
+
+    # and the DB does not alias one file with two rows
+    db = Database(tmp_path / "nightseam.db")
+    stored = [i["file"] for i in db.images() if i["object_name"] == "ArchiveOne"]
+    assert len(stored) == 2, stored
+    assert len(set(stored)) == 2, f"two rows alias one file: {stored}"
+    for rel in stored:
+        assert (archive / rel).is_file(), rel
+
+
 def test_ingest_rejects_bad_files(client):
     r = client.post("/api/images/ingest", files=[
         ("files", ("notes.txt", b"not a fits file", "text/plain")),
@@ -1153,6 +1203,45 @@ def test_origin_null_is_rejected(client):
     assert client.get("/api/state").status_code == 200
 
 
+def test_shutdown_is_post_only(client, monkeypatch):
+    """SP-03 (review 0.6.32): the route was BOTH `@app.get` and `@app.post`, so
+    any page the user visits could kill the app with
+    `<img src="http://127.0.0.1:8407/api/shutdown">` - an image request carries
+    neither `Sec-Fetch-Site` nor `Origin`, which is exactly the case the
+    anti-cross-site guard must fail open on (non-browser clients send neither).
+    A state-changing route must not be reachable by GET."""
+    # the POST arms a 1.5 s thread that calls os._exit(0): never let it run here
+    class _NoTimer:
+        def __init__(self, *a, **k):
+            pass
+
+        def start(self):
+            pass
+
+    monkeypatch.setattr(server_mod.threading, "Timer", _NoTimer)
+    assert client.get("/api/shutdown").status_code == 405
+    assert client.post("/api/shutdown").status_code == 200
+    assert server_mod._state["shutdown"] is True
+
+
+def test_int_path_params_beyond_64_bits_are_404_not_500(client):
+    """PY-05 (review 0.6.32): pydantic accepts arbitrary-precision ints, so a
+    hand-crafted URL reached sqlite3 and raised `OverflowError: Python int too
+    large to convert to SQLite INTEGER` - a 500 with a traceback instead of a
+    clean not-found. 2**63-1 is the largest id SQLite can hold and must still
+    answer normally."""
+    too_big = 999999999999999999999
+    assert client.get(f"/api/images/{too_big}/preview").status_code == 404
+    assert client.delete(f"/api/sites/{too_big}").status_code == 404
+    assert client.delete(f"/api/rigs/{too_big}").status_code == 404
+    assert client.put(
+        f"/api/sites/{too_big}",
+        json={"name": "x", "lat": 1.0, "lon": 2.0, "elev": 0}
+    ).status_code == 404
+    assert client.get(
+        f"/api/images/{2 ** 63 - 1}/preview").status_code == 404   # clean miss
+
+
 def test_import_malformed_bundles_are_clean_400s(client):
     """FIX-4 follow-up (verification): a VALID zip with a wrong/missing
     setup.json used to leave the ZipFile open, so the route's spool unlink
@@ -1189,6 +1278,95 @@ def test_import_rejects_hostile_settings_and_keeps_state_alive(client):
     st = client.get("/api/state")
     assert st.status_code == 200
     assert st.json()["bortle"] == 4
+
+
+def test_import_rejects_a_hostile_min_vis_and_keeps_state_alive(client):
+    """PY-02 (review 0.6.32): `min_vis` was the one int-coerced setting with no
+    import check, so `"abc"`/`null` was stored verbatim and every `/api/state`
+    then answered 500 (`int(db.setting("min_vis", 1))`) - static/js/main.js
+    awaits that route before rendering anything, so one crafted bundle bricked
+    the desktop at every boot."""
+    z = client.get("/api/export")
+    assert z.status_code == 200
+    base = json.loads(zipfile.ZipFile(io.BytesIO(z.content)).read("setup.json"))
+    for bad in ("abc", None):
+        setup = json.loads(json.dumps(base))
+        setup["settings"]["min_vis"] = bad
+        out = io.BytesIO()
+        with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as dst:
+            dst.writestr("setup.json", json.dumps(setup))
+        r = client.post("/api/import", files={
+            "file": ("backup.zip", out.getvalue(), "application/zip")})
+        assert r.status_code == 400, (bad, r.status_code, r.text)
+        assert "min_vis" in r.json()["detail"]
+    st = client.get("/api/state")
+    assert st.status_code == 200
+    assert st.json()["min_vis"] == 1
+    # a finite float is a legitimate (if odd) value: coerced and clamped
+    setup = json.loads(json.dumps(base))
+    setup["settings"]["min_vis"] = 42.9
+    out = io.BytesIO()
+    with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as dst:
+        dst.writestr("setup.json", json.dumps(setup))
+    r = client.post("/api/import", files={
+        "file": ("backup.zip", out.getvalue(), "application/zip")})
+    assert r.status_code == 200, r.text
+    assert client.get("/api/state").json()["min_vis"] == 42
+
+
+def test_state_survives_a_min_vis_row_that_is_not_a_number(db, tmp_path,
+                                                           monkeypatch):
+    """PY-02, second half: even a row that arrived some other way must not be
+    able to 500 the boot route. `/api/state` falls back to the default."""
+    db.set_setting("min_vis", "abc")
+    data = tmp_path / "data"
+    (data / "panos").mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr("app.server.data_dir", lambda: data)
+    with TestClient(create_app(db, prefetch=False)) as c:
+        r = c.get("/api/state")
+    assert r.status_code == 200
+    assert r.json()["min_vis"] == 1
+
+
+def test_import_never_writes_a_payload_for_a_record_it_dropped(client, tmp_path):
+    """SP-05/PY-06 (review 0.6.32): the restore write loop iterated the RAW
+    bundle list, so a panorama whose id failed `safe_token` never became a row
+    but its payload was still written into `data/panos` - an orphan file, never
+    cleaned, while the summary reported `panoramas: 0, pano_images: 1`."""
+    pano_root = server_mod.data_dir() / "panos"
+    setup = {"app": "NightSeam", "version": "test", "settings": {},
+             "sites": [], "rigs": [], "customs": [],
+             "panoramas": [{"id": "../evil", "name": "evil", "file": "ok.jpg"}],
+             "images": []}
+    out = io.BytesIO()
+    with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
+        z.writestr("setup.json", json.dumps(setup))
+        z.writestr("panos/ok.jpg", b"JPEGDATA")
+    r = client.post("/api/import", files={
+        "file": ("backup.zip", out.getvalue(), "application/zip")})
+    assert r.status_code == 200, r.text
+    assert r.json()["panoramas"] == 0
+    assert r.json()["pano_images"] == 0, "a dropped record's payload was written"
+    assert not (pano_root / "ok.jpg").exists()
+
+
+def test_import_rejects_a_control_character_in_a_stored_path(client):
+    """SP-05 (review 0.6.32): `safe_rel` rejected NUL, `..`, absolutes and
+    device names but let `\\x01`/`\\n`/`\\t`/`\\x1b` through, and Windows refuses
+    those at write time (`OSError: [Errno 22] Invalid argument`) - so the record
+    was stored and then aborted the restore AFTER the database had been
+    replaced. It must be refused at the boundary, so nothing is stored."""
+    setup = {"app": "NightSeam", "version": "test", "settings": {},
+             "sites": [], "rigs": [], "customs": [], "images": [],
+             "panoramas": [{"id": "p1", "name": "ctl", "file": "a\x01b.jpg"}]}
+    out = io.BytesIO()
+    with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
+        z.writestr("setup.json", json.dumps(setup))
+    r = client.post("/api/import", files={
+        "file": ("backup.zip", out.getvalue(), "application/zip")})
+    assert r.status_code == 200, r.text
+    assert r.json()["panoramas"] == 0
+    assert client.get("/api/state").json()["panoramas"] == []
 
 
 def test_import_rejects_nonfinite_image_numbers_and_keeps_library_alive(client):

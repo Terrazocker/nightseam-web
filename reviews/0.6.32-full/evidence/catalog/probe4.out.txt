@@ -1,0 +1,10 @@
+<workspace>\AstroPilot-local\reviews\0.6.32-full\evidence\catalog\catalog.regen.json: 12176 objects (main 200, advanced 11976)
+scratch db: <workspace>\AstroPilot-local\reviews\0.6.32-full\evidence\catalog\scratch.db exists True
+objects: 200 advanced: 11976 sum: 12176
+scored objects rows: 200
+unscored objects rows: 0
+cross-table duplicate ids: [] count 0
+objects cols: ['id', 'primary_name', 'messier', 'ngcic', 'other', 'otype', 'ra_hours', 'dec_deg', 'vmag', 'size_am', 'constellation', 'wiki', 'blurb', 'search', 'popularity']
+shipped sha256: ae002a9a6d5f832f98a522c319ec97dca2560ba30617486a34984aec61c75c6c 3834258
+regen   sha256: ae002a9a6d5f832f98a522c319ec97dca2560ba30617486a34984aec61c75c6c 3834258
+BYTE IDENTICAL: True

@@ -153,9 +153,31 @@ $dirtyTree = $describe.EndsWith("-dirty")
 & cmd /c "git describe --tags --exact-match HEAD >nul 2>nul"
 $onTag = ($LASTEXITCODE -eq 0)
 
-if ($dirtyTree -or (-not $onTag)) {
+# TR-08 (0.6.32 review): `git describe --dirty` only sees TRACKED modifications,
+# so an UNTRACKED file under static/ or app/data/ was compiled into the exe by
+# `--add-data` while the exe still claimed a clean tag (`check_release.py`
+# compares versions, not contents). `git status --porcelain` DOES list untracked,
+# non-ignored paths, so that list is the gate. The gitignored bakery is filtered
+# out because this script writes part of it (`app\_version_baked.py`) and the
+# rest is local state (data/, logs/) that must never block a build.
+$bakery = @('app/_version_baked.py', 'web/version.json', 'data', 'logs', '.pytest-tmp')
+$bundled = @($changed | Where-Object {
+    $line = "$_".Trim()
+    if (-not $line) { return $false }
+    $path = ($line -replace '^..\s+', '').Trim('"').TrimEnd('/')
+    foreach ($b in $bakery) {
+        if ($path -eq $b -or $path.StartsWith("$b/")) { return $false }
+    }
+    return $true
+})
+
+if ($dirtyTree -or (-not $onTag) -or ($bundled.Count -gt 0)) {
     $reasons = @()
     if ($dirtyTree) { $reasons += "the working tree is dirty ($($changed.Count) changed file(s))" }
+    if ($bundled.Count -gt 0) {
+        $shown = ($bundled | Select-Object -First 5) -join ", "
+        $reasons += "untracked/modified path(s) would be BUNDLED ($($bundled.Count)): $shown"
+    }
     if (-not $onTag) { $reasons += "HEAD is not exactly a git tag" }
     $why = $reasons -join " and "
     $ver = $describe.TrimStart("v")

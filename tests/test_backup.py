@@ -386,6 +386,27 @@ def test_import_rejects_hostile_settings(db):
     assert len(db.sites()) == 1
 
 
+def test_import_rejects_a_hostile_min_vis(db):
+    """PY-02 (review 0.6.32): `min_vis` is the FOURTH int-coerced setting and had
+    no import check, so `"abc"`/`null` was stored verbatim and `/api/state` then
+    raised `int("abc")` on EVERY boot (`static/js/main.js` awaits that route
+    before rendering anything). Same rule as bortle/edge_space - and a finite
+    float stays a legitimate value, coerced and clamped."""
+    db.add_site("Home", 50.0, 7.8, 150)
+    for bad in ("abc", None, float("nan"), True):
+        blob = _mutate_bundle(build_export_zip(db),
+                              lambda s, bad=bad: s["settings"].update(
+                                  {"min_vis": bad}))
+        with pytest.raises(ValueError, match="min_vis"):
+            apply_import_zip(db, blob)
+    assert len(db.sites()) == 1                  # nothing was replaced
+    # a finite out-of-range number is clamped, not refused
+    blob = _mutate_bundle(build_export_zip(db),
+                          lambda s: s["settings"].update({"min_vis": 150}))
+    apply_import_zip(db, blob)
+    assert db.setting("min_vis") == 100
+
+
 def test_import_rejects_nonfinite_site_and_rig_numbers(db):
     """PY3 follow-up (adversarial verification): imported site/rig/pano
     numbers reach /api/state, so a crafted zip with Infinity used to 500 the
@@ -623,3 +644,164 @@ def test_rolling_backup_is_a_consistent_sqlite_snapshot(db, tmp_path):
         assert conn.execute("SELECT COUNT(*) FROM sites").fetchone()[0] == 1
     finally:
         conn.close()
+
+
+# ------------------------------------------------------- review 0.6.32 findings
+
+def test_restore_is_atomic_when_a_payload_cannot_be_written(db, tmp_path,
+                                                            monkeypatch):
+    """PY-03 (review 0.6.32): the restore committed the database FIRST and wrote
+    the payloads after, so a write failure answered 400/500 while the library had
+    already been replaced and one row pointed at a file that would never exist -
+    "the import failed" and "nothing was replaced" were different statements.
+    The payloads are written first now (each into a temp file that is moved into
+    place only when it is complete), so a disk-full failure leaves both the
+    database and the existing payload files exactly as they were."""
+    import app.backup as backup
+
+    _seed(db, tmp_path)
+    before = [s["name"] for s in db.sites()]
+    # the bundle carries a brand-new panorama record: pre-fix, `import_bundle`
+    # committed its ROW before the payload phase ran, so the failing write still
+    # left the row behind (and `pano1.jpg` truncated by the failed write)
+    blob = _mutate_bundle(
+        build_export_zip(db),
+        lambda s: s["panoramas"].append(
+            {"id": "newpano", "name": "new", "file": "new.jpg",
+             "profile": [], "profile_top": []}))
+
+    def boom(zf, member, target, limit):
+        raise OSError(28, "No space left on device")
+
+    monkeypatch.setattr(backup, "_write_member", boom)
+    with pytest.raises(OSError):
+        apply_import_zip(db, blob)
+
+    assert [s["name"] for s in db.sites()] == before, "the library was replaced"
+    assert [p["id"] for p in db.panoramas()] == ["p1"], "a row survived the replace"
+    assert not (tmp_path / "data" / "panos" / "new.jpg").exists()
+    # the pre-import payload is not truncated by the failed restore either
+    assert (tmp_path / "data" / "panos" / "pano1.jpg").read_bytes() == b"JPEGDATA"
+
+
+def test_a_successful_restore_never_carries_the_incomplete_marker(db, tmp_path):
+    """PY-03: `restore_incomplete` is only valid on the ERROR path, so the
+    success path must not carry it (it would make every restore look partial)."""
+    _seed(db, tmp_path)
+    summary = apply_import_zip(db, build_export_zip(db))
+    assert summary["ok"] is True
+    assert "restore_incomplete" not in summary
+
+
+def test_a_failure_after_the_replace_is_named_in_the_error():
+    """PY-03, the honest-status half: an import that fails AFTER the database was
+    replaced must not answer a bare `400 Failed to write restored files`, which
+    reads as "bundle rejected - nothing happened". The route names the partial
+    state, and only when the marker is set."""
+    from app.server import _restore_error
+
+    plain = _restore_error("zip member too large: panos/x.jpg", {})
+    assert plain == "zip member too large: panos/x.jpg"
+    partial = _restore_error("zip member too large: panos/x.jpg",
+                             {"restore_incomplete": True})
+    assert "already replaced" in partial
+    assert "backup-auto.zip" in partial
+
+
+# ------------------------------------------------------- SP-01 aggregate cap
+
+def _oversized_bundle_member(declared: int) -> bytes:
+    """A tiny zip whose member DECLARES `declared` uncompressed bytes."""
+    out = io.BytesIO()
+    with zipfile.ZipFile(out, "w", zipfile.ZIP_STORED) as z:
+        z.writestr("setup.json", json.dumps(
+            {"app": "NightSeam", "version": "test", "settings": {},
+             "sites": [], "rigs": [], "customs": [], "images": [],
+             "panoramas": [{"id": "p1", "name": "big", "file": "big.jpg"}]}))
+        with z.open("panos/big.jpg", "w") as dst:
+            dst.write(b"\0" * declared)
+    return out.getvalue()
+
+
+def test_import_refuses_a_bundle_that_expands_past_the_restore_budget(
+        db, tmp_path, monkeypatch):
+    """SP-01 (review 0.6.32): `MAX_MEMBER_BYTES` bounded ONE member, but nothing
+    bounded the sum, so a 42 KB ZIP could write 40 MiB (measured 996:1) and a
+    2 GiB upload could fill the disk. The whole restore is refused now, before
+    the safety copy and before anything is written."""
+    import app.backup as backup
+
+    db.add_site("Home", 50.0, 7.8, 150)
+    assert backup.MAX_RESTORE_BYTES >= 1 << 30       # the shipped budget
+    blob = _oversized_bundle_member((1 << 20) + 1)
+    # a 1 MiB budget keeps the test from materialising the shipped 4 GiB
+    monkeypatch.setattr(backup, "MAX_RESTORE_BYTES", 1 << 20)
+    with pytest.raises(ValueError, match="expands to more than"):
+        apply_import_zip(db, blob)
+    assert not (tmp_path / "data" / "panos" / "big.jpg").exists()
+    assert len(db.sites()) == 1                      # nothing was replaced
+
+
+def test_import_never_writes_a_payload_for_a_record_it_dropped(db, tmp_path):
+    """PY-06/SP-05 (review 0.6.32): the write loop iterated the RAW bundle list,
+    so a panorama whose id failed `safe_token` never became a row but its payload
+    was still written into `data/panos` - an orphan file, never cleaned, while
+    the summary reported the pair `panoramas: 0, pano_images: 1`."""
+    pdir = tmp_path / "data" / "panos"
+    pdir.mkdir(parents=True)
+    setup = {"app": "NightSeam", "version": "test", "settings": {},
+             "sites": [], "rigs": [], "customs": [], "images": [],
+             "panoramas": [{"id": "../evil", "name": "evil", "file": "ok.jpg"}]}
+    summary = apply_import_zip(db, _zip_with("NightSeam", setup,
+                                            files={"panos/ok.jpg": b"JPEG"}))
+    assert summary["panoramas"] == 0
+    assert summary["pano_images"] == 0, "a dropped record's payload was written"
+    assert not (pdir / "ok.jpg").exists()
+
+
+def test_import_rejects_two_custom_records_with_one_id(db):
+    """PY-07 (review 0.6.32): `INSERT OR REPLACE INTO custom_objects` silently
+    collapsed two bundle targets sharing an id into ONE row while the summary
+    reported both - the silent-loss shape PY-01 was fixed for, in its record-id
+    form."""
+    db.add_site("Home", 50.0, 7.8, 150)
+    dup = {"id": "u_dup", "primary_name": "Dup", "otype": "galaxy",
+           "ra_hours": 1.0, "dec_deg": 2.0}
+    blob = _mutate_bundle(build_export_zip(db),
+                          lambda s: s["customs"].extend([dict(dup), dict(dup)]))
+    with pytest.raises(ValueError, match="same id"):
+        apply_import_zip(db, blob)
+    assert db.customs() == []            # nothing was replaced
+    assert len(db.sites()) == 1
+
+
+def test_import_of_a_structurally_broken_bundle_is_a_400_not_a_500(db):
+    """PY-04 (review 0.6.32): a bundle that got past the initial read and then
+    blew up inside the transaction (`sqlite3.IntegrityError`, or an
+    `AttributeError` from a non-dict record) surfaced as an opaque 500 while the
+    API documents ValueError -> 400. The transaction rolled back either way, so
+    only the error contract was wrong - and a 400 must not be reported for a
+    shape `import_bundle` can simply refuse."""
+    db.add_site("Home", 50.0, 7.8, 150)
+    # (a) NULL name -> NOT NULL constraint inside the transaction
+    blob = _mutate_bundle(build_export_zip(db),
+                          lambda s: s["sites"].append(
+                              {"id": 2, "name": None, "lat": 1.0, "lon": 2.0,
+                               "elev": 0}))
+    with pytest.raises(ValueError, match="malformed setup bundle"):
+        apply_import_zip(db, blob)
+    # (b) a site entry that is not an object at all
+    blob = _mutate_bundle(build_export_zip(db),
+                          lambda s: s["sites"].append("not-a-site"))
+    with pytest.raises(ValueError, match="malformed setup bundle"):
+        apply_import_zip(db, blob)
+    # (c) a duplicate panorama id -> UNIQUE constraint inside the transaction
+    blob = _mutate_bundle(
+        build_export_zip(db),
+        lambda s: s["panoramas"].extend([
+            {"id": "pdup", "name": "a", "file": "a.jpg"},
+            {"id": "pdup", "name": "b", "file": "b.jpg"}]))
+    with pytest.raises(ValueError, match="malformed setup bundle"):
+        apply_import_zip(db, blob)
+    assert len(db.sites()) == 1          # nothing was replaced
+    assert db.panoramas() == []

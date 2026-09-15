@@ -26,6 +26,7 @@ import hashlib
 import http.server
 import json
 import os
+import re
 import shutil
 import socket
 import subprocess
@@ -189,6 +190,7 @@ class Ctx:
         self.console_errors: list[str] = []
         self.page_errors: list[str] = []
         self.bad_responses: list[str] = []
+        self.external_images: list[tuple[int, str]] = []
         self._allow_console = False
         self._allow_responses = False
 
@@ -226,7 +228,14 @@ class Ctx:
 
     def assert_clean(self):
         """Every check that does not deliberately break something ends here:
-        no console errors, no uncaught exceptions, no same-origin 4xx/5xx."""
+        no console errors, no uncaught exceptions, no same-origin 4xx/5xx - and
+        no request to a third party (the popularity source tripwire)."""
+        attempts = getattr(self.page, "_ns_external_attempts", None) or []
+        if attempts:
+            raise AssertionError(
+                "NightSeam must not contact the popularity source (or any third party) at "
+                "boot; the popularity snapshot ships in the catalog. Attempted: "
+                + "; ".join(attempts[:3]))
         if self.page_errors and not self._allow_console:
             raise AssertionError("uncaught page errors: " + "; ".join(self.page_errors[:5]))
         if self.console_errors and not self._allow_console:
@@ -269,15 +278,26 @@ class Result:
 
 
 def _install_stubs(page):
-    """The gate is offline + deterministic: stub the one external file the web
-    app fetches at boot (The popularity source popularity; popularity-source.invalid sends no CORS
-    header, so a live fetch is a console error even when the app catches it).
-    The baked catalog popularity still applies."""
+    """The gate is offline + deterministic, and NightSeam must not contact a
+    third party at boot: the popularity source popularity snapshot is BAKED into the
+    catalog payload (`web/app.js::popularityOf` reads `o.popularity`), and the
+    web app has no live fetch left. This route is therefore a TRIPWIRE, not a
+    stub - any request to it is aborted and recorded, and `Ctx.assert_clean()`
+    fails the check that made it, on both shells. `tests/test_no_popularity_
+    fetch.py` pins the same rule statically."""
+    attempts: list[str] = []
+    page._ns_external_attempts = attempts
+
     def handler(route):
         try:
-            route.fulfill(status=200, content_type="application/json", body="{}")
+            attempts.append(route.request.url)
         except Exception:
             pass
+        try:
+            route.abort()
+        except Exception:
+            pass
+
     page.route("https://popularity-source.invalid/", handler)
 
 
@@ -310,6 +330,10 @@ def _attach(ctx: Ctx):
                 if resp.url.endswith("favicon.ico"):
                     return
                 ctx.bad_responses.append(f"{resp.status} {resp.url}")
+            # the allowlisted third-party image hosts: recorded so the production
+            # smoke can prove the shipped CSP does not block them
+            if "upload.wikimedia.org" in resp.url or "commons.wikimedia.org" in resp.url:
+                ctx.external_images.append((resp.status, resp.url))
         except Exception:
             pass
     ctx.page.on("console", on_console)
@@ -406,16 +430,68 @@ def run(channel: str = "chrome", targets=("web", "desktop"),
     return 1 if failed else 0
 
 
+def _inline_script_hashes() -> list[str]:
+    """`sha256-...` for every inline `<script>` in web/index.html - the hashes a
+    correct CSP must carry."""
+    import base64
+    import hashlib
+    out = []
+    try:
+        html = (WEB_DIR / "index.html").read_text(encoding="utf-8")
+    except OSError:
+        return out
+    for body in re.findall(r"<script(?![^>]*\bsrc=)[^>]*>(.*?)</script>",
+                           html, re.S | re.I):
+        digest = hashlib.sha256(body.encode("utf-8")).digest()
+        out.append("sha256-" + base64.b64encode(digest).decode("ascii"))
+    return out
+
+
+def _csp_problems(policy: str | None) -> list[str]:
+    """Why a deployed /astro Content-Security-Policy is unusable ([] = fine).
+
+    The web shell is the PUBLIC origin and loads third-party images while
+    holding the user's sites/rigs/targets/panoramas in IndexedDB and
+    localStorage, so a missing or over-permissive policy is a real finding -
+    not a nicety. The check is read-only and only runs for `--prod-url`.
+    """
+    if not policy:
+        return ["no Content-Security-Policy header is served (web/.htaccess "
+                "carries one; the host must apply it)"]
+    low = policy.lower()
+    bad = []
+    if "script-src" not in low:
+        bad.append("no script-src directive (default-src alone is weaker than "
+                   "the desktop shell, which pins script-src)")
+    elif "unsafe-inline" in low.split("script-src", 1)[1].split(";", 1)[0]:
+        bad.append("script-src allows 'unsafe-inline' (the web shell has NO "
+                   "inline handler; only the theme bootstrap needs a hash)")
+    elif "unsafe-eval" in low:
+        bad.append("script-src allows 'unsafe-eval'")
+    for wanted in _inline_script_hashes():
+        if wanted.lower() not in low:
+            bad.append(f"the inline theme bootstrap hash {wanted} is missing - "
+                       f"the saved theme would not be applied before paint")
+    if "connect-src" not in low:
+        bad.append("no connect-src (the Wikipedia photo fetch and version.json "
+                   "are unrestricted)")
+    return bad
+
+
 def _prod_smoke(browser, prod_url: str, artifacts: Path, verbose: bool) -> Result:
-    """Read-only production smoke (/astro): the page loads, shows a version
-    and has no console errors. Never mutates anything."""
+    """Read-only production smoke (/astro): the page loads, shows a version,
+    serves a usable CSP, has no console errors - and its own policy does not
+    break the third-party photos it allows. Never mutates anything."""
     ctx_b, page = _new_context(browser)
     c = Ctx(page, prod_url, "web-prod", artifacts)
     _attach(c)
     t0 = time.time()
     ok, err = True, ""
     try:
-        c.goto("/")
+        resp = page.goto(prod_url, wait_until="domcontentloaded")
+        c.expect(resp is not None, "the production page did not respond")
+        problems = _csp_problems(resp.headers.get("content-security-policy"))
+        c.expect(not problems, "production CSP: " + "; ".join(problems))
         page.wait_for_selector("#foot-ver", timeout=45000)
         # First-run welcome (throwaway profile, empty storage): "Skip" keeps the
         # default site so boot proceeds.  This writes only to the ephemeral
@@ -431,6 +507,13 @@ def _prod_smoke(browser, prod_url: str, artifacts: Path, verbose: bool) -> Resul
                  return t && t !== '\\u2026'; }""", timeout=45000)
         shown = (page.evaluate(
             """() => (document.querySelector('#foot-ver')?.textContent || '').trim()""") or "")
+        # The policy must not block what the app legitimately loads: the whole
+        # point of the img-src allowlist. `web-prod` used to verify the CSP text
+        # only, which cannot tell a correct policy from one that breaks photos.
+        failed = [f"{st} {url}" for st, url in c.external_images if st >= 400]
+        c.expect(not failed,
+                 "an allowlisted third-party image failed under the policy: "
+                 + "; ".join(failed[:3]))
         deployed = page.evaluate(
             """async () => { const r = await fetch('version.json'); return r.ok
                  ? (await r.json()).version : null; }""")

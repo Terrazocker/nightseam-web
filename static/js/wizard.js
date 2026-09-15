@@ -8,7 +8,21 @@ import { loadNight } from "./night.js";
 let _bound = false;
 let _step = 0;
 let _busy = false;           // guards against double-clicks while validating
+let _validatePromise = null; // an in-flight validate that outlived the 20 s guard
 let _formState = {};         // step index -> input values, kept across back/next
+
+/** Run a step's validate(), REUSING an in-flight one (DE-01, 0.6.32 review).
+ *  The location step creates/updates a site over HTTP, so the old code - which
+ *  dropped `_busy` after 20 s but left the request pending - fired a SECOND
+ *  POST on retry and the user ended up with two identical sites. A retry now
+ *  awaits the same promise, so the request happens exactly once. */
+function runValidate(st) {
+  if (_validatePromise) return _validatePromise;
+  _validatePromise = Promise.resolve()
+    .then(() => st.validate())
+    .finally(() => { _validatePromise = null; });
+  return _validatePromise;
+}
 
 /* show an error directly on the wizard (never silently swallowed) */
 function wizErr(msg) {
@@ -168,9 +182,10 @@ async function next() {
   try {
     const st = STEPS[_step];
     if (st.validate) {
-      // a stuck validate (e.g. a hanging request) must never wedge the
-      // wizard: after 20 s the guard is dropped so the click works again
-      const done = await Promise.race([st.validate(), new Promise(r => {
+      // a stuck validate (e.g. a hanging request) must never wedge the wizard:
+      // after 20 s the guard is dropped so the click works again - and the
+      // request itself is REUSED, never re-issued (DE-01, see runValidate)
+      const done = await Promise.race([runValidate(st), new Promise(r => {
         setTimeout(() => r("timeout"), 20000);
       })]);
       if (done === "timeout") {

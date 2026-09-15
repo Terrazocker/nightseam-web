@@ -5,7 +5,7 @@ import { parseUTC, clamp, fmtHM } from "./util.js";
 import { statusOf as coreStatusOf, effectiveMinAlt as coreMinAlt,
          moonSensitivity, effectiveMoonGlow, moonPenalty, bortleMoonFactor,
          popularityFactor as corePopularityFactor, scrubWindowMs,
-         scrubBounds, scrubClamp, sepDeg }
+         scrubBounds, scrubClamp, sepDeg, julianDay, scoreNightTracks }
   from "./core.js";
 
 /* keyboard scrub steps in minutes - shared with the web (web/astro.js) and
@@ -157,7 +157,6 @@ export function recomputeNightDerived() {
   const N = S.night;
   if (!N) return;
   const [i0, i1] = nightIndexRange();
-  const nightN = Math.max(1, i1 - i0 + 1);
   const minAlt = S.minAlt;
   const illum = N.moon_illum || 0;
   const bortle = (S.cfg && S.cfg.bortle) || 4;
@@ -165,46 +164,81 @@ export function recomputeNightDerived() {
   const moonAge = N.moon_age_days || 0;  // 0-14.76 (folded), 0 = new, ~14.76 = full
   const bortleF = bortleMoonFactor(bortle);
 
-  for (const o of N.objects) {
-    o.vis = o.alt.map((a, i) =>
-      a >= minAlt && a > o.ceil[i] && a < (o.ceil_top ? o.ceil_top[i] : 90.5));
-    o.above = o.alt.map(a => a > 0);
-    let visIn = 0, blocked = 0, sClassic = 0, sMoon = 0;
-    const m = S.meta[o.id];
-    const typeF = moonSensitivity(m && m.otype);
-    /* The clear window, the score and the "% of night" are all measured WITHIN
-       the dark window (dusk..dawn = i0..i1). The payload's grid deliberately
-       carries an hour of twilight on each side for chart context; counting it
-       made the desktop advertise clear windows that included daylight (e.g.
-       19:37-07:01 for a 20:37-06:02 night) and score samples the web - which
-       clips to the same window - never sees. `o.vis` itself stays unclipped:
-       the charts and the sky view colour every sample. */
-    for (let i = 0; i < o.vis.length; i++) {
-      const v = o.vis[i], up = o.above[i];
-      const inNight = i >= i0 && i <= i1;
-      if (inNight && v) visIn++;
-      if (up && !v) blocked++;
-      if (v && inNight) {
-        let w = Math.sin(Math.max(0, Math.min(90, o.alt[i])) * Math.PI / 180);
-        sClassic += w;
-        const ma = N.moon_alt[i];
-        if (ma > 0) {
-          const sep = sepDeg(o.alt[i], o.az[i], ma, N.moon_az[i]);
-          const glow = effectiveMoonGlow(illum, sep, fType, moonAge);
-          w *= moonPenalty(glow, typeF, bortleF);
-        }
-        sMoon += w;
-      }
+  /* ONE scoring loop for both shells: core/scoring.js::scoreNightTracks. This
+     shell used to aggregate the same numbers inline, which is how the two apps
+     drifted (CO-07). The desktop keeps its own GRID (the 241-sample
+     noon->noon payload the charts draw) and passes the dusk..dawn scoring
+     window in, exactly like the web passes no window because its grid already
+     IS the dark window. Every "night" number - the clear window, `% of night`
+     and both scores - is measured inside that window on BOTH sides. */
+  const count = N.objects.length ? N.objects[0].alt.length : 0;
+  if (!count) return;
+  const jd0 = julianDay(parseUTC(N.timeline.times_iso[0]));
+  const step = N.timeline.step_min / 1440;
+  const trackAlt = new Float64Array(N.objects.length * count);
+  const trackAz = new Float64Array(N.objects.length * count);
+  const typeF = new Array(N.objects.length);
+  for (let k = 0; k < N.objects.length; k++) {
+    const o = N.objects[k], base = k * count;
+    for (let i = 0; i < count; i++) {
+      trackAlt[base + i] = o.alt[i];
+      trackAz[base + i] = o.az[i];
     }
-    const inNightFlags = o.vis.map((v, i) => v && i >= i0 && i <= i1);
-    const nightOnly = o.above.map((v, i) => v && i >= i0 && i <= i1);
-    o.obs_pct = Math.round(100 * visIn / nightN);
-    o.best = longestRunJS(inNightFlags);
-    o.best_above = longestRunJS(nightOnly);
-    o.blocked_n = blocked;
-    o.score = Math.round(sClassic * 10) / 100;
-    o.score_moon = Math.round(sMoon * 10) / 100;
+    const m = S.meta[o.id];
+    typeF[k] = moonSensitivity(m && m.otype);
   }
+  const tracks = { n: N.timeline.n, count, alt: trackAlt, az: trackAz };
+  const ctx = {
+    moonAlt: N.moon_alt, moonAz: N.moon_az,
+    illum, moonAgeDays: moonAge, filterType: fType,
+    moonAware: !!(S.cfg && S.cfg.moon_aware),
+    typeF, bortleF,
+    range: [i0, i1],
+  };
+  const pano = activePanoForScoring();
+  // ONE pass. `o.alt`/`o.ceil` stay the payload's own arrays: they are what the
+  // charts, the sky view and `buildClientDetail` read, and core computes its
+  // ceilings from the same world-bin rule.
+  const rows = scoreNightTracks(tracks, N.objects, jd0, step, minAlt, pano, ctx);
+
+  for (let k = 0; k < N.objects.length; k++) {
+    const o = N.objects[k], r = rows[k];
+    o.vis = o.alt.map((a, i) => a >= minAlt && a > o.ceil[i]
+                               && a < (o.ceil_top ? o.ceil_top[i] : 90.5));
+    o.above = o.alt.map((a) => a > 0);
+    o.obs_pct = r.pct;
+    /* The clear window is reported as GRID INDICES - the desktop's `best`
+       contract (windowText/windowEndISO index times_iso with them) - and it is
+       the half-open longestRunJS the shell always used, so the window and the
+       flags that colour the chart can never disagree. `best` is clipped to
+       dusk..dawn; `best_above` is the same run over the whole payload grid. */
+    const inNightFlags = o.vis.map((v, i) => v && i >= i0 && i <= i1);
+    const aboveInNight = o.above.map((v, i) => v && i >= i0 && i <= i1);
+    o.best = longestRunJS(inNightFlags);
+    o.best_above = longestRunJS(aboveInNight) || longestRunJS(o.above);
+    o.blocked_n = r.blocked;
+    // the desktop's SCORE ROUNDING contract: two decimals (the web rounds the
+    // same way in app.js::renderTonight). The engine and the Targets sort read
+    // these numbers, so the scale has to stay bit-compatible.
+    o.score = Math.round(r.sClassic * 10) / 100;
+    o.score_moon = Math.round(r.sMoon * 10) / 100;
+    o.transit_jd = r.transitJd;
+  }
+}
+
+/** The active panorama in the shape core/scoring.js expects (world bins,
+ *  sky/obstacle mode, FOV gate, block-above). `null` when none is active. */
+function activePanoForScoring() {
+  const act = S.panos.find(p => p.active) ||
+              S.panos.find(p => p.id === (S.cfg && S.cfg.active_pano_id));
+  if (!act || !act.profile || !act.profile.length) return null;
+  return {
+    profile: act.profile,
+    profileTop: act.profile_top || null,
+    paintMode: act.paint_mode === "sky" ? "sky" : "obstacle",
+    fov: act.fov, azOffset: act.az_offset,
+    blockAbove: !!act.block_above,
+  };
 }
 
 

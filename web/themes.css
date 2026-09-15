@@ -100,7 +100,7 @@ html[data-theme="dome"] .topbar {
   gap: 12px;
   flex-wrap: wrap;
 }
-html[data-theme="dome"] .tagline { color: #67749c; }
+html[data-theme="dome"] .tagline { color: #7d8bb5; }
 html[data-theme="dome"] .brand-ico {
   filter: drop-shadow(0 0 10px rgba(143,123,255,.7));
 }
@@ -150,7 +150,7 @@ html[data-theme="dome"] .tabs a {
 }
 html[data-theme="dome"] .tabs a:hover { color: #dbe4ff; }
 html[data-theme="dome"] .tabs a.active {
-  color: #0a0d1a;
+  color: #05070f;
   background: linear-gradient(135deg, #8f7bff, #7a5cff);
   box-shadow: 0 2px 12px rgba(143,123,255,.45), inset 0 1px 0 rgba(255,255,255,.25);
 }
@@ -175,7 +175,7 @@ html[data-theme="dome"] .pick li {
   -webkit-backdrop-filter: blur(8px);
 }
 html[data-theme="dome"] .pick li:hover { border-color: rgba(143,123,255,.55); }
-html[data-theme="dome"] .pick .p-tags { color: #67749c; }
+html[data-theme="dome"] .pick .p-tags { color: #7d8bb5; }
 
 /* buttons */
 html[data-theme="dome"] .btn {
@@ -314,7 +314,7 @@ html[data-theme="dome"] .set-form { border-color: rgba(255,255,255,0.07); }
 
 /* === FOOTER / version === */
 html[data-theme="dome"] .foot { border-top-color: rgba(255,255,255,0.06); }
-html[data-theme="dome"] .foot p { color: #67749c; }
+html[data-theme="dome"] .foot p { color: #7d8bb5; }
 
 /* === scrollbar === */
 html[data-theme="dome"] ::-webkit-scrollbar { width: 10px; height: 10px; }

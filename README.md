@@ -8,8 +8,10 @@ mode that organizes your captured FITS frames.
 
 NightSeam runs as a small local web server and opens its UI in your default
 browser (or a native window). It ships with **no external runtime
-dependencies** on the target machine and works fully offline except for
-optional object example images (fetched from Wikipedia and cached locally).
+dependencies** on the target machine, and both the sky calculations and the
+whole catalog work fully offline. The only network calls are optional: object
+example images (Wikipedia, cached locally), the weather panel (Open-Meteo, on
+request) and a once-per-start version check against nightseam.de.
 
 **Docs:** `CATALOG.md` - where the catalogue comes from and how to rebuild it
 (sources, the popularity table, the web payload, cache tokens). `DECISIONS.md` -
@@ -25,8 +27,8 @@ in your browser with no server:
 ## License
 
 MIT — see [LICENSE](LICENSE). Third-party data and service credits
-(OpenNGC CC BY-SA 4.0, Wikimedia images, Open-Meteo) are listed in
-[NOTICE](NOTICE).
+(OpenNGC CC BY-SA 4.0, Wikimedia images, Open-Meteo, the popularity source
+popularity snapshot) are listed in [NOTICE](NOTICE).
 
 Two modes, switched with the top-right button:
 
@@ -45,8 +47,9 @@ Two modes, switched with the top-right button:
   region, M40, M73, and the Tulip, Lion, Flying Bat/Squid, Dolphin Head,
   Simeis 147 and Seahorse nebulae, LBN 437, LDN 1622 and the Pipe Nebula) -
   12,176 objects to magnitude 20. Standard mode shows
-  the 200 MOST POPULAR of them (community observing counts, as a silent
-  ranking input); **advanced mode** (hamburger menu) shows all 12,176. Each
+  the 200 MOST POPULAR of them (community observing counts from the popularity source,
+  shipped as a one-time snapshot and used as a silent ranking input);
+  **advanced mode** (hamburger menu) shows all 12,176. Each
   object carries its designations - search "M101" or "NGC 5457" and you get
   the same object.
 - **Location-aware visibility** - enter your observing site(s) once; every
@@ -69,15 +72,15 @@ Two modes, switched with the top-right button:
   now / rising later, ranked by an imaging-quality score. Moon-aware ranking
   penalizes targets near a bright Moon (per object type) and honors your
   Bortle sky class (hamburger menu).
+- **Weather panel** - the top-bar weather chip loads the active site's current
+  conditions and a 4-day forecast from Open-Meteo. Nothing is fetched until you
+  click it, unless you turn on "always load on startup"; the weather is
+  display-only and never feeds the planning numbers.
 - **Timezone-aware planning** - all times render in your machine's zone with
   DST applied per date (planning a December night in summer is not shifted).
   An optional IANA timezone picker (advanced mode) plans for a distant
   observing site.
 - **Constellation filter** keeps the target list tidy.
-- **Timezone-aware planning** - all times render in your machine's zone with
-  DST applied per date (planning a December night in summer is not shifted).
-  An optional IANA timezone picker (advanced mode) plans for a distant
-  observing site.
 
 ### Image Catalog
 
@@ -180,9 +183,12 @@ published algorithms - no internet service is involved:
 - Object altitudes use J2000 catalog coordinates precessed to date plus
   standard sidereal time and refraction (typically well below 0.1 deg error).
 
-Object example images are the only online content: they are fetched once from
-Wikipedia and cached in `data\imgcache`; offline you get generated
-placeholders instead.
+Object example images are not the only online content. Images are fetched from
+Wikipedia on demand and cached in `data\imgcache` (offline you get generated
+placeholders instead); loading the weather panel sends your active site's
+coordinates to Open-Meteo; and, once per start, the app checks whether a newer
+version is available. The catalogue with its popularity snapshot and every sky
+calculation are local.
 
 ## Accuracy notes
 
@@ -192,5 +198,6 @@ standard sidereal time and Saemundsson refraction (typical error well below
 (~0.01 / ~0.3 degree) - plenty for twilight times, obstruction tests and moon
 phase. Obstacle comparisons use apparent altitudes on both sides consistently.
 
-Not included on purpose: satellite/planet positions, weather, ephemeris-grade
-lunar librations.
+Not included on purpose: satellite/planet positions, ephemeris-grade lunar
+librations. (The weather panel reports Open-Meteo conditions for your site; it
+is never an input to the planning numbers.)

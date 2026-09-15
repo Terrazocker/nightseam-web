@@ -9,6 +9,7 @@ import os
 import re
 import threading
 import time
+import urllib.request
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
@@ -20,7 +21,8 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from .backup import _export_zip_to, apply_import_zip, build_export_zip
-from .database import (Database, PROFILE_BINS, new_id, profile_values_ok)
+from .database import (Database, PROFILE_BINS, _finalize_num_setting, new_id,
+                       profile_values_ok)
 from .fits import parse_dec_deg, parse_ra_hours
 from .imglib import name_key
 from .ingest import ingest_one, obj_slug, reindex_library, rename_archive_folder
@@ -49,7 +51,136 @@ _MAX_REQUEST_BYTES = {
     "/api/panorama": 64 * (1 << 20),
 }
 
+# PY-05: SQLite INTEGER ids are signed 64-bit. Pydantic accepts arbitrary
+# precision ints, so a hand-crafted URL like /api/images/999999999999999999999/
+# preview reached sqlite3 and raised OverflowError -> a 500 + traceback instead
+# of a clean "not found". `_int_id` bounds the path param by hand so the
+# behaviour is a documented 404 (a pydantic-constrained `int` path param would
+# answer 422 and its error body would echo the huge value).
+_INT_ID_MAX = 2 ** 63 - 1
+
 _state = {"last_request": time.time(), "shutdown": False}
+
+# ---- update check (SP-02, 0.6.32 review) ------------------------------------
+# The desktop used to load https://nightseam.de/downloads/ns-version.js as a
+# JSONP <script> (static/js/updater.js), which executed THIRD-PARTY JavaScript
+# in the app's own origin - where /api/export, /api/state and every
+# state-changing route answer unauthenticated same-origin requests. No amount of
+# payload validation fixes that, because the script itself runs. The fetch,
+# parse and validation now happen HERE, in Python, where CORS does not apply;
+# the page only ever receives a JSON document from its own origin.
+UPDATE_VERSION_URL = "https://nightseam.de/downloads/version.json"
+UPDATE_TIMEOUT = 6.0
+UPDATE_MAX_BYTES = 64 * 1024
+_VERSION_RE = re.compile(r"^[0-9][0-9A-Za-z.\-+]{0,31}$")
+
+
+def _fetch_remote_version() -> str | None:
+    """The published version string, or None.
+
+    Returns None for EVERY failure (offline, DNS, TLS, HTTP error, a hostile or
+    oversized body, a version that is not a plain version token) - the check is
+    silent and optional, so any failure simply means "no update". Tests must
+    never hit the real site: patch `server_mod.UPDATE_VERSION_URL` (or the
+    module's `urllib.request.urlopen`) at the network boundary.
+    """
+    url = UPDATE_VERSION_URL
+    if not url.startswith("https://"):
+        return None                       # defence in depth: never plain HTTP
+    try:
+        req = urllib.request.Request(url, headers={
+            "User-Agent": "NightSeam/1.0 (update check)",
+            "Accept": "application/json"})
+        with urllib.request.urlopen(req, timeout=UPDATE_TIMEOUT) as resp:
+            raw = resp.read(UPDATE_MAX_BYTES + 1)
+    except Exception:                     # noqa: BLE001 - offline/hostile/HTTP
+        return None
+    if len(raw) > UPDATE_MAX_BYTES:
+        return None
+    try:
+        doc = json.loads(raw.decode("utf-8", "replace"))
+    except Exception:                     # noqa: BLE001
+        return None
+    if not isinstance(doc, dict):
+        return None
+    value = doc.get("version")
+    if value is None:
+        # tolerate the site baking the string as a pre-set variable
+        value = doc.get("describe") or doc.get("tag") or ""
+    value = str(value).strip().lstrip("vV")
+    return value if _VERSION_RE.match(value) else None
+
+
+def _version_greater(a: str, b: str) -> bool:
+    """True when version `a` is strictly newer than `b` (numeric fields, so
+    0.6.32 > 0.6.9 - a string compare would get that wrong)."""
+    def parts(v):
+        out = []
+        for chunk in str(v or "").split("-")[0].split("."):
+            num = ""
+            for ch in chunk:
+                if ch.isdigit():
+                    num += ch
+                else:
+                    break
+            out.append(int(num) if num else 0)
+        return out
+    pa, pb = parts(a), parts(b)
+    for i in range(max(len(pa), len(pb))):
+        x = pa[i] if i < len(pa) else 0
+        y = pb[i] if i < len(pb) else 0
+        if x != y:
+            return x > y
+    return False
+
+
+# Content-Security-Policy for the HTML the server serves (SP-02, defence in
+# depth). The load-bearing part is that NO remote origin may provide script:
+# `script-src 'self'` is what makes a hostile DNS/CA/host compromise unable to
+# run code in the 127.0.0.1 origin even if some future code tries a JSONP tag.
+#   * `'unsafe-inline'` in script-src is REQUIRED by static/index.html's inline
+#     theme bootstrap (which must run before first paint) - that file is out of
+#     this change's scope. It permits inline <script> and inline event handlers;
+#     it does NOT permit a script from another origin.
+#   * the two inline `onerror=` image fallbacks in static/js/{targets,tonight}.js
+#     are therefore blocked (the fallback transparent GIF / hidden-image trick
+#     degrades to the browser's broken-image state). Fixing that needs a small
+#     JS change in those files, which is outside this change's file scope.
+#   * img-src is pinned to the hosts the desktop actually renders images from
+#     (cached Wikipedia/Wikidata thumbnails are full URLs; DSS cutouts and the
+#     API payloads answer from /api/object/...).
+#   * connect-src keeps the weather panel working and stays restricted to it.
+CSP_HEADER = (
+    "default-src 'self'; "
+    "script-src 'self' 'unsafe-inline'; "
+    "style-src 'self' 'unsafe-inline'; "
+    "img-src 'self' data: https://upload.wikimedia.org "
+    "https://commons.wikimedia.org https://alasky.cds.unistra.fr; "
+    "connect-src 'self' https://api.open-meteo.com; "
+    "worker-src 'self'; "
+    "font-src 'self'"
+)
+
+
+def _int_id(value: int) -> int:
+    """A stored-row id that SQLite can actually hold, else 404 (PY-05)."""
+    if not 0 <= value <= _INT_ID_MAX:
+        raise HTTPException(404, "not found")
+    return value
+
+
+def _restore_error(message, summary: dict) -> str:
+    """The error text for a failed restore, naming the state it left behind.
+
+    PY-03: an import that fails AFTER `import_bundle` replaced the library used
+    to answer a bare `400 Failed to write restored files` (or `zip member too
+    large`), which reads as "bundle rejected - nothing happened" while the user's
+    data had in fact been replaced. Say so instead."""
+    if summary.get("restore_incomplete"):
+        return (f"{message} - the setup database was already replaced, so the "
+                "library is in a partially restored state; the pre-import data "
+                "is in <db>.backup-auto.zip")
+    return str(message)
 
 
 def _same_origin_request(request) -> bool:
@@ -351,6 +482,14 @@ def create_app(db: Database, *, prefetch: bool = True) -> FastAPI:
                                f"{limit // (1024 * 1024)} MB per request)"},
                     status_code=413)
         resp = await call_next(request)
+        # SP-02: the privileged localhost origin must not accept remote script.
+        # Attach the policy to every HTML document the server serves (the SPA
+        # shell and FastAPI's own error pages; a 4xx/5xx body is HTML and needs
+        # it just as much, since a cross-site <script> tag can read nothing from
+        # a JSON response anyway but the browser still runs what it loads).
+        ctype = (resp.headers.get("content-type") or "").lower()
+        if ctype.startswith("text/html"):
+            resp.headers.setdefault("Content-Security-Policy", CSP_HEADER)
         # the UI ships as plain files served from the exe/source bundle; a
         # stale cached index.html next to fresh ES modules breaks the app
         # (missing DOM ids). Never cache the UI shell or its assets - including
@@ -378,6 +517,12 @@ def create_app(db: Database, *, prefetch: bool = True) -> FastAPI:
     def api_state():
         panos = db.panoramas()
         mua = _effective_min_alt(db)
+        # PY-02: an imported "abc"/null used to make int() raise below, and
+        # static/js/main.js awaits this route before rendering anything - so one
+        # crafted bundle bricked the desktop at every boot. The import boundary
+        # refuses such a value now; this is the second line of defence for a row
+        # that got in some other way.
+        min_vis = _finalize_num_setting(db.setting("min_vis", 1), 0, 100)
         return {
             "version": APP_VERSION,
             "sites": db.sites(),
@@ -410,7 +555,7 @@ def create_app(db: Database, *, prefetch: bool = True) -> FastAPI:
             "weather_auto": bool(db.setting("weather_auto", False)),
             "view_full_day": bool(db.setting("view_full_day", False)),
             # the target list's Min-visibility gate (0 = off); see targets.js
-            "min_vis": max(0, min(100, int(db.setting("min_vis", 1)))),
+            "min_vis": min_vis if min_vis is not None else 1,
         }
 
     @app.post("/api/settings")
@@ -485,12 +630,13 @@ def create_app(db: Database, *, prefetch: bool = True) -> FastAPI:
     @app.put("/api/sites/{sid}")
     def api_update_site(sid: int, body: SiteIn):
         _check_site(body.lat, body.lon, body.elev)
-        db.update_site(sid, body.name.strip(), body.lat, body.lon, body.elev)
+        db.update_site(_int_id(sid), body.name.strip(), body.lat, body.lon,
+                       body.elev)
         return {"ok": True}
 
     @app.delete("/api/sites/{sid}")
     def api_delete_site(sid: int):
-        db.delete_site(sid)
+        db.delete_site(_int_id(sid))
         return {"ok": True}
 
     # ---------------- rigs ----------------
@@ -512,7 +658,7 @@ def create_app(db: Database, *, prefetch: bool = True) -> FastAPI:
 
     @app.delete("/api/rigs/{rid}")
     def api_delete_rig(rid: int):
-        db.delete_rig(rid)
+        db.delete_rig(_int_id(rid))
         return {"ok": True}
 
     # ---------------- catalog + images (IO) ----------------
@@ -542,6 +688,19 @@ def create_app(db: Database, *, prefetch: bool = True) -> FastAPI:
                         headers={"Cache-Control": "public, max-age=600"})
 
     # ---------------- panoramas ----------------
+
+    @app.post("/api/images/cache/clear")
+    def api_clear_image_cache():
+        """SP-10: the explicit "clear cached images" action.
+
+        `app/images.py` bounds the cache automatically (byte cap + age cap,
+        enforced on write); this is the user-triggered path. POST because it
+        changes state - and it must not be a GET, which any page the user
+        visits can reach with `<img src=...>` (the same class of issue as
+        /api/shutdown, SP-03).
+        """
+        from .images import clear_cache
+        return {"ok": True, "freed": clear_cache()}
 
     def _pano_or_404(pid: str) -> dict:
         """Panorama row for an id that is safe to use as a filename component.
@@ -694,16 +853,23 @@ def create_app(db: Database, *, prefetch: bool = True) -> FastAPI:
         # Spool to a temp file next to the db so the blob never lives in RAM
         # (apply_import_zip accepts a Path).
         spool = db.path.parent / f".import-{uuid.uuid4().hex}.zip"
+        # PY-03: `apply_import_zip` fills this summary in place, so the route can
+        # tell "the bundle was rejected" (nothing was replaced) from "the restore
+        # failed AFTER the library was replaced" - a plain 400 must never be read
+        # as the former when it is the latter.
+        summary: dict = {}
         try:
             await _drain_upload(file, spool, 2 * 1024 * 1024 * 1024,
                                 "Backup zip")
             try:
-                summary = apply_import_zip(db, spool)
+                summary = apply_import_zip(db, spool, summary)
             except ValueError as exc:
-                raise HTTPException(400, str(exc)) from None
+                raise HTTPException(400, _restore_error(exc, summary)) from None
             except OSError as exc:      # e.g. disk full while restoring
                 raise HTTPException(
-                    500, f"Failed to write restored files: {exc}") from None
+                    500, _restore_error(
+                        f"Failed to write restored files: {exc}", summary)
+                ) from None
         finally:
             spool.unlink(missing_ok=True)
         return summary
@@ -860,14 +1026,19 @@ def create_app(db: Database, *, prefetch: bool = True) -> FastAPI:
                 and name_key(i["object_name"]) == name_key(name)]
         if not rows:
             raise HTTPException(404, "Object not found in library")
-        if not rename_archive_folder(Path(db.image_dir()), name, new_name):
+        # PY-01: the move returns the REAL destination of every frame. A rename
+        # into a folder that already holds a same-named frame used to `replace`
+        # it (two rows aliasing one file, the replaced pixels gone); the frame is
+        # uniquified now and the stored path is updated to where it really is.
+        moved = rename_archive_folder(Path(db.image_dir()), name, new_name)
+        if moved is None:
             # the folder could not be moved (files open in another program):
             # leave the stored paths alone rather than pointing them at a
             # folder that does not exist
             raise HTTPException(
                 500, "Could not move the archive folder - close any program "
                      "using those files and try again")
-        db.rename_images(name, new_name, otype, obj_slug(new_name))
+        db.rename_images(name, new_name, otype, obj_slug(new_name), moved)
         return {"ok": True, "name": new_name, "otype": otype}
 
     @app.get("/api/library/export")
@@ -913,7 +1084,7 @@ def create_app(db: Database, *, prefetch: bool = True) -> FastAPI:
     @app.get("/api/images/{img_id}/preview")
     def api_image_preview(img_id: int):
         from . import fits as fitsio
-        row = db.image(img_id)
+        row = db.image(_int_id(img_id))
         if row is None:
             raise HTTPException(404, "image not found")
         # same rule as the panorama route: a stored path must stay inside the
@@ -932,16 +1103,54 @@ def create_app(db: Database, *, prefetch: bool = True) -> FastAPI:
                         headers={"Cache-Control":
                                  "public, max-age=604800, immutable"})
 
+    @app.post("/api/update-check")
+    def api_update_check():
+        """SP-02: the update check, server-side.
+
+        The page used to load `ns-version.js` as a JSONP <script>, executing
+        remote code in the privileged origin. Python fetches the published
+        version document here (no CORS constraint on this side), validates it
+        strictly and answers a same-origin JSON document. EVERY failure is
+        "no update": silent, never blocking, never fatal.
+
+        POST because StaticFiles (mounted at "/") claims GET/HEAD for every
+        unmatched path - and because this is the app's own JSON endpoint, not a
+        cacheable document.
+        """
+        remote = _fetch_remote_version()
+        if remote is None:
+            return {"ok": False, "version": None, "update": False,
+                    "current": APP_VERSION}
+        return {"ok": True, "version": remote,
+                "update": _version_greater(remote, APP_VERSION),
+                "current": APP_VERSION}
+
     @app.get("/api/shutdown")
+    def api_shutdown_get():
+        """SP-03: GET must not shut the app down.
+
+        The route used to answer GET as well, which made it reachable from any
+        page the user visits (`<img src="http://127.0.0.1:8407/api/shutdown">`
+        carries neither `Sec-Fetch-Site` nor `Origin` - the case the anti
+        cross-site guard has to fail open on). Answer 405 with the allowed
+        method instead of letting it fall through to the static mount's 404."""
+        raise HTTPException(405, "Use POST /api/shutdown",
+                            headers={"Allow": "POST"})
+
     @app.post("/api/shutdown")
     def api_shutdown():
         """Ask the app to exit.
 
-        Cross-site callers are rejected by the guard middleware (a page on
-        another origin can otherwise reach a local port with a no-cors
-        request). The flag lets main.py's loop shut down gracefully - closing
-        the server and clearing data/instance.json; the timer is the fallback
-        for native-window mode, where nothing polls the flag."""
+        POST only (SP-03): it changes state, and a GET is reachable from ANY
+        page the user visits with `<img src="http://127.0.0.1:8407/api/shutdown">`
+        - a request that carries neither `Sec-Fetch-Site` nor `Origin`, which is
+        exactly the case the anti-cross-site guard has to fail open on (a
+        non-browser client sends neither). The UI (and the idle-exit probe) use
+        an explicit POST, which the guard can classify. Cross-site callers are
+        still rejected by the middleware. The flag lets main.py's loop shut down
+        gracefully - closing the server and clearing data/instance.json; the
+        timer is the fallback for native-window mode, where nothing polls the
+        flag."""
         _state["shutdown"] = True
 
         def _hard_exit():

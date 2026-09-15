@@ -31,19 +31,36 @@ export function offsetEastMin(tzName, ms) {
 
 /** Minutes EAST of UTC in effect at local noon of `dateStr` (YYYY-MM-DD) in
  *  `tzName`, via the installed tz database. Falls back to the machine offset
- *  when the zone is absent or the date is malformed (the desktop rule). */
+ *  when the zone is absent or the date is malformed (the desktop rule).
+ *
+ *  Local noon is the instant T with `T + offset(T) === noonUTC`, so T = noonUTC
+ *  - offset(T); solved by fixed-point iteration.
+ *
+ *  DE-02 (0.6.32 review): this used `+ off`, which probes noonUTC + 2*offset -
+ *  up to ~26 h away from local noon - so a DST boundary falling inside that
+ *  window was read from the WRONG side and the desktop day grid anchored on the
+ *  post-transition offset. Measured before the fix: Australia/Lord_Howe
+ *  2026-10-03 returned +11:00 instead of +10:30, Australia/Adelaide 2026-10-03
+ *  +10:30 instead of +09:30 (both 30 min wrong, exactly on their transition
+ *  date). The review attributed this to the `:30` being dropped by the
+ *  `longOffset` regex - that part is FALSE (the regex parses +10:30, +05:30 and
+ *  +05:45 correctly); the sign was the real cause. Whole-hour zones happened to
+ *  survive because their boundary sat outside that shifted span. */
 export function zoneOffsetAtLocalNoon(tzName, dateStr) {
   const [y, m, d] = String(dateStr || '').split('-').map(Number);
   if (!y || !m || !d) return -new Date().getTimezoneOffset();
   if (!tzName) return -new Date(y, m - 1, d, 12).getTimezoneOffset();
-  let ms = Date.UTC(y, m - 1, d, 12);
-  for (let i = 0; i < 3; i++) {
-    const off = offsetEastMin(tzName, ms);
-    if (off == null) return -new Date(y, m - 1, d, 12).getTimezoneOffset();
-    ms = Date.UTC(y, m - 1, d, 12) + off * 60000;
+  const machine = () => -new Date(y, m - 1, d, 12).getTimezoneOffset();
+  const noonUTC = Date.UTC(y, m - 1, d, 12);
+  let off = offsetEastMin(tzName, noonUTC);
+  if (off == null) return machine();
+  for (let i = 0; i < 4; i++) {
+    const next = offsetEastMin(tzName, noonUTC - off * 60000);
+    if (next == null) return machine();
+    if (next === off) break;
+    off = next;
   }
-  const off = offsetEastMin(tzName, ms);
-  return off == null ? 0 : off;
+  return off;
 }
 
 /** A wall-clock Date (site zone, read through browser-local getters) is the

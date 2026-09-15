@@ -1,0 +1,803 @@
+{
+  "base": "http://127.0.0.1:29646/",
+  "themes": {
+    "dome": [
+      {
+        "viewport": 320,
+        "scrollWidth": 327,
+        "bodyScrollWidth": 327,
+        "topbar": null,
+        "tabs": {
+          "x": 0,
+          "y": 250,
+          "w": 320,
+          "h": 54
+        },
+        "main": {
+          "x": 0,
+          "y": 304,
+          "w": 320,
+          "h": 3142
+        },
+        "focusVisible": false,
+        "overflow": [
+          {
+            "tag": "SPAN",
+            "id": "",
+            "cls": "p-right",
+            "left": 174,
+            "right": 327,
+            "width": 153,
+            "text": "81\u00b0\n100% of night \u00b7 7h 30m visible\nclear 19:21 \u2013 02:51"
+          },
+          {
+            "tag": "B",
+            "id": "",
+            "cls": "",
+            "left": 174,
+            "right": 327,
+            "width": 153,
+            "text": "81\u00b0"
+          },
+          {
+            "tag": "SPAN",
+            "id": "",
+            "cls": "p-vis",
+            "left": 174,
+            "right": 327,
+            "width": 153,
+            "text": "100% of night \u00b7 7h 30m visible"
+          },
+          {
+            "tag": "SPAN",
+            "id": "",
+            "cls": "p-right",
+            "left": 174,
+            "right": 327,
+            "width": 153,
+            "text": "84\u00b0\n100% of night \u00b7 7h 30m visible\nclear 19:21 \u2013 02:51"
+          },
+          {
+            "tag": "B",
+            "id": "",
+            "cls": "",
+            "left": 174,
+            "right": 327,
+            "width": 153,
+            "text": "84\u00b0"
+          },
+          {
+            "tag": "SPAN",
+            "id": "",
+            "cls": "p-vis",
+            "left": 174,
+            "right": 327,
+            "width": 153,
+            "text": "100% of night \u00b7 7h 30m visible"
+          },
+          {
+            "tag": "SPAN",
+            "id": "",
+            "cls": "p-right",
+            "left": 174,
+            "right": 327,
+            "width": 153,
+            "text": "80\u00b0\n100% of night \u00b7 7h 30m visible\nclear 19:21 \u2013 02:51"
+          },
+          {
+            "tag": "B",
+            "id": "",
+            "cls": "",
+            "left": 174,
+            "right": 327,
+            "width": 153,
+            "text": "80\u00b0"
+          },
+          {
+            "tag": "SPAN",
+            "id": "",
+            "cls": "p-vis",
+            "left": 174,
+            "right": 327,
+            "width": 153,
+            "text": "100% of night \u00b7 7h 30m visible"
+          },
+          {
+            "tag": "SPAN",
+            "id": "",
+            "cls": "p-right",
+            "left": 174,
+            "right": 327,
+            "width": 153,
+            "text": "76\u00b0\n100% of night \u00b7 7h 30m visible\nclear 19:21 \u2013 02:51"
+          },
+          {
+            "tag": "B",
+            "id": "",
+            "cls": "",
+            "left": 174,
+            "right": 327,
+            "width": 153,
+            "text": "76\u00b0"
+          },
+          {
+            "tag": "SPAN",
+            "id": "",
+            "cls": "p-vis",
+            "left": 174,
+            "right": 327,
+            "width": 153,
+            "text": "100% of night \u00b7 7h 30m visible"
+          },
+          {
+            "tag": "SPAN",
+            "id": "",
+            "cls": "p-right",
+            "left": 174,
+            "right": 327,
+            "width": 153,
+            "text": "85\u00b0\n100% of night \u00b7 7h 30m visible\nclear 19:21 \u2013 02:51"
+          },
+          {
+            "tag": "B",
+            "id": "",
+            "cls": "",
+            "left": 174,
+            "right": 327,
+            "width": 153,
+            "text": "85\u00b0"
+          },
+          {
+            "tag": "SPAN",
+            "id": "",
+            "cls": "p-vis",
+            "left": 174,
+            "right": 327,
+            "width": 153,
+            "text": "100% of night \u00b7 7h 30m visible"
+          },
+          {
+            "tag": "SPAN",
+            "id": "",
+            "cls": "p-right",
+            "left": 174,
+            "right": 327,
+            "width": 153,
+            "text": "74\u00b0\n100% of night \u00b7 7h 30m visible\nclear 19:21 \u2013 02:51"
+          },
+          {
+            "tag": "B",
+            "id": "",
+            "cls": "",
+            "left": 174,
+            "right": 327,
+            "width": 153,
+            "text": "74\u00b0"
+          },
+          {
+            "tag": "SPAN",
+            "id": "",
+            "cls": "p-vis",
+            "left": 174,
+            "right": 327,
+            "width": 153,
+            "text": "100% of night \u00b7 7h 30m visible"
+          },
+          {
+            "tag": "SPAN",
+            "id": "",
+            "cls": "p-right",
+            "left": 174,
+            "right": 327,
+            "width": 153,
+            "text": "88\u00b0\n100% of night \u00b7 7h 30m visible\nclear 19:21 \u2013 02:51"
+          },
+          {
+            "tag": "B",
+            "id": "",
+            "cls": "",
+            "left": 174,
+            "right": 327,
+            "width": 153,
+            "text": "88\u00b0"
+          },
+          {
+            "tag": "SPAN",
+            "id": "",
+            "cls": "p-vis",
+            "left": 174,
+            "right": 327,
+            "width": 153,
+            "text": "100% of night \u00b7 7h 30m visible"
+          }
+        ]
+      },
+      {
+        "viewport": 360,
+        "scrollWidth": 360,
+        "bodyScrollWidth": 360,
+        "topbar": null,
+        "tabs": {
+          "x": 7.25,
+          "y": 250,
+          "w": 345.5,
+          "h": 38
+        },
+        "main": {
+          "x": 14,
+          "y": 288,
+          "w": 332,
+          "h": 3133
+        },
+        "focusVisible": false,
+        "overflow": []
+      },
+      {
+        "viewport": 768,
+        "scrollWidth": 768,
+        "bodyScrollWidth": 768,
+        "topbar": null,
+        "tabs": {
+          "x": 211.25,
+          "y": 166,
+          "w": 345.5,
+          "h": 38
+        },
+        "main": {
+          "x": 14,
+          "y": 204,
+          "w": 740,
+          "h": 2874
+        },
+        "focusVisible": false,
+        "overflow": []
+      },
+      {
+        "viewport": 900,
+        "scrollWidth": 900,
+        "bodyScrollWidth": 900,
+        "topbar": null,
+        "tabs": {
+          "x": 277.25,
+          "y": 166,
+          "w": 345.5,
+          "h": 38
+        },
+        "main": {
+          "x": 14,
+          "y": 204,
+          "w": 872,
+          "h": 2061.5
+        },
+        "focusVisible": false,
+        "overflow": []
+      },
+      {
+        "viewport": 1280,
+        "scrollWidth": 1280,
+        "bodyScrollWidth": 1280,
+        "topbar": null,
+        "tabs": {
+          "x": 441.515625,
+          "y": 160,
+          "w": 396.953125,
+          "h": 41
+        },
+        "main": {
+          "x": 14,
+          "y": 201,
+          "w": 1252,
+          "h": 2061.5
+        },
+        "focusVisible": false,
+        "overflow": []
+      },
+      {
+        "viewport": 1366,
+        "scrollWidth": 1366,
+        "bodyScrollWidth": 1366,
+        "topbar": null,
+        "tabs": {
+          "x": 484.515625,
+          "y": 160,
+          "w": 396.953125,
+          "h": 41
+        },
+        "main": {
+          "x": 14,
+          "y": 201,
+          "w": 1338,
+          "h": 2061.5
+        },
+        "focusVisible": false,
+        "overflow": []
+      },
+      {
+        "viewport": 1920,
+        "scrollWidth": 1920,
+        "bodyScrollWidth": 1920,
+        "topbar": null,
+        "tabs": {
+          "x": 761.515625,
+          "y": 120,
+          "w": 396.953125,
+          "h": 41
+        },
+        "main": {
+          "x": 14,
+          "y": 161,
+          "w": 1892,
+          "h": 2061.5
+        },
+        "focusVisible": false,
+        "overflow": []
+      }
+    ],
+    "classic": [
+      {
+        "viewport": 320,
+        "scrollWidth": 548,
+        "bodyScrollWidth": 548,
+        "topbar": null,
+        "tabs": {
+          "x": 0,
+          "y": 314,
+          "w": 320,
+          "h": 91
+        },
+        "main": {
+          "x": 0,
+          "y": 405,
+          "w": 320,
+          "h": 3129
+        },
+        "focusVisible": false,
+        "overflow": [
+          {
+            "tag": "DIV",
+            "id": "",
+            "cls": "topbar-right",
+            "left": 22,
+            "right": 548,
+            "width": 526,
+            "text": "moon 24% \u00b7 Waxing Crescent \u00b7 dark 19:21\u201302:42\n\u2601\ufe0f Weather \u2014 click to load"
+          },
+          {
+            "tag": "DIV",
+            "id": "nightInfo",
+            "cls": "nightinfo",
+            "left": 22,
+            "right": 364,
+            "width": 342,
+            "text": "moon 24% \u00b7 Waxing Crescent \u00b7 dark 19:21\u201302:42"
+          },
+          {
+            "tag": "DIV",
+            "id": "",
+            "cls": "popwrap weatherwrap",
+            "left": 372,
+            "right": 502,
+            "width": 130,
+            "text": "\u2601\ufe0f Weather \u2014 click to load"
+          },
+          {
+            "tag": "BUTTON",
+            "id": "btnWeather",
+            "cls": "ghost weatherbtn",
+            "left": 372,
+            "right": 502,
+            "width": 130,
+            "text": "\u2601\ufe0f Weather \u2014 click to load"
+          },
+          {
+            "tag": "SPAN",
+            "id": "wxChip",
+            "cls": "",
+            "left": 383,
+            "right": 491,
+            "width": 108,
+            "text": "\u2601\ufe0f Weather \u2014 click to load"
+          },
+          {
+            "tag": "DIV",
+            "id": "",
+            "cls": "popwrap menuwrap",
+            "left": 510,
+            "right": 548,
+            "width": 38,
+            "text": ""
+          },
+          {
+            "tag": "BUTTON",
+            "id": "btnMenu",
+            "cls": "ghost menubtn",
+            "left": 510,
+            "right": 548,
+            "width": 38,
+            "text": ""
+          },
+          {
+            "tag": "svg",
+            "id": "",
+            "cls": "[object SVGAnimatedString]",
+            "left": 521,
+            "right": 537,
+            "width": 16,
+            "text": ""
+          },
+          {
+            "tag": "path",
+            "id": "",
+            "cls": "[object SVGAnimatedString]",
+            "left": 524,
+            "right": 535,
+            "width": 11,
+            "text": ""
+          },
+          {
+            "tag": "A",
+            "id": "",
+            "cls": "",
+            "left": 274,
+            "right": 372,
+            "width": 98,
+            "text": "Horizon & Obstacles"
+          },
+          {
+            "tag": "SPAN",
+            "id": "",
+            "cls": "p-right",
+            "left": 179,
+            "right": 332,
+            "width": 153,
+            "text": "81\u00b0\n100% of night \u00b7 7h 30m visible\nclear 19:21 \u2013 02:51"
+          },
+          {
+            "tag": "B",
+            "id": "",
+            "cls": "",
+            "left": 179,
+            "right": 332,
+            "width": 153,
+            "text": "81\u00b0"
+          },
+          {
+            "tag": "SPAN",
+            "id": "",
+            "cls": "p-vis",
+            "left": 179,
+            "right": 332,
+            "width": 153,
+            "text": "100% of night \u00b7 7h 30m visible"
+          },
+          {
+            "tag": "SPAN",
+            "id": "",
+            "cls": "p-right",
+            "left": 179,
+            "right": 332,
+            "width": 153,
+            "text": "84\u00b0\n100% of night \u00b7 7h 30m visible\nclear 19:21 \u2013 02:51"
+          },
+          {
+            "tag": "B",
+            "id": "",
+            "cls": "",
+            "left": 179,
+            "right": 332,
+            "width": 153,
+            "text": "84\u00b0"
+          },
+          {
+            "tag": "SPAN",
+            "id": "",
+            "cls": "p-vis",
+            "left": 179,
+            "right": 332,
+            "width": 153,
+            "text": "100% of night \u00b7 7h 30m visible"
+          },
+          {
+            "tag": "SPAN",
+            "id": "",
+            "cls": "p-right",
+            "left": 179,
+            "right": 332,
+            "width": 153,
+            "text": "80\u00b0\n100% of night \u00b7 7h 30m visible\nclear 19:21 \u2013 02:51"
+          },
+          {
+            "tag": "B",
+            "id": "",
+            "cls": "",
+            "left": 179,
+            "right": 332,
+            "width": 153,
+            "text": "80\u00b0"
+          },
+          {
+            "tag": "SPAN",
+            "id": "",
+            "cls": "p-vis",
+            "left": 179,
+            "right": 332,
+            "width": 153,
+            "text": "100% of night \u00b7 7h 30m visible"
+          },
+          {
+            "tag": "SPAN",
+            "id": "",
+            "cls": "p-right",
+            "left": 179,
+            "right": 332,
+            "width": 153,
+            "text": "76\u00b0\n100% of night \u00b7 7h 30m visible\nclear 19:21 \u2013 02:51"
+          },
+          {
+            "tag": "B",
+            "id": "",
+            "cls": "",
+            "left": 179,
+            "right": 332,
+            "width": 153,
+            "text": "76\u00b0"
+          },
+          {
+            "tag": "SPAN",
+            "id": "",
+            "cls": "p-vis",
+            "left": 179,
+            "right": 332,
+            "width": 153,
+            "text": "100% of night \u00b7 7h 30m visible"
+          },
+          {
+            "tag": "SPAN",
+            "id": "",
+            "cls": "p-right",
+            "left": 179,
+            "right": 332,
+            "width": 153,
+            "text": "85\u00b0\n100% of night \u00b7 7h 30m visible\nclear 19:21 \u2013 02:51"
+          },
+          {
+            "tag": "B",
+            "id": "",
+            "cls": "",
+            "left": 179,
+            "right": 332,
+            "width": 153,
+            "text": "85\u00b0"
+          }
+        ]
+      },
+      {
+        "viewport": 360,
+        "scrollWidth": 548,
+        "bodyScrollWidth": 548,
+        "topbar": null,
+        "tabs": {
+          "x": 0,
+          "y": 298,
+          "w": 360,
+          "h": 91
+        },
+        "main": {
+          "x": 14,
+          "y": 389,
+          "w": 332,
+          "h": 3120
+        },
+        "focusVisible": false,
+        "overflow": [
+          {
+            "tag": "DIV",
+            "id": "",
+            "cls": "topbar-right",
+            "left": 22,
+            "right": 548,
+            "width": 526,
+            "text": "moon 24% \u00b7 Waxing Crescent \u00b7 dark 19:21\u201302:42\n\u2601\ufe0f Weather \u2014 click to load"
+          },
+          {
+            "tag": "DIV",
+            "id": "nightInfo",
+            "cls": "nightinfo",
+            "left": 22,
+            "right": 364,
+            "width": 342,
+            "text": "moon 24% \u00b7 Waxing Crescent \u00b7 dark 19:21\u201302:42"
+          },
+          {
+            "tag": "DIV",
+            "id": "",
+            "cls": "popwrap weatherwrap",
+            "left": 372,
+            "right": 502,
+            "width": 130,
+            "text": "\u2601\ufe0f Weather \u2014 click to load"
+          },
+          {
+            "tag": "BUTTON",
+            "id": "btnWeather",
+            "cls": "ghost weatherbtn",
+            "left": 372,
+            "right": 502,
+            "width": 130,
+            "text": "\u2601\ufe0f Weather \u2014 click to load"
+          },
+          {
+            "tag": "SPAN",
+            "id": "wxChip",
+            "cls": "",
+            "left": 383,
+            "right": 491,
+            "width": 108,
+            "text": "\u2601\ufe0f Weather \u2014 click to load"
+          },
+          {
+            "tag": "DIV",
+            "id": "",
+            "cls": "popwrap menuwrap",
+            "left": 510,
+            "right": 548,
+            "width": 38,
+            "text": ""
+          },
+          {
+            "tag": "BUTTON",
+            "id": "btnMenu",
+            "cls": "ghost menubtn",
+            "left": 510,
+            "right": 548,
+            "width": 38,
+            "text": ""
+          },
+          {
+            "tag": "svg",
+            "id": "",
+            "cls": "[object SVGAnimatedString]",
+            "left": 521,
+            "right": 537,
+            "width": 16,
+            "text": ""
+          },
+          {
+            "tag": "path",
+            "id": "",
+            "cls": "[object SVGAnimatedString]",
+            "left": 524,
+            "right": 535,
+            "width": 11,
+            "text": ""
+          },
+          {
+            "tag": "A",
+            "id": "",
+            "cls": "",
+            "left": 274,
+            "right": 372,
+            "width": 98,
+            "text": "Horizon & Obstacles"
+          }
+        ]
+      },
+      {
+        "viewport": 768,
+        "scrollWidth": 768,
+        "bodyScrollWidth": 768,
+        "topbar": null,
+        "tabs": {
+          "x": 0,
+          "y": 178,
+          "w": 768,
+          "h": 53
+        },
+        "main": {
+          "x": 14,
+          "y": 231,
+          "w": 740,
+          "h": 2874
+        },
+        "focusVisible": false,
+        "overflow": []
+      },
+      {
+        "viewport": 900,
+        "scrollWidth": 900,
+        "bodyScrollWidth": 900,
+        "topbar": null,
+        "tabs": {
+          "x": 0,
+          "y": 178,
+          "w": 900,
+          "h": 53
+        },
+        "main": {
+          "x": 14,
+          "y": 231,
+          "w": 872,
+          "h": 2061.5
+        },
+        "focusVisible": false,
+        "overflow": []
+      },
+      {
+        "viewport": 1280,
+        "scrollWidth": 1280,
+        "bodyScrollWidth": 1280,
+        "topbar": null,
+        "tabs": {
+          "x": 0,
+          "y": 154,
+          "w": 1280,
+          "h": 53
+        },
+        "main": {
+          "x": 14,
+          "y": 207,
+          "w": 1252,
+          "h": 2061.5
+        },
+        "focusVisible": false,
+        "overflow": []
+      },
+      {
+        "viewport": 1366,
+        "scrollWidth": 1366,
+        "bodyScrollWidth": 1366,
+        "topbar": null,
+        "tabs": {
+          "x": 0,
+          "y": 154,
+          "w": 1366,
+          "h": 53
+        },
+        "main": {
+          "x": 14,
+          "y": 207,
+          "w": 1338,
+          "h": 2061.5
+        },
+        "focusVisible": false,
+        "overflow": []
+      },
+      {
+        "viewport": 1920,
+        "scrollWidth": 1920,
+        "bodyScrollWidth": 1920,
+        "topbar": null,
+        "tabs": {
+          "x": 0,
+          "y": 113,
+          "w": 1920,
+          "h": 53
+        },
+        "main": {
+          "x": 14,
+          "y": 166,
+          "w": 1892,
+          "h": 2061.5
+        },
+        "focusVisible": false,
+        "overflow": []
+      }
+    ]
+  },
+  "popularity_requests": [
+    "https://popularity-source.invalid/",
+    "https://popularity-source.invalid/"
+  ],
+  "keyboard": {
+    "dome": {
+      "before": "2026-09-15T17:33",
+      "after_fine": "2026-09-15T17:39",
+      "after_coarse": "2026-09-15T18:39"
+    },
+    "classic": {
+      "before": "2026-09-15T17:33",
+      "after_fine": "2026-09-15T17:39",
+      "after_coarse": "2026-09-15T18:39"
+    }
+  }
+}

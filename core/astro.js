@@ -126,6 +126,11 @@ export function altaz(raDeg, decDeg, jd, latDeg, lonDeg, refract = true, precess
   const north = Math.sin(d) * Math.cos(p) - Math.cos(d) * Math.sin(p) * Math.cos(h);
   let az = (Math.atan2(east, north) * R2D) % 360;
   if (az < 0) az += 360;
+  // CO-04 (0.6.32 review): keep the documented [0, 360) range. Two float64 edges
+  // break it - a tiny negative value (e.g. -1e-15) becomes EXACTLY 360 when 360
+  // is added, because the difference is below 360's ULP, and `-0 < 0` is false so
+  // a -0 survives the branch above. `az === 0` catches both (-0 === 0).
+  if (az >= 360 || az === 0) az = 0;
 
   if (refract) {
     const altApp = alt * R2D + refractionDeg(alt * R2D);
@@ -249,7 +254,12 @@ export function moonIllumination(jd) {
 }
 
 const SYNODIC_MONTH = 29.53058770576;
-/** Moon age in days (0 = new, ~14.76 = full). Derived from elongation. */
+/** FOLDED moon age in days, 0..~14.77 (0 = new, 7.38 = full, then decreasing to
+ *  the next new). Derived from the elongation MAGNITUDE, so it is NOT the true
+ *  age since the last new moon: a waning last-quarter moon reads ~7.7, not ~22.8
+ *  (CO-05, 0.6.32 review). Every consumer - the moonPhase labels, the moon-aware
+ *  scoring curve and the Moon card - treats it as folded; only this docstring
+ *  used to claim "age in days" and invite the wrong reading. */
 export function moonAge(jd) {
   const [raS, decS] = sunRaDec(jd);
   const [raM, decM] = moonRaDec(jd);

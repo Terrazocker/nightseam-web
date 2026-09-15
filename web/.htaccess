@@ -1,0 +1,26 @@
+# NightSeam Web - response security headers for the /astro deployment.
+#
+# WHY THIS FILE EXISTS: the desktop shell ships a strict Content-Security-Policy
+# in `app/server.py` (CSP_HEADER), but the web shell is served as static files,
+# so it had NO policy at all - and it is the shell on a PUBLIC origin, loading
+# third-party images and running the user's stored data in the same context. A
+# single XSS there reaches localStorage, IndexedDB (sites/rigs/targets/panoramas)
+# and every key the user owns.
+#
+# `script-src` is 'self' + the SHA-256 of the ONE inline theme bootstrap in
+# `index.html` - deliberately NOT 'unsafe-inline'. That script only applies the
+# saved theme before first paint; if the hash ever goes stale the worst case is
+# a one-frame flash of the default theme, never a broken app.
+# `tests/browser/harness.py::_csp_problems` recomputes the hash and fails
+# `python scripts/check_browser.py --prod-url https://nightseam.de/astro/` if it
+# does not match, so drift is detected rather than shipped.
+#
+# mod_headers must be enabled (Plesk: Apache with mod_headers - the default).
+# If this file causes a 500, the module is off: remove the file rather than
+# leaving a broken site.
+
+<IfModule mod_headers.c>
+Header always set Content-Security-Policy "default-src 'self'; script-src 'self' 'sha256-L8aiDzZyJ9k2GW9FggYfWKbcrM22h1LPcHxs0Ov+uCE='; style-src 'self'; img-src 'self' data: https://upload.wikimedia.org; connect-src 'self' https://en.wikipedia.org; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; object-src 'none'"
+Header always set Referrer-Policy "strict-origin-when-cross-origin"
+Header always set X-Content-Type-Options "nosniff"
+</IfModule>

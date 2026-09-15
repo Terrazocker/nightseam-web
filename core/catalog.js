@@ -7,13 +7,19 @@
  * and `app/catalog_data.py::TYPE_LABELS` validates against.
  */
 
-export const TYPE_LABELS = {
+/* CO-09 (0.6.32 review): these lookups are driven by `otype`, which a crafted
+   setup bundle can set to ANY string (`app/database.py` stores it verbatim) -
+   including `"toString"` or `"constructor"`. A plain object literal then returns
+   an inherited `Object.prototype` member, so `X[t] || fallback` never falls back
+   and the type cell renders native function source. Null-prototype maps make
+   every inherited key genuinely absent. */
+export const TYPE_LABELS = Object.assign(Object.create(null), {
   galaxy: 'Galaxy', open_cluster: 'Open cluster', globular: 'Globular cluster',
   nebula: 'Nebula', planetary: 'Planetary nebula', supernova_remnant: 'Supernova remnant',
   asterism: 'Asterism', star_cloud: 'Star cloud',
-};
+});
 
-export const TYPE_COLORS = {
+export const TYPE_COLORS = Object.assign(Object.create(null), {
   galaxy: '#ffd166',
   open_cluster: '#7cc4ff',
   globular: '#9be0ff',
@@ -22,7 +28,7 @@ export const TYPE_COLORS = {
   supernova_remnant: '#ff8fa3',
   asterism: '#c9b8ff',
   star_cloud: '#e0e6ff',
-};
+});
 
 /** Custom targets are server-created records with the `u_` id prefix
  *  (`app/server.py` creates and deletes them only by that prefix). */
@@ -30,12 +36,19 @@ export function isCustomId(id) {
   return typeof id === 'string' && id.startsWith('u_');
 }
 
-/** Web search text: id, names, type, constellation, description and distance,
- *  lowercased and space-joined. The desktop searches the server's designation
- *  blob instead (`app/catalog_data.py`); the two models stay per-shell. */
+/** Web search text: id, names, type, constellation, description and the CSV's
+ *  own designation blob (`search`), lowercased and space-joined.
+ *
+ *  CD-02 (0.6.32 review): `search` was NOT indexed here and the web payload did
+ *  not ship it at all, so 25 rows whose common name lives only in that column
+ *  (`tarantula`, `coathanger`, `silver coin`, ...) were findable on the desktop
+ *  but not on the web. The column is now in `web/build_web.py::COLS` and below.
+ *  (The old comment here claimed the desktop searched
+ *  `app/catalog_data.py`'s blob - that file was deleted with the curated list in
+ *  0.6.26, and `o.distance` no longer exists either.) */
 export function searchBlob(o) {
   return [o.id, o.primary_name, o.messier, o.ngcic, o.other, o.otype,
-          o.constellation, o.blurb, o.distance]
+          o.constellation, o.blurb, o.search]
     .filter(Boolean).join(' ').toLowerCase();
 }
 

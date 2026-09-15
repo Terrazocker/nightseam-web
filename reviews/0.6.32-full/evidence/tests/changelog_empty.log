@@ -1,0 +1,6 @@
+real CURATED['0.6.32'] empty? False
+pre_tag_check.check('9.9.9') with no key: False
+pre_tag_check.check('9.9.9') with an EMPTY entry: True
+split_uncurated backlog for v9.9.9 with an EMPTY entry: []
+generated changelog versions: ['0.6.32', '0.6.31']
+=> the release is 'curated' for every gate but absent from the page

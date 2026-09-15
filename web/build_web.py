@@ -31,7 +31,7 @@ DEFAULT_DB = ROOT / "data" / "nightseam.db"
 COLS = [
     "id", "primary_name", "messier", "ngcic", "other", "otype",
     "ra_hours", "dec_deg", "vmag", "size_am", "constellation",
-    "wiki", "blurb", "popularity",
+    "wiki", "blurb", "search", "popularity",
 ]
 
 

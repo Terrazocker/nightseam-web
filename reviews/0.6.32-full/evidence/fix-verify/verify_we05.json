@@ -1,0 +1,22 @@
+{
+ "base": "http://127.0.0.1:37955/",
+ "steps": [
+  {
+   "chip_after_open": "Saved"
+  },
+  {
+   "chip_after_paint": "Saved"
+  },
+  {
+   "chip_after_pref_change": "Saved"
+  },
+  {
+   "chip_after_bortle": "Saved"
+  }
+ ],
+ "verdict": {
+  "painted_shows_unsaved": false,
+  "still_unsaved_after_pref_change": false,
+  "WE-05_fixed": false
+ }
+}

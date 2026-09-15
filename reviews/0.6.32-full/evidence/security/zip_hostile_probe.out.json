@@ -1,0 +1,543 @@
+{
+ "traversal": [
+  {
+   "file": "../../evil.jpg",
+   "kept": [],
+   "result": {
+    "ok": {
+     "ok": true,
+     "sites": 0,
+     "rigs": 0,
+     "panoramas": 0,
+     "pano_images": 0,
+     "customs": 0,
+     "images": 0,
+     "library_files": 0,
+     "auto_backup": "<workspace>\\AstroPilot-local\\logs\\review-l8-zip\\t0.backup-auto.zip",
+     "auto_backup_error": null
+    }
+   }
+  },
+  {
+   "file": "..\\..\\evil.jpg",
+   "kept": [],
+   "result": {
+    "ok": {
+     "ok": true,
+     "sites": 0,
+     "rigs": 0,
+     "panoramas": 0,
+     "pano_images": 0,
+     "customs": 0,
+     "images": 0,
+     "library_files": 0,
+     "auto_backup": "<workspace>\\AstroPilot-local\\logs\\review-l8-zip\\t1.backup-auto.zip",
+     "auto_backup_error": null
+    }
+   }
+  },
+  {
+   "file": "..%2f..%2fevil.jpg",
+   "kept": [
+    "..%2f..%2fevil.jpg"
+   ],
+   "result": {
+    "ok": {
+     "ok": true,
+     "sites": 0,
+     "rigs": 0,
+     "panoramas": 1,
+     "pano_images": 1,
+     "customs": 0,
+     "images": 1,
+     "library_files": 1,
+     "auto_backup": "<workspace>\\AstroPilot-local\\logs\\review-l8-zip\\t2.backup-auto.zip",
+     "auto_backup_error": null
+    }
+   }
+  },
+  {
+   "file": "C:/evil.jpg",
+   "kept": [],
+   "result": {
+    "ok": {
+     "ok": true,
+     "sites": 0,
+     "rigs": 0,
+     "panoramas": 0,
+     "pano_images": 0,
+     "customs": 0,
+     "images": 0,
+     "library_files": 0,
+     "auto_backup": "<workspace>\\AstroPilot-local\\logs\\review-l8-zip\\t3.backup-auto.zip",
+     "auto_backup_error": null
+    }
+   }
+  },
+  {
+   "file": "C:x/evil.jpg",
+   "kept": [],
+   "result": {
+    "ok": {
+     "ok": true,
+     "sites": 0,
+     "rigs": 0,
+     "panoramas": 0,
+     "pano_images": 0,
+     "customs": 0,
+     "images": 0,
+     "library_files": 0,
+     "auto_backup": "<workspace>\\AstroPilot-local\\logs\\review-l8-zip\\t4.backup-auto.zip",
+     "auto_backup_error": null
+    }
+   }
+  },
+  {
+   "file": "//server/share/evil.jpg",
+   "kept": [],
+   "result": {
+    "ok": {
+     "ok": true,
+     "sites": 0,
+     "rigs": 0,
+     "panoramas": 0,
+     "pano_images": 0,
+     "customs": 0,
+     "images": 0,
+     "library_files": 0,
+     "auto_backup": "<workspace>\\AstroPilot-local\\logs\\review-l8-zip\\t5.backup-auto.zip",
+     "auto_backup_error": null
+    }
+   }
+  },
+  {
+   "file": "\\\\?\\C:\\evil.jpg",
+   "kept": [],
+   "result": {
+    "ok": {
+     "ok": true,
+     "sites": 0,
+     "rigs": 0,
+     "panoramas": 0,
+     "pano_images": 0,
+     "customs": 0,
+     "images": 0,
+     "library_files": 0,
+     "auto_backup": "<workspace>\\AstroPilot-local\\logs\\review-l8-zip\\t6.backup-auto.zip",
+     "auto_backup_error": null
+    }
+   }
+  },
+  {
+   "file": "/evil.jpg",
+   "kept": [],
+   "result": {
+    "ok": {
+     "ok": true,
+     "sites": 0,
+     "rigs": 0,
+     "panoramas": 0,
+     "pano_images": 0,
+     "customs": 0,
+     "images": 0,
+     "library_files": 0,
+     "auto_backup": "<workspace>\\AstroPilot-local\\logs\\review-l8-zip\\t7.backup-auto.zip",
+     "auto_backup_error": null
+    }
+   }
+  },
+  {
+   "file": "a/../../../evil.jpg",
+   "kept": [],
+   "result": {
+    "ok": {
+     "ok": true,
+     "sites": 0,
+     "rigs": 0,
+     "panoramas": 0,
+     "pano_images": 0,
+     "customs": 0,
+     "images": 0,
+     "library_files": 0,
+     "auto_backup": "<workspace>\\AstroPilot-local\\logs\\review-l8-zip\\t8.backup-auto.zip",
+     "auto_backup_error": null
+    }
+   }
+  },
+  {
+   "file": "sub/./../evil.jpg",
+   "kept": [],
+   "result": {
+    "ok": {
+     "ok": true,
+     "sites": 0,
+     "rigs": 0,
+     "panoramas": 0,
+     "pano_images": 0,
+     "customs": 0,
+     "images": 0,
+     "library_files": 0,
+     "auto_backup": "<workspace>\\AstroPilot-local\\logs\\review-l8-zip\\t9.backup-auto.zip",
+     "auto_backup_error": null
+    }
+   }
+  },
+  {
+   "file": "con",
+   "kept": [],
+   "result": {
+    "ok": {
+     "ok": true,
+     "sites": 0,
+     "rigs": 0,
+     "panoramas": 0,
+     "pano_images": 0,
+     "customs": 0,
+     "images": 0,
+     "library_files": 0,
+     "auto_backup": "<workspace>\\AstroPilot-local\\logs\\review-l8-zip\\t10.backup-auto.zip",
+     "auto_backup_error": null
+    }
+   }
+  },
+  {
+   "file": "nul.jpg",
+   "kept": [],
+   "result": {
+    "ok": {
+     "ok": true,
+     "sites": 0,
+     "rigs": 0,
+     "panoramas": 0,
+     "pano_images": 0,
+     "customs": 0,
+     "images": 0,
+     "library_files": 0,
+     "auto_backup": "<workspace>\\AstroPilot-local\\logs\\review-l8-zip\\t11.backup-auto.zip",
+     "auto_backup_error": null
+    }
+   }
+  },
+  {
+   "file": "a. ",
+   "kept": [],
+   "result": {
+    "ok": {
+     "ok": true,
+     "sites": 0,
+     "rigs": 0,
+     "panoramas": 0,
+     "pano_images": 0,
+     "customs": 0,
+     "images": 0,
+     "library_files": 0,
+     "auto_backup": "<workspace>\\AstroPilot-local\\logs\\review-l8-zip\\t12.backup-auto.zip",
+     "auto_backup_error": null
+    }
+   }
+  },
+  {
+   "file": "...",
+   "kept": [],
+   "result": {
+    "ok": {
+     "ok": true,
+     "sites": 0,
+     "rigs": 0,
+     "panoramas": 0,
+     "pano_images": 0,
+     "customs": 0,
+     "images": 0,
+     "library_files": 0,
+     "auto_backup": "<workspace>\\AstroPilot-local\\logs\\review-l8-zip\\t13.backup-auto.zip",
+     "auto_backup_error": null
+    }
+   }
+  },
+  {
+   "file": "..",
+   "kept": [],
+   "result": {
+    "ok": {
+     "ok": true,
+     "sites": 0,
+     "rigs": 0,
+     "panoramas": 0,
+     "pano_images": 0,
+     "customs": 0,
+     "images": 0,
+     "library_files": 0,
+     "auto_backup": "<workspace>\\AstroPilot-local\\logs\\review-l8-zip\\t14.backup-auto.zip",
+     "auto_backup_error": null
+    }
+   }
+  },
+  {
+   "file": ".",
+   "kept": [],
+   "result": {
+    "ok": {
+     "ok": true,
+     "sites": 0,
+     "rigs": 0,
+     "panoramas": 0,
+     "pano_images": 0,
+     "customs": 0,
+     "images": 0,
+     "library_files": 0,
+     "auto_backup": "<workspace>\\AstroPilot-local\\logs\\review-l8-zip\\t15.backup-auto.zip",
+     "auto_backup_error": null
+    }
+   }
+  },
+  {
+   "file": "",
+   "kept": [],
+   "result": {
+    "ok": {
+     "ok": true,
+     "sites": 0,
+     "rigs": 0,
+     "panoramas": 0,
+     "pano_images": 0,
+     "customs": 0,
+     "images": 0,
+     "library_files": 0,
+     "auto_backup": "<workspace>\\AstroPilot-local\\logs\\review-l8-zip\\t16.backup-auto.zip",
+     "auto_backup_error": null
+    }
+   }
+  },
+  {
+   "file": "a\u0000b.jpg",
+   "kept": [],
+   "result": {
+    "ok": {
+     "ok": true,
+     "sites": 0,
+     "rigs": 0,
+     "panoramas": 0,
+     "pano_images": 0,
+     "customs": 0,
+     "images": 0,
+     "library_files": 0,
+     "auto_backup": "<workspace>\\AstroPilot-local\\logs\\review-l8-zip\\t17.backup-auto.zip",
+     "auto_backup_error": null
+    }
+   }
+  }
+ ],
+ "zip_member_slip": {
+  "result": {
+   "ok": {
+    "ok": true,
+    "sites": 0,
+    "rigs": 0,
+    "panoramas": 0,
+    "pano_images": 0,
+    "customs": 0,
+    "images": 0,
+    "library_files": 0,
+    "auto_backup": "<workspace>\\AstroPilot-local\\logs\\review-l8-zip\\m.backup-auto.zip",
+    "auto_backup_error": null
+   }
+  },
+  "escaped": []
+ },
+ "bad_id_valid_file": {
+  "result": {
+   "ok": {
+    "ok": true,
+    "sites": 0,
+    "rigs": 0,
+    "panoramas": 1,
+    "pano_images": 2,
+    "customs": 0,
+    "images": 0,
+    "library_files": 0,
+    "auto_backup": "<workspace>\\AstroPilot-local\\logs\\review-l8-zip\\id.backup-auto.zip",
+    "auto_backup_error": null
+   }
+  },
+  "rows": [
+   "good.jpg"
+  ],
+  "files_on_disk": [
+   "..%2f..%2fevil.jpg",
+   "good.jpg",
+   "planted.jpg"
+  ]
+ },
+ "case_alias": {
+  "result": {
+   "ok": {
+    "ok": true,
+    "sites": 0,
+    "rigs": 0,
+    "panoramas": 2,
+    "pano_images": 2,
+    "customs": 0,
+    "images": 0,
+    "library_files": 0,
+    "auto_backup": "<workspace>\\AstroPilot-local\\logs\\review-l8-zip\\alias.backup-auto.zip",
+    "auto_backup_error": null
+   }
+  },
+  "rows": [
+   "SUB/a.jpg",
+   "sub/A.jpg"
+  ],
+  "files_on_disk": [
+   "A.jpg"
+  ],
+  "bytes": "SECOND"
+ },
+ "control_chars": [
+  {
+   "file": "'a\\x01b.jpg'",
+   "kept": [
+    "a\u0001b.jpg"
+   ],
+   "error": "OSError: [Errno 22] Invalid argument: '<workspace>\\\\AstroPilot-local\\\\logs\\\\review-l8-zip\\\\data\\\\panos\\\\a\\x01b.jpg'"
+  },
+  {
+   "file": "'a\\nb.jpg'",
+   "kept": [
+    "a\nb.jpg"
+   ],
+   "error": "OSError: [Errno 22] Invalid argument: '<workspace>\\\\AstroPilot-local\\\\logs\\\\review-l8-zip\\\\data\\\\panos\\\\a\\nb.jpg'"
+  },
+  {
+   "file": "'a\\x1bb.jpg'",
+   "kept": [
+    "a\u001bb.jpg"
+   ],
+   "error": "OSError: [Errno 22] Invalid argument: '<workspace>\\\\AstroPilot-local\\\\logs\\\\review-l8-zip\\\\data\\\\panos\\\\a\\x1bb.jpg'"
+  },
+  {
+   "file": "'a\\x7fb.jpg'",
+   "kept": [
+    "a\u007fb.jpg"
+   ],
+   "error": null
+  },
+  {
+   "file": "'a\\tb.jpg'",
+   "kept": [
+    "a\tb.jpg"
+   ],
+   "error": "OSError: [Errno 22] Invalid argument: '<workspace>\\\\AstroPilot-local\\\\logs\\\\review-l8-zip\\\\data\\\\panos\\\\a\\tb.jpg'"
+  }
+ ],
+ "amplification": {
+  "records": 10,
+  "zip_bytes": 42096,
+  "restored_bytes": 41943040,
+  "seconds": 0.14,
+  "summary": {
+   "ok": true,
+   "sites": 0,
+   "rigs": 0,
+   "panoramas": 10,
+   "pano_images": 10,
+   "customs": 0,
+   "images": 0,
+   "library_files": 0,
+   "auto_backup": "<workspace>\\AstroPilot-local\\logs\\review-l8-zip\\amp.backup-auto.zip",
+   "auto_backup_error": null
+  },
+  "ratio": 996.4
+ },
+ "read_member_ram": {
+  "within_limit": {
+   "member_bytes": 8388608,
+   "limit": 8388608,
+   "zip_bytes": 8265,
+   "peak_ram_mb": 16.0,
+   "error": null
+  },
+  "over_limit": {
+   "member_bytes": 25165824,
+   "limit": 8388608,
+   "zip_bytes": 24572,
+   "peak_ram_mb": 0.0,
+   "error": "zip member too large: m.bin"
+  }
+ },
+ "read_member_default_limit_bytes": 1073741824,
+ "partial_restore": {
+  "error": "OSError: forced payload write failure",
+  "sites_after": [
+   "Imported"
+  ],
+  "panorama_rows_after": [
+   "fail.jpg"
+  ],
+  "safety_copy": true,
+  "safety_copy_bytes": 393,
+  "original_file_recoverable": true
+ },
+ "image_dir_ignored": {
+  "summary": {
+   "ok": true,
+   "sites": 0,
+   "rigs": 0,
+   "panoramas": 0,
+   "pano_images": 0,
+   "customs": 0,
+   "images": 0,
+   "library_files": 0,
+   "auto_backup": "<workspace>\\AstroPilot-local\\logs\\review-l8-zip\\idir.backup-auto.zip",
+   "auto_backup_error": null,
+   "image_dir_ignored": "<workspace>\\AstroPilot-local\\logs\\review-l8-zip\\OUTSIDE\\redirect"
+  },
+  "db_image_dir": "<workspace>\\AstroPilot-local\\logs\\review-l8-zip\\archive",
+  "outside_written": []
+ },
+ "malformed_elements": [
+  {
+   "case": "panoramas_not_dict",
+   "error": "AttributeError: 'str' object has no attribute 'get'",
+   "sites_after": [
+    "Original",
+    "Original"
+   ]
+  },
+  {
+   "case": "panoramas_null",
+   "error": "AttributeError: 'NoneType' object has no attribute 'get'",
+   "sites_after": [
+    "Original",
+    "Original",
+    "Original",
+    "Original"
+   ]
+  },
+  {
+   "case": "sites_not_dict",
+   "error": "AttributeError: 'str' object has no attribute 'get'",
+   "sites_after": [
+    "Original",
+    "Original",
+    "Original",
+    "Original",
+    "Original",
+    "Original"
+   ]
+  },
+  {
+   "case": "settings_list",
+   "error": "ValueError: malformed setup bundle",
+   "sites_after": [
+    "Original",
+    "Original",
+    "Original",
+    "Original",
+    "Original",
+    "Original",
+    "Original",
+    "Original"
+   ]
+  }
+ ]
+}

@@ -325,3 +325,175 @@ duplicate sections of `AGENTS.md` and drift out of sync, which is worse than not
 having them. A `CONTRIBUTING.md` and a second `CHANGELOG.md`: no external
 contributors, and `landing/changelog.json` + the `CURATED` table in
 `scripts/build_changelog.py` already are the changelog.
+
+## CO-07 - the two shells' "% of night" windows are NOT identical (documented, not unified)
+
+**Measured (0.6.32 review, `reviews/0.6.32-full/20-core.md` CO-07):** the web
+scores on a dusk-anchored 6-min grid; the desktop clips its noon-anchored
+241-sample grid to `dusk..dawn`. The denominators differ by one sample (80 vs
+79) and 20-66 of the 200 standard-mode rows differ by up to 4 pp (Berlin
+2026-09-22, Berlin 2026-06-21, Tenerife). Since 0.6.30 the web's Min-visibility
+gate keys on the WEB number, so list membership can differ between the shells.
+
+**Decision: document the divergence rather than unify it in a fix batch.** The
+two candidate fixes (snap the web's scoring window to whole noon-grid steps, or
+pass the core an explicit sample range) both CHANGE user-visible planning numbers
+on the public web app, and the second reaches into the time model that the scrub,
+the charts and the tier/min-visibility browser checks are built on. That is a
+release-level change with its own release note, not a correctness patch.
+
+**Consequence:** `AGENTS.md`'s claim that "the web scores the same window as the
+desktop on a 6-min grid" was FALSE and has been replaced with the measurement
+above. Both shells still compute every number inside `dusk..dawn` (that
+invariant holds); they merely sample that window on different phases.
+
+## 0.6.33 batch - other decisions taken while fixing the 0.6.32 review
+
+- **`CD-05` matcher fix without a re-bake.** The deterministic tie-break is fixed
+  in `scripts/match_popularity.py` (highest score wins; equal score -> first in
+  source order), but `app/popularity_data.py` is deliberately NOT regenerated:
+  on the shipped snapshot the only affected key is `ngc6542` (3 -> 115), which is
+  far outside the standard-mode cut. Re-baking would rewrite a tracked module and
+  can re-select standard mode, so it stays a separate, deliberate act.
+- **`SP-02` CSP keeps `script-src 'unsafe-inline'`.** `static/index.html`'s
+  synchronous theme bootstrap (`XMLHttpRequest GET /api/state`) must run before
+  first paint, so inline script stays permitted; remote script is still fully
+  blocked (`'self'`), the JSONP path is gone, and the update check now runs
+  server-side via `POST /api/update-check`. Verified against the real server:
+  the header is served, the inline bootstrap runs, and an inline `onerror=`
+  attribute still fires (so the two `onerror=` fallbacks in
+  `static/js/{targets,tonight}.js` keep working - the feared "cosmetic
+  regression" does not exist).
+- **`CD-02` ships the `search` column, at a size cost.** `web/catalog.json` grows
+  from 3,834,258 to 5,088,280 bytes (+33%) because the OpenNGC `search` blob is
+  now in the payload; that is what makes 25 rows (e.g. `tarantula`,
+  `coathanger`, `silver coin`) findable on the web. It is text, so gzip absorbs
+  much of it, but the trade is deliberate and worth re-measuring if the payload
+  is ever streamed.
+
+## Shell unification pass (0.6.33 work tree) - one rule, one loop, one codebase
+
+The owner's directive: the web shell is further along and more current, both
+shells should run on mostly the same code so a change lands in both at once, and
+the BETTER implementation is used for both - but only where it works in a
+browser too, and never at the cost of a regression.
+
+**What was unified (real cross-shell code, not prose):**
+
+- `core/visibility.js::inTonightPool(vmag, isAdv, advCap)` +
+  `vmagKnownAndUnder` + `ADV_TONIGHT_MAG_CAP` + `TONIGHT_MAG_UNCAPPED` - which
+  objects may reach the Tonight list is ONE rule now, called by
+  `web/app.js::renderTonight` and `static/js/tonight.js::renderTonight`. This
+  FIXES a defect rather than only deduplicating: the web's inline
+  `o.vmag != null` dropped 45 of the 200 standard-mode objects (IC 1396, the
+  Running Man, NGC 281, the Flame, the Tulip, Simeis 147, the Double Cluster,
+  the Pipe Nebula, ...) while the comment above it claimed desktop parity. The
+  unknown-magnitude answer is deliberately YES - the same reasoning as
+  `magVisible`'s "a no-magnitude object shows at the slider maximum".
+- `core/scoring.js::scoreNightTracks(..., ctx.range = [lo, hi])` - the scoring
+  SPAN is a parameter, so the desktop (241-sample noon->noon payload for its
+  charts, clipped to dusk..dawn) and the web (grid == the dark window, no range)
+  run the SAME loop. `derive.js::recomputeNightDerived` no longer owns a second
+  aggregation; that second loop is what let CO-07 drift. The desktop's
+  `best`/`best_above`/`score`/`score_moon` contracts and the
+  `tests/js/scoring_parity.mjs` characterization goldens are preserved
+  bit-for-bit (`bestStart` is captured incrementally, never recomputed as
+  `jd - run*step`).
+
+**What deliberately did NOT move into `core/`:**
+
+- **CSS.** `web/style.css` + `web/themes.css` and `static/style.css` +
+  `static/themes.css` share only the design LANGUAGE (the `dome` token blocks),
+  not the files - selector overlap is 23%/16%. The two shells have different
+  DOMs (a 6-pane tab app vs a JS-rendered single view), so a shared stylesheet
+  would be a rewrite with no correctness gain. The AGENTS rule stands: `dome` is
+  the language, `classic` the fallback, and structural themes never move IDs.
+- **Storage, backup and data delivery.** IndexedDB + `localStorage` versus
+  SQLite + FastAPI is a platform split, not duplication. The web's
+  stage-validate-commit restore is genuinely better, and it is already what
+  DECISIONS/the AGENTS invariant describe; porting it to Python would be a
+  rewrite of `app/backup.py`'s write path for no user-visible gain, so the
+  desktop keeps its safety copy + rollback and the web keeps staging.
+- **The advanced-mode magnitude cap.** The web caps the Tonight pool at mag 9
+  because scoring ~5,900 objects per repaint is not viable in a browser. That is
+  a PERFORMANCE parameter, so it is passed in per shell (`TONIGHT_MAG_UNCAPPED`
+  on the desktop, which carries the whole catalog in its payload anyway) instead
+  of being duplicated as a second inline expression. Same rule, different
+  budget.
+- **The grid anchor (CO-07).** Still open on purpose: aligning the web's grid to
+  the desktop's noon->noon payload would move user-visible web numbers
+  (`% of night`, the scores, the clear window). The divergence is now confined to
+  the anchor, because the arithmetic is shared.
+
+**Consequence: no two shells, one codebase for the domain.** The rule for the
+next change is the same as the one this pass followed: if a decision can be
+expressed as a pure function of data, it belongs in `core/` and both shells call
+it; if it needs the DOM, storage or a network, it stays in the shell and gets a
+parity pin instead.
+
+### The scoring grid anchor stays as it is (CO-07, closed as DECIDED)
+
+The two shells score the same dark window with slightly different sample sets:
+the desktop's payload grid is a 24 h noon->noon day for its charts and is clipped
+to dusk..dawn (87 samples at 47.5 N on 2026-03-14), while the web's grid IS
+dusk..dawn and lands on 88. That one sample moves `% of night` by a point and a
+score by up to 0.07 on 12 of 14 probed rows (and 20-66 of 200 standard rows by up
+to 4 pp in the original 0.6.32 survey).
+
+**Rejected: aligning either side.** Re-anchoring the web's grid to noon->noon
+changes numbers the web has shipped for releases (and its `View full day` span),
+while re-anchoring the desktop's payload breaks the chart margins and the
+`scrubgrid` contract. Both are user-visible behaviour changes traded for a 1 pp
+cosmetic difference.
+
+**Rejected: making the desktop pass a sample list instead of an index range.**
+It would let both engines share identical sample times, but it changes the
+already-characterized `tests/js/scoring_parity.mjs` goldens for no user-visible
+gain.
+
+**What WAS done (shell-unification pass):** the arithmetic is shared
+(`core/scoring.js::scoreNightTracks` with `ctx.range`), so the divergence is
+confined to the ANCHOR - a grid choice each shell makes for its own rendering -
+instead of living in two independent aggregation loops. Pinned as "one loop, one
+span parameter" and documented as a deliberate anchor difference.
+
+### The web shell ships a Content-Security-Policy
+
+`web/.htaccess` sets `default-src 'self'`, `script-src 'self'` plus the SHA-256
+of the ONE inline theme bootstrap (deliberately NOT `'unsafe-inline'`:
+`tests/browser/harness.py` recomputes the hash, and the web shell has no inline
+handler at all), `style-src 'self'`, `img-src 'self' data:
+https://upload.wikimedia.org`, `connect-src 'self' https://en.wikipedia.org`,
+plus `base-uri`/`form-action`/`frame-ancestors`/`object-src` and
+`Referrer-Policy`/`X-Content-Type-Options`. The desktop has carried an equivalent
+policy in `app/server.py` since SP-02; the STATIC shell is the public origin and
+had none, which is the wrong way round.
+
+The file is deployed by hand (the FTPS uploader skips dotfiles), so
+`python scripts/check_browser.py --prod-url https://nightseam.de/astro/` is the
+verification: it fails when the header is absent, when `script-src` is missing or
+allows `unsafe-inline`/`unsafe-eval`, when the inline hash is stale, or when
+`connect-src` is absent - and it now also asserts that an allowlisted
+`upload.wikimedia.org` response actually loaded, because a policy that breaks the
+photos is worse than the text being right. `tests/test_prod_csp.py` pins all of
+that offline.
+
+### Cache-token register history (moved out of AGENTS.md)
+
+AGENTS.md carries only the CURRENT register; the cascade record lives here so the
+instructions stay inside their byte budget. Every core re-bake moves the stub
+token and changes the bytes of every module importing it, so those tokens move in
+the same commit:
+
+* 0.6.32-review fixes touched `core/horizon.js`, `core/astro.js`,
+  `core/catalog.js`, `core/scoring.js`, `core/time.js` -> stub 24 -> 25.
+* CR3 (CO-01, review 0.6.24) touched `core/horizon.js` + `core/index.js` ->
+  stub 17 -> 19.
+* the WE-03 comment corrections -> stub 19 -> 20 (that re-bake exercised the N-1
+  retention: the manifest now records `previous` and BOTH trees stay in place).
+* shell-unification pass: `core/visibility.js` + `core/scoring.js` +
+  `core/index.js` -> stub 26 -> 33 across the intermediate bakes (25..32), each
+  one cascading the web tokens; `core/panohistory.js` was added in the same pass
+  (10 core modules now).
+* the tagged v0.6.24 register was 60/10/41/17/7/20 with stub 17; 0.6.23 (live)
+  was 59/9/40/16/6/19.

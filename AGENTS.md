@@ -11,9 +11,13 @@
 > language.
 
 NightSeam: a desktop DSO-planning app - a local FastAPI server plus a vanilla-JS
-UI, pure-Python Meeus astronomy (no numpy/astropy), no JS bundler/npm. Works
-fully offline except optional Wikipedia images. Two modes: Night Planner and
-Image Catalog (FITS ingest + library). `README.md` has the feature list.
+UI, no JS bundler/npm. ALL astronomy and planning math lives in `core/` (ES
+modules, shared and baked into BOTH shells); `app/` is storage/platform/IO, the
+old pure-Python Meeus modules were deleted in 0.6.20 (Phase C). Two modes: Night
+Planner and Image Catalog (FITS ingest + library). It reaches the network only
+for optional Wikipedia images, the Open-Meteo weather panel and the
+once-per-start update check - the catalog, the popularity snapshot and every
+calculation stay local. `README.md` has the feature list.
 
 > **Docs map.** This file is canonical for invariants, commands, release and
 > deploy. `CATALOG.md` = the data pipeline (sources -> CSV -> DB -> web payload
@@ -56,7 +60,7 @@ Image Catalog (FITS ingest + library). `README.md` has the feature list.
   was generated from the same implementation lineage (the retired oracle), so
   it catches drift but NOT a shared misreading of a formula (the old X-axis
   precession bug survived three engines that way). The CORRECTNESS AUTHORITY is
-  `tests/js/reference_anchors.mjs` + `tests/test_reference_anchors.py` (19
+  `tests/js/reference_anchors.mjs` + `tests/test_reference_anchors.py` (21
   checks):
   published IAU 2006/Capitaine precession (forward + inverse), Meeus ch.7/12/21
   textbook values, the published 2026-08-12/28 moon phases, an astropy/ERFA
@@ -74,11 +78,6 @@ Image Catalog (FITS ingest + library). `README.md` has the feature list.
 - Clear window: the shared `longestRunJS` returns a HALF-OPEN `[start,end)`
   whose `end` may equal the grid length. Never index `times_iso[end]`; resolve it
   with `windowEndISO()`. The client detail payload ships `step_min`.
-- Every "night" number (clear window, `% of night`, score) is measured inside
-  `dusk..dawn` on BOTH sides; the payload grid carries twilight margins for the
-  charts only. `static/js/derive.js` clips them and
-  `static/js/planning_client.js::buildClientDetail` clips its 4-min window the
-  same way (`tests/js/derive_window.mjs`).
 - Twilight scan is anchored at the SITE's local noon + 30 h, never browser
   midnight + 48 h. `nightInfo(localDate,lat,lon,localNoon)` needs the site's noon
   (`siteNoon()`, via `webstore.wallToUtc`) or a cross-timezone site resolves the
@@ -88,9 +87,22 @@ Image Catalog (FITS ingest + library). `README.md` has the feature list.
   `server.py::_effective_min_alt` is the one server rule (`/api/state` ships
   `min_useful_alt_explicit`); desktop `derive.js::effectiveMinAlt` re-derives live
   on a Bortle change (web `horizon.js::effectiveMinAlt` already did).
-- Moon/Bortle scoring curves are exported by BOTH `derive.js` and `web/astro.js`
-  and compared numerically; the web scores the same window as the desktop on a
-  6-min grid and uses the PLANNED night's moon (midpoint), never "now".
+- Every "night" number (clear window, `% of night`, score) is measured inside
+  `dusk..dawn` on BOTH sides; the payload grid carries twilight margins for the
+  charts only. `planning_client.js::buildClientDetail` clips its 4-min window the
+  same way (`tests/js/derive_window.mjs`).
+- **Scoring is ONE loop with an explicit span (shell-unification pass).** Both
+  shells score through `core/scoring.js::scoreNightTracks`, which takes the span
+  as `ctx.range = [lo, hi]` (INCLUSIVE grid indices; a sample's `vis`/`above`
+  STATE stays full-grid). The desktop passes dusk..dawn because its payload grid
+  is a 24 h noon->noon day for the charts; the web passes none because its grid
+  already IS the dark window. The desktop's old SECOND loop
+  (`derive.js::recomputeNightDerived`) is what let CO-07 drift.
+  CO-07 stays a measured, deliberate difference in the GRID ANCHOR, not the
+  loop: one sample (87 vs 88 re-measured at 47.5 N on 2026-03-14; 20-66 of 200
+  standard rows by up to 4 pp in the original survey). Closing it would change
+  user-visible web numbers, so it remains open (see `DECISIONS.md`). The web
+  still uses the PLANNED night's moon (midpoint), never "now".
 - Selected time is the source of truth: desktop `S.tIdx`, web `S.skyTime`. "Best
   targets tonight" (web) lists only rows with `visN > 0`. Keyboard scrub is 6 min,
   Shift 60 min in BOTH apps (`SCRUB_STEP_MIN`/`SCRUB_SHIFT_STEP_MIN`).
@@ -193,22 +205,25 @@ Image Catalog (FITS ingest + library). `README.md` has the feature list.
   Deliberate clearing goes through `clearMask()`, the one place a stored profile
   is discarded. A stroke-less profile must not be silently removed - that could
   make a blocked target look observable.
-- Web panorama editor model (0.6.x redesign): edits are applied to planning
-  IMMEDIATELY (in-memory `activePano`) but persisted only on **Save** (or when
-  you leave the editor). History is JSON snapshots of the EDITABLE state
-  (strokes + calibration + paint mode) - `snapshotPano`/`historyCommit`/
-  `historyUndo`/`historyRedo` - with ONE entry per gesture (committed on pointer
-  up), a bounded stack (`HISTORY_LIMIT`), redo invalidated by a new edit, and
-  `historyDirty` clearing when the state returns to the `historyMarkSaved`
-  baseline. `flushHorizonEdits()` runs on panorama switch / create / navigating
-  away (never lose an edit); a `beforeunload` guard covers closing the tab while
-  dirty. Clear is confirmed via the in-page `confirmDialog` (never `alert`/
-  `confirm`) and is undoable; Revert restores the last saved state and is also
-  undoable. Zoom (`editorClampZoom`/`editorViewMatrix`/`editorScreenToBase`/
-  `editorClampFocus`) is PRESENTATION-ONLY (1..8, fits the mask rectangle) and
-  never touches stored geometry; the canvas is DPR-aware and `ResizeObserver`-
-  driven, drawing in the 720x360 logical space so guides, the cursor readout and
-  `ceilFor` share ONE transform. Pinned by `tests/js/pano_ui.mjs`.
+- **Panorama editor model (0.6.x redesign; history SHARED in the
+  shell-unification pass):** edits apply to planning IMMEDIATELY (in-memory
+  `activePano`) but persist only on **Save** (or when you leave the editor).
+  History is JSON snapshots of the EDITABLE state - now ONE implementation in
+  `core/panohistory.js` (`snapshot`/`applySnapshot`/`historyCommit`/
+  `historyUndo`/`historyRedo`/`historyDirty`; the web's `snapshotPano`/... are
+  delegates) - one entry per gesture, bounded (`HISTORY_LIMIT`), redo dropped by
+  a new edit, dirty cleared when the state returns to `historyMarkSaved`. The
+  snapshot DEEP-COPIES the strokes: the desktop mutates `rec.strokes` in place,
+  so an aliased entry was rewritten by the next gesture (found by a test, not by
+  inspection). The desktop keeps a PRE-gesture stack on the same contract (undo
+  returns to the moment before the gesture) and gained `#btnRedo`.
+  `flushHorizonEdits()` runs on panorama switch / create / navigating away (never
+  lose an edit) and a `beforeunload` guard covers a dirty tab. Clear uses the
+  in-page `confirmDialog` (never `alert`/`confirm`) and is undoable; Revert is
+  too. Editor zoom (`editorClampZoom`/`editorViewMatrix`/`editorScreenToBase`/
+  `editorClampFocus`) is PRESENTATION-ONLY (1..8) and never touches stored
+  geometry; the canvas is DPR-aware and `ResizeObserver`-driven in the 720x360
+  logical space. Pinned by `tests/js/pano_ui.mjs` + `tests/test_pano_history.py`.
 - Panorama profiles are exactly 720 bins (0.5 deg/az), `NO_BLOCK = -90`. Sky mode
   inverts the mask: `profile` = band BOTTOM, `profile_top` = band TOP; unpainted
   sky columns stay at 90; outside the FOV follows the mode. The web editor
@@ -264,6 +279,18 @@ Image Catalog (FITS ingest + library). `README.md` has the feature list.
   hand - edit `core/` and re-run `python scripts/build_core.py`; a core change
   bumps the stub token, and every `./core.js?v=N` importer must match it in the
   same commit (`tests/test_core_drift.py` proves each mutation fails).
+- **The Tonight candidate pool is ONE rule (shell-unification pass):**
+  `core/visibility.js::inTonightPool(vmag, isAdv, advCap)`, called by BOTH
+  shells (`web/app.js::renderTonight`, `static/js/tonight.js::renderTonight`).
+  Every STANDARD row qualifies; the unknown-magnitude answer is deliberately
+  **YES** (`vmagKnownAndUnder` is binary, like `magVisible`'s "a no-magnitude
+  object shows at the slider maximum"). The web passes `ADV_TONIGHT_MAG_CAP`
+  (9) as a PERFORMANCE parameter; the desktop passes `TONIGHT_MAG_UNCAPPED`.
+  The web's old inline `o.vmag != null` silently dropped **45 of the 200
+  standard-mode objects** (IC 1396, the Running Man, NGC 281, the Flame, the
+  Tulip, Simeis 147, the Double Cluster, the Pipe Nebula, ...) while its comment
+  claimed desktop parity. Pinned by `test_the_tonight_candidate_pool_is_one_
+  shared_rule` and `web-tonight-pool-includes-unmagnituded-standard-rows`.
 - **D1 - world-azimuth profile bins:** `core/horizon.js` stores bin
   `i = azimuth i*0.5 deg`, exactly like the retired `app/nightcalc.py::ceil_lookup`
   and the desktop editor. The web editor's FOV-relative mask converts through
@@ -303,9 +330,8 @@ Image Catalog (FITS ingest + library). `README.md` has the feature list.
   carry a wrong fov (the removed fraction); re-cropping, or correcting the FOV
   field directly in the editor, fixes it - no migration touches stored data.
 - Web `app.js::clampSkyTime()` also runs at boot and on every `refreshView()`
-  (site/date change), so loading during the day starts the scrub at the first
-  allowed instant (the window start) instead of showing a daylight
-  "visible at HH:MM" outside the night window.
+  (site/date change), so loading in daylight starts the scrub at the window
+  start instead of showing a "visible at HH:MM" outside the night.
 - **Action-button sizing (ITEM B):** action buttons are auto-width and grouped
   (`.btnrow` = flex+wrap+gap; `.action-row .btn { flex: 0 0 auto }`) - never a
   lone full-width action. A `.btnrow label` rule must exclude label-buttons
@@ -405,7 +431,8 @@ Image Catalog (FITS ingest + library). `README.md` has the feature list.
     `Get-CimInstance Win32_Process`).
   - If 8407 is briefly taken at boot, `free_port()` silently picks a RANDOM port
     (written to `instance.json`).
-- Tests: `python -m pytest tests/` (507). Single test:
+- Tests: `python -m pytest tests/` (598 collected at the time of writing -
+  re-derive with `--collect-only -q` rather than trusting this line). Single test:
   `python -m pytest tests/test_js_parity.py -k name`. API tests use
   `create_app(db, prefetch=False)` (no image-cache thread). The `client` fixture
   must leave `data/panos` in the tmp dir it patches in.
@@ -415,8 +442,9 @@ Image Catalog (FITS ingest + library). `README.md` has the feature list.
     external `--basetemp` workaround does not restore a clean run either.
     `tests/conftest.py` therefore OVERRIDES the `tmp_path` fixture with a dir under
     the gitignored, sandbox-owned `logs/.pytest-tmp`, so a plain
-    `python -m pytest tests/` is clean: **507 pass with 0 assertion failures**
-    (the 0.6.24..0.6.26 sessions needed a scratch plugin for this; it is built in
+    `python -m pytest tests/` is clean: **0 assertion failures** (598 tests
+    collected at the time of writing - re-derive the count, do not trust it here;
+    the 0.6.24..0.6.26 sessions needed a scratch plugin for this, it is built in
     now).
 - JS checks (run after touching `static/` OR `web/`): `python scripts/check_js.py`
   runs all of them and exits non-zero on hard failures:
@@ -437,6 +465,11 @@ Image Catalog (FITS ingest + library). `README.md` has the feature list.
   - `check_core.py` - baked core drift, stub/token pairing and the core purity +
     moved-concept guards (see "Shared core" invariant)
   - `check_js_defs.py` - heuristic, always exits 0
+  - `scripts/bump_web_tokens.py` is the OTHER half of the cache-token remedy: it
+    reads the guard's verified baseline and bumps (index.html + app.js
+    references + the `core.js` stub) every module whose bytes changed without
+    its token moving. Run it, then `check_js_tokens.py --update`, then the
+    guards. `check_js_tokens.py --update` alone REFUSES while a bump is missing.
 - **Browser gate (real engine; run after touching `static/`, `web/` or any shell
   contract):** `python scripts/check_browser.py --all` runs `tests/browser/`
   through Playwright + system Chrome - `--web` (static `web/`, no exe) or
@@ -501,7 +534,7 @@ Image Catalog (FITS ingest + library). `README.md` has the feature list.
   `PY-07`, `CO-03`, `CO-04`, `WE-03`, `WE-04`, `DE-04`-`DE-15` and
   `TO-03`-`TO-11` (`TO-07` stays a deliberate WARNING that names the re-bake).
 - **Release records** (tag, staged artifacts, gate results, deploy and
-  the live checks for 0.6.25-0.6.28) live in `RELEASES.md`.
+  the live checks for 0.6.25-0.6.32) live in `RELEASES.md`.
 - A bounded carry-over of non-reachable hardening/tooling/test-quality items
   remains (consume it in the next review pass): `CR2` malformed-horizon guards
   (all shipped producers normalize before preview), `DS4` worker/sync `ceil`
@@ -564,18 +597,16 @@ Image Catalog (FITS ingest + library). `README.md` has the feature list.
   `scripts/check_catalog_token.py`, wired into `scripts/check_js.py`, and pinned
   by `tests/test_cache_tokens.py` (mutation-tested). Do NOT add
   `{cache:'no-store'}` - the file must stay cacheable.
-  Current (0.6.32, unreleased): `app.js?v=80` (index.html) /
-  `CATALOG_TOKEN = '9'`, `astro.js?v=16`, `horizon.js?v=48`, `format.js?v=23`,
-  `nightrank.js?v=14`, `webstore.js?v=26`, `dragwin.js?v=1`, `style.css?v=21`,
-  `themes.css?v=4`; the core stub is `web/core.js?v=24` (bump = re-bake,
-  enforced by `scripts/check_core.py`). The CR3 fix (CO-01, 0.6.24 review)
-  touched `core/horizon.js` + `core/index.js`, so the re-bake moved the stub
-  17 -> 19 and changed the bytes of every module importing it => that cascade;
-  the WE-03 comment corrections moved it 19 -> 20 the same way, and that re-bake
-  exercised the N-1 retention policy (the manifest now records a `previous` hash
-  and BOTH trees stay in place).
-  The tagged v0.6.24 register was 60/10/41/17/7/20 with stub 17; 0.6.23 (live)
-  was 59/9/40/16/6/19.
+  Current (0.6.33 work tree, post-review + shell-unification pass):
+  `app.js?v=87` (index.html) / `CATALOG_TOKEN = '10'`, `astro.js?v=21`,
+  `horizon.js?v=54`, `format.js?v=28`, `nightrank.js?v=20`, `webstore.js?v=31`,
+  `dragwin.js?v=1`, `style.css?v=24`,
+  `themes.css?v=5`; the core stub is `web/core.js?v=33` (bump = re-bake,
+  enforced by `scripts/check_core.py`). Every core change cascades: the re-bake
+  moves the stub token and changes the bytes of every module importing it, so
+  those tokens move in the same commit. The historic registers (the 0.6.32
+  review's 24 -> 25, the CR3 17 -> 19, WE-03 19 -> 20, the tagged v0.6.24
+  60/10/41/17/7/20 with stub 17) are recorded in `DECISIONS.md`.
 - **A missed bump is now a hard failure (XL-01, 0.6.24).** The v0.6.24 tag
   shipped the 0.6.23 tokens naming 0.6.24 bytes (`index.html app.js?v=59`,
   imports astro 9 / horizon 40 / webstore 19 / format 16 / nightrank 6), so
@@ -659,8 +690,10 @@ Image Catalog (FITS ingest + library). `README.md` has the feature list.
   `horizon.js` (panorama/sky-band geometry), `astro.js` (JD/GMST/precession/
   altaz, sun/moon), `planning.js` (twilight/night window + the shared
   `scrubWindowMs` degeneracy policy + `scrubBounds`/`scrubClamp`),
-  `visibility.js` (predicates, min-alt rule), `scoring.js` (moon/bortle
-  curves, popularity, `nightStats`), `catalog.js` (type palette, ids, search),
+  `visibility.js` (predicates, min-alt rule, Tonight pool), `scoring.js`
+  (moon/bortle curves, popularity, `nightStats`, the ONE scoring loop),
+  `panohistory.js` (the panorama editor's snapshot/undo/redo/dirty model,
+  shared by BOTH editors), `catalog.js` (type palette, ids, search),
   `format.js` (sizes/FOV/zoom), `time.js` (IANA offsets). Baked by
   `scripts/build_core.py` to `web/core/<hash>/` + `static/js/core/<hash>/`
   with stable explicit-export stubs; `scripts/check_core.py` enforces
@@ -780,16 +813,21 @@ Image Catalog (FITS ingest + library). `README.md` has the feature list.
   `tests/test_catalog.py` pins the selection rule, the `tier` engine pins the
   bands/ranking, `web-catalog-tier-frame` pins the rendered web table and
   `test_desktop_shows_a_tier_and_never_the_popularity_score` the desktop.
-  `app/popularity_data.py` is GENERATED by `python scripts/match_popularity.py`
-  (add `--cached` to use `data/popularity_snapshot.json`); the matcher must stay
+  `app/popularity_data.py` is GENERATED by `python scripts/match_popularity.py`,
+  which is OFFLINE, FULL STOP: it replays the frozen snapshot
+  `data/popularity_snapshot.json`, and there is no fetch path left anywhere -
+  neither shell contacts the popularity source, the refresh flag `--live` was REMOVED
+  (passing it now exits 2), `tests/test_no_popularity_fetch.py` fails if any
+  network machinery reappears in the matcher, and the browser gate treats the
+  URL as a tripwire; the matcher must stay
   deterministic - it scores the HIGHEST match over every designation of a row,
   normalizes leading zeros (The popularity source pads 'PGC 17223', OpenNGC does not - the
   old exact-key match silently dropped the LMC) and carries a small
   `POPULARITY_ALIASES` table for the objects the popularity source keys under another
   designation ('B 33' -> 'BARNARD 33', 'Mel 111' -> 'CL MELOTTE 111', ...).
   The old code iterated a `set` and broke on the first hit, so scores depended on
-  PYTHONHASHSEED and the standard list was not reproducible. Run it WITHOUT
-  `--cached` to refresh from the live source (0.6.27 did: 17,007 source entries,
+  PYTHONHASHSEED and the standard list was not reproducible. The snapshot was
+  taken once (0.6.27: 17,007 source entries,
   7,640 shipped scores, 535 of them moved); 0.6.28 replayed the SAME cache after
   adding the supplement and only gained entries (7,645, five of the seven) with no
   existing score touched; 0.6.29 replayed it again for the nine batch-2 rows
@@ -886,7 +924,7 @@ Image Catalog (FITS ingest + library). `README.md` has the feature list.
 - Reference anchors: the published-value checks deleted with the Python suites
   (Capitaine/IAU 2006 forward+inverse, Meeus ch.7/12/21 examples, the
   2026-08-12/28 moon phases, the ERFA lunar position, Bennett refraction) were
-  PORTED to `tests/js/reference_anchors.mjs` (19 checks) + the mutation proofs
+  PORTED to `tests/js/reference_anchors.mjs` (21 checks) + the mutation proofs
   in `tests/test_reference_anchors.py`.
 - Backups written by 0.6.18/0.6.19 containing the retired flag still import
   safely (`tests/test_backup.py::test_import_of_the_retired_planning_flag_stays_safe`).

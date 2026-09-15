@@ -50,6 +50,34 @@ def test_header_without_end_still_parses():
     assert fits.read_fits_header(data)["OBJECT"] == "M 42"
 
 
+def test_only_the_end_card_terminates_the_header():
+    """PY-10 (review 0.6.32): the terminator test was a bare
+    `rec.startswith("END")`, so ANY keyword whose name merely begins with END -
+    a non-standard `ENDTIME` written by some capture software - truncated the
+    header and every later card was dropped: EXPTIME, OBJECT, DATE-OBS, the
+    coordinates. The frame then became unresolved and `undated`. The standard
+    reserves the keyword `END` with no value."""
+    data = make_fits([
+        ("SIMPLE", "T"),
+        ("ENDTIME", "12345"),
+        ("OBJECT", "'M 31'"),
+        ("EXPTIME", "300.0"),
+    ])
+    hdr = fits.read_fits_header(data)
+    assert hdr["ENDTIME"] == 12345          # the card is read, not the terminator
+    assert hdr["EXPTIME"] == 300.0
+    assert hdr["OBJECT"] == "M 31"
+    # and `header_size` must not stop at it either
+    assert fits.header_size(data) == _BLOCK
+
+
+def test_header_size_counts_blocks_for_an_end_prefixed_card():
+    records = [("SIMPLE", "T"), ("ENDTIME", "1")] + \
+        [(f"KEY{i}", f"{i}") for i in range(40)]
+    data = make_fits(records)
+    assert fits.header_size(data) == 2 * _BLOCK
+
+
 # ---------------------------------------------------------------- parsers
 
 def test_parse_ra_hours():
@@ -91,14 +119,18 @@ def test_parse_value_rejects_non_finite_numbers():
 def test_parsers_reject_non_finite_coordinates():
     """PY-04: `parse_ra_hours`/`parse_dec_deg` are the single coordinate
     parsers (used by ingest AND reindex). A non-finite input used to reach
-    `math.sin()` in imglib.angular_dist and 500 the whole ingest request."""
-    import math
+    `math.sin()` in imglib.angular_dist and 500 the whole ingest request.
+
+    TR-11 (0.6.32 review): the old trailing
+    `assert not (isinstance(got, float) and not math.isfinite(got))` was
+    entailed by `got is None` on the line above - a constant-true assertion.
+    `is None` IS the contract (a non-finite value must never be handed up the
+    stack), so the entailed line is gone."""
     for bad in ("Infinity", "-Infinity", "inf", "nan", "1e400", "  nan  ",
                 float("inf"), float("nan")):
         for fn in (fits.parse_ra_hours, fits.parse_dec_deg):
             got = fn(bad)
             assert got is None, (fn.__name__, bad, got)
-            assert not (isinstance(got, float) and not math.isfinite(got))
     # finite decimal/sexagesimal values are unchanged
     assert fits.parse_ra_hours("5.575") == 5.575
     assert fits.parse_dec_deg("-27.958") == -27.958

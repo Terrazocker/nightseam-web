@@ -43,6 +43,25 @@ def test_classify_frame_unknown_defaults_to_light():
     assert classify_frame("calibration?") == "light"
 
 
+def test_classify_frame_master_qualifier():
+    """PY-09 (review 0.6.32): the letters are reduced and then matched with
+    `startswith`, so `"Master Dark"` became `masterdark`, matched neither `dark`
+    nor `flat` and fell through to `light` - stacked master calibration frames
+    landed in `<object>/<session>/lights/` and were counted as light frames. The
+    docstring claims the multi-word spellings are handled, and `fits._STOPWORDS`
+    already knows "master"."""
+    assert classify_frame("Master Dark") == "dark"
+    assert classify_frame("MasterDark") == "dark"
+    assert classify_frame("MASTER DARK FRAME") == "dark"
+    assert classify_frame("Master Flat") == "flat"
+    assert classify_frame("MasterFlat") == "flat"
+    assert classify_frame("Master Bias") == "bias"
+    # a master LIGHT is still a light, and the plain spellings are unchanged
+    assert classify_frame("Master Light") == "light"
+    assert classify_frame("Dark") == "dark"
+    assert classify_frame("SkyFlat") == "flat"
+
+
 # ---------------------------------------------------------------- classify_frame
 
 def test_classify_known_types():

@@ -5,7 +5,10 @@
 import { $, clamp, esc, api, toast, num } from "./util.js";
 import { S } from "./state.js";
 import { loadNight } from "./night.js";
-import { profileSegments, cropKeptBand, fovBinRel } from "./core.js";
+import { profileSegments, cropKeptBand, fovBinRel,
+         snapshotPanoState as coreSnapshotPano,
+         applyPanoState as coreApplySnapshot,
+         HISTORY_KEYS_DESKTOP } from "./core.js";
 
 export { profileSegments };
 
@@ -21,7 +24,8 @@ export const Pano = {
   tool: "b",
   saveTimer: null,
   pending: null,    // {rec, fields} captured by scheduleSave, flushed on switch/close
-  undo: [],         // stroke snapshots for undo
+  undo: [],         // pre-gesture snapshots (core/panohistory.js format)
+  redo: [],         // undone snapshots, invalidated by a new edit
   loupeOn: true,
   lastPos: null,    // last pointer position over canvas (css px)
 };
@@ -45,6 +49,8 @@ Pano.init = function () {
   $("#btnCropApply").addEventListener("click", () => applyCrop());
   $("#btnClearMask").addEventListener("click", clearMask);
   $("#btnUndo").addEventListener("click", undoPaint);
+  const br = $("#btnRedo");
+  if (br) br.addEventListener("click", redoPaint);
   $("#chkLoupe").addEventListener("change", e => { Pano.loupeOn = e.target.checked; render(); });
   // "block above band": opt OUT of the default open-above assumption
   const ba = $("#chkBlockAbove");
@@ -177,25 +183,29 @@ export function setEditableMode(rec, m) {
 
 /** Undo snapshots carry the WHOLE editable state, not just the strokes: a mode
  *  switch or a Clear must be undoable, and a stroke-less record's profile is
- *  authoritative (an empty mask cannot re-derive it). */
+ *  authoritative (an empty mask cannot re-derive it).
+ *
+ *  The snapshot itself is core/panohistory.js - ONE implementation shared with
+ *  the web editor (shell-unification pass), including the two rules that are
+ *  easy to get wrong: the stored profile is captured ONLY when there are no
+ *  strokes (a mask reproduces a stroke-y profile exactly, and a stroke-less one
+ *  is authoritative - ruling C, DE-03/WE-02), and the editable set is exactly
+ *  the calibration bounds + paint mode + blockAbove + strokes. `HISTORY_KEYS_
+ *  DESKTOP` maps the canonical names onto this shell's snake_case record.
+ *
+ *  Sequencing stays shell-side and deliberately differs from the web: this
+ *  editor captures the PRE-gesture state on pointer down (so undo steps back to
+ *  the moment before the gesture), while the web commits post-gesture states
+ *  into its step list. */
 export function pushPanoUndo(rec, stack) {
   if (!rec) return;
-  stack.push(JSON.stringify({
-    strokes: rec.strokes || [],
-    paint_mode: (rec.paint_mode === "sky") ? "sky" : "obstacle",
-    profile: rec.profile || [],
-    profile_top: rec.profile_top || [],
-  }));
+  stack.push(coreSnapshotPano(rec, HISTORY_KEYS_DESKTOP));
   if (stack.length > 60) stack.shift();
 }
 
 export function popPanoUndo(rec, stack) {
   if (!rec || !stack.length) return false;
-  const s = JSON.parse(stack.pop());
-  rec.strokes = s.strokes;
-  rec.paint_mode = s.paint_mode;
-  rec.profile = s.profile;
-  rec.profile_top = s.profile_top;
+  coreApplySnapshot(rec, stack.pop(), HISTORY_KEYS_DESKTOP);
   return true;
 }
 
@@ -209,18 +219,50 @@ function setPaintMode(m) {
   scheduleSave(0);
 }
 
-/* ---------------- undo ---------------- */
+/* ---------------- undo / redo ----------------
+   The snapshots are core/panohistory.js (ONE implementation, shared with the web
+   editor). This shell keeps its PRE-gesture stack: pointer-down captures the
+   state the gesture is about to change, so an undo returns to the moment before
+   it - a different sequencing from the web's post-gesture step list, on top of
+   the same snapshot contract. */
 
 function pushUndo() {
   pushPanoUndo(Pano.cur, Pano.undo);
+  // a NEW edit invalidates the redo branch (the same rule as the web's
+  // historyCommit dropping its forward entries)
+  Pano.redo = [];
+  syncUndoButtons();
 }
 
 function undoPaint() {
+  if (!Pano.cur || !Pano.undo.length) return;
+  // the redo entry is the state the undo is LEAVING, captured before the pop
+  Pano.redo.push(coreSnapshotPano(Pano.cur, HISTORY_KEYS_DESKTOP));
   if (!popPanoUndo(Pano.cur, Pano.undo)) return;
   invalidateMask();
   updateModeButtons();
+  syncUndoButtons();
   render();
   scheduleSave();
+}
+
+function redoPaint() {
+  if (!Pano.cur || !Pano.redo.length) return;
+  const snap = Pano.redo.pop();
+  coreApplySnapshot(Pano.cur, snap, HISTORY_KEYS_DESKTOP);
+  Pano.undo.push(snap);
+  invalidateMask();
+  updateModeButtons();
+  syncUndoButtons();
+  render();
+  scheduleSave();
+}
+
+/** Undo/Redo availability, so a button never invites a no-op click. */
+function syncUndoButtons() {
+  const u = $("#btnUndo"), r = $("#btnRedo");
+  if (u) u.disabled = !Pano.undo.length;
+  if (r) r.disabled = !Pano.redo.length;
 }
 
 /* ---------------- landmark calibration ---------------- */
@@ -328,7 +370,9 @@ async function select(rec) {
   // undo history belongs to ONE panorama: without this, undoing after a switch
   // wrote the previous panorama's strokes into this one and auto-saved them
   Pano.undo = [];
+  Pano.redo = [];
   updateModeButtons();
+  syncUndoButtons();
   $("#calibBox").classList.remove("hidden");
   $("#azOffset").value = rec.az_offset ?? 0;
   $("#altBottom").value = rec.alt_bottom ?? 0;

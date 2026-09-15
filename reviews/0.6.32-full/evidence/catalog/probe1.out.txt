@@ -1,0 +1,36 @@
+data rows: 12176
+rows whose naive ';' split is not 14 fields: 0 []
+rows containing a double quote: 0
+rows ending in \r: 0
+csv-module parsed rows: 12176 field counts: Counter({14: 12176})
+unique ids: 12176
+unsafe ids: []
+id case-collisions (lower dup): []
+otype counts: {'galaxy': 10792, 'nebula': 302, 'asterism': 66, 'open_cluster': 664, 'planetary': 132, 'supernova_remnant': 12, 'globular': 208}
+constellations: 88
+coordinate/magnitude outliers: [] count 0
+vmag empty: 711
+ngc650 in: True | ngc651 in: False
+m40: asterism | m73: asterism
+m102/ngc5866 present: True | ngc6994 present: False
+ic1318: Gamma Cygni Nebula (Sadr Region)
+ngcic non-empty: 12173 unique: 12173
+control chars / U+FFFD: [] count 0
+non-ascii chars: []
+POPULARITY entries: 7654 | zero/neg: 0
+ids with a score: 7654
+standard_ids size: 200 | STANDARD_TOP_N: 200
+rank 1..3: [(166350, 'ngc1976'), (162860, 'ngc224'), (122550, 'ngc3031')]
+rank 199..202: [(2033, 'ngc2903'), (2032, 'ngc6530'), (2030, 'ngc6231'), (2020, 'ngc2362')]
+rank 200 score (cut): 2032
+unscored rows inside the top 200: 0
+standard set == positive-score top200: True
+unscored ids count: 4522
+advertised: [('web/index.html', '12,176'), ('web/index.html', '12,176'), ('web/app.js', '12,176'), ('landing/index.html', '12,176'), ('landing/index.html', '12,176'), ('landing/about.html', '12,176')]
+real: 12,176
+web/catalog.json len: 12176 unique: 12176
+web standard set size: 200 == rule: True
+payload keys sample: ['_adv', 'blurb', 'constellation', 'dec_deg', 'id', 'messier', 'ngcic', 'other', 'otype', 'popularity', 'primary_name', 'ra_hours', 'size_am', 'vmag', 'wiki']
+any 'distance' in payload: False
+popularity in payload: True
+manifest: {"token": "9", "sha256": "ae002a9a6d5f832f98a522c319ec97dca2560ba30617486a34984aec61c75c6c"}

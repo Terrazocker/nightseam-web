@@ -517,6 +517,131 @@ def frame_cells(c):
         " span: e.firstElementChild ? e.firstElementChild.className : '' }))")
 
 
+@check("web-pref-change-keeps-unsaved-paint", "web")
+def web_pref_change_keeps_unsaved_paint(c):
+    """WE-05 (0.6.32 review): a preference change while the editor is open must
+    not clear the unsaved state.
+
+    `renderHorizon()` used to call `newHistory(p)` on EVERY render, which makes
+    the current - including unsaved - state the "saved" baseline. So any
+    `refreshView()` with the editor open (a min-alt, site, date, rig, Bortle,
+    filter, size-unit, moon-aware or timezone change) flipped the chip to
+    "Saved", made `horizonUnsaved()` false, and silently disarmed BOTH the
+    `flushHorizonEdits()` call on navigating away and the `beforeunload` guard:
+    the paint was lost on reload. The baseline must survive a re-render."""
+    boot(c)
+    open_editor(c)
+    paint(c)
+    c.expect_in("Unsaved", c.page.inner_text("#ed-status"),
+                "painting must mark the editor dirty")
+
+    # trigger 1: the min-alt slider - it only re-renders on 'change' (an 'input'
+    # tick just moves the label; the app deliberately avoids rebuilding the view
+    # under a dragging pointer), so the event MATTERS here.
+    c.page.evaluate("""() => { const s = document.querySelector('#tb-minalt');
+        s.value = String(Number(s.value) + 3);
+        s.dispatchEvent(new Event('change', { bubbles: true })); }""")
+    c.page.wait_for_timeout(700)
+    c.expect_in("Unsaved", c.page.inner_text("#ed-status"),
+                "a min-alt change must not clear the unsaved state (WE-05)")
+
+    # trigger 2: a DATE change - a different refreshView path
+    c.page.evaluate("""() => { const d = document.querySelector('#tb-date');
+        const dt = new Date(d.value + 'T12:00:00Z');
+        dt.setUTCDate(dt.getUTCDate() + 1);
+        d.value = dt.toISOString().slice(0, 10);
+        d.dispatchEvent(new Event('change', { bubbles: true })); }""")
+    c.page.wait_for_timeout(800)
+    c.expect_in("Unsaved", c.page.inner_text("#ed-status"),
+                "a date change must not clear the unsaved state (WE-05)")
+
+    # and the flush path is armed again: leaving the tab persists the paint
+    paint(c, 0.66, 0.80, 0.35)
+    before = active_strokes(c)
+    tab(c, "tonight")
+    c.page.wait_for_timeout(400)
+    c.expect(active_strokes(c) > before,
+             "leaving the editor must FLUSH the unsaved paint (the guard was "
+             "disarmed by the bug)")
+    c.assert_clean()
+
+
+@check("web-search-indexes-the-designation-blob", "web")
+def web_search_indexes_the_designation_blob(c):
+    """CD-02 (0.6.32 review): the web search must index the catalogue's own
+    designation blob (`search`), not only ids/names/type/constellation.
+
+    25 rows carry a common name ONLY in that column - `tarantula` (ngc2070),
+    `coathanger` (cl399), `silver coin` (ngc253) - so they were findable on the
+    desktop and invisible in the web search. The column now ships in the payload
+    (`web/build_web.py::COLS`) and is indexed by `core/catalog.js::searchBlob`;
+    before that change the web returned [] for these three terms."""
+    boot(c)
+    tab(c, "catalog")
+    c.page.wait_for_selector("#cat-q", timeout=30000)
+    for term, oid in (("tarantula", "ngc2070"),
+                      ("coathanger", "cl399"),
+                      ("silver coin", "ngc253")):
+        c.page.fill("#cat-q", term)
+        c.page.dispatch_event("#cat-q", "input")
+        c.page.wait_for_timeout(400)
+        found = c.page.eval_on_selector_all(
+            "main table tbody tr[data-id]", "els => els.map((e) => e.dataset.id)")
+        c.expect(oid in found,
+                 f"searching {term!r} must find {oid} through the designation "
+                 f"blob (got {found[:6]})")
+    c.page.fill("#cat-q", "")
+    c.page.dispatch_event("#cat-q", "input")
+    c.assert_clean()
+
+
+@check("web-tonight-pool-includes-unmagnituded-standard-rows", "web")
+def web_tonight_pool_includes_unmagnituded_standard_rows(c):
+    """The Tonight candidate pool is core/visibility.js::inTonightPool.
+
+    It used to be an inline `o.vmag != null` in web/app.js, which silently threw
+    away the 45 of the 200 STANDARD-mode objects whose magnitude OpenNGC leaves
+    empty - IC 1396, the Running Man, NGC 281, the Flame, the Tulip, Simeis 147,
+    the Double Cluster, the Pipe Nebula, ... - while the comment above it claimed
+    exact desktop parity. The three lists show at most 16+8+8 rows, so a single
+    scrub position proves nothing; the check scans the window in 3 h steps and
+    requires several of those objects to appear, which the old filter made
+    impossible."""
+    boot(c)
+    bounds = c.page.eval_on_selector(
+        "#tb-scrub", "el => ({ lo: Number(el.min), hi: Number(el.max) })")
+    total = bounds["hi"] - bounds["lo"]
+    c.expect(total > 0, f"the scrub range is empty: {bounds}")
+    step = 180 / max(1.0, total / 180)          # minutes per sample, >= 3 h
+    ids = set()
+    pos = bounds["lo"]
+    for _ in range(30):
+        c.page.eval_on_selector(
+            "#tb-scrub", """(el, v) => { el.value = String(v);
+                el.dispatchEvent(new Event('input', { bubbles: true }));
+                el.dispatchEvent(new Event('change', { bubbles: true })); }""",
+            round(pos))
+        c.page.wait_for_timeout(120)
+        ids |= set(c.page.eval_on_selector_all(
+            ".pick li[data-id]", "els => els.map((e) => e.dataset.id)"))
+        pos += step
+        if pos > bounds["hi"]:
+            break
+    c.expect(ids, "the Tonight lists rendered nothing at all")
+    # Every one of these has an EMPTY magnitude in the shipped catalogue, so the
+    # old inline filter excluded them from the candidate set entirely. The check
+    # asks for TWO of the four: the lists carry at most 16+8+8 rows and are
+    # ranked by score, so an individual object can legitimately miss the cut at
+    # every sampled instant - but the old filter made ALL FOUR impossible.
+    found = [oid for oid in ("ic1396", "ngc1977", "c14", "pipe") if oid in ids]
+    c.expect(len(found) >= 2,
+             f"objects whose catalogue magnitude is EMPTY are missing from the "
+             f"Tonight pool: only {found} of ['ic1396', 'ngc1977', 'c14', 'pipe'] "
+             f"ever appeared (saw {len(ids)} distinct rows across the night). "
+             f"core/visibility.js::inTonightPool answers 'in' for them.")
+    c.assert_clean()
+
+
 @check("web-catalog-advanced-minvis", "web")
 def web_catalog_advanced_minvis(c):
     """ADVANCED mode + the Min-visibility gate: the whole 12k list has to warm

@@ -121,6 +121,89 @@ const IAU_POINTS = [
   [359.5, -70.0],           // RA wraparound
 ];
 
+/* ---- explicit rotation-matrix product: the ORDER authority (CO-06) --------
+ * Meeus ch.21 eq.21.4 is a product of THREE rotations. Both authorities above
+ * evaluate the same closed form the core does (A/B/C + atan2), so neither can
+ * see a REORDERED product: the Meeus one is a re-derivation of the core's own
+ * expression, and the 2 arcsec IAU tolerance ADMITS a reorder at the epoch the
+ * app actually runs ("middle rotation last" is 1.5 arcsec at J2026 - the same
+ * error only exceeds the tolerance at the far epochs, where it is ~20 arcsec).
+ * Below, the three factors are literal matrices in the active
+ * (rotate-the-vector) convention, transcribed from Meeus' zeta/theta/z
+ * rotations with his sign convention, so the factor order is DATA rather than a
+ * consequence of the core's algebra:
+ *
+ *     v(date) = Rz(z) . Ry(-theta) . Rz(zeta) . v(J2000)
+ *
+ *   Rz(p) = [[cos p, -sin p, 0], [sin p, cos p, 0], [0, 0, 1]]
+ *   Ry(p) = [[cos p, 0, sin p], [0, 1, 0], [-sin p, 0, cos p]]
+ *   Rx(p) = [[1, 0, 0], [0, cos p, -sin p], [0, sin p, cos p]]
+ *
+ * (The same product in the passive convention is SOFA iauPmat06's
+ * P = R3(-z) R2(theta) R3(-zeta).) The COEFFICIENTS are deliberately Meeus'
+ * own, i.e. the SAME model as the core - `iau2006_forward` is what pins them
+ * against the outside world. `precession_rotation_order` pins the ORDER, and
+ * the `order:` variants exist only to prove that pin has teeth.
+ */
+function meeusAnglesDeg(jd) {
+  const t = (jd - J2000) / 36525.0;
+  return [
+    (2306.2181 * t + 0.30188 * t * t + 0.017998 * t ** 3) / 3600.0,   // zeta
+    (2306.2181 * t + 1.09468 * t * t + 0.018203 * t ** 3) / 3600.0,   // z
+    (2004.3109 * t - 0.42665 * t * t - 0.041833 * t ** 3) / 3600.0,   // theta
+  ];
+}
+const rotZ = (rad) => { const c = Math.cos(rad), s = Math.sin(rad);
+  return [[c, -s, 0], [s, c, 0], [0, 0, 1]]; };
+const rotY = (rad) => { const c = Math.cos(rad), s = Math.sin(rad);
+  return [[c, 0, s], [0, 1, 0], [-s, 0, c]]; };
+const rotX = (rad) => { const c = Math.cos(rad), s = Math.sin(rad);
+  return [[1, 0, 0], [0, c, -s], [0, s, c]]; };
+function matMul(...ms) {
+  return ms.reduce((P, Q) => P.map((row) =>
+    Q[0].map((_, j) => row.reduce((s, x, k) => s + x * Q[k][j], 0))));
+}
+const matVec = (P, v) => P.map((row) => row.reduce((s, x, k) => s + x * v[k], 0));
+
+function matrixPrecess(raDeg, decDeg, jd, order = "correct") {
+  const [zeta, z, theta] = meeusAnglesDeg(jd);
+  const a = D2R * raDeg, d = D2R * decDeg;
+  const v = [Math.cos(d) * Math.cos(a), Math.cos(d) * Math.sin(a), Math.sin(d)];
+  const rz = D2R * zeta, th = D2R * theta, zz = D2R * z;
+  let P;
+  if (order === "correct") P = matMul(rotZ(zz), rotY(-th), rotZ(rz));
+  else if (order === "x-middle") P = matMul(rotZ(zz), rotX(-th), rotZ(rz));
+  else if (order === "y-last") P = matMul(rotZ(zz), rotZ(rz), rotY(-th));
+  else if (order === "zeta-z-swap") P = matMul(rotZ(rz), rotY(-th), rotZ(zz));
+  else throw new Error(`unknown order ${order}`);
+  const w = matVec(P, v);
+  return [norm360(Math.atan2(w[1], w[0]) * R2D),
+          Math.asin(Math.max(-1, Math.min(1, w[2]))) * R2D];
+}
+
+/** Chord-exact angular separation in ARCSEC. `sepDeg` uses acos, whose floor of
+ *  ~4e-3 arcsec is far above the floating-point-scale differences this pin
+ *  works with, so it cannot resolve them. */
+function sepArcsec(ra1, dec1, ra2, dec2) {
+  const v = (ra, dec) => {
+    const d = D2R * dec;
+    return [Math.cos(d) * Math.cos(D2R * ra), Math.cos(d) * Math.sin(D2R * ra),
+            Math.sin(d)];
+  };
+  const p = v(ra1, dec1), q = v(ra2, dec2);
+  const chord = Math.hypot(p[0] - q[0], p[1] - q[1], p[2] - q[2]);
+  return 2 * Math.asin(Math.min(1, chord / 2)) * R2D * 3600;
+}
+
+// The explicit product and the core's closed form are the SAME expression, so
+// they can differ only by floating-point rounding (measured <= 1.6e-10 arcsec
+// over 1900-2200). A reordered or wrong-axis product is 1.4e-4 arcsec for the
+// zeta<->z swap at J2026 and up to 5666 arcsec for a middle axis X at J2200.
+// 1e-6 arcsec sits ~6000x above the rounding floor and ~135x BELOW the smallest
+// real order error - so it bites without ever producing a false positive.
+const TOL_ORDER_ARCSEC = 1e-6;
+const ROT_EPOCHS = [1900, 1950, 2026, 2100, 2200];
+
 /* ------------------------------- checks ---------------------------------- */
 
 check("meeus_jd_examples", () => {
@@ -236,6 +319,48 @@ check("old_x_axis_bug_guard", () => {
   const sep = sepDeg(bRa, bDec, wRa, wDec);
   assert(sep > 100 * TOL_IAU,
     `the old bug was only ${(sep * 3600).toFixed(1)} arcsec`);
+});
+
+check("precession_rotation_order", () => {
+  // CO-06 (0.6.32 review): the ROTATION ORDER and the MIDDLE AXIS, pinned
+  // against the explicit product of literal rotation matrices above - never
+  // against the core's own atan2(A, B) + z expression. TOL_ORDER_ARCSEC is
+  // tight because the two are algebraically identical; it is the ORDER that is
+  // being asserted, so no model-difference budget is needed.
+  for (const year of ROT_EPOCHS) {
+    const jd = C.julianDay(utc(year, 1, 1, 12));
+    for (const [ra, dec] of IAU_POINTS) {
+      const [gotRa, gotDec] = C.precessJ2000ToDate(ra, dec, jd);
+      const [wantRa, wantDec] = matrixPrecess(ra, dec, jd);
+      const sep = sepArcsec(gotRa, gotDec, wantRa, wantDec);
+      assert(sep < TOL_ORDER_ARCSEC,
+        `${year} (${ra}, ${dec}): ${sep} arcsec from the explicit ` +
+        "Rz(z).Ry(-theta).Rz(zeta) product (tol " + TOL_ORDER_ARCSEC + ")");
+    }
+  }
+});
+
+check("precession_rotation_order_matters", () => {
+  // A property of the TRANSCRIBED matrices alone (the core comparison is the
+  // check above), so this stays a statement about the authority's resolving
+  // power: at J2026 the three wrong products differ from the correct one by the
+  // sizes below. A middle axis X (the pre-0.6.9 bug) is huge, but the zeta<->z
+  // factor swap is 1.35e-4 arcsec - five orders of magnitude BELOW every other
+  // tolerance in this file - which is exactly why TOL_ORDER_ARCSEC must be this
+  // tight and why the order needed its own authority instead of being inferred
+  // from the loose ones.
+  const jd = C.julianDay(utc(2026, 1, 1, 12));
+  const [ra, dec] = [83.63, 22.01];
+  const [okRa, okDec] = matrixPrecess(ra, dec, jd);
+  const sepOf = (order) =>
+    sepArcsec(okRa, okDec, ...matrixPrecess(ra, dec, jd, order));
+  const xMiddle = sepOf("x-middle"), yLast = sepOf("y-last");
+  const swap = sepOf("zeta-z-swap");
+  assert(xMiddle > 100, `middle axis X moved the answer only ${xMiddle} arcsec`);
+  assert(yLast > 1 && yLast < TOL_IAU * 3600,
+    `middle rotation last moved the answer ${yLast} arcsec (expected 1..2)`);
+  assert(swap > TOL_ORDER_ARCSEC * 10 && swap < 0.01,
+    `zeta<->z swap moved the answer ${swap} arcsec (expected 1e-4..1e-2)`);
 });
 
 check("transit_altitude_uses_precessed_declination", () => {

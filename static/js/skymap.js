@@ -201,7 +201,7 @@ function onMove(ev) {
     const sess = o.n_sessions === 1 ? "1 session" : `${o.n_sessions} sessions`;
     tip.innerHTML =
       `<b>${esc(o.name)}</b>${o.designation ? ` <span style="color:#8b93a8">${esc(o.designation)}</span>` : ""}<br>` +
-      `${esc(o.otype ? TYPE_LABEL[o.otype] : "unknown")} \u00B7 ` +
+      `${esc(o.otype ? (TYPE_LABEL[o.otype] || "unknown") : "unknown")} \u00B7 ` +
       `${o.n_images} image${o.n_images === 1 ? "" : "s"} \u00B7 ` +
       `<b>${fmtDurShort(o.total_exposure)}</b> \u00B7 ${sess}` +
       (o.ra_hours != null ? `<br>RA ${o.ra_hours.toFixed(2)}h \u00B7 Dec ${o.dec_deg.toFixed(2)}\u00B0` : "");

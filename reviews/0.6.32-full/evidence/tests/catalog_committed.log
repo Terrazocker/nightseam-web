@@ -1,0 +1,5 @@
+baseline (copies, real git, real repo HEAD): []
+CATALOG_TOKEN in app.js: 9 (unchanged)
+manifest token/sha agree with the new bytes: True
+guard verdict for the shipped (committed) shape: []
+control (working tree differs from HEAD): ['web/catalog.json differs from HEAD but CATALOG_TOKEN in web/app.js does not (bump the token in the same change)']

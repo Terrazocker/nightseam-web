@@ -35,6 +35,12 @@ _WINDOWS_DEVICES = {
     *(f"lpt{i}" for i in range(1, 10)),
 }
 
+# SP-05: C0 controls (0x00-0x1f) and DEL. Windows rejects these in a filename
+# (`OSError: [Errno 22] Invalid argument`) and normalizes nothing about them, so
+# a stored record carrying one can never be written or opened - it only exists
+# to abort a restore with a 500. NUL is covered by the same rule.
+_CONTROL_RE = re.compile(r"[\x00-\x1f\x7f]")
+
 
 def _segment_ok(part: str) -> bool:
     """False for a path segment Windows would silently rewrite.
@@ -43,8 +49,12 @@ def _segment_ok(part: str) -> bool:
     normalized away by the filesystem ("..." and ".. ." resolve to the parent
     directory, and `a. ` becomes `a`), so accepting it would let a stored value
     mean something different from what was validated. Device names (NUL, CON,
-    COM1, ...) address devices rather than files.
+    COM1, ...) address devices rather than files. Control characters are
+    rejected (SP-05): Windows cannot create such a file, so the record would be
+    stored and then fail at every read/write with an OSError.
     """
+    if _CONTROL_RE.search(part):
+        return False
     if part != part.rstrip(". "):
         return False
     if not part.strip(". "):
@@ -69,8 +79,14 @@ def safe_rel(rel) -> str | None:
     """
     if rel is None:
         return None
-    text = str(rel).strip().replace("\\", "/")
-    if not text or "\x00" in text:
+    text = str(rel)
+    # SP-05: check the RAW value, before `.strip()`/separator normalization - a
+    # control character that only survives as padding (\x0b, \t) would otherwise
+    # be removed here and the stored value would differ from what was validated.
+    if _CONTROL_RE.search(text):
+        return None
+    text = text.strip().replace("\\", "/")
+    if not text:
         return None
     if text.startswith("/") or _DRIVE_RE.match(text):
         return None

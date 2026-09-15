@@ -1,0 +1,11 @@
+[1] check_core with the object-property form -> exit 0
+    check_core: OK
+[1c] positive control (function form) -> exit 1
+    zz_l7_probe_b.js: precessJ2000ToDate() must live in core/ only
+    check_core: FAIL
+[2] check_js_imports with a broken RE-EXPORT -> exit 0
+    checked 78 js files, 0 broken import(s)
+[2c] positive control (import form) -> exit 1
+    BROKEN  web\zz_l7_probe_d.js -> ./does-not-exist-l7.js
+    checked 79 js files, 1 broken import(s)
+[cleanup] git status --porcelain -- web: ''

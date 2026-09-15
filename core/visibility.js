@@ -46,3 +46,46 @@ export function statusOf(o, i, minAlt) {
 export function effectiveMinAlt(bortle, explicitMinAlt) {
   return explicitMinAlt != null ? explicitMinAlt : 17 + 2 * (bortle || 4);
 }
+
+/* ---------------------- the "Tonight" candidate pool ----------------------
+ * ONE answer to "may this object appear in the Tonight list at all?", shared by
+ * both shells so the two apps cannot disagree about the pool - they used to:
+ * the web filtered `o.vmag != null`, which silently dropped 45 of the 200
+ * standard-mode objects (IC 1396, the Running Man, NGC 281, the Flame, the
+ * Tulip, Simeis 147, the Double Cluster, the Pipe Nebula, ...) while a comment
+ * claimed exact desktop parity. The desktop applied no magnitude test here at
+ * all, so it kept them.
+ *
+ * The rule:
+ *   * STANDARD mode (the 200 most popular) - every row is a candidate. The
+ *     Tonight list is the headline view; a magnitude cut belongs to the
+ *     catalog/browse lists, which apply their own (`magVisible`).
+ *   * ADVANCED mode (all 12,176) - every row is a candidate too, because the
+ *     desktop's payload carries them all and its Tonight list is "what is up
+ *     tonight" over the loaded catalog. The WEB caps the pool at
+ *     `ADV_TONIGHT_MAG_CAP` because scoring 12k objects per repaint is not
+ *     viable in a browser; that is a PERFORMANCE parameter, not a rule, so it
+ *     is passed in per shell (`TONIGHT_MAG_UNCAPPED` on the desktop) instead of
+ *     being duplicated as a second inline expression.
+ *
+ * `vmagKnownAndUnder` is deliberately BINARY: "no magnitude in the catalog"
+ * answers YES (the object is bright enough that nobody recorded one - the same
+ * reasoning as `magVisible`'s "a no-magnitude object shows at the slider
+ * maximum"). `null <= 9` would be false and is exactly the bug this replaces.
+ */
+export const ADV_TONIGHT_MAG_CAP = 9;
+
+/** Pass as the advanced-mode cap to mean "no cap" (the desktop's payload is
+ *  built for the whole catalog, so it never needed one). */
+export const TONIGHT_MAG_UNCAPPED = Infinity;
+
+export function vmagKnownAndUnder(vmag, cap) {
+  if (vmag == null) return true;
+  return Number.isFinite(cap) ? vmag <= cap : true;
+}
+
+/** May an object with this catalog metadata be a Tonight candidate?
+ *  `isAdv` = the row came from the advanced catalog (`_adv` on a web row). */
+export function inTonightPool(vmag, isAdv, advCap = ADV_TONIGHT_MAG_CAP) {
+  return !isAdv || vmagKnownAndUnder(vmag, advCap);
+}

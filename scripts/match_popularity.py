@@ -8,15 +8,18 @@ so the match must be REPRODUCIBLE - it is: every designation of an object is
 considered and the highest score wins (see `match_objects`).
 
 Usage:
-  python scripts/match_popularity.py                 # fetch, then write the module
-  python scripts/match_popularity.py --cached        # use data/popularity_snapshot.json
+  python scripts/match_popularity.py                 # OFFLINE: use the local snapshot
   python scripts/match_popularity.py --print         # print the dict instead of writing
+
+NightSeam NEVER fetches the popularity source. The snapshot at `data/popularity_snapshot.json`
+was taken once, deliberately, and is the frozen source of truth; every build,
+matcher run and shipped artefact reads that file. There is no network code path
+in this script or anywhere else in the project - `tests/test_no_popularity_fetch.py`
+fails if one reappears, and the browser gate treats the URL as a tripwire.
 """
 
 import csv
 import json
-import ssl
-import urllib.request
 import re
 import sys
 from collections import defaultdict
@@ -25,43 +28,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 CSV_PATH = ROOT / "app" / "data" / "openned.csv"
-POPULARITY_URL = "https://popularity-source.invalid/"
 OUTPUT_JSON = ROOT / "data" / "popularity_snapshot.json"
 OUTPUT_MODULE = ROOT / "app" / "popularity_data.py"
-
-
-def fetch_popularity():
-    """Fetch the popularity source popularity JSON."""
-    print("Fetching the popularity source popularity data...")
-    try:
-        # Try with default SSL
-        ctx = ssl.create_default_context()
-        req = urllib.request.Request(
-            POPULARITY_URL,
-            headers={"User-Agent": "Mozilla/5.0 (compatible; NightSeam/1.0)"}
-        )
-        with urllib.request.urlopen(req, timeout=30, context=ctx) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
-            print(f"  Fetched {len(data)} entries from the popularity source")
-            return data
-    except Exception as e:
-        print(f"  SSL fetch failed: {e}")
-        # Try with relaxed SSL
-        try:
-            ctx = ssl.create_default_context()
-            ctx.check_hostname = False
-            ctx.verify_mode = ssl.CERT_NONE
-            req = urllib.request.Request(
-                POPULARITY_URL,
-                headers={"User-Agent": "Mozilla/5.0 (compatible; NightSeam/1.0)"}
-            )
-            with urllib.request.urlopen(req, timeout=30, context=ctx) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-                print(f"  Fetched {len(data)} entries (relaxed SSL)")
-                return data
-        except Exception as e2:
-            print(f"  Relaxed SSL also failed: {e2}")
-            return None
 
 
 def load_cached_snapshot():
@@ -161,28 +129,63 @@ def extract_designations_from_csv_row(row):
     return designations
 
 
+def _index_winner(prev, score, name, order):
+    """The deterministic winner for one normalized key.
+
+    CD-05 (0.6.32 review): a plain `index[norm] = (name, score)` let the LAST
+    entry in source order win, which is the source-order dependence
+    `match_objects` documents as fixed. Same rule as the matcher: the HIGHEST
+    score wins; an equal score goes to the entry that appeared FIRST in the
+    source sequence (`order`), and lexicographic name order breaks a remaining
+    tie so a hand-built dict can never fall back on iteration/hash order.
+    """
+    if prev is None:
+        return (name, score, order)
+    _, pscore, porder = prev
+    if score != pscore:
+        return (name, score, order) if score > pscore else prev
+    if order != porder:
+        return prev if porder < order else (name, score, order)
+    return prev if prev[0] <= name else (name, score, order)
+
+
 def build_popularity_index(tel_data):
-    """Build lookup index from the popularity source data."""
-    index = {}  # normalized_name -> (original_name, score)
-    
-    for entry in tel_data:
-        name = entry.get("name", "")
-        score = entry.get("popularity", entry.get("score", 0))
-        
+    """Build the lookup index from a list of the popularity source entries.
+
+    `normalize(name) -> (original_name, score)`. Colliding normalized keys are
+    resolved by `_index_winner` (highest score, then source order), never by
+    overwrite order - the old body's second `if ... not in index` block was a
+    no-op (it re-tested the same key) and the first assignment silently
+    overwrote a collision.
+    """
+    return index_from_name_score_pairs(
+        (entry.get("name", ""),
+         entry.get("popularity", entry.get("score", 0)))
+        for entry in tel_data)
+
+
+def index_from_name_score_pairs(pairs):
+    """Build the lookup index from `(name, score)` pairs IN SOURCE ORDER.
+
+    Used by the dict branch of `main()` (`{name: score}` / `{name: {score: X}}`
+    snapshots), where the old code did `tel_index[norm] = (k, score)` and let a
+    later key overwrite an earlier one. The shipped snapshot has exactly one
+    such pair - 'NGC 654 2' (115) and 'NGC 6542' (3) both normalize to
+    `ngc6542` - so `ngc6542` shipped 3 instead of the documented highest-wins
+    115. See `_index_winner` for the tiebreak rule.
+    """
+    index: dict = {}
+    order: dict = {}
+    for name, score in pairs:
         if not name:
             continue
-        
         norm = normalize(name)
-        if norm and norm not in index:
-            index[norm] = (name, score)
-        
-        # Also try variations
-        # The popularity source uses "NGC 7000" format, try "ngc7000" too
-        stripped = norm
-        if stripped not in index:
-            index[stripped] = (name, score)
-    
-    return index
+        if not norm:
+            continue
+        n = order.get(norm, 0)
+        order[norm] = n + 1
+        index[norm] = _index_winner(index.get(norm), score, name, n)
+    return {norm: (name, score) for norm, (name, score, _o) in index.items()}
 
 
 def match_objects(csv_rows, tel_index):
@@ -230,16 +233,22 @@ def match_objects(csv_rows, tel_index):
 
 
 def read_csv():
-    """Read the openned.csv file."""
+    """Read the openned.csv file (the catalogue's `;`-separated layout).
+
+    CD-03 (0.6.32 review): parsed with the `csv` module, exactly like
+    `app/database.py::_read_catalog_csv`. The generator
+    (`scripts/build_adv_catalog.py`) writes with `csv.writer(delimiter=";")`,
+    which QUOTES any field containing `;`, `"` or a newline - the old
+    `line.split(";")` mis-split such a row and dropped it through the length
+    check. The comment/blank-line/field-count behaviour is unchanged.
+    """
     rows = []
-    with open(CSV_PATH, "r", encoding="utf-8") as f:
-        for line in f:
-            if line.startswith("#"):
-                continue
-            line = line.strip()
-            if not line:
-                continue
-            parts = line.split(";")
+    with open(CSV_PATH, "r", encoding="utf-8", newline="") as f:
+        for parts in csv.reader(f, delimiter=";"):
+            if not parts:
+                continue                      # blank line
+            if parts[0].startswith("#"):
+                continue                      # comment line
             if len(parts) < 10:
                 continue
             row = {
@@ -275,8 +284,7 @@ def write_module(matches) -> None:
         "",
         "GENERATED - do not hand-edit. Re-run:",
         "",
-        "    python scripts/match_popularity.py            # fetch + rewrite this file",
-        "    python scripts/match_popularity.py --cached   # use data/popularity_snapshot.json",
+        "    python scripts/match_popularity.py            # offline, from the frozen snapshot",
         "",
         "Every designation of every `app/data/openned.csv` row is matched against",
         "the popularity source table and the HIGHEST score wins (`match_objects`), so the",
@@ -294,29 +302,32 @@ def write_module(matches) -> None:
 
 def main():
     argv = sys.argv[1:]
-    use_cache = "--cached" in argv
     to_stdout = "--print" in argv
+
+    if "--live" in argv:
+        # The network path is GONE on purpose: the snapshot is frozen and no
+        # NightSeam code may contact the popularity source again. Tell a stale caller
+        # instead of silently ignoring the flag.
+        print("ERROR: --live was removed on purpose - NightSeam never fetches "
+              "The popularity source any more.")
+        print(f"       The frozen snapshot is {OUTPUT_JSON}; this script reads it.")
+        sys.exit(2)
 
     # 1. Read CSV
     print(f"Reading {CSV_PATH}...")
     csv_rows = read_csv()
     print(f"  Total rows in openned.csv: {len(csv_rows)}")
 
-    # 2. Fetch or load the popularity source data
-    tel_data = None if use_cache else fetch_popularity()
+    # 2. Load the frozen local snapshot - the ONLY source. There is no fallback
+    #    and no fetch: if it is missing, say so and stop.
+    tel_data = load_cached_snapshot()
     if tel_data is None:
-        tel_data = load_cached_snapshot()
-    
-    if tel_data is None:
-        print("ERROR: Could not fetch or load the popularity source data")
+        print(f"ERROR: no local snapshot at {OUTPUT_JSON}.")
+        print("       NightSeam is offline by design; restore that file from a")
+        print("       backup. There is no download path any more.")
         sys.exit(1)
-    
-    # Cache it
-    import os
-    os.makedirs(os.path.dirname(OUTPUT_JSON), exist_ok=True)
-    with open(OUTPUT_JSON, "w", encoding="utf-8") as f:
-        json.dump(tel_data, f, indent=2)
-    print(f"  Cached the popularity source data to {OUTPUT_JSON}")
+
+    # (the snapshot is NOT rewritten when reading it - no side effect)
     
     # 3. Inspect the popularity source data structure
     if tel_data:
@@ -329,18 +340,19 @@ def main():
     if isinstance(tel_data, list):
         tel_index = build_popularity_index(tel_data)
     elif isinstance(tel_data, dict):
-        # Might be {name: score} or {name: {score: X}} etc.
-        tel_index = {}
-        for k, v in tel_data.items():
-            if isinstance(v, (int, float)):
-                score = v
-            elif isinstance(v, dict):
-                score = v.get("popularity", v.get("score", 0))
-            else:
-                continue
-            norm = normalize(k)
-            if norm:
-                tel_index[norm] = (k, score)
+        # Might be {name: score} or {name: {score: X}} etc. CD-05: built through
+        # the shared deterministic rule - plain assignment let the LAST key in
+        # file order win a normalize collision (shipped: 'NGC 654 2' 115 lost to
+        # 'NGC 6542' 3).
+        def _pairs():
+            for k, v in tel_data.items():
+                if isinstance(v, bool) or not isinstance(v, (int, float)):
+                    if not isinstance(v, dict):
+                        continue
+                    yield k, v.get("popularity", v.get("score", 0))
+                else:
+                    yield k, v
+        tel_index = index_from_name_score_pairs(_pairs())
     else:
         print("ERROR: Unexpected the popularity source data format")
         sys.exit(1)
