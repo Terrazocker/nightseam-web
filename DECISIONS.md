@@ -497,3 +497,27 @@ the same commit:
   (10 core modules now).
 * the tagged v0.6.24 register was 60/10/41/17/7/20 with stub 17; 0.6.23 (live)
   was 59/9/40/16/6/19.
+
+### The deployed CSP is limited by the host's nginx front end (measured)
+
+`web/.htaccess` sets the policy, but on the live host **nginx serves
+`.html`/`.js`/`.css` itself** and never reaches Apache for those paths, so the
+directives arrive only where nginx proxies (measured 2026-09-15:
+`/astro/version.json` carries `Content-Security-Policy` + `Referrer-Policy` +
+`X-Content-Type-Options`; `/astro/`, `/astro/app.js` and `/astro/style.css` carry
+none). `mod_headers` is working - the path split is the host's architecture, not
+a broken config, and it is the same reason `web/ftps_deploy.py` uploads the file
+by hand (the uploader skips dotfiles).
+
+To cover the HTML, the policy has to be added at the nginx layer
+(Plesk: domain -> Apache & nginx Settings -> Additional nginx directives), e.g.
+`add_header Content-Security-Policy "<the same policy>" always;`. That is a
+host-side action outside this repo.
+
+Consequence for the release gate: `web-prod` probes every path under the deployed
+URL for the policy. If the host serves it somewhere, the policy is validated
+(`script-src` present, no `unsafe-inline`/`unsafe-eval`, the CURRENT inline-theme
+hash, `connect-src` present) and a bad policy FAILS the gate. If the host serves
+it nowhere, that is a printed NOTE rather than a failure - the repo cannot assert
+a platform property it does not control - while the policy's content and hash
+stay pinned offline by `tests/test_prod_csp.py`.

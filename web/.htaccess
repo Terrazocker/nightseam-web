@@ -15,6 +15,13 @@
 # `python scripts/check_browser.py --prod-url https://nightseam.de/astro/` if it
 # does not match, so drift is detected rather than shipped.
 #
+# MEASURED LIMIT OF THIS FILE (2026-09-15): on Plesk the static files are
+# fronted by NGINX, which serves .html/.js/.css itself, so these directives
+# arrive only on the paths nginx proxies (/astro/version.json does; /astro/
+# and /astro/app.js do NOT). Covering the HTML needs the same header at the
+# nginx layer (Plesk > domain > Apache & nginx Settings > Additional nginx
+# directives): add_header Content-Security-Policy "..." always;
+#
 # mod_headers must be enabled (Plesk: Apache with mod_headers - the default).
 # If this file causes a 500, the module is off: remove the file rather than
 # leaving a broken site.

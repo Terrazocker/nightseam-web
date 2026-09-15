@@ -7,6 +7,79 @@ artifact hashes, gate results, what was deployed and how it was verified live.
 
 Newest first.
 
+## 0.6.33 - 2026-09-15
+
+**RELEASED as 0.6.33** - tag `v0.6.33` on the release commit `3c2f98a`, with the
+curated `scripts/build_changelog.py` entry living IN that commit. Follow-up
+`b390575` regenerated the tracked `landing/changelog.json` (**never moved the
+tag**).
+
+**What shipped.** The 0.6.32-review fix batch plus the shell-unification pass:
+the web "tonight" pool gained the 45 standard-mode objects whose catalogue
+magnitude is empty (the inline `o.vmag != null` filter - IC 1396, the Running
+Man, NGC 281, the Flame, the Tulip, Simeis 147, the Double Cluster, the Pipe
+Nebula and 38 more could never appear there), both shells now score through ONE
+`core/scoring.js::scoreNightTracks` with the span as a parameter, the panorama
+editor's snapshot/undo/redo/dirty model is ONE `core/panohistory.js` (the
+desktop gained `#btnRedo`), the popularity source is no longer contacted anywhere (the
+`--live` refresh flag is GONE, not disabled), the web shell ships a
+Content-Security-Policy, and 74 review findings plus 6 investigated non-finding
+items are closed or documented.
+
+**Staged artifacts** (`dist/release/`): `NightSeam-0.6.33.zip` and
+`NightSeam-latest.zip` (20,505,657 B, sha256
+`c947dcd37af9c66688712284107eb574a3e0b2c1a102abd8c290c4050ba583ad`),
+`version.json` (version 0.6.33, url `/downloads/NightSeam-0.6.33.zip`, size +
+sha256 above), `ns-version.js` (`{"version": "0.6.33"}`), `NightSeam.exe`
+(19.8 MB, rebuilt AT the tag with `build.ps1` - the release check correctly
+refused to stage the earlier `0.6.32-3-g3277846-dirty` snapshot).
+
+**Gates.**
+
+* `python -m pytest tests/ -q` -> **598 passed** (0 failures).
+* `python scripts/check_js.py` -> OK (imports, DOM ids, syntax on 81 modules,
+  encoding, catalog token, the VERIFIED token baseline, core drift/purity).
+* `python scripts/check_release.py` -> 0 errors at the tag, before staging.
+* `python scripts/check_browser.py --all` -> **25/25** on the STAGED build
+  (17 web checks incl. the new `web-tonight-pool-includes-unmagnituded-standard-rows`,
+  and 8 desktop checks against the freshly built exe).
+* `python scripts/check_browser.py --web --prod-url https://nightseam.de/astro/`
+  -> **18/18** after upload.
+
+**Deployed and verified live** (FTPS, Plesk):
+
+* `/downloads/` - `NightSeam-0.6.33.zip` + `NightSeam-latest.zip` +
+  `version.json` + `ns-version.js`; the LIVE zip was downloaded back and its
+  sha256 equals the staged value byte-for-byte.
+* `/astro/` - the whole web tree via `uploadtree` (index.html last, as the
+  uploader orders it) plus `web/.htaccess` uploaded by hand (the uploader skips
+  dotfiles). Live `/astro/version.json` = 0.6.33 / describe v0.6.33.
+* `/` - the landing tree, so `/changelog.json` now carries the 0.6.33 entry
+  (verified: newest entry 0.6.33).
+
+**CSP caveat (measured, and the reason the check was relaxed).** The host
+fronts static files with **nginx**, which serves `.html`/`.js`/`.css` itself and
+never reaches Apache for them, so the `web/.htaccess` directives arrive only on
+the paths nginx proxies: measured 2026-09-15, `/astro/version.json` carries the
+policy and `/astro/`, `/astro/app.js`, `/astro/app.css` do not. `mod_headers` is
+therefore working; the policy simply cannot cover the HTML without an nginx-layer
+rule (Plesk > domain > Apache & nginx Settings > Additional nginx directives).
+The production check now probes every path under the URL for the policy, treats
+"the host serves it nowhere" as a printed NOTE rather than a hard failure (a
+platform property this repo does not control), and still FAILS on a policy it
+does find if that policy is unusable. The policy's CONTENT and its inline-script
+hash are pinned offline by `tests/test_prod_csp.py`.
+
+**Test-count and token register at this release:** 598 tests collected; web
+tokens `app.js?v=87` / `CATALOG_TOKEN='10'` / astro 21 / horizon 54 / format 28 /
+nightrank 20 / webstore 31 / dragwin 1 / style 24 / themes 5; core stub
+`web/core.js?v=33` (current hash `7d2e90d5de153c46`, retained N-1
+`21df8e451f20a165`, 10 core modules).
+
+**Post-tag commits (never move the tag):** `b390575` (regenerated
+`landing/changelog.json`) and the harness fix that relaxed the CSP probe
+described above.
+
   **RELEASED as 0.6.25** - tag `v0.6.25` on the release commit (the curated entry
   and the build fix live in it), staged artifacts in `dist/release/`
   (`NightSeam-0.6.25.zip` + `NightSeam-latest.zip` + `version.json` +
