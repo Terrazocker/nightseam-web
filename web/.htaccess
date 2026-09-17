@@ -31,12 +31,28 @@
 # The nginx directive to add is the Header value below (`add_header
 # Content-Security-Policy "<that value>" always;` at the `/astro` location).
 #
+# MEASURED 2026-09-17, why the header below is NOT the live protection: /astro/
+# answers `server: nginx` + `content-type: text/html` with no policy header, i.e.
+# nginx serves the HTML itself and never reaches Apache - and this host exposes no
+# nginx directive field. The enforced policy therefore ships as a
+# `<meta http-equiv="Content-Security-Policy">` in web/index.html, carrying every
+# directive below EXCEPT `frame-ancestors` (ignored in a meta policy, so it is
+# deliberately omitted there). If the host ever gains the directive field, add the
+# line below and the header simply becomes the stronger of the two.
+#
+# `style-src 'unsafe-inline'` is REQUIRED, not a convenience relaxation: index.html
+# styles several controls with inline `style=` attributes (range widths, theme
+# swatches) and `style-src 'self'` blocks them SILENTLY - measured 2026-09-17,
+# Chrome logged no "Refused to" line and the page still booted; only the sliders
+# and swatches lost their styling. The `web-prod` check measures that at runtime
+# now (the green swatch must actually be green).
+#
 # mod_headers must be enabled (Plesk: Apache with mod_headers - the default).
 # If this file causes a 500, the module is off: remove the file rather than
 # leaving a broken site.
 
 <IfModule mod_headers.c>
-Header always set Content-Security-Policy "default-src 'self'; script-src 'self' 'sha256-L8aiDzZyJ9k2GW9FggYfWKbcrM22h1LPcHxs0Ov+uCE='; style-src 'self'; img-src 'self' data: https://upload.wikimedia.org; connect-src 'self' https://en.wikipedia.org; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; object-src 'none'"
+Header always set Content-Security-Policy "default-src 'self'; script-src 'self' 'sha256-L8aiDzZyJ9k2GW9FggYfWKbcrM22h1LPcHxs0Ov+uCE='; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://upload.wikimedia.org; connect-src 'self' https://en.wikipedia.org; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; object-src 'none'"
 Header always set Referrer-Policy "strict-origin-when-cross-origin"
 Header always set X-Content-Type-Options "nosniff"
 </IfModule>

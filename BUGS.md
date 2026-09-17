@@ -25,14 +25,14 @@ system Chrome.
 |---|---|---|---|
 | BUG-001 | P1 | Fixed + pinned | A rejected desktop restore can overwrite existing payload files |
 | BUG-002 | P1 | Fixed + pinned | Imported desktop fields can create executable HTML attributes |
-| BUG-003 | P1 | Code fixed; HOST outstanding | The production HTML document has no effective CSP |
+| BUG-003 | P1 | CLOSED (meta carrier, live) | The production HTML document has no effective CSP |
 | BUG-004 | P2 | Fixed + pinned | Some malformed backup shapes escape as HTTP 500 |
 | BUG-005 | P2 | Fixed + gate verified | The Tonight browser check races its own 120 ms debounce |
 | BUG-006 | P3 | Fixed + pinned | Deleting the active panorama leaves a stale setting |
 | DOC-001 | P3 | Corrected earlier | README said Shift scrubbed 10 minutes; the code uses 60 |
 | DOC-002 | P3 | Corrected earlier | CATALOG said `--live` fetched the popularity source; the flag is removed |
 
-## BUG-003 - production HTML has no effective CSP (STILL OPEN at the host)
+## BUG-003 - production HTML has no effective CSP (CLOSED, meta carrier)
 
 **Evidence.** Measured on 2026-09-17: `/astro/` and `/astro/app.js` returned no
 `Content-Security-Policy`; `/astro/version.json` returned the repository policy.
@@ -41,20 +41,36 @@ searched JSON paths when the HTML lacked a header and counted that as a pass, so
 it gave false assurance. `web/.htaccess` already explains that nginx serves
 HTML/JS/CSS without reaching Apache.
 
-**Fixed in the tree.** `tests/browser/harness.py::_prod_smoke` reads the policy
-from the `page.goto()` DOCUMENT response ONLY; the `version.json` /
-`catalog.manifest.json` fallback is gone and a missing document policy is a HARD
-failure (`_csp_problems(policy, document=True)`). Pinned by the new
-`tests/test_prod_document_csp.py`. `web/.htaccess` documents the exact nginx
-directive to add.
+**Fixed, and now enforced on the live origin.** Three parts:
 
-**Still open (host layer).** The nginx directive has NOT been applied - this
-session has no Plesk/hosting access. Consequence, and it is the intended one:
-`python scripts/check_browser.py --prod-url https://nightseam.de/astro/` now
-FAILS until the header reaches `<location /astro>` with `always`. That failure is
-the deliverable; when the host is configured, the same command closes the finding.
-Verify with
-`curl -sI https://nightseam.de/astro/ | Select-String -Pattern 'content-security-policy'`.
+1. The smoke reads the policy from the DOCUMENT (response header OR the
+   document's own meta policy) and a missing policy is a hard failure; the
+   `version.json`/`catalog.manifest.json` fallback is gone
+   (`tests/test_prod_document_csp.py`).
+2. The enforced policy ships as `<meta http-equiv="Content-Security-Policy">` in
+   `web/index.html`. **Measured 2026-09-17:** `/astro/` answers `server: nginx` +
+   `content-type: text/html` with no policy header, so nginx serves the document
+   and `web/.htaccess` can never reach it; this host exposes no nginx directive
+   field. The meta form carries every directive except `frame-ancestors` (which
+   browsers IGNORE in meta - the check reports it if anyone adds it there).
+3. `web/index.html` was deployed and
+   `python scripts/check_browser.py --prod-url https://nightseam.de/astro/` ->
+   **PASS**: the live document carries the policy and the inline-styled theme
+   swatches still render.
+
+**Found while fixing it (a real bug in the other carrier).** The header policy
+shipped `style-src 'self'`, which SILENTLY blocks the shell's inline `style=`
+attributes - measured: the sliders and theme swatches lost their styling while the
+page booted normally and Chrome logged NO "Refused to" message. Both carriers now
+say `style-src 'self' 'unsafe-inline'`, and the production smoke MEASURES a computed
+background on an inline-styled element so the failure can never be silent again.
+
+**Residual (documented, not a finding).** A meta policy is weaker than a header,
+and `frame-ancestors`/`report-uri`/`sandbox` cannot be delivered that way - the
+clickjacking header was never live either, and a local planner UI is a weak
+clickjacking target. If the host ever exposes the nginx directive field, adding the
+`add_header` line documented in `web/.htaccess` upgrades the carrier with no other
+change.
 
 ## BUG-005 - the Tonight browser check races the render debounce (CLOSED by the gate)
 
@@ -165,14 +181,8 @@ full suite plus required JS/browser/release guards have been run. Record the
 shipped result in `RELEASES.md`, then remove the closed item from this active
 file; Git history preserves the investigation.
 
-One more item is now CLOSED rather than open: the desktop gate was run against a
-freshly rebuilt exe (`--desktop`: 8/8), so the desktop shell is verified against
-this pass along with the web shell (`--web`: 18/18). What remains is the
-deployment action below, and the release decision (bump/tag), which is not a
-defect.
-
-The fix pass followed the closing rule above. BUG-005 is closed with the browser
-gate green (18/18). BUG-003 stays in the open section with its remaining action
-spelled out: the CODE half is done and pinned, but the header has to be applied
-at the host's nginx layer, which this session cannot reach - so the finding is
-not closed on evidence.
+The fix pass followed that rule. BUG-003 is closed with the policy live on the
+origin (production smoke PASS), and BUG-005 with the browser gate green
+(`--web` 18/18, `--desktop` 8/8). Nothing in this file is a confirmed OPEN defect
+any more - what remains is the release decision and the deferred items below,
+which are recorded here so they are not rediscovered as findings.

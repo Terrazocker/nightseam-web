@@ -72,26 +72,36 @@ tagged; nothing below was verified against a deployed host.
 - `python scripts/check_js.py` -> **OK** after repeated
   `scripts/bump_web_tokens.py` + `scripts/check_js_tokens.py --update` runs
   (`app.js` 87 -> 97 across the pass, in `web/index.html` + `web/app.js`).
-- **Browser gate, web shell: `python scripts/check_browser.py --web` -> 18/18
-  passed** (escalated once: Playwright cannot create its Chrome pipes under the
-  confined sandbox - see `ENVIRONMENT.md`). This is BUG-005's end-to-end proof and
-  it exercised the corrected check.
-- Desktop CSP verified against a SOURCE-served server with system Chrome: the
-  document carries `script-src 'self' 'sha256-...'` (no `unsafe-inline`), the
-  inline theme bootstrap still applies (`data-theme=dome`), 49 catalog rows + 4
-  Tonight cards render and there are no page or console errors.
+- **Browser gate:** `--web` **18/18 passed** and `--desktop` **8/8 passed**
+  (rebuilt exe). Escalated once per run: Playwright cannot create its Chrome pipes
+  under the confined sandbox - see `ENVIRONMENT.md`.
+- **BUG-003 closed on the LIVE origin.** `/astro/` was measured through Chrome on
+  2026-09-17: `server: nginx`, `content-type: text/html`, NO policy header and no
+  meta policy - i.e. nginx serves the document itself, so `web/.htaccess` can never
+  reach it and this host exposes no nginx directive field. The enforced policy now
+  ships as a `<meta http-equiv="Content-Security-Policy">` in `web/index.html`;
+  `web/index.html` was deployed individually and
+  `check_browser.py --prod-url https://nightseam.de/astro/` -> **PASS** (policy
+  present on the document, inline-styled swatches still render).
+- **A silent-breakage bug found by measuring instead of assuming.** The header
+  policy carried `style-src 'self'`, which blocks the shell's inline `style=`
+  attributes with NO console message: the sliders and theme swatches lost their
+  styling while the page booted normally (negative control: `style-src 'self'`
+  alone -> `edgeSpace`/`bortle` widths and the swatch background all
+  `<blocked>`, `Refused to` messages = 0). Both carriers now say
+  `style-src 'self' 'unsafe-inline'`, and the production smoke measures a computed
+  background on an inline-styled element so it can never fail silently again.
 - Desktop: the exe was REBUILT from this tree (PyInstaller onefile, ~47 s,
   20.8 MB, `v0.6.33-8-gfa6ef5c`) and `python scripts/check_browser.py --desktop`
   -> **8/8 passed** (boot, worker date change, worker kill/sync fallback, pref
-  rescore, advanced mode, catalog tier/minvis, scrub window, pano crop FOV). The
-  desktop shell is therefore verified against the post-fix code too.
+  rescore, advanced mode, catalog tier/minvis, scrub window, pano crop FOV).
 - Guard dry run: `python scripts/pre_tag_check.py 0.6.34` -> the expected FAIL
   ("no CURATED entry for 0.6.34"), with the token guard's self-test OK and no
   missed-bump finding - i.e. the release machinery is armed and waiting for the
   changelog entry, nothing else.
-- **NOT run:** any deployed check. The production document CSP still needs the
-  host's nginx directive (BUGS.md BUG-003), and the exe is a local build, not a
-  released artifact (the tag/bump decision is open).
+- **NOT run:** the header carrier on the live host (it cannot be applied there).
+  The meta carrier is the live protection; `web/.htaccess` keeps the stronger
+  header form ready for a host that exposes the directive field.
 
 **Discovered while verifying (fixed in the same pass).** The browser gate earned
 its keep: the new BUG-005 check failed three times in a row and each failure was a

@@ -5,6 +5,22 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>NightSeam Web — night-planning in your browser</title>
 <meta name="description" content="NightSeam Web: tonight's best deep-sky targets, live polar sky map and per-object altitude charts — computed entirely in your browser. Catalog: OpenNGC + supplement (12,176 objects).">
+<!-- Content-Security-Policy DELIVERED IN THE DOCUMENT (BUG-003).
+
+     MEASURED 2026-09-17: the deployed origin answers `<location /astro>` with
+     `server: nginx` + `content-type: text/html` and NO policy header, so nginx
+     serves the HTML itself and never reaches Apache - `web/.htaccess` (which
+     carries the same policy, plus the header-only directives) cannot apply to
+     the document, and this host does not expose the nginx directive field.
+     A meta policy is worse than a header (a parser bug ahead of this tag could
+     drop it, and `frame-ancestors`/`report-uri`/`sandbox` are IGNORED here), but
+     it is a REAL enforced policy on the public origin, and it lives in a file
+     this repo controls and verifies.
+
+     Keep the directives in step with `web/.htaccess`: the tests in
+     `tests/test_prod_csp.py` compare both against the same rule table, and the
+     browser gate reads whichever one the live document carries. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-L8aiDzZyJ9k2GW9FggYfWKbcrM22h1LPcHxs0Ov+uCE='; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://upload.wikimedia.org; connect-src 'self' https://en.wikipedia.org; base-uri 'self'; form-action 'self'; object-src 'none'">
 <script>
 /* apply the saved theme before first paint (synchronous, no server).
    Glass is the default look; "Classic" is the older flat blue look. */

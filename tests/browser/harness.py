@@ -505,7 +505,16 @@ def _inline_script_hashes() -> list[str]:
     return out
 
 
-def _csp_problems(policy: str | None, document: bool = False) -> list[str]:
+# Directives a browser IGNORES when the policy arrives in a `<meta>` tag
+# (CSP3 §"The meta element": frame-ancestors, report-uri, sandbox are only
+# meaningful as response headers). Naming them in a meta policy is a silent
+# no-op - exactly the false-assurance shape BUG-003 was - so the check reports
+# it instead of counting the directive as present.
+_META_IGNORED = ("frame-ancestors", "report-uri", "report-to", "sandbox")
+
+
+def _csp_problems(policy: str | None, document: bool = False,
+                  from_meta: bool = False) -> list[str]:
     """Why a deployed Content-Security-Policy is unusable ([] = fine).
 
     The web shell is the PUBLIC origin and loads third-party images while
@@ -517,12 +526,24 @@ def _csp_problems(policy: str | None, document: bool = False) -> list[str]:
     protects only the response it is attached to, so a policy seen on
     `version.json` says nothing about the HTML a browser runs. The document check
     therefore drops the inline-bootstrap-hash requirement (the static desktop
-    entry point has no such script) but keeps every policy rule."""
+    entry point has no such script) but keeps every policy rule.
+
+    `from_meta=True` is the BUG-003 WORKAROUND path: the deployed host answers
+    `/astro` from nginx, so no header can be applied there and the policy ships
+    inside `web/index.html` instead (measured 2026-09-17: `server: nginx`,
+    `content-type: text/html`, no policy header)."""
     if not policy:
-        return ["no Content-Security-Policy header is served (web/.htaccess "
-                "carries one; the host must apply it)"]
+        return ["no Content-Security-Policy is served (neither a response header "
+                "nor a meta policy in the document; web/.htaccess carries the "
+                "header form and web/index.html the meta form)"]
     low = policy.lower()
     bad = []
+    if from_meta:
+        for directive in _META_IGNORED:
+            if directive in low:
+                bad.append(
+                    f"{directive} is IGNORED in a meta policy - it only works as "
+                    f"a response header, so the document is not protected by it")
     if "script-src" not in low:
         bad.append("no script-src directive (default-src alone is weaker than "
                    "the desktop shell, which pins script-src)")
@@ -554,18 +575,32 @@ def _prod_smoke(browser, prod_url: str, artifacts: Path, verbose: bool) -> Resul
     try:
         resp = page.goto(prod_url, wait_until="domcontentloaded")
         c.expect(resp is not None, "the production page did not respond")
-        # BUG-003: the policy must be on the DOCUMENT response, and nothing else
-        # counts. This used to fall back to probing version.json /
-        # catalog.manifest.json, which nginx DOES proxy to Apache - so a
-        # deployment whose HTML carried no policy at all still "passed" while
-        # every browser ran the page unprotected. A CSP protects only the
-        # response that carries it. The policy itself is pinned offline by
-        # tests/test_prod_csp.py; the host has to apply it to .html (Plesk: the
-        # domain's nginx "Additional directives" - web/.htaccess explains why the
-        # Apache file alone cannot).
+        # BUG-003: the policy must cover the DOCUMENT, and nothing else counts.
+        # This used to fall back to probing version.json / catalog.manifest.json,
+        # which nginx DOES proxy to Apache - so a deployment whose HTML carried no
+        # policy at all still "passed" while every browser ran the page
+        # unprotected. A CSP protects only the response that carries it.
+        #
+        # Two legitimate carriers, both checked here:
+        #   1. a response header on the page (the stronger form);
+        #   2. a `<meta http-equiv="Content-Security-Policy">` in the document -
+        #      the BUG-003 WORKAROUND, because the deployed host answers /astro
+        #      from nginx and exposes no directive field, so no header can be
+        #      applied to the HTML (measured 2026-09-17). The meta form cannot
+        #      carry frame-ancestors/report-uri/sandbox, and _csp_problems
+        #      reports those as findings rather than counting them.
         policy = resp.headers.get("content-security-policy")
-        problems = _csp_problems(policy, document=True)
-        c.expect(not problems, "production DOCUMENT CSP: " + "; ".join(problems))
+        from_meta = False
+        if not policy:
+            policy = page.evaluate(
+                """() => { const m = document.querySelector(
+                       'meta[http-equiv="Content-Security-Policy" i]');
+                     return m ? (m.getAttribute('content') || '') : ''; }""") or None
+            from_meta = bool(policy)
+        problems = _csp_problems(policy, document=True, from_meta=from_meta)
+        carrier = "meta policy" if from_meta else "response header"
+        c.expect(not problems,
+                 f"production DOCUMENT CSP ({carrier}): " + "; ".join(problems))
         page.wait_for_selector("#foot-ver", timeout=45000)
         # First-run welcome (throwaway profile, empty storage): "Skip" keeps the
         # default site so boot proceeds.  This writes only to the ephemeral
@@ -594,6 +629,32 @@ def _prod_smoke(browser, prod_url: str, artifacts: Path, verbose: bool) -> Resul
         c.expect(deployed, "the deployed version.json must be readable")
         c.expect(deployed in shown,
                  f"page shows {shown!r} but version.json says {deployed!r}")
+        # BUG-003 follow-up: a policy can be PRESENT and still break the page, and
+        # `style-src 'self'` does exactly that with NO console message - measured
+        # 2026-09-17, the theme swatches and sliders silently lost their inline
+        # styling while the app booted normally.
+        #
+        # The signal is "does a computed background exist at all", NOT a colour
+        # literal: the swatch's colour comes from its OWN inline `style=` attribute
+        # (`#8f7bff` for Glass, `#4f9cff` for Classic), so pinning a colour here
+        # would couple the gate to the current theme palette. When the attribute is
+        # dropped the element falls back to `background: none` on the class rule,
+        # i.e. `rgba(0, 0, 0, 0)` - which is what the negative control measured.
+        style_ok = page.evaluate(
+            """() => {
+                 const sw = document.querySelector('#themeDome .sw');
+                 const rng = document.querySelector('#edgeSpace');
+                 const bg = sw ? getComputedStyle(sw).backgroundColor : null;
+                 const m = bg && bg.match(/rgba?\\((\\d+),\\s*(\\d+),\\s*(\\d+)(?:,\\s*([\\d.]+))?/);
+                 const opaque = !!m && (m[4] === undefined || Number(m[4]) > 0.05);
+                 return { swatch: bg, styled: opaque,
+                          rangeWidth: rng ? getComputedStyle(rng).width : null };
+               }""")
+        c.expect(style_ok.get("styled"),
+                 f"the inline-styled theme swatch has no computed background "
+                 f"({style_ok}) - the policy is blocking inline STYLE (style-src "
+                 f"needs 'unsafe-inline'; the browser reports nothing when it "
+                 f"happens)")
         c.assert_clean()
     except Exception as exc:
         ok, err = False, f"{type(exc).__name__}: {exc}"

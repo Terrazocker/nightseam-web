@@ -10,6 +10,50 @@ history, tests and `RELEASES.md` preserve their durable evidence.
 
 ---
 
+## 0.6.33 fix pass — the web policy is enforced from the DOCUMENT, not a header
+
+**Decision.** `web/index.html` carries the policy as
+`<meta http-equiv="Content-Security-Policy">`, with the same directives as
+`web/.htaccess` except `frame-ancestors`. The production smoke accepts either
+carrier (a response header still wins when present) and a missing policy is a hard
+failure.
+
+**Why.** Measured 2026-09-17 through Chrome on the live origin: `/astro/` answers
+`server: nginx` + `content-type: text/html` with NO policy header and NO meta
+policy. nginx serves the document itself, so `web/.htaccess` never applies to it,
+and the Plesk console on this host exposes no nginx directive field. The choices
+were a meta policy, a hosting-panel action that is not available, or leaving the
+public origin with no enforced policy at all while a check claimed otherwise -
+which is precisely the false assurance BUG-003 exists to remove.
+
+**What the meta carrier cannot do, stated plainly.** Browsers IGNORE
+`frame-ancestors`, `report-uri`/`report-to` and `sandbox` in a meta policy, so
+those are omitted there and the check reports them as findings if anyone adds them
+(claiming protection that does not exist is the bug, not the workaround). A meta
+policy is also weaker than a header in principle: it is parsed with the document,
+so a flaw that corrupts the response before the tag could drop it. Against
+injected MARKUP it is sound - a `<meta>` placed in `<body>` is ignored - which is
+the threat this origin actually faces.
+
+**Required directive that looked like a relaxation.** `style-src 'self' 'unsafe-inline'`
+in BOTH carriers. The shell styles several controls with inline `style=`
+attributes, and `style-src 'self'` blocks them with NO console message: measured
+2026-09-17, the range inputs and theme swatches silently lost their styling while
+the page booted normally (`Refused to` messages: 0). Inline STYLE cannot execute,
+so this is not the same class of exemption as `script-src 'unsafe-inline'`, which
+stays forbidden. The production smoke now measures a computed background on an
+inline-styled element, so the failure mode cannot be silent again.
+
+**Rejected.** (a) Leaving it open until the host offers nginx directives - the
+exposure is on the user's data today, and the workaround costs one file. (b)
+Serving the app through Plesk's Node.js/PHP handlers to gain a header - a large
+deployment change for a marginal carrier upgrade. (c) Quietly weakening the smoke
+to pass without a policy - that is the defect, restated.
+
+**Enforced by.** `tests/test_prod_csp.py` (both carriers against one rule table,
+the no-header-only-directive rule, and the shared directives), and `web-prod`,
+which reads the live carrier and measures the inline-style outcome.
+
 ## 0.6.33 fix pass — the Tonight view publishes what the SCRUBBER names
 
 **Decision (BUG-005).** `web/app.js` publishes `#view[data-ns-gen]` /

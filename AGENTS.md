@@ -449,7 +449,7 @@ calculation stay local. `README.md` has the feature list.
     `Get-CimInstance Win32_Process`).
   - If 8407 is briefly taken at boot, `free_port()` silently picks a RANDOM port
     (written to `instance.json`).
-- Tests: `python -m pytest tests/` (620 collected as of the 2026-09-17 fix pass -
+- Tests: `python -m pytest tests/` (623 collected as of the 2026-09-17 fix pass -
   re-derive with `--collect-only -q` rather than trusting this line). Single test:
   `python -m pytest tests/test_js_parity.py -k name`. API tests use
   `create_app(db, prefetch=False)` (no image-cache thread). The `client` fixture
@@ -460,7 +460,7 @@ calculation stay local. `README.md` has the feature list.
     external `--basetemp` workaround does not restore a clean run either.
     `tests/conftest.py` therefore OVERRIDES the `tmp_path` fixture with a dir under
     the gitignored, sandbox-owned `logs/.pytest-tmp`, so a plain
-    `python -m pytest tests/` is clean: **0 assertion failures** (620 tests as of
+    `python -m pytest tests/` is clean: **0 assertion failures** (623 tests as of
     the 2026-09-17 fix pass - re-derive the count, do not trust it here).
 - JS checks (run after touching `static/` OR `web/`): `python scripts/check_js.py`
   runs all of them and exits non-zero on hard failures:
@@ -499,9 +499,9 @@ calculation stay local. `README.md` has the feature list.
   (`--prod-url https://nightseam.de/astro/` adds a read-only production smoke).
   Designed to be deterministic: UTC, pinned clock, empty storage per check;
   `-p no` pytest never collects it (`*_suite.py`, functions take a `ctx`).
-  `BUGS.md` records what the fix pass left open (apply the host's nginx
-  document-CSP directive; run `--desktop` after a rebuild - the packed exe is
-  pre-fix). The marker/scrubber contract is pinned by
+  `--prod-url` checks the live DOCUMENT policy (header or the meta tag) and
+  MEASURES that it did not break inline styles - a policy can be present and still
+  break the page silently. The marker/scrubber contract is pinned by
   `web-tonight-render-marker-converges` plus `tests/test_tonight_marker.py`.
 - Build exe: `powershell -ExecutionPolicy Bypass -File build.ps1` ->
   `dist\NightSeam.exe` (isolated `.venv-build`; kills running NightSeam first).
@@ -537,10 +537,12 @@ calculation stay local. `README.md` has the feature list.
 
 ## Current review status
 
-- `BUGS.md` is the active backlog. The 2026-09-17 fix pass closed BUG-001,
-  BUG-002, BUG-004, BUG-005 and BUG-006 with implementation changes plus
-  regression pins (browser gate `--web`: 18/18). BUG-003 keeps one named
-  remaining action: apply the document CSP at the host's nginx layer.
+- `BUGS.md` is the active backlog, and as of the 2026-09-17 fix pass it holds NO
+  confirmed open defect: BUG-001, BUG-002, BUG-004, BUG-005 and BUG-006 are fixed
+  with regression pins (gates: `--web` 18/18, `--desktop` 8/8), and BUG-003 is
+  closed with the policy ENFORCED on the live origin - nginx serves `/astro` and
+  the host exposes no directive field (measured 2026-09-17), so the policy ships
+  as a `<meta http-equiv>` in `web/index.html` and `--prod-url` passes.
   `RELEASES.md` has the evidence, `DECISIONS.md` the reasoning.
 - Release records (tag, staged artifacts, gate results, deploy and live checks)
   live in `RELEASES.md`.

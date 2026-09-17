@@ -35,10 +35,18 @@ def test_the_document_check_is_the_one_the_smoke_uses():
     """The smoke must pass `document=True`, i.e. it must NOT require the web
     shell's inline-bootstrap hash (the entry point may be the static desktop
     shell, whose index.html has a different one) - but it must keep every policy
-    rule, and it must not consult another path for the header."""
+    rule, and it must not consult another path for the policy.
+
+    It must also accept the meta carrier: this host serves /astro from nginx and
+    exposes no directive field (measured 2026-09-17), so the enforced policy ships
+    inside web/index.html. A header still wins when both are present."""
     src = HARNESS.read_text(encoding="utf-8")
     smoke = src.split("def _prod_smoke(", 1)[1]
-    assert "_csp_problems(policy, document=True)" in smoke
+    assert "document=True" in smoke
+    assert "from_meta=from_meta" in smoke, (
+        "the smoke must evaluate the meta policy under the meta rules")
+    assert 'meta[http-equiv="Content-Security-Policy" i]' in smoke, (
+        "the smoke no longer reads the document's meta policy")
     # Look at the CODE, not the comment that explains the removed fallback.
     code = "\n".join(ln for ln in smoke.splitlines()
                      if not ln.lstrip().startswith("#"))
