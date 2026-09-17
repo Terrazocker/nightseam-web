@@ -12,7 +12,78 @@ Newest first.
 > still lacks CSP even though `version.json` carries the policy, and the relaxed
 > production smoke does not establish document protection. This note does not
 > rewrite what the 0.6.33 release ran or observed; fixes belong in the next
-> release entry when they ship.
+> release entry when they ship. **All six shipped in 0.6.34 (below).**
+
+## 0.6.34 - 2026-09-17
+
+**RELEASED as 0.6.34** - tag `v0.6.34` on the release commit `a279513`, with the
+curated `scripts/build_changelog.py` entry living IN that commit. Follow-up
+`3d4eb54` regenerated the tracked `landing/changelog.json` (**never moved the
+tag**); HEAD is now `v0.6.34-1-g3d4eb54`.
+
+**What shipped.** The BUGS.md fix pass - all six findings:
+
+- **BUG-001** - a restore now validates the whole bundle, stages payloads with a
+  `payload.journal`, and swaps them in only after the database transaction
+  commits. A refused restore leaves both the database and the payload tree
+  byte-identical.
+- **BUG-002** - imported ids need `u_` AND `safe_token()`, imported `imagetyp` is
+  normalized, every desktop attribute sink escapes, the two inline `onerror=`
+  handlers became listeners, and the desktop CSP dropped `script-src
+  'unsafe-inline'` for the SHA-256 of the one inline theme bootstrap.
+- **BUG-003** - the production document enforces a policy. `/astro/` answers
+  `server: nginx` + `content-type: text/html` with no header and the Plesk console
+  exposes no nginx directive field (measured 2026-09-17), so the policy ships as
+  `<meta http-equiv="Content-Security-Policy">` in `web/index.html`; the header
+  form stays in `web/.htaccess` for a host that offers the directive field.
+- **BUG-004** - malformed bundle shapes (scalar top level, non-object records) are
+  a controlled 400 raised before the safety copy, not a 500.
+- **BUG-005** - the Today view publishes `#view[data-ns-gen]`/`[data-ns-sel]` on
+  the scrubber's own grid and the browser check waits for the REQUESTED instant.
+  The new check found three real stale-selection defects (see below).
+- **BUG-006** - deleting the active panorama clears `active_pano_id` in the same
+  transaction; activating an unknown id is refused with a 400.
+
+**Found while fixing (all fixed before the tag).**
+
+1. BUG-005's new check failed three times, each a real divergence:
+   `renderTonight` captured the selection at call time while its compute runs
+   ~30 ms later; `clampSkyTime()` announced `sky:time` only when it CHANGED the
+   time, so at boot the announcement arrived before the scrub listener existed;
+   and `#tb-scrub` is `step="15"`, so the browser snapped what `syncScrub()`
+   wrote (write 204, DOM 210) - a marker publishing raw milliseconds could never
+   match.
+2. `style-src 'self'` in the (then-unused) header policy **silently blocked the
+   shell's inline `style=` attributes**: measured 2026-09-17, the range inputs and
+   theme swatches lost their styling while the page booted normally and Chrome
+   logged NO "Refused to" message. Both carriers now say
+   `style-src 'self' 'unsafe-inline'` (inline STYLE cannot execute), and the
+   production smoke MEASURES a computed background so it cannot fail silently.
+
+**Verification.**
+
+- `python -m pytest tests/ -q` -> **623 passed, 0 failed** (baseline 598).
+- `python scripts/check_js.py` -> OK.
+- `python scripts/pre_tag_check.py 0.6.34` -> OK (curated entry present, every
+  module and the catalog match their cache token).
+- `python scripts/check_browser.py --all` on the staged build -> **26/26 passed**
+  (web 18, desktop 8), including the new `web-tonight-render-marker-converges`.
+- `python scripts/check_release.py` -> 0 errors, 1 warning (the changelog
+  regeneration that step 7 performs; done and committed as `3d4eb54`).
+- Staged artifacts: `dist/release/NightSeam-0.6.34.zip` (20,510,625 bytes, sha256
+  `285e8927b00632c214fd37e302719bcdc49d2eefa99f7c422eea07f485e7c876`), plus
+  `NightSeam-latest.zip`, `version.json` and `ns-version.js`.
+- Deployed and verified LIVE: `/downloads/` (zip + latest + version.json +
+  ns-version.js + changelog.json) and the `/astro` tree (`app.js`, `version.json`,
+  `.htaccess`, **`index.html` last**), then
+  `check_browser.py --prod-url https://nightseam.de/astro/` -> **PASS**, with the
+  page's own footer version matching the deployed `version.json`.
+
+**Not done, deliberately.** The desktop app's update notice points at
+`ns-version.js`, which is uploaded; the exe itself is a local build (the `/downloads`
+zip is the distributable). The nginx header remains a possible upgrade if the host
+ever exposes the directive field - no change would be needed beyond adding the
+documented `add_header` line.
 
 ## UNRELEASED - BUGS.md fix pass (2026-09-17)
 
