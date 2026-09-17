@@ -1,5 +1,9 @@
 # NightSeam Design Guide — the Glass language
 
+This file is the UI design contract. Current implementation defects and security
+findings are tracked separately in `BUGS.md`; none of the 2026-09-17 findings
+changes the Glass/dome language below.
+
 **Read this before implementing ANY UI change.** The Glass theme (`dome`) is
 the project's design direction and its default look in the web app. New UI
 must be built *in the Glass style* — for the theme itself and for everything

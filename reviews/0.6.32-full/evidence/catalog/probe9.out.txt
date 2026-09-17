@@ -1,7 +1,0 @@
-empty popularity dict        : set()
-all-zero scores, top_n=200   : set()
-only 2 scored of 4, top_n=3  : {'a', 'b'}
-shipped catalog, top_n=10000 : 1
-
-docstring claim: 'an object with no score is not "popular" and never becomes standard'
-CATALOG.md: 'an unscored object is never standard'

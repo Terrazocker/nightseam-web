@@ -1,6 +1,6 @@
 /*
  * RULING C for the panorama profile/strokes invariant (findings DE-03 desktop and
- * WE-02 web, certified high in reviews/0.6.24/REVIEW-0.6.24.md).
+ * WE-02 web, certified high in a prior review retained in Git history).
  *
  * The ruling: a stored profile/profileTop is MODE-SPECIFIC only for a DELIBERATE
  * paint-mode switch; that switch must be an explicit, undoable transform - never

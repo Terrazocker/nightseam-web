@@ -1,5 +1,8 @@
 # ENVIRONMENT.md - measured facts about the agent sandbox
 
+This file records environment behavior only. Current product and test-harness
+defects are tracked in `BUGS.md`; do not reclassify them as sandbox limitations.
+
 Moved out of `AGENTS.md` (which had grown past the workspace instruction budget
 and was being truncated). These are measurements of THIS machine's sandbox
 token, not properties of the app - re-measure before trusting them if the

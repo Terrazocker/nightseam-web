@@ -424,16 +424,14 @@ def test_web_version_behind_is_only_a_warning():
     assert "build_web.py version" in msg, msg
 
 
-def test_the_build_writes_its_spec_outside_the_tracked_file():
-    """TO-08 (TL4): without `--specpath` PyInstaller writes NightSeam.spec into the
-    repo root, overwriting the TRACKED artifact - so a PyInstaller upgrade that
-    emits a different spec makes `git describe --dirty` report -dirty after a
-    successful build and aborts make_release.py. The build now writes the spec into
-    the gitignored `dist/`, and the toolchain is pinned."""
+def test_the_build_writes_its_spec_to_ignored_dist():
+    """Without `--specpath`, PyInstaller writes NightSeam.spec into the repo root
+    and dirties a successful release build. The build writes generated specs into
+    gitignored `dist/`, no spec is tracked, and the toolchain is pinned."""
     import re
 
     ps1 = (ROOT / "build.ps1").read_text(encoding="utf-8")
-    assert "--specpath" in ps1, "build.ps1 must not overwrite the tracked spec"
+    assert "--specpath" in ps1, "build.ps1 must keep generated specs out of the repo root"
     # with --specpath the spec sits in dist/, and PyInstaller resolves --add-data
     # sources relative to the SPEC DIR - a relative "static" became dist\static and
     # the 0.6.25 build died. Every source path must be absolute.

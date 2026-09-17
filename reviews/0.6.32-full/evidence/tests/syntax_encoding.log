@@ -1,8 +1,0 @@
-[syntax] clean file -> exit 0: checked 1 js module(s), 0 syntax error(s)
-[syntax] duplicate const -> exit 1: checked 1 js module(s), 1 syntax error(s)
-[syntax] missing path -> exit 2: check_js_syntax: no such file or directory: <workspace>\AstroPilot-local\reviews\0.6.32-full\evidence\tests\syntaxprobe\nope.js
-[encoding] bom.py: starts with a UTF-8 BOM
-[encoding] c1.txt: contains C1 control characters
-[encoding] clean.py: OK (not reported)
-[encoding] mojibake.md: double-encoded text (cp1252 mojibake)
-[encoding] notutf8.py: not valid UTF-8: 'utf-8' codec can't decode byte 0xe4 in position 2: invalid continuation byte

@@ -16,7 +16,8 @@ request) and a once-per-start version check against nightseam.de.
 **Docs:** `CATALOG.md` - where the catalogue comes from and how to rebuild it
 (sources, the popularity table, the web payload, cache tokens). `DECISIONS.md` -
 why the app works the way it does and what was rejected. `AGENTS.md` - the
-invariants, commands, release and deploy reference.
+invariants, commands, release and deploy reference. `BUGS.md` - current confirmed
+issues and recommended implementation direction.
 
 There is also a **web version** — the same night-planning core, running 100%
 in your browser with no server:
@@ -67,7 +68,7 @@ Two modes, switched with the top-right button:
 - **Sky view** - polar whole-dome chart with live positions of all catalog
   objects, sun/moon and your painted obstacle silhouette, plus an optional
   min-altitude band. Scrub through the night with the time slider
-  (arrow keys, Shift = 10 min).
+  (arrow keys, Shift = 60 min).
 - **Tonight view** - dark-time summary, moon phase and the best targets right
   now / rising later, ranked by an imaging-quality score. Moon-aware ranking
   penalizes targets near a bright Moon (per object type) and honors your

@@ -4,7 +4,7 @@
 `app.server.data_dir` (which `test_api.py`'s client fixture does) is NOT enough:
 a bundle import still wrote its panorama payload into the developer's real
 `data/panos/`. It was found twice as a stray `ok.jpg` - 1 byte during the 0.6.32
-review (`reviews/0.6.32-full/evidence/INTEGRITY-NOTE.md`) and 8 bytes
+    prior full review (the removed report remains in Git history) and 8 bytes
 (`b"JPEGDATA"`) during the fix session - and the timing was the nasty part: the
 assertion that guards it reads that same real directory, so the pollution
 happened exactly when the test was FAILING.

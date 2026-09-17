@@ -25,9 +25,9 @@ calculation stay local. `README.md` has the feature list.
 > exists and what was rejected; `RELEASES.md` = what each release shipped and
 > how it was verified; `ENVIRONMENT.md` = measured facts about the agent
 > sandbox (pipes, browser gate, scratch DACLs); `README.md` = user-facing
-> features; `DESIGN.md` = the UI language. Everything under `AUDIT*`, `ARCH-AUDIT/`, `reviews/`,
-> `BATCH3-REPORT.md` and `*REPORT*.md` is a HISTORICAL record of the state at the
-> time - read those for history, never as instructions.
+> features; `DESIGN.md` = the UI language; `BUGS.md` = the CURRENT confirmed,
+> unresolved findings with implementation hints. Closed audit/review bundles
+> were removed from the working tree on 2026-09-17; Git history is their archive.
 
 ## Invariants (pinned by tests - do not regress)
 
@@ -40,6 +40,23 @@ calculation stay local. `README.md` has the feature list.
   `test_api.py`).
 - `apply_import_zip` never honors the bundle's `settings.image_dir`; it
   re-injects the LOCAL configured archive and reports `image_dir_ignored`.
+- **Import/restore invariants (BUGS.md fix pass, 2026-09-17).** The restore is
+  three ordered phases and no user file changes in the first two:
+  `database.prepare_import_bundle` validates the WHOLE bundle side-effect-free,
+  `_PayloadStage` stages payload bytes on the DESTINATION filesystem with a
+  `payload.journal` holding any file they would replace, and only a committed
+  `Database.import_bundle` swaps them in (`commit()`); every other path runs
+  `rollback()`. So a refused restore leaves the database AND the payload tree
+  byte-identical, and a journal/`.part` file must never survive a restore.
+  `database.import_bundle_shape()` rejects a non-object top level, a non-list
+  collection or a non-object record as a `ValueError` -> 400 BEFORE the safety
+  copy. An imported custom id needs `u_` AND `paths.safe_token()`
+  (`database.custom_id_problem`, one rule shared with the insert loop) and an
+  imported `imagetyp` is normalized through `ingest.classify_frame` - both are
+  rendered into HTML attributes, so neither may carry markup. `active_pano_id`
+  is referentially intact: `delete_panorama` clears it in the same transaction
+  when it removes the row the pointer names, and `set_active_panorama` refuses
+  an id that names no row.
 - Tests never touch the user profile: `tests/conftest.py` redirects
   `paths.default_archive_dir()` into `logs/`.
 
@@ -411,7 +428,8 @@ calculation stay local. `README.md` has the feature list.
   (`Select-String -Quiet`, `Measure-Object`).
 - **Delegate bulk reading:** anything touching 2-3+ files goes to a subagent with
   a self-contained prompt and an explicit "return a digest, not the files".
-- **Write findings to files** (`AUDIT.md`-style) and reference the path in chat.
+- **Write current confirmed findings to `BUGS.md`** and reference it in chat.
+  Release outcomes belong in `RELEASES.md`; closed evidence stays in Git history.
 - **`/compact` at phase boundaries** and start a new session per deliverable.
 - When editing this file, collect changes and apply them in ONE write (each edit
   re-injects the whole file).
@@ -431,7 +449,7 @@ calculation stay local. `README.md` has the feature list.
     `Get-CimInstance Win32_Process`).
   - If 8407 is briefly taken at boot, `free_port()` silently picks a RANDOM port
     (written to `instance.json`).
-- Tests: `python -m pytest tests/` (598 collected at the time of writing -
+- Tests: `python -m pytest tests/` (620 collected as of the 2026-09-17 fix pass -
   re-derive with `--collect-only -q` rather than trusting this line). Single test:
   `python -m pytest tests/test_js_parity.py -k name`. API tests use
   `create_app(db, prefetch=False)` (no image-cache thread). The `client` fixture
@@ -442,10 +460,8 @@ calculation stay local. `README.md` has the feature list.
     external `--basetemp` workaround does not restore a clean run either.
     `tests/conftest.py` therefore OVERRIDES the `tmp_path` fixture with a dir under
     the gitignored, sandbox-owned `logs/.pytest-tmp`, so a plain
-    `python -m pytest tests/` is clean: **0 assertion failures** (598 tests
-    collected at the time of writing - re-derive the count, do not trust it here;
-    the 0.6.24..0.6.26 sessions needed a scratch plugin for this, it is built in
-    now).
+    `python -m pytest tests/` is clean: **0 assertion failures** (620 tests as of
+    the 2026-09-17 fix pass - re-derive the count, do not trust it here).
 - JS checks (run after touching `static/` OR `web/`): `python scripts/check_js.py`
   runs all of them and exits non-zero on hard failures:
   - `check_js_imports.py` - broken relative ES-module imports / missing named exports
@@ -481,14 +497,18 @@ calculation stay local. `README.md` has the feature list.
   before investigating. It is part of the
   release checklist: run it on the STAGED build before upload
   (`--prod-url https://nightseam.de/astro/` adds a read-only production smoke).
-  Deterministic: UTC, pinned clock, empty storage per check; `-p no` pytest
-  never collects it (`*_suite.py`, functions take a `ctx`).
+  Designed to be deterministic: UTC, pinned clock, empty storage per check;
+  `-p no` pytest never collects it (`*_suite.py`, functions take a `ctx`).
+  `BUGS.md` records what the fix pass left open (apply the host's nginx
+  document-CSP directive; run `--desktop` after a rebuild - the packed exe is
+  pre-fix). The marker/scrubber contract is pinned by
+  `web-tonight-render-marker-converges` plus `tests/test_tonight_marker.py`.
 - Build exe: `powershell -ExecutionPolicy Bypass -File build.ps1` ->
   `dist\NightSeam.exe` (isolated `.venv-build`; kills running NightSeam first).
-  `build.ps1` drives PyInstaller via CLI flags (the committed `NightSeam.spec` is
-  an artifact, not the source of truth), bakes `git describe` into gitignored
-  `app/_version_baked.py`, and never touches `dist\data` (user db/imgcache next to
-  the exe survive rebuilds). The leading `pip install` phases can HANG with no
+  `build.ps1` drives PyInstaller via CLI flags and writes its generated spec
+  under gitignored `dist/`; no spec is tracked. It bakes `git describe` into
+  gitignored `app/_version_baked.py` and never touches `dist\data` (user
+  db/imgcache next to the exe survive rebuilds). The leading `pip install` phases can HANG with no
   network; after the first build `.venv-build` is complete, so kill pip and run
   PyInstaller directly (see the command in git history / `build.ps1`). ~90 s
   direct, ~8 min full.
@@ -515,39 +535,17 @@ calculation stay local. `README.md` has the feature list.
   Read it before working around a restriction - most of them are measured
   facts, not guesses.
 
-## Code review record and status
+## Current review status
 
-- `CODE-REVIEW-0.6.20.md` (tracked) - the 0.6.20 review; Batch 1 (0.6.21) and
-  Batch 2 (0.6.22) shipped every USER-REACHABLE finding with a
-  failing-before/passing-after pin; `BATCH3-REPORT.md` records Batch 3
-  (Python + web hardening shipped; the rule/table lists every item).
-- **The 0.6.20 program is closed; the 0.6.24 review's batch has shipped
-  COMPLETE.** The review itself is COMMITTED at `reviews/0.6.24/` -
-  `REVIEW-0.6.24.md`, the five lane reports, `70-verification.md`,
-  `07-findings.json` and the passing gate `80-report-review.md`. Every finding
-  (6 high, 10 medium, 26 low) now has a fix with a pin proven failing-before -
-  or, for the pure coverage additions (`TO-05`, `TO-09`), proven by mutating the
-  guarded thing. Highs/mediums: `PY-04` plus its storage boundary and the
-  custom-target `vmag` route (T6-F1), `DE-01`, `XL-01` (the cache-token guard),
-  `CR3`/`CO-01`, `DE-03`/`WE-02` (ruling C), `PY-01`, `PY-03`, `PY-06`/`PY6`,
-  `TO-02`, `XL-02`, `DE-02`, `DE-07`, `DE-08`, `WE-01`. Lows: `PY-02`, `PY-05`,
-  `PY-07`, `CO-03`, `CO-04`, `WE-03`, `WE-04`, `DE-04`-`DE-15` and
-  `TO-03`-`TO-11` (`TO-07` stays a deliberate WARNING that names the re-bake).
-- **Release records** (tag, staged artifacts, gate results, deploy and
-  the live checks for 0.6.25-0.6.32) live in `RELEASES.md`.
-- A bounded carry-over of non-reachable hardening/tooling/test-quality items
-  remains (consume it in the next review pass): `CR2` malformed-horizon guards
-  (all shipped producers normalize before preview), `DS4` worker/sync `ceil`
-  (max_alt agrees; the residual is a one-bin `ceil` divergence on 516 of 19280
-  samples, cosmetic), `DS5` worker revive (sync fallback always planned), `WB7`
-  bundle-version check (forward-compat choice). The other rows were closed by
-  this batch: `TL3` (the committed-change branch is mutation-proven and its
-  absence is now REPORTED, not silent), `TL4` (`--specpath dist` + an exact
-  `pyinstaller==6.22.2` pin), `TS4` (`tests/js/core_exports.mjs` drives the eight
-  exports no test named), `TS7` (a missing fixture section FAILS and names the
-  missing export instead of skipping) and `TL5` (kept a deliberate WARNING, which
-  now says so in the record). Baked-core retention is documented in "Versioning
-  and release".
+- `BUGS.md` is the active backlog. The 2026-09-17 fix pass closed BUG-001,
+  BUG-002, BUG-004, BUG-005 and BUG-006 with implementation changes plus
+  regression pins (browser gate `--web`: 18/18). BUG-003 keeps one named
+  remaining action: apply the document CSP at the host's nginx layer.
+  `RELEASES.md` has the evidence, `DECISIONS.md` the reasoning.
+- Release records (tag, staged artifacts, gate results, deploy and live checks)
+  live in `RELEASES.md`.
+- The previously accepted/deferred `CR2`, `DS4`, `DS5` and `WB7` items are
+  summarized in `BUGS.md` so future reviews do not re-file them as discoveries.
 
 ## Versioning and release
 
@@ -597,8 +595,8 @@ calculation stay local. `README.md` has the feature list.
   `scripts/check_catalog_token.py`, wired into `scripts/check_js.py`, and pinned
   by `tests/test_cache_tokens.py` (mutation-tested). Do NOT add
   `{cache:'no-store'}` - the file must stay cacheable.
-  Current (0.6.33 work tree, post-review + shell-unification pass):
-  `app.js?v=87` (index.html) / `CATALOG_TOKEN = '10'`, `astro.js?v=21`,
+  Current (BUGS.md fix pass, 2026-09-17):
+  `app.js?v=97` (index.html) / `CATALOG_TOKEN = '10'`, `astro.js?v=21`,
   `horizon.js?v=54`, `format.js?v=28`, `nightrank.js?v=20`, `webstore.js?v=31`,
   `dragwin.js?v=1`, `style.css?v=24`,
   `themes.css?v=5`; the core stub is `web/core.js?v=33` (bump = re-bake,
@@ -623,14 +621,11 @@ calculation stay local. `README.md` has the feature list.
   what `208f7d6` looks like) and leaves the baseline to be refreshed.
   Refresh ONLY with `python scripts/check_js_tokens.py --update`, which
   **REFUSES while any missed bump is present** (bump the token in the same
-  change first) and rewrites only the rows whose token actually moved - so the
-  documented remedy can never record an unbumped token and bless the defect.
-  The stale-baseline hint is never printed alongside a missed-bump finding, and
-  hashes are line-ending-normalized (`core.autocrlf=true`), so a CRLF checkout
-  is not a finding. Pinned by the guard's built-in `--self-test` (the 0.6.25
-  shape, CRLF handling, the `--update` refusal and the hint gating), which
-  `scan()` re-runs once per process - so `scripts/check_js.py` and the collected
-  `tests/test_pre_tag_check.py` test both fail if the detector regresses.
+  change first). It also refuses to print a stale-baseline hint beside a
+  missed-bump finding, and it normalizes line endings (`core.autocrlf=true`), so
+  a CRLF checkout is not a finding. History and the `--self-test` cases (the
+  0.6.25 shape, CRLF handling, the `--update` refusal, hint gating): see
+  `DECISIONS.md`; `tests/test_pre_tag_check.py` runs the same detector.
 - **Baked-core retention policy (ENFORCED since the 0.6.24 review, XL-02):**
   keep the CURRENT content-hashed dir plus the immediately previous one (N-1) so a
   visitor holding a cached old `core.js` stub still resolves its tree; remove
@@ -754,6 +749,10 @@ calculation stay local. `README.md` has the feature list.
 - Export/import ZIP covers settings, sites, rigs, panoramas, custom targets and the
   images library; every import first writes a best-effort safety copy to
   `<db>.backup-auto.zip` (`auto_backup`). Uploads stream to disk in 1 MB chunks.
+  Since the BUGS.md fix pass the restore is staged, not streamed into place: the
+  whole bundle is validated, payloads are staged with a rollback journal, and the
+  swap happens only after the database transaction commits (see the
+  import/restore invariant above).
 - `/api/object/{oid}/image?thumb=1` is cache-only (never network) - use it for
   lists/repeated views; the full Wikipedia/DSS chain only for the detail view
   (8 s abort). Pointing a list at the full chain starves the browser's

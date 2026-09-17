@@ -14,7 +14,7 @@ records *why* the rules below exist.
 | `web/catalog.json` | **generated** | The web payload, derived from the DB. |
 | `web/catalog.manifest.json` | generated | Bytes for the current `CATALOG_TOKEN`. |
 | `data/NGC.csv`, `data/addendum.csv` | gitignored input | Downloaded from OpenNGC. |
-| `data/popularity_snapshot.json` | gitignored snapshot | The one-time the popularity source table (refreshed only by `--live`). |
+| `data/popularity_snapshot.json` | gitignored snapshot | The frozen one-time the popularity source table. The matcher never refreshes it; `--live` exits 2. |
 
 ## Sources
 
@@ -54,11 +54,10 @@ records *why* the rules below exist.
 # 1. catalogue CSV  (asserts unique ids; RAISES on an unmapped OpenNGC type)
 python scripts/build_adv_catalog.py
 
-# 2. popularity     (OFFLINE by default: replays the one-time snapshot in
-#                    data/popularity_snapshot.json. `--live` refetches from
-#                    The popularity source - that MOVES scores and re-ranks standard mode,
-#                    so it is a deliberate, rare maintainer action. Neither app
-#                    contacts the popularity source at runtime.)
+# 2. popularity     (STRICTLY OFFLINE: replays the frozen one-time snapshot in
+#                    data/popularity_snapshot.json. The old network path was removed;
+#                    `--live` deliberately exits 2. Replacing the snapshot would
+#                    be a separate provenance decision outside this matcher.)
 python scripts/match_popularity.py
 
 # 3. database + web payload (a scratch DB is the clean way: Database() seeds and

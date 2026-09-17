@@ -7,6 +7,96 @@ artifact hashes, gate results, what was deployed and how it was verified live.
 
 Newest first.
 
+> **Post-release audit note (2026-09-17).** Six unresolved findings discovered
+> after 0.6.33 are tracked in `BUGS.md`. In particular, the live HTML document
+> still lacks CSP even though `version.json` carries the policy, and the relaxed
+> production smoke does not establish document protection. This note does not
+> rewrite what the 0.6.33 release ran or observed; fixes belong in the next
+> release entry when they ship.
+
+## UNRELEASED - BUGS.md fix pass (2026-09-17)
+
+**Not tagged, not deployed, no version bump.** This is the working-tree fix pass
+for the six findings in `BUGS.md`, recorded here because the repository's rule is
+that evidence lives with the change. It becomes a release entry only when it is
+tagged; nothing below was verified against a deployed host.
+
+**What changed (one line per finding).**
+
+- **BUG-001** - `app/backup.py::apply_import_zip` now validates the WHOLE bundle
+  (new side-effect-free `database.prepare_import_bundle`) before a payload byte is
+  staged, stages payloads into `<target>.import-<n>.part` on the DESTINATION
+  filesystem with a `payload.journal` holding any file they would replace, runs
+  the database transaction, and only then swaps the staged files in. Every
+  failure path rolls the journal back, so a refused restore leaves the database
+  and the payload tree byte-identical. `_PayloadStage` is the one mechanism;
+  `_write_member` is a thin wrapper over it.
+- **BUG-002** - the import boundary requires `u_` **and** `paths.safe_token()` for
+  a custom id (`database.custom_id_problem`, the one rule shared with the insert
+  loop) and normalizes `imagetyp` through `ingest.classify_frame`; the desktop
+  attribute sinks that rendered those values unescaped (`setup.js` custom list -
+  the id that reproduced the finding - plus `targets.js`, `tonight.js`, `pano.js`
+  and the site/rig buttons) now escape them; the two inline `onerror=` thumbnail
+  handlers became listeners; and `app/server.py::CSP_HEADER` dropped
+  `'unsafe-inline'` from `script-src` in favour of the SHA-256 of the one inline
+  theme bootstrap.
+- **BUG-003** - `tests/browser/harness.py::_csp_problems(..., document=True)` and
+  `_prod_smoke` read the policy from the `page.goto()` DOCUMENT response only (the
+  `version.json`/`catalog.manifest.json` fallback is gone) and a missing document
+  CSP is now a hard failure. `web/.htaccess` documents the required nginx
+  directive; **applying it at the host layer is still outstanding** (see BUGS.md).
+- **BUG-004** - `database.import_bundle_shape()` runs immediately after
+  `json.loads`: a non-object top level, a non-list collection and a non-object
+  entry in any collection are ValueError -> controlled 400, before the safety copy.
+- **BUG-005** - `web/app.js` publishes `#view[data-ns-gen]`/`[data-ns-sel]` after
+  each Tonight paint (and clears the selection the moment the scrub moves);
+  `tests/browser/harness.py::wait_tonight_after` polls it and
+  `web-tonight-pool-includes-unmagnituded-standard-rows` asserts the painted
+  instant equals the scrubber's own (`window.__ns_scrub_sel`), replacing the
+  120 ms sleep. New check `web-tonight-render-marker-converges`.
+- **BUG-006** - `Database.delete_panorama` clears `active_pano_id` in the same
+  transaction when it deletes the row the pointer names (and only then);
+  `set_active_panorama` refuses an id that names no row, and
+  `POST /api/settings` maps that to a 400.
+
+**Verification run.**
+
+- `python -m pytest tests/ -q --tb=no` -> **620 passed, 0 failed** (baseline in
+  `BUGS.md` was 598).
+- New regression modules: `tests/test_prod_document_csp.py` (6),
+  `tests/test_tonight_marker.py` (5), `tests/js/dom_escape.mjs` +
+  `tests/test_js_behaviour.py::test_desktop_attribute_sinks_escape_imported_data`,
+  and the BUG-001/002/004/006 cases added to `tests/test_backup.py` and
+  `tests/test_api.py`. The escape engine was mutation-proven (removing one `esc()`
+  fails it).
+- `python scripts/check_js.py` -> **OK** after repeated
+  `scripts/bump_web_tokens.py` + `scripts/check_js_tokens.py --update` runs
+  (`app.js` 87 -> 97 across the pass, in `web/index.html` + `web/app.js`).
+- **Browser gate, web shell: `python scripts/check_browser.py --web` -> 18/18
+  passed** (escalated once: Playwright cannot create its Chrome pipes under the
+  confined sandbox - see `ENVIRONMENT.md`). This is BUG-005's end-to-end proof and
+  it exercised the corrected check.
+- Desktop CSP verified against a SOURCE-served server with system Chrome: the
+  document carries `script-src 'self' 'sha256-...'` (no `unsafe-inline`), the
+  inline theme bootstrap still applies (`data-theme=dome`), 49 catalog rows + 4
+  Tonight cards render and there are no page or console errors.
+- **NOT run:** `--desktop` (the packed `dist/NightSeam.exe` is the 2026-09-15
+  build, i.e. pre-fix code - re-run the gate after a rebuild) and any deployed
+  check.
+
+**Discovered while verifying (fixed in the same pass).** The browser gate earned
+its keep: the new BUG-005 check failed three times in a row and each failure was a
+REAL divergence, not test flakiness. (1) `renderTonight` captured
+`S.skyTime` at CALL time while its compute runs ~30 ms later, so a selection
+clamped in between painted cards for the old instant. (2) `clampSkyTime()` only
+announced `sky:time` when it CHANGED the time, so at boot the announcement arrived
+before the scrub listener existed and the slider + Tonight view kept the
+pre-clamp selection. (3) `#tb-scrub` is `step="15"`, so the browser snaps what
+`syncScrub()` writes (write 204, DOM 210) and a scrub writes that back into
+`S.skyTime` - a marker publishing raw milliseconds could never equal the
+scrubber's own instant. All three are fixed at the source and pinned by
+`web-tonight-render-marker-converges`.
+
 ## 0.6.33 - 2026-09-15
 
 **RELEASED as 0.6.33** - tag `v0.6.33` on the release commit `3c2f98a`, with the
