@@ -138,21 +138,27 @@ def _version_greater(a: str, b: str) -> bool:
 # depth). The load-bearing part is that NO remote origin may provide script:
 # `script-src 'self'` is what makes a hostile DNS/CA/host compromise unable to
 # run code in the 127.0.0.1 origin even if some future code tries a JSONP tag.
-#   * `'unsafe-inline'` in script-src is REQUIRED by static/index.html's inline
-#     theme bootstrap (which must run before first paint) - that file is out of
-#     this change's scope. It permits inline <script> and inline event handlers;
-#     it does NOT permit a script from another origin.
-#   * the two inline `onerror=` image fallbacks in static/js/{targets,tonight}.js
-#     are therefore blocked (the fallback transparent GIF / hidden-image trick
-#     degrades to the browser's broken-image state). Fixing that needs a small
-#     JS change in those files, which is outside this change's file scope.
+#   * BUG-002: `'unsafe-inline'` is GONE from script-src. It was there for
+#     static/index.html's one inline theme bootstrap (which must run before first
+#     paint), and it also permitted inline EVENT HANDLERS - so an injected
+#     attribute (imported custom ids reached `data-delcust="${o.id}"`, imported
+#     `imagetyp` reached a `title`) became executable code. The bootstrap is
+#     allowlisted by its SHA-256 instead, exactly like the web shell's
+#     `web/.htaccess`; `tests/test_update_check_csp.py` recomputes the hash from
+#     the file and fails if it drifts.
+#   * the two inline `onerror=` image fallbacks that used to live in
+#     static/js/{targets,tonight}.js are event listeners now, so no handler needs
+#     the exemption at all.
+#   * style-src keeps `'unsafe-inline'`: the shipped themes and the JS set
+#     `style=`/`element.style` all over the UI, and inline STYLE cannot execute.
 #   * img-src is pinned to the hosts the desktop actually renders images from
 #     (cached Wikipedia/Wikidata thumbnails are full URLs; DSS cutouts and the
 #     API payloads answer from /api/object/...).
 #   * connect-src keeps the weather panel working and stays restricted to it.
+_INLINE_BOOTSTRAP_SHA256 = "sha256-lOMdolhkUqnnqFBUwwNKJYbMdAlQvEBKqybJqHdppbw="
 CSP_HEADER = (
     "default-src 'self'; "
-    "script-src 'self' 'unsafe-inline'; "
+    f"script-src 'self' '{_INLINE_BOOTSTRAP_SHA256}'; "
     "style-src 'self' 'unsafe-inline'; "
     "img-src 'self' data: https://upload.wikimedia.org "
     "https://commons.wikimedia.org https://alasky.cds.unistra.fr; "
@@ -572,7 +578,13 @@ def create_app(db: Database, *, prefetch: bool = True) -> FastAPI:
             if pid is not None and safe_token(pid) is None:
                 raise HTTPException(
                     400, "active_pano_id must be a plain panorama id")
-            db.set_active_panorama(pid)
+            try:
+                db.set_active_panorama(pid)
+            except ValueError as exc:
+                # BUG-006: a well-formed id must still NAME a row - the pointer
+                # is advertised by /api/state and resolved by planning, so a
+                # dangling one is malformed input, not a silent no-op.
+                raise HTTPException(400, str(exc)) from None
         if body.min_useful_alt is not None:
             db.set_setting("min_useful_alt",
                            _finite(body.min_useful_alt, "min_useful_alt"))

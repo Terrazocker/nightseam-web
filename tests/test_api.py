@@ -1104,6 +1104,87 @@ def test_panorama_activate_deactivate(client):
         client.delete(f"/api/panorama/{pid}")
 
 
+def test_deleting_the_active_panorama_clears_the_pointer(client):
+    """BUG-006: `DELETE /api/panorama/{pid}` removed the row and its image but
+    left `settings.active_pano_id` naming it, so `/api/state` advertised an
+    "active panorama" that planning could not resolve - the desktop planned
+    against empty sky while the UI claimed a horizon. Deleting an INACTIVE pano
+    must leave the user's active choice alone."""
+    ids = [client.post("/api/panorama",
+                       files={"file": (f"{n}.jpg", b"x", "image/jpeg")}).json()["id"]
+           for n in ("pdel-active", "pdel-other", "pdel-third")]
+    active, other, third = ids
+    # (a) deleting the ACTIVE record clears the pointer
+    client.put(f"/api/panorama/{active}", json={"active": True})
+    assert client.get("/api/state").json()["active_pano_id"] == active
+    assert client.delete(f"/api/panorama/{active}").status_code == 200
+    state = client.get("/api/state").json()
+    assert state["active_pano_id"] is None, state["active_pano_id"]
+    assert all(p["id"] != active for p in state["panoramas"])
+    # (b) deleting an INACTIVE record keeps the pointer where it was ...
+    client.put(f"/api/panorama/{other}", json={"active": True})
+    assert client.delete(f"/api/panorama/{third}").status_code == 200
+    assert client.get("/api/state").json()["active_pano_id"] == other
+    # ... and the surviving row is still the active one
+    rows = client.get("/api/panoramas").json()
+    assert [r["id"] for r in rows if r["active"]] == [other]
+    # (c) the pointer is idempotent to a second delete of the same id
+    assert client.delete(f"/api/panorama/{other}").status_code == 200
+    assert client.delete(f"/api/panorama/{other}").status_code == 200
+    assert client.get("/api/state").json()["active_pano_id"] is None
+
+
+def test_activating_an_unknown_panorama_id_is_refused(client):
+    """BUG-006: `POST /api/settings {active_pano_id: <well-formed but unknown>}`
+    stored the pointer anyway (the token rule passed), so `/api/state` advertised
+    a panorama that does not exist. A well-formed id must still NAME a row."""
+    pid = client.post("/api/panorama",
+                      files={"file": ("pknown.jpg", b"x", "image/jpeg")}).json()["id"]
+    try:
+        # unknown but token-shaped -> 400, and nothing is stored
+        r = client.post("/api/settings", json={"active_pano_id": "deadbeef00"})
+        assert r.status_code == 400, r.text
+        assert "deadbeef00" in r.json()["detail"]
+        assert client.get("/api/state").json()["active_pano_id"] is None
+        # a real id still works, and clearing still works
+        assert client.post("/api/settings",
+                           json={"active_pano_id": pid}).status_code == 200
+        assert client.get("/api/state").json()["active_pano_id"] == pid
+        assert client.post("/api/settings",
+                           json={"active_pano_id": ""}).status_code == 200
+        assert client.get("/api/state").json()["active_pano_id"] in (None, "")
+    finally:
+        client.delete(f"/api/panorama/{pid}")
+
+
+def test_the_database_refuses_a_dangling_active_pointer(client, db):
+    """The rule lives in the DATABASE transaction, not only in the route: the
+    import path writes settings directly, so a pointer that names no row must be
+    refused there too (and the activate/clear pair must stay atomic)."""
+    import pytest as _pytest
+
+    pid = client.post("/api/panorama",
+                      files={"file": ("pdbrule.jpg", b"x", "image/jpeg")}).json()["id"]
+    with _pytest.raises(ValueError):
+        db.set_active_panorama("nosuchpano")
+    assert db.setting("active_pano_id") is None
+    # a known id still activates, and deleting it through the DB clears it
+    db.set_active_panorama(pid)
+    assert db.setting("active_pano_id") == pid
+    db.delete_panorama(pid)
+    assert db.setting("active_pano_id") is None
+    # deleting an unknown id is a no-op, not an error, and never clears a
+    # pointer that names a DIFFERENT row
+    other = client.post("/api/panorama",
+                        files={"file": ("pdbrule2.jpg", b"x", "image/jpeg")}).json()["id"]
+    try:
+        db.set_active_panorama(other)
+        db.delete_panorama("nosuchpano")
+        assert db.setting("active_pano_id") == other
+    finally:
+        client.delete(f"/api/panorama/{other}")
+
+
 def test_activating_a_panorama_deactivates_the_previous(client):
     """Exactly one panorama may be active at a time.
 
