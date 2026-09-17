@@ -48,6 +48,24 @@ function workerUsable() {
   return typeof Worker === "function" && !window.__NS_WORKER_FORCE_FAIL && !_workerBroken;
 }
 
+/* One handler for "the worker script died", used by the real `onerror` AND by
+ * the dev hook below (which dispatches a genuine ErrorEvent at the worker, so a
+ * browser check exercises this exact code path).
+ *
+ * DS5: mark it broken AND dispose of it. The flag alone left a DEAD Worker object
+ * in `_worker`, so after `__NS_REVIVE_WORKER` the next build handed the corpse
+ * back to `postMessage` instead of constructing a fresh worker - the revive hook
+ * could not actually recover the worker path. The timeout path in `ask()` and
+ * `__NS_KILL_WORKER` already terminate; this one did not. */
+function onWorkerError(e) {
+  _workerBroken = true;
+  if (_worker) { _worker.terminate(); _worker = null; }
+  for (const [, p] of _pending) {
+    p.reject(new Error("worker error: " + ((e && e.message) || "?")));
+  }
+  _pending.clear();
+}
+
 function getWorker() {
   if (_worker) return _worker;
   _worker = new Worker("/js/planning_worker.js", { type: "module" });
@@ -60,11 +78,7 @@ function getWorker() {
     else if (m.type === "cancelled") p.reject(new SupersededError());
     else p.resolve(m);
   };
-  _worker.onerror = (e) => {
-    _workerBroken = true;
-    for (const [, p] of _pending) p.reject(new Error("worker error: " + (e.message || "?")));
-    _pending.clear();
-  };
+  _worker.onerror = onWorkerError;
   return _worker;
 }
 
@@ -105,6 +119,17 @@ if (typeof window !== "undefined") {
   window.__NS_REVIVE_WORKER = () => {
     if (!window.__NS_DEBUG_WORKER) return false;
     _workerBroken = false;
+    return true;
+  };
+  /* DS5: drive the REAL failure path - dispatch a genuine ErrorEvent at the live
+   * worker, which fires `onerror` (an `onerror` property is an event handler, so
+   * its return value is ignored and the event reaches the registered listener).
+   * Inert unless `__NS_DEBUG_WORKER` was set in devtools. */
+  window.__NS_FAIL_WORKER = () => {
+    if (!window.__NS_DEBUG_WORKER) return false;
+    if (!_worker) return false;
+    const ev = new ErrorEvent("error", { message: "dev: simulated worker crash" });
+    _worker.dispatchEvent(ev);
     return true;
   };
 }
@@ -497,8 +522,17 @@ export async function buildClientDetail(oid, { date, tzMin, minAlt, siteId }) {
     if (tops) tops.push(r1(topAt(z)));
     vis.push(a >= minAlt && a > c && (!tops || a < tops[i]));
   }
-  let maxI = 0;
-  for (let i = 1; i < alts.length; i++) if (alts[i] > alts[maxI]) maxI = i;
+  // DS4: the night payload picks its peak on the RAW altitude and reports it at
+  // 1 dp (`max_alt: r1(maxRaw)`, `max_i: maxI` above); this payload rounded each
+  // sample to 2 dp FIRST and then took the argmax of the rounded array. Near a
+  // tie the two therefore chose DIFFERENT samples - the detail view's "max
+  // altitude ... at HH:MM" could name the sample before or after the row it was
+  // opened from, a whole 4-minute step apart, which is what "one-bin residual"
+  // meant. The argmax now runs on the raw values, exactly like the worker.
+  let maxI = 0, maxRaw = -Infinity;
+  for (let i = 0; i < times.length; i++) {
+    if (tracks.alt[i] > maxRaw) { maxRaw = tracks.alt[i]; maxI = i; }
+  }
   const inNight = times.map((t) => t >= duskMs && t <= dawnMs);
   const best = longestRunJS(vis.map((v, i) => v && inNight[i]));
 
@@ -511,7 +545,14 @@ export async function buildClientDetail(oid, { date, tzMin, minAlt, siteId }) {
     times_iso: times.map((t) => new Date(t).toISOString().slice(0, 19)),
     step_min: DETAIL_STEP_MIN,
     alt: alts, az: azs, ceil: ceils, vis,
-    max_alt: alts[maxI],
+    // DS4: the peak AT THE DETAIL GRID'S OWN PRECISION. `alt[]` holds 2-dp
+    // samples, so reporting `r1(maxRaw)` (1 dp) would make this payload disagree
+    // with itself: `max_time` names the sample at 78.95 while `max_alt` says
+    // 78.9, and a caller reading "max altitude X at T" would get the wrong pair -
+    // the very defect DS4 is about, moved rather than fixed. The FIX is the
+    // argmax above running on the raw values (like the worker's) instead of on
+    // the rounded array, so `max_time` and `max_alt` always name one sample.
+    max_alt: Math.round(maxRaw * 100) / 100,
     max_time: new Date(times[maxI]).toISOString().slice(0, 19),
     best,
     min_useful_alt: minAlt,

@@ -150,6 +150,60 @@ def desktop_worker_kill_sync_fallback(c):
     c.assert_clean()
 
 
+@check("desktop-worker-error-disposal", "desktop")
+def desktop_worker_error_disposal(c):
+    """DS5 (carried over from the 0.6.20/0.6.24 reviews, closed in 0.6.35): a
+    worker whose script DIES must be disposed of, not just flagged.
+
+    `_worker.onerror` set `_workerBroken = true` and left the dead Worker in
+    `_worker`. `__NS_REVIVE_WORKER` clears the flag, so the next build handed the
+    corpse back to `postMessage` instead of constructing a fresh worker: the
+    recovery hook could not actually recover the worker path. The kill hook was
+    already correct, which is why the existing check passed while this path was
+    broken.
+
+    This drives the REAL failure path - `__NS_FAIL_WORKER` dispatches a genuine
+    `ErrorEvent` at the live worker, so the registered `onerror` handler runs.
+    Asserts the disposal (a real terminate) and the recovery (a fresh Worker)."""
+    c.page.add_init_script(WATCH_WORKERS)
+    boot(c)
+    c.page.evaluate("() => { window.__NS_DEBUG_WORKER = true; }")
+    arm_night_loaded(c)
+    set_date(c, "2026-08-16")
+    wait_night_loaded(c)
+    c.expect(rows(c) > 0, "the worker-backed build must render targets")
+    ctor_before = c.page.evaluate("() => window.__nsWorkerCtor")
+    term_before = c.page.evaluate("() => window.__nsWorkerTerm")
+
+    failed = c.page.evaluate("() => window.__NS_FAIL_WORKER()")
+    c.expect(failed is True, "the dev failure hook must report that it ran")
+    terminated = c.page.evaluate("() => window.__nsWorkerTerm")
+    c.expect(terminated > term_before,
+             f"a worker `onerror` must TERMINATE the dead worker, not just mark it "
+             f"broken (terminate() calls: {term_before} -> {terminated})")
+
+    # the sync fallback must still plan while the worker is dead
+    arm_night_loaded(c)
+    set_date(c, "2026-08-17")
+    wait_night_loaded(c)
+    c.expect(rows(c) > 0, "the sync fallback must still produce a plan")
+    c.expect("of" in count_text(c), f"the count must be populated: {count_text(c)!r}")
+
+    # and revive must construct a FRESH worker - only possible if the dead one is
+    # gone from `_worker` (a flagged-but-retained worker is reused, ctor unchanged)
+    revived = c.page.evaluate("() => window.__NS_REVIVE_WORKER()")
+    c.expect(revived is True, "the dev revive hook must report that it ran")
+    arm_night_loaded(c)
+    set_date(c, "2026-08-18")
+    wait_night_loaded(c)
+    ctor_after = c.page.evaluate("() => window.__nsWorkerCtor")
+    c.expect(ctor_after > ctor_before,
+             f"after revive the next build must construct a FRESH worker "
+             f"(ctor calls: {ctor_before} -> {ctor_after}) - proof the errored "
+             f"worker was disposed of")
+    c.assert_clean()
+
+
 @check("desktop-pref-rescore", "desktop")
 def desktop_pref_rescore(c):
     """A client-side min-alt change re-derives without a reload."""
