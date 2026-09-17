@@ -328,6 +328,143 @@ def _reject_duplicate_custom_ids(customs: list) -> None:
             "refusing to let one replace the other")
 
 
+# Imported custom ids: `u_` marks a user row (the delete/custom routes key off
+# it) and the rest must be a plain token, because an imported id is interpolated
+# into UI ATTRIBUTES (`data-delcust="${o.id}"` in static/js/setup.js) - an id
+# carrying a quote therefore used to become an executable event handler in the
+# desktop shell, whose CSP still allowed inline script (BUG-002).
+_CUSTOM_PREFIX = "u_"
+
+
+def custom_id_problem(cid) -> str | None:
+    """Why an imported custom id is unusable (None = fine). The ONE rule, shared
+    by `prepare_import_bundle` and the insert loop (review PY4 + BUG-002)."""
+    if not isinstance(cid, str) or not cid.startswith(_CUSTOM_PREFIX):
+        return f"custom target id must start with '{_CUSTOM_PREFIX}' (got {cid!r})"
+    if safe_token(cid) != cid:
+        return ("custom target id must be a plain token of letters, digits, "
+                f"'-' and '_' (got {cid!r})")
+    return None
+
+
+# The archive's frame classes. `imagetyp` is free-form TEXT in the DB and is
+# rendered into a `title` attribute by static/js/archive.js, so an imported value
+# has to be normalized to one of these before it is stored (BUG-002) - the FITS
+# ingest path already normalizes through `ingest.classify_frame`.
+_IMAGETYP_CACHE: list = []
+
+
+def normalize_import_imagetyp(value):
+    """An imported `imagetyp` as one of light/dark/flat/light (BUG-002).
+
+    `classify_frame` is the ONE normalizer and it lives in `app.ingest`, which
+    imports this module - hence the lazy import (no cycle at module load; the
+    call runs once per import, not per request).
+    """
+    if not _IMAGETYP_CACHE:
+        from .ingest import classify_frame
+        _IMAGETYP_CACHE.append(classify_frame)
+    return _IMAGETYP_CACHE[0](value)
+
+
+def import_bundle_shape(setup) -> None:
+    """Reject any malformed bundle STRUCTURE as a ValueError (BUG-004).
+
+    The restore used to call `.get()` on the decoded top level and on every
+    record before proving either was an object, so `panoramas: ["not-an-object"]`
+    escaped as an AttributeError -> HTTP 500 (and a scalar top level escaped even
+    earlier). A structural failure is malformed input: it must be a controlled
+    400, and it must be detected BEFORE the safety copy and before any file is
+    written. Raises ValueError; returns None when the shape is usable."""
+    if not isinstance(setup, dict):
+        raise ValueError(f"malformed setup bundle: expected a JSON object, "
+                         f"got {type(setup).__name__}")
+    for key in ("sites", "rigs", "panoramas", "customs", "images"):
+        records = setup.get(key, [])
+        if not isinstance(records, list):
+            raise ValueError(f"malformed setup bundle: {key} must be a list of "
+                             f"objects, got {type(records).__name__}")
+        if not all(isinstance(r, dict) for r in records):
+            raise ValueError(f"malformed setup bundle: {key} must be a list of "
+                             "objects")
+    if "settings" in setup and not isinstance(setup["settings"], dict):
+        raise ValueError("malformed setup bundle: settings must be an object")
+
+
+def prepare_import_bundle(settings: dict, sites: list, rigs: list,
+                          panoramas: list, customs: list,
+                          images: list) -> dict:
+    """Validate a whole bundle BEFORE anything is written, and normalize it.
+
+    Side-effect free apart from the in-place normalization `import_bundle`
+    always did (numeric settings clamped to their allowed range, the record
+    collections replaced by their ACCEPTED subset). This is the check
+    `apply_import_zip` runs before it writes a payload file (BUG-001): anything
+    that used to fail halfway through the database transaction now fails here,
+    with nothing on disk or in the database touched.
+
+    Raises ValueError for every malformed shape/field; returns the same
+    `{"panoramas": [...], "images": [...], "skipped": {...}}` dict
+    `_accepted_records` produces."""
+    import_bundle_shape({"settings": settings, "sites": sites, "rigs": rigs,
+                         "panoramas": panoramas, "customs": customs,
+                         "images": images})
+    # FIX-4 (review PY1/PY2): fail closed BEFORE any write. A malformed profile
+    # would fail open at planning time and a hostile setting could brick
+    # /api/state at every boot; the transaction below is never entered.
+    _validate_import_settings(settings)
+    # PY3 follow-up (adversarial verification): site/rig/pano numbers are read
+    # into /api/state, which rejects NaN on serialization - validate them on the
+    # import boundary too (None is allowed; JSON null is fine).
+    def _fin(label, v):
+        if v is None:
+            return
+        if isinstance(v, bool) or not isinstance(v, (int, float)) \
+                or not math.isfinite(float(v)):
+            raise ValueError(f"imported {label} must be a finite number")
+    for s in sites:
+        for key in ("lat", "lon", "elev"):
+            _fin(f"site {key}", s.get(key))
+    for r in rigs:
+        for key in ("focal_mm", "sensor_w", "sensor_h", "fov_w", "fov_h"):
+            _fin(f"rig {key}", r.get(key))
+    for p in panoramas:
+        for key in ("az_offset", "alt_bottom", "alt_top", "fov"):
+            _fin(f"panorama {key}", p.get(key))
+        _validate_import_profile(p.get("profile"), "profile")
+        _validate_import_profile(p.get("profile_top"), "profile_top")
+        # PY-03: the third stored array, iterated by both editors
+        _validate_import_strokes(p.get("strokes"))
+    # PY04-F2 (review round 2): the image rows were the ONE record type the
+    # boundary did not check, and `json.loads` happily produces the bare tokens
+    # Infinity/NaN. `images[]` is read back by /api/library, so a crafted - or
+    # self-exported - bundle could store `inf` and 500 that route forever. Fail
+    # closed BEFORE the transaction, like the records above; the custom target
+    # numbers get the same treatment because /api/catalog serializes them too.
+    for im in images:
+        for key in _NUMERIC_RECORD_FIELDS["images"]:
+            _fin(f"image {key}", im.get(key))
+        # BUG-002: normalize the frame class before it is stored OR rendered.
+        im["imagetyp"] = normalize_import_imagetyp(im.get("imagetyp"))
+    for c in customs:
+        for key in _NUMERIC_RECORD_FIELDS["customs"]:
+            _fin(f"custom {key}", c.get(key))
+        problem = custom_id_problem(c.get("id"))
+        if problem:
+            raise ValueError(problem)
+    # PY-01: `safe_rel` canonicalization can map several records onto one stored
+    # path; the restore loop would then overwrite and the summary would still
+    # over-count. Refuse the bundle (no export produces this shape).
+    _reject_duplicate_paths(images, "images")
+    _reject_duplicate_paths(panoramas, "panoramas")
+    # PY-07: two targets sharing an id would collapse to one row under
+    # INSERT OR REPLACE while the summary still reported both.
+    _reject_duplicate_custom_ids(customs)
+    # ONE acceptance pass (PY-06/SP-05): the caller's payload loop and the
+    # inserts below must agree on which records exist.
+    return _accepted_records(panoramas, images)
+
+
 class Database:
     def __init__(self, db_path: Path):
         self.path = db_path
@@ -691,8 +828,18 @@ class Database:
         One transaction / one commit: activating a panorama through
         `PUT /api/panorama/{pid}` used to leave earlier rows active, and
         `active_panorama()` returns the newest of them, so `/api/state` and
-        `/api/night` could disagree about which horizon governs planning."""
+        `/api/night` could disagree about which horizon governs planning.
+
+        BUG-006: the pointer may only name a row that EXISTS. The route checks
+        its target, but `/api/settings` (and an import) can move the pointer
+        directly, and `/api/state` advertises it - so an unknown id is refused
+        here, in the same transaction that would have stored it."""
         with self.lock:
+            if pid is not None:
+                known = self.conn.execute(
+                    "SELECT 1 FROM panoramas WHERE id=?", (pid,)).fetchone()
+                if not known:
+                    raise ValueError(f"no such panorama: {pid}")
             self.conn.execute("UPDATE panoramas SET active=0")
             if pid is not None:
                 self.conn.execute(
@@ -737,8 +884,25 @@ class Database:
         return None
 
     def delete_panorama(self, pid: str):
+        """Delete a panorama and keep `active_pano_id` naming a real row.
+
+        BUG-006: the DELETE removed the row and its image but left the setting
+        pointing at it, so `/api/state` advertised an "active panorama" that
+        planning could not resolve (the desktop then planned against empty sky
+        while the UI claimed a horizon). Cleared here, in the SAME transaction,
+        so the two can never disagree - and only when the deleted row was the
+        one the pointer named (deleting an inactive pano must not clear the
+        user's active choice)."""
         with self.lock:
+            active = self.conn.execute(
+                "SELECT 1 FROM settings WHERE key='active_pano_id' "
+                "AND value=?", (json.dumps(pid),)).fetchone()
             self.conn.execute("DELETE FROM panoramas WHERE id=?", (pid,))
+            if active:
+                self.conn.execute(
+                    "INSERT INTO settings(key,value) VALUES('active_pano_id',?) "
+                    "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                    (json.dumps(None),))
             self.conn.commit()
 
     # ---------------- settings ----------------
@@ -956,70 +1120,13 @@ class Database:
         customs = customs or []
         images = images or []
         observations = observations or []
-        if not isinstance(settings, dict) or not all(
-                isinstance(x, list)
-                for x in (sites, rigs, panoramas, customs, images)):
-            raise ValueError("malformed setup bundle")
-        # PY-04: a non-dict entry used to blow up as an AttributeError DEEP in
-        # the transaction, which the route reported as an opaque 500. Every
-        # collection holds records, so check the shape here: a ValueError is the
-        # documented 400.
-        for label, records in (("sites", sites), ("rigs", rigs),
-                               ("panoramas", panoramas),
-                               ("customs", customs), ("images", images)):
-            if not all(isinstance(r, dict) for r in records):
-                raise ValueError(f"malformed setup bundle: {label} "
-                                 "must be a list of objects")
-        # FIX-4 (review PY1/PY2): fail closed BEFORE any write. A malformed
-        # profile would fail open at planning time and a hostile setting could
-        # brick /api/state at every boot; the transaction below is never entered.
-        _validate_import_settings(settings)
-        # PY3 follow-up (adversarial verification): site/rig/pano numbers are
-        # read into /api/state, which rejects NaN on serialization - validate
-        # them on the import boundary too (None is allowed; JSON null is fine).
-        def _fin(label, v):
-            if v is None:
-                return
-            if isinstance(v, bool) or not isinstance(v, (int, float)) \
-                    or not math.isfinite(float(v)):
-                raise ValueError(f"imported {label} must be a finite number")
-        for s in sites:
-            for key in ("lat", "lon", "elev"):
-                _fin(f"site {key}", s.get(key))
-        for r in rigs:
-            for key in ("focal_mm", "sensor_w", "sensor_h", "fov_w", "fov_h"):
-                _fin(f"rig {key}", r.get(key))
-        for p in panoramas:
-            for key in ("az_offset", "alt_bottom", "alt_top", "fov"):
-                _fin(f"panorama {key}", p.get(key))
-            _validate_import_profile(p.get("profile"), "profile")
-            _validate_import_profile(p.get("profile_top"), "profile_top")
-            # PY-03: the third stored array, iterated by both editors
-            _validate_import_strokes(p.get("strokes"))
-        # PY04-F2 (review round 2): the image rows were the ONE record type the
-        # boundary did not check, and `json.loads` happily produces the bare
-        # tokens Infinity/NaN. `images[]` is read back by /api/library, so a
-        # crafted - or self-exported - bundle could store `inf` and 500 that
-        # route forever. Fail closed BEFORE the transaction, like the records
-        # above; the custom target numbers get the same treatment because
-        # /api/catalog serializes them too.
-        for im in images:
-            for key in _NUMERIC_RECORD_FIELDS["images"]:
-                _fin(f"image {key}", im.get(key))
-        for c in customs:
-            for key in _NUMERIC_RECORD_FIELDS["customs"]:
-                _fin(f"custom {key}", c.get(key))
-        # PY-01: `safe_rel` canonicalization can map several records onto one
-        # stored path; the restore loop would then overwrite and the summary would
-        # still over-count. Refuse the bundle (no export produces this shape).
-        _reject_duplicate_paths(images, "images")
-        _reject_duplicate_paths(panoramas, "panoramas")
-        # PY-07: two targets sharing an id would collapse to one row under
-        # INSERT OR REPLACE while the summary still reported both.
-        _reject_duplicate_custom_ids(customs)
-        # ONE acceptance pass (PY-06/SP-05): the caller's payload loop and the
-        # inserts below must agree on which records exist.
-        store = _accepted_records(panoramas, images)
+        # Every shape/field check lives in ONE side-effect-free place (BUG-001,
+        # BUG-002, BUG-004) so the restore can run it BEFORE it writes a payload
+        # file - and the transaction below is never entered with bad input. The
+        # acceptance pass (PY-06/SP-05) is the LAST step of it, so the caller's
+        # payload loop and the inserts here agree on which records exist.
+        store = prepare_import_bundle(settings, sites, rigs, panoramas,
+                                      customs, images)
         panoramas, images = store["panoramas"], store["images"]
         skipped = store["skipped"]
         accepted_panos: list[dict] = []
@@ -1066,12 +1173,14 @@ class Database:
                 for c in customs:
                     # PY4 (review): the id must keep the `u_` custom prefix -
                     # a bundle carrying a builtin id (e.g. "m31") would collide
-                    # with the seeded catalog and could not be deleted.
-                    cid = c.get("id")
-                    if not isinstance(cid, str) or not cid.startswith("u_"):
-                        raise ValueError(
-                            "custom target id must start with 'u_' "
-                            f"(got {cid!r})")
+                    # with the seeded catalog and could not be deleted. Since
+                    # BUG-002 it must ALSO be a plain token (it is interpolated
+                    # into UI attributes): ONE rule, `custom_id_problem`, shared
+                    # with `prepare_import_bundle` so the pre-write check and
+                    # this insert can never disagree.
+                    problem = custom_id_problem(c.get("id"))
+                    if problem:
+                        raise ValueError(problem)
                     cur.execute(
                         "INSERT OR REPLACE INTO custom_objects"
                         "(id,primary_name,otype,ra_hours,dec_deg,vmag,size_am,"

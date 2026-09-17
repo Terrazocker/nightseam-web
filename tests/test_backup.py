@@ -654,9 +654,9 @@ def test_restore_is_atomic_when_a_payload_cannot_be_written(db, tmp_path,
     the payloads after, so a write failure answered 400/500 while the library had
     already been replaced and one row pointed at a file that would never exist -
     "the import failed" and "nothing was replaced" were different statements.
-    The payloads are written first now (each into a temp file that is moved into
-    place only when it is complete), so a disk-full failure leaves both the
-    database and the existing payload files exactly as they were."""
+    The payloads are staged first now (BUG-001 moved the swap after the database
+    transaction), so a disk-full failure leaves both the database and the
+    existing payload files exactly as they were."""
     import app.backup as backup
 
     _seed(db, tmp_path)
@@ -670,10 +670,18 @@ def test_restore_is_atomic_when_a_payload_cannot_be_written(db, tmp_path,
             {"id": "newpano", "name": "new", "file": "new.jpg",
              "profile": [], "profile_top": []}))
 
-    def boom(zf, member, target, limit):
-        raise OSError(28, "No space left on device")
+    # the FIRST stage succeeds (its target file is new), the SECOND one hits a
+    # full disk - the case where a naive swap would already have left a file
+    real_stage = backup._PayloadStage.stage
+    calls = {"n": 0}
 
-    monkeypatch.setattr(backup, "_write_member", boom)
+    def flaky(self, zf, member, target, budget):
+        calls["n"] += 1
+        if calls["n"] > 1:
+            raise OSError(28, "No space left on device")
+        return real_stage(self, zf, member, target, budget)
+
+    monkeypatch.setattr(backup._PayloadStage, "stage", flaky)
     with pytest.raises(OSError):
         apply_import_zip(db, blob)
 
@@ -682,6 +690,7 @@ def test_restore_is_atomic_when_a_payload_cannot_be_written(db, tmp_path,
     assert not (tmp_path / "data" / "panos" / "new.jpg").exists()
     # the pre-import payload is not truncated by the failed restore either
     assert (tmp_path / "data" / "panos" / "pano1.jpg").read_bytes() == b"JPEGDATA"
+    assert not (tmp_path / "data" / "panos" / "payload.journal").exists()
 
 
 def test_a_successful_restore_never_carries_the_incomplete_marker(db, tmp_path):
@@ -805,3 +814,185 @@ def test_import_of_a_structurally_broken_bundle_is_a_400_not_a_500(db):
         apply_import_zip(db, blob)
     assert len(db.sites()) == 1          # nothing was replaced
     assert db.panoramas() == []
+
+
+# --------------------------------------------- BUGS.md BUG-001/002/004 (2026-09-17)
+
+def _replace_setup_json(blob: bytes, raw_json: str) -> bytes:
+    """A copy of `blob` whose setup.json is the RAW text (a scalar, a list)."""
+    src = zipfile.ZipFile(io.BytesIO(blob))
+    out = io.BytesIO()
+    with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as dst:
+        dst.writestr("setup.json", raw_json)
+        for name in src.namelist():
+            if name != "setup.json":
+                dst.writestr(name, src.read(name))
+    return out.getvalue()
+
+
+def _add_member(blob: bytes, name: str, data: bytes) -> bytes:
+    """A copy of `blob` with one extra (or replaced) member."""
+    src = zipfile.ZipFile(io.BytesIO(blob))
+    out = io.BytesIO()
+    with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as dst:
+        for entry in src.namelist():
+            dst.writestr(entry, data if entry == name else src.read(entry))
+        if name not in src.namelist():
+            dst.writestr(name, data)
+    return out.getvalue()
+
+
+def test_import_of_a_scalar_or_non_object_collection_is_a_400(db):
+    """BUG-004: the decoded top level and every record were used through `.get()`
+    BEFORE either was proven to be an object, so `panoramas: ["not-an-object"]`
+    raised AttributeError (HTTP 500) and a scalar top level escaped even earlier
+    - after the safety copy had already been written. One structural preflight
+    now runs immediately after `json.loads`."""
+    db.add_site("Home", 50.0, 7.8, 150)
+    # (a) a scalar / list / null top level
+    for top in ('"just-a-string"', "[]", "null", "5"):
+        blob = _replace_setup_json(_zip_with("NightSeam", {}), top)
+        with pytest.raises(ValueError):
+            apply_import_zip(db, blob)
+    # (b) a non-object entry in EVERY collection (panoramas/images reached
+    #     `_accepted_records` before the shape check, so they were the live 500s)
+    for key in ("sites", "rigs", "panoramas", "customs", "images"):
+        blob = _mutate_bundle(build_export_zip(db),
+                              lambda s, key=key: s[key].append("not-an-object"))
+        with pytest.raises(ValueError, match="malformed setup bundle"):
+            apply_import_zip(db, blob)
+    # (c) a collection that is not a list, and a scalar settings object
+    for key in ("sites", "rigs", "panoramas", "customs", "images"):
+        blob = _mutate_bundle(build_export_zip(db),
+                              lambda s, key=key: s.update({key: {"not": "a list"}}))
+        with pytest.raises(ValueError, match="malformed setup bundle"):
+            apply_import_zip(db, blob)
+    blob = _mutate_bundle(build_export_zip(db),
+                          lambda s: s.update({"settings": []}))
+    with pytest.raises(ValueError, match="malformed setup bundle"):
+        apply_import_zip(db, blob)
+    assert len(db.sites()) == 1          # nothing was replaced, ever
+
+
+def test_a_rejected_restore_leaves_the_payload_bytes_untouched(db, tmp_path):
+    """BUG-001: `apply_import_zip` called `_write_payloads` BEFORE
+    `Database.import_bundle` validated the bundle, so a bundle carrying a valid
+    colliding payload plus one invalid record replaced the user's file
+    (`ORIGINAL` -> `REPLACED`) and then reported "the import failed" - read as
+    "nothing happened". The payload is now staged, not swapped in, until the
+    database transaction has committed."""
+    _seed(db, tmp_path)
+    pano = tmp_path / "data" / "panos" / "pano1.jpg"
+    pano.write_bytes(b"ORIGINAL")
+    # a VALID panorama payload that collides with the existing file + an INVALID
+    # site id (a non-integer primary key): the pair that reproduced the finding,
+    # because `import_bundle` only fails on it inside the transaction
+    blob = _mutate_bundle(build_export_zip(db),
+                          lambda s: s["sites"].append(
+                              {"id": "not-an-int", "name": "bad", "lat": 1.0,
+                               "lon": 1.0, "elev": 0}))
+    blob = _add_member(blob, "panos/pano1.jpg", b"REPLACED")
+    with pytest.raises(ValueError):
+        apply_import_zip(db, blob)
+    assert pano.read_bytes() == b"ORIGINAL", \
+        "a rejected restore overwrote an existing payload"
+    assert len(db.sites()) == 1 and [p["id"] for p in db.panoramas()] == ["p1"]
+    # an invalid CUSTOM id must be refused at the same boundary (BUG-002): with
+    # the whole bundle rejected, the colliding payload is still untouched
+    blob = _mutate_bundle(
+        build_export_zip(db),
+        lambda s: s["customs"].append(
+            {"id": 'u_x" onmouseover="globalThis.__pwned=1',
+             "primary_name": "evil"}))
+    blob = _add_member(blob, "panos/pano1.jpg", b"REPLACED-2")
+    with pytest.raises(ValueError):
+        apply_import_zip(db, blob)
+    assert pano.read_bytes() == b"ORIGINAL"
+    # the seeded target is the ONLY one: the hostile record never became a row
+    assert [c["id"] for c in db.customs()] == ["u_seed1"]
+
+
+def test_a_rejected_restore_leaves_no_staging_residue(db, tmp_path):
+    """BUG-001: the journal may never survive a restore - not as `.part` files,
+    not as a `payload.journal` directory beside the user's photos."""
+    _seed(db, tmp_path)
+    pano_root = tmp_path / "data" / "panos"
+    for blob in (
+            # rejected in the structural preflight (before the stage exists)
+            _mutate_bundle(build_export_zip(db),
+                           lambda s: s["images"].append("nope")),
+            # rejected by field validation (the stage is not created either)
+            _mutate_bundle(build_export_zip(db),
+                           lambda s: s["rigs"].__setitem__(
+                               0, {"id": 1, "name": "r", "focal_mm": "wide"}))):
+        with pytest.raises(ValueError):
+            apply_import_zip(db, blob)
+    leftover = [p.name for p in pano_root.iterdir()
+                if p.name.endswith(".part") or p.name == "payload.journal"]
+    assert leftover == []
+    assert (pano_root / "pano1.jpg").read_bytes() == b"JPEGDATA"
+
+
+def test_a_successful_restore_swaps_the_payload_in(db, tmp_path):
+    """The other half of BUG-001: staging must not lose a legitimate payload.
+    The rewrite lands, the summary counts it, and the journal is gone."""
+    _seed(db, tmp_path)
+    blob = _add_member(build_export_zip(db), "panos/pano1.jpg", b"NEWER")
+    summary = apply_import_zip(db, blob)
+    assert summary["ok"] is True and summary["pano_images"] == 1
+    assert (tmp_path / "data" / "panos" / "pano1.jpg").read_bytes() == b"NEWER"
+    assert not (tmp_path / "data" / "panos" / "payload.journal").exists()
+    assert db.panoramas()[0]["id"] == "p1"
+
+
+def test_import_normalizes_a_hostile_imagetyp(db, tmp_path):
+    """BUG-002: `imagetyp` is stored verbatim and `static/js/archive.js` puts the
+    per-session type rollup into a `title` ATTRIBUTE, so an imported value with a
+    quote became an executable handler in the desktop shell (which then allowed
+    inline script). The import boundary normalizes it through the SAME
+    `ingest.classify_frame` the FITS path uses."""
+    _seed(db, tmp_path)
+    blob = _mutate_bundle(
+        build_export_zip(db),
+        lambda s: s["images"][0].update(
+            {"imagetyp": 'light" onmouseover="globalThis.__pwned=1'}))
+    apply_import_zip(db, blob)
+    stored = db.images()[0]["imagetyp"]
+    assert stored == "light", stored
+    assert '"' not in stored and "<" not in stored
+
+
+def test_import_rejects_a_custom_id_that_is_not_a_plain_token(db):
+    """BUG-002: the boundary required only the `u_` prefix, so an imported id
+    carrying a quote reached `data-delcust="${o.id}"` in static/js/setup.js and
+    rendered as an event handler. The id rule is now `u_` AND `safe_token`."""
+    db.add_site("Home", 50.0, 7.8, 150)
+    db.add_custom({"id": "u_keep", "primary_name": "Keep", "otype": "galaxy",
+                   "ra_hours": 1.0, "dec_deg": 2.0})
+    for evil in ('u_x" onmouseover="globalThis.__pwned=1',
+                 "u_x' onmouseover='x", "u_x><script>x</script>",
+                 "u_../evil", "u_/abs", "m31", "u_x y", "u_x&amp;y"):
+        blob = _mutate_bundle(
+            build_export_zip(db),
+            lambda s, evil=evil: s["customs"].append(
+                {"id": evil, "primary_name": "evil", "otype": "galaxy",
+                 "ra_hours": 1.0, "dec_deg": 2.0}))
+        with pytest.raises(ValueError, match="custom target id"):
+            apply_import_zip(db, blob)
+    # the seeded target is still the only one: nothing was replaced by a refusal
+    assert [c["id"] for c in db.customs()] == ["u_keep"]
+
+
+def test_the_custom_id_rule_is_u_prefix_and_token():
+    """The rule itself, pinned directly: a user row needs BOTH the `u_` marker
+    (the custom routes key off it) and the plain-token shape (it is interpolated
+    into attributes). A bare `u_` is a token, so it stays legal - over-tightening
+    the rule would reject an id an older NightSeam could legitimately have
+    stored."""
+    from app.database import custom_id_problem
+
+    assert custom_id_problem("u_keep") is None
+    assert custom_id_problem("u_") is None
+    assert custom_id_problem("u_seed1-2") is None
+    for bad in ("m31", "keep", "u_x y", 'u_x"', "u_../evil", "", None, 7):
+        assert custom_id_problem(bad) is not None, bad

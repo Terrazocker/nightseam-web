@@ -9,13 +9,15 @@ from __future__ import annotations
 
 import io
 import json
+import shutil
 import sqlite3
 import sys
 import zipfile
 from datetime import UTC, datetime
 from pathlib import Path
 
-from .database import Database, _accepted_records, finite_or_none
+from .database import (Database, import_bundle_shape, prepare_import_bundle,
+                       _accepted_records, finite_or_none)
 from .paths import data_dir, safe_join, safe_rel
 from .version import app_version
 
@@ -66,31 +68,19 @@ def _write_member(zf: zipfile.ZipFile, member: str, target: Path,
     Streaming (never `zf.read`) keeps the restore's memory peak at one 1 MB
     chunk, and `limit` is the REMAINING budget of the whole restore, so a
     crafted bundle cannot spend it all on one member (SP-01). Raises ValueError
-    when the member is larger than the budget."""
+    when the member is larger than the budget.
+
+    Thin wrapper over `_PayloadStage.stage` + immediate commit: the restore
+    itself goes through the journal (BUG-001) and never calls a bare writer, so
+    this exists for tests and tools that want the PY-03 temp-file behaviour
+    (write to `.part`, rename only when the member is complete) without a
+    journal."""
+    stage = _PayloadStage(target.parent, target.parent)
     try:
-        info = zf.getinfo(member)
-    except KeyError:
-        return 0                    # no payload for that record: fine
-    if info.file_size > limit:
-        raise ValueError(f"zip member too large: {member}")
-    target.parent.mkdir(parents=True, exist_ok=True)
-    written = 0
-    # PY-03: write to a temp file and rename only when the member is complete, so
-    # a failed restore does not truncate a file the user already had.
-    tmp = target.with_name(target.name + ".part")
-    try:
-        with zf.open(info) as src, open(tmp, "wb") as out:
-            while True:
-                chunk = src.read(1 << 20)
-                if not chunk:
-                    break
-                written += len(chunk)
-                if written > limit:
-                    raise ValueError(f"zip member too large: {member}")
-                out.write(chunk)
-        tmp.replace(target)
+        written = stage.stage(zf, member, target, limit)
+        stage.commit()
     except BaseException:
-        tmp.unlink(missing_ok=True)
+        stage.rollback()
         raise
     return written
 
@@ -201,9 +191,132 @@ def _write_safety_copy(db: Database, dest: Path) -> tuple[str | None, str | None
         return None, f"{type(exc).__name__}: {exc}"
 
 
-def _write_payloads(zf: zipfile.ZipFile, accepted: dict, image_dir: str,
+class _PayloadStage:
+    """Temporary payloads plus a rollback journal for the files they replace.
+
+    BUG-001: `apply_import_zip` wrote every payload into place BEFORE
+    `Database.import_bundle` validated the bundle, so a bundle with a valid
+    colliding payload and one invalid record left the user's file replaced
+    ("ORIGINAL" -> "REPLACED") while the error said only that the import failed.
+    A restore now has three phases, and no user file changes in the first two:
+
+      1. `stage()` writes the member into `<target>.import-<n>.part`, i.e. onto
+         the DESTINATION filesystem (so the later swap is one atomic rename, even
+         across drives/temp dirs), and - before the first stage for that target -
+         moves any existing file of that name into the private journal directory
+         beside it.
+      2. `Database.import_bundle` replaces the rows in ONE transaction.
+      3. `commit()` swaps the staged files in and drops the journal.
+
+    Any exception before `commit()` returns runs `rollback()`, which puts every
+    journalled file back where it was and deletes every staged file - so a
+    refused or failed restore leaves the payload tree byte-identical. The journal
+    is a directory (`payload.journal`) rather than hidden copies in the target
+    folder, so a crashed restore leaves ONE directory to clean up next to the
+    files, never a set of disguised `.bak` payloads the pano/library readers
+    could pick up.
+
+    The `.part` shape is the one PY-03 already used, so a concurrent reader
+    (an image request, a reindex) never sees a half-copied payload.
+    """
+
+    def __init__(self, pano_root: Path, image_root: Path):
+        self.pano_root = Path(pano_root)
+        self.image_root = Path(image_root)
+        self.journal = self.pano_root / "payload.journal"
+        self._seq = 0
+        self.staged: list[tuple[Path, Path]] = []     # (staged file, target)
+        self.backups: list[tuple[Path, Path]] = []    # (original, journal copy)
+        self._seen: set[str] = set()
+
+    def _snapshot(self, target: Path) -> None:
+        """Move an existing payload into the journal (once per target).
+
+        `_reject_duplicate_paths` has already refused a bundle that maps two
+        records onto one path, so this can never run twice for one target."""
+        key = str(target)
+        if key in self._seen:
+            return
+        self._seen.add(key)
+        if not target.is_file():
+            return
+        self.journal.mkdir(parents=True, exist_ok=True)
+        saved = self.journal / f"{len(self.backups):05d}-{target.name}"
+        shutil.move(str(target), str(saved))
+        self.backups.append((target, saved))
+
+    def stage(self, zf: zipfile.ZipFile, member: str, target: Path,
+              budget: int) -> int:
+        """Stream one member into a temp file; 0 when the member is absent.
+
+        `budget` is the REMAINING SP-01 byte budget of the whole restore, so a
+        crafted bundle cannot spend it all on one member. Raises ValueError when
+        the member is larger than the budget."""
+        try:
+            info = zf.getinfo(member)
+        except KeyError:
+            return 0                    # no payload for that record: fine
+        if info.file_size > budget:
+            raise ValueError(f"zip member too large: {member}")
+        target.parent.mkdir(parents=True, exist_ok=True)
+        self._snapshot(target)
+        self._seq += 1
+        staged = target.with_name(f"{target.name}.import-{self._seq}.part")
+        written = 0
+        try:
+            with zf.open(info) as src, open(staged, "wb") as out:
+                while True:
+                    chunk = src.read(1 << 20)
+                    if not chunk:
+                        break
+                    written += len(chunk)
+                    # the budget bounds what is really written, not what the
+                    # zip directory declares
+                    if written > budget:
+                        raise ValueError(f"zip member too large: {member}")
+                    out.write(chunk)
+        except BaseException:
+            staged.unlink(missing_ok=True)
+            raise
+        if not written:
+            # an empty member is still "that record has a payload" for the
+            # summary, so keep the (empty) file rather than losing the row
+            self.staged.append((staged, target))
+            return 1
+        self.staged.append((staged, target))
+        return written
+
+    def commit(self) -> None:
+        """Swap the staged payloads in, then drop the journal."""
+        for staged, target in self.staged:
+            staged.replace(target)
+        self.discard()
+
+    def discard(self) -> None:
+        """Forget the journal (the restore succeeded, or was never started)."""
+        shutil.rmtree(self.journal, ignore_errors=True)
+
+    def rollback(self) -> None:
+        """Restore every payload this stage touched; never raises."""
+        for staged, _target in self.staged:
+            try:
+                staged.unlink(missing_ok=True)
+            except OSError:
+                pass
+        for target, saved in self.backups:
+            try:
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.move(str(saved), str(target))
+            except OSError:
+                pass
+        self.staged.clear()
+        self.backups.clear()
+        self.discard()
+
+
+def _write_payloads(zf: zipfile.ZipFile, accepted: dict, stage: _PayloadStage,
                     budget: int) -> tuple[int, int]:
-    """Write the payload files for the records `import_bundle` ACCEPTED.
+    """Stage the payload files for the records `import_bundle` ACCEPTED.
 
     PY-06/SP-05: the loop used to iterate the RAW bundle list, so a record whose
     id failed `safe_token` never became a row but still had its payload written -
@@ -211,27 +324,27 @@ def _write_payloads(zf: zipfile.ZipFile, accepted: dict, image_dir: str,
     summary reported the pair `panoramas: 0, pano_images: 1`. Driving both sides
     from one accepted set is what keeps the count and the disk in agreement.
 
-    Returns `(panorama files, library files)`; `budget` is the remaining
-    SP-01 byte budget, spent across both loops."""
+    BUG-001: nothing is swapped into place here - `stage` returns a journal the
+    caller commits AFTER the database transaction. Returns
+    `(panorama files, library files)`; `budget` is the remaining SP-01 byte
+    budget, spent across both loops."""
     pano_files = 0
-    pano_root = data_dir() / "panos"
     for rec in accepted.get("panoramas", []):
-        target = safe_join(pano_root, rec["file"])
+        target = safe_join(stage.pano_root, rec["file"])
         if target is None:          # safe_rel already passed; belt and braces
             continue
-        spent = _write_member(zf, f"panos/{rec['file']}", target, budget)
+        spent = stage.stage(zf, f"panos/{rec['file']}", target, budget)
         if spent:
             budget -= spent
             pano_files += 1
 
     image_files = 0
-    base = Path(image_dir)
-    base.mkdir(parents=True, exist_ok=True)
+    stage.image_root.mkdir(parents=True, exist_ok=True)
     for rec in accepted.get("images", []):
-        target = safe_join(base, rec["file"])
+        target = safe_join(stage.image_root, rec["file"])
         if target is None:
             continue
-        spent = _write_member(zf, f"library/{rec['file']}", target, budget)
+        spent = stage.stage(zf, f"library/{rec['file']}", target, budget)
         if spent:
             budget -= spent
             image_files += 1
@@ -261,13 +374,27 @@ def apply_import_zip(db: Database, blob: bytes | Path,
     never be read as "nothing happened" after the library was already replaced.
     Should a failure happen after the replace anyway, the summary carries
     `restore_incomplete` so the client can say so instead of the caller's
-    rollback repainting an already-replaced database."""
+    rollback repainting an already-replaced database.
+
+    BUG-001: "the payloads are written first" is not enough on its own - the
+    bundle used to be validated INSIDE `import_bundle`, i.e. after the payload
+    files had already been replaced, so a refused restore still overwrote them.
+    The order is now: structural + field validation (`import_bundle_shape`,
+    `prepare_import_bundle`), the safety copy, then the payloads STAGED (never
+    swapped in), then the database transaction, then the swap. Any failure
+    before the swap runs the journal's rollback, so a rejected bundle leaves the
+    database AND the payload tree exactly as they were."""
     zf = None
     try:
         zf = zipfile.ZipFile(io.BytesIO(blob) if isinstance(blob, bytes)
                              else blob)
         setup = json.loads(_read_member(zf, "setup.json", 64 << 20)
                            .decode("utf-8"))
+        # BUG-004: prove the STRUCTURE before anything reads a field from it. A
+        # scalar top level or `panoramas: ["not-an-object"]` used to escape as an
+        # AttributeError -> HTTP 500, and (for panoramas/images) only after the
+        # safety copy had been written.
+        import_bundle_shape(setup)
     except Exception as exc:  # noqa: BLE001
         if zf is not None:
             zf.close()
@@ -279,6 +406,7 @@ def apply_import_zip(db: Database, blob: bytes | Path,
     safety_path = db.path.with_suffix(".backup-auto.zip")
     replaced = False            # did import_bundle replace the database?
     out = summary if summary is not None else {}
+    stage: _PayloadStage | None = None
     # The ZipFile handle must be closed on EVERY path: on Windows an open
     # handle makes the route's spool unlink fail, turning a clean 400 into a
     # 500 (FIX-4 exposes this through the new validation errors).
@@ -289,14 +417,8 @@ def apply_import_zip(db: Database, blob: bytes | Path,
         customs = setup.get("customs", [])
         images = setup.get("images", [])
         settings = setup.get("settings", {})
-        if not isinstance(settings, dict):
-            raise ValueError("malformed setup bundle")
-        if not all(isinstance(x, list)
-                   for x in (sites, rigs, panos, customs, images)):
-            raise ValueError("malformed setup bundle")
         # SP-01: refuse an oversized restore BEFORE the safety copy and before
         # anything is written.
-
         _reject_oversized_bundle(panos, images, zf)
         safety, safety_error = _write_safety_copy(db, safety_path)
 
@@ -317,13 +439,25 @@ def apply_import_zip(db: Database, blob: bytes | Path,
         # would silently move the library into ~/Documents).
         settings["image_dir"] = current_image_dir
 
-        # PY-03: the payloads land first, and only for the records
-        # `import_bundle` will accept (PY-06/SP-05 - the SAME predicate). A
-        # write failure here leaves the database untouched, so "the import
-        # failed" and "nothing was replaced" are finally one statement.
-        accepted = _accepted_records(panos, images)   # same predicate as the DB
-        pano_files, image_files = _write_payloads(
-            zf, accepted, current_image_dir, MAX_RESTORE_BYTES)
+        # BUG-001/BUG-002/BUG-004: ONE side-effect-free validation pass, and it
+        # runs BEFORE a single payload byte is staged. Everything that used to
+        # fail inside the transaction (a hostile custom id, a NULL name, a
+        # duplicate id, a non-finite number) fails here now, while the payload
+        # tree is still untouched.
+        accepted = prepare_import_bundle(settings, sites, rigs, panos,
+                                         customs, images)
+
+        # PY-03 + BUG-001: the payloads are STAGED first, and only for the
+        # records `import_bundle` will accept (PY-06/SP-05 - the SAME predicate).
+        # A write failure here leaves the database untouched and is rolled back,
+        # so "the import failed" and "nothing was replaced" are one statement.
+        stage = _PayloadStage(data_dir() / "panos", Path(current_image_dir))
+        try:
+            pano_files, image_files = _write_payloads(
+                zf, accepted, stage, MAX_RESTORE_BYTES)
+        except BaseException:
+            stage.rollback()
+            raise
         # import_bundle drops records whose stored path escapes its folder and
         # reports how many, so the summary below never over-counts a restore.
         store: dict = {}
@@ -337,6 +471,19 @@ def apply_import_zip(db: Database, blob: bytes | Path,
             # is a ValueError -> the route's documented 400. The transaction has
             # rolled back; nothing was replaced.
             raise ValueError(f"malformed setup bundle: {exc}") from None
+        except BaseException:
+            # BUG-001: the database transaction rolled back, and the payloads
+            # have not been swapped in yet - put the tree back as it was.
+            stage.rollback()
+            raise
+        # The database is committed; the payloads become visible in one rename
+        # each. A failure inside the swap is the ONLY remaining window, and it
+        # restores every payload (including the ones already swapped).
+        try:
+            stage.commit()
+        except OSError:
+            stage.rollback()
+            raise
         replaced = True
 
         out.update({"ok": True, "sites": len(sites), "rigs": len(rigs),
@@ -361,4 +508,9 @@ def apply_import_zip(db: Database, blob: bytes | Path,
             # reported as a no-op. A successful restore never sets it - the
             # route's error path is the only reader.
             out["restore_incomplete"] = True
+        if stage is not None and not replaced:
+            # Belt and braces: every failure path above already rolled back, so
+            # this only removes an empty journal - but a restore may NEVER leave
+            # `.part` files or a journal directory behind, whatever went wrong.
+            stage.rollback()
         zf.close()
