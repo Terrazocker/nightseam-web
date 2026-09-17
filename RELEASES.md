@@ -80,9 +80,18 @@ tagged; nothing below was verified against a deployed host.
   document carries `script-src 'self' 'sha256-...'` (no `unsafe-inline`), the
   inline theme bootstrap still applies (`data-theme=dome`), 49 catalog rows + 4
   Tonight cards render and there are no page or console errors.
-- **NOT run:** `--desktop` (the packed `dist/NightSeam.exe` is the 2026-09-15
-  build, i.e. pre-fix code - re-run the gate after a rebuild) and any deployed
-  check.
+- Desktop: the exe was REBUILT from this tree (PyInstaller onefile, ~47 s,
+  20.8 MB, `v0.6.33-8-gfa6ef5c`) and `python scripts/check_browser.py --desktop`
+  -> **8/8 passed** (boot, worker date change, worker kill/sync fallback, pref
+  rescore, advanced mode, catalog tier/minvis, scrub window, pano crop FOV). The
+  desktop shell is therefore verified against the post-fix code too.
+- Guard dry run: `python scripts/pre_tag_check.py 0.6.34` -> the expected FAIL
+  ("no CURATED entry for 0.6.34"), with the token guard's self-test OK and no
+  missed-bump finding - i.e. the release machinery is armed and waiting for the
+  changelog entry, nothing else.
+- **NOT run:** any deployed check. The production document CSP still needs the
+  host's nginx directive (BUGS.md BUG-003), and the exe is a local build, not a
+  released artifact (the tag/bump decision is open).
 
 **Discovered while verifying (fixed in the same pass).** The browser gate earned
 its keep: the new BUG-005 check failed three times in a row and each failure was a

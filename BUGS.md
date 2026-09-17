@@ -165,15 +165,14 @@ full suite plus required JS/browser/release guards have been run. Record the
 shipped result in `RELEASES.md`, then remove the closed item from this active
 file; Git history preserves the investigation.
 
-The fix pass above followed that rule. BUG-005 is closed with the browser gate
-green (18/18). BUG-003 stays in the open section with its remaining action spelled
-out: the CODE half is done and pinned, but the header has to be applied at the
-host's nginx layer, which this session cannot reach - so the finding is not
-closed on evidence.
+One more item is now CLOSED rather than open: the desktop gate was run against a
+freshly rebuilt exe (`--desktop`: 8/8), so the desktop shell is verified against
+this pass along with the web shell (`--web`: 18/18). What remains is the
+deployment action below, and the release decision (bump/tag), which is not a
+defect.
 
-One more item stays open for the same reason: `python scripts/check_browser.py
---desktop` was NOT run, because `dist/NightSeam.exe` is the 2026-09-15 build
-(pre-fix code) and running the gate against it would verify the old shell. Rebuild
-the exe and run `--all` (or at least `--desktop`) before tagging. The desktop-side
-CSP change itself was verified live against a source-served server instead (see
-`RELEASES.md`).
+The fix pass followed the closing rule above. BUG-005 is closed with the browser
+gate green (18/18). BUG-003 stays in the open section with its remaining action
+spelled out: the CODE half is done and pinned, but the header has to be applied
+at the host's nginx layer, which this session cannot reach - so the finding is
+not closed on evidence.
