@@ -731,3 +731,66 @@ paths and can pass on the JSON-only header. The replacement decision is to treat
 deployment as observable release state: the main document response must carry a
 valid policy or the production smoke fails. The policy's content and hash remain
 pinned offline by `tests/test_prod_csp.py`.
+
+
+## The carried-over four: what each turned out to be (0.6.35 working tree)
+
+The 0.6.20/0.6.24 reviews deferred four S4 items. Reassessing them in 0.6.35
+confirmed two and refuted the details of two, which is the reason this entry
+exists: a deferred item is a hypothesis, not a finding, and two of these were
+described in a way that would have sent a maintainer to the wrong place.
+
+**CR2 - "malformed horizon guards: defense-in-depth, all shipped producers
+normalize before preview."** The premise was wrong. `visibleSkyBands` had been
+fixed (CO-04), but a probe of the whole family found `skyBandPolygons` and
+`profileSegments` still threw on 7 malformed shapes, and the desktop editor
+passes `profileTop` - so a sky-mode record with no top array crashed a render
+pass, exactly the outcome the guards are for. Bigger: `ceilFor` validated the
+profile's LENGTH but not its ELEMENTS, so a 720-long array holding NaN returned
+`ceil: NaN` - and that function's own comment names the hazard (`alt > NaN` is
+false, so every object at that azimuth reads as blocked and vanishes from the
+planning). "Producers normalize" is not a boundary when the values are STORED and
+EDITABLE. Decision: every entry point returns its empty sentinel; the contract is
+pinned by `tests/js/horizon_degrade.mjs`.
+
+**DS4 - "worker/sync diverge on max_alt (rounded vs raw argmax); one-sample/0.05
+deg difference near ties; cosmetic."** Two separate things were conflated. The
+night and detail payloads use DIFFERENT grids by design (6 min noon-anchored vs
+4 min dusk-anchored), so their peaks legitimately differ and that is not a
+defect. The real one was internal to the detail payload: it took the argmax over
+the 2-dp-ROUNDED array while the night path used the raw argmax, so `max_time`
+and `max_alt` could describe different samples. Fixed to the raw argmax.
+**Measured limit of the fix:** because `round2(max(raw)) >= round2(raw[j])` for
+every j, the rounded argmax can only land at or BEFORE the raw one, so the
+reported peak VALUE is identical either way - only WHICH of several equal-valued
+samples `max_time` names can differ. The shipped ic434 row holds a single sample
+at its detail maximum over four dates, so no live fixture separates the two. The
+pin therefore asserts the user-visible contract (the two fields describe one
+sample; the peak is not below the grid's own maximum) and the engine records the
+limit instead of inventing a fixture that cannot exist in the data.
+
+**DS5 - "worker revive: sync fallback always planned; dev-hook-only impact."**
+Correct that it was dev-hook-only, wrong that it was therefore harmless: the hook
+is the app's declared recovery path and it was broken. `_worker.onerror` set
+`_workerBroken` but left the DEAD Worker in `_worker`; `__NS_REVIVE_WORKER`
+clears the flag, so the next build handed the corpse to `postMessage`. The kill
+hook was already correct - which is precisely why the existing browser check
+passed while this path was dead. Decision: extract `onWorkerError`, terminate and
+null like the timeout path and the kill hook, and drive the REAL path from a
+browser check with a genuine `ErrorEvent` (`__NS_FAIL_WORKER`, inert unless
+`__NS_DEBUG_WORKER`).
+
+**WB7 - "bundle version still ignored (forward-compat choice)."** Correct, and
+the choice was the wrong one: a bundle from a LATER build was accepted and its
+fields read under this build's rules, so a misreading was reported to the user as
+a successful restore. Decision: `stageBackup` refuses a version above
+`BUNDLE_VERSION` with a message that says to update; v1 (no stamp, same field
+layout) and v2 still restore; an unusable stamp is refused rather than crashing.
+A future incompatible format gets an explicit migration hook instead of silent
+best-effort parsing.
+
+**Why all four are closed rather than deferred again.** Each now has a
+mutation-proven pin: reverting the guard makes the engine fail (verified for the
+two CR2 guards, the DS5 disposal, the DS4 argmax and the WB7 version check).
+That is the standard `BUGS.md` sets for closing a finding, and it is what was
+missing when these were first carried over.

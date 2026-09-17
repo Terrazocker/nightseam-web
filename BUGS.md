@@ -165,13 +165,52 @@ maps that to a 400. Regressions:
 `::test_activating_an_unknown_panorama_id_is_refused`,
 `::test_the_database_refuses_a_dangling_active_pointer`.
 
-## Pre-existing accepted/deferred items
+## Pre-existing accepted/deferred items - ALL CLOSED in 0.6.35
 
-These were already documented before this audit and were not rediscovered as
-new defects: malformed-horizon defensive guards (`CR2`), the worker/sync
-one-bin `ceil` residual (`DS4`), worker-revive coverage (`DS5`), and web backup
-bundle-version forward compatibility (`WB7`). Reassess them separately; do not
-silently merge them into the findings above.
+These were documented before the 0.6.34 audit and were not rediscovered as new
+defects. All four were reassessed and closed in the 0.6.35 working tree, each with
+a regression pin that a mutation proves (see `RELEASES.md`). Their original
+severity was S4 ("migration") in every case, and the reassessment CONFIRMED two of
+them and REFINED two:
+
+- **CR2 - malformed-horizon defensive guards.** Confirmed, and larger than the
+  note suggested: `visibleSkyBands` had already been fixed (CO-04), but
+  `skyBandPolygons` and `profileSegments` still threw on 7 malformed shapes, and
+  `ceilFor` checked the profile's LENGTH but not its ELEMENTS - returning
+  `ceil: NaN` for a 720-long array holding NaN, which hides every object at that
+  azimuth (`alt > NaN` is false). All three now degrade to the same empty sentinel
+  their siblings use. Pin: `tests/js/horizon_degrade.mjs` + the new pytest case.
+- **DS4 - the worker/detail peak disagreement.** REFINED, and the original note
+  was imprecise. The two payloads sample DIFFERENT grids (night 6 min
+  noon-anchored, detail 4 min dusk-anchored), so their peaks legitimately differ;
+  the real defect was that the detail payload disagreed with ITSELF, taking the
+  argmax over the 2-dp-ROUNDED array while the night path used the raw one. Fixed
+  to the raw argmax. **What the fix does and does not change (measured):** since
+  `round2(max(raw)) >= round2(raw[j])`, the rounded argmax can only land at or
+  before the raw one, so the reported peak VALUE is unchanged - the difference is
+  which of two equal-valued samples `max_time` names. The shipped ic434 row holds
+  a single sample at its detail maximum over four dates, so no live fixture
+  separates the two; the pin asserts the user-visible contract (peak and time
+  describe one sample) and the engine records this limit rather than pretending a
+  fixture exists. Pin: `tests/js/worker_failure.mjs`.
+- **DS5 - worker revive.** Confirmed: `_worker.onerror` set the broken flag but
+  kept the DEAD Worker, so `__NS_REVIVE_WORKER` handed the corpse back to
+  `postMessage`. It now terminates and nulls the worker like the timeout path and
+  the kill hook already did. Pins: `tests/js/worker_failure.mjs` (mutation-proven)
+  and the new browser check `desktop-worker-error-disposal`.
+- **WB7 - web backup bundle-version forward compatibility.** Confirmed: `version`
+  was written at export and IGNORED on import, so a bundle from a future format
+  was accepted and its fields read under this build's rules - a silent misreading
+  reported as a successful restore. `stageBackup` now refuses a version above
+  `BUNDLE_VERSION` with a message that says to update; v1 (no stamp) and v2 still
+  restore. Pin: `tests/js/web_backup.mjs` (mutation-proven).
+
+Related items that were NOT carried over because they are already closed: TL3
+(verified by mutation - tampering `web/catalog.json` fails
+`check_catalog_token`), TL4 (no spec is tracked; `build.ps1` drives PyInstaller
+by CLI flags and writes its generated spec under gitignored `dist/`), and CR3
+(a deliberate, documented non-change: the FOV-edge half-bin alters user-visible
+scoring and needs its own release decision).
 
 ## Closing a finding
 

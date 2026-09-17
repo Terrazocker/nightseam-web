@@ -449,7 +449,7 @@ calculation stay local. `README.md` has the feature list.
     `Get-CimInstance Win32_Process`).
   - If 8407 is briefly taken at boot, `free_port()` silently picks a RANDOM port
     (written to `instance.json`).
-- Tests: `python -m pytest tests/` (623 collected as of the 2026-09-17 fix pass -
+- Tests: `python -m pytest tests/` (625 collected as of the 0.6.35 working tree -
   re-derive with `--collect-only -q` rather than trusting this line). Single test:
   `python -m pytest tests/test_js_parity.py -k name`. API tests use
   `create_app(db, prefetch=False)` (no image-cache thread). The `client` fixture
@@ -460,8 +460,8 @@ calculation stay local. `README.md` has the feature list.
     external `--basetemp` workaround does not restore a clean run either.
     `tests/conftest.py` therefore OVERRIDES the `tmp_path` fixture with a dir under
     the gitignored, sandbox-owned `logs/.pytest-tmp`, so a plain
-    `python -m pytest tests/` is clean: **0 assertion failures** (623 tests as of
-    the 2026-09-17 fix pass - re-derive the count, do not trust it here).
+    `python -m pytest tests/` is clean: **0 assertion failures** (625 tests as of
+    the 0.6.35 working tree - re-derive the count, do not trust it here).
 - JS checks (run after touching `static/` OR `web/`): `python scripts/check_js.py`
   runs all of them and exits non-zero on hard failures:
   - `check_js_imports.py` - broken relative ES-module imports / missing named exports
@@ -537,17 +537,20 @@ calculation stay local. `README.md` has the feature list.
 
 ## Current review status
 
-- `BUGS.md` is the active backlog, and as of the 2026-09-17 fix pass it holds NO
-  confirmed open defect: BUG-001, BUG-002, BUG-004, BUG-005 and BUG-006 are fixed
-  with regression pins (gates: `--web` 18/18, `--desktop` 8/8), and BUG-003 is
-  closed with the policy ENFORCED on the live origin - nginx serves `/astro` and
-  the host exposes no directive field (measured 2026-09-17), so the policy ships
-  as a `<meta http-equiv>` in `web/index.html` and `--prod-url` passes.
+- `BUGS.md` is the active backlog, and as of the 0.6.35 working tree it holds NO
+  open defect: BUG-001..BUG-006 shipped in 0.6.34 (gates: `--web` 18/18,
+  `--desktop` 9/9 after the DS5 check was added), and the four carried-over
+  items - CR2, DS4, DS5, WB7 - were reassessed and closed with mutation-proven
+  pins. BUG-003's live carrier is a `<meta http-equiv>` policy in
+  `web/index.html` because nginx serves `/astro` and the host exposes no
+  directive field (measured 2026-09-17); `--prod-url` passes.
   `RELEASES.md` has the evidence, `DECISIONS.md` the reasoning.
 - Release records (tag, staged artifacts, gate results, deploy and live checks)
   live in `RELEASES.md`.
-- The previously accepted/deferred `CR2`, `DS4`, `DS5` and `WB7` items are
-  summarized in `BUGS.md` so future reviews do not re-file them as discoveries.
+- The previously accepted/deferred `CR2`, `DS4`, `DS5` and `WB7` items were all
+  reassessed and CLOSED in the 0.6.35 working tree, each with a mutation-proven
+  pin (`BUGS.md` records what each turned out to be, including the two whose
+  original note was imprecise). The backlog now holds no open defect.
 
 ## Versioning and release
 
@@ -597,11 +600,11 @@ calculation stay local. `README.md` has the feature list.
   `scripts/check_catalog_token.py`, wired into `scripts/check_js.py`, and pinned
   by `tests/test_cache_tokens.py` (mutation-tested). Do NOT add
   `{cache:'no-store'}` - the file must stay cacheable.
-  Current (BUGS.md fix pass, 2026-09-17):
-  `app.js?v=97` (index.html) / `CATALOG_TOKEN = '10'`, `astro.js?v=21`,
-  `horizon.js?v=54`, `format.js?v=28`, `nightrank.js?v=20`, `webstore.js?v=31`,
+  Current (0.6.35 working tree, after the CR2/DS4/DS5/WB7 pass):
+  `app.js?v=100` (index.html) / `CATALOG_TOKEN = '10'`, `astro.js?v=23`,
+  `horizon.js?v=56`, `format.js?v=30`, `nightrank.js?v=22`, `webstore.js?v=33`,
   `dragwin.js?v=1`, `style.css?v=24`,
-  `themes.css?v=5`; the core stub is `web/core.js?v=33` (bump = re-bake,
+  `themes.css?v=5`; the core stub is `web/core.js?v=35` (bump = re-bake,
   enforced by `scripts/check_core.py`). Every core change cascades: the re-bake
   moves the stub token and changes the bytes of every module importing it, so
   those tokens move in the same commit. The historic registers (the 0.6.32

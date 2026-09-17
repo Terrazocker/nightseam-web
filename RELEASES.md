@@ -14,6 +14,72 @@ Newest first.
 > rewrite what the 0.6.33 release ran or observed; fixes belong in the next
 > release entry when they ship. **All six shipped in 0.6.34 (below).**
 
+## UNRELEASED - the carried-over four (2026-09-17, 0.6.35 working tree)
+
+**Not tagged.** The four items `BUGS.md` had been carrying since the 0.6.20/0.6.24
+reviews (`CR2`, `DS4`, `DS5`, `WB7`) were reassessed and closed. All four were
+severity S4 ("migration") originally; the reassessment CONFIRMED two and REFINED
+two, and in both refined cases the original note was imprecise in a way that
+mattered.
+
+**CR2 - malformed-horizon guards (confirmed, and larger than noted).**
+`visibleSkyBands` had already been fixed (CO-04), but an empirical probe of the
+whole family found three live gaps: `skyBandPolygons` and `profileSegments` threw
+on 7 malformed shapes (the desktop editor passes `profileTop`, so a sky record
+with no top array crashed a render), and `ceilFor` validated the profile's LENGTH
+but not its ELEMENTS - returning `ceil: NaN` for a 720-long array holding NaN,
+which is the exact hazard its own guard exists to prevent (`alt > NaN` is false,
+so every object at that azimuth reads as blocked). All three now return the empty
+sentinel their siblings use. **Pin:** `tests/js/horizon_degrade.mjs`, 14 malformed
+shapes x 7 entry points, plus a positive case so the degrade cannot become
+"always empty"; mutation-proven for both guards added.
+
+**DS4 - the worker/detail peak disagreement (refined; the note was wrong).**
+The note said "one-sample/0.05 deg difference near ties". The two payloads sample
+DIFFERENT grids (night 6 min noon-anchored, detail 4 min dusk-anchored), so their
+peaks legitimately differ and that is not the defect. The defect was that the
+detail payload disagreed with ITSELF: it took the argmax over the 2-dp-ROUNDED
+array while the night path used the raw argmax, so `max_time` and `max_alt` could
+name different samples. Fixed to the raw argmax. **Measured, and it limits the
+pin:** since `round2(max(raw)) >= round2(raw[j])`, the rounded argmax can only
+land at or before the raw one, so the reported peak VALUE is unchanged either way;
+the difference is which of two equal-valued samples `max_time` names. The shipped
+ic434 row holds a single sample at its detail maximum over four dates, so no live
+fixture separates the two. The engine therefore asserts the user-visible contract
+(the two fields describe one sample; the peak is not below the grid's own maximum)
+and records this limit in a comment rather than inventing a fixture. **Pin:**
+`tests/js/worker_failure.mjs`.
+
+**DS5 - worker revive (confirmed).** `_worker.onerror` set the broken flag but
+left the DEAD Worker in `_worker`; `__NS_REVIVE_WORKER` clears the flag, so the
+next build handed the corpse back to `postMessage` - the recovery hook could not
+recover. The kill hook was already correct, which is exactly why the existing
+`desktop-worker-kill-sync-fallback` check passed while this path was broken. The
+handler now terminates and nulls the worker like the timeout path and the kill
+hook; it was extracted into `onWorkerError` so a browser check can drive it with a
+genuine `ErrorEvent` through the new `__NS_FAIL_WORKER` dev hook. **Pins:**
+`tests/js/worker_failure.mjs` (mutation-proven) and the new browser check
+`desktop-worker-error-disposal`.
+
+**WB7 - web bundle version (confirmed).** `version` was written at export and
+IGNORED on import, so a bundle from a future format was accepted and its fields
+read under this build's rules - a silent misreading reported as a successful
+restore. `stageBackup` now refuses a version above `BUNDLE_VERSION` with a
+message that says to update; v1 (no stamp) and v2 still restore, and an unusable
+stamp is refused rather than crashing. **Pin:** `tests/js/web_backup.mjs`
+(mutation-proven).
+
+**Verification.** `python -m pytest tests/ -q` -> **625 passed, 0 failed**.
+`python scripts/check_js.py` -> OK (core re-baked: token 33 -> 35, every importer
+and its cache token moved in the same change). Browser gate: `--web` 18/18,
+`--desktop` **9/9** against a freshly built exe (the new check included). The exe
+was rebuilt for that gate and is a local build, not a release artifact.
+
+**Not done, deliberately.** No version bump and no tag: this is the working tree
+for the next release, and the four closures ride with it. CR3 (FOV-edge half-bin)
+remains a deliberate, documented non-change - it alters user-visible scoring and
+needs its own release decision.
+
 ## 0.6.34 - 2026-09-17
 
 **RELEASED as 0.6.34** - tag `v0.6.34` on the release commit `a279513`, with the

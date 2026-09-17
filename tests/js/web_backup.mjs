@@ -292,5 +292,35 @@ assert(JSON.stringify(reimported.profile) === JSON.stringify(legacyCrop.profile)
 assert(JSON.stringify(reimported.profileTop) === JSON.stringify(legacyCrop.profileTop),
   'crop profileTop must be byte-identical after export + re-import');
 
+/* WB7 forward compatibility: `version` is written at export and was IGNORED on
+ * import, so a bundle from a LATER build was accepted and its fields read under
+ * this build's rules - a silent misreading reported as a successful restore. A
+ * version above BUNDLE_VERSION must now be refused, v1 (no stamp) and v2 must
+ * still restore, and the stamp must never be a crash of its own. */
+const good = { app: 'nightseam-web', version: 2, sites: [], rigs: [], targets: [],
+               prefs: {}, panos: { panos: [], activeId: null } };
+assert(WS.stageBackup(good), 'a current-format bundle must still stage');
+const future = { ...good, version: 99 };
+let futureErr = null;
+try { WS.stageBackup(future); } catch (e) { futureErr = e; }
+assert(futureErr, 'a bundle from a NEWER format must be refused, not misread');
+assert(futureErr && /newer version/i.test(futureErr.message),
+  `the refusal must say the bundle is newer (got ${futureErr && futureErr.message})`);
+assert(futureErr && String(futureErr.message).includes('99'),
+  'the refusal must name the format it saw');
+/* an older bundle (no stamp at all = v1) still restores: same field layout */
+const v1 = { ...good }; delete v1.version;
+assert(WS.stageBackup(v1), 'a v1 bundle (no version stamp) must still restore');
+/* a garbage stamp is malformed input, not a crash */
+for (const bad of ['abc', -1, 0, {}]) {
+  let badErr = null;
+  try { WS.stageBackup({ ...good, version: bad }); } catch (e) { badErr = e; }
+  assert(badErr, `an unusable version stamp (${JSON.stringify(bad)}) must be refused`);
+}
+/* and the app identity rule is untouched */
+let foreignErr = null;
+try { WS.stageBackup({ ...good, app: 'something-else' }); } catch (e) { foreignErr = e; }
+assert(foreignErr, 'a foreign bundle must still be refused');
+
 console.log(ok ? 'web backup integrity held' : 'web backup integrity FAILED');
 process.exit(ok ? 0 : 1);
