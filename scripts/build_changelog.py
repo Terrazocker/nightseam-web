@@ -30,6 +30,14 @@ ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "landing" / "changelog.json"
 
 CURATED = {
+    # 0.6.34 is the security/reliability batch for the six findings in BUGS.md:
+    # a refused restore can no longer overwrite your files, the desktop can no
+    # longer execute an imported value, the web app finally enforces a policy,
+    # malformed backups answer 400 instead of 500, the browser check waits for
+    # the Tonight view instead of guessing, and the active panorama can no
+    # longer point at something that is not there. Written for users, not for
+    # the changelog reader.
+    "0.6.34": "A safety release for importing backups, plus a fix to the web app's \"tonight\" list. Restoring a setup file is now all-or-nothing: the whole backup is checked first, and your existing files are only replaced once it is known to be usable. Before this, a backup that mixed one good panorama with one broken record could overwrite that panorama's image and then report the import as failed - so \"nothing happened\" and \"your file was replaced\" could be the same message. The import boundary is also stricter about what it accepts: a malformed backup is refused with a clear message rather than an error page, and values that arrive from an imported file can no longer take effect as code - in the desktop app an imported target name or frame type was able to run as a click handler, which is no longer possible. Both apps now escape everything they display from imported data, and the desktop app's script policy no longer permits inline code at all. The web app now enforces a real Content-Security-Policy on the page itself, which it had been missing: its content is restricted to this site's own scripts and styles, plus the two hosts it legitimately loads images from. Separately, the web app's \"tonight\" list no longer lags behind the time scrubber: moving through the night refreshed the ranking asynchronously, so the suggestions could briefly describe the moment you were at before - the list now always matches the selected time, including at startup, and the automatic check that watches for this waits for the list to actually catch up. Deleting the panorama that planning was using also leaves the app with no active panorama instead of an active one that does not exist; activating one that is not there is refused. Everything else is unchanged.",
     # 0.6.33 is the review batch plus the shell-unification pass: the web
     # "tonight" list gained the 45 bright nebulae it was silently filtering out,
     # the desktop panorama editor gained Redo, and the web shell now ships a
