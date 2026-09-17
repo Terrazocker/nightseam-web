@@ -1,6 +1,6 @@
 /* Tonight tab: summary cards + ranked pick lists */
 
-import { $, esc, parseUTC, fmtHM, fmtT, TYPE_LABEL, phaseName } from "./util.js";
+import { $, $$, esc, parseUTC, fmtHM, fmtT, TYPE_LABEL, phaseName } from "./util.js";
 import { S, IMG_VER } from "./state.js";
 import { statusOf, objScore, windowText, desigLine,
          curTimeISO, popularityFactor } from "./derive.js";
@@ -20,11 +20,24 @@ export function bindTonight() {
   });
 }
 
+/* Hide a thumbnail that failed to load (no broken-image glyph).
+ *
+ * This was an inline `onerror="this.style.visibility='hidden'"` ATTRIBUTE, which
+ * BUG-002 removed: an inline handler forces `script-src 'unsafe-inline'` in the
+ * desktop CSP, and that is what turned an injected ATTRIBUTE (an unescaped id)
+ * into running code. Same behaviour, bound as a listener. */
+function hideBrokenThumbs() {
+  $$(".pick-thumb").forEach(img => {
+    if (img.dataset.fbBound) return;
+    img.dataset.fbBound = "1";
+    img.addEventListener("error", () => { img.style.visibility = "hidden"; });
+  });
+}
+
 function cardHTML({o, m}) {
   const st = statusOf(o, S.tIdx);
-  return `<div class="pick ${st.code==="blk"?"blocked":st.code==="low"||st.code==="hor"?"low":""}" data-id="${m.id}" role="button" tabindex="0">
-    <img class="pick-thumb" loading="lazy" src="/api/object/${m.id}/image?thumb=1&v=${IMG_VER}"
-      onerror="this.onerror=null;this.style.visibility='hidden'">
+  return `<div class="pick ${st.code==="blk"?"blocked":st.code==="low"||st.code==="hor"?"low":""}" data-id="${esc(m.id)}" role="button" tabindex="0">
+    <img class="pick-thumb" loading="lazy" src="/api/object/${esc(m.id)}/image?thumb=1&v=${IMG_VER}">
     <div class="pick-body">
       <div class="nm">${esc(m.primary_name)}</div>
       <div class="ds">${esc(desigLine(m))} &middot; ${TYPE_LABEL[m.otype]||""}</div>
@@ -87,4 +100,6 @@ export function renderTonight() {
                     .slice(0,8);
   $("#laterList").innerHTML = later.length ? later.map(cardHTML).join("")
      : '<p class="hint">No further clear windows tonight.</p>';
+
+  hideBrokenThumbs();
 }

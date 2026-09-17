@@ -23,6 +23,14 @@
 # directives), e.g. `add_header Content-Security-Policy` with the same
 # value as the Header line below, marked `always`.
 #
+# BUG-003 (2026-09-17): this is now a HARD FAILURE of the production smoke, not
+# a note. `python scripts/check_browser.py --prod-url https://nightseam.de/astro/`
+# reads the policy from the PAGE response ONLY and fails when it is absent: a
+# policy on version.json/catalog.manifest.json protects nothing, because a CSP
+# covers the response that carries it and those are not the HTML a browser runs.
+# The nginx directive to add is the Header value below (`add_header
+# Content-Security-Policy "<that value>" always;` at the `/astro` location).
+#
 # mod_headers must be enabled (Plesk: Apache with mod_headers - the default).
 # If this file causes a 500, the module is off: remove the file rather than
 # leaving a broken site.

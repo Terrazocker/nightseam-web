@@ -1,6 +1,6 @@
 /* Targets tab: filters, sorting, paginated table rendering */
 
-import { $, esc, api, fmtSize, TYPE_LABEL, TYPE_COLOR, constName } from "./util.js";
+import { $, $$, esc, api, fmtSize, TYPE_LABEL, TYPE_COLOR, constName } from "./util.js";
 import { S, IMG_VER } from "./state.js";
 import { statusOf, windowText, desigLine,
          objScore, filterAdvice, frameCoverage, coverageCell,
@@ -167,9 +167,28 @@ function sortObjects(list) {
   return list.sort(cmp);
 }
 
+/* A failed thumbnail must not draw the browser's broken-image glyph.
+ *
+ * This used to be an inline `onerror="this.src=..."` ATTRIBUTE on every <img>,
+ * which BUG-002 had to get rid of: it is an inline event handler, so the desktop
+ * CSP needed `script-src 'unsafe-inline'` - and that, in turn, is what made an
+ * injected attribute (imported custom ids used to reach `data-delcust`) actually
+ * EXECUTE. Bound as a listener now, once per element, and the CSP no longer has
+ * to allow inline script. */
+const BROKEN_THUMB =
+  "data:image/gif;base64,R0lGODlhAQABAIAAAP///wAAACH5BAEAAAAALAAAAAABAAEAAAICRAEAOw==";
+function thumbFallbacks() {
+  $$("#targetRows .thumb").forEach(img => {
+    if (img.dataset.fbBound) return;
+    img.dataset.fbBound = "1";
+    img.addEventListener("error", () => { img.src = BROKEN_THUMB; });
+  });
+}
+
 function thumbHTML(id) {
-  return `<img class="thumb" loading="lazy" src="/api/object/${id}/image?thumb=1&v=${IMG_VER}"
-    onerror="this.onerror=null;this.src='data:image/gif;base64,R0lGODlhAQABAIAAAP///wAAACH5BAEAAAAALAAAAAABAAEAAAICRAEAOw=='">`;
+  // `esc` on the id: it is a catalog identifier interpolated into BOTH an
+  // attribute and a URL (an imported custom id used to be able to carry a quote)
+  return `<img class="thumb" loading="lazy" src="/api/object/${esc(id)}/image?thumb=1&v=${IMG_VER}">`;
 }
 
 export function renderTargets(fromPager = false) {
@@ -212,10 +231,10 @@ export function renderTargets(fromPager = false) {
     const adv = filterAdvice(m);
     const cov = frameCoverage(m);
     const fav = favs.has(m.id);
-    return `<tr data-id="${m.id}">
+    return `<tr data-id="${esc(m.id)}">
       <td>${thumbHTML(m.id)}</td>
-      <td class="objcell"><button class="starbtn${fav?" on":""}" data-fav="${m.id}" title="mark for session">&#9733;</button><b>${esc(m.primary_name)}</b><span>${esc(desigLine(m))}${m.constellation?" \u00B7 "+esc(constName(m.constellation)):""}</span></td>
-      <td class="tiercell"><span class="tierbadge t-${tierOf(m).toLowerCase()}" title="${tierTitle(m)}">${tierOf(m)}</span></td>
+      <td class="objcell"><button class="starbtn${fav?" on":""}" data-fav="${esc(m.id)}" title="mark for session">&#9733;</button><b>${esc(m.primary_name)}</b><span>${esc(desigLine(m))}${m.constellation?" \u00B7 "+esc(constName(m.constellation)):""}</span></td>
+      <td class="tiercell"><span class="tierbadge t-${tierOf(m).toLowerCase()}" title="${esc(tierTitle(m))}">${tierOf(m)}</span></td>
       <td><span class="typebadge" style="color:${TYPE_COLOR[m.otype] || "#9ca5b5"};border-color:${(TYPE_COLOR[m.otype] || "#9ca5b5")}55">${esc(TYPE_LABEL[m.otype]||m.otype)}</span>${adv ? " " + adv.pill : ""}</td>
       <td>${m.vmag!=null?m.vmag.toFixed(1):"&mdash;"}</td>
       <td>${fmtSize(m.size_am, unit)}</td>
@@ -226,6 +245,7 @@ export function renderTargets(fromPager = false) {
       <td><span class="statuspill ${stClass[st.code]}">${st.text}</span></td>
     </tr>`;
   }).join("");
+  thumbFallbacks();
 
   const pager = $("#targetPager");
   pager.classList.toggle("hidden", pages <= 1);

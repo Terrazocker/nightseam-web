@@ -340,10 +340,10 @@ function renderList() {
   const box = $("#panoList");
   if (!S.panos.length) { box.innerHTML = '<p class="hint">No panoramas yet.</p>'; return; }
   box.innerHTML = S.panos.map(p => `
-    <div class="pano-item ${p.active ? "active" : ""}" data-id="${p.id}">
+    <div class="pano-item ${p.active ? "active" : ""}" data-id="${esc(p.id)}">
       <span class="nm">${esc(p.name)}</span>
       ${p.profile && p.profile.length ? '<small class="hint">saved</small>' : '<small class="hint">draft</small>'}
-      <button data-sel="${p.id}" class="ghost">Edit</button>
+      <button data-sel="${esc(p.id)}" class="ghost">Edit</button>
     </div>`).join("");
   box.querySelectorAll("[data-sel]").forEach(b =>
     b.addEventListener("click", () =>

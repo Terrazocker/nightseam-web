@@ -252,7 +252,7 @@ function renderCustomList() {
   box.innerHTML = customs.map(o => `<div class="pano-item">
       <span class="nm">${esc(o.primary_name)}</span>
       <span class="mono">${o.ra_hours.toFixed(2)}h ${o.dec_deg.toFixed(1)}\u00B0</span>
-      <button data-delcust="${o.id}" class="danger ghost">Del</button>
+      <button data-delcust="${esc(o.id)}" class="danger ghost">Del</button>
     </div>`).join("");
   box.querySelectorAll("[data-delcust]").forEach(b => b.addEventListener("click", async () => {
     await api("/api/catalog/custom/" + b.dataset.delcust, { method:"DELETE" });
@@ -343,8 +343,8 @@ function renderSitesTable(sites) {
     <td>${esc(s.name)}</td><td class="mono">${s.lat.toFixed(4)}</td>
     <td class="mono">${s.lon.toFixed(4)}</td><td>${s.elev}</td>
     <td>
-      <button data-use="${s.id}" class="${String(s.id)===String(S.cfg.active_site_id)?"primary":"ghost"}">${String(s.id)===String(S.cfg.active_site_id)?"Active":"Use"}</button>
-      <button data-del="${s.id}" class="danger ghost">Delete</button>
+      <button data-use="${esc(s.id)}" class="${String(s.id)===String(S.cfg.active_site_id)?"primary":"ghost"}">${String(s.id)===String(S.cfg.active_site_id)?"Active":"Use"}</button>
+      <button data-del="${esc(s.id)}" class="danger ghost">Delete</button>
     </td></tr>`).join("");
   tb.querySelectorAll("[data-use]").forEach(b => b.addEventListener("click", async () => {
     await api("/api/settings", { method:"POST",
@@ -374,8 +374,8 @@ function renderRigsTable() {
     <td class="mono">${r.sensor_w}\u00D7${r.sensor_h}</td>
     <td class="mono">${fmtFovPair(r.fov_w, r.fov_h)}</td>
     <td>
-      <button data-ur="${r.id}" class="${activeRigBtn(r)}">${String(S.cfg.active_rig_id)===String(r.id)?"Active":"Use"}</button>
-      <button data-dr="${r.id}" class="danger ghost">Del</button>
+      <button data-ur="${esc(r.id)}" class="${activeRigBtn(r)}">${String(S.cfg.active_rig_id)===String(r.id)?"Active":"Use"}</button>
+      <button data-dr="${esc(r.id)}" class="danger ghost">Del</button>
     </td></tr>`).join("");
 
   tb.querySelectorAll("[data-ur]").forEach(b => b.addEventListener("click", async () => {

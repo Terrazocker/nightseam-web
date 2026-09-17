@@ -136,6 +136,19 @@ def test_web_panorama_editor_history_and_view():
     assert "pano ui contract held" in out
 
 
+def test_desktop_attribute_sinks_escape_imported_data():
+    """BUG-002: an imported custom id / image type must never become MARKUP.
+
+    The real desktop renderers (targets.js, tonight.js) run under Node with a
+    stub DOM and a hostile id is pushed through them: every attribute sink has to
+    emit an entity-escaped value, no inline event handler may remain (that is
+    what forced `script-src 'unsafe-inline'`, which made the injection
+    executable), and the listener that replaced the thumbnail `onerror=` must
+    actually run. Mutation-proven: dropping one `esc()` makes it fail."""
+    out = run_node_harness("dom_escape.mjs")
+    assert "desktop attribute sinks escape hostile values" in out
+
+
 def test_web_sky_band_complement_geometry():
     """ITEM C (0.6.13): the visible-sky band is the exact complement of the
     blocked band - open-above (90.5) extends to the zenith, unpainted columns
