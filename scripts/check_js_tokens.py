@@ -92,32 +92,32 @@ _VERIFIED_BASELINE_JSON = r"""
 {
  "modules": {
   "app.js": {
-   "sha256": "6055c396834475d0e4712fda2496f7f66ef5749e895cb2df7bb5784af7682e81",
-   "token": "97"
+   "sha256": "b54894e887c3219067e86bca5ff9ef52757bc68fe64f769746e676ea21c0942c",
+   "token": "100"
   },
   "astro.js": {
-   "sha256": "b033f45f9711ea0273d77109c91907d885bba2615c4cda853686e42ea58479c4",
-   "token": "21"
+   "sha256": "07382c21d9e76f83cc2791f26af3b064c349380b3d3a3b66d55f23e8fbf8074b",
+   "token": "23"
   },
   "core.js": {
-   "sha256": "a8fbf6077e1caf78ad8df0963e9ed8747c3cd7dda0f61909c6d8f9e95ce7c09b",
-   "token": "33"
+   "sha256": "ae2fe7e41decb4f08db230d0f41cf228c167ffd3f395ba22abd9547fa896af7a",
+   "token": "35"
   },
   "dragwin.js": {
    "sha256": "d8b316eaf6b7d9eeb9f8397ed8df232990992c5d3d3c9830fe160f832a3d529c",
    "token": "1"
   },
   "format.js": {
-   "sha256": "d00014d2fa4decab8bdaeed7f22b40c8584d3af159bbfccfeeae648a9f88ace1",
-   "token": "28"
+   "sha256": "0d2c961dbcdfa58e7305df23bab4ee8c19246c2ad8edb018130c696bc2d05f40",
+   "token": "30"
   },
   "horizon.js": {
-   "sha256": "91cd977bc49035d14a9bc0caef53587d0600c01657ae5a1b1b3774deadd4af5e",
-   "token": "54"
+   "sha256": "4dee29d5793ccf0ebe5cd59c39aafc498db8c51b6b7f47fddf739b79e1730e54",
+   "token": "56"
   },
   "nightrank.js": {
-   "sha256": "f8dbb32260629274bcec0b7deba1293168df2b895ec49b53d348425bef2df9c5",
-   "token": "20"
+   "sha256": "d6496910e282d6412ee670b05a31ea8b27a6b122bb1088eb19d081be45ec3059",
+   "token": "22"
   },
   "style.css": {
    "sha256": "e0790dfbbeb284f52f5e1b74ad800181fe6afca5a81ec046e4bc8d3d6b28e612",
@@ -128,8 +128,8 @@ _VERIFIED_BASELINE_JSON = r"""
    "token": "5"
   },
   "webstore.js": {
-   "sha256": "820efcfc3c1b99da998e0c9e51d29e38329d986d99e9ed85d7d8e7de7f639993",
-   "token": "31"
+   "sha256": "48c81e1bdbbf23fa76d6a8df10058e0e86836aa2ec8d2bcba27be4a845d7b271",
+   "token": "33"
   }
  }
 }

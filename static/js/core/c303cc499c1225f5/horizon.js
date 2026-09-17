@@ -194,6 +194,12 @@ export function normalizeProfileBins(p) {
  *  or smear. */
 export function profileSegments(prof, W, H, ab, at, azOff, fov, skipAbove = 90.5) {
   const segs = [];
+  // CR2: this is the desktop editor's silhouette call and the WEB editor passes
+  // `p.profileTop` (null whenever a sky-mode record has no top array), so a
+  // missing/unusable array threw "Cannot read properties of null (reading '0')"
+  // mid-render. Same degrade as the siblings: no array -> no segments -> nothing
+  // drawn - which is exactly what the caller renders for an empty result.
+  if (!Array.isArray(prof)) return segs;
   let seg = null, prevX = null;
   const span = at - ab || 1;
   for (let i = 0; i < BINS; i++) {
@@ -260,6 +266,13 @@ export function visibleSkyBands(p, altBottom = null, zenith = 90) {
  *  then top edge right->left). Obstacle mode has no fill -> []. */
 export function skyBandPolygons(p, W, H, ab, at, azOff, fov) {
   const bands = visibleSkyBands(p, ab);
+  // CR2: `visibleSkyBands` degrades to [] for a missing/unusable record, and the
+  // sibling entry points (ceilFor/overhangRuns/assumedOpenRuns) all return their
+  // empty degrade - this one indexed the result blindly and threw
+  // "Cannot read properties of undefined (reading 'vis')" instead. "No usable
+  // record" means "draw nothing", exactly like its siblings, so a caller that
+  // forgot to check its record cannot break a render pass with an exception.
+  if (!bands.length) return [];
   const span = at - ab || 1;
   const yOf = (alt) => H * (1 - (Math.min(Math.max(alt, ab), at) - ab) / span);
   const polys = [];
@@ -445,15 +458,24 @@ export function ceilFor(p, azDeg) {
     return p.paintMode === 'sky' ? { ceil: 90, ceilTop: null } : { ceil: NO_BLOCK, ceilTop: null };
   }
   const col = worldBin(azDeg);   // D1: world-azimuth bins (Python ceil_lookup)
+  // CR2: the array guard above checks the LENGTH, not the ELEMENTS. A stored
+  // profile can be 720 long and still hold NaN or a string (an imported or
+  // hand-built record), and returning that value is the SAME hazard that guard
+  // exists to prevent: `alt > NaN` is false, so every object at that azimuth
+  // reads as blocked and vanishes from the planning, and `ceil: "x"` compares
+  // false too. One bad ELEMENT degrades to the same sentinel the callers already
+  // use for a missing profile ("nothing blocks").
+  const element = (v, fallback) => (Number.isFinite(v) ? v : fallback);
   if (p.paintMode === 'sky') {
     // DEFAULT: everything ABOVE the painted band is free sky (open above), so
     // the band top is NOT a ceiling. Only when the user explicitly opts into
     // "block above the band" (p.blockAbove) does the painted top become a
     // ceiling (an overhang/balcony). The 90.5 sentinel means open to the zenith.
-    const top = (p.blockAbove && tops && tops[col] > NO_BLOCK + 0.5) ? tops[col] : null;
-    return { ceil: prof[col], ceilTop: top };
+    const topRaw = (p.blockAbove && tops) ? tops[col] : null;
+    const top = (Number.isFinite(topRaw) && topRaw > NO_BLOCK + 0.5) ? topRaw : null;
+    return { ceil: element(prof[col], 90), ceilTop: top };
   }
-  return { ceil: prof[col], ceilTop: null };
+  return { ceil: element(prof[col], NO_BLOCK), ceilTop: null };
 }
 
 /** Raw painted band TOP at an azimuth (sky mode), or null when the column is

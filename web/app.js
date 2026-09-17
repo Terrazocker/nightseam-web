@@ -8,17 +8,17 @@
  *   • Settings — sites, rigs, custom targets, backup/restore (webstore.js)
  * All sky math runs client-side (astro.js, Meeus algorithms).
  */
-import * as E from './astro.js?v=21';
-import * as Hor from './horizon.js?v=54';
-import * as WS from './webstore.js?v=31';
+import * as E from './astro.js?v=23';
+import * as Hor from './horizon.js?v=56';
+import * as WS from './webstore.js?v=33';
 import { initDragWindows } from './dragwin.js?v=1';
 import { fmtSize, sizeArcmin, framePct, magVisible, skyClampZoom,
-         skyViewMatrix, skyScreenToBase, skyClampFocus } from './format.js?v=28';
-import { nightStats, nightStatsBatch, sampleVisible } from './nightrank.js?v=20';
+         skyViewMatrix, skyScreenToBase, skyClampFocus } from './format.js?v=30';
+import { nightStats, nightStatsBatch, sampleVisible } from './nightrank.js?v=22';
 import { TYPE_LABELS, TYPE_COLORS, searchBlob as coreSearchBlob,
          TIER_ORDER, assignPopularityTiers, wikiTitles,
-         inTonightPool } from './core.js?v=33';
-import { popularityFactor as corePopularityFactor } from './core.js?v=33';
+         inTonightPool } from './core.js?v=35';
+import { popularityFactor as corePopularityFactor } from './core.js?v=35';
 
 // Cache-bust token for the ~4 MB data file web/catalog.json. It is NOT a JS
 // module, so it cannot carry a ?v= in an import: this named token IS its

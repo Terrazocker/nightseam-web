@@ -194,6 +194,12 @@ export function normalizeProfileBins(p) {
  *  or smear. */
 export function profileSegments(prof, W, H, ab, at, azOff, fov, skipAbove = 90.5) {
   const segs = [];
+  // CR2: this is the desktop editor's silhouette call and the WEB editor passes
+  // `p.profileTop` (null whenever a sky-mode record has no top array), so a
+  // missing/unusable array threw "Cannot read properties of null (reading '0')"
+  // mid-render. Same degrade as the siblings: no array -> no segments -> nothing
+  // drawn - which is exactly what the caller renders for an empty result.
+  if (!Array.isArray(prof)) return segs;
   let seg = null, prevX = null;
   const span = at - ab || 1;
   for (let i = 0; i < BINS; i++) {
@@ -260,6 +266,13 @@ export function visibleSkyBands(p, altBottom = null, zenith = 90) {
  *  then top edge right->left). Obstacle mode has no fill -> []. */
 export function skyBandPolygons(p, W, H, ab, at, azOff, fov) {
   const bands = visibleSkyBands(p, ab);
+  // CR2: `visibleSkyBands` degrades to [] for a missing/unusable record, and the
+  // sibling entry points (ceilFor/overhangRuns/assumedOpenRuns) all return their
+  // empty degrade - this one indexed the result blindly and threw
+  // "Cannot read properties of undefined (reading 'vis')" instead. "No usable
+  // record" means "draw nothing", exactly like its siblings, so a caller that
+  // forgot to check its record cannot break a render pass with an exception.
+  if (!bands.length) return [];
   const span = at - ab || 1;
   const yOf = (alt) => H * (1 - (Math.min(Math.max(alt, ab), at) - ab) / span);
   const polys = [];

@@ -49,20 +49,30 @@ export const HISTORY_LIMIT = 60;
 
 const arr = (v) => (Array.isArray(v) ? v : []);
 
+/** The editable geometry, DEEP-COPIED. A snapshot must not alias the record's
+ *  own arrays: `p.strokes = []` (Clear) or a pushed stroke would otherwise
+ *  rewrite an entry that is already in the stack, and `historyCommit`'s
+ *  "unchanged?" comparison would compare the record with itself. The web's
+ *  editor happened to pass fresh arrays, so the aliasing was invisible there -
+ *  the desktop mutates `rec.strokes` in place (`dab()` pushes into it), which is
+ *  how this surfaced. */
+const clone = (v) => arr(v).map((s) => (s && typeof s === 'object' ? { ...s } : s));
+
 /** Serialize a record's editable state. `keys` maps the canonical names to the
  *  record's own properties; the short JSON keys are the wire format and must
  *  stay stable (a stored history is never persisted, but tests compare them). */
 export function snapshot(state, keys = HISTORY_KEYS) {
-  const o = {
+  const s = clone(state[keys.strokes]);
+  const out = {
     a: state[keys.azOffset], b: state[keys.altBottom], t: state[keys.altTop],
     f: state[keys.fov], m: state[keys.paintMode],
-    s: arr(state[keys.strokes]), o: state[keys.blockAbove] ? 1 : 0,
+    s, o: state[keys.blockAbove] ? 1 : 0,
   };
-  if (!o.s.length) {
-    o.pr = arr(state[keys.profile]);
-    o.pt = arr(state[keys.profileTop]);
+  if (!s.length) {
+    out.pr = arr(state[keys.profile]).slice();
+    out.pt = arr(state[keys.profileTop]).slice();
   }
-  return JSON.stringify(o);
+  return JSON.stringify(out);
 }
 
 /** Write a snapshot back onto a record (in place). */

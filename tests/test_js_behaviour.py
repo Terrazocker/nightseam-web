@@ -167,3 +167,27 @@ def test_pano_mode_semantics_ruling_c():
     to the strokes."""
     out = run_node_harness("pano_mode_semantics.mjs")
     assert "pano mode semantics contract held" in out
+
+
+def test_horizon_entry_points_degrade_on_malformed_records():
+    """CR2 (carried over, closed in 0.6.35): every `core/horizon.js` entry point
+    must return its EMPTY answer for a missing or malformed record instead of
+    throwing mid-render. `visibleSkyBands` was fixed earlier (CO-04); this pins
+    the whole family, including the element-level case (`ceilFor` returning
+    `NaN`: `alt > NaN` is false, so every object would read as blocked).
+    Mutation-proven for both guards this pass added."""
+    out = run_node_harness("horizon_degrade.mjs")
+    assert "CR2 horizon degrade contract held" in out
+
+
+def test_worker_failure_disposes_the_worker_and_aligns_the_detail_peak():
+    """DS4 + DS5 (carried over, closed in 0.6.35).
+
+    DS5: `_worker.onerror` set the broken flag but kept the DEAD Worker, so the
+    revive hook handed the corpse back to `postMessage` - the worker path could
+    not recover. DS4: the detail payload took its peak from the 2-dp-ROUNDED
+    array while the night payload used the raw argmax, so the two could name
+    different samples. Drives the real planning_client.js with a counting Worker
+    shim."""
+    out = run_node_harness("worker_failure.mjs")
+    assert "DS4/DS5 worker contract held" in out

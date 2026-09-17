@@ -27,7 +27,7 @@ import {
   historyCanRedo as coreHistoryCanRedo, historyUndo as coreHistoryUndo,
   historyRedo as coreHistoryRedo, historyMarkSaved as coreHistoryMarkSaved,
   historyDirty as coreHistoryDirty, PANO_HISTORY_LIMIT as coreHISTORY_LIMIT,
-} from './core.js?v=33';
+} from './core.js?v=35';
 
 export {
   NO_BLOCK, BINS, MASK_W, MASK_H,

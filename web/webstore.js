@@ -10,7 +10,7 @@
  * the app moved to nightseam.de, so every visitor starts on a fresh origin.
  */
 
-import { offsetEastMin, wallFromUtcMs, utcFromWallMs } from './core.js?v=33';
+import { offsetEastMin, wallFromUtcMs, utcFromWallMs } from './core.js?v=35';
 
 const DB_NAME = 'nightseam-db-v1';
 const DB_VER = 1;
@@ -328,7 +328,7 @@ export async function collectBackup(prefs, panos, theme) {
   ]);
   return {
     app: 'nightseam-web',
-    version: 2,
+    version: BUNDLE_VERSION,
     exportedAt: new Date().toISOString(),
     // the theme is stored in its own localStorage key (not in prefs) - back up
     // the key the boot script actually reads, so a restore can re-apply it
@@ -366,12 +366,34 @@ function cleanRecord(r, { numbers = [], strings = [] } = {}) {
   return out;
 }
 
+/** The bundle format this build can restore. `version: 2` is the current shape
+ *  (v1 bundles differ only in not stamping a version at all, so they are still
+ *  accepted). Bump this together with any INCOMPATIBLE bundle change. */
+export const BUNDLE_VERSION = 2;
+
 /** Validate a backup into staged records WITHOUT touching storage.
- *  Throws on a malformed / foreign backup, so nothing is destroyed before the
- *  whole bundle is known to be usable. Pure (no I/O): unit-testable. */
+ *  Throws on a malformed / foreign / too-new backup, so nothing is destroyed
+ *  before the whole bundle is known to be usable. Pure (no I/O): unit-testable.
+
+ *  WB7 (forward compatibility): `version` was written at export time and then
+ *  ignored on import, so a bundle produced by a LATER build was accepted and its
+ *  fields read under this build's rules - silent misreading dressed up as a
+ *  successful restore. A version above BUNDLE_VERSION is now refused with a
+ *  message that says to update; an older/absent one still restores, because v1
+ *  and v2 share the field layout. */
 export function stageBackup(data) {
   if (!data || data.app !== 'nightseam-web') {
     throw new Error('not a NightSeam Web backup');
+  }
+  const v = data.version == null ? 1 : Number(data.version);
+  if (!Number.isFinite(v) || v < 1) {
+    throw new Error('backup has an unusable version stamp');
+  }
+  if (v > BUNDLE_VERSION) {
+    throw new Error(
+      `this backup was written by a newer version of the app (format ${v}, ` +
+      `this build reads ${BUNDLE_VERSION}) - reload/update the page and try ` +
+      `again`);
   }
   const siteOf = (s) => cleanRecord(s, {
     numbers: ['lat', 'lon', 'elev'],
