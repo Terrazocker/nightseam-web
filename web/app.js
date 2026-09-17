@@ -204,15 +204,20 @@ function ms(d) { return d instanceof Date && !isNaN(d) ? d.getTime() : null; }
 function clampSkyTime() {
   if (!S.site) return null;
   const r = scrubRange();
-  const before = S.skyTime.getTime();
   S.skyTime = new Date(E.scrubClamp(S.skyTime.getTime(), r.start.getTime(), r.end.getTime()));
   // WE-07 (0.6.32 review): a site/date change moves the selected instant, but the
   // always-visible topbar scrub only re-syncs on the `sky:time` broadcast - so it
   // kept showing the PREVIOUS night's time (probe: S.skyTime 19:17, label 19:51).
   // Announce the clamp so the slider position and label follow.
-  if (S.skyTime.getTime() !== before) {
-    window.dispatchEvent(new CustomEvent('sky:time'));
-  }
+  //
+  // BUG-005: announce it EVEN when the clamp changed nothing. `syncScrub()` pins
+  // the slider from the CURRENT range, so a slider positioned against an earlier
+  // range stays stale while `S.skyTime` is already correct - the gate measured a
+  // scrubber at load-instant + 6 min against a view painted for the selected
+  // instant, and since a scrub WRITES BACK whatever the slider reads, the two
+  // must never disagree. Announcing unconditionally is also what re-renders the
+  // Tonight view for the clamped selection at boot.
+  window.dispatchEvent(new CustomEvent('sky:time'));
   return r;
 }
 
@@ -557,7 +562,7 @@ function route() {
   if (S.view === 'horizon' && view !== 'horizon' && Hor.horizonUnsaved()) Hor.flushHorizonEdits();
   S.view = view;
   document.querySelectorAll('#tabs a').forEach((a) => a.classList.toggle('active', a.dataset.v === S.view));
-  if (S.view === 'tonight') renderTonight();
+  if (S.view === 'tonight') { renderTonight(); applyTonightMarker(); }
   else if (S.view === 'sky') renderSky();
   else if (S.view === 'catalog') renderCatalog();
   else renderHorizonView();
@@ -573,6 +578,80 @@ function renderHorizonView() {
 
 let tonightTimer = null;
 let tonightToken = 0;
+/* BUG-005: a monotonic marker for "the Tonight view has finished painting the
+ * selection I asked for". The browser check used to scrub, wait a nominal
+ * 120 ms and read the rows - but the app itself debounces that scrub by 120 ms
+ * and then defers the heavy ranking by another tick, so the check raced its own
+ * debounce (25/26 full-sequence failures, passing in isolation). The root
+ * carries the render generation and the selected instant it painted; checks poll
+ * `#view[data-ns-gen]`/`[data-ns-sel]` instead of sleeping. */
+let tonightRenderGen = 0;
+/** The instant the LAST completed Tonight paint used - the same value the cards
+ *  print as "Visible at HH:MM". A paint only counts as covering a scrub once
+ *  this equals the selected instant. */
+let tonightRenderedMs = null;
+
+/** The scrubber's OWN resolution (BUG-005).
+ *
+ *  `#tb-scrub` is `<input type="range" step="15">` over the active range, so the
+ *  instant it NAMES is `rangeStart + snapped(minute offset)` - the browser snaps
+ *  a value the app writes to the nearest multiple of the step. `syncScrub()`
+ *  writes the exact offset, the DOM holds the snapped one, and a scrub then
+ *  WRITES THAT BACK into `S.skyTime`. A marker publishing raw milliseconds can
+ *  therefore never equal what the scrubber names: the gate measured a 6-minute
+ *  split (write 204, DOM 210) for a paint that was in fact correct.
+ *
+ *  Both sides go through THIS helper: the app publishes what the scrubber would
+ *  compute, and `window.__ns_scrub_sel()` (the check's oracle) computes the same
+ *  quantity from the live slider. */
+const SCRUB_STEP_UI_MIN = 15;          // mirrors step="15" in web/index.html
+function scrubTimeMs(selMs, rangeStartMs) {
+  const offsetMin = Math.round((selMs - rangeStartMs) / 60000);
+  const snapped = Math.round(offsetMin / SCRUB_STEP_UI_MIN) * SCRUB_STEP_UI_MIN;
+  return rangeStartMs + snapped * 60000;
+}
+
+function stampTonightRender(root, selTime) {
+  tonightRenderGen += 1;
+  const ms = selTime && selTime.getTime ? selTime.getTime() : null;
+  tonightRenderedMs = ms == null ? null
+    : scrubTimeMs(ms, scrubRange().start.getTime());
+  if (!root || !root.dataset) return;
+  root.dataset.nsGen = String(tonightRenderGen);
+  root.dataset.nsSel = tonightRenderedMs == null ? '' : String(tonightRenderedMs);
+}
+
+/** BUG-005: publish "the Tonight view is showing the selection for `ms`".
+ *
+ *  A check (or a user script) waits for `#view[data-ns-sel]` to equal the
+ *  instant it asked for instead of sleeping for the app's own 120 ms debounce -
+ *  that sleep raced the debounce and then the deferred ranking, which failed
+ *  25/26 full-sequence browser runs while passing in isolation.
+ *
+ *  `S.skyTime` is the single source of truth for the selected instant (exactly
+ *  like the desktop's `S.tIdx`), and it is read HERE, when the paint really
+ *  finished - if the paint belongs to an older selection the marker stays stale
+ *  (nsSel = 0), so a stale paint can never satisfy a wait. */
+function applyTonightMarker() {
+  const root = $('#view');
+  if (!root) return;
+  const now = S.skyTime instanceof Date && !isNaN(S.skyTime) ? S.skyTime : null;
+  const sel = tonightRenderedMs;
+  const fresh = sel != null && now != null
+    && sel === scrubTimeMs(now.getTime(), scrubRange().start.getTime());
+  tonightRenderGen += 1;
+  root.dataset.nsGen = String(tonightRenderGen);
+  if (!fresh) {
+    // BUG-005: publish the GENERATION but no selection - "a paint happened, it
+    // is not the one the scrubber names". It must still be non-empty, because
+    // the boot sequence can leave the view showing a selection that was clamped
+    // after the first paint, and a marker that only ever exists after a scrub
+    // would make a waiting check hang instead of reporting the staleness.
+    root.dataset.nsSel = String(Date.now());
+  } else {
+    root.dataset.nsSel = String(sel);
+  }
+}
 
 function fmtClock(dt) {
   if (!dt) return '—';
@@ -608,6 +687,15 @@ function renderTonight(silent) {
     // time", and the topbar/sky scrub re-renders this view (see the sky:time
     // listener at boot). S.skyTime is initialised to the current instant, so an
     // untouched page still shows the live situation.
+    //
+    // BUG-005: it is read HERE, inside the deferred callback, not when
+    // `renderTonight` was called. This compute runs ~30 ms later, and boot calls
+    // `clampSkyTime()` in between (loading in daylight moves the selection to
+    // the window start), so a time captured at call time painted cards for an
+    // instant the scrubber no longer named - the browser check measured exactly
+    // that: painted 14:00:00.984 against a scrubber at 14:06:12.500 before this
+    // was fixed. Reading the live value is also what the marker's freshness
+    // rule can then assert (painted instant === selected instant).
     const selTime = (S.skyTime instanceof Date && !isNaN(S.skyTime))
       ? S.skyTime : new Date();
     const jdSel = E.julianDay(selTime);
@@ -765,6 +853,10 @@ function renderTonight(silent) {
     box.innerHTML = html;
     box.querySelectorAll('.pick li[data-id]').forEach((li) => li.addEventListener('click', () => openDetail(li.dataset.id)));
     hideSplash();
+    // BUG-005: publish the painted selection so a check (or a user script) can
+    // wait for THIS render instead of guessing a delay.
+    stampTonightRender(box, selTime);
+    applyTonightMarker();
   }, 30);
 }
 
@@ -2691,6 +2783,29 @@ async function boot() {
     };
     scrub.addEventListener('input', onScrub);
     window.addEventListener('sky:time', syncScrub);
+    // BUG-005 check/dev hook (same spirit as the desktop's __NS_DEBUG_WORKER):
+    // the selected instant and the active scrub span, so a browser check can
+    // assert that the marker the Tonight view publishes names the SAME instant
+    // the slider does. Inert unless read; the app itself never calls it.
+    window.__ns_scrub_range = () => {
+      const r = scrubRange();
+      return { start: r.start.getTime(), end: r.end.getTime() };
+    };
+    window.__ns_scrub_sel = () => {
+      const r = scrubRange();
+      // the SAME quantity the Tonight marker publishes (the scrubber's snapped
+      // grid), so the check compares like with like
+      return scrubTimeMs(r.start.getTime() + Number(scrub.value) * 60000,
+                         r.start.getTime());
+    };
+    // BUG-005: the instant the app WOULD select for a given slider value, without
+    // touching any state - so a check computes its target with the app's OWN
+    // snapping instead of duplicating the arithmetic. Inert unless read.
+    window.__ns_scrub_at = (v) => {
+      const r = scrubRange();
+      return scrubTimeMs(r.start.getTime() + Number(v) * 60000,
+                         r.start.getTime());
+    };
   }
 
   // — night info chip (dark window + moon) —
@@ -2892,6 +3007,11 @@ async function boot() {
   let tonightScrubTimer = null;
   window.addEventListener('sky:time', () => {
     if (S.view !== 'tonight') return;
+    // BUG-005: the selection just moved, so the on-screen cards no longer
+    // describe it - clear the render marker NOW and let the paint below set it
+    // again. Without this a check that reads the marker between the scrub and
+    // the debounce would see the PREVIOUS selection as current.
+    applyTonightMarker();
     clearTimeout(tonightScrubTimer);
     tonightScrubTimer = setTimeout(() => {
       if (S.view === 'tonight') renderTonight(true);
@@ -2923,6 +3043,19 @@ async function boot() {
   // seed the scrub inside the window: loading during the day must not show a
   // daylight "visible at" time (it starts at the first allowed instant)
   clampSkyTime();
+  // BUG-005: `clampSkyTime()` announces the moved selection on `sky:time`, but
+  // the debounced re-render lives in the scrub handler below - so at boot the
+  // announcement arrived with no listener and the Tonight view kept the PRE-CLAMP
+  // paint (browser check: painted 14:00:00.984, scrubber 14:06:12.500). Clear the
+  // marker for the stale paint and repaint the clamped selection.
+  if (S.view === 'tonight') {
+    applyTonightMarker();
+    if (tonightRenderedMs == null
+        || !(S.skyTime instanceof Date)
+        || tonightRenderedMs !== S.skyTime.getTime()) {
+      renderTonight(true);
+    }
+  }
   route();
 }
 

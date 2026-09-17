@@ -387,6 +387,48 @@ def web_scrub_changes_time(c):
     c.assert_clean()
 
 
+@check("web-tonight-render-marker-converges", "web")
+def web_tonight_render_marker_converges(c):
+    """BUG-005: a check must be able to WAIT for the Tonight paint.
+
+    The application debounces a scrub by 120 ms and then defers the ranking by
+    another tick, so a check that sleeps a nominal 120 ms samples the PREVIOUS
+    selection about as often as the new one (measured 25/26 full-sequence
+    failures, passing in isolation, with stale rows in the artifact). The view
+    now publishes `#view[data-ns-gen]`/`[data-ns-sel]`, and the wait demands the
+    instant the REQUESTED scrub position names (not merely "a newer paint") - the
+    boot sequence can leave a stale marker behind, and accepting any generation
+    bump sampled that instead."""
+    boot(c)
+    range0 = c.page.evaluate("() => window.__ns_scrub_range()")
+    c.expect(range0 and range0["end"] > range0["start"],
+             f"the scrub range is empty: {range0}")
+    first = c.wait_tonight_render()
+    c.expect_eq(first["sel"], c.page.evaluate("() => window.__ns_scrub_sel()"),
+                "the first Tonight paint did not name the selected instant")
+    # move the slider a third of the way in and wait for THAT selection
+    pos = c.page.eval_on_selector(
+        "#tb-scrub", "el => Math.round((Number(el.min) + Number(el.max)) / 3)")
+    want = c.page.evaluate("(v) => window.__ns_scrub_at(v)", pos)
+    c.expect(want != first["sel"], "the scrub position did not move")
+    c.page.eval_on_selector(
+        "#tb-scrub", """(el, v) => { el.value = String(v);
+            el.dispatchEvent(new Event('input', { bubbles: true })); }""", pos)
+    later = c.wait_tonight_after(first["gen"], sel=want)
+    c.expect(later["gen"] > first["gen"],
+             f"the render marker did not advance: {first} -> {later}")
+    c.expect_eq(later["sel"], want,
+                "the marker converged on a different instant than the scrub "
+                "position names (a stale paint satisfied the wait)")
+    c.expect_eq(c.page.evaluate("() => window.__ns_scrub_sel()"), want,
+                "the app's marker and its scrubber disagree about the selected "
+                "instant")
+    rows = c.page.eval_on_selector_all(".pick li[data-id]",
+                                       "els => els.map((e) => e.dataset.id)")
+    c.expect(rows, "the painted selection rendered no rows at all")
+    c.assert_clean()
+
+
 @check("web-mag-slider-changes-sky", "web")
 def web_mag_slider_changes_sky(c):
     boot(c)
@@ -616,12 +658,23 @@ def web_tonight_pool_includes_unmagnituded_standard_rows(c):
     ids = set()
     pos = bounds["lo"]
     for _ in range(30):
+        gen = c.tonight_gen()
+        # the instant the app will select for THIS slider value, computed by the
+        # app itself (its snapping), so the wait can demand that exact paint
+        want = c.page.evaluate("(v) => window.__ns_scrub_at(v)", round(pos))
         c.page.eval_on_selector(
             "#tb-scrub", """(el, v) => { el.value = String(v);
                 el.dispatchEvent(new Event('input', { bubbles: true }));
                 el.dispatchEvent(new Event('change', { bubbles: true })); }""",
             round(pos))
-        c.page.wait_for_timeout(120)
+        # BUG-005: wait for the app to have PAINTED this selection. A fixed sleep
+        # here raced the app's own 120 ms debounce (plus its deferred ranking) and
+        # sampled stale/partial rows - 25/26 full-sequence failures while the
+        # check passed in isolation.
+        marker = c.wait_tonight_after(gen, sel=want)
+        c.expect_eq(marker["sel"], want,
+                    "the Tonight view painted a different instant than the "
+                    "scrub position names")
         ids |= set(c.page.eval_on_selector_all(
             ".pick li[data-id]", "els => els.map((e) => e.dataset.id)"))
         pos += step

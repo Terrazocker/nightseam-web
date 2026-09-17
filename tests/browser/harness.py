@@ -265,6 +265,64 @@ class Ctx:
         except Exception:
             pass
 
+    def wait_tonight_render(self, timeout: float = 15000.0) -> dict:
+        """Wait for the Tonight view to have PAINTED the current selection.
+
+        BUG-005: the check used to scrub the slider and sleep 120 ms, but the
+        application debounces that scrub by 120 ms and then defers the ranking by
+        another tick - so the check raced the app's own debounce (it failed 25/26
+        full-sequence runs while passing in isolation, with stale/partial rows in
+        the artifact). `web/app.js::stampTonightRender` publishes
+        `#view[data-ns-gen]`/`[data-ns-sel]` after the DOM swap; this returns them
+        once the view carries a painted selection."""
+        self.page.wait_for_function(
+            """() => { const v = document.querySelector('#view');
+                 if (!v || !v.dataset || !v.dataset.nsGen) return false;
+                 const sel = Number(v.dataset.nsSel);
+                 return Number.isFinite(sel) && sel > 0; }""",
+            timeout=timeout)
+        return self.page.evaluate(
+            """() => { const v = document.querySelector('#view');
+                 return { gen: Number(v.dataset.nsGen), sel: Number(v.dataset.nsSel) }; }""")
+
+    def tonight_gen(self) -> int:
+        """The current Tonight render generation (0 = never painted)."""
+        return int(self.page.evaluate(
+            """() => { const v = document.querySelector('#view');
+                 return v && v.dataset ? Number(v.dataset.nsGen || 0) : 0; }"""))
+
+    def wait_tonight_after(self, gen: int, sel: int | None = None,
+                           timeout: float = 15000.0) -> dict:
+        """Wait for a Tonight paint that shows the REQUESTED selection.
+
+        BUG-005's implementation hint is explicit: poll for the requested scrub
+        position, not for "a paint happened". A generation bump alone is not
+        enough - the boot sequence can leave a stale marker whose value is an
+        arbitrary timestamp, and a check that accepts any newer generation
+        samples whatever happened to be on screen (that is the race, one level
+        up). `sel` is the instant the app itself would select for the scrub
+        position (`window.__ns_scrub_at`), so both sides compare the same
+        quantity; omit it to accept any newer paint."""
+        if sel is None:
+            self.page.wait_for_function(
+                """(g) => { const v = document.querySelector('#view');
+                     if (!v || !v.dataset) return false;
+                     const s = Number(v.dataset.nsSel);
+                     return Number(v.dataset.nsGen || 0) > g
+                            && Number.isFinite(s) && s > 0; }""",
+                arg=int(gen), timeout=timeout)
+        else:
+            self.page.wait_for_function(
+                """(a) => { const v = document.querySelector('#view');
+                     if (!v || !v.dataset) return false;
+                     const s = Number(v.dataset.nsSel);
+                     return Number(v.dataset.nsGen || 0) > a.g
+                            && Number.isFinite(s) && s === a.sel; }""",
+                arg={"g": int(gen), "sel": int(sel)}, timeout=timeout)
+        return self.page.evaluate(
+            """() => { const v = document.querySelector('#view');
+                 return { gen: Number(v.dataset.nsGen), sel: Number(v.dataset.nsSel) }; }""")
+
 
 # ---------------------------------------------------------------- runner
 
@@ -447,14 +505,19 @@ def _inline_script_hashes() -> list[str]:
     return out
 
 
-def _csp_problems(policy: str | None) -> list[str]:
-    """Why a deployed /astro Content-Security-Policy is unusable ([] = fine).
+def _csp_problems(policy: str | None, document: bool = False) -> list[str]:
+    """Why a deployed Content-Security-Policy is unusable ([] = fine).
 
     The web shell is the PUBLIC origin and loads third-party images while
     holding the user's sites/rigs/targets/panoramas in IndexedDB and
     localStorage, so a missing or over-permissive policy is a real finding -
     not a nicety. The check is read-only and only runs for `--prod-url`.
-    """
+
+    BUG-003: `document=True` is for the response that carries the PAGE. A CSP
+    protects only the response it is attached to, so a policy seen on
+    `version.json` says nothing about the HTML a browser runs. The document check
+    therefore drops the inline-bootstrap-hash requirement (the static desktop
+    entry point has no such script) but keeps every policy rule."""
     if not policy:
         return ["no Content-Security-Policy header is served (web/.htaccess "
                 "carries one; the host must apply it)"]
@@ -468,10 +531,11 @@ def _csp_problems(policy: str | None) -> list[str]:
                    "inline handler; only the theme bootstrap needs a hash)")
     elif "unsafe-eval" in low:
         bad.append("script-src allows 'unsafe-eval'")
-    for wanted in _inline_script_hashes():
-        if wanted.lower() not in low:
-            bad.append(f"the inline theme bootstrap hash {wanted} is missing - "
-                       f"the saved theme would not be applied before paint")
+    if not document:
+        for wanted in _inline_script_hashes():
+            if wanted.lower() not in low:
+                bad.append(f"the inline theme bootstrap hash {wanted} is missing "
+                           f"- the saved theme would not be applied before paint")
     if "connect-src" not in low:
         bad.append("no connect-src (the Wikipedia photo fetch and version.json "
                    "are unrestricted)")
@@ -490,47 +554,18 @@ def _prod_smoke(browser, prod_url: str, artifacts: Path, verbose: bool) -> Resul
     try:
         resp = page.goto(prod_url, wait_until="domcontentloaded")
         c.expect(resp is not None, "the production page did not respond")
-        # The policy must be served SOMEWHERE under this path with valid content.
-        # It is not necessarily on the HTML: Plesk front-ends static files with
-        # nginx, which serves .html/.js/.css itself and never reaches Apache for
-        # them, so the `web/.htaccess` directives arrive on the paths nginx
-        # proxies instead (measured 2026-09-15: /astro/version.json yes,
-        # /astro/ and /astro/app.js no). The requirement is therefore "the host
-        # applies the policy we ship", checked on whichever path carries it -
-        # and the POLICY ITSELF is pinned offline by tests/test_prod_csp.py.
+        # BUG-003: the policy must be on the DOCUMENT response, and nothing else
+        # counts. This used to fall back to probing version.json /
+        # catalog.manifest.json, which nginx DOES proxy to Apache - so a
+        # deployment whose HTML carried no policy at all still "passed" while
+        # every browser ran the page unprotected. A CSP protects only the
+        # response that carries it. The policy itself is pinned offline by
+        # tests/test_prod_csp.py; the host has to apply it to .html (Plesk: the
+        # domain's nginx "Additional directives" - web/.htaccess explains why the
+        # Apache file alone cannot).
         policy = resp.headers.get("content-security-policy")
-        if not policy:
-            # The policy is not necessarily on the HTML: Plesk front-ends static
-            # files with nginx, which serves .html/.js/.css itself and never
-            # reaches Apache for them, so the `web/.htaccess` directives arrive
-            # on the paths nginx proxies instead (measured 2026-09-15:
-            # /astro/version.json yes, /astro/ and /astro/app.js no). Look for it
-            # on any path under this URL before calling the host unconfigured.
-            for probe in ("version.json", "catalog.manifest.json"):
-                try:
-                    req = urllib.request.Request(
-                        prod_url.rstrip("/") + "/" + probe,
-                        headers={"Cache-Control": "no-store"})
-                    with urllib.request.urlopen(req, timeout=20) as r:
-                        got = r.headers.get("Content-Security-Policy")
-                    if got:
-                        policy = got
-                        break
-                except Exception:
-                    continue
-        if not policy:
-            # Reported, never a hard failure: whether a host applies the policy
-            # to .html is a PLATFORM property (a Plesk nginx front end has to be
-            # configured at its own layer), not something this repo can assert
-            # about a deployment it does not control. The policy we ship is
-            # pinned offline by tests/test_prod_csp.py, and this line is how a
-            # deployment that silently stops serving it becomes visible.
-            print("        note: no path under this URL serves a CSP - the host "
-                  "fronts static files (nginx) and skips web/.htaccess; apply "
-                  "the policy at the nginx layer to cover .html/.js/.css")
-        else:
-            problems = _csp_problems(policy)
-            c.expect(not problems, "production CSP: " + "; ".join(problems))
+        problems = _csp_problems(policy, document=True)
+        c.expect(not problems, "production DOCUMENT CSP: " + "; ".join(problems))
         page.wait_for_selector("#foot-ver", timeout=45000)
         # First-run welcome (throwaway profile, empty storage): "Skip" keeps the
         # default site so boot proceeds.  This writes only to the ephemeral
