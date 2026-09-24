@@ -70,6 +70,9 @@ MOVED = (
     "skyDistanceKm", "eogWalkerAlpha", "eogAlrZlrRatio",
     "zenithMpsasFromZlr", "zenithQualityForZlr",
     "estimateZenithSkyBrightness", "estimateZenithSkyBrightnessFromGrid",
+    "blackMarbleSpreadWeight",
+    "estimateBlackMarbleZenithSkyBrightnessFromGrid",
+    "estimateSkyBrightnessFromGrid",
     "decodeSkyBrightnessPack",
 )
 # The Python astronomy/planning layer was deleted in Phase C (0.6.20): these

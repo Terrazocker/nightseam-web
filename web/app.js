@@ -2212,10 +2212,12 @@ function openDetail(id) {
   const detailReasonCounts = Object.create(null);
   let detailVisibleFullN = 0;
   samples.forEach((s, i) => {
+    const visibleAcrossChart = visibilityReason(
+      s.alt, minAlt, s.ceil.ceil, s.ceil.ceilTop, true) === 'visible';
     const reason = visibilityReason(s.alt, minAlt, s.ceil.ceil, s.ceil.ceilTop, inNight[i]);
     s.reason = reason;
     if (inNight[i]) detailReasonCounts[reason] = (detailReasonCounts[reason] || 0) + 1;
-    if (reason === 'visible') detailVisibleFullN++;
+    if (visibleAcrossChart) detailVisibleFullN++;
   });
 
   // best window = longest clear run INSIDE the dark window ([start, end) over

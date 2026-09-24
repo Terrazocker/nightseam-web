@@ -1629,6 +1629,23 @@ def test_panorama_strokes_shape_is_validated(client):
         client.delete(f"/api/panorama/{pid}")
 
 
+def test_panorama_metadata_rejects_unhashable_enum_values(client):
+    pid = client.post("/api/panorama",
+                      files={"file": ("p.jpg", b"fake jpeg", "image/jpeg")}
+                      ).json()["id"]
+    try:
+        landmark = {"name": "oak", "azimuth": 45.0, "altitude": 20.0,
+                    "kind": []}
+        r = client.put(f"/api/panorama/{pid}", json={"landmarks": [landmark]})
+        assert r.status_code == 400, r.text
+
+        r = client.put(f"/api/panorama/{pid}",
+                       json={"provenance": {"source": {}}})
+        assert r.status_code == 400, r.text
+    finally:
+        client.delete(f"/api/panorama/{pid}")
+
+
 def test_malformed_stored_strokes_do_not_500_the_listing(client, db):
     """PY-03 (read half): a row whose `strokes` column is not valid JSON (hand
     edit, interrupted write, an older build) made `panoramas()` raise, so

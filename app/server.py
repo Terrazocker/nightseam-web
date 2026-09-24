@@ -22,6 +22,8 @@ from pydantic import BaseModel
 
 from .backup import _export_zip_to, apply_import_zip, build_export_zip
 from .database import (Database, PROFILE_BINS, _finalize_num_setting, new_id,
+                       _validate_import_landmarks,
+                       _validate_import_provenance,
                        confidence_values_ok, normalize_horizon_landmarks,
                        normalize_horizon_provenance, profile_values_ok)
 from .fits import parse_dec_deg, parse_ra_hours
@@ -386,17 +388,15 @@ def _check_strokes(values) -> None:
 def _check_horizon_metadata(landmarks, provenance, confidence) -> None:
     """Validate the additive horizon annotations at the API boundary."""
     if landmarks is not None:
-        if not isinstance(landmarks, list) or len(landmarks) > 128:
-            raise HTTPException(400, "landmarks must be a list of at most 128 objects")
-        # Normalization is deliberately also called here: it rejects entries
-        # without finite coordinates rather than silently storing an annotation
-        # the editor could never position.
-        if len(normalize_horizon_landmarks(landmarks)) != len(landmarks):
-            raise HTTPException(400, "landmarks must contain named finite points")
+        try:
+            _validate_import_landmarks(landmarks)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
     if provenance is not None:
-        if not isinstance(provenance, dict):
-            raise HTTPException(400, "provenance must be an object")
-        normalize_horizon_provenance(provenance)
+        try:
+            _validate_import_provenance(provenance)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
     if confidence is not None and not confidence_values_ok(confidence):
         raise HTTPException(400,
                             f"confidence must be empty or exactly {PROFILE_BINS} "

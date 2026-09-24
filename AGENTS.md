@@ -607,12 +607,13 @@ calculation stay local. `README.md` has the feature list.
   `scripts/check_catalog_token.py`, wired into `scripts/check_js.py`, and pinned
   by `tests/test_cache_tokens.py` (mutation-tested). Do NOT add
   `{cache:'no-store'}` - the file must stay cacheable.
-  Current (0.6.35 working tree, after the EOG sky-brightness pass and
-  accessibility foundation + horizon metadata + catalog provenance): `app.js?v=124` (index.html) /
-  `CATALOG_TOKEN = '10'`, `CATALOG_PROVENANCE_TOKEN = '1'`, `astro.js?v=27`, `horizon.js?v=64`,
-  `format.js?v=34`, `nightrank.js?v=26`, `webstore.js?v=38`,
-  `skybrightness.js?v=4`, `dragwin.js?v=1`, `viztheme.js?v=5`,
-  `style.css?v=33`, `themes.css?v=11`; the core stub is `web/core.js?v=41`
+  Current (0.6.35 working tree, after the EOG sky-brightness pass,
+  accessibility foundation, horizon metadata, catalog provenance and detail
+  visibility summaries): `app.js?v=127` (index.html) /
+  `CATALOG_TOKEN = '10'`, `CATALOG_PROVENANCE_TOKEN = '1'`, `astro.js?v=28`, `horizon.js?v=65`,
+  `format.js?v=35`, `nightrank.js?v=27`, `webstore.js?v=39`,
+  `skybrightness.js?v=6`, `dragwin.js?v=1`, `viztheme.js?v=5`,
+  `style.css?v=33`, `themes.css?v=11`; the core stub is `web/core.js?v=42`
   (bump = re-bake,
   enforced by `scripts/check_core.py`). Every core change cascades: the re-bake
   moves the stub token and changes the bytes of every module importing it, so

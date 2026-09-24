@@ -928,3 +928,17 @@ def test_desktop_crop_uses_the_shared_kept_band_helper():
     web = _read("web", "horizon.js")
     assert "cropPano(p," in web and "cropKeptBand" in web, \
         "the web editor must crop through the shared core helpers"
+
+
+def test_detail_visibility_summary_counts_full_chart_separately():
+    """Outside-window chart samples can explain that a target is visible at
+    another time, while visibility reasons and totals stay clipped to dusk..dawn."""
+    desktop = _read("static", "js", "planning_client.js")
+    assert 'visibilityReason(a, minAlt, c, top, true) === "visible"' in desktop
+    assert 'visibilityReason(a, minAlt, c, top, inNight)' in desktop
+    assert "if (visibleAcrossChart) visibleFullN++;" in desktop
+
+    web = _read("web", "app.js")
+    assert "s.alt, minAlt, s.ceil.ceil, s.ceil.ceilTop, true) === 'visible'" in web
+    assert "s.ceil.ceilTop, inNight[i])" in web
+    assert "if (visibleAcrossChart) detailVisibleFullN++;" in web

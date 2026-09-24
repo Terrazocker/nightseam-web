@@ -531,10 +531,12 @@ export async function buildClientDetail(oid, { date, tzMin, minAlt, siteId }) {
     ceils.push(Math.round(c * 100) / 100);
     if (tops) tops.push(r1(topAt(z)));
     const inNight = times[i] >= duskMs && times[i] <= dawnMs;
-    const reason = visibilityReason(a, minAlt, c, tops ? tops[i] : null, inNight);
+    const top = tops ? tops[i] : null;
+    const visibleAcrossChart = visibilityReason(a, minAlt, c, top, true) === "visible";
+    const reason = visibilityReason(a, minAlt, c, top, inNight);
     if (inNight) reasonCounts[reason] = (reasonCounts[reason] || 0) + 1;
     const isVis = reason === "visible";
-    if (isVis) visibleFullN++;
+    if (visibleAcrossChart) visibleFullN++;
     vis.push(isVis);
   }
   // DS4: the night payload picks its peak on the RAW altitude and reports it at

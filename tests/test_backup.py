@@ -371,6 +371,24 @@ def test_import_rejects_malformed_profiles(db, tmp_path):
     assert db.setting("bortle", 4) == 4
 
 
+def test_import_rejects_unhashable_horizon_enum_values(db):
+    baseline = build_export_zip(db)
+    cases = (
+        ("landmarks", [{"name": "oak", "azimuth": 45.0, "altitude": 20.0,
+                        "kind": []}], "kind"),
+        ("provenance", {"source": {}}, "source"),
+    )
+    for key, value, message in cases:
+        blob = _mutate_bundle(
+            baseline,
+            lambda setup, key=key, value=value: setup["panoramas"].append({
+                "id": "pbad", "name": "bad", "file": "bad.jpg",
+                key: value,
+            }))
+        with pytest.raises(ValueError, match=message):
+            apply_import_zip(db, blob)
+
+
 def test_import_rejects_hostile_settings(db):
     """FIX-4 (review PY2): an opaque imported setting could brick /api/state
     forever (bortle null -> float(None) at every boot). Fail closed instead."""

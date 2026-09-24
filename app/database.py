@@ -60,7 +60,9 @@ def normalize_horizon_landmarks(value) -> list[dict]:
         seen.add(ident)
         az = az % 360
         alt = max(-90, min(90, alt))
-        kind = item.get("kind") if item.get("kind") in _HORIZON_LANDMARK_KINDS else "other"
+        raw_kind = item.get("kind")
+        kind = (raw_kind if isinstance(raw_kind, str)
+                and raw_kind in _HORIZON_LANDMARK_KINDS else "other")
         out.append({
             "id": ident,
             "name": name,
@@ -75,7 +77,9 @@ def normalize_horizon_landmarks(value) -> list[dict]:
 def normalize_horizon_provenance(value) -> dict:
     """Normalize calibration provenance while preserving old empty records."""
     item = value if isinstance(value, dict) else {}
-    source = item.get("source") if item.get("source") in _HORIZON_PROVENANCE_SOURCES else "unknown"
+    raw_source = item.get("source")
+    source = (raw_source if isinstance(raw_source, str)
+              and raw_source in _HORIZON_PROVENANCE_SOURCES else "unknown")
     return {
         "source": source,
         "capturedAt": str(item.get("capturedAt", item.get("captured_at")) or "").strip()[:40],
@@ -118,7 +122,9 @@ def _validate_import_landmarks(value) -> None:
             if isinstance(v, bool) or not isinstance(v, (int, float)) \
                     or not math.isfinite(float(v)):
                 raise ValueError(f"panorama landmark {key} must be finite")
-        if item.get("kind") is not None and item.get("kind") not in _HORIZON_LANDMARK_KINDS:
+        kind = item.get("kind")
+        if kind is not None and (
+                not isinstance(kind, str) or kind not in _HORIZON_LANDMARK_KINDS):
             raise ValueError("panorama landmark kind is not recognized")
 
 
@@ -127,7 +133,9 @@ def _validate_import_provenance(value) -> None:
         return
     if not isinstance(value, dict):
         raise ValueError("panorama provenance must be an object")
-    if value.get("source") is not None and value.get("source") not in _HORIZON_PROVENANCE_SOURCES:
+    source = value.get("source")
+    if source is not None and (
+            not isinstance(source, str) or source not in _HORIZON_PROVENANCE_SOURCES):
         raise ValueError("panorama provenance source is not recognized")
 
 
