@@ -90,6 +90,15 @@ STAGE = DIST / "release"
 ZIP_PREFIX = "NightSeam-"
 LATEST_ZIP = "NightSeam-latest.zip"
 
+# These modules are imported by tracked runtime files but are easy to leave
+# behind as untracked working-tree additions.  A release assembled from a
+# patch or clean checkout must carry them explicitly.
+REQUIRED_RUNTIME_MODULES = (
+    "app/theme.py",
+    "static/js/viztheme.js",
+    "web/viztheme.js",
+)
+
 # THE authoritative version.  --dirty: a snapshot must never claim a clean tag.
 DESCRIBE_ARGS = ("describe", "--tags", "--always", "--dirty")
 
@@ -899,13 +908,47 @@ def check_catalog_findings(root: Path = ROOT):
     root = Path(root)
     if root.resolve() != ROOT.resolve():
         return []
-    script = root / "scripts" / "check_catalog_token.py"
-    if not script.is_file():
+    findings = []
+    for name, label in (("check_catalog_token.py", "catalog-token"),
+                        ("check_catalog_provenance.py", "catalog-provenance")):
+        script = root / "scripts" / name
+        if not script.is_file():
+            continue
+        module_name = name[:-3].replace("-", "_")
+        spec = importlib.util.spec_from_file_location(module_name, script)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        findings.extend(Finding(ERROR, label, problem) for problem in mod.scan())
+    return findings
+
+
+def check_source_module_findings(root: Path = ROOT):
+    """Fail when required imported runtime modules are missing or untracked.
+
+    This is intentionally a small release-boundary check for modules whose
+    absence breaks a clean source checkout even though the current dirty tree
+    still imports successfully.  Synthetic roots used by pure release tests do
+    not have the repository's Git index, so they are skipped like the other
+    source-tree guards.
+    """
+    root = Path(root)
+    if root.resolve() != ROOT.resolve():
         return []
-    spec = importlib.util.spec_from_file_location("check_catalog_token", script)
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return [Finding(ERROR, "catalog-token", problem) for problem in mod.scan()]
+    findings = []
+    for relative in REQUIRED_RUNTIME_MODULES:
+        path = root / relative
+        if not path.is_file():
+            findings.append(Finding(
+                ERROR, "source-modules",
+                f"required runtime module {relative} is missing from the source tree"))
+            continue
+        rc, output = git(["ls-files", "--error-unmatch", "--", relative], root)
+        tracked = rc == 0 and relative in output.splitlines()
+        if not tracked:
+            findings.append(Finding(
+                ERROR, "source-modules",
+                f"required runtime module {relative} is not tracked by Git"))
+    return findings
 
 
 def run(allow_dirty: bool = False, include_stage: bool = True,
@@ -916,6 +959,7 @@ def run(allow_dirty: bool = False, include_stage: bool = True,
                         include_stage=include_stage)
     findings += check_core_findings(root)
     findings += check_catalog_findings(root)
+    findings += check_source_module_findings(root)
     describe = state.describe or "<git describe failed>"
     print(console_safe(f"NightSeam release check - {root}"), file=stream)
     print(console_safe(

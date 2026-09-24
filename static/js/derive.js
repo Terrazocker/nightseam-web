@@ -217,6 +217,16 @@ export function recomputeNightDerived() {
     o.best = longestRunJS(inNightFlags);
     o.best_above = longestRunJS(aboveInNight) || longestRunJS(o.above);
     o.blocked_n = r.blocked;
+    o.max_alt = r.maxAlt;
+    o.culmination_alt = r.culminationAlt;
+    o.culmination_jd = r.culminationJd;
+    o.rise_jd = r.riseJd;
+    o.set_jd = r.setJd;
+    o.visible_minutes = r.visibleMinutes;
+    o.visibility_reason = r.visibilityReason;
+    o.reason_counts = r.reasonCounts;
+    o.usable_start_jd = r.usableStartJd;
+    o.usable_end_jd = r.usableEndJd;
     // the desktop's SCORE ROUNDING contract: two decimals (the web rounds the
     // same way in app.js::renderTonight). The engine and the Targets sort read
     // these numbers, so the scale has to stay bit-compatible.
@@ -294,12 +304,20 @@ export function windowText(o) {
       const [a, b] = o.best_above;
       return `<span class="wininfo">${fmtHM(tl.times_iso[a])}&ndash;${fmtHM(windowEndISO(tl.times_iso, b, tl.step_min))} <small>(obstructed)</small></span>`;
     }
-    return '<span class="wininfo"><small>&mdash;</small></span>';
+    const why = {
+      blocked_by_horizon: "blocked because of horizon",
+      below_minimum_altitude: "below minimum altitude",
+      outside_selected_window: "outside the selected window",
+      never_rises: "never rises in this window",
+      no_usable_window: "no usable visibility interval",
+    }[o.visibility_reason] || "no usable visibility interval";
+    return `<span class="wininfo"><small>${why}</small></span>`;
   }
   const [a, b] = o.best;
   const mins = (b - a) * tl.step_min;
+  const total = Number.isFinite(o.visible_minutes) ? o.visible_minutes : mins;
   return `<span class="wininfo">${fmtHM(tl.times_iso[a])}&ndash;${fmtHM(windowEndISO(tl.times_iso, b, tl.step_min))}<br>` +
-         `<small>${Math.floor(mins/60)}h ${String(mins%60).padStart(2,"0")}m clear</small></span>`;
+         `<small>${Math.floor(mins/60)}h ${String(mins%60).padStart(2,"0")}m clear · ${Math.round(total)}m visible</small></span>`;
 }
 
 export function desigLine(m) {

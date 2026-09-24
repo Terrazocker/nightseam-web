@@ -1,34 +1,86 @@
-# NightSeam Design Guide — the Glass language
+# NightSeam Design Guide — Workbench default, Glass alternate
 
 This file is the UI design contract. Current implementation defects and security
 findings are tracked separately in `BUGS.md`; none of the 2026-09-17 findings
-changes the Glass/dome language below.
+changes the theme contracts below.
 
-**Read this before implementing ANY UI change.** The Glass theme (`dome`) is
-the project's design direction and its default look in the web app. New UI
-must be built *in the Glass style* — for the theme itself and for everything
-else (web app, desktop app, landing page). "Classic" is the flat blue
-fallback, not a second design language.
+**Read this before implementing ANY UI change.** Since the 0.6.35 working tree,
+NightSeam has two presentation themes:
+
+- **Workbench (`workbench`)** is the default across the desktop app and planner,
+  and is the visual direction of the public landing page.
+- **Glass (`dome`)** is the optional observatory-glass presentation retained for
+  users who prefer the earlier look.
+
+The old `classic` value, an empty value, and unknown values migrate to
+`workbench`. They are compatibility inputs, not additional themes. Theme choice
+does not change planning, catalog, storage, or calculation behavior.
 
 Where the style lives:
-- Web: `web/themes.css` → `html[data-theme="dome"]` (Glass); `web/style.css` (Classic base)
-- Desktop: `static/themes.css` → dome block; `static/style.css` (base)
-- Landing: `landing/style.css` (mirrors the Glass palette)
+- Web: `web/style.css` plus `web/themes.css` → `html[data-theme="workbench"]`
+  (Workbench) and `html[data-theme="dome"]` (Glass)
+- Desktop: `static/style.css` plus the Workbench and Glass blocks in
+  `static/themes.css`
+- Landing: `landing/style.css` follows the Workbench palette and layout; it has
+  no user theme switch
 
-Both themes share ONE HTML skeleton and switch via `<html data-theme="...">`.
-Write UI against the base + override tokens in the dome block; never fork the
-DOM per theme.
+Both app themes share ONE HTML skeleton per shell and switch via
+`<html data-theme="...">`. Write UI against the base plus the active theme's
+override tokens; never fork the DOM per theme.
 
 ---
 
-## 1. Core idea
+## 1. Workbench theme — precision utility
+
+Workbench is a quiet instrument panel for making decisions during an observing
+session. Its visual hierarchy comes from spacing, alignment, borders, and data
+placement rather than atmosphere or decoration:
+
+- opaque graphite surfaces and a near-black page background;
+- brass for actions, focus, selection, and the small amount of visual emphasis;
+- compact square controls, restrained radii, and flat tab underlines;
+- no blur, glow, decorative starfield, or large gradient surfaces;
+- charts, target rows, and forecast information carry the visual interest.
+
+### Workbench composition
+
+- The top bar keeps the common planning controls visible; advanced and
+  infrequent actions stay in the hamburger menu.
+- Tonight opens with a session brief: site/date, dark window, selected time, and
+  a booked-night track showing where the current time sits in the usable window.
+- The target area is chart-first: best targets and the later queue are visible
+  together, while a selected target opens in a right-side inspector sheet.
+- The same hierarchy is used in the desktop and browser planner even though the
+  two shells keep their own HTML and stylesheets.
+
+## 2. Glass theme — core idea
 
 Deep-space darkness. UI is **translucent glass floating over a CSS starfield**,
 not flat boxes: translucent surfaces, blurred backdrops, hairline light
 borders, one lavender accent, soft glows, rounded corners. Calm, restrained,
 "observatory at night".
 
-## 2. Palette — use the tokens, never raw hex
+## 3. Theme palettes — use the tokens, never raw hex
+
+### Workbench palette
+
+| Role | Desktop / landing token | Web app token | Value |
+|---|---|---|---|
+| Page background | `--bg` | `--bg` | `#111315` |
+| Panel base | `--panel` | `--panel` | `#1c2022` |
+| Borders | `--border` / `--border-soft` | `--line` | `#343a3d` / `#292e30` |
+| Text | `--text` | `--txt` | `#e4e1d9` |
+| Secondary text | `--dim` | `--muted` | `#9a9d97` |
+| **Accent (brass)** | `--accent` | `--accent` | `#c99a53` |
+| Good | `--good` | `--green` | `#7fbd98` |
+| Warn / gold | `--warn` / `--gold` | `--amber` | `#dfae61` |
+| Control radius | `--r-sm` … `--r-xl` | `--radius` | `4–7px` / `6px` |
+| Mono font | `--font-mono` | `--mono` | Consolas / Cascadia Mono |
+
+Workbench surfaces are opaque. Keep the page and panel contrast quiet, reserve
+brass for an action or a state, and do not introduce another decorative accent.
+
+### Glass palette
 
 | Role | Desktop / landing token | Web app token | Value |
 |---|---|---|---|
@@ -54,16 +106,55 @@ borders, one lavender accent, soft glows, rounded corners. Calm, restrained,
 exist only in the desktop (`static/`) and landing stylesheets. A rule in `web/`
 written with `var(--text)`, `var(--dim)`, `var(--border)`, `var(--faint)`,
 `var(--good)` or `var(--bad)` resolves to nothing and the declaration is
-dropped (the web's `--bad` uses a literal fallback). Same roles, same Glass
-values — use the column that matches the stylesheet you are editing.
+dropped (the web's `--bad` uses a literal fallback). The roles are shared, but
+the values belong to the active theme — use the column and theme block that
+matches the stylesheet you are editing.
 
 
-Rules: hardcoded colors are only allowed for **data-driven** values (type
-dots, chart series). Everything else goes through tokens
-defined in the dome block. Never introduce a new hue; stick to lavender,
-teal, gold and the base grays.
+Rules: hardcoded colors are only allowed for **data-driven** values (type dots,
+chart series). Everything else goes through tokens defined in the active theme
+block. Workbench uses graphite, brass, warm text, and quiet status colors;
+Glass uses lavender, teal, gold, and the deep-space grays below. Never add a
+new decorative hue without a design decision.
 
-## 3. The glass recipe
+### Data visualizations
+
+The sky views, altitude graphs, constellation backdrops, and catalog sky map
+are part of the theme contract too. Their drawing code owns geometry and
+meaning only; presentation comes from the semantic `--viz-*` roles at the end
+of `web/themes.css` and `static/themes.css`, read by the matching
+`viztheme.js` helper. Workbench therefore uses the same graphite/brass/status
+language inside canvases, while Glass keeps its luminous space-chart palette.
+When adding a chart mark, add or reuse a semantic role in both theme blocks and
+redraw on `theme:changed`; do not put a theme-specific hex value in canvas
+drawing code. Altitude-chart legends are grouped into *Target state* and
+*Chart guides*, with a short explanation for every line or shaded region.
+Moon tracks and all target paths are clipped to the plot rectangle, so an
+object below the -10° chart floor cannot run into the time labels.
+
+### Accessibility baseline
+
+Charts remain canvas-based for their dense astronomy geometry, but every chart
+also exposes a semantic image role and a concise text summary derived from the
+same plotted state. Primary tabs expose `tablist`/`tab` selection state, dialogs
+are keyboard-dismissable with Escape, and focus-visible styling is present in
+both Workbench and Glass. High-contrast and reduced-motion media preferences
+must remain usable without changing the planning result. The current browser
+matrix covers this foundation in both shells and themes; manual screen-reader
+and focus-restoration QA is still a release follow-up.
+
+The weather panel is a data visualization too, but it uses a compact,
+scrollable dark-hour table rather than a multi-series canvas. Keep the four
+observing questions separate and named: cloud cover, rain warning, sky
+clarity (a clearly labelled haze proxy, not astronomical transparency), and
+dew risk. Values use the active theme's text/status tokens; bars are only for
+the data-driven cloud percentage. The top-bar chip carries one aggregate
+green/yellow/red status and a 0–100 night rating. The panel must show the
+site-local date and dark-hour range, omit daylight rows, make the dew estimate
+explicit, and keep weather advisory-only so it never changes planning or
+ranking calculations.
+
+## 4. The glass recipe
 
 A Glass surface =  translucent background + blur + hairline border + inset
 top highlight + soft shadow (add a lavender glow for large floating pieces):
@@ -83,12 +174,15 @@ Where each depth lives (from the actual theme):
 - Centered sheets (menu, weather): blur `20px` saturate `150%`, radius `22px`
 - Small rows / pick items: lighter glass (blur `8px`, radius `12px`)
 
-## 4. The starfield
+## 5. The starfield
 
 The whole sky lives in a **viewport-locked `body::before`** (fixed, inset 0,
 z-index 0, pointer-events none). Three star layers (1px / 2px / 3px dots),
 cyan+lavender aurora sweeps, a bottom vignette, and a vertical sky gradient
 (`#0b1020 → #070a15 → #04060c`) as the bottom-most layer.
+
+Workbench intentionally disables this decorative layer and uses its solid
+`--bg`; the starfield rules below apply to Glass only.
 
 Critical: **ALL star layers share ONE uniform tile size (`480px 480px`)** —
 mixed tile sizes create per-band density seams. Never add a document-relative
@@ -96,7 +190,7 @@ gradient to `body` itself (scrolling slices it). Content sits above with
 `position:relative; z-index:1` (header/nav/main/footer only — modals and
 toasts stay fixed at their own z-levels).
 
-## 5. Typography
+## 6. Typography
 
 - System UI stack (`--font-ui`); **no webfonts**, offline-friendly.
 - Section headings: `11px`, `uppercase`, `letter-spacing: 1–1.4px`,
@@ -107,7 +201,27 @@ toasts stay fixed at their own z-levels).
 - The prominent value (cards, stats): large, `700`, `--text`, can carry a
   subtle lavender text-shadow.
 
-## 6. Components
+Workbench keeps the same system/mono font contract but uses its warm text tokens
+and does not add text glow.
+
+## 7. Components
+
+### Workbench components
+
+- **Buttons**: compact square controls with a thin border; primary actions use
+  brass fill with dark ink; hover changes the border and text to brass without
+  a glow.
+- **Inputs / selects**: dark opaque fields with a 4px radius and brass focus;
+  range controls use the brass accent.
+- **Tabs**: flat, full-width strip with a brass underline for the active tab.
+- **Cards / panels**: opaque graphite surfaces with a 1px border, 6px radius,
+  no lift, blur, or shadow.
+- **Tables and target rows**: visible alignment and quiet separators; use the
+  data hierarchy, not decorative containers, to guide scanning.
+- **Sheets / inspectors**: functional side panels with a clear edge and no
+  centered floating-glass treatment.
+
+### Glass components
 
 - **Buttons**: `border-radius: 999px`, translucent background, hairline
   border; hover brightens (`--accent` border + lighter tint).
@@ -139,7 +253,18 @@ toasts stay fixed at their own z-levels).
   above. Range slider labels show the live value in `--font-mono`.
 - **Scrollbar**: thin (`10px`), thumb `#1e2848`, rounded, transparent track.
 
-## 7. Layout
+## 8. Layout
+
+### Workbench layout
+
+- Full-width structural top bar and tab strip; no floating gap around the main
+  chrome.
+- Content is organized into compact grids with the main chart or target list as
+  the dominant area and supporting information alongside it.
+- Detail views may become right-side inspector sheets so the planning context
+  remains visible.
+
+### Glass layout
 
 - **Floating glass topbar**: sticky, `top:10px`, side margins `14px`,
   radius `18px` — floats over the starfield with a gap on all sides.
@@ -152,13 +277,16 @@ toasts stay fixed at their own z-levels).
 - **Compact widths**: ≤1240px tighten controls; ≤900px shrink the bar/tabs,
   hide the night-info chip and tagline. Keep everything reachable.
 
-## 8. Restraint & motion
+## 9. Restraint & motion
 
 - One accent, one glow color; no rainbow UIs, no animated backgrounds.
 - Transitions ~`0.15s ease` on hover/active only (lift, border color).
 - `prefers-reduced-motion: reduce` disables animations/transitions.
 
-## 9. Hard rules (never break — these are bugs, not style)
+Workbench is the stricter version of this rule: transitions are limited to
+state changes, and there is no decorative glow or lift.
+
+## 10. Hard rules (never break — these are bugs, not style)
 
 - `.hidden { display:none !important }` stays; never override it.
 - Never set `display` on `#tabs-cat`, `#plannerControls`, `#tabs`,
@@ -168,14 +296,28 @@ toasts stay fixed at their own z-levels).
 - z-index ladder: content 1, topbar 55, tabs 50, popover/sheet 60, modal 40,
   toasts 300, drag handles ≥ 95 < 100. Stay below 100 for UI chrome.
 - Starfield tiles: uniform size (480px) on every star layer.
-- Both themes share one skeleton — put token overrides in the dome block.
+- Both themes share one skeleton — put token and structural overrides in the
+  corresponding Workbench or Glass block; never move IDs to make a theme work.
 
-## 10. Checklist before shipping UI
+## 11. Checklist before shipping UI
 
-- [ ] Uses tokens (no raw hex except data-driven colors).
-- [ ] Surfaces use the glass recipe (translucent + blur + hairline border).
-- [ ] Rounded/pill shapes; uppercase H4 headers; mono for numbers.
-- [ ] Primary actions use the lavender gradient + dark ink.
-- [ ] Works in BOTH themes (Glass default; Classic fallback) — one DOM.
+- [ ] Uses the active theme's tokens (no raw hex except data-driven colors).
+- [ ] Workbench surfaces are opaque, bordered, compact, and free of decorative
+      blur/glow.
+- [ ] Glass surfaces use the glass recipe (translucent + blur + hairline border)
+      where the Glass theme calls for them.
+- [ ] Workbench actions use brass; Glass actions use the lavender treatment.
+- [ ] Works in BOTH themes (Workbench default; Glass alternate) — one DOM.
 - [ ] Structural rules + z-index ladder respected.
 - [ ] Checked at desktop and compact (≤1240 / ≤900) widths.
+
+## 12. Theme persistence
+
+- The only canonical theme values are `workbench` and `dome`.
+- Desktop settings are normalized at the database boundary by `app/theme.py`;
+  web preference and backup handling use the same rule in `web/webstore.js`.
+- `classic`, the empty value, and unknown values resolve to Workbench. A stored
+  `dome` value remains Glass.
+- The desktop and web planners expose the choice in **Appearance**. Web backups
+  carry the theme and restore it with the rest of the staged bundle.
+- The landing page follows Workbench and does not offer a planner theme switch.

@@ -40,7 +40,8 @@ MOVED = (
     "profileFromMask", "normalizeProfileBins", "profileSegments", "fovBinRel",
     "visibleSkyBands", "skyBandPolygons", "computeProfile",
     "ceilFor", "bandTopFor", "overhangRuns", "assumedOpenRuns",
-    "assumedOpenHatchPolys",
+    "assumedOpenHatchPolys", "normalizeHorizonLandmarks",
+    "normalizeHorizonProvenance", "normalizeHorizonConfidence", "profileDifference",
     "cropKeptBand", "cropStrokes", "clipProfileToFov", "cropPano",
     "fmtSize", "sizeArcmin", "fmtFov", "fmtFovPair", "framePct", "magVisible",
     "skyClampZoom", "skyViewMatrix", "skyScreenToBase", "skyClampFocus",
@@ -48,7 +49,9 @@ MOVED = (
     "tierForRank", "assignPopularityTiers",
     "offsetEastMin", "zoneOffsetAtLocalNoon", "wallFromUtcMs", "utcFromWallMs",
     "aboveHorizon", "sampleVisible", "statusOf", "effectiveMinAlt",
+    "visibilityReason", "summarizeVisibility",
     "vmagKnownAndUnder", "inTonightPool",
+    "nextPlannerRevision", "plannerChange", "panoramaRevision",
     # core/panohistory.js - the panorama editor's snapshot/undo model. These
     # names used to be re-implemented per shell (the desktop's pushPanoUndo
     # built its own snapshot object), which is what the guard prevents.
@@ -64,6 +67,10 @@ MOVED = (
     "moonAge",
     "sunAlt", "sunCrossings", "nightInfo", "pickDarkWindow", "scrubWindowMs",
     "scrubBounds", "scrubClamp", "sepDeg", "nightStats",
+    "skyDistanceKm", "eogWalkerAlpha", "eogAlrZlrRatio",
+    "zenithMpsasFromZlr", "zenithQualityForZlr",
+    "estimateZenithSkyBrightness", "estimateZenithSkyBrightnessFromGrid",
+    "decodeSkyBrightnessPack",
 )
 # The Python astronomy/planning layer was deleted in Phase C (0.6.20): these
 # snake_case cores must not reappear as Python definitions in app/ or scripts/.

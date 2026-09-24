@@ -120,7 +120,7 @@ export function initDragWindows() {
 
   /* when the theme changes, drop any inline drag positions so a
      popup dragged in one theme does not leak into another (e.g. a
-     Glass drag must not sit stranded off-centre in Default) */
+     Glass drag must not sit stranded off-centre in Workbench) */
   const resetInline = () => {
     document.querySelectorAll("#menuPanel, .modal .modal-box").forEach((el) => {
       el.style.removeProperty("left");

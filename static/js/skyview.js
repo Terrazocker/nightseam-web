@@ -10,6 +10,7 @@ import { openDetail } from "./detail.js";
 import { passesFilters } from "./targets.js";
 import { CONSTELLATIONS, FIELD_STARS } from "./skydata.js";
 import { altaz as coreAltaz, julianDay as coreJulianDay } from "./core.js";
+import { vizTheme } from "./viztheme.js";
 
 let SKY_HOVER = null;
 let SKY_POINTS = [];
@@ -124,10 +125,11 @@ export function bindSky() {
       e.preventDefault();
       chip.click();
     });
+    const V = vizTheme();
     lg.innerHTML = Object.keys(TYPE_COLOR).map(t =>
-      `<span class="lgchip${S.disabledTypes.has(t) ? " off" : ""}" data-type="${t}" role="button" tabindex="0" style="--c:${TYPE_COLOR[t]}"><i></i>${TYPE_LABEL[t] || t}</span>`
+      `<span class="lgchip${S.disabledTypes.has(t) ? " off" : ""}" data-type="${t}" role="button" tabindex="0" style="--c:${V.types[t] || TYPE_COLOR[t]}"><i></i>${TYPE_LABEL[t] || t}</span>`
     ).join("") +
-    `<span class="lgchip" style="--c:#ffd700"><i></i>&#9733; session target</span>`;
+    `<span class="lgchip" style="--c:${V.favorite}"><i></i>&#9733; session target</span>`;
     lg.addEventListener("click", e => {
       const chip = e.target.closest("[data-type]");
       if (!chip) return;
@@ -166,7 +168,7 @@ function backdropAltAz(raH, decD, latD, lonD, jd) {
   return coreAltaz(raH * 15, decD, jd, latD, lonD, false, false);
 }
 
-function drawSkyBackdrop(ctx, cx, cy, R) {
+function drawSkyBackdrop(ctx, cx, cy, R, V) {
   const site = activeSite();
   if (!site || !S.night) return;
   const tl = S.night.timeline;
@@ -190,7 +192,7 @@ function drawSkyBackdrop(ctx, cx, cy, R) {
   };
 
   // faint field stars
-  ctx.fillStyle = "rgba(165,175,200,.32)";
+  ctx.fillStyle = V.fieldStar;
   for (const st of FIELD_STARS) {
     const { a, z } = proj(st[0], st[1]);
     if (a <= 0.5) continue;
@@ -201,7 +203,7 @@ function drawSkyBackdrop(ctx, cx, cy, R) {
   }
 
   // constellation stick figures
-  ctx.strokeStyle = "rgba(150,160,185,.30)";
+  ctx.strokeStyle = V.constellation;
   ctx.lineWidth = 1;
   for (const con of CONSTELLATIONS) {
     if (!con.g.length) continue;
@@ -216,7 +218,7 @@ function drawSkyBackdrop(ctx, cx, cy, R) {
     }
     ctx.stroke();
   }
-  ctx.fillStyle = "rgba(185,194,220,.50)";
+  ctx.fillStyle = V.constellationStar;
   for (const con of CONSTELLATIONS) {
     for (const [ra, de] of con.s) {
       const { a, z } = proj(ra, de);
@@ -227,7 +229,7 @@ function drawSkyBackdrop(ctx, cx, cy, R) {
   }
 
   // names
-  ctx.fillStyle = "rgba(139,147,168,.62)";
+  ctx.fillStyle = V.constellationLabel;
   ctx.font = "10px Segoe UI";
   ctx.textAlign = "center";
   for (const con of CONSTELLATIONS) {
@@ -248,8 +250,13 @@ function drawSkyBackdrop(ctx, cx, cy, R) {
 function syncTypeLegend() {
   const lg = $("#typeLegend");
   if (!lg) return;
-  lg.querySelectorAll("[data-type]").forEach(chip =>
-    chip.classList.toggle("off", S.disabledTypes.has(chip.dataset.type)));
+  const V = vizTheme();
+  lg.querySelectorAll("[data-type]").forEach(chip => {
+    chip.classList.toggle("off", S.disabledTypes.has(chip.dataset.type));
+    chip.style.setProperty("--c", V.types[chip.dataset.type] || TYPE_COLOR[chip.dataset.type] || V.text);
+  });
+  const session = lg.querySelector(".lgchip:not([data-type])");
+  if (session) session.style.setProperty("--c", V.favorite);
 }
 
 export function renderSky() {
@@ -263,6 +270,7 @@ export function renderSky() {
   const R = Math.round(Math.min(W,H)/2 - 26);
   cv.width=W*dpr; cv.height=H*dpr;
   const ctx=cv.getContext("2d");
+  const V = vizTheme();
   ctx.setTransform(1,0,0,1,0,0);
   ctx.clearRect(0,0,cv.width,cv.height);
   applyView(ctx, dpr, W, H);
@@ -270,7 +278,7 @@ export function renderSky() {
   ctx.textBaseline = "alphabetic";
 
   // faded constellation backdrop (toggleable)
-  if (($("#showCons")||{}).checked !== false) drawSkyBackdrop(ctx, cx, cy, R);
+  if (($("#showCons")||{}).checked !== false) drawSkyBackdrop(ctx, cx, cy, R, V);
 
   // obstacle silhouette (filled region + boundary stroke only)
   const prof = activeProfile();
@@ -288,7 +296,7 @@ export function renderSky() {
     ctx.lineTo(...azToXY(cx,cy,R,360,0));
     for (let az=360; az>=0; az-=2) ctx.lineTo(...azToXY(cx,cy,R,az,0));
     ctx.closePath();
-    ctx.fillStyle="rgba(255,107,107,.18)";
+    ctx.fillStyle=V.obstacleFill;
     ctx.fill();
 
     // solid boundary line: obstacle mode only. In sky mode the fully
@@ -300,7 +308,7 @@ export function renderSky() {
         const [x,y] = azToXY(cx,cy,R,az,clamp(elevAt(az),-2,89));
         az===0 ? ctx.moveTo(x,y) : ctx.lineTo(x,y);
       }
-      ctx.strokeStyle="rgba(255,107,107,.75)"; ctx.lineWidth=1.4;
+      ctx.strokeStyle=V.obstacleStroke; ctx.lineWidth=1.4;
       ctx.stroke();
     }
   }
@@ -317,7 +325,7 @@ export function renderSky() {
       return raw > 0.25 && raw < 88 ? Math.min(89, raw) : NaN;
     };
 
-    ctx.fillStyle = "rgba(255,107,107,.18)";
+    ctx.fillStyle = V.obstacleFill;
     let run = false;
     for (let az = 0; az <= 360; az += 1) {
       const v = topVal(az);
@@ -345,7 +353,7 @@ export function renderSky() {
       pen ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
       pen = true;
     }
-    ctx.strokeStyle = "rgba(255,107,107,.75)"; ctx.lineWidth = 1.4;
+    ctx.strokeStyle = V.obstacleStroke; ctx.lineWidth = 1.4;
     ctx.stroke();
     ctx.setLineDash([]);
   }
@@ -371,7 +379,7 @@ export function renderSky() {
         minY = Math.min(minY, y); maxY = Math.max(maxY, y);
       }
       const diag = (maxX - minX) + (maxY - minY);
-      ctx.strokeStyle = "rgba(210,225,255,.28)";
+      ctx.strokeStyle = V.assumedHatch;
       ctx.lineWidth = 1;
       for (let o = -diag; o < diag; o += 9) {
         ctx.beginPath();
@@ -406,7 +414,7 @@ export function renderSky() {
     const blocked = !!activeProfile();
     const openAbove = mode === "sky" && !!activeBandTop() && !activeTopProfile();
     pl.innerHTML =
-      (blocked ? '<span class="lgchip" style="--c:#ff6b6b"><i></i>blocked by horizon</span>' : "") +
+      (blocked ? `<span class="lgchip" style="--c:${V.obstacleStroke}"><i></i>blocked by horizon</span>` : "") +
       (openAbove ? '<span class="lgchip hatch"><i></i>above band: open (assumed)</span>' : "");
   }
 
@@ -420,16 +428,16 @@ export function renderSky() {
     ctx.moveTo(cx + r1, cy);        // lift the pen: no radial seam at east
     ctx.arc(cx, cy, r1, Math.PI * 2, 0, true);
     ctx.closePath();
-    ctx.fillStyle = "rgba(120,140,180,.10)";
+    ctx.fillStyle = V.minFill;
     ctx.fill();
     ctx.setLineDash([6, 4]);
     ctx.beginPath();
     ctx.arc(cx, cy, r1, 0, 7);
-    ctx.strokeStyle = "rgba(150,165,200,.55)";
+    ctx.strokeStyle = V.minStroke;
     ctx.lineWidth = 1.2;
     ctx.stroke();
     ctx.setLineDash([]);
-    ctx.fillStyle = "rgba(150,165,200,.85)";
+    ctx.fillStyle = V.minLabel;
     ctx.font = "10px Consolas, monospace";
     ctx.textAlign = "left";
     ctx.fillText(Math.round(S.minAlt) + "\u00B0 min alt", cx + 6, cy - r1 - 4);
@@ -440,12 +448,12 @@ export function renderSky() {
   ctx.font="10px Consolas, monospace";
   for (let alt=10; alt<=80; alt+=10) {
     const ry = cy-R*(1-alt/90);
-    ctx.strokeStyle="#232c41";
+    ctx.strokeStyle=V.gridStrong;
     ctx.beginPath(); ctx.arc(cx,cy,R*(1-alt/90),0,7); ctx.stroke();
-    ctx.fillStyle="#4d5870";
+    ctx.fillStyle=V.axis;
     ctx.fillText(alt+"\u00B0", cx+3, ry-3);
   }
-  ctx.fillStyle="#4d5870";
+  ctx.fillStyle=V.axis;
   ctx.fillText("0\u00B0", cx+3, cy+11);
 
   // cardinal labels
@@ -453,7 +461,7 @@ export function renderSky() {
   for (const [lab,az] of CARD) {
     const a=az*Math.PI/180;
     const x=cx+(R+12)*Math.sin(a), y=cy-(R+12)*Math.cos(a);
-    ctx.fillStyle="#aab3c8"; ctx.font="bold 13px Segoe UI";
+    ctx.fillStyle=V.text; ctx.font="bold 13px Segoe UI";
     ctx.textAlign="center"; ctx.textBaseline="middle";
     ctx.fillText(lab,x,y);
   }
@@ -482,7 +490,7 @@ export function renderSky() {
     if (alt<-3) continue;
     const [x,y]=azToXY(cx,cy,R,az,alt);
     const blocked=alt<=o.ceil[S.tIdx];
-    const col=isHover?"#ffffff":(blocked?"#ff5d5d66":(TYPE_COLOR[m.otype]||"#aaa"));
+    const col=isHover?V.target:(blocked?V.blockedDot:(V.types[m.otype]||TYPE_COLOR[m.otype]||V.text));
     ctx.fillStyle=col;
     ctx.globalAlpha = alt>0?1:.35;
     const dotR=isHover?4.5:m.vmag&&m.vmag<6?3.4:2.4;
@@ -490,9 +498,9 @@ export function renderSky() {
     ctx.globalAlpha=1;
     if (favs.has(o.id) && alt>-3) {
       // yellow ring marks session targets
-      ctx.strokeStyle="rgba(0,0,0,.55)"; ctx.lineWidth=3.2;
+      ctx.strokeStyle=V.favoriteOuter; ctx.lineWidth=3.2;
       ctx.beginPath(); ctx.arc(x,y,dotR+3.4,0,7); ctx.stroke();
-      ctx.strokeStyle="#ffd700"; ctx.lineWidth=1.8;
+      ctx.strokeStyle=V.favorite; ctx.lineWidth=1.8;
       ctx.beginPath(); ctx.arc(x,y,dotR+3.4,0,7); ctx.stroke();
     }
     pts.push({x,y,id:o.id});
@@ -522,17 +530,23 @@ export function renderSky() {
       placed.push({ x: tx + w/2, y: ty, w });
       // dark halo under bright text for contrast on the busy backdrop
       ctx.save();
-      ctx.shadowColor = "rgba(0,0,0,.9)";
-      ctx.shadowBlur = 4;
-      ctx.fillStyle = c.isHover ? "#ffffff" : "#e9edf6";
+      ctx.shadowColor = V.targetShadow;
+      ctx.shadowBlur = V.labelBlur;
+      ctx.fillStyle = c.isHover ? V.target : V.targetLabel;
       ctx.fillText(c.text, tx, ty);
       ctx.restore();
     }
   }
 
-  if ($("#showMoon").checked) drawSunMoon(ctx,cx,cy,R);
+  if ($("#showMoon").checked) drawSunMoon(ctx,cx,cy,R,V);
 
   SKY_POINTS=pts;
+  const summary = $("#skyChartSummary");
+  if (summary) {
+    const iso = S.night.times_iso && S.night.times_iso[S.tIdx];
+    const when = iso ? new Date(iso).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" }) : "the selected time";
+    summary.textContent = `All-sky polar chart at ${when}; ${pts.length} catalog objects are plotted. Center is zenith, rim is horizon, and the selected horizon profile is shown as blocked sky.`;
+  }
 }
 
 function moonAzAtIndex(i){
@@ -542,25 +556,25 @@ function sunAzAtIndex(i){
   return (S.night.sun_az && S.night.sun_az[i])!=null ? S.night.sun_az[i] : 0;
 }
 
-function drawSunMoon(ctx,cx,cy,R){
+function drawSunMoon(ctx,cx,cy,R,V){
   const sa=S.night.sun_alt[S.tIdx];
   const ma=S.night.moon_alt[S.tIdx];
   // selected-time visibility: apparent altitude above the horizon (same rule
   // as the web chart and as the catalog dots below) - never a -6 floor
   if(aboveHorizon(sa)){
     const [x,y]=azToXY(cx,cy,R,sunAzAtIndex(S.tIdx),sa);
-    ctx.fillStyle="#ffd166";
+    ctx.fillStyle=V.sun;
     ctx.beginPath();ctx.arc(x,y,7,0,7);ctx.fill();
-    ctx.strokeStyle="#ffd16688";ctx.lineWidth=1;
+    ctx.strokeStyle=V.sunLine;ctx.lineWidth=1;
     ctx.beginPath();ctx.arc(x,y,11,0,7);ctx.stroke();
-    ctx.fillStyle="#8a763a";ctx.font="10px Segoe UI";ctx.textAlign="center";
+    ctx.fillStyle=V.sunLabel;ctx.font="10px Segoe UI";ctx.textAlign="center";
     ctx.fillText("Sun",x,y+22);ctx.textAlign="left";
   }
   if(aboveHorizon(ma)){
     const [x,y]=azToXY(cx,cy,R,moonAzAtIndex(S.tIdx),ma);
-    ctx.fillStyle="#e8ecf5";
+    ctx.fillStyle=V.moon;
     ctx.beginPath();ctx.arc(x,y,6.5,0,7);ctx.fill();
-    ctx.fillStyle="#555e73";ctx.font="10px Segoe UI";ctx.textAlign="center";
+    ctx.fillStyle=V.moonLabel;ctx.font="10px Segoe UI";ctx.textAlign="center";
     ctx.fillText(Math.round(S.night.moon_illum*100)+"%",x,y+19);ctx.textAlign="left";
   }
 }

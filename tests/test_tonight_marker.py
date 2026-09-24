@@ -65,6 +65,25 @@ def test_the_marker_is_cleared_the_moment_the_selection_moves():
     assert "tonightScrubTimer = setTimeout" in listener
 
 
+def test_sync_only_time_notification_does_not_schedule_a_second_repaint():
+    """A refresh renders its active view directly but must still resync both
+    scrubbers. The event therefore carries a sync-only mode: it invalidates a
+    Tonight marker but does not queue a second ranking pass or Sky canvas draw.
+    """
+    src = _app()
+    clamp = src.split("function clampSkyTime(", 1)[1].split("\n}\n", 1)[0]
+    assert "{ repaint = false }" in clamp
+    assert "announceSkyTime({ repaint })" in clamp
+    sky_listener = src.split("skyTimeHandler = (ev)", 1)[1] \
+                      .split("window.addEventListener('sky:time', skyTimeHandler)", 1)[0]
+    assert "ev.detail?.repaint !== false" in sky_listener
+    tonight_listener = src.split("window.addEventListener('sky:time', (ev)", 1)[1] \
+                        .split("}, 120);", 1)[0]
+    assert "applyTonightMarker()" in tonight_listener
+    assert "ev.detail?.repaint === false" in tonight_listener
+    assert "if (ev.detail?.repaint === false) return;" in tonight_listener
+
+
 def test_the_check_waits_for_the_marker_not_a_sleep():
     """The regression is a sleep, so the check must not carry one on the Tonight
     scrub path any more."""

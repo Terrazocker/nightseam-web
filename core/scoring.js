@@ -9,6 +9,7 @@
  */
 
 import { gmstDeg, precessJ2000ToDate, refractionDeg, sepDeg } from './astro.js';
+import { visibilityReason, summarizeVisibility } from './visibility.js';
 
 /* how badly an object type suffers under moonlight (nebulae worst, clusters
    least). CO-09 (0.6.32 review): null prototype, because `otype` and the filter
@@ -164,7 +165,10 @@ export function scoreNightTracks(tracks, objects, jd0, step, minAlt, pano, ctx =
   for (let k = 0; k < objects.length; k++) {
     const base = k * count;
     let maxAlt = -90, transitJd = jd0, bestRun = 0, bestStart = jd0;
-    let run = 0, runStart = jd0, visN = 0, blocked = 0, sClassic = 0, sMoon = 0;
+    let riseJd = null, setJd = null, prevAlt = null;
+    let run = 0, runStart = jd0, visN = 0, visibleFullN = 0;
+    let aboveN = 0, blocked = 0, sClassic = 0, sMoon = 0;
+    const reasonCounts = Object.create(null);
     const alts = wantAlts ? new Array(count) : null;
     const aboveBits = wantAlts ? new Uint8Array(count) : null;
     const visBits = wantAlts ? new Uint8Array(count) : null;
@@ -174,6 +178,17 @@ export function scoreNightTracks(tracks, objects, jd0, step, minAlt, pano, ctx =
       const jd = jd0 + i * step;
 
       if (alt > maxAlt) { maxAlt = alt; transitJd = jd; }
+      if (alt > 0) aboveN++;
+      if (prevAlt != null) {
+        if (prevAlt <= 0 && alt > 0 && riseJd == null) {
+          const f = prevAlt / (prevAlt - alt);
+          riseJd = jd - step + f * step;
+        } else if (prevAlt > 0 && alt <= 0 && setJd == null) {
+          const f = prevAlt / (prevAlt - alt);
+          setJd = jd - step + f * step;
+        }
+      }
+      prevAlt = alt;
       if (wantAlts) alts[i] = alt;
 
       let ceil = -90, top = null;
@@ -191,12 +206,16 @@ export function scoreNightTracks(tracks, objects, jd0, step, minAlt, pano, ctx =
 
       const up = alt > 0;
       const vis = alt >= minAlt && alt > ceil && alt < (top == null ? 90.5 : top);
+      const inRange = !isWin || isWin(i);
+      const reason = visibilityReason(alt, minAlt, ceil, top, inRange);
+      if (inRange) reasonCounts[reason] = (reasonCounts[reason] || 0) + 1;
+      if (vis) visibleFullN++;
       if (wantAlts) {
         visBits[i] = vis ? 1 : 0;
         aboveBits[i] = up ? 1 : 0;
       }
       if (up && !vis) blocked++;                 // full grid, like both shells
-      if (!vis || (isWin && !isWin(i))) { run = 0; continue; }
+      if (!vis || !inRange) { run = 0; continue; }
 
       visN++;
       let w = Math.sin(Math.max(0, Math.min(90, alt)) * Math.PI / 180);
@@ -212,8 +231,21 @@ export function scoreNightTracks(tracks, objects, jd0, step, minAlt, pano, ctx =
       if (run > bestRun) { bestRun = run; bestStart = runStart; }
     }
     const nightN = winHi - winLo + 1;
+    const summary = summarizeVisibility({
+      visibleSamples: visN, visibleFullSamples: visibleFullN,
+      stepMin: step * 1440, maxAlt, reasonCounts,
+    });
+    const bestEnd = bestRun > 0 ? bestStart + bestRun * step : null;
     out[k] = {
-      n, maxAlt, transitJd, visN, blocked, bestRun, bestStart, sClassic, sMoon,
+      n, maxAlt, transitJd, culminationJd: transitJd,
+      culminationAlt: maxAlt, riseJd, setJd,
+      visN, visibleFullN, aboveN, blocked, bestRun, bestStart, bestEnd,
+      usableStartJd: bestRun > 0 ? bestStart : null,
+      usableEndJd: bestEnd,
+      visibleMinutes: summary.visibleMinutes,
+      visibilityReason: summary.reason,
+      reasonCounts: summary.reasonCounts,
+      sClassic, sMoon,
       pct: Math.round(100 * visN / nightN),
       blockedPct: Math.round(100 * blocked / (n + 1)),
       alt: alts, vis: visBits, above: aboveBits,

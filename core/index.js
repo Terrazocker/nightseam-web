@@ -10,6 +10,8 @@
 
 export {
   NO_BLOCK, BINS, BIN_DEG, MASK_W, MASK_H, WORLD_BINS,
+  HORIZON_LANDMARK_KINDS, normalizeHorizonLandmarks,
+  normalizeHorizonProvenance, normalizeHorizonConfidence, profileDifference,
   rebuildMask, altOf, rowOfAlt, xOfAz, azOfX, wrapsFor,
   profileFromMask, normalizeProfileBins, profileSegments, fovBinRel,
   visibleSkyBands, skyBandPolygons,
@@ -42,6 +44,10 @@ export {
 export { HISTORY_LIMIT as PANO_HISTORY_LIMIT } from './panohistory.js';
 
 export {
+  PLANNER_CHANGE_EVENT, nextPlannerRevision, plannerChange, panoramaRevision,
+} from './plannerstate.js';
+
+export {
   julianDay, dateFromJD, gmstDeg, precessJ2000ToDate, precessDateToJ2000,
   refractionDeg, altaz, altazFrame, altazFrameApply,
   sunRaDec, moonRaDec, moonIllumination, moonAge, sunAlt, sepDeg,
@@ -54,6 +60,7 @@ export {
 
 export {
   aboveHorizon, sampleVisible, statusOf, effectiveMinAlt,
+  VISIBILITY_REASON, visibilityReason, summarizeVisibility,
   ADV_TONIGHT_MAG_CAP, TONIGHT_MAG_UNCAPPED, vmagKnownAndUnder, inTonightPool,
 } from './visibility.js';
 
@@ -62,3 +69,21 @@ export {
   moonPenalty, bortleMoonFactor, popularityFactor, nightStats, nightStatsBatch,
   computeNightTracks, scoreNightTracks,
 } from './scoring.js';
+
+export {
+  SKY_BRIGHTNESS_MODEL, SKY_BRIGHTNESS_MODEL_VERSION,
+  SKY_BRIGHTNESS_PACK_MAGIC,
+  SKY_BRIGHTNESS_PACK_VERSION, EOG_NATIVE_RES_ARCSEC, EOG_RADIUS_KM,
+  BLACK_MARBLE_MODEL, BLACK_MARBLE_MODEL_VERSION, BLACK_MARBLE_RADIUS_KM,
+  BLACK_MARBLE_RADIANCE_CALIBRATION,
+  SKY_BRIGHTNESS_PROVIDER_EOG, SKY_BRIGHTNESS_PROVIDER_BLACK_MARBLE,
+  SKY_BRIGHTNESS_DEFAULT_PROVIDER,
+  NATURAL_ZENITH_LUMINANCE_UCD, MPSAS_ZERO_LUMINANCE_CD_M2,
+  NATURAL_ZENITH_MPSAS, NATURAL_ZENITH_LUMINANCE_MCD_M2,
+  MCD_M2_ZERO_LUMINANCE, EOG_ALR_CALIBRATION,
+  skyDistanceKm, eogWalkerAlpha, eogAlrZlrRatio, zenithMpsasFromZlr,
+  zenithQualityForZlr, estimateZenithSkyBrightness,
+  estimateZenithSkyBrightnessFromGrid, blackMarbleSpreadWeight,
+  estimateBlackMarbleZenithSkyBrightnessFromGrid,
+  estimateSkyBrightnessFromGrid, decodeSkyBrightnessPack,
+} from './skybrightness.js';

@@ -1,11 +1,11 @@
 /* Targets tab: filters, sorting, paginated table rendering */
 
-import { $, $$, esc, api, fmtSize, TYPE_LABEL, TYPE_COLOR, constName } from "./util.js";
+import { $, $$, esc, api, fmtSize, fmtHM, TYPE_LABEL, TYPE_COLOR, constName } from "./util.js";
 import { S, IMG_VER } from "./state.js";
 import { statusOf, windowText, desigLine,
          objScore, filterAdvice, frameCoverage, coverageCell,
          popularityFactor } from "./derive.js";
-import { assignPopularityTiers, TIER_ORDER } from "./core.js";
+import { assignPopularityTiers, TIER_ORDER, dateFromJD } from "./core.js";
 
 const PAGE_SIZE = 250;
 let _page = 0;
@@ -80,6 +80,7 @@ export function bindFilters() {
   $("#fFav").addEventListener("change", () => { resetPage(); renderTargets(); });
   $("#fConst").addEventListener("change", () => { resetPage(); renderTargets(); });
   $("#fSort").addEventListener("change", () => { resetPage(); renderTargets(); });
+  $("#btnCatalogProvenance").addEventListener("click", downloadCatalogProvenance);
   $("#pagerPrev").addEventListener("click", () => {
     if (_page > 0) { _page--; renderTargets(true); }
   });
@@ -111,12 +112,34 @@ export function bindFilters() {
     const tr = e.target.closest("tr[data-id]");
     if (tr) openDetail(tr.dataset.id);
   });
+  $("#targetRows").addEventListener("keydown", e => {
+    if (e.key !== "Enter" && e.key !== " ") return;
+    const tr = e.target.closest("tr[data-id]");
+    if (!tr) return;
+    e.preventDefault();
+    openDetail(tr.dataset.id);
+  });
 
   // late import to avoid a circular dependency at module init
   async function openDetail(id) {
     const mod = await import("./detail.js");
     mod.openDetail(id);
   }
+}
+
+function downloadCatalogProvenance() {
+  const payload = S.catalogProvenance && typeof S.catalogProvenance === "object"
+    ? S.catalogProvenance : { schema_version: 1, objects: {} };
+  const blob = new Blob([JSON.stringify(payload, null, 2) + "\n"],
+                        { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "nightseam-catalog-provenance.json";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
 export function passesFilters(m, o) {
@@ -231,7 +254,9 @@ export function renderTargets(fromPager = false) {
     const adv = filterAdvice(m);
     const cov = frameCoverage(m);
     const fav = favs.has(m.id);
-    return `<tr data-id="${esc(m.id)}">
+    const culmination = Number.isFinite(o.transit_jd)
+      ? fmtHM(dateFromJD(o.transit_jd).toISOString()) : "--:--";
+    return `<tr data-id="${esc(m.id)}" tabindex="0" role="button" aria-label="Open details for ${esc(m.primary_name)}">
       <td>${thumbHTML(m.id)}</td>
       <td class="objcell"><button class="starbtn${fav?" on":""}" data-fav="${esc(m.id)}" title="mark for session">&#9733;</button><b>${esc(m.primary_name)}</b><span>${esc(desigLine(m))}${m.constellation?" \u00B7 "+esc(constName(m.constellation)):""}</span></td>
       <td class="tiercell"><span class="tierbadge t-${tierOf(m).toLowerCase()}" title="${esc(tierTitle(m))}">${tierOf(m)}</span></td>
@@ -239,7 +264,7 @@ export function renderTargets(fromPager = false) {
       <td>${m.vmag!=null?m.vmag.toFixed(1):"&mdash;"}</td>
       <td>${fmtSize(m.size_am, unit)}</td>
       <td class="col-opt">${coverageCell(cov)}</td>
-      <td>${o.max_alt.toFixed(0)}&deg;</td>
+      <td title="culminates at ${culmination}">${o.max_alt.toFixed(0)}&deg;</td>
         <td title="share of the night window above ${S.minAlt}\u00B0 and unobstructed">${o.obs_pct!=null?o.obs_pct+"<small>%</small>":"&mdash;"}</td>
       <td>${windowText(o)}</td>
       <td><span class="statuspill ${stClass[st.code]}">${st.text}</span></td>

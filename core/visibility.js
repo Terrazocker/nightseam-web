@@ -24,6 +24,60 @@ export function sampleVisible(alt, minAlt, ceil, ceilTop) {
   return alt >= minAlt && alt > ceil && alt < (ceilTop ?? 90.5);
 }
 
+/** Stable reason codes for explaining why a target is not usable at one
+ * sample. The shells may translate these into local prose, but the precedence
+ * and vocabulary belong to the shared core. */
+export const VISIBILITY_REASON = Object.freeze({
+  VISIBLE: "visible",
+  BELOW_HORIZON: "below_horizon",
+  BELOW_MINIMUM_ALTITUDE: "below_minimum_altitude",
+  BLOCKED_BY_HORIZON: "blocked_by_horizon",
+  OUTSIDE_SELECTED_WINDOW: "outside_selected_window",
+  NEVER_RISES: "never_rises",
+  NO_USABLE_WINDOW: "no_usable_window",
+});
+
+/** Explain one sample using the exact same predicate as sampleVisible().
+ * `inWindow` is explicit because selected-time UI and night-summary UI have
+ * different scopes: a valid astronomical sample outside the chosen planning
+ * window must not be described as horizon-blocked. */
+export function visibilityReason(alt, minAlt, ceil, ceilTop, inWindow = true) {
+  if (!inWindow) return VISIBILITY_REASON.OUTSIDE_SELECTED_WINDOW;
+  if (!(alt > 0)) return VISIBILITY_REASON.BELOW_HORIZON;
+  if (alt <= ceil || alt >= (ceilTop ?? 90.5)) {
+    return VISIBILITY_REASON.BLOCKED_BY_HORIZON;
+  }
+  if (alt < minAlt) return VISIBILITY_REASON.BELOW_MINIMUM_ALTITUDE;
+  return VISIBILITY_REASON.VISIBLE;
+}
+
+/** Summarize a scored span without formatting time or locale-specific prose.
+ * `visibleFullSamples` distinguishes "never usable in this selected window"
+ * from "usable, but only outside the selected window". `reasonCounts` covers
+ * the selected span and is intentionally returned for diagnostics/tooltips. */
+export function summarizeVisibility({
+  visibleSamples = 0,
+  visibleFullSamples = visibleSamples,
+  stepMin = 0,
+  maxAlt = -90,
+  reasonCounts = {},
+} = {}) {
+  const visibleMinutes = Math.max(0, Number(visibleSamples) || 0)
+    * Math.max(0, Number(stepMin) || 0);
+  let reason = VISIBILITY_REASON.NO_USABLE_WINDOW;
+  if (visibleSamples > 0) reason = VISIBILITY_REASON.VISIBLE;
+  else if (visibleFullSamples > 0) reason = VISIBILITY_REASON.OUTSIDE_SELECTED_WINDOW;
+  else if (!(maxAlt > 0)) reason = VISIBILITY_REASON.NEVER_RISES;
+  else if ((reasonCounts[VISIBILITY_REASON.BLOCKED_BY_HORIZON] || 0)
+           >= (reasonCounts[VISIBILITY_REASON.BELOW_MINIMUM_ALTITUDE] || 0)
+           && (reasonCounts[VISIBILITY_REASON.BLOCKED_BY_HORIZON] || 0) > 0) {
+    reason = VISIBILITY_REASON.BLOCKED_BY_HORIZON;
+  } else if ((reasonCounts[VISIBILITY_REASON.BELOW_MINIMUM_ALTITUDE] || 0) > 0) {
+    reason = VISIBILITY_REASON.BELOW_MINIMUM_ALTITUDE;
+  }
+  return { reason, visibleMinutes, reasonCounts: { ...reasonCounts } };
+}
+
 /** Per-sample status. `minAlt` is passed in so the shell keeps ownership of
  *  the resolved threshold (which re-derives live on a Bortle change). */
 export function statusOf(o, i, minAlt) {
@@ -32,10 +86,17 @@ export function statusOf(o, i, minAlt) {
   // (ceil_top) blocks ABOVE the band, exactly like a horizon obstruction
   // blocks below it - status must never say "Observable" where vis[] says no
   const top = o.ceil_top ? o.ceil_top[i] : 90.5;
-  if (alt <= 0)       return { code: "hor", text: "Below horizon" };
-  if (alt <= ceil || alt >= top) return { code: "blk", text: "Blocked" };
-  if (alt < minAlt)   return { code: "low", text: "Too low" };
-  return                 { code: "vis", text: "Observable" };
+  const reason = visibilityReason(alt, minAlt, ceil, top);
+  if (reason === VISIBILITY_REASON.BELOW_HORIZON) {
+    return { code: "hor", reason, text: "Below horizon" };
+  }
+  if (reason === VISIBILITY_REASON.BLOCKED_BY_HORIZON) {
+    return { code: "blk", reason, text: "Blocked by horizon" };
+  }
+  if (reason === VISIBILITY_REASON.BELOW_MINIMUM_ALTITUDE) {
+    return { code: "low", reason, text: "Below minimum altitude" };
+  }
+  return { code: "vis", reason, text: "Observable" };
 }
 
 /** The authoritative minimum-altitude rule (shared with the server): an

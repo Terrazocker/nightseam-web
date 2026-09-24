@@ -376,7 +376,8 @@ def test_import_rejects_hostile_settings(db):
     forever (bortle null -> float(None) at every boot). Fail closed instead."""
     db.add_site("Home", 50.0, 7.8, 150)
     for bad in ({"bortle": None}, {"bortle": "x"}, {"min_useful_alt": "x"},
-                {"adv_mode": 1}, {"filters": []}):
+                {"adv_mode": 1}, {"filters": []},
+                {"sky_brightness_provider": "unknown"}):
         blob = _mutate_bundle(build_export_zip(db),
                               lambda s, bad=bad: s["settings"].update(bad))
         with pytest.raises(ValueError):

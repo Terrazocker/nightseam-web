@@ -22,13 +22,15 @@ from pydantic import BaseModel
 
 from .backup import _export_zip_to, apply_import_zip, build_export_zip
 from .database import (Database, PROFILE_BINS, _finalize_num_setting, new_id,
-                       profile_values_ok)
+                       confidence_values_ok, normalize_horizon_landmarks,
+                       normalize_horizon_provenance, profile_values_ok)
 from .fits import parse_dec_deg, parse_ra_hours
 from .imglib import name_key
 from .ingest import ingest_one, obj_slug, reindex_library, rename_archive_folder
-from .paths import TOKEN_RE, data_dir, safe_join, safe_token, static_dir
+from .paths import TOKEN_RE, data_dir, resource_dir, safe_join, safe_token, static_dir
 from .rig_presets import presets_payload as rig_presets_payload
 from .rig_presets import remove_seeded_once as unseed_rig_presets
+from .theme import normalize_theme
 from .version import app_version
 
 from starlette.background import BackgroundTask
@@ -155,14 +157,14 @@ def _version_greater(a: str, b: str) -> bool:
 #     (cached Wikipedia/Wikidata thumbnails are full URLs; DSS cutouts and the
 #     API payloads answer from /api/object/...).
 #   * connect-src keeps the weather panel working and stays restricted to it.
-_INLINE_BOOTSTRAP_SHA256 = "sha256-lOMdolhkUqnnqFBUwwNKJYbMdAlQvEBKqybJqHdppbw="
+_INLINE_BOOTSTRAP_SHA256 = "sha256-iV/AR7rIubNsaZQdsJmLBz8jRB940hetSdnl0VqFyM4="
 CSP_HEADER = (
     "default-src 'self'; "
     f"script-src 'self' '{_INLINE_BOOTSTRAP_SHA256}'; "
     "style-src 'self' 'unsafe-inline'; "
     "img-src 'self' data: https://upload.wikimedia.org "
     "https://commons.wikimedia.org https://alasky.cds.unistra.fr; "
-    "connect-src 'self' https://api.open-meteo.com; "
+    "connect-src 'self' https://api.open-meteo.com https://air-quality-api.open-meteo.com; "
     "worker-src 'self'; "
     "font-src 'self'"
 )
@@ -266,6 +268,7 @@ class SettingsIn(BaseModel):
     weather_auto: Optional[bool] = None
     view_full_day: Optional[bool] = None
     min_vis: Optional[int] = None
+    sky_brightness_provider: Optional[str] = None
 
 
 class RigIn(BaseModel):
@@ -306,6 +309,9 @@ class PanoramaUpdate(BaseModel):
     active: Optional[bool] = None
     paint_mode: Optional[str] = None
     block_above: Optional[bool] = None
+    landmarks: Optional[list] = None
+    provenance: Optional[dict] = None
+    confidence: Optional[list] = None
 
 
 class LibraryEditIn(BaseModel):
@@ -375,6 +381,26 @@ def _check_strokes(values) -> None:
         return
     if not isinstance(values, list) or not all(isinstance(s, dict) for s in values):
         raise HTTPException(400, "strokes must be a list of stroke objects")
+
+
+def _check_horizon_metadata(landmarks, provenance, confidence) -> None:
+    """Validate the additive horizon annotations at the API boundary."""
+    if landmarks is not None:
+        if not isinstance(landmarks, list) or len(landmarks) > 128:
+            raise HTTPException(400, "landmarks must be a list of at most 128 objects")
+        # Normalization is deliberately also called here: it rejects entries
+        # without finite coordinates rather than silently storing an annotation
+        # the editor could never position.
+        if len(normalize_horizon_landmarks(landmarks)) != len(landmarks):
+            raise HTTPException(400, "landmarks must contain named finite points")
+    if provenance is not None:
+        if not isinstance(provenance, dict):
+            raise HTTPException(400, "provenance must be an object")
+        normalize_horizon_provenance(provenance)
+    if confidence is not None and not confidence_values_ok(confidence):
+        raise HTTPException(400,
+                            f"confidence must be empty or exactly {PROFILE_BINS} "
+                            "values between 0 and 1")
 
 
 # ------------------------------------------------------------------ image prefetch
@@ -529,6 +555,9 @@ def create_app(db: Database, *, prefetch: bool = True) -> FastAPI:
         # refuses such a value now; this is the second line of defence for a row
         # that got in some other way.
         min_vis = _finalize_num_setting(db.setting("min_vis", 1), 0, 100)
+        sky_provider = db.setting("sky_brightness_provider", "eog")
+        if sky_provider not in ("eog", "blackmarble"):
+            sky_provider = "eog"
         return {
             "version": APP_VERSION,
             "sites": db.sites(),
@@ -557,9 +586,10 @@ def create_app(db: Database, *, prefetch: bool = True) -> FastAPI:
             "adv_mode": bool(db.setting("adv_mode", False)),
             "bortle": db.setting("bortle", 4),
             "timezone": db.setting("timezone") or "",
-            "theme": db.setting("theme", "") or "",
+            "theme": normalize_theme(db.setting("theme", None)),
             "weather_auto": bool(db.setting("weather_auto", False)),
             "view_full_day": bool(db.setting("view_full_day", False)),
+            "sky_brightness_provider": sky_provider,
             # the target list's Min-visibility gate (0 = off); see targets.js
             "min_vis": min_vis if min_vis is not None else 1,
         }
@@ -616,13 +646,19 @@ def create_app(db: Database, *, prefetch: bool = True) -> FastAPI:
         if body.timezone is not None:
             db.set_setting("timezone", body.timezone.strip()[:64])
         if body.theme is not None:
-            db.set_setting("theme", body.theme.strip()[:32])
+            db.set_setting("theme", normalize_theme(body.theme.strip()[:32]))
         if body.weather_auto is not None:
             db.set_setting("weather_auto", bool(body.weather_auto))
         if body.view_full_day is not None:
             db.set_setting("view_full_day", bool(body.view_full_day))
         if body.min_vis is not None:
             db.set_setting("min_vis", max(0, min(100, int(body.min_vis))))
+        if body.sky_brightness_provider is not None:
+            provider = body.sky_brightness_provider.strip().lower()
+            if provider not in ("eog", "blackmarble"):
+                raise HTTPException(
+                    400, "sky_brightness_provider must be eog or blackmarble")
+            db.set_setting("sky_brightness_provider", provider)
         return {"ok": True}
 
     # ---------------- sites ----------------
@@ -679,6 +715,29 @@ def create_app(db: Database, *, prefetch: bool = True) -> FastAPI:
     def api_catalog(adv: bool = False):
         return [{k: v for k, v in o.items() if k != "_adv"}
                 for o in db.all_objects(advanced=adv)]
+
+    @app.get("/api/catalog/provenance")
+    def api_catalog_provenance():
+        """Return the generated, read-only catalog provenance sidecar.
+
+        The planning catalog deliberately keeps its compact row schema; this
+        endpoint exposes source versions, aliases and designation history for
+        audit/export without making that metadata part of every planning
+        request.  A missing or malformed shipped sidecar is an installation
+        error, not an empty catalog, so fail explicitly instead of returning a
+        plausible but incomplete provenance document.
+        """
+        path = resource_dir() / "app" / "data" / "catalog_provenance.json"
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except FileNotFoundError:
+            raise HTTPException(503, "Catalog provenance is not installed")
+        except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+            raise HTTPException(503, "Catalog provenance is unavailable") from exc
+        if (not isinstance(payload, dict) or payload.get("schema_version") != 1
+                or not isinstance(payload.get("objects"), dict)):
+            raise HTTPException(503, "Catalog provenance is invalid")
+        return payload
 
     @app.get("/api/object/{oid}/image")
     def api_object_image(oid: str, thumb: bool = False):
@@ -811,12 +870,17 @@ def create_app(db: Database, *, prefetch: bool = True) -> FastAPI:
         _check_profile(body.profile, "profile")
         _check_profile(body.profile_top, "profile_top")
         _check_strokes(body.strokes)
+        _check_horizon_metadata(body.landmarks, body.provenance, body.confidence)
         for label in ("az_offset", "alt_bottom", "alt_top", "fov"):
             value = getattr(body, label)
             if value is not None:
                 _finite(value, label)
         fields = {k: v for k, v in body.model_dump().items() if v is not None}
         fields.pop("active", None)      # activation is handled atomically below
+        if "landmarks" in fields:
+            fields["landmarks"] = normalize_horizon_landmarks(fields["landmarks"])
+        if "provenance" in fields:
+            fields["provenance"] = normalize_horizon_provenance(fields["provenance"])
         if fields:
             db.update_panorama(pid, **fields)
         # explicit active flag: True makes THIS pano the only active one; False

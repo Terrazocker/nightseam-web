@@ -1,17 +1,19 @@
 {
-  "hash": "c303cc499c1225f5",
-  "token": 35,
-  "previous": "0ce28a14cd61a269",
+  "hash": "8d159920e97d1d82",
+  "token": 42,
+  "previous": "e2cc83b16d8c4743",
   "files": {
     "astro.js": "1b49de0525283bdef851c63e0b700eca7649a0f3c5b63242604a11c43969ed72",
     "catalog.js": "6afcd78f5e7420d5e6ef72e46b695b90147438d5d5828b6dbb67848739819dd0",
     "format.js": "b04f2d369d22f497dd879a81f4f70453eb5fc740e4a8a47d3047786cfcb855fc",
-    "horizon.js": "c83ff0c34989a421aafd336a4224fee5c71ca20dc127f27d431eab42b763f0c9",
-    "index.js": "3735b85764042900d6adf0a213cb96718e91e9eb539f8d8171df22fe6cd86ad4",
-    "panohistory.js": "10002ce9490ed2402599c0cfd60142f479c05f2f98bc798f83929155f138208f",
+    "horizon.js": "4d7f0f08e4958f2607a305c20eac9dc57870b6f58109d7b4730be4ab51b0f866",
+    "index.js": "a7a31eb01ad55467a7f9151ff33a44a427d1bd38bc1981f5644df276d8af7da6",
+    "panohistory.js": "9760545951580292093c56095d0d1b129169ca901cfc7d2a57032129be3d7ebc",
+    "plannerstate.js": "a33baa6f9f39230b1485def7429f0d7a93d160bf1489cba5ddd1aa6cc5bbf87d",
     "planning.js": "cae22623fd754cb8b2367fb145a58bd89c8b63caff36d010d0f412da99b2fa5d",
-    "scoring.js": "36c9cd3022df4017f5153a798cb2765242a723ac5e4d8e334182662b073ba0eb",
+    "scoring.js": "b3a38615c8cec62b03093a1923851a299bf572686d96f99af193f5e55ba24143",
+    "skybrightness.js": "c7108ff03a2bd8a9fa8caad38865aa40e3fbd71f7349daee556140aac542edb4",
     "time.js": "28b648a940e89de5bd3d07fb158a944a62bdf5b93072d61c492495017d575832",
-    "visibility.js": "1068b51fe33652bc0d741ebf00bf16545776fe17ae866757d4aa51db70e795e6"
+    "visibility.js": "d503071e60ad139beaa44c995782595f426fe50072f21713922e54efa217ad5a"
   }
 }

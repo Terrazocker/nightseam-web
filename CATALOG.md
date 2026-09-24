@@ -10,9 +10,12 @@ records *why* the rules below exist.
 |---|---|---|
 | `app/data/openned.csv` | **generated** | THE catalogue (12,176 rows). Never hand-edit. |
 | `app/data/supplement.csv` | **hand-kept** | The only non-OpenNGC data: 16 objects in two batches (below). |
+| `app/data/catalog_provenance.json` | **generated** | Deterministic source/version, aliases, designation history and mapping notes for every row. |
 | `app/popularity_data.py` | **generated** | the popularity source scores, one per catalogue id. |
 | `web/catalog.json` | **generated** | The web payload, derived from the DB. |
 | `web/catalog.manifest.json` | generated | Bytes for the current `CATALOG_TOKEN`. |
+| `web/catalog-provenance.json` | generated | Web copy of the provenance sidecar; byte-identical to the desktop copy. |
+| `web/catalog-provenance.manifest.json` | generated | Bytes for the current `CATALOG_PROVENANCE_TOKEN`. |
 | `data/NGC.csv`, `data/addendum.csv` | gitignored input | Downloaded from OpenNGC. |
 | `data/popularity_snapshot.json` | gitignored snapshot | The frozen one-time the popularity source table. The matcher never refreshes it; `--live` exits 2. |
 
@@ -65,9 +68,14 @@ python scripts/match_popularity.py
 python -c "import sys; sys.path.insert(0,'.'); from app.database import Database; Database('logs/opengnc/db/nightseam.db')"
 python web/build_web.py catalog --db logs/opengnc/db/nightseam.db
 
-# 4. cache tokens   (a changed web/catalog.json MUST bump CATALOG_TOKEN + manifest;
+# 4. provenance sidecars (requires the same exact OpenNGC input files used for
+#    step 1; writes desktop + web JSON and the web manifest)
+python scripts/build_catalog_provenance.py
+
+# 5. cache tokens   (a changed web/catalog.json MUST bump CATALOG_TOKEN + manifest;
 #                    any changed web module MUST bump its ?v=)
 python scripts/check_catalog_token.py
+python scripts/check_catalog_provenance.py
 python scripts/check_js_tokens.py --update     # refuses while a missed bump exists
 python scripts/check_js.py
 ```
@@ -76,7 +84,28 @@ Checks that catch the classic mistakes: `tests/test_catalog_integrity.py`
 (unique/token-safe ids, the standard/advanced split, the CSV ↔ JSON ↔ DB counts,
 and the **advertised size** in six copy sites), `tests/test_supplement.py` (the
 exception set), `tests/test_advanced_catalog.py` (row shape, seeding),
-`tests/test_catalog.py` (types, coordinates, the standard-mode rule).
+`tests/test_catalog.py` (types, coordinates, the standard-mode rule), and
+`tests/test_catalog_provenance.py` (sidecar identity, complete row coverage,
+API exposure and cache guard).
+
+## Provenance and reproducible exports
+
+The planning rows stay compact and schema-compatible. The generated provenance
+sidecar is the audit layer for them: `objects[<catalog id>]` records the source
+dataset/file, a `sha256:<digest>` source version, aliases, structured
+designation history, and a mapping note when the display name or supplement
+rule changes the source representation. The top-level `catalog.sha256` is the
+exact byte hash of `app/data/openned.csv`; the input list records the exact
+OpenNGC `NGC.csv`, OpenNGC `addendum.csv`, and committed NightSeam supplement
+hashes. No mutable release label is inferred from a download URL.
+
+Both shells load this same sidecar. Desktop exposes `/api/catalog/provenance`
+and both catalog views offer a deterministic `nightseam-catalog-provenance.json`
+download. The web sidecar has its own cache token and manifest; `check_js.py`,
+`check_release.py`, and `check_catalog_provenance.py` fail if the two copies,
+the catalog ids, the CSV hash, or the token pairing drift. If a future catalog
+rebuild changes provenance bytes, bump `CATALOG_PROVENANCE_TOKEN` in
+`web/app.js` and refresh its guard baseline in the same change.
 
 ## Rules that are easy to get wrong
 

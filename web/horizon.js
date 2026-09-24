@@ -21,13 +21,16 @@ import {
   skyBandPolygons, computeProfile, clearMask, ceilFor, bandTopFor,
   overhangRuns, assumedOpenRuns, assumedOpenHatchPolys,
   CROP_MIN_FOV, cropPano, cropKeptBand, cropStrokes, clipProfileToFov,
+  HORIZON_LANDMARK_KINDS, normalizeHorizonLandmarks,
+  normalizeHorizonProvenance, normalizeHorizonConfidence, profileDifference,
   effectiveMinAlt as coreMinAlt,
   snapshotPanoState as coreSnapshotPano, applyPanoState as coreApplySnapshot,
   historyCommit as coreHistoryCommit, historyCanUndo as coreHistoryCanUndo,
   historyCanRedo as coreHistoryCanRedo, historyUndo as coreHistoryUndo,
   historyRedo as coreHistoryRedo, historyMarkSaved as coreHistoryMarkSaved,
   historyDirty as coreHistoryDirty, PANO_HISTORY_LIMIT as coreHISTORY_LIMIT,
-} from './core.js?v=35';
+  PLANNER_CHANGE_EVENT, nextPlannerRevision, plannerChange, panoramaRevision,
+} from './core.js?v=42';
 
 export {
   NO_BLOCK, BINS, MASK_W, MASK_H,
@@ -35,9 +38,30 @@ export {
   visibleSkyBands, skyBandPolygons, computeProfile, clearMask, ceilFor,
   bandTopFor, overhangRuns, assumedOpenRuns, assumedOpenHatchPolys,
   wrapsFor, CROP_MIN_FOV, cropKeptBand, cropStrokes, clipProfileToFov, cropPano,
+  HORIZON_LANDMARK_KINDS, normalizeHorizonLandmarks,
+  normalizeHorizonProvenance, normalizeHorizonConfidence, profileDifference,
 };
 
 const LS_KEY = 'nightseam_panos_v1';
+let plannerRevision = 0;
+
+/** Publish the shared planner invalidation contract for this web shell. */
+export function announcePlannerChange(kind, fields = {}) {
+  plannerRevision = nextPlannerRevision(plannerRevision);
+  if (typeof window === 'undefined' || typeof window.dispatchEvent !== 'function'
+      || typeof CustomEvent !== 'function') return;
+  window.dispatchEvent(new CustomEvent(PLANNER_CHANGE_EVENT, {
+    detail: plannerChange(kind, plannerRevision, fields),
+  }));
+}
+
+function announcePanoChanged(pano, cause = 'edit') {
+  announcePlannerChange('panorama', {
+    cause,
+    panoId: pano && pano.id ? pano.id : null,
+    panoRevision: panoramaRevision(pano),
+  });
+}
 
 /* ----- compressed panorama-image cache (survives reload) -----
    The full-resolution photo is memory-only (it can exceed localStorage
@@ -259,6 +283,9 @@ export function normalizePanos(data) {
       strokes,
       profile: (Array.isArray(p.profile) && p.profile.length === BINS) ? p.profile : blank(),
       profileTop: (Array.isArray(p.profileTop) && p.profileTop.length === BINS) ? p.profileTop : blank(),
+      landmarks: normalizeHorizonLandmarks(p.landmarks),
+      provenance: normalizeHorizonProvenance(p.provenance),
+      confidence: normalizeHorizonConfidence(p.confidence),
       // carry the bin-space marker: a CURRENT backup restores untouched, a
       // legacy (FOV-relative) one converts exactly once below
       profileBins: p.profileBins,
@@ -309,6 +336,7 @@ export function applyPanosSnapshot(snapshot) {
   for (const [id, image] of pending) {
     dataUrlToBlob(image).then((b) => { if (b) panoImgSet(id, b); }).catch(() => {});
   }
+  announcePanoChanged(activePano(), 'restore');
   return true;
 }
 
@@ -331,16 +359,21 @@ export function newPano(name) {
     profile: new Array(BINS).fill(NO_BLOCK),
     profileTop: new Array(BINS).fill(NO_BLOCK),
     profileBins: WORLD_BINS,
+    landmarks: [],
+    provenance: normalizeHorizonProvenance({ source: 'manual' }),
+    confidence: normalizeHorizonConfidence([]),
   };
   db.panos.push(p);
   if (!db.activeId) { db.activeId = id; }
   save();
+  announcePanoChanged(p, 'create');
   return p;
 }
 
 export function setActive(id) {
   db.activeId = id;
   save();
+  announcePanoChanged(activePano(), 'activate');
 }
 
 export function deletePano(id) {
@@ -348,6 +381,7 @@ export function deletePano(id) {
   if (db.activeId === id) db.activeId = db.panos.length ? db.panos[0].id : null;
   save();
   panoImgDel(id); // drop the cached compressed photo too
+  announcePanoChanged(activePano(), 'delete');
 }
 
 export function updatePano(p) {
@@ -370,7 +404,8 @@ export function updatePano(p) {
 const HISTORY_KEYS = {
   azOffset: 'azOffset', altBottom: 'altBottom', altTop: 'altTop', fov: 'fov',
   paintMode: 'paintMode', strokes: 'strokes', blockAbove: 'blockAbove',
-  profile: 'profile', profileTop: 'profileTop',
+  profile: 'profile', profileTop: 'profileTop', landmarks: 'landmarks',
+  provenance: 'provenance', confidence: 'confidence',
 };
 
 /** JSON snapshot of a panorama's EDITABLE state (strokes + calibration + paint
@@ -681,8 +716,67 @@ function haziEditorHTML(p) {
         <output id="ed-fov-v">${p.fov}\u00B0</output>
       </label>
     </div>
+    <details class="horizon-meta" open>
+      <summary>Calibration provenance</summary>
+      <div class="cal-grid">
+        <label>Method
+          <select id="ed-prov-source" aria-label="Calibration method">
+            ${['manual', 'compass', 'phone_metadata', 'plate_solve', 'imported', 'unknown'].map((v) => `<option value="${v}"${p.provenance?.source === v ? ' selected' : ''}>${v.replace('_', ' ')}</option>`).join('')}
+          </select>
+        </label>
+        <label>Captured
+          <input id="ed-prov-date" type="text" maxlength="40" placeholder="YYYY-MM-DD" value="${esc(p.provenance?.capturedAt || '')}">
+        </label>
+        <label>Operator
+          <input id="ed-prov-operator" type="text" maxlength="96" value="${esc(p.provenance?.operator || '')}">
+        </label>
+        <label>Orientation / reference
+          <input id="ed-prov-orientation" type="text" maxlength="160" placeholder="true north, compass, plate solve…" value="${esc(p.provenance?.orientation || '')}">
+        </label>
+      </div>
+      <label>Calibration notes
+        <textarea id="ed-prov-notes" rows="2" maxlength="320" placeholder="How was this panorama aligned?">${esc(p.provenance?.notes || '')}</textarea>
+      </label>
+    </details>
+    <details class="horizon-meta">
+      <summary>Named obstruction landmarks</summary>
+      <div id="ed-landmarks" class="landmark-list" role="list"></div>
+      <div class="landmark-add">
+        <input id="ed-landmark-name" type="text" maxlength="96" placeholder="Name (e.g. east roof)" aria-label="Landmark name">
+        <select id="ed-landmark-kind" aria-label="Landmark type">${HORIZON_LANDMARK_KINDS.map((v) => `<option value="${v}">${v}</option>`).join('')}</select>
+        <input id="ed-landmark-az" type="number" min="0" max="359.99" step="0.5" placeholder="Az °" aria-label="Landmark azimuth">
+        <input id="ed-landmark-alt" type="number" min="-90" max="90" step="0.5" placeholder="Alt °" aria-label="Landmark altitude">
+        <button class="btn small" id="ed-landmark-add" type="button">Add</button>
+      </div>
+      <p class="sub">Landmarks document what the profile represents; they do not change visibility by themselves.</p>
+    </details>
+    <details class="horizon-meta">
+      <summary>Numeric profile and comparison</summary>
+      <div class="cal-grid">
+        <label>Azimuth bin
+          <input id="ed-profile-az" type="number" min="0" max="359.5" step="0.5" value="0">
+        </label>
+        <label>Lower / ceiling altitude
+          <input id="ed-profile-alt" type="number" min="-90" max="90.5" step="0.1" value="${Number(p.profile?.[0] ?? NO_BLOCK)}">
+        </label>
+        <label>Band top (sky mode)
+          <input id="ed-profile-top" type="number" min="-90" max="90.5" step="0.1" value="${Number(p.profileTop?.[0] ?? NO_BLOCK)}">
+        </label>
+        <label>Confidence (0–1)
+          <input id="ed-profile-confidence" type="number" min="0" max="1" step="0.05" placeholder="unknown">
+        </label>
+      </div>
+      <div class="btnrow">
+        <button class="btn" id="ed-profile-read" type="button">Read bin</button>
+        <button class="btn" id="ed-profile-apply" type="button">Apply numeric bin</button>
+        <select id="ed-profile-compare" aria-label="Compare this horizon with another"><option value="">Compare with…</option>${db.panos.filter((q) => q.id !== p.id).map((q) => `<option value="${esc(q.id)}">${esc(q.name)}</option>`).join('')}</select>
+      </div>
+      <p id="ed-profile-compare-summary" class="sub" role="status" aria-live="polite">Choose another horizon to compare profile bins.</p>
+      <p class="sub">Numeric editing makes the stored profile authoritative and clears painted strokes, so the value cannot be overwritten by a later mask recompute.</p>
+    </details>
     <div class="pano-canvas-box" id="pano-box">
-      <canvas id="pano-canvas" width="720" height="360" tabindex="0" aria-label="Panorama horizon editor"></canvas>
+      <canvas id="pano-canvas" width="720" height="360" tabindex="0" role="img" aria-label="Panorama horizon editor" aria-describedby="panoChartSummary"></canvas>
+      <p id="panoChartSummary" class="visually-hidden" role="note">Panorama horizon editor. Use the paint controls to mark obstructions or visible sky.</p>
       <div class="ed-view-overlay" role="group" aria-label="View controls">
         <button class="btn small" id="ed-zoom-out" title="Zoom out" aria-label="Zoom out">\u2212</button>
         <span id="ed-zoom-label" class="mono">1.0\u00D7</span>
@@ -690,8 +784,9 @@ function haziEditorHTML(p) {
         <button class="btn small" id="ed-fit" title="Fit the whole panorama">Fit</button>
       </div>
     </div>
-    <canvas id="pano-profile" width="720" height="56" aria-label="Obstruction profile preview"></canvas>
-    <p class="sub" style="margin-top:6px">Guides: amber = azimuth (N/E/S/W), green dashed = horizon (alt 0), blue = altitude. Profile preview scales to your alt-bottom / alt-top range &middot; edits apply to planning immediately; press Save to keep them.</p>`;
+    <canvas id="pano-profile" width="720" height="56" role="img" aria-label="Obstruction profile preview" aria-describedby="panoProfileSummary"></canvas>
+    <p id="panoProfileSummary" class="visually-hidden" role="note">Obstruction profile preview.</p>
+    <p class="sub" style="margin-top:6px">Guides: amber = azimuth (N/E/S/W), green dashed = horizon (alt 0), blue = altitude; dashed blue profile = comparison. Profile preview scales to your alt-bottom / alt-top range &middot; edits apply to planning immediately; press Save to keep them.</p>`;
 }
 
 /** Small in-page confirm dialog (never a blocking browser alert/confirm). */
@@ -744,9 +839,11 @@ export function setPrefs(patch) { prefs = { ...prefs, ...patch }; savePrefs(); }
 function loadPrefs() {
   try {
     const raw = localStorage.getItem('nightseam_prefs_v1');
-    if (raw) return { bortle: 4, minAlt: null, moonAware: false, viewFullDay: false, ...JSON.parse(raw) };
+    if (raw) return { bortle: 4, minAlt: null, moonAware: false, viewFullDay: false,
+      skyBrightnessProvider: 'eog', ...JSON.parse(raw) };
   } catch { /* ignore */ }
-  return { bortle: 4, minAlt: null, moonAware: false, viewFullDay: false };
+  return { bortle: 4, minAlt: null, moonAware: false, viewFullDay: false,
+    skyBrightnessProvider: 'eog' };
 }
 function savePrefs() { try { localStorage.setItem('nightseam_prefs_v1', JSON.stringify(prefs)); } catch { /* ignore */ } }
 
@@ -818,9 +915,97 @@ function wireEditor(box, p, onChanged) {
                       && activeSession.panoId === p.id && activeSession.hist);
   const hist = samePano ? activeSession.hist : newHistory(p);
   let status = 'saved';                    // 'saved' | 'saving' | 'failed'
+  let metadataPending = false;
   const paintMode = () => p.paintMode;
   const paintRGB = () => (p.paintMode === 'obstacle' ? [255, 80, 80] : [120, 230, 140]);
-  const dirty = () => historyDirty(hist, p);
+  const dirty = () => metadataPending || historyDirty(hist, p);
+
+  function markMetadataPending() {
+    metadataPending = true;
+    renderStatus();
+  }
+
+  function syncMetadataFromUI() {
+    const get = (id) => $(id, box);
+    p.provenance = normalizeHorizonProvenance({
+      source: get('#ed-prov-source')?.value,
+      capturedAt: get('#ed-prov-date')?.value,
+      operator: get('#ed-prov-operator')?.value,
+      orientation: get('#ed-prov-orientation')?.value,
+      notes: get('#ed-prov-notes')?.value,
+    });
+    const confidence = get('#ed-profile-confidence');
+    if (confidence && confidence.value !== '') {
+      const n = num(confidence.value);
+      if (Number.isFinite(n)) {
+        p.confidence = normalizeHorizonConfidence(p.confidence);
+        p.confidence[profileIndex()] = Math.max(0, Math.min(1, n));
+      }
+    }
+  }
+
+  function profileIndex() {
+    const az = num($('#ed-profile-az', box)?.value);
+    const a = Number.isFinite(az) ? ((az % 360) + 360) % 360 : 0;
+    return Math.min(BINS - 1, Math.max(0, Math.round(a * 2)));
+  }
+
+  function readProfileBin() {
+    const idx = profileIndex();
+    const alt = $('#ed-profile-alt', box);
+    const top = $('#ed-profile-top', box);
+    const conf = $('#ed-profile-confidence', box);
+    if (alt) alt.value = String(Number(p.profile?.[idx] ?? NO_BLOCK));
+    if (top) top.value = String(Number(p.profileTop?.[idx] ?? NO_BLOCK));
+    const cv = normalizeHorizonConfidence(p.confidence)[idx];
+    if (conf) conf.value = cv == null ? '' : String(cv);
+  }
+
+  function renderLandmarkRows() {
+    const list = $('#ed-landmarks', box);
+    if (!list) return;
+    list.innerHTML = p.landmarks.map((lm, i) => `
+      <div class="landmark-row" data-lm-index="${i}" role="listitem">
+        <input data-lm="name" type="text" maxlength="96" value="${esc(lm.name)}" aria-label="Landmark ${i + 1} name">
+        <select data-lm="kind" aria-label="Landmark ${i + 1} type">${HORIZON_LANDMARK_KINDS.map((v) => `<option value="${v}"${lm.kind === v ? ' selected' : ''}>${v}</option>`).join('')}</select>
+        <input data-lm="azimuth" type="number" min="0" max="359.99" step="0.5" value="${lm.azimuth}" aria-label="Landmark ${i + 1} azimuth">
+        <input data-lm="altitude" type="number" min="-90" max="90" step="0.5" value="${lm.altitude}" aria-label="Landmark ${i + 1} altitude">
+        <button class="btn small" data-lm-remove type="button" aria-label="Remove ${esc(lm.name)}">Remove</button>
+      </div>`).join('') || '<p class="sub">No named landmarks yet.</p>';
+    list.querySelectorAll('[data-lm]').forEach((el) => el.addEventListener('change', () => {
+      const row = el.closest('[data-lm-index]');
+      const i = Number(row?.dataset.lmIndex);
+      if (!Number.isInteger(i) || !p.landmarks[i]) return;
+      const key = el.dataset.lm;
+      p.landmarks[i] = { ...p.landmarks[i], [key]: key === 'kind' || key === 'name'
+        ? el.value : num(el.value) };
+      p.landmarks = normalizeHorizonLandmarks(p.landmarks);
+      markMetadataPending();
+    }));
+    list.querySelectorAll('[data-lm-remove]').forEach((el) => el.addEventListener('click', () => {
+      const row = el.closest('[data-lm-index]');
+      const i = Number(row?.dataset.lmIndex);
+      if (!Number.isInteger(i)) return;
+      p.landmarks.splice(i, 1);
+      renderLandmarkRows();
+      markMetadataPending();
+    }));
+  }
+
+  function compareProfile() {
+    const sel = $('#ed-profile-compare', box);
+    const out = $('#ed-profile-compare-summary', box);
+    if (!sel || !out || !sel.value) {
+      if (out) out.textContent = 'Choose another horizon to compare profile bins.';
+      return;
+    }
+    const other = db.panos.find((q) => q.id === sel.value);
+    if (!other) return;
+    const d = profileDifference(p.profile, other.profile);
+    out.textContent = d.compared
+      ? `${other.name}: mean difference ${d.meanAbs.toFixed(1)}°; maximum ${d.maxAbs.toFixed(1)}° at azimuth ${d.azAtMax.toFixed(1)}° (${d.compared} bins compared).`
+      : `${other.name}: no comparable profile bins.`;
+  }
 
   /* ---- DPR-aware sizing: the backing store follows the displayed size, so
    *      lines and labels stay sharp; all drawing stays in the 720x360 logical
@@ -1028,6 +1213,30 @@ function wireEditor(box, p, onChanged) {
         profCtx.restore();
       }
     }
+    const compareId = $('#ed-profile-compare', box)?.value;
+    const compare = compareId ? db.panos.find((q) => q.id === compareId) : null;
+    if (compare && Array.isArray(compare.profile) && compare.profile.length === BINS) {
+      const compareSegs = profileSegments(compare.profile, W, H, lo, hi, azOff, fov, 90.5);
+      profCtx.save();
+      profCtx.strokeStyle = 'rgba(120,190,255,.95)';
+      profCtx.lineWidth = 1.5;
+      profCtx.setLineDash([5, 3]);
+      profCtx.beginPath();
+      for (const s of compareSegs) {
+        s.forEach(([x, y], k) => (k ? profCtx.lineTo(x, y) : profCtx.moveTo(x, y)));
+      }
+      profCtx.stroke();
+      if (paintMode() === 'sky' && compare.blockAbove &&
+          Array.isArray(compare.profileTop) && compare.profileTop.length === BINS) {
+        const topSegs = profileSegments(compare.profileTop, W, H, lo, hi, azOff, fov, 90.5);
+        profCtx.beginPath();
+        for (const s of topSegs) {
+          s.forEach(([x, y], k) => (k ? profCtx.lineTo(x, y) : profCtx.moveTo(x, y)));
+        }
+        profCtx.stroke();
+      }
+      profCtx.restore();
+    }
     profCtx.fillStyle = 'rgba(127,151,184,.8)';
     profCtx.font = '9px system-ui';
     profCtx.fillText(lo.toFixed(0) + '\u00B0', 2, 53);
@@ -1082,17 +1291,39 @@ function wireEditor(box, p, onChanged) {
     }
     const save = $('#ed-save', box);
     if (save) save.classList.toggle('primary', dirty());
+    const profileSummary = $('#panoProfileSummary', box);
+    if (profileSummary) {
+      const mode = p.paintMode === 'sky' ? 'visible sky band' : 'obstruction ceiling';
+      const assumed = p.paintMode === 'sky' && !p.blockAbove ? ' Above-band sky is assumed open.' : '';
+      profileSummary.textContent = `Horizon profile preview: ${mode}, azimuth ${p.azOffset.toFixed(1)} to ${(p.azOffset + p.fov).toFixed(1)} degrees, altitude ${p.altBottom.toFixed(1)} to ${p.altTop.toFixed(1)} degrees.${assumed}`;
+    }
+    const chartSummary = $('#panoChartSummary', box);
+    if (chartSummary) {
+      const modeName = p.paintMode === 'sky' ? 'sky-band' : 'obstacle';
+      chartSummary.textContent = `Panorama horizon editor in ${modeName} mode. Azimuth offset ${p.azOffset.toFixed(1)} degrees, field of view ${p.fov.toFixed(1)} degrees, altitude range ${p.altBottom.toFixed(1)} to ${p.altTop.toFixed(1)} degrees.${dirty() ? ' Unsaved changes.' : ' Saved.'}`;
+    }
   }
 
   const rebuildMaskNow = () => { mask = rebuildMask(p.strokes, wrapsFor(p)); };
 
-  function commit() { historyCommit(hist, p); renderStatus(); }
+  function commit() {
+    historyCommit(hist, p);
+    announcePanoChanged(p, 'edit');
+    renderStatus();
+  }
+
+  function commitMetadata() {
+    if (!metadataPending) return;
+    metadataPending = false;
+    commit();
+  }
 
   function doUndo() {
     if (!historyUndo(hist, p)) return;
     rebuildMaskNow();
     syncCalInputs();
     overlay();
+    announcePanoChanged(p, 'undo');
     renderStatus();
   }
   function doRedo() {
@@ -1100,6 +1331,7 @@ function wireEditor(box, p, onChanged) {
     rebuildMaskNow();
     syncCalInputs();
     overlay();
+    announcePanoChanged(p, 'redo');
     renderStatus();
   }
   function revertSession() {
@@ -1112,6 +1344,8 @@ function wireEditor(box, p, onChanged) {
   function saveSession() {
     status = 'saving';
     renderStatus();
+    syncMetadataFromUI();
+    commitMetadata();
     computeProfile(p);    // derive from strokes (or keep the stored profile)
     // FIX-5: only a REAL write may clear the dirty baseline; on failure keep
     // the edits and let the caller show "Save failed".
@@ -1383,6 +1617,71 @@ function wireEditor(box, p, onChanged) {
     overlay();
     commit();
   });
+
+  // Descriptive metadata is edited live but coalesced into one history entry
+  // when the field changes or the user presses Save. This keeps typing from
+  // consuming the bounded undo stack while still making a focused field dirty
+  // before navigation can flush it.
+  ['#ed-prov-source', '#ed-prov-date', '#ed-prov-operator',
+   '#ed-prov-orientation', '#ed-prov-notes'].forEach((sel) => {
+    const el = $(sel, box);
+    if (!el) return;
+    el.addEventListener('input', markMetadataPending);
+    el.addEventListener('change', () => { syncMetadataFromUI(); commitMetadata(); });
+  });
+  const confEl = $('#ed-profile-confidence', box);
+  if (confEl) confEl.addEventListener('input', markMetadataPending);
+  const readBin = $('#ed-profile-read', box);
+  if (readBin) readBin.addEventListener('click', readProfileBin);
+  const azBin = $('#ed-profile-az', box);
+  if (azBin) azBin.addEventListener('change', readProfileBin);
+  const applyBin = $('#ed-profile-apply', box);
+  if (applyBin) applyBin.addEventListener('click', () => {
+    const idx = profileIndex();
+    const alt = num($('#ed-profile-alt', box)?.value);
+    const top = num($('#ed-profile-top', box)?.value);
+    if (!Number.isFinite(alt) || alt < -90 || alt > 90.5) return;
+    if (p.paintMode === 'sky' && (!Number.isFinite(top) || top < -90 || top > 90.5)) return;
+    p.strokes = [];
+    p.profile = Array.isArray(p.profile) && p.profile.length === BINS
+      ? p.profile.slice() : new Array(BINS).fill(p.paintMode === 'sky' ? 90 : NO_BLOCK);
+    p.profileTop = Array.isArray(p.profileTop) && p.profileTop.length === BINS
+      ? p.profileTop.slice() : new Array(BINS).fill(NO_BLOCK);
+    p.profile[idx] = +alt.toFixed(1);
+    if (p.paintMode === 'sky') p.profileTop[idx] = +top.toFixed(1);
+    p.confidence = normalizeHorizonConfidence(p.confidence);
+    const cv = $('#ed-profile-confidence', box)?.value;
+    p.confidence[idx] = cv === '' ? null : Math.max(0, Math.min(1, num(cv)));
+    p.profileBins = WORLD_BINS;
+    metadataPending = false;
+    rebuildMaskNow();
+    overlay();
+    commit();
+  });
+  const addLandmark = $('#ed-landmark-add', box);
+  if (addLandmark) addLandmark.addEventListener('click', () => {
+    const name = $('#ed-landmark-name', box)?.value.trim();
+    const az = num($('#ed-landmark-az', box)?.value);
+    const alt = num($('#ed-landmark-alt', box)?.value);
+    if (!name || !Number.isFinite(az) || !Number.isFinite(alt)) return;
+    p.landmarks.push({
+      id: `landmark-${Date.now().toString(36)}`,
+      name, kind: $('#ed-landmark-kind', box)?.value || 'other',
+      azimuth: az, altitude: alt, notes: '',
+    });
+    p.landmarks = normalizeHorizonLandmarks(p.landmarks);
+    $('#ed-landmark-name', box).value = '';
+    $('#ed-landmark-az', box).value = '';
+    $('#ed-landmark-alt', box).value = '';
+    renderLandmarkRows();
+    metadataPending = false;
+    commit();
+  });
+  const cmp = $('#ed-profile-compare', box);
+  if (cmp) cmp.addEventListener('change', () => { compareProfile(); drawProfile(); });
+  renderLandmarkRows();
+  readProfileBin();
+  compareProfile();
 
   if (undoHandler) document.removeEventListener('keydown', undoHandler);
   undoHandler = (ev) => {

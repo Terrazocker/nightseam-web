@@ -14,8 +14,9 @@ import { S } from "./state.js";
 import { api, parseUTC } from "./util.js";
 import { activeProfile, activeTopProfile, longestRunJS } from "./derive.js";
 import {
-  julianDay, altaz, sunRaDec, moonRaDec, moonIllumination, moonAge,
+  julianDay, dateFromJD, altaz, sunRaDec, moonRaDec, moonIllumination, moonAge,
   nightInfo, pickDarkWindow, computeNightTracks,
+  visibilityReason, summarizeVisibility,
 } from "./core.js";
 
 const GRID_STEP_MIN = 6;
@@ -312,6 +313,13 @@ function applyDerivedNumbers(o, d, j) {
   o.score = d.score[j]; o.score_moon = d.scoreMoon[j];
   o.best = d.bS[j] < 0 ? null : [d.bS[j], d.bE[j]];
   o.best_above = d.aS[j] < 0 ? null : [d.aS[j], d.aE[j]];
+  o.max_alt = Number.isFinite(d.maxAlt[j]) ? d.maxAlt[j] : o.max_alt;
+  o.visible_minutes = d.visibleMinutes[j] || 0;
+  o.transit_jd = Number.isFinite(d.transitJd[j]) ? d.transitJd[j] : null;
+  o.culmination_jd = o.transit_jd;
+  o.rise_jd = Number.isFinite(d.riseJd[j]) ? d.riseJd[j] : null;
+  o.set_jd = Number.isFinite(d.setJd[j]) ? d.setJd[j] : null;
+  o.visibility_reason = d.reason[j] || "no_usable_window";
 }
 
 /** Preference-change rescore through the worker (uses its retained tracks);
@@ -513,6 +521,8 @@ export async function buildClientDetail(oid, { date, tzMin, minAlt, siteId }) {
   const topAt = lookup(topProf);
   const alts = [], azs = [], ceils = [], tops = topProf ? [] : null, vis = [];
   const duskMs = w.dusk.getTime(), dawnMs = w.dawn.getTime();
+  const reasonCounts = Object.create(null);
+  let visibleFullN = 0;
   for (let i = 0; i < times.length; i++) {
     const a = tracks.alt[i], z = tracks.az[i];
     const c = ceilAt(z);
@@ -520,7 +530,12 @@ export async function buildClientDetail(oid, { date, tzMin, minAlt, siteId }) {
     azs.push(r1(z));
     ceils.push(Math.round(c * 100) / 100);
     if (tops) tops.push(r1(topAt(z)));
-    vis.push(a >= minAlt && a > c && (!tops || a < tops[i]));
+    const inNight = times[i] >= duskMs && times[i] <= dawnMs;
+    const reason = visibilityReason(a, minAlt, c, tops ? tops[i] : null, inNight);
+    if (inNight) reasonCounts[reason] = (reasonCounts[reason] || 0) + 1;
+    const isVis = reason === "visible";
+    if (isVis) visibleFullN++;
+    vis.push(isVis);
   }
   // DS4: the night payload picks its peak on the RAW altitude and reports it at
   // 1 dp (`max_alt: r1(maxRaw)`, `max_i: maxI` above); this payload rounded each
@@ -535,6 +550,29 @@ export async function buildClientDetail(oid, { date, tzMin, minAlt, siteId }) {
   }
   const inNight = times.map((t) => t >= duskMs && t <= dawnMs);
   const best = longestRunJS(vis.map((v, i) => v && inNight[i]));
+  const visibleNightN = vis.reduce((n, v, i) => n + (v && inNight[i] ? 1 : 0), 0);
+  let riseJd = null, setJd = null;
+  for (let i = 1; i < times.length; i++) {
+    const a0 = tracks.alt[i - 1], a1 = tracks.alt[i];
+    const jdPrev = jd0 + (i - 1) * stepJd;
+    if (a0 <= 0 && a1 > 0 && riseJd == null) {
+      riseJd = jdPrev + (a0 / (a0 - a1)) * stepJd;
+    } else if (a0 > 0 && a1 <= 0 && setJd == null) {
+      setJd = jdPrev + (a0 / (a0 - a1)) * stepJd;
+    }
+  }
+  const summary = summarizeVisibility({
+    visibleSamples: visibleNightN,
+    visibleFullSamples: visibleFullN,
+    stepMin: DETAIL_STEP_MIN,
+    maxAlt: maxRaw,
+    reasonCounts,
+  });
+  const isoBoundary = (index) => {
+    const ms = index < times.length ? times[index]
+      : times[times.length - 1] + DETAIL_STEP_MIN * 60000;
+    return new Date(ms).toISOString().slice(0, 19);
+  };
 
   const out = {
     meta: Object.assign({}, meta, {
@@ -554,7 +592,16 @@ export async function buildClientDetail(oid, { date, tzMin, minAlt, siteId }) {
     // the rounded array, so `max_time` and `max_alt` always name one sample.
     max_alt: Math.round(maxRaw * 100) / 100,
     max_time: new Date(times[maxI]).toISOString().slice(0, 19),
+    culmination_jd: jd0 + maxI * stepJd,
+    culmination_alt: Math.round(maxRaw * 100) / 100,
+    rise_time: riseJd == null ? null : dateFromJD(riseJd).toISOString().slice(0, 19),
+    set_time: setJd == null ? null : dateFromJD(setJd).toISOString().slice(0, 19),
     best,
+    usable_start: best ? times[best[0]] && new Date(times[best[0]]).toISOString().slice(0, 19) : null,
+    usable_end: best ? isoBoundary(best[1]) : null,
+    visible_minutes: summary.visibleMinutes,
+    visibility_reason: summary.reason,
+    reason_counts: summary.reasonCounts,
     min_useful_alt: minAlt,
   };
   if (tops) out.ceil_top = tops;

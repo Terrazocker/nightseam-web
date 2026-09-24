@@ -3,12 +3,15 @@
 /* ================= panorama import / calibration / masking ================= */
 
 import { $, clamp, esc, api, toast, num } from "./util.js";
-import { S } from "./state.js";
+import { S, announcePlannerChange } from "./state.js";
 import { loadNight } from "./night.js";
 import { profileSegments, cropKeptBand, fovBinRel,
+         HORIZON_LANDMARK_KINDS, normalizeHorizonLandmarks,
+         normalizeHorizonProvenance, normalizeHorizonConfidence,
+         profileDifference,
          snapshotPanoState as coreSnapshotPano,
          applyPanoState as coreApplySnapshot,
-         HISTORY_KEYS_DESKTOP } from "./core.js";
+         HISTORY_KEYS_DESKTOP, panoramaRevision } from "./core.js";
 
 export { profileSegments };
 
@@ -22,15 +25,32 @@ export const Pano = {
   cropping: false,
   crop: null,       // side-band selection in canvas px
   tool: "b",
-  saveTimer: null,
-  pending: null,    // {rec, fields} captured by scheduleSave, flushed on switch/close
+  pending: null,    // {rec, fields} captured by scheduleSave, flushed on Save/leave
   undo: [],         // pre-gesture snapshots (core/panohistory.js format)
   redo: [],         // undone snapshots, invalidated by a new edit
+  metadataGesture: false,
   loupeOn: true,
   lastPos: null,    // last pointer position over canvas (css px)
 };
 
 window.Pano = Pano;
+
+function announcePanoChanged(cause = "edit") {
+  const rec = Pano.cur;
+  announcePlannerChange("panorama", {
+    cause,
+    panoId: rec ? rec.id : null,
+    panoRevision: panoramaRevision(rec),
+  });
+}
+
+function setSaveStatus(text, cls = "") {
+  const el = $("#panoSaveStatus");
+  if (!el) return;
+  el.textContent = text;
+  el.classList.toggle("dirty", cls === "dirty");
+  el.classList.toggle("failed", cls === "failed");
+}
 
 Pano.init = function () {
   $("#btnUploadPano").addEventListener("click", () => $("#panoFile").click());
@@ -58,7 +78,7 @@ Pano.init = function () {
     if (!Pano.cur) return;
     Pano.cur.block_above = !!e.target.checked;
     render();
-    scheduleSave(0);
+    scheduleSave();
   });
   $("#btnCalN").addEventListener("click", () => {
     if (!Pano.cur) return;
@@ -67,9 +87,24 @@ Pano.init = function () {
     setTool("none");
     render();
   });
-  $("#btnSaveProfile").addEventListener("click", () => { recomputeProfile(); scheduleSave(0); });
+  $("#btnSaveProfile").addEventListener("click", () => { recomputeProfile(); requestSave(); });
   $("#btnSetActive").addEventListener("click", activateCurrent);
   $("#btnDelPano").addEventListener("click", deleteCurrent);
+  for (const id of ["panoProvSource", "panoProvDate", "panoProvOperator",
+                    "panoProvOrientation", "panoProvNotes"]) {
+    const el = $("#" + id);
+    if (!el) continue;
+    el.addEventListener("input", () => updateMetadataFromUI(true));
+    el.addEventListener("change", () => { Pano.metadataGesture = false; updateMetadataFromUI(false); });
+  }
+  $("#btnAddPanoLandmark").addEventListener("click", addPanoLandmark);
+  $("#btnReadPanoProfile").addEventListener("click", readPanoProfileBin);
+  $("#panoProfileAz").addEventListener("change", readPanoProfileBin);
+  $("#btnApplyPanoProfile").addEventListener("click", applyPanoProfileBin);
+  $("#panoProfileCompare").addEventListener("change", () => {
+    comparePanoProfile();
+    render();
+  });
 
   for (const [id, valId] of [
       ["azOffset","azOffVal"], ["altBottom","abVal"],
@@ -171,6 +206,140 @@ export function blankProfileForMode(rec) {
   return rec.profile;
 }
 
+function ensureHorizonMetadata(rec) {
+  if (!rec) return rec;
+  rec.landmarks = normalizeHorizonLandmarks(rec.landmarks);
+  rec.provenance = normalizeHorizonProvenance(rec.provenance);
+  rec.confidence = normalizeHorizonConfidence(rec.confidence);
+  return rec;
+}
+
+function metadataTouch() {
+  if (!Pano.metadataGesture) {
+    pushPanoUndo(Pano.cur, Pano.undo);
+    Pano.redo = [];
+    Pano.metadataGesture = true;
+  }
+}
+
+function profileBinIndex() {
+  const n = num($("#panoProfileAz")?.value);
+  const a = Number.isFinite(n) ? ((n % 360) + 360) % 360 : 0;
+  return Math.min(NBIN - 1, Math.max(0, Math.round(a * 2)));
+}
+
+function updateMetadataFromUI(mark = true) {
+  if (!Pano.cur) return;
+  if (mark) metadataTouch();
+  Pano.cur.provenance = normalizeHorizonProvenance({
+    source: $("#panoProvSource")?.value,
+    capturedAt: $("#panoProvDate")?.value,
+    operator: $("#panoProvOperator")?.value,
+    orientation: $("#panoProvOrientation")?.value,
+    notes: $("#panoProvNotes")?.value,
+  });
+  scheduleSave();
+}
+
+function renderPanoLandmarks() {
+  const box = $("#panoLandmarks");
+  if (!box || !Pano.cur) return;
+  box.innerHTML = Pano.cur.landmarks.map((lm, i) => `
+    <div class="landmark-row" data-lm-index="${i}" role="listitem">
+      <input data-lm="name" type="text" maxlength="96" value="${esc(lm.name)}" aria-label="Landmark ${i + 1} name">
+      <select data-lm="kind" aria-label="Landmark ${i + 1} type">${HORIZON_LANDMARK_KINDS.map((v) => `<option value="${v}"${lm.kind === v ? " selected" : ""}>${v}</option>`).join("")}</select>
+      <input data-lm="azimuth" type="number" min="0" max="359.99" step="0.5" value="${lm.azimuth}" aria-label="Landmark ${i + 1} azimuth">
+      <input data-lm="altitude" type="number" min="-90" max="90" step="0.5" value="${lm.altitude}" aria-label="Landmark ${i + 1} altitude">
+      <button class="ghost" data-lm-remove type="button" aria-label="Remove ${esc(lm.name)}">Remove</button>
+    </div>`).join("")
+    || '<p class="hint">No named landmarks yet.</p>';
+  box.querySelectorAll("[data-lm]").forEach((el) => el.addEventListener("change", () => {
+    const row = el.closest("[data-lm-index]");
+    const i = Number(row?.dataset.lmIndex);
+    if (!Number.isInteger(i) || !Pano.cur.landmarks[i]) return;
+    metadataTouch();
+    const key = el.dataset.lm;
+    Pano.cur.landmarks[i] = { ...Pano.cur.landmarks[i], [key]: key === "name" || key === "kind" ? el.value : num(el.value) };
+    Pano.cur.landmarks = normalizeHorizonLandmarks(Pano.cur.landmarks);
+    scheduleSave();
+  }));
+  box.querySelectorAll("[data-lm-remove]").forEach((el) => el.addEventListener("click", () => {
+    const row = el.closest("[data-lm-index]");
+    const i = Number(row?.dataset.lmIndex);
+    if (!Number.isInteger(i)) return;
+    metadataTouch();
+    Pano.cur.landmarks.splice(i, 1);
+    renderPanoLandmarks();
+    scheduleSave();
+  }));
+}
+
+function addPanoLandmark() {
+  if (!Pano.cur) return;
+  const name = $("#panoLandmarkName")?.value.trim();
+  const az = num($("#panoLandmarkAz")?.value);
+  const alt = num($("#panoLandmarkAlt")?.value);
+  if (!name || !Number.isFinite(az) || !Number.isFinite(alt)) return;
+  metadataTouch();
+  Pano.cur.landmarks.push({
+    id: `landmark-${Date.now().toString(36)}`,
+    name, kind: $("#panoLandmarkKind")?.value || "other",
+    azimuth: az, altitude: alt, notes: "",
+  });
+  Pano.cur.landmarks = normalizeHorizonLandmarks(Pano.cur.landmarks);
+  $("#panoLandmarkName").value = "";
+  $("#panoLandmarkAz").value = "";
+  $("#panoLandmarkAlt").value = "";
+  renderPanoLandmarks();
+  scheduleSave();
+}
+
+function readPanoProfileBin() {
+  if (!Pano.cur) return;
+  const i = profileBinIndex();
+  $("#panoProfileAlt").value = String(Number(Pano.cur.profile?.[i] ?? -90));
+  $("#panoProfileTop").value = String(Number(Pano.cur.profile_top?.[i] ?? -90));
+  const c = normalizeHorizonConfidence(Pano.cur.confidence)[i];
+  $("#panoProfileConfidence").value = c == null ? "" : String(c);
+}
+
+function applyPanoProfileBin() {
+  if (!Pano.cur) return;
+  const alt = num($("#panoProfileAlt")?.value);
+  const top = num($("#panoProfileTop")?.value);
+  if (!Number.isFinite(alt) || alt < -90 || alt > 90.5) return;
+  if (paintMode() === "sky" && (!Number.isFinite(top) || top < -90 || top > 90.5)) return;
+  metadataTouch();
+  const i = profileBinIndex();
+  Pano.cur.strokes = [];
+  Pano.cur.profile = Array.isArray(Pano.cur.profile) && Pano.cur.profile.length === NBIN
+    ? Pano.cur.profile.slice() : new Array(NBIN).fill(paintMode() === "sky" ? 90 : -90);
+  Pano.cur.profile_top = Array.isArray(Pano.cur.profile_top) && Pano.cur.profile_top.length === NBIN
+    ? Pano.cur.profile_top.slice() : new Array(NBIN).fill(-90);
+  Pano.cur.profile[i] = +alt.toFixed(1);
+  if (paintMode() === "sky") Pano.cur.profile_top[i] = +top.toFixed(1);
+  Pano.cur.confidence = normalizeHorizonConfidence(Pano.cur.confidence);
+  const cv = $("#panoProfileConfidence")?.value;
+  Pano.cur.confidence[i] = cv === "" ? null : Math.max(0, Math.min(1, num(cv)));
+  invalidateMask();
+  render();
+  scheduleSave();
+}
+
+function comparePanoProfile() {
+  const out = $("#panoProfileCompareSummary"), sel = $("#panoProfileCompare");
+  if (!out || !sel || !sel.value || !Pano.cur) {
+    if (out) out.textContent = "Choose another horizon to compare profile bins.";
+    return;
+  }
+  const other = S.panos.find((p) => p.id === sel.value);
+  if (!other) return;
+  const d = profileDifference(Pano.cur.profile, other.profile);
+  out.textContent = d.compared
+    ? `${other.name}: mean difference ${d.meanAbs.toFixed(1)}°; maximum ${d.maxAbs.toFixed(1)}° at azimuth ${d.azAtMax.toFixed(1)}° (${d.compared} bins compared).`
+    : `${other.name}: no comparable profile bins.`;
+}
+
 /** Switch the record's paint mode. Returns true when it changed. */
 export function setEditableMode(rec, m) {
   const want = (m === "sky") ? "sky" : "obstacle";
@@ -215,8 +384,9 @@ function setPaintMode(m) {
   setEditableMode(Pano.cur, m);        // mode + canonical blank for the new mode
   invalidateMask();
   updateModeButtons();
+  syncUndoButtons();
   recomputeProfile();
-  scheduleSave(0);
+  scheduleSave();
 }
 
 /* ---------------- undo / redo ----------------
@@ -240,7 +410,7 @@ function undoPaint() {
   Pano.redo.push(coreSnapshotPano(Pano.cur, HISTORY_KEYS_DESKTOP));
   if (!popPanoUndo(Pano.cur, Pano.undo)) return;
   invalidateMask();
-  updateModeButtons();
+  syncEditorInputs(Pano.cur);
   syncUndoButtons();
   render();
   scheduleSave();
@@ -252,7 +422,7 @@ function redoPaint() {
   coreApplySnapshot(Pano.cur, snap, HISTORY_KEYS_DESKTOP);
   Pano.undo.push(snap);
   invalidateMask();
-  updateModeButtons();
+  syncEditorInputs(Pano.cur);
   syncUndoButtons();
   render();
   scheduleSave();
@@ -279,12 +449,13 @@ function calibrateAt(e) {
   if (bearing != null) {
     const b = num(bearing);
     if (!isNaN(b)) {
+      pushUndo();
       const newOff = (((b - frac * fov) % 360) + 360) % 360;
       $("#azOffset").value = newOff.toFixed(1);
       $("#azOffVal").textContent = newOff.toFixed(1) + "\u00B0";
       invalidateMask();          // calibration moved -> grid + line shift
       recomputeProfile();        // profile bins follow the new offset
-      scheduleSave(0);
+      scheduleSave();
     }
   }
   Pano.calibrating = false;
@@ -310,14 +481,18 @@ function normCrop() {
 }
 
 Pano.onShow = function () { renderList(); render(); };
+Pano.onHide = function () { void flushSave(); };
 Pano.render = render;   // exposed for the global resize handler
 
-Pano.refreshOverlay = function () { /* night reloads don't alter editor */ };
+Pano.refreshOverlay = function () {
+  if (Pano.cur && Pano.img && $("#tab-horizon")?.classList.contains("active")) render();
+};
 
 /* ---------------- data plumbing ---------------- */
 
 async function refreshPanos() {
   S.panos = await api("/api/panoramas");
+  S.panos.forEach(ensureHorizonMetadata);
   renderList();
 }
 
@@ -351,13 +526,13 @@ function renderList() {
 }
 
 async function select(rec) {
-  // DE-04: a pending auto-save belongs to the PREVIOUS panorama, and its payload
-  // is captured when it is scheduled - so FLUSH it before switching instead of
-  // cancelling it. The old clearTimeout dropped a gesture whose 900 ms timer had
-  // not fired; because the payload carries its own record, the flush can never
-  // write into the record we are switching to (the reason the cancel existed).
+  // A pending explicit save belongs to the PREVIOUS panorama, and its payload
+  // is captured when it is scheduled - so FLUSH it before switching. The
+  // payload carries its own record and can never write into the record we are
+  // switching to.
   await flushSave();
-  Pano.cur = rec;
+  Pano.cur = ensureHorizonMetadata(rec);
+  Pano.metadataGesture = false;
   // DE-02: the offscreen mask cache belongs to ONE record, but `render()` only
   // rebuilds it when the canvas SIZE changes - so two panoramas with the same
   // aspect reused the previous mask. `select()` writes the calibration fields
@@ -365,25 +540,17 @@ async function select(rec) {
   // ran here either. Drop the cache with the record it belongs to.
   invalidateMask();
   Pano.crop = null;
-  // a pending auto-save belongs to the PREVIOUS panorama: FLUSHED above (DE-04),
-  // never cancelled - the captured payload cannot leak into this record
-  // undo history belongs to ONE panorama: without this, undoing after a switch
-  // wrote the previous panorama's strokes into this one and auto-saved them
+  // A pending save belongs to the PREVIOUS panorama: it was flushed above and
+  // never cancelled. Undo history belongs to ONE panorama: without this,
+  // undoing after a switch could write the previous panorama's strokes into
+  // this one.
   Pano.undo = [];
   Pano.redo = [];
   updateModeButtons();
   syncUndoButtons();
   $("#calibBox").classList.remove("hidden");
-  $("#azOffset").value = rec.az_offset ?? 0;
-  $("#altBottom").value = rec.alt_bottom ?? 0;
-  $("#altTop").value = rec.alt_top ?? 45;
-  $("#fovAz").value = rec.fov ?? 360;
-  $("#azOffVal").textContent = ($("#azOffset").value) + "\u00B0";
-  $("#abVal").textContent = ($("#altBottom").value) + "\u00B0";
-  $("#atVal").textContent = ($("#altTop").value) + "\u00B0";
-  $("#fovVal").textContent = ($("#fovAz").value) + "\u00B0";
-  const ba = $("#chkBlockAbove");
-  if (ba) ba.checked = !!rec.block_above;
+  syncEditorInputs(rec);
+  setSaveStatus("Saved");
   Pano.img = new Image();
   Pano.img.onload = () => { $("#panoError").classList.add("hidden"); render(); };
   Pano.img.onerror = () => {
@@ -493,13 +660,49 @@ function dab(ev) {
   invalidateMask();
 }
 
-function clearMask() {
+function confirmDialog({ title, body, ok = "OK", cancel = "Cancel" }) {
+  return new Promise((resolve) => {
+    const el = document.createElement("div");
+    el.className = "modal";
+    el.setAttribute("role", "dialog");
+    el.setAttribute("aria-modal", "true");
+    el.setAttribute("aria-labelledby", "panoConfirmTitle");
+    el.innerHTML = `<div class="modal-box" style="max-width:440px">
+      <h3 id="panoConfirmTitle">${esc(title)}</h3>
+      <p class="hint">${esc(body)}</p>
+      <div class="rowbtns" style="justify-content:flex-end">
+        <button class="ghost" data-cancel>${esc(cancel)}</button>
+        <button class="danger" data-ok>${esc(ok)}</button>
+      </div>
+    </div>`;
+    const done = (value) => { el.remove(); resolve(value); };
+    el.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") done(false);
+    });
+    el.addEventListener("click", (event) => {
+      if (event.target === el) done(false);
+    });
+    el.querySelector("[data-cancel]").addEventListener("click", () => done(false));
+    el.querySelector("[data-ok]").addEventListener("click", () => done(true));
+    document.body.appendChild(el);
+    el.querySelector("[data-ok]").focus();
+  });
+}
+
+async function clearMask() {
   if (!Pano.cur) return;
+  const ok = await confirmDialog({
+    title: "Clear horizon mask?",
+    body: "Remove all paint from this panorama? You can undo this change.",
+    ok: "Clear",
+  });
+  if (!ok) return;
   pushPanoUndo(Pano.cur, Pano.undo);   // Clear is undoable too (the ONE deliberate discard)
   Pano.cur.strokes = [];
   Pano.cur.profile = [];
   Pano.cur.profile_top = [];
   invalidateMask();
+  syncUndoButtons();
   render();
   scheduleSave();
 }
@@ -597,6 +800,12 @@ function render() {
     ctx.fillText(`-\u00A0${lTrim}\u00B0`, 6, 18);
     ctx.fillText(`-\u00A0${rTrim}\u00B0`, W - 74, 18);
     ctx.fillText(`FOV \u2192 ${(fov - lTrim - rTrim).toFixed(0)}\u00B0`, c.x + 8, 18);
+  }
+  const summary = $("#panoChartSummary");
+  if (summary && Pano.cur) {
+    const mode = paintMode() === "sky" ? "sky-band" : "obstacle";
+    const open = paintMode() === "sky" && !Pano.cur.block_above ? " Above-band sky is assumed open." : "";
+    summary.textContent = `Panorama horizon editor in ${mode} mode. Azimuth offset ${(+$("#azOffset").value || 0).toFixed(1)} degrees, field of view ${(+$("#fovAz").value || 360).toFixed(1)} degrees, altitude range ${(+$("#altBottom").value || 0).toFixed(1)} to ${(+$("#altTop").value || 45).toFixed(1)} degrees.${open}`;
   }
 }
 
@@ -751,6 +960,23 @@ function drawProfileLine(ctx, W, H) {
     strokeSegments(ctx, topSegs);
     ctx.setLineDash([]);
   }
+
+  const compareId = $("#panoProfileCompare")?.value;
+  const compare = compareId ? S.panos.find((p) => p.id === compareId) : null;
+  if (compare && Array.isArray(compare.profile) && compare.profile.length === NBIN) {
+    const compareSegs = profileSegments(compare.profile, W, H, ab, at, azOff, fov, 90.5);
+    ctx.save();
+    ctx.strokeStyle = "rgba(120,190,255,.95)";
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([5, 3]);
+    strokeSegments(ctx, compareSegs);
+    if (sky && compare.block_above && Array.isArray(compare.profile_top)
+        && compare.profile_top.length === NBIN) {
+      strokeSegments(ctx, profileSegments(compare.profile_top, W, H,
+                                           ab, at, azOff, fov, 90.5));
+    }
+    ctx.restore();
+  }
 }
 
 /* ---------------- obstruction profile from mask ---------------- */
@@ -851,36 +1077,94 @@ function recomputeProfile() {
 
 /* ---------------- persistence ---------------- */
 
-/** The editable fields a save sends for `rec`, captured when the save is
- *  SCHEDULED - so a flush after the user switched panoramas still sends the
- *  values of the record it belongs to (DE-04). */
+function syncRecordFromUI(rec) {
+  rec.az_offset = +$("#azOffset").value;
+  rec.alt_bottom = +$("#altBottom").value;
+  rec.alt_top = +$("#altTop").value;
+  rec.fov = +$("#fovAz").value;
+  rec.paint_mode = paintMode();
+  const block = $("#chkBlockAbove");
+  rec.block_above = block ? !!block.checked : !!rec.block_above;
+}
+
+function syncEditorInputs(rec) {
+  if (!rec) return;
+  ensureHorizonMetadata(rec);
+  const fields = [
+    ["#azOffset", "#azOffVal", rec.az_offset ?? 0],
+    ["#altBottom", "#abVal", rec.alt_bottom ?? 0],
+    ["#altTop", "#atVal", rec.alt_top ?? 45],
+    ["#fovAz", "#fovVal", rec.fov ?? 360],
+  ];
+  for (const [input, label, value] of fields) {
+    const el = $(input), out = $(label);
+    if (el) el.value = value;
+    if (out) out.textContent = value + "\u00B0";
+  }
+  const block = $("#chkBlockAbove");
+  if (block) block.checked = !!rec.block_above;
+  const prov = rec.provenance || {};
+  const setValue = (id, value) => { const el = $(id); if (el) el.value = value ?? ""; };
+  setValue("#panoProvSource", prov.source || "unknown");
+  setValue("#panoProvDate", prov.capturedAt);
+  setValue("#panoProvOperator", prov.operator);
+  setValue("#panoProvOrientation", prov.orientation);
+  setValue("#panoProvNotes", prov.notes);
+  const cmp = $("#panoProfileCompare");
+  if (cmp) {
+    cmp.innerHTML = '<option value="">Compare with…</option>'
+      + S.panos.filter((p) => p.id !== rec.id)
+        .map((p) => `<option value="${esc(p.id)}">${esc(p.name)}</option>`).join("");
+  }
+  renderPanoLandmarks();
+  readPanoProfileBin();
+  comparePanoProfile();
+  updateModeButtons();
+}
+
+/** The editable fields a save sends for `rec`, captured when the edit is
+ * queued - so a flush after the user switched panoramas still sends the
+ * values of the record it belongs to (DE-04). Deep copies keep a later edit
+ * from rewriting an already queued explicit-save payload. */
 function currentPanoFields(rec) {
   return {
-    az_offset: +$("#azOffset").value,
-    alt_bottom: +$("#altBottom").value,
-    alt_top: +$("#altTop").value,
-    fov: +$("#fovAz").value,
-    strokes: rec.strokes,
-    profile: rec.profile,
-    profile_top: rec.profile_top || [],
-    paint_mode: paintMode(),
+    az_offset: rec.az_offset,
+    alt_bottom: rec.alt_bottom,
+    alt_top: rec.alt_top,
+    fov: rec.fov,
+    strokes: Array.isArray(rec.strokes) ? rec.strokes.map((s) => ({ ...s })) : [],
+    profile: Array.isArray(rec.profile) ? rec.profile.slice() : [],
+    profile_top: Array.isArray(rec.profile_top) ? rec.profile_top.slice() : [],
+    paint_mode: rec.paint_mode,
     block_above: !!rec.block_above,
+    landmarks: normalizeHorizonLandmarks(rec.landmarks),
+    provenance: normalizeHorizonProvenance(rec.provenance),
+    confidence: normalizeHorizonConfidence(rec.confidence),
   };
 }
 
-function scheduleSave(delay = 900) {
-  clearTimeout(Pano.saveTimer);
+function scheduleSave() {
   const rec = Pano.cur;
   if (!rec) return;
   // derive the profile NOW: the flush may run when the DOM - and this record -
   // are already gone (a panorama switch or a window close)
+  syncRecordFromUI(rec);
   recomputeProfile();
-  Pano.pending = { rec, fields: currentPanoFields(rec) };
-  Pano.saveTimer = setTimeout(() => { void flushSave(); }, delay);
+  const fields = currentPanoFields(rec);
+  Object.assign(rec, fields);
+  Pano.pending = { rec, fields };
+  setSaveStatus("Unsaved changes", "dirty");
+  announcePanoChanged("edit");
 }
 
-/** Persist the pending edit (no-op when there is none). Called by the debounce
- *  timer, by a panorama switch and by the unload guard.
+/** Explicit persistence boundary for the desktop editor. */
+function requestSave() {
+  scheduleSave();
+  void flushSave();
+}
+
+/** Persist the pending edit (no-op when there is none). Called by Save, a
+ *  panorama switch, navigation away from Horizon, and the unload guard.
  *
  *  DE-05: the WHOLE continuation is inside the guard. `api()` rethrows, so the
  *  list refresh used to reject the timer callback with nothing to catch it; it
@@ -889,11 +1173,10 @@ function scheduleSave(delay = 900) {
  *  discard a DIFFERENT panorama's unsaved strokes. The merge below touches only
  *  the record that was actually saved, and only while the user is still on it. */
 async function flushSave() {
-  clearTimeout(Pano.saveTimer);
-  Pano.saveTimer = null;
   const job = Pano.pending;
   Pano.pending = null;
   if (!job) return;
+  if (Pano.cur === job.rec) setSaveStatus("Saving...");
   try {
     await api("/api/panorama/" + job.rec.id, { method: "PUT",
       headers: {"Content-Type":"application/json"},
@@ -902,11 +1185,21 @@ async function flushSave() {
     const upd = list.find(p => p.id === job.rec.id);
     if (upd) {
       const idx = S.panos.findIndex(p => p.id === job.rec.id);
-      if (idx >= 0) S.panos[idx] = upd;
-      if (Pano.cur === job.rec) Pano.cur = upd;
+      const stillEditing = Pano.cur === job.rec;
+      // A second gesture may have been edited while this request was in
+      // flight. Keep the local record and its list entry until that newer
+      // payload is acknowledged; replacing it here would silently discard the
+      // newer in-memory edit even though Pano.pending still held it.
+      if (idx >= 0 && (!stillEditing || !Pano.pending)) S.panos[idx] = upd;
+      if (stillEditing && !Pano.pending) {
+        Pano.cur = upd;
+        Pano.metadataGesture = false;
+        setSaveStatus("Saved");
+      }
     }
   } catch {
     // api() already toasted; keep the local painting
+    if (Pano.cur === job.rec) setSaveStatus("Save failed", "failed");
   }
 }
 

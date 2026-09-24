@@ -99,6 +99,82 @@ def desktop_boot(c):
     c.assert_clean()
 
 
+@check("desktop-both-themes-render", "desktop")
+def desktop_both_themes_render(c):
+    """Exercise the packed desktop shell in both supported presentations."""
+    boot(c)
+    accents = {}
+    for name in ("workbench", "dome"):
+        c.page.evaluate(
+            """(theme) => {
+                 const button = document.querySelector(
+                   `#themeRow .theme-btn[data-theme="${theme}"]`);
+                 if (!button) throw new Error(`missing theme button: ${theme}`);
+                 button.click();
+               }""", name)
+        c.page.wait_for_function(
+            """(theme) => document.documentElement.dataset.theme === theme""",
+            arg=name)
+        c.page.click("[data-tab='sky']")
+        c.page.wait_for_timeout(250)
+        accent = c.page.evaluate(
+            """() => getComputedStyle(document.documentElement)
+                       .getPropertyValue('--accent').trim()""")
+        c.expect(accent, f"{name} theme did not expose an accent token")
+        c.expect(c.page.locator("#skyCanvas").bounding_box(),
+                 f"Sky View canvas missing in {name} theme")
+        accents[name] = accent
+        c.page.click("[data-tab='tonight']")
+        c.page.wait_for_timeout(150)
+    c.expect(accents["workbench"] != accents["dome"],
+             f"theme palettes did not differ: {accents}")
+    c.assert_clean()
+
+
+@check("desktop-accessibility-essentials", "desktop")
+def desktop_accessibility_essentials(c):
+    """The packed desktop shell must expose tab semantics and descriptions for
+    its chart canvases, not only draw pixels."""
+    boot(c)
+    tabs = c.page.locator("#tabs[role='tablist'] .tab[role='tab']")
+    c.expect_eq(tabs.count(), 4, "the desktop planner tablist must expose four tabs")
+    c.expect_eq(c.page.locator("#tabs .tab[aria-selected='true']").count(), 1,
+                "exactly one desktop planner tab must be selected")
+    c.page.click("[data-tab='sky']")
+    c.page.wait_for_selector("#skyCanvas[role='img'][aria-describedby='skyChartSummary']")
+    c.expect(text(c, "#skyChartSummary"),
+             "the desktop sky chart needs a non-empty screen-reader summary")
+    c.page.click("[data-tab='targets']")
+    c.page.wait_for_selector("#targetRows tr[data-id]:visible")
+    c.page.wait_for_selector("#btnCatalogProvenance")
+    provenance = c.page.evaluate(
+        """async () => { const j = await (await fetch('/api/catalog/provenance')).json();
+             return { schema: j.schema_version,
+                      source: j.objects?.ngc1976?.source,
+                      aliases: j.objects?.ngc1976?.aliases?.length || 0 }; }""")
+    c.expect(provenance["schema"] == 1 and provenance["source"] == "OpenNGC"
+             and provenance["aliases"] > 0,
+             f"the desktop provenance endpoint was not loaded: {provenance}")
+    row = c.page.locator("#targetRows tr[data-id]:visible").first
+    c.expect_eq(row.get_attribute("role"), "button",
+                "target rows must be keyboard-openable controls")
+    row.focus()
+    c.page.keyboard.press("Enter")
+    c.page.wait_for_selector("#detailModal:not(.hidden)")
+    c.expect("Catalog source" in c.page.inner_text("#dMeta")
+             and "Designation history" in c.page.inner_text("#dMeta"),
+             "the desktop detail must show catalog provenance")
+    c.expect(text(c, "#altChartSummary"),
+             "the desktop altitude chart needs a non-empty screen-reader summary")
+    # The detail chart can still be painting while the modal header is visible;
+    # dispatch the real DOM click without making Playwright wait for a fresh
+    # hit-test frame. The close handler itself must still restore focus.
+    c.page.evaluate("() => document.querySelector('#dClose')?.click()")
+    c.expect(c.page.evaluate("() => document.activeElement?.matches('#targetRows tr[data-id]')"),
+             "closing the desktop detail dialog must restore focus to its target row")
+    c.assert_clean()
+
+
 @check("desktop-worker-date-change", "desktop")
 def desktop_worker_date_change(c):
     """FIX-1 scenario: a date change must clear the busy chip and keep a plan."""

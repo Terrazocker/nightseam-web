@@ -10,6 +10,218 @@ history, tests and `RELEASES.md` preserve their durable evidence.
 
 ---
 
+## 0.6.35 — Workbench is the default; Glass remains available
+
+**Decision.** The new Workbench theme (`workbench`) is the canonical default for
+the desktop app and web planner, and the public landing page follows the same
+visual direction. The existing Glass theme (`dome`) remains selectable from
+Appearance so users can keep the earlier observatory-glass presentation.
+
+**Why.** The planning workflow benefits from a restrained instrument-panel
+surface: opaque graphite keeps charts and target data legible, brass gives the
+user one clear action/focus signal, and the compact layout leaves more room for
+the actual night plan. Removing blur, glow, and decorative starfield from the
+default also makes the interface feel less ornamental without removing the
+alternate style for users who prefer it.
+
+**Compatibility.** `classic`, the empty value, and unknown values are accepted
+as legacy inputs and normalize to `workbench`; `dome` remains `dome`. Desktop
+settings and web backups use the same canonicalization rule, so changing the
+default does not strand an existing preference or backup.
+
+**What was rejected.** Replacing Glass outright would discard a working user
+choice; keeping Classic as a third selectable theme would create a second flat
+design language and a permanent compatibility burden. The two shells keep
+their own stylesheets because their DOMs differ, but both implement the same
+Workbench hierarchy and the same theme names.
+
+**Where enforced.** `app/theme.py`, `app/database.py`, `app/server.py`,
+`web/webstore.js`, `web/app.js`, `static/js/header.js`, `web/themes.css`,
+`static/themes.css`, `landing/style.css`, and the theme migration tests.
+
+---
+
+## Unreleased review decisions - 2026-09-20
+
+This section mixes decisions implemented in the current working tree with
+explicitly pending product/architecture choices. Implemented entries are still
+not release claims until a tag is made; pending entries must be resolved before
+their decision-dependent features are implemented.
+
+### Shared planner-state invalidation
+
+**Decision.** Treat planner state changes as typed invalidation events with a
+revision-bearing payload. Panorama/profile edits, site changes, rig changes,
+date changes, selected time changes, and planning preferences must publish the
+same conceptual contract in both shells. Derived night state and observation
+caches must include the relevant revisions instead of relying on object ids
+alone.
+
+**Why.** The current shells can display an edited panorama while still showing
+derived results from the old profile. This is a correctness problem, not merely
+a repaint problem. A single event contract prevents every future consumer from
+inventing a second invalidation rule.
+
+**Proposed payload.** `{ kind, revision, causes, siteId, panoId, dateKey }`,
+with optional domain revisions for site, rig, panorama, and preferences. A
+completed user gesture emits once; pointer samples remain local to the editor.
+
+**What was rejected.** Recomputing on every pointer sample would waste work and
+make the UI race its own worker. Invalidating only by panorama id is insufficient
+because a restored or edited record can retain the same id.
+
+**Where to enforce.** The shell event adapters belong in `static/js/` and
+`web/`; pure revision/key helpers may live in `core/`. `derive.js`,
+`planning_client.js`, `web/app.js`, `web/horizon.js`, and the observation caches
+must consume the contract. Browser tests must prove that a profile edit changes
+dependent results in both shells.
+
+**Working-tree status.** The shared foundation is implemented in
+`core/plannerstate.js`; desktop and web now emit the contract for panorama,
+site, rig, date, selection, and preference changes. The event model is ready
+for future planner consumers. The accessibility foundation now has a 32/32
+cross-shell/theme browser matrix; the remaining manual accessibility audit and
+the roadmap features below still need their own coverage.
+
+### Panorama persistence boundary
+
+**Decision.** Keep the explicit-save model: edits affect the active in-memory
+panorama immediately, while durable storage changes only on Save or when the
+user leaves the editor. A page-exit flush is a safety net, not the normal user
+interface. Save should remain visibly meaningful and dirty state should be
+truthful.
+
+**Why.** This matches the existing design contract, makes undo/redo and Revert
+understandable, and gives users a clear persistence boundary for destructive
+editor operations.
+
+**What was rejected.** Silent timed autosave makes the Save button ambiguous and
+can persist a gesture before the user has reviewed it. If autosave is later
+chosen, it must be a deliberate contract change in both shells.
+
+### Site elevation contract — decision still required
+
+**Decision.** Until a defined observer model exists, elevation remains stored
+site metadata and must not be described as affecting calculations. A later
+observer-model feature may use it for explicitly documented effects such as
+horizon dip or atmospheric parameters, but those effects must be implemented in
+`core/` and shared by both shells.
+
+**Why.** The current calculation path accepts latitude and longitude but does
+not use elevation consistently. Claiming more than the implementation does is
+worse than accurately labeling the field as metadata.
+
+**What was rejected.** Adding an unexplained correction in one shell would make
+desktop and web disagree and would create no trustworthy reference values.
+
+**Exit condition.** Either remove the claim from user documentation and add a
+metadata test, or implement a specified elevation-aware observer model with
+reference anchors, migration rules, and parity tests.
+
+### Solar-system ephemeris policy — decision still required
+
+**Recommended direction.** Use a bounded, versioned, offline-capable ephemeris
+with explicit date coverage and provenance stored alongside the generated
+result. This keeps the planner reproducible and usable without a network
+request. The target-result contract should expose the same rise, set,
+culmination, altitude, interval, and reason fields as deep-sky targets.
+
+**Alternatives requiring an explicit choice.** A larger, higher-accuracy
+bundled model increases artifact size and maintenance cost; an external
+provider can improve coverage but requires a cache, offline behavior, source
+version display, and defined failure semantics. No planet, comet, or asteroid
+implementation should begin until the source, accuracy target, supported date
+range, and out-of-range behavior are chosen.
+
+### Unknown theme values during web restore
+
+**Decision.** Normalize legacy, empty, and unknown theme values to Workbench in
+web restore, matching desktop settings and the documented compatibility rule.
+
+**Why.** A backup should be deterministic across shells. Keeping the current
+theme for an unknown value is defensively conservative, but it makes the same
+backup behave differently depending on the user's current preference.
+
+**What was rejected.** Treating `null` as a third semantic theme or allowing
+unknown values to pass through to DOM attributes would create compatibility and
+styling ambiguity.
+
+**Where to enforce.** Use one canonicalizer in `web/webstore.js`, update the
+backup tests, and keep the `data-theme` value limited to `workbench` or `dome`.
+
+### Feature-data principle
+
+**Decision.** New planner features should return structured, explainable data
+from shared core calculations first, then let each shell format that data for
+its UI. Reasons, intervals, provenance, and uncertainty must not be reconstructed
+independently in desktop and web presentation code.
+
+**Why.** The planned target-explanation, transit, horizon, and catalog-provenance
+features all need the same facts in both shells. Keeping only a final boolean or
+formatted sentence in the UI will recreate the parity drift that the shared core
+was introduced to prevent.
+
+**Where to enforce.** Add typed/plain-object contracts to `core/`, freeze
+fixture-level examples, and require both shells to consume those fields without
+duplicating astronomy or planning math.
+
+### Accessibility foundation
+
+**Decision.** Treat charts as visualizations with a parallel semantic surface:
+each canvas has an accessible role and a concise live-updated text summary;
+planner tabs expose selected state; dialogs dismiss with Escape; focus-visible,
+high-contrast, and reduced-motion behavior are explicit in both shells.
+
+**Why.** A canvas can be perfectly legible to a sighted user while exposing no
+target state, timing, or editor status to a keyboard or screen-reader user.
+The summary is intentionally concise and derived from the same structured
+result the chart draws, so it does not become a second planning implementation.
+
+**What remains.** This is the source/UI contract, not a completed conformance
+claim. Focus restoration after closing dialogs and menus, dynamic announcements
+for long-running planner updates, and manual testing with actual assistive
+technology remain required before calling accessibility complete.
+
+**Where enforced.** `static/index.html`, `web/index.html`, both shell chart
+renderers, `static/style.css`, `web/style.css`, and the paired browser checks
+`desktop-accessibility-essentials` / `web-accessibility-essentials`.
+
+---
+
+## Unreleased — independent EOG zenith sky brightness
+
+**Decision.** Build the site's clear-sky zenith-brightness estimate from an
+operator-provided EOG Annual VNL radiance pack, using the shared published
+VIIRS sky-glow model in `core/skybrightness.js`. Keep Lorenz completely outside
+the product: it may supply comparison points to the separate validator, but it
+must not be an input, fallback, copied asset, or calibration source.
+
+**Why.** EOG is the independent measurement source the app can explain and
+rebuild from, while the Lorenz atlas is a finished derived rendering with
+different processing and assumptions. Separating the two makes the estimate
+auditable, avoids reverse-engineering or redistributing the atlas, and still
+gives maintainers a useful external sanity check.
+
+**Product boundary.** The raw EOG rasters are not fetched by the app. The
+offline builder reduces the 15-arcsecond `average-masked`, `cf_cvg`, and `cvg`
+products to a compact regular pack. The pack is optional; without it the
+shells remain fully functional and simply hide the chip. The estimate is
+display-only for now and never silently changes Bortle, ranking, or weather.
+
+**What was rejected.** (a) Looking up a precomputed Lorenz value at runtime -
+that would make the result dependent on the atlas rather than EOG. (b) Treating
+the result as a direct Bortle lookup - Bortle is an observing-class preference,
+while this is a modeled annual clear-sky radiance signal. (c) Bundling the raw
+EOG rasters - they are too large for the app and their download terms/access
+should remain with the operator who builds the reduced pack.
+
+**Where enforced.** `core/skybrightness.js`, `web/skybrightness.js`,
+`static/js/skybrightness.js`, `scripts/build_skybrightness.py`,
+`scripts/validate_skybrightness.mjs`, `SKY_BRIGHTNESS.md`, and the focused
+sky-brightness tests.
+
+---
+
 ## 0.6.33 fix pass — the web policy is enforced from the DOCUMENT, not a header
 
 **Decision.** `web/index.html` carries the policy as
@@ -617,11 +829,12 @@ browser too, and never at the cost of a regression.
 **What deliberately did NOT move into `core/`:**
 
 - **CSS.** `web/style.css` + `web/themes.css` and `static/style.css` +
-  `static/themes.css` share only the design LANGUAGE (the `dome` token blocks),
-  not the files - selector overlap is 23%/16%. The two shells have different
-  DOMs (a 6-pane tab app vs a JS-rendered single view), so a shared stylesheet
-  would be a rewrite with no correctness gain. The AGENTS rule stands: `dome` is
-  the language, `classic` the fallback, and structural themes never move IDs.
+  `static/themes.css` share only the design LANGUAGE (the Workbench and Glass
+  theme blocks), not the files - selector overlap is 23%/16%. The two shells
+  have different DOMs (a 6-pane tab app vs a JS-rendered single view), so a
+  shared stylesheet would be a rewrite with no correctness gain. The current
+  rule is: Workbench is the default, `dome` is the optional Glass alternate,
+  and structural themes never move IDs.
 - **Storage, backup and data delivery.** IndexedDB + `localStorage` versus
   SQLite + FastAPI is a platform split, not duplication. The web's
   stage-validate-commit restore remains the stronger model. **Audit correction,
@@ -678,7 +891,8 @@ span parameter" and documented as a deliberate anchor difference.
 of the ONE inline theme bootstrap (deliberately NOT `'unsafe-inline'`:
 `tests/browser/harness.py` recomputes the hash, and the web shell has no inline
 handler at all), `style-src 'self'`, `img-src 'self' data:
-https://upload.wikimedia.org`, `connect-src 'self' https://en.wikipedia.org`,
+https://upload.wikimedia.org`, `connect-src 'self' https://en.wikipedia.org
+https://api.open-meteo.com`,
 plus `base-uri`/`form-action`/`frame-ancestors`/`object-src` and
 `Referrer-Policy`/`X-Content-Type-Options`. The desktop has carried an equivalent
 policy in `app/server.py` since SP-02; the STATIC shell is the public origin and
@@ -794,3 +1008,29 @@ mutation-proven pin: reverting the guard makes the engine fail (verified for the
 two CR2 guards, the DS5 disposal, the DS4 argmax and the WB7 version check).
 That is the standard `BUGS.md` sets for closing a finding, and it is what was
 missing when these were first carried over.
+
+## Catalog provenance stays in a deterministic sidecar (CP-01, 2026-09-20)
+
+The catalog's 14-column planning row remains the stable identity/data contract.
+Source audit data belongs in `catalog_provenance.json`, generated from the
+exact OpenNGC inputs plus `app/data/supplement.csv`. Every row records its
+source file and byte-level `sha256:<digest>` version, aliases, structured
+designation history, and a mapping note when NightSeam's display or supplement
+rule changes the source representation. The top-level catalog hash is the
+generated `openned.csv` hash, so a provenance export can be reproduced and
+checked without embedding the large raw source files in the application.
+
+**Rejected: putting aliases and provenance into every catalog row.** It would
+expand both the desktop seed and the roughly 4 MB web payload, make the
+planner's hot path carry audit-only text, and couple future provenance changes
+to the catalog schema. The sidecar is loaded once, shown in the detail view,
+and downloadable as a complete audit artifact instead.
+
+**Rejected: using a mutable upstream release label as the version.** OpenNGC
+downloads can change without a stable label being available in the local input.
+The exact source-file SHA-256 is unambiguous; the sidecar also retains the
+human source URL and license for attribution.
+
+Both copies are byte-identical and checked against the catalog id set, the
+desktop CSV hash, a manifest, and `CATALOG_PROVENANCE_TOKEN`. A future rebuild
+must bump that token and refresh the generated baseline in the same change.

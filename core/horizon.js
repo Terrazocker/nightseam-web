@@ -18,6 +18,108 @@ export const BIN_DEG = 0.5;
 export const MASK_W = 720;
 export const MASK_H = 360; // 0.25 deg per row of altitude
 
+/** Metadata vocabulary for the horizon editor.  These values are descriptive
+ * only: they never alter the planning profile.  Keeping the vocabulary in the
+ * shared core prevents the web and desktop editors from silently inventing
+ * different meanings for the same imported record. */
+export const HORIZON_LANDMARK_KINDS = Object.freeze([
+  'tree', 'building', 'ridge', 'pole', 'roof', 'balcony', 'other',
+]);
+
+const HORIZON_TEXT_LIMITS = Object.freeze({
+  name: 96, notes: 320, source: 40, capturedAt: 40,
+  orientation: 160, operator: 96,
+});
+
+const horizonText = (value, limit) => String(value ?? '').trim().slice(0, limit);
+
+/** Normalize user-entered obstruction landmarks into a safe, portable shape.
+ *  Landmarks are annotations, not geometry; malformed entries are ignored and
+ *  coordinates are clamped/wrapped at the storage boundary. */
+export function normalizeHorizonLandmarks(value) {
+  if (!Array.isArray(value)) return [];
+  const seen = new Set();
+  const out = [];
+  for (let i = 0; i < value.length && out.length < 128; i++) {
+    const item = value[i];
+    if (!item || typeof item !== 'object') continue;
+    const name = horizonText(item.name, HORIZON_TEXT_LIMITS.name);
+    const azRaw = Number(item.azimuth ?? item.az);
+    const altRaw = Number(item.altitude ?? item.alt);
+    if (!name || !Number.isFinite(azRaw) || !Number.isFinite(altRaw)) continue;
+    const idRaw = horizonText(item.id, 64);
+    let id = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(idRaw)
+      ? idRaw : `landmark-${i + 1}`;
+    while (seen.has(id)) id = `${id}-${i + 1}`.slice(0, 64);
+    seen.add(id);
+    const kind = HORIZON_LANDMARK_KINDS.includes(item.kind)
+      ? item.kind : 'other';
+    const azimuth = ((azRaw % 360) + 360) % 360;
+    const altitude = Math.max(-90, Math.min(90, altRaw));
+    out.push({
+      id, name, kind,
+      azimuth: +azimuth.toFixed(2),
+      altitude: +altitude.toFixed(2),
+      notes: horizonText(item.notes, HORIZON_TEXT_LIMITS.notes),
+    });
+  }
+  return out;
+}
+
+/** Normalize calibration provenance.  An empty object is intentional: old
+ * panorama records did not carry provenance and must remain valid. */
+export function normalizeHorizonProvenance(value) {
+  const item = value && typeof value === 'object' && !Array.isArray(value)
+    ? value : {};
+  const allowed = ['manual', 'compass', 'phone_metadata', 'plate_solve',
+    'imported', 'unknown'];
+  return {
+    source: allowed.includes(item.source) ? item.source : 'unknown',
+    capturedAt: horizonText(item.capturedAt ?? item.captured_at,
+      HORIZON_TEXT_LIMITS.capturedAt),
+    orientation: horizonText(item.orientation, HORIZON_TEXT_LIMITS.orientation),
+    operator: horizonText(item.operator, HORIZON_TEXT_LIMITS.operator),
+    notes: horizonText(item.notes, HORIZON_TEXT_LIMITS.notes),
+  };
+}
+
+/** Confidence is per canonical world-azimuth bin: 0 = inferred/uncertain,
+ *  1 = high confidence, null = not assessed.  Always return 720 entries so a
+ *  consumer can index it without a second shape convention. */
+export function normalizeHorizonConfidence(value) {
+  const src = Array.isArray(value) ? value : [];
+  return Array.from({ length: BINS }, (_, i) => {
+    if (src[i] === null || src[i] === undefined || src[i] === '') return null;
+    const n = Number(src[i]);
+    return Number.isFinite(n) ? +Math.max(0, Math.min(1, n)).toFixed(3) : null;
+  });
+}
+
+/** Compare two canonical obstruction profiles for the editor's explanation.
+ *  Every finite bin participates, including the explicit NO_BLOCK/open-sky
+ *  sentinels; a partial-FOV difference is therefore visible rather than being
+ *  mistaken for agreement. */
+export function profileDifference(a, b) {
+  let compared = 0, sum = 0, maxAbs = 0, azAtMax = null;
+  for (let i = 0; i < BINS; i++) {
+    const av = Number(Array.isArray(a) ? a[i] : NaN);
+    const bv = Number(Array.isArray(b) ? b[i] : NaN);
+    if (!Number.isFinite(av) || !Number.isFinite(bv)) continue;
+    const diff = Math.abs(av - bv);
+    compared++;
+    sum += diff;
+    if (azAtMax === null || diff > maxAbs) {
+      maxAbs = diff; azAtMax = i * BIN_DEG;
+    }
+  }
+  return {
+    compared,
+    meanAbs: compared ? sum / compared : 0,
+    maxAbs,
+    azAtMax,
+  };
+}
+
 /** Canonical bin space marker. D1: core profiles are WORLD-AZIMUTH bins
  *  (bin i = azimuth i * 0.5 deg), matching Python `ceil_lookup`, the server
  *  payload path and the desktop editor. The web editor's mask is FOV-relative,

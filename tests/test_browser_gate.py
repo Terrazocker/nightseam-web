@@ -28,6 +28,8 @@ WEB_CHECKS = [
     "web-scrub-changes-time",
     "web-mag-slider-changes-sky",
     "web-pano-crop-recalibrate",
+    "web-both-themes-render",
+    "web-accessibility-essentials",
 ]
 DESKTOP_CHECKS = [
     "desktop-boot",
@@ -37,6 +39,8 @@ DESKTOP_CHECKS = [
     "desktop-advanced-mode",
     "desktop-scrub-window",
     "desktop-pano-crop-fov",
+    "desktop-both-themes-render",
+    "desktop-accessibility-essentials",
 ]
 
 

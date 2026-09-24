@@ -14,11 +14,130 @@ from pathlib import Path
 
 from . import catalog_data
 from .paths import resource_dir, safe_rel, safe_token
+from .theme import normalize_theme
 
 # Panorama obstruction arrays are exactly 720 numbers (0.5-degree world-azimuth
 # bins) or empty. This is the storage-format rule shared by the PUT route and
 # the import boundary (core/horizon.js owns the math).
 PROFILE_BINS = 720
+CONFIDENCE_BINS = PROFILE_BINS
+_HORIZON_LANDMARK_KINDS = {
+    "tree", "building", "ridge", "pole", "roof", "balcony", "other",
+}
+_HORIZON_PROVENANCE_SOURCES = {
+    "manual", "compass", "phone_metadata", "plate_solve", "imported",
+    "unknown",
+}
+
+
+def normalize_horizon_landmarks(value) -> list[dict]:
+    """Return the bounded, HTML-safe annotation shape used by both shells.
+
+    Landmarks are descriptive metadata, not an input to the planner. The
+    storage boundary still normalizes them because names/notes are rendered by
+    the editors and imported JSON is untrusted. Invalid entries are dropped;
+    the whole panorama remains usable when one annotation is malformed.
+    """
+    if not isinstance(value, list):
+        return []
+    out: list[dict] = []
+    seen: set[str] = set()
+    for i, item in enumerate(value[:128]):
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get("name") or "").strip()[:96]
+        try:
+            az = float(item.get("azimuth", item.get("az")))
+            alt = float(item.get("altitude", item.get("alt")))
+        except (TypeError, ValueError):
+            continue
+        if not name or not math.isfinite(az) or not math.isfinite(alt):
+            continue
+        raw_id = str(item.get("id") or "").strip()[:64]
+        ident = raw_id if safe_token(raw_id) == raw_id else f"landmark-{i + 1}"
+        while ident in seen:
+            ident = f"{ident[:55]}-{i + 1}"
+        seen.add(ident)
+        az = az % 360
+        alt = max(-90, min(90, alt))
+        kind = item.get("kind") if item.get("kind") in _HORIZON_LANDMARK_KINDS else "other"
+        out.append({
+            "id": ident,
+            "name": name,
+            "kind": kind,
+            "azimuth": round(az, 2),
+            "altitude": round(alt, 2),
+            "notes": str(item.get("notes") or "").strip()[:320],
+        })
+    return out
+
+
+def normalize_horizon_provenance(value) -> dict:
+    """Normalize calibration provenance while preserving old empty records."""
+    item = value if isinstance(value, dict) else {}
+    source = item.get("source") if item.get("source") in _HORIZON_PROVENANCE_SOURCES else "unknown"
+    return {
+        "source": source,
+        "capturedAt": str(item.get("capturedAt", item.get("captured_at")) or "").strip()[:40],
+        "orientation": str(item.get("orientation") or "").strip()[:160],
+        "operator": str(item.get("operator") or "").strip()[:96],
+        "notes": str(item.get("notes") or "").strip()[:320],
+    }
+
+
+def confidence_values_ok(values) -> bool:
+    """True for [] or one finite confidence value per world profile bin."""
+    if not isinstance(values, list) or len(values) not in (0, CONFIDENCE_BINS):
+        return False
+    return all(v is None or (
+        not isinstance(v, bool) and isinstance(v, (int, float))
+        and math.isfinite(float(v)) and 0 <= float(v) <= 1
+    ) for v in values)
+
+
+def normalize_horizon_confidence(values) -> list:
+    """Always expose a 720-entry confidence vector to API consumers."""
+    if not isinstance(values, list) or len(values) not in (0, CONFIDENCE_BINS):
+        return [None] * CONFIDENCE_BINS
+    return [round(float(v), 3) if v is not None else None for v in values]
+
+
+def _validate_import_landmarks(value) -> None:
+    if value is None:
+        return
+    if not isinstance(value, list) or len(value) > 128:
+        raise ValueError("panorama landmarks must be a list of at most 128 objects")
+    for item in value:
+        if not isinstance(item, dict):
+            raise ValueError("panorama landmarks must contain objects")
+        if not str(item.get("name") or "").strip():
+            raise ValueError("panorama landmark names must not be empty")
+        for key in ("azimuth", "altitude"):
+            alt_key = "az" if key == "azimuth" else "alt"
+            v = item.get(key, item.get(alt_key))
+            if isinstance(v, bool) or not isinstance(v, (int, float)) \
+                    or not math.isfinite(float(v)):
+                raise ValueError(f"panorama landmark {key} must be finite")
+        if item.get("kind") is not None and item.get("kind") not in _HORIZON_LANDMARK_KINDS:
+            raise ValueError("panorama landmark kind is not recognized")
+
+
+def _validate_import_provenance(value) -> None:
+    if value is None:
+        return
+    if not isinstance(value, dict):
+        raise ValueError("panorama provenance must be an object")
+    if value.get("source") is not None and value.get("source") not in _HORIZON_PROVENANCE_SOURCES:
+        raise ValueError("panorama provenance source is not recognized")
+
+
+def _validate_import_confidence(value) -> None:
+    if value is None:
+        return
+    if not confidence_values_ok(value):
+        raise ValueError(
+            f"panorama confidence must be empty or exactly {CONFIDENCE_BINS} "
+            "finite values between 0 and 1")
 
 
 def profile_values_ok(values) -> bool:
@@ -105,7 +224,7 @@ def finite_or_none(value):
 
 _BOOL_SETTINGS = ("moon_aware", "adv_mode", "weather_auto", "view_full_day",
                   "wizard_done")
-_STR_SETTINGS = ("timezone", "theme")
+_STR_SETTINGS = ("timezone", "theme", "sky_brightness_provider")
 _SIZE_UNITS = ("arcmin", "arcsec", "deg")
 
 # Settings stored as a number but read back through an int()/float() coercion.
@@ -165,6 +284,10 @@ def _validate_import_settings(settings: dict) -> None:
             raise ValueError("settings.min_useful_alt must be a finite number")
     if "size_unit" in settings and settings["size_unit"] not in _SIZE_UNITS:
         raise ValueError("settings.size_unit must be arcmin, arcsec or deg")
+    if "sky_brightness_provider" in settings and settings["sky_brightness_provider"] not in (
+            "eog", "blackmarble"):
+        raise ValueError(
+            "settings.sky_brightness_provider must be eog or blackmarble")
     if "filters" in settings and not isinstance(settings["filters"], dict):
         raise ValueError("settings.filters must be an object")
     if "favorites" in settings and not isinstance(settings["favorites"], list):
@@ -228,7 +351,10 @@ CREATE TABLE IF NOT EXISTS panoramas (
     profile_top TEXT NOT NULL DEFAULT '[]',
     active INTEGER NOT NULL DEFAULT 1,
     paint_mode TEXT NOT NULL DEFAULT 'obstacle',
-    block_above INTEGER NOT NULL DEFAULT 0
+    block_above INTEGER NOT NULL DEFAULT 0,
+    landmarks TEXT NOT NULL DEFAULT '[]',
+    provenance TEXT NOT NULL DEFAULT '{}',
+    confidence TEXT NOT NULL DEFAULT '[]'
 );
 CREATE TABLE IF NOT EXISTS settings (
     key TEXT PRIMARY KEY,
@@ -413,6 +539,12 @@ def prepare_import_bundle(settings: dict, sites: list, rigs: list,
     # would fail open at planning time and a hostile setting could brick
     # /api/state at every boot; the transaction below is never entered.
     _validate_import_settings(settings)
+    # ``classic`` (and the empty value used by older desktop builds) is the
+    # legacy name for the flat/default look. Store the new canonical name while
+    # the bundle is still side-effect free, so the database and export format
+    # converge on one default without a separate migration pass.
+    if "theme" in settings:
+        settings["theme"] = normalize_theme(settings["theme"])
     # PY3 follow-up (adversarial verification): site/rig/pano numbers are read
     # into /api/state, which rejects NaN on serialization - validate them on the
     # import boundary too (None is allowed; JSON null is fine).
@@ -433,6 +565,9 @@ def prepare_import_bundle(settings: dict, sites: list, rigs: list,
             _fin(f"panorama {key}", p.get(key))
         _validate_import_profile(p.get("profile"), "profile")
         _validate_import_profile(p.get("profile_top"), "profile_top")
+        _validate_import_landmarks(p.get("landmarks"))
+        _validate_import_provenance(p.get("provenance"))
+        _validate_import_confidence(p.get("confidence"))
         # PY-03: the third stored array, iterated by both editors
         _validate_import_strokes(p.get("strokes"))
     # PY04-F2 (review round 2): the image rows were the ONE record type the
@@ -508,6 +643,24 @@ class Database:
             self.conn.execute(
                 "ALTER TABLE panoramas ADD COLUMN block_above "
                 "INTEGER NOT NULL DEFAULT 0")
+        except sqlite3.OperationalError:
+            pass
+        try:  # migration: named obstruction landmarks
+            self.conn.execute(
+                "ALTER TABLE panoramas ADD COLUMN landmarks "
+                "TEXT NOT NULL DEFAULT '[]'")
+        except sqlite3.OperationalError:
+            pass
+        try:  # migration: calibration provenance (source/orientation/notes)
+            self.conn.execute(
+                "ALTER TABLE panoramas ADD COLUMN provenance "
+                "TEXT NOT NULL DEFAULT '{}'")
+        except sqlite3.OperationalError:
+            pass
+        try:  # migration: confidence per canonical world-azimuth bin
+            self.conn.execute(
+                "ALTER TABLE panoramas ADD COLUMN confidence "
+                "TEXT NOT NULL DEFAULT '[]'")
         except sqlite3.OperationalError:
             pass
         try:  # migration: import-run marker for merging chunked uploads
@@ -805,13 +958,17 @@ class Database:
                 # value; the write boundaries (`_validate_import_*`, `_check_profile`,
                 # `_check_strokes`) are what keep malformed shapes out in the first
                 # place.
-                for key in ("strokes", "profile", "profile_top"):
+                for key in ("strokes", "profile", "profile_top", "landmarks",
+                            "provenance", "confidence"):
                     try:
                         d[key] = json.loads(d[key])
                     except (TypeError, ValueError):
-                        d[key] = []
+                        d[key] = {} if key == "provenance" else []
                 if not isinstance(d["strokes"], list):
                     d["strokes"] = []       # both editors iterate this
+                d["landmarks"] = normalize_horizon_landmarks(d["landmarks"])
+                d["provenance"] = normalize_horizon_provenance(d["provenance"])
+                d["confidence"] = normalize_horizon_confidence(d["confidence"])
                 d["block_above"] = bool(d.get("block_above"))
                 out.append(d)
             return out
@@ -861,12 +1018,14 @@ class Database:
     def update_panorama(self, pid: str, **fields):
         allowed = {"name", "file", "az_offset", "alt_bottom", "alt_top",
                    "strokes", "profile", "profile_top", "active", "fov",
-                   "paint_mode", "block_above"}
+                   "paint_mode", "block_above", "landmarks", "provenance",
+                   "confidence"}
         sets, vals = [], []
         for k, v in fields.items():
             if k not in allowed:
                 continue
-            if k in ("strokes", "profile", "profile_top"):
+            if k in ("strokes", "profile", "profile_top", "landmarks",
+                     "provenance", "confidence"):
                 v = json.dumps(v)
             if k in ("active", "block_above"):
                 v = 1 if v else 0
@@ -915,11 +1074,14 @@ class Database:
             if not r:
                 return default
             try:
-                return json.loads(r["value"])
+                value = json.loads(r["value"])
+                return normalize_theme(value) if key == "theme" else value
             except Exception:
                 return default
 
     def set_setting(self, key: str, value):
+        if key == "theme":
+            value = normalize_theme(value)
         with self.lock:
             self.conn.execute(
                 "INSERT INTO settings(key,value) VALUES(?,?) "
@@ -1077,7 +1239,9 @@ class Database:
             out = {}
             for r in self.conn.execute("SELECT key,value FROM settings"):
                 try:
-                    out[r["key"]] = json.loads(r["value"])
+                    value = json.loads(r["value"])
+                    out[r["key"]] = (normalize_theme(value)
+                                      if r["key"] == "theme" else value)
                 except Exception:
                     pass
             return out
@@ -1160,8 +1324,8 @@ class Database:
                     cur.execute(
                         "INSERT INTO panoramas(id,name,file,az_offset,alt_bottom,"
                         "alt_top,strokes,profile,profile_top,active,fov,paint_mode,"
-                        "block_above) "
-                        "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                        "block_above,landmarks,provenance,confidence) "
+                        "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                         (acc["id"], p.get("name"), acc["file"],
                          p.get("az_offset", 0), p.get("alt_bottom", 0),
                          p.get("alt_top", 45), json.dumps(p.get("strokes", [])),
@@ -1169,7 +1333,10 @@ class Database:
                          json.dumps(p.get("profile_top", [])),
                          1 if p.get("active") else 0, p.get("fov", 360),
                          p.get("paint_mode", "obstacle"),
-                         1 if p.get("block_above") else 0))
+                         1 if p.get("block_above") else 0,
+                         json.dumps(normalize_horizon_landmarks(p.get("landmarks", []))),
+                         json.dumps(normalize_horizon_provenance(p.get("provenance", {}))),
+                         json.dumps(p.get("confidence", []))))
                 for c in customs:
                     # PY4 (review): the id must keep the `u_` custom prefix -
                     # a bundle carrying a builtin id (e.g. "m31") would collide

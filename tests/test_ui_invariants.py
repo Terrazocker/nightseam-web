@@ -106,13 +106,35 @@ def test_web_panorama_editor_controls_and_no_blocking_dialogs():
         assert f"export function {fn}" in js, fn
 
 
+def test_both_shells_expose_chart_descriptions_and_accessibility_modes():
+    """Canvas pixels need a textual fallback, and the preference media modes
+    must remain active in both design languages."""
+    desk = _read("static", "index.html")
+    web_html = _read("web", "index.html")
+    web_app = _read("web", "app.js")
+    for text in (desk, web_app):
+        assert "aria-describedby" in text and "skyChartSummary" in text
+        assert "role=\"img\"" in text or "role=\"img\'" in text
+    for text, ids in ((desk, ("altChartSummary", "panoChartSummary", "skymapChartSummary")),
+                      (web_app, ("graphSummary",))):
+        for ident in ids:
+            assert ident in text, f"missing chart description {ident}"
+    assert 'role="tablist"' in desk and 'role="tablist"' in web_html
+    assert "aria-selected" in desk and "aria-selected" in web_html
+    for rel in (("static", "style.css"), ("web", "style.css")):
+        css = _read(*rel)
+        assert "prefers-reduced-motion" in css
+        assert "prefers-contrast: more" in css
+        assert "focus-visible" in css
+
+
 def test_desktop_robustness_invariants():
     """Zero-site recovery and pano-save safety are one-line-critical: a
     substring assertion is enough to catch a revert.
 
     - main.js must reopen the wizard whenever there are no sites (the old
       `&& !wizard_done` guard left a permanent 0-site dead-end).
-    - pano.js select() must cancel a pending auto-save (it belongs to the
+    - pano.js select() must flush a pending explicit save (it belongs to the
       previous panorama) and must not blank a stored profile for a stroke-less
       record.
     - detail.js must escape the constellation and the catalogue chips."""
@@ -120,12 +142,14 @@ def test_desktop_robustness_invariants():
     assert "if (!S.cfg.sites.length) {" in mainjs
     assert "!S.cfg.wizard_done" not in mainjs
     pano = _read("static", "js", "pano.js")
-    # DE-04 changed this contract on purpose: select() now FLUSHES the captured
-    # payload instead of cancelling the timer (the cancel silently dropped a
-    # gesture whose 900 ms window had not elapsed). The ownership test below pins
-    # the flush and the unload guard; the cancel itself must be gone.
+    # The desktop editor has an explicit-save boundary: select() FLUSHES the
+    # captured payload, and the cancel-only path is gone.
     assert "await flushSave();" in pano
     assert "if (Pano.saveTimer) { clearTimeout(Pano.saveTimer); Pano.saveTimer = null; }" not in pano
+    assert "function requestSave()" in pano
+    assert "setTimeout(() => { void flushSave();" not in pano
+    assert "confirmDialog({" in pano
+    assert "panoSaveStatus" in _read("static", "index.html")
     # recomputeProfile must keep a stroke-less record's stored profile. Since
     # PY-03 the test is the shared strokeList() guard, so a NON-ARRAY stored
     # `strokes` also counts as stroke-less instead of crashing the editor - and
@@ -157,7 +181,7 @@ def test_desktop_ownership_invariants():
     assert "invalidateMask();" in select_body, (
         "DE-02: select() must drop the previous panorama's mask cache")
     assert "await flushSave();" in select_body, (
-        "DE-04: a panorama switch must FLUSH the pending auto-save, not drop it")
+        "a panorama switch must FLUSH the pending explicit save, not drop it")
     assert "clearTimeout(Pano.saveTimer)" not in select_body, (
         "DE-04: the cancel-only path is what silently lost the edit")
     flush_body = _js_body(pano, "async function flushSave() {")
@@ -174,6 +198,72 @@ def test_desktop_ownership_invariants():
     wiz = _read("static", "js", "wizard.js")
     assert "_formState = {};" in _js_body(wiz, "export function openWizard() {"), (
         "DE-07: a wizard replay must not reuse the first run's coordinates")
+
+
+def test_shared_panorama_invalidation_contract_is_wired_in_both_shells():
+    """A horizon edit changes planning immediately in both shells and cannot
+    leave a visibility cache keyed only by the panorama id."""
+    core = _read("core", "plannerstate.js")
+    desktop = _read("static", "js", "pano.js")
+    main = _read("static", "js", "main.js")
+    horizon = _read("web", "horizon.js")
+    app = _read("web", "app.js")
+    assert "export const PLANNER_CHANGE_EVENT" in core
+    assert "panoramaRevision" in core
+    assert "announcePlannerChange" in desktop and "announcePanoChanged" in desktop
+    assert "document.addEventListener(PLANNER_CHANGE_EVENT" in main
+    assert "window.dispatchEvent(new CustomEvent(PLANNER_CHANGE_EVENT" in horizon
+    assert "window.addEventListener(PLANNER_CHANGE_EVENT" in app
+    assert "panoramaRevision(g.pano)" in app
+    assert "obsCache.clear()" in app
+
+
+def test_shared_planner_events_cover_all_calculation_inputs():
+    """Site, rig, date, selection, preference, and panorama changes share one
+    revision-bearing event boundary in both shells."""
+    state = _read("static", "js", "state.js")
+    header = _read("static", "js", "header.js")
+    setup = _read("static", "js", "setup.js")
+    web_horizon = _read("web", "horizon.js")
+    web = _read("web", "app.js")
+    for subject in (state, header, setup, web_horizon, web):
+        assert "announcePlannerChange" in subject
+        assert "planner:changed" not in subject or "PLANNER_CHANGE_EVENT" in subject
+    for kind in ("site", "rig", "date", "selection", "preferences"):
+        assert f'"{kind}"' in header + setup or f"'{kind}'" in web
+    assert "panoramaRevision" in web_horizon
+    assert "obsCache.clear()" in web
+
+
+def test_weather_retry_restarts_after_a_failed_request():
+    """The failed-weather chip must be an actual retry affordance in both
+    shells, while duplicate clicks during a request remain suppressed."""
+    desktop = _read("static", "js", "weather.js")
+    web = _read("web", "app.js")
+    expected = "!WX_STATE.loading && (!WX_STATE.data || WX_STATE.error)"
+    assert expected in desktop
+    assert expected in web
+    assert desktop.count("loadWeather();") >= 3
+    assert web.count("loadWeather();") >= 3
+
+
+def test_target_explainability_is_shared_and_survives_worker_binding():
+    """Target rows must consume the structured core result instead of making
+    each shell infer its own reason or culmination semantics."""
+    core = _read("core", "scoring.js")
+    visibility = _read("core", "visibility.js")
+    derive = _read("static", "js", "derive.js")
+    worker = _read("static", "js", "planning_worker.js")
+    client = _read("static", "js", "planning_client.js")
+    detail = _read("static", "js", "detail.js")
+    web = _read("web", "app.js")
+    assert "visibilityReason" in visibility and "summarizeVisibility" in visibility
+    assert "visibilityReason(alt" in core and "culminationJd" in core
+    for subject in (derive, worker, client, detail, web):
+        assert "visibility" in subject, "the target explanation must reach every shell"
+    assert "visible_minutes" in derive and "transit_jd" in derive
+    assert "riseJd" in worker and "setJd" in worker
+    assert "Culmination" in detail
 
 
 def test_sky_view_outline_is_obstacle_mode_only_in_both_apps():
@@ -639,19 +729,65 @@ def test_horizon_legend_and_outline_are_identical_across_apps():
                       (_read("static", "js", "skyview.js"), "static")):
         assert "blocked by horizon" in src, tree
         assert "above band: open (assumed)" in src, tree
-        assert "#ff6b6b" in src, tree
+        assert "obstacleStroke" in src and "obstacleFill" in src, tree
+        assert "assumedHatch" in src, tree
     assert "rgba(210, 225, 255, .55)" in _read("web", "style.css")
     assert "rgba(210, 225, 255, .55)" in _read("static", "style.css")
     assert "activePaintMode() !== \"sky\"" in _read("static", "js", "skyview.js")
     assert "assumedOpenHatchPolys(p, W, H, lo, hi)" in _read("web", "horizon.js"), \
         "the web editor preview must hatch the assumed-open band in bin space"
-    # the chart shading is the legend's red in BOTH apps (no third red)
-    sky = _read("static", "js", "skyview.js")
-    assert "rgba(255,107,107,.18)" in sky and "rgba(255,107,107,.75)" in sky
-    assert "255,93,93" not in sky, "desktop sky view kept the old red"
-    app = _read("web", "app.js")
-    assert "rgba(255, 107, 107, .15)" in app and "rgba(255, 107, 107, .85)" in app
-    assert "255, 80, 80" not in app, "web sky view kept the old red"
+    # Canvas presentation is theme-owned in both shells; the drawing code
+    # consumes semantic roles instead of embedding a single red palette.
+    for css in (_read("web", "themes.css"), _read("static", "themes.css")):
+        assert "--viz-obstacle-fill:" in css
+        assert "--viz-obstacle-stroke:" in css
+        assert "--viz-assumed-hatch:" in css
+
+
+def test_altitude_graph_legend_is_explanatory_and_tracks_are_clipped():
+    """The detail chart must explain states/guides and keep Moon data in-plot.
+
+    The web chart used to let a negative Moon altitude run into the time labels,
+    while both shells presented several unrelated meanings as tiny colour chips.
+    """
+    web = _read("web", "app.js")
+    desktop = _read("static", "index.html")
+    for src in (web, desktop):
+        assert 'class="chart-legend"' in src
+        assert "Target state" in src and "Chart guides" in src
+        assert "Minimum altitude" in src and "Moon altitude" in src
+        assert "Obstruction ceiling" in src
+        assert "white phase discs" in src
+    assert "gCtx.rect(padL, padT, W - padL - padR, H - padT - padB);" in web
+    assert "s.mAlt < -10 || s.mAlt > 90" in web
+    detail = _read("static", "js", "detail.js")
+    assert "ctx.rect(ML, MT, pw, ph);" in detail
+    assert "ma == null || ma < -10 || ma > 90" in detail
+    assert "C.guideMoonDash" in web and "C.guideMoonDash" in detail
+    assert "drawMoonPhaseMarker" in web and "drawMoonPhaseMarker" in detail
+    assert "moonPoints" in web and "moonPoints" in detail
+    assert "p.i % markerStep !== 0" in web and "p.i % markerStep !== 0" in detail
+    assert "j !== 0" not in web and "j !== 0" not in detail
+    for css in (_read("web", "style.css"), _read("static", "style.css")):
+        assert ".guide-moon" in css and ".guide-obstruction" in css
+        assert ".guide-moon::after" in css
+    for css in (_read("web", "themes.css"), _read("static", "themes.css")):
+        assert "--viz-moon-line:" in css and "--viz-moon-band:" in css
+        assert "--viz-moon-marker:" in css and "--viz-moon-marker-shadow:" in css
+        assert "--viz-guide-moon-dash:" in css
+
+
+def test_hamburger_menu_stays_above_workbench_content():
+    """The Workbench chrome must preserve the shared z-index ladder.
+
+    Workbench had put the top bar and main content at the same stacking level,
+    letting the later page panels paint over its open menu.
+    """
+    web = _read("web", "themes.css")
+    assert 'html[data-theme="workbench"] .topbar {\n  position: sticky;\n  top: 0;\n  z-index: 55;' in web
+    assert 'html[data-theme="workbench"] .tabs { z-index: 50; }' in web
+    desktop = _read("static", "themes.css")
+    assert 'html[data-theme="workbench"] #topbar {\n  position: relative;\n  z-index: 55;' in desktop
 
 
 def test_catalog_type_palette_is_shared_and_web_canonical():
@@ -699,8 +835,12 @@ def test_web_sky_mode_is_one_obstruction_colour_and_scrub_time_is_clamped():
     assert "rgba(255, 209, 102, .12)" not in app, \
         "sky mode must not paint a second (yellow) blocked colour"
     assert "Hor.overhangRuns(pano, 2)" in app
-    assert app.count("clampSkyTime();") >= 3, \
-        "clamp the scrub time at boot, on refresh AND on the viewFullDay toggle"
+    assert app.count("clampSkyTime();") >= 2, \
+        "clamp the scrub time at boot and on refresh"
+    assert "clampSkyTime({ repaint: true });" in app, \
+        "a direct View full day change must clamp and repaint its active view"
+    assert "function clampSkyTime({ repaint = false } = {})" in app, \
+        "refresh-driven clamps must synchronize controls without a second render"
     assert "if (!S.site) return null;" in app, \
         "clampSkyTime must guard before the active site is known"
 

@@ -816,6 +816,11 @@ def test_run_returns_0_when_nothing_is_wrong_and_1_when_something_is():
         assert f.check in buf.getvalue(), f.render()
 
 
+def test_required_runtime_modules_are_present_and_tracked():
+    findings = CR.check_source_module_findings(ROOT)
+    assert findings == [], [f.render() for f in findings]
+
+
 def test_make_release_consults_the_core_drift_check(monkeypatch):
     """FIX-9 (review TL1): check_release.py::run() appended
     check_core_findings(), but make_release.run_check() did not - its 'release

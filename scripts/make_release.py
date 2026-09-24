@@ -37,8 +37,8 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(Path(__file__).resolve().parent))  # scripts/ -> check_release
 
 from check_release import (  # noqa: E402  (needs the path insert above)
-    ERROR, ROOT as CHECK_ROOT, check_core_findings, collect, evaluate,
-    git_describe, normalize_version,
+    ERROR, ROOT as CHECK_ROOT, check_core_findings, check_source_module_findings,
+    collect, evaluate, git_describe, normalize_version,
 )
 
 DIST = ROOT / "dist"
@@ -71,6 +71,7 @@ def run_check(version, allow_dirty, include_stage, when):
     # drift guard must block STAGING too (check_release.run() already did this,
     # make_release's own "ok" could not see it - FIX-9, review TL1).
     findings += check_core_findings(ROOT)
+    findings += check_source_module_findings(ROOT)
     errors = [f for f in findings if f.level == ERROR]
     for finding in findings:
         print("  " + finding.render())

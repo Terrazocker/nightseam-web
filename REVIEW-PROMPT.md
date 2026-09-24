@@ -1,4 +1,4 @@
-# Full review prompt - NightSeam (workspace `<workspace>\AstroPilot-local`)
+# Full review prompt - NightSeam (workspace `<workspace>\Nightseam-programm`)
 
 This file is a PROMPT, not a report. `BUGS.md` is the active known-findings
 backlog; closed review bundles are available through Git history rather than
@@ -124,8 +124,9 @@ shells over one shared domain core, plus a marketing site:
   drift-detector.
 - **No deploys, no releases, no tags, no network uploads.** Do not run
   `ftps_deploy.py`, `make_release.py` or `build.ps1` with side effects on
-  `dist/release/`. Do not rename `<workspace>\AstroPilot-local`, `<workspace>\Astro-Web`
-  or the `/astro` path.
+  `dist/release/`. Do not rename the canonical workspace
+  `<workspace>\Nightseam-programm`, the legacy
+  mirror `<workspace>\Astro-Web`, or the `/astro` path.
 - Do not start a replacement server for the user, and do not leave a server
   running on port 8407. If you need the desktop API, use `main.py --no-browser`
   and shut it down; if 8407 is already taken by a stale `dist\NightSeam.exe`,

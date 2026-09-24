@@ -192,22 +192,28 @@ def web_pano_undo_redo_clear(c):
     open_editor(c)
     paint(c)
     c.page.click("#ed-save")
-    c.page.wait_for_function(
-        """() => (document.querySelector('#ed-status')?.textContent || '')
-                   .includes('Saved')""", timeout=10000)
+    def wait_status(text_value: str, timeout: int = 8000):
+        try:
+            c.page.wait_for_function(
+                """(want) => (document.querySelector('#ed-status')?.textContent || '')
+                           .includes(want)""", arg=text_value, timeout=timeout)
+        except Exception as exc:
+            raise AssertionError(
+                f"editor status did not reach {text_value!r}: "
+                f"{c.page.inner_text('#ed-status').replace('●', '*')!r}; "
+                f"undo-disabled={c.page.is_disabled('#ed-undo')}, "
+                f"redo-disabled={c.page.is_disabled('#ed-redo')}") from exc
+
+    wait_status("Saved", timeout=10000)
 
     # a second gesture: undo returns to the saved baseline, redo re-applies it
     paint(c, 0.55, 0.78, 0.5)
     c.expect_in("Unsaved", c.page.inner_text("#ed-status"),
                 "the second stroke must dirty the editor")
     c.page.click("#ed-undo")
-    c.page.wait_for_function(
-        """() => (document.querySelector('#ed-status')?.textContent || '')
-                   .includes('Saved')""", timeout=8000)
+    wait_status("Saved")
     c.page.click("#ed-redo")
-    c.page.wait_for_function(
-        """() => (document.querySelector('#ed-status')?.textContent || '')
-                   .includes('Unsaved')""", timeout=8000)
+    wait_status("Unsaved")
 
     # Clear is confirmed in-page (never alert()) and is undoable
     before = canvas_digest(c, "#pano-profile")
@@ -426,6 +432,152 @@ def web_tonight_render_marker_converges(c):
     rows = c.page.eval_on_selector_all(".pick li[data-id]",
                                        "els => els.map((e) => e.dataset.id)")
     c.expect(rows, "the painted selection rendered no rows at all")
+    c.assert_clean()
+
+
+@check("web-both-themes-render", "web")
+def web_both_themes_render(c):
+    """Exercise the real web shell in both supported presentations.
+
+    Source-level CSS checks cannot catch a theme bootstrap, event, or chart
+    rendering regression.  Switch through the actual theme controls and visit
+    the two canvas-heavy views while each theme is active.
+    """
+    boot(c)
+    accents = {}
+    for name in ("workbench", "dome"):
+        c.page.evaluate(
+            """(theme) => {
+                 const button = document.querySelector(
+                   `#themeRow .theme-btn[data-theme="${theme}"]`);
+                 if (!button) throw new Error(`missing theme button: ${theme}`);
+                 button.click();
+               }""", name)
+        c.page.wait_for_function(
+            """(theme) => document.documentElement.dataset.theme === theme
+                 && localStorage.getItem('nightseam_theme') === theme""",
+            arg=name)
+        c.page.click("#tabs a[data-v='sky']")
+        c.page.wait_for_timeout(250)
+        accent = c.page.evaluate(
+            """() => getComputedStyle(document.documentElement)
+                       .getPropertyValue('--accent').trim()""")
+        c.expect(accent, f"{name} theme did not expose an accent token")
+        c.expect(c.page.locator("#sky").bounding_box(),
+                 f"Sky View canvas missing in {name} theme")
+        accents[name] = accent
+        c.page.click("#tabs a[data-v='tonight']")
+        c.page.wait_for_timeout(150)
+    c.expect(accents["workbench"] != accents["dome"],
+             f"theme palettes did not differ: {accents}")
+    c.assert_clean()
+
+
+@check("web-accessibility-essentials", "web")
+def web_accessibility_essentials(c):
+    """The real web DOM must expose tab semantics and text alternatives for
+    the canvas charts after the dynamic views are rendered."""
+    boot(c)
+    tabs = c.page.locator("#tabs a[role='tab']")
+    c.expect_eq(tabs.count(), 4, "the planner tablist must expose four tabs")
+    c.expect_eq(c.page.locator("#tabs a[aria-selected='true']").count(), 1,
+                "exactly one web planner tab must be selected")
+
+    tab(c, "sky")
+    c.page.wait_for_selector("#sky[role='img'][aria-describedby='skyChartSummary']")
+    c.expect(c.page.inner_text("#skyChartSummary"),
+             "the web sky chart needs a non-empty screen-reader summary")
+
+    tab(c, "catalog")
+    c.page.wait_for_selector(".cat tbody tr[data-id]")
+    c.page.wait_for_selector("#cat-export-provenance")
+    provenance = c.page.evaluate(
+        """async () => { const r = await fetch('catalog-provenance.json?v=1');
+             const j = await r.json();
+             return { schema: j.schema_version,
+                      source: j.objects?.ngc1976?.source,
+                      aliases: j.objects?.ngc1976?.aliases?.length || 0 }; }""")
+    c.expect(provenance["schema"] == 1 and provenance["source"] == "OpenNGC"
+             and provenance["aliases"] > 0,
+             f"the web provenance sidecar was not loaded: {provenance}")
+    # The catalog may legitimately have no bundled photo for the first row;
+    # the detail view then falls back to its optional Wikipedia thumbnail.
+    c.allow_console_errors("expected missing optional bundled catalog photo")
+    c.allow_failed_responses("expected missing optional bundled catalog photo")
+    row = c.page.locator(".cat tbody tr[data-id]").first
+    c.expect_eq(row.get_attribute("role"), "button",
+                "catalog rows must be keyboard-openable controls")
+    row.focus()
+    c.page.keyboard.press("Enter")
+    c.page.wait_for_selector("#graph[role='img'][aria-describedby='graphSummary']")
+    c.expect("Catalog source" in c.page.inner_text("#modal")
+             and "Designation history" in c.page.inner_text("#modal"),
+             "the web detail must show catalog provenance")
+    c.expect(c.page.inner_text("#graphSummary"),
+             "the web altitude chart needs a non-empty screen-reader summary")
+    c.page.keyboard.press("Escape")
+    c.expect(c.page.evaluate("() => document.activeElement?.matches('.cat tbody tr[data-id]')"),
+             "closing the web detail dialog must restore focus to its catalog row")
+
+    tab(c, "horizon")
+    c.page.wait_for_selector("#pano-blank")
+    c.page.click("#pano-blank")
+    c.page.wait_for_selector("#pano-canvas[aria-describedby='panoChartSummary']")
+    for selector in ("#ed-prov-source", "#ed-landmark-add",
+                     "#ed-profile-apply", "#ed-profile-compare"):
+        # The metadata groups are deliberately collapsed by default; assert
+        # that the controls exist without requiring the user to expand every
+        # progressive-disclosure section in this accessibility smoke.
+        c.page.wait_for_selector(selector, state="attached")
+    c.expect(c.page.inner_text("#panoChartSummary"),
+             "the web horizon editor needs a text alternative")
+    c.assert_clean()
+
+
+@check("web-sky-time-single-notification", "web")
+def web_sky_time_single_notification(c):
+    """A range change syncs every scrubber and repaints Tonight once.
+
+    `clampSkyTime()` must announce even when the selected instant is already
+    valid, because the range can still have changed. This check makes that
+    notification count explicit while retaining the BUG-005 marker proof for
+    the one repaint it schedules.
+    """
+    boot(c)
+    first = c.wait_tonight_render()
+    before = c.page.evaluate("() => window.__ns_scrub_range()")
+    c.expect(not c.page.is_checked("#viewFullDay"),
+             "fresh web storage must start with View full day disabled")
+    c.page.evaluate(
+        """() => {
+            window.__ns_sky_time_events = 0;
+            window.addEventListener('sky:time', () => {
+              window.__ns_sky_time_events += 1;
+            });
+        }""")
+    c.page.eval_on_selector(
+        "#viewFullDay", """(el) => {
+            el.checked = true;
+            el.dispatchEvent(new Event('change', { bubbles: true }));
+        }""")
+    after = c.page.evaluate("() => window.__ns_scrub_range()")
+    c.expect(after["start"] <= before["start"] and after["end"] >= before["end"],
+             f"full-day range did not contain the former night range: {before} -> {after}")
+    scrub = c.page.eval_on_selector(
+        "#tb-scrub", """(el) => ({ min: Number(el.min), max: Number(el.max),
+            value: Number(el.value) })""")
+    expected_max = max(1, round((after["end"] - after["start"]) / 60000))
+    c.expect_eq(scrub["min"], 0, "the topbar scrub did not reset its lower bound")
+    c.expect_eq(scrub["max"], expected_max,
+                "the topbar scrub did not adopt the full-day range")
+    c.expect(0 <= scrub["value"] <= scrub["max"],
+             f"the selected scrub value escaped its new range: {scrub}")
+    want = c.page.evaluate("() => window.__ns_scrub_sel()")
+    later = c.wait_tonight_after(first["gen"], sel=want)
+    c.expect_eq(later["sel"], want,
+                "the one full-day notification did not repaint Tonight for its selection")
+    c.expect_eq(c.page.evaluate("() => window.__ns_sky_time_events"), 1,
+                "a single full-day change emitted more than one sky:time notification")
     c.assert_clean()
 
 

@@ -11,7 +11,7 @@
    and setting one throws before send() - which silently disabled this whole
    block and caused a first-paint flash of the default theme. */
 (function(){try{var x=new XMLHttpRequest();x.open("GET","/api/state",false);x.send();
-if(x.status===200){var t=JSON.parse(x.responseText).theme;if(t)document.documentElement.setAttribute("data-theme",t);}
+var t="workbench";if(x.status===200){var v=JSON.parse(x.responseText).theme;t=v==="dome"?"dome":"workbench";}document.documentElement.setAttribute("data-theme",t);
 }catch(e){}})();
 </script>
 <link rel="stylesheet" href="/style.css">
@@ -57,6 +57,7 @@ if(x.status===200){var t=JSON.parse(x.responseText).theme;if(t)document.document
     <span id="archiveInfo" class="archinfo mono hidden" title="Image archive folder"></span>
     <div class="popwrap weatherwrap">
       <button id="btnWeather" class="ghost weatherbtn" title="Weather for the active site — click to load">
+        <span id="wxStatusDot" class="wx-status-dot wx-unknown" aria-hidden="true">○</span>
         <span id="wxChip">☁️ Weather — click to load</span>
       </button>
       <div id="weatherPanel" class="popover weather-panel hidden">
@@ -72,6 +73,13 @@ if(x.status===200){var t=JSON.parse(x.responseText).theme;if(t)document.document
           <p class="hint">When on, the app fetches weather for the active site every time it opens, so the chip is already filled.</p>
         </div>
       </div>
+    </div>
+    <div class="popwrap skybrightnesswrap">
+      <button id="btnSkyBrightness" class="ghost weatherbtn hidden" type="button"
+        title="EOG/VIIRS zenith sky-brightness estimate">
+        <span id="skyBrightnessStatusDot" class="wx-status-dot wx-unknown" aria-hidden="true">●</span>
+        <span id="skyBrightnessChip">Sky brightness</span>
+      </button>
     </div>
     <button id="btnMode" class="ghost modebtn" title="Switch to the image catalog">
       <svg class="ic ic-tel" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -97,7 +105,7 @@ if(x.status===200){var t=JSON.parse(x.responseText).theme;if(t)document.document
         <div class="menu-section">
           <h4>Appearance</h4>
           <div class="theme-row" id="themeRow">
-            <button class="theme-btn" data-theme="" id="themeDefault"><span class="sw" style="background:#4f9cff"></span>Default</button>
+            <button class="theme-btn" data-theme="workbench" id="themeWorkbench"><span class="sw" style="background:#c99a53"></span>Workbench</button>
             <button class="theme-btn" data-theme="dome" id="themeDome"><span class="sw" style="background:#8f7bff"></span>Glass</button>
           </div>
           <p class="hint">Pick the look; it applies instantly and is
@@ -192,6 +200,12 @@ if(x.status===200){var t=JSON.parse(x.responseText).theme;if(t)document.document
           </label>
           <p class="hint">1 = pristine dark sky, 9 = city centre. Darker skies
           lower the default minimum altitude and weaken moonlight penalties.</p>
+          <label class="inline">Sky brightness source
+            <select id="skyBrightnessProvider" style="width:100%">
+              <option value="eog">EOG / VIIRS</option>
+            </select>
+          </label>
+          <p class="hint">EOG is the default. NASA appears only when an enabled compatible pack is deployed; unavailable providers fall back to EOG.</p>
           <div class="chkrow">
             <label class="inline"><input type="checkbox" id="fltBb"> Broadband (L)</label>
             <label class="inline"><input type="checkbox" id="fltHa"> H&#945;</label>
@@ -214,22 +228,23 @@ if(x.status===200){var t=JSON.parse(x.responseText).theme;if(t)document.document
   </div>
 </header>
 
-<nav id="tabs">
-  <button data-tab="tonight" class="tab active">Tonight</button>
-  <button data-tab="targets" class="tab">Targets</button>
-  <button data-tab="sky" class="tab">Sky View</button>
-  <button data-tab="horizon" class="tab">Horizon &amp; Obstacles</button>
+<nav id="tabs" role="tablist" aria-label="Night planner views">
+  <button data-tab="tonight" class="tab active" role="tab" aria-selected="true" aria-controls="tab-tonight">Tonight</button>
+  <button data-tab="targets" class="tab" role="tab" aria-selected="false" aria-controls="tab-targets">Targets</button>
+  <button data-tab="sky" class="tab" role="tab" aria-selected="false" aria-controls="tab-sky">Sky View</button>
+  <button data-tab="horizon" class="tab" role="tab" aria-selected="false" aria-controls="tab-horizon">Horizon &amp; Obstacles</button>
 </nav>
 
-<nav id="tabs-cat">
-  <button data-tab="import" class="tab active">Import Exposures</button>
-  <button data-tab="library" class="tab">Library</button>
-  <button data-tab="skymap" class="tab">Sky Map</button>
+<nav id="tabs-cat" role="tablist" aria-label="Image catalog views">
+  <button data-tab="import" class="tab active" role="tab" aria-selected="true" aria-controls="tab-import">Import Exposures</button>
+  <button data-tab="library" class="tab" role="tab" aria-selected="false" aria-controls="tab-library">Library</button>
+  <button data-tab="skymap" class="tab" role="tab" aria-selected="false" aria-controls="tab-skymap">Sky Map</button>
 </nav>
 
 <main>
   <!-- ================= TONIGHT ================= -->
   <section id="tab-tonight" class="tabpane active">
+    <div id="nightBrief" class="session-head"></div>
     <div id="tonightCards" class="cards"></div>
     <h3 id="nowHeading">Best targets right now</h3>
     <div id="topPicks" class="pickgrid"></div>
@@ -273,6 +288,8 @@ if(x.status===200){var t=JSON.parse(x.responseText).theme;if(t)document.document
         <option value="mag">Sort: magnitude</option>
         <option value="name">Sort: name</option>
       </select>
+      <button id="btnCatalogProvenance" class="ghost" type="button"
+              title="Download catalog source, aliases and designation history">Provenance JSON</button>
       <span id="resultCount"></span>
     </div>
     <div class="tablewrap">
@@ -295,7 +312,8 @@ if(x.status===200){var t=JSON.parse(x.responseText).theme;if(t)document.document
   <!-- ================= SKY VIEW ================= -->
   <section id="tab-sky" class="tabpane">
     <div class="chart-layout">
-      <div id="skyWrap" class="skywrap"><canvas id="skyCanvas"></canvas>
+      <div id="skyWrap" class="skywrap"><canvas id="skyCanvas" role="img" aria-label="All-sky polar chart" aria-describedby="skyChartSummary"></canvas>
+        <p id="skyChartSummary" class="visually-hidden" role="note">All-sky chart. Select an object to inspect its details.</p>
         <div id="skyTip" class="tooltip hidden"></div>
       </div>
       <aside class="chart-side">
@@ -387,15 +405,57 @@ if(x.status===200){var t=JSON.parse(x.responseText).theme;if(t)document.document
             <button id="btnCalN" class="ghost" title="Click a landmark and enter its compass bearing to calibrate azimuths">&#9210; Calibrate N...</button>
             <span id="calNHint" class="hint hidden">click the known point on the image...</span>
           </div>
+          <details class="pano-meta" open>
+            <summary>Calibration provenance</summary>
+            <div class="cal-grid">
+              <label>Method
+                <select id="panoProvSource" aria-label="Calibration method">
+                  <option value="manual">manual</option><option value="compass">compass</option>
+                  <option value="phone_metadata">phone metadata</option><option value="plate_solve">plate solve</option>
+                  <option value="imported">imported</option><option value="unknown">unknown</option>
+                </select>
+              </label>
+              <label>Captured <input id="panoProvDate" type="text" maxlength="40" placeholder="YYYY-MM-DD"></label>
+              <label>Operator <input id="panoProvOperator" type="text" maxlength="96"></label>
+              <label>Orientation / reference <input id="panoProvOrientation" type="text" maxlength="160" placeholder="true north, compass…"></label>
+            </div>
+            <label>Calibration notes <textarea id="panoProvNotes" rows="2" maxlength="320"></textarea></label>
+          </details>
+          <details class="pano-meta">
+            <summary>Named obstruction landmarks</summary>
+            <div id="panoLandmarks" class="landmark-list" role="list"></div>
+            <div class="landmark-add">
+              <input id="panoLandmarkName" type="text" maxlength="96" placeholder="Name (e.g. east roof)" aria-label="Landmark name">
+              <select id="panoLandmarkKind" aria-label="Landmark type"><option value="tree">tree</option><option value="building">building</option><option value="ridge">ridge</option><option value="pole">pole</option><option value="roof">roof</option><option value="balcony">balcony</option><option value="other">other</option></select>
+              <input id="panoLandmarkAz" type="number" min="0" max="359.99" step="0.5" placeholder="Az °" aria-label="Landmark azimuth">
+              <input id="panoLandmarkAlt" type="number" min="-90" max="90" step="0.5" placeholder="Alt °" aria-label="Landmark altitude">
+              <button id="btnAddPanoLandmark" class="ghost" type="button">Add</button>
+            </div>
+            <p class="hint">Landmarks document what the profile represents; they do not change visibility by themselves.</p>
+          </details>
+          <details class="pano-meta">
+            <summary>Numeric profile and comparison</summary>
+            <div class="cal-grid">
+              <label>Azimuth bin <input id="panoProfileAz" type="number" min="0" max="359.5" step="0.5" value="0"></label>
+              <label>Lower / ceiling altitude <input id="panoProfileAlt" type="number" min="-90" max="90.5" step="0.1"></label>
+              <label>Band top (sky mode) <input id="panoProfileTop" type="number" min="-90" max="90.5" step="0.1"></label>
+              <label>Confidence (0–1) <input id="panoProfileConfidence" type="number" min="0" max="1" step="0.05" placeholder="unknown"></label>
+            </div>
+            <div class="rowbtns"><button id="btnReadPanoProfile" class="ghost" type="button">Read bin</button><button id="btnApplyPanoProfile" class="ghost" type="button">Apply numeric bin</button><select id="panoProfileCompare" aria-label="Compare this horizon with another"><option value="">Compare with…</option></select></div>
+            <p id="panoProfileCompareSummary" class="hint" role="status" aria-live="polite">Choose another horizon to compare profile bins.</p>
+            <p class="hint">Numeric editing makes the stored profile authoritative and clears painted strokes. The comparison profile is shown as a dashed blue line.</p>
+          </details>
           <div class="rowbtns">
             <button id="btnSaveProfile">Save obstruction profile</button>
+            <span id="panoSaveStatus" class="hint" role="status" aria-live="polite">Saved</span>
             <button id="btnSetActive" class="ghost">Use for planning</button>
             <button id="btnDelPano" class="danger ghost">Delete</button>
           </div>
         </div>
       </aside>
       <div id="panoStage">
-        <canvas id="panoCanvas"></canvas>
+        <canvas id="panoCanvas" role="img" aria-label="Panorama horizon editor" aria-describedby="panoChartSummary"></canvas>
+        <p id="panoChartSummary" class="visually-hidden" role="note">Panorama horizon editor. Use the paint controls to mark obstructions.</p>
         <canvas id="loupeCv" width="140" height="140" class="hidden"></canvas>
         <div id="panoEmpty">No panorama imported yet.</div>
         <div id="panoError" class="hidden"></div>
@@ -488,7 +548,8 @@ if(x.status===200){var t=JSON.parse(x.responseText).theme;if(t)document.document
   <!-- ================= SKY MAP ================= -->
   <section id="tab-skymap" class="tabpane">
     <div class="chart-layout">
-      <div id="skymapWrap" class="skywrap"><canvas id="skymapCanvas"></canvas>
+      <div id="skymapWrap" class="skywrap"><canvas id="skymapCanvas" role="img" aria-label="Image library sky map" aria-describedby="skymapChartSummary"></canvas>
+        <p id="skymapChartSummary" class="visually-hidden" role="note">Image library sky map. Select an object to inspect its details.</p>
         <div id="skymapTip" class="tooltip hidden"></div>
       </div>
       <aside class="chart-side">
@@ -524,15 +585,26 @@ if(x.status===200){var t=JSON.parse(x.responseText).theme;if(t)document.document
         <p id="dBlurb"></p>
       </div>
       <div class="detail-chart">
-        <canvas id="altChart"></canvas>
+        <canvas id="altChart" role="img" aria-label="Target altitude and visibility chart" aria-describedby="altChartSummary"></canvas>
+        <p id="altChartSummary" class="visually-hidden" role="note">Altitude chart for the selected target.</p>
         <div id="chartTip" class="tooltip hidden"></div>
-        <div class="legend">
-          <span class="lg vis">clear &amp; high enough</span>
-          <span class="lg blk">blocked by obstacle</span>
-          <span class="lg low">below min altitude</span>
-          <span class="lg ceil">&#9472;&#9472; obstruction ceiling</span>
-          <span class="lg moon">moon up</span>
-          <label class="inline"><input type="checkbox" id="chkMoon" checked> moon altitude</label>
+        <div class="chart-legend" aria-label="Altitude chart legend">
+          <div class="chart-legend-group">
+            <strong class="chart-legend-heading">Target state</strong>
+            <span class="chart-legend-item"><i class="legend-swatch state-clear"></i><span><b>Clear</b><small>above minimum and unobstructed</small></span></span>
+            <span class="chart-legend-item"><i class="legend-swatch state-warn"></i><span><b>Below minimum</b><small>above the horizon, but too low</small></span></span>
+            <span class="chart-legend-item"><i class="legend-swatch state-blocked"></i><span><b>Blocked</b><small>the horizon or ceiling blocks it</small></span></span>
+            <span class="chart-legend-item"><i class="legend-swatch state-below"></i><span><b>Below horizon</b><small>not astronomically visible</small></span></span>
+          </div>
+          <div class="chart-legend-group">
+            <strong class="chart-legend-heading">Chart guides</strong>
+            <span class="chart-legend-item"><i class="legend-swatch guide-min"></i><span><b>Minimum altitude</b><small>your selected visibility threshold</small></span></span>
+            <span class="chart-legend-item"><i class="legend-swatch guide-moon"></i><span><b>Moon altitude</b><small>dash-dot line · white phase discs</small></span></span>
+            <span class="chart-legend-item"><i class="legend-swatch guide-twilight"></i><span><b>Twilight</b><small>shaded time outside the dark window</small></span></span>
+            <span class="chart-legend-item"><i class="legend-swatch guide-window"></i><span><b>Best window</b><small>longest clear run tonight</small></span></span>
+            <span class="chart-legend-item"><i class="legend-swatch guide-obstruction"></i><span><b>Obstruction ceiling</b><small>lower: short dash · upper: dash-dot</small></span></span>
+            <label class="chart-legend-toggle"><input type="checkbox" id="chkMoon" checked> show Moon altitude</label>
+          </div>
         </div>
       </div>
     </div>

@@ -7,6 +7,39 @@ artifact hashes, gate results, what was deployed and how it was verified live.
 
 Newest first.
 
+## UNRELEASED - 2026-09-20 review implementation pass (final validation)
+
+Not tagged or deployed. This pass covered planner invalidation, panorama
+editing/persistence, backup restore safety, weather retry, theme module
+tracking, target explainability/transit data, richer horizon metadata, and
+catalog provenance/reproducible exports. The separate environmental tool was
+intentionally outside its scope.
+
+Validation of the final dirty working-tree snapshot:
+
+- `python -m pytest tests/ -q --tb=no` -> **641 passed, 1 warning**.
+- `python scripts/check_core.py` and `python scripts/check_js.py` -> **OK**.
+- Browser gate -> **32/32 passed**, covering both shells, Workbench/Glass,
+  horizon metadata, catalog provenance, and accessibility smoke checks.
+- `build.ps1 -AllowDirty` produced `0.6.34-5-gd6e115c-dirty`.
+- `python scripts/make_release.py --allow-dirty` produced
+  `dist/release/NightSeam-0.6.34-5-gd6e115c-dirty.zip` (23.4 MB), SHA-256
+  `a80fb785c1c0d491f1cdd9f3f64c45bcac8faf6d1f5636c361a77852db0dda47`.
+- `python scripts/check_release.py --allow-dirty` -> zero errors and one
+  expected dirty/off-tag warning.
+
+The accessibility foundation adds semantic tab state, chart text alternatives,
+visible focus styling, high-contrast/reduced-motion rules, and Escape dismissal
+for the web dialog. Horizon metadata is carried through both shells, backup,
+SQLite, shared history, and the profile comparison UI. Catalog provenance is a
+deterministic 12,176-row sidecar with source hashes, aliases, designation
+history, mapping notes, and complete JSON export actions. A full manual
+screen-reader/focus-restoration audit remains open; no clean tag or deployment
+was made.
+
+Elevation semantics and the solar-system ephemeris policy remain explicit
+maintainer decisions before their decision-dependent features are implemented.
+
 > **Post-release audit note (2026-09-17).** Six unresolved findings discovered
 > after 0.6.33 are tracked in `BUGS.md`. In particular, the live HTML document
 > still lacks CSP even though `version.json` carries the policy, and the relaxed
@@ -14,13 +47,90 @@ Newest first.
 > rewrite what the 0.6.33 release ran or observed; fixes belong in the next
 > release entry when they ship. **All six shipped in 0.6.34 (below).**
 
-## UNRELEASED - the carried-over four (2026-09-17, 0.6.35 working tree)
+## UNRELEASED - 0.6.35 working tree (2026-09-19)
 
 **Not tagged.** The four items `BUGS.md` had been carrying since the 0.6.20/0.6.24
 reviews (`CR2`, `DS4`, `DS5`, `WB7`) were reassessed and closed. All four were
 severity S4 ("migration") originally; the reassessment CONFIRMED two and REFINED
 two, and in both refined cases the original note was imprecise in a way that
 mattered.
+
+**Workbench theme redesign.** The new `workbench` theme is now the default for
+the desktop app and web planner, with the landing page following the same
+graphite/brass visual language. The existing `dome` Glass theme remains
+selectable from Appearance. Legacy `classic`, empty, and unknown values migrate
+to Workbench; desktop settings and web backups preserve the canonical `dome` or
+`workbench` value. The Tonight surfaces gained the shared session brief,
+booked-night track, chart-first target layout, and side inspector treatment.
+The implementation is scoped to `app/theme.py`, the two theme stylesheets,
+`landing/style.css`, and the existing shell controls; astronomy, planning, and
+catalog behavior did not change.
+
+**Workbench verification.** `python scripts/check_js.py` -> OK.
+`python -m pytest tests/ -q --tb=no` -> **626 passed, 0 failed**. Manual live
+smoke checks covered the desktop and browser planner shells in both the default
+Workbench presentation and the selectable Glass presentation.
+
+**Beta deployment.** The current `web/` tree was uploaded to the isolated
+`/beta/` remote directory and is live at
+`https://www.nightseam.de/beta/`. The live page reports the catalog ready with
+12,176 objects and `data-theme="workbench"`; production `/astro/` and the
+landing page were not changed for that theme deployment. The repository Playwright gate could not start in
+this Windows sandbox (`WinError 5` while creating its browser subprocess), so
+the deployed page was verified through the in-app browser instead.
+
+**Weather CSP fix and deployment (2026-09-19).** The public web document CSP
+now allowlists `https://api.open-meteo.com` in `connect-src`, matching the
+browser-side weather fetch. The source-level policy test covers both the HTML
+meta carrier and `.htaccess` header carrier. `web/index.html` and
+`web/.htaccess` were uploaded to both `/beta` and `/astro`. Live in-app browser
+checks confirmed that both deployed sites load current conditions and the
+four-day forecast. The repository Playwright gate still cannot start in this
+Windows sandbox (`WinError 5`); no version bump or tag was made.
+
+**Hourly observing weather.** Both shells now normalize Open-Meteo hourly
+forecast data into a site-local selected-night timeline with cloud cover,
+precipitation probability and amount, a plain-language sky-clarity/haze
+proxy, temperature/dew-point spread, and derived dew-risk labels. It now
+shows dark hours only and puts a 0–100 night rating plus a green/yellow/red
+aggregate status in the top bar; daylight/current-noon and raw kilometre
+visibility values are not presented. Responses are generation-guarded so
+changing site or date cannot paint stale data. A direct browser-side 7Timer
+seeing/transparency feed is intentionally deferred until it can be served
+through a safe HTTPS/CORS-aware provider boundary; the normalized hourly
+contract leaves that extension open.
+
+**Theme-owned visualizations.** Sky View, the catalog sky map, and altitude
+graphs now consume semantic `--viz-*` roles through `viztheme.js` in both
+shells. Switching Appearance emits `theme:changed` and repaints the active
+canvas, so Workbench and Glass differ inside the charts as well as around them.
+The invariant test was updated to protect the semantic contract rather than a
+single hard-coded red palette.
+
+**Altitude graph legibility.** The detail-chart legend is now grouped into
+Target state and Chart guides, with plain-language descriptions for the target
+states, minimum threshold, moon track, twilight shading, best window, and
+obstruction ceiling. The Moon track has its own blue/cyan palette role instead
+of sharing the warning colour, and both shells clip the track at the chart's
+-10° floor so it cannot overlap the time labels.
+
+**Menu stacking.** Workbench now follows the shared chrome ladder in both
+shells: the top bar sits above the tab strip and page content, while its menu
+popover remains above the bar. This prevents the hamburger menu from opening
+behind Horizon cards or other view panels.
+
+**Independent EOG zenith sky brightness.** Added a shared, pure EOG/VIIRS
+estimate based on the published neighborhood sky-glow model, an offline builder
+for reduced Annual VNL radiance/coverage packs, a lazy optional chip in both
+shells, and a separate Lorenz comparison validator. Lorenz is not a runtime
+dependency or shipped asset; the estimate remains display-only and does not
+replace Bortle or ranking. The raw EOG source rasters were not bundled because
+the current download endpoint requires operator access. Focused verification:
+`python scripts/check_js.py`, `python scripts/check_core.py`, pack-builder and
+validator syntax checks, and `python -m pytest tests/test_skybrightness.py -q`
+(5 passed). The full suite remains the final release gate.
+
+No tag or package was made.
 
 **CR2 - malformed-horizon guards (confirmed, and larger than noted).**
 `visibleSkyBands` had already been fixed (CO-04), but an empirical probe of the
@@ -69,7 +179,7 @@ message that says to update; v1 (no stamp) and v2 still restore, and an unusable
 stamp is refused rather than crashing. **Pin:** `tests/js/web_backup.mjs`
 (mutation-proven).
 
-**Verification.** `python -m pytest tests/ -q` -> **625 passed, 0 failed**.
+**Verification.** `python -m pytest tests/ -q` -> **626 passed, 0 failed**.
 `python scripts/check_js.py` -> OK (core re-baked: token 33 -> 35, every importer
 and its cache token moved in the same change). Browser gate: `--web` 18/18,
 `--desktop` **9/9** against a freshly built exe (the new check included). The exe
@@ -166,8 +276,8 @@ tagged; nothing below was verified against a deployed host.
   filesystem with a `payload.journal` holding any file they would replace, runs
   the database transaction, and only then swaps the staged files in. Every
   failure path rolls the journal back, so a refused restore leaves the database
-  and the payload tree byte-identical. `_PayloadStage` is the one mechanism;
-  `_write_member` is a thin wrapper over it.
+  and the payload tree byte-identical. `_PayloadStage` is the sole
+  payload-writing mechanism.
 - **BUG-002** - the import boundary requires `u_` **and** `paths.safe_token()` for
   a custom id (`database.custom_id_problem`, the one rule shared with the insert
   loop) and normalizes `imagetyp` through `ingest.classify_frame`; the desktop

@@ -26,7 +26,8 @@ from tests.browser.harness import _csp_problems, _inline_script_hashes  # noqa: 
 GOOD = (
     "default-src 'self'; script-src 'self' 'sha256-L8aiDzZyJ9k2GW9FggYfWKbcrM22h1"
     "LPcHxs0Ov+uCE='; style-src 'self'; img-src 'self' data: "
-    "https://upload.wikimedia.org; connect-src 'self' https://en.wikipedia.org; "
+    "https://upload.wikimedia.org; connect-src 'self' https://en.wikipedia.org "
+    "https://api.open-meteo.com https://air-quality-api.open-meteo.com; "
     "base-uri 'self'; form-action 'self'; frame-ancestors 'none'; "
     "object-src 'none'"
 )
@@ -66,13 +67,26 @@ def test_the_htaccess_hash_matches_the_inline_bootstrap():
     assert "nightseam_theme" in html, "the bootstrap changed shape"
 
 
+def test_the_weather_provider_is_allowlisted_in_both_csp_carriers():
+    """The browser-side weather fetch must be allowed by either carrier."""
+    text = (ROOT / "web" / ".htaccess").read_text(encoding="utf-8")
+    header = re.search(
+        r'^\s*Header\s+\S+\s+set\s+Content-Security-Policy\s+"([^"]+)"',
+        text, re.M).group(1)
+    meta = _meta_policy()
+    expected = "connect-src 'self' https://en.wikipedia.org https://api.open-meteo.com https://air-quality-api.open-meteo.com"
+    assert expected in header
+    assert meta and expected in meta
+
+
 @pytest.mark.parametrize("policy,expectation", [
     (None, "no Content-Security-Policy"),
     ("default-src 'self'", "no script-src"),
     (GOOD.replace("script-src 'self' ", "script-src 'unsafe-inline' ",
                   ).replace("'sha256-L8aiDzZyJ9k2GW9FggYfWKbcrM22h1"
                             "LPcHxs0Ov+uCE='", ""), "unsafe-inline"),
-    (GOOD.replace("connect-src 'self' https://en.wikipedia.org; ", ""),
+    (GOOD.replace("connect-src 'self' https://en.wikipedia.org "
+                  "https://api.open-meteo.com https://air-quality-api.open-meteo.com; ", ""),
      "no connect-src"),
     (GOOD.replace("'sha256-L8aiDzZyJ9k2GW9FggYfWKbcrM22h1LPcHxs0Ov+uCE='",
                   "'sha256-STALEHASHSTALEHASHSTALEHASHSTALEHASHSTALEHASHSTAL='"),

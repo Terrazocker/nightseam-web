@@ -385,3 +385,84 @@ header, main, footer { position: relative; z-index: 1; }
   html { scroll-behavior: auto; }
   * { transition: none !important; }
 }
+
+/* =====================================================================
+   DEFAULT WEBSITE LANGUAGE: WORKBENCH
+
+   The landing pages share the planner's restrained visual language: solid
+   surfaces, brass action states and clear edges. The app's Glass theme stays
+   an in-app choice and is not imposed on the public information site.
+   ===================================================================== */
+:root {
+  --bg: #111315;
+  --panel: #1c2022;
+  --panel2: #202527;
+  --border-soft: #343a3d;
+  --text: #e4e1d9;
+  --dim: #9a9d97;
+  --faint: #737976;
+  --accent: #c99a53;
+  --accent2: #9bb7a4;
+  --accent-ink: #17120b;
+  --gold: #dfae61;
+  --pink: #c9897e;
+  --blue: #a6b9ad;
+  --green: #7fbd98;
+}
+body::before { display: none; }
+.site-header {
+  background: #151819;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  border-bottom-color: var(--border-soft);
+}
+.brand-ico {
+  border-radius: 5px;
+  box-shadow: 0 0 0 1px var(--border-soft);
+  filter: grayscale(.25) sepia(.3);
+}
+.nav a { border-radius: 4px; }
+.nav a:hover { background: #242a2b; }
+.nav a.nav-cta {
+  background: var(--accent);
+  box-shadow: none;
+}
+.nav a.nav-cta:hover { background: #d7a761; }
+.hero h1 .accent { text-shadow: none; }
+.cta {
+  background: var(--accent);
+  border-radius: 4px;
+  box-shadow: none;
+}
+.cta:hover {
+  transform: none;
+  background: #d7a761;
+  box-shadow: none;
+}
+.cta.secondary {
+  background: #15191a;
+  border-color: var(--border-soft);
+  box-shadow: none;
+  border-radius: 4px;
+}
+.cta.secondary:hover { border-color: var(--accent); color: var(--text); }
+.feature-card,
+.dl-card,
+.stat,
+.cta-band,
+.legal-body,
+.cl-item {
+  background: var(--panel);
+  border-color: var(--border-soft);
+  border-radius: 6px;
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+.feature-card:hover { transform: none; border-color: var(--accent); }
+.feature-card.link:hover .go { color: var(--accent); }
+.stat b { text-shadow: none; }
+.dl-facts code,
+.legal-body code { background: #15191a; border-radius: 3px; }
+.cta-band { border-top: 2px solid var(--accent); }
+.site-footer { border-top-color: var(--border-soft); }

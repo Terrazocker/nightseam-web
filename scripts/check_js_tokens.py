@@ -92,44 +92,52 @@ _VERIFIED_BASELINE_JSON = r"""
 {
  "modules": {
   "app.js": {
-   "sha256": "b54894e887c3219067e86bca5ff9ef52757bc68fe64f769746e676ea21c0942c",
-   "token": "100"
+   "sha256": "9ea786f035aa4cb3701220beefd83ca3afb507122692ad37840abeed15f36f74",
+   "token": "126"
   },
   "astro.js": {
-   "sha256": "07382c21d9e76f83cc2791f26af3b064c349380b3d3a3b66d55f23e8fbf8074b",
-   "token": "23"
+   "sha256": "bafab3ee3c8dee0d4c434f924fc0c1904afbe9a6ef1ac16cbf3cfa361dcb3333",
+   "token": "28"
   },
   "core.js": {
-   "sha256": "ae2fe7e41decb4f08db230d0f41cf228c167ffd3f395ba22abd9547fa896af7a",
-   "token": "35"
+   "sha256": "4f7d53c7cf0b72d71feb925eeedfdecf62506114326d2d7dbda82ff46ea2fe52",
+   "token": "42"
   },
   "dragwin.js": {
    "sha256": "d8b316eaf6b7d9eeb9f8397ed8df232990992c5d3d3c9830fe160f832a3d529c",
    "token": "1"
   },
   "format.js": {
-   "sha256": "0d2c961dbcdfa58e7305df23bab4ee8c19246c2ad8edb018130c696bc2d05f40",
-   "token": "30"
+   "sha256": "e38fc22cc8f8ca36743a9b785dd39c970cbd729f87fb8da0447eafb63f9f0b56",
+   "token": "35"
   },
   "horizon.js": {
-   "sha256": "4dee29d5793ccf0ebe5cd59c39aafc498db8c51b6b7f47fddf739b79e1730e54",
-   "token": "56"
+   "sha256": "40fb59a152d78af6cb3ed5dde272a60d1c210c54c1f4bfe54b8e67c3e4a9c5c2",
+   "token": "65"
   },
   "nightrank.js": {
-   "sha256": "d6496910e282d6412ee670b05a31ea8b27a6b122bb1088eb19d081be45ec3059",
-   "token": "22"
+   "sha256": "e03172a6543af7a7180922560eaca16db15bd615f106fe81a362f6a80d10d17d",
+   "token": "27"
+  },
+  "skybrightness.js": {
+   "sha256": "12bdde5aad06218f3b6d882f72f7d2130c77574f2b620d540b73739a8b742e2d",
+   "token": "6"
   },
   "style.css": {
-   "sha256": "e0790dfbbeb284f52f5e1b74ad800181fe6afca5a81ec046e4bc8d3d6b28e612",
-   "token": "24"
+   "sha256": "d73a2c1ae072141b74a09b3296d408cab0f93add4385639dd4379d38c6aa9112",
+   "token": "33"
   },
   "themes.css": {
-   "sha256": "2be0515629e11c8175644d1db76f6e435cf943c48673e25044559b9f9669c4d0",
+   "sha256": "df0c8f035f6355353f7aa4b0c620ef7c20ba7f9e89dba39f93c6b014e571fdf7",
+   "token": "11"
+  },
+  "viztheme.js": {
+   "sha256": "741aa87317c3ac766599e8a7c6f02df4eb5df46c017c360a79d8f762569c5071",
    "token": "5"
   },
   "webstore.js": {
-   "sha256": "48c81e1bdbbf23fa76d6a8df10058e0e86836aa2ec8d2bcba27be4a845d7b271",
-   "token": "33"
+   "sha256": "3049b651a50507adf08fc2ab55008c74a663ec312832df190e44bfa05cc53244",
+   "token": "39"
   }
  }
 }

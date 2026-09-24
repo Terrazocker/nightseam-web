@@ -1,7 +1,7 @@
 /* top bar: site/date/prefs/scrubber bindings + night summary line */
 
 import { $, fmtHM, fmtT, esc, api, phaseName, applyEdgeSpace } from "./util.js";
-import { S } from "./state.js";
+import { S, announcePlannerChange } from "./state.js";
 import { moonUpDownText, effectiveMinAlt, scrubWindowRange } from "./derive.js";
 import { scheduleLoadNight } from "./night.js";
 import { openSites } from "./setup.js";
@@ -12,13 +12,22 @@ export function bindHeader() {
     const id = +e.target.value;
     S.cfg.active_site_id = id;         // keep client state + server in sync
     S.activeSiteId = id;
+    announcePlannerChange("site", { cause: "active-site", siteId: id });
     api("/api/settings", { method: "POST",
       headers: { "Content-Type": "application/json" }, silent: true,
       body: JSON.stringify({ active_site_id: id })}).catch(() => {});
     scheduleLoadNight(300);
     refreshWeatherForSite();
+    document.dispatchEvent(new CustomEvent("site:changed"));
   });
-  $("#dateInput").addEventListener("change", () => scheduleLoadNight(300));
+  $("#dateInput").addEventListener("change", () => {
+    announcePlannerChange("date", {
+      cause: "calendar", dateKey: $("#dateInput").value || null,
+    });
+    scheduleLoadNight(300);
+    refreshWeatherForSite();
+    document.dispatchEvent(new CustomEvent("date:changed"));
+  });
   $("#btnSites").addEventListener("click", () => {
     $("#menuPanel").classList.add("hidden");   // Setup now lives in the menu
     openSites();
@@ -53,6 +62,7 @@ export function bindHeader() {
     raf = requestAnimationFrame(() => {
       raf = null;
       updateTimeLabel();
+      announcePlannerChange("selection", { cause: "scrub", tIdx: S.tIdx });
       document.dispatchEvent(new CustomEvent("time:changed"));
     });
   });
@@ -64,6 +74,9 @@ export function bindHeader() {
     S.cfg.min_useful_alt = S.minAlt;         // an explicit value now exists
     S.cfg.min_useful_alt_explicit = true;    // ... so Bortle must not override it
     $("#muaVal").textContent = S.minAlt + "\u00B0";
+    if (e.type === "change") {
+      announcePlannerChange("preferences", { cause: "min-useful-alt" });
+    }
     document.dispatchEvent(new CustomEvent("prefs:changed"));
     clearTimeout(_muaPersist);
     _muaPersist = setTimeout(() => api("/api/settings", {
@@ -83,6 +96,7 @@ export function bindHeader() {
         headers:{"Content-Type":"application/json"},
         body: JSON.stringify({ moon_aware: e.target.checked })});
     } catch { /* api() already toasted; the local value stays applied */ }
+    announcePlannerChange("preferences", { cause: "moon-aware" });
     document.dispatchEvent(new CustomEvent("prefs:changed"));
   });
   // View full day: widen the scrub to the whole payload grid; off (default)
@@ -93,6 +107,7 @@ export function bindHeader() {
     await api("/api/settings", { method:"POST",
       headers:{"Content-Type":"application/json"}, silent: true,
       body: JSON.stringify({ view_full_day: e.target.checked })}).catch(() => {});
+    announcePlannerChange("preferences", { cause: "view-full-day" });
     applyScrubRange();
   });
   let _bortleT = null;
@@ -110,6 +125,9 @@ export function bindHeader() {
       const muaVal = $("#muaVal");
       if (muaVal) muaVal.textContent = S.minAlt + "\u00B0";
     }
+    if (e.type === "change") {
+      announcePlannerChange("preferences", { cause: "bortle" });
+    }
     document.dispatchEvent(new CustomEvent("prefs:changed"));
     clearTimeout(_bortleT);
     _bortleT = setTimeout(() => api("/api/settings", {
@@ -125,10 +143,11 @@ export function bindHeader() {
 /* ---------- appearance themes ---------- */
 
 export function applySavedTheme(name) {
-  name = name || "";
+  name = name === "dome" ? "dome" : "workbench";
   document.documentElement.setAttribute("data-theme", name);
   for (const b of document.querySelectorAll("#themeRow .theme-btn"))
     b.classList.toggle("active", (b.dataset.theme || "") === name);
+  document.dispatchEvent(new Event("theme:changed"));
 }
 
 function bindTheme() {
@@ -137,7 +156,7 @@ function bindTheme() {
   row.addEventListener("click", e => {
     const b = e.target.closest(".theme-btn");
     if (!b) return;
-    const name = b.dataset.theme || "";
+    const name = b.dataset.theme === "dome" ? "dome" : "workbench";
     applySavedTheme(name);
     api("/api/settings", {
       method: "POST",

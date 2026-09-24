@@ -8,17 +8,23 @@
  *   • Settings — sites, rigs, custom targets, backup/restore (webstore.js)
  * All sky math runs client-side (astro.js, Meeus algorithms).
  */
-import * as E from './astro.js?v=23';
-import * as Hor from './horizon.js?v=56';
-import * as WS from './webstore.js?v=33';
+import * as E from './astro.js?v=28';
+import * as Hor from './horizon.js?v=65';
+import * as WS from './webstore.js?v=39';
 import { initDragWindows } from './dragwin.js?v=1';
 import { fmtSize, sizeArcmin, framePct, magVisible, skyClampZoom,
-         skyViewMatrix, skyScreenToBase, skyClampFocus } from './format.js?v=30';
-import { nightStats, nightStatsBatch, sampleVisible } from './nightrank.js?v=22';
+         skyViewMatrix, skyScreenToBase, skyClampFocus } from './format.js?v=35';
+import { nightStats, nightStatsBatch, sampleVisible } from './nightrank.js?v=27';
 import { TYPE_LABELS, TYPE_COLORS, searchBlob as coreSearchBlob,
          TIER_ORDER, assignPopularityTiers, wikiTitles,
-         inTonightPool } from './core.js?v=35';
-import { popularityFactor as corePopularityFactor } from './core.js?v=35';
+         inTonightPool, PLANNER_CHANGE_EVENT, panoramaRevision,
+         visibilityReason, summarizeVisibility } from './core.js?v=42';
+import { popularityFactor as corePopularityFactor } from './core.js?v=42';
+import { vizTheme, drawMoonPhaseMarker } from './viztheme.js?v=5';
+import { estimateSiteZenithSkyBrightness, listSkyBrightnessProviders }
+  from './skybrightness.js?v=6';
+
+const announcePlannerChange = Hor.announcePlannerChange;
 
 // Cache-bust token for the ~4 MB data file web/catalog.json. It is NOT a JS
 // module, so it cannot carry a ?v= in an import: this named token IS its
@@ -27,6 +33,8 @@ import { popularityFactor as corePopularityFactor } from './core.js?v=35';
 // web/catalog.manifest.json records the bytes for the current token and
 // scripts/check_catalog_token.py enforces the pairing.
 const CATALOG_TOKEN = '10';
+// The provenance sidecar is independently cacheable and has its own token.
+const CATALOG_PROVENANCE_TOKEN = '1';
 
 /** Debounce timer for the catalog search box — re-renders at most every
  *  150 ms while typing instead of once per keystroke (12k-row filter). */
@@ -65,9 +73,11 @@ function applyActiveSite(site) {
     sel.innerHTML = SITES.map((s) => `<option value="${esc(s.id)}"${s.id === site.id ? ' selected' : ''}>${esc(s.name)}</option>`).join('');
     sel.value = site.id;
   }
+  refreshSkyBrightnessForSite(site);
 }
 
 let CAT = null;                 // array of catalog objects
+let CAT_PROV = { objects: {} }; // generated source/alias sidecar
 let TIER = new Map();           // id -> popularity TIER letter (A-F); scores are never rendered
 const byId = new Map();         // id -> object
 const searchCache = new Map();  // object -> lowercase search blob
@@ -81,6 +91,70 @@ const S = {
   detailId: null,
   cat: { q: '', chip: 'all', con: '', sort: 'tier', up: true, page: 0 },
 };
+
+let _skyBrightness = null;
+let _skyBrightnessGen = 0;
+
+function skyBrightnessClass(result) {
+  return result && result.quality === 'good' ? 'wx-good' :
+    result && result.quality === 'moderate' ? 'wx-warn' :
+      result && (result.quality === 'poor' || result.quality === 'bright')
+        ? 'wx-bad' : 'wx-unknown';
+}
+
+function renderSkyBrightnessChip() {
+  const button = $('#btnSkyBrightness');
+  const dot = $('#skyBrightnessStatusDot');
+  const chip = $('#skyBrightnessChip');
+  if (!button || !dot || !chip) return;
+  for (const cls of ['wx-good', 'wx-warn', 'wx-bad', 'wx-unknown']) dot.classList.remove(cls);
+  const result = _skyBrightness;
+  if (!result || !result.available || result.zenithMpsas == null) {
+    button.classList.add('hidden');
+    return;
+  }
+  const cls = skyBrightnessClass(result);
+  dot.classList.add(cls);
+  dot.textContent = '●';
+  chip.textContent = `SQM ${result.zenithMpsas.toFixed(2)} · ${result.quality}`;
+  const coverage = Math.round((result.coverage || 0) * 100);
+  const provider = result.providerLabel || result.provider || 'Sky brightness';
+  const year = result.sourceYear ? ` · ${result.sourceYear}` : '';
+  const fallback = result.fallbackReason ? ' · EOG fallback' : '';
+  button.title = `${provider}${year} · zenith sky brightness ` +
+    `${result.zenithMpsas.toFixed(2)} mag/arcsec² · ${coverage}% source coverage` +
+    (result.lowConfidence ? ' · low confidence' : '') + fallback;
+  button.classList.remove('hidden');
+}
+
+async function refreshSkyBrightnessForSite(site) {
+  const gen = ++_skyBrightnessGen;
+  _skyBrightness = null;
+  renderSkyBrightnessChip();
+  if (!site || !Number.isFinite(Number(site.lat)) || !Number.isFinite(Number(site.lon))) return;
+  const result = await estimateSiteZenithSkyBrightness(
+    Number(site.lat), Number(site.lon), {
+      provider: Hor.getPrefs().skyBrightnessProvider || 'eog',
+    });
+  if (gen !== _skyBrightnessGen) return;
+  _skyBrightness = result;
+  renderSkyBrightnessChip();
+}
+
+async function refreshSkyBrightnessProviderMenu() {
+  const select = $('#skyBrightnessProvider');
+  if (!select) return;
+  const providers = await listSkyBrightnessProviders();
+  const wanted = String(Hor.getPrefs().skyBrightnessProvider || 'eog');
+  const usable = providers.length ? providers : [{
+    id: 'eog', label: 'EOG / VIIRS', enabled: true,
+  }];
+  select.innerHTML = usable.map((provider) =>
+    `<option value="${esc(provider.id)}">${esc(provider.label)}</option>`).join('');
+  const actual = usable.some((provider) => provider.id === wanted) ? wanted : 'eog';
+  select.value = actual;
+  if (actual !== wanted) Hor.setPrefs({ skyBrightnessProvider: actual });
+}
 
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -117,6 +191,32 @@ function dateKey(d) { return `${d.getFullYear()}-${String(d.getMonth() + 1).padS
 
 /* visible-% cache shared between Tonight and Catalog (key: date|minAlt|pano|obj) */
 const obsCache = new Map();
+let obsEpoch = 0;
+
+function invalidateObservationCache() {
+  obsEpoch++;
+  obsCache.clear();
+}
+
+if (typeof window !== 'undefined') {
+  window.addEventListener(PLANNER_CHANGE_EVENT, (event) => {
+    const kind = event.detail && event.detail.kind;
+    if (!kind || !['panorama', 'site', 'rig', 'date', 'selection', 'preferences'].includes(kind)) return;
+    // The same event contract covers every planner input. Site/date/rig/pref
+    // handlers still own their immediate render/load policy; this listener
+    // owns the cache boundary so a future consumer cannot reuse an observation
+    // computed for a different planner revision.
+    if (kind !== 'selection') invalidateObservationCache();
+    if (kind !== 'panorama') return;
+    // All dependent views read the active panorama at render time. Repainting
+    // here closes the gap between the editor's live in-memory edit and the
+    // catalog/tonight values that consume it.
+    if (S.view === 'catalog') renderCatalog();
+    else if (S.view === 'tonight') renderTonight();
+    else if (S.view === 'sky') renderSky();
+  });
+}
+
 function computeObs(obj, jd0, jd1, step, minAlt, pano, lat, lon) {
   const st = nightStats(obj, jd0, jd1, step, minAlt, pano, lat, lon);
   return { pct: st.pct, blk: st.blockedPct };
@@ -201,7 +301,14 @@ function ms(d) { return d instanceof Date && !isNaN(d) ? d.getTime() : null; }
  *  shrinks under it, and at boot / on a site or date change): a daytime load
  *  (e.g. 14:32) lands on the first allowed instant - the window start - instead
  *  of showing "visible at 14:32", which is outside every planning window. */
-function clampSkyTime() {
+/** Notify time consumers once. Sync-only notifications update controls and
+ * invalidate stale Tonight markers; repainting notifications also redraw the
+ * active time-driven view. */
+function announceSkyTime({ repaint = true } = {}) {
+  window.dispatchEvent(new CustomEvent('sky:time', { detail: { repaint } }));
+}
+
+function clampSkyTime({ repaint = false } = {}) {
   if (!S.site) return null;
   const r = scrubRange();
   S.skyTime = new Date(E.scrubClamp(S.skyTime.getTime(), r.start.getTime(), r.end.getTime()));
@@ -212,12 +319,10 @@ function clampSkyTime() {
   //
   // BUG-005: announce it EVEN when the clamp changed nothing. `syncScrub()` pins
   // the slider from the CURRENT range, so a slider positioned against an earlier
-  // range stays stale while `S.skyTime` is already correct - the gate measured a
-  // scrubber at load-instant + 6 min against a view painted for the selected
-  // instant, and since a scrub WRITES BACK whatever the slider reads, the two
-  // must never disagree. Announcing unconditionally is also what re-renders the
-  // Tonight view for the clamped selection at boot.
-  window.dispatchEvent(new CustomEvent('sky:time'));
+  // range stays stale while `S.skyTime` is already correct. Callers that render
+  // the active view themselves keep this sync-only; direct user scrubs request
+  // the one repaint here instead.
+  announceSkyTime({ repaint });
   return r;
 }
 
@@ -232,7 +337,8 @@ function obsKey(g, oid) {
   if (obsCache.size > 250000) obsCache.clear(); // guard against stale-site growth
   // the ANCHOR date (topbar "night of", else today at the site) - NOT today:
   // otherwise changing the date re-served the previous night's percentages
-  return `${dateKey(nightAnchor())}|${g.minAlt.toFixed(2)}|${g.pano ? g.pano.id : '-'}|${g.lat.toFixed(2)}|${g.lon.toFixed(2)}|${oid}`;
+  const panoKey = g.pano ? `${g.pano.id}:${panoramaRevision(g.pano)}` : '-';
+  return `${dateKey(nightAnchor())}|${g.minAlt.toFixed(2)}|${panoKey}|${g.lat.toFixed(2)}|${g.lon.toFixed(2)}|${oid}`;
 }
 function escAttr(s) { return String(s).replace(/[^a-zA-Z0-9_-]/g, (c) => '\\' + c); }
 function cachedPctText(oid) {
@@ -297,26 +403,29 @@ function busy(on, text) {
 /* ---- theme (desktop parity) ---- */
 const THEME_KEY = 'nightseam_theme';
 /** Commit a theme choice (user action): apply attribute + persist.
- *  Glass ('dome') is the default look; 'classic' is the flat blue one.
- *  The key is always persisted (its ABSENCE means "use the default =
- *  Glass" — the head script falls back to 'dome'). */
+ *  Workbench is the new flat/default look. classic and the empty value are
+ *  legacy aliases; only dome remains a separate selectable language. */
 function applyTheme(t) {
-  const name = t === 'classic' || t === '' ? 'classic' : 'dome';
+  const name = t === 'dome' ? 'dome' : 'workbench';
   document.documentElement.setAttribute('data-theme', name);
   try { localStorage.setItem(THEME_KEY, name); } catch { /* ignore */ }
   reflectTheme();
+  document.dispatchEvent(new Event('theme:changed'));
 }
 /** Sync the picker's active state only — never touches storage or the
  *  attribute (boot must not undo the theme the head script applied). */
 function reflectTheme() {
-  const t = document.documentElement.getAttribute('data-theme') || '';
+  const t = document.documentElement.getAttribute('data-theme') || 'workbench';
   const row = $('#themeRow');
   if (row) row.querySelectorAll('.theme-btn').forEach((b) => b.classList.toggle('active', b.dataset.theme === t));
 }
 
 /* ---- weather: Open-Meteo, load-on-demand — nothing is fetched until the
-   user clicks the top-bar chip (or auto-load is switched on) ---- */
-const WX_STATE = { data: null, loading: false, error: false };
+   user clicks the top-bar chip (or auto-load is switched on).  The response
+   is normalized into hourly observing rows so the UI can add providers later
+   without changing the presentation contract. ---- */
+const WX_STATE = { data: null, loading: false, error: false, airError: false };
+let _wxGen = 0;
 const WMO_INFO = {
   0: ['☀️', 'Clear sky'], 1: ['🌤️', 'Mainly clear'], 2: ['⛅', 'Partly cloudy'], 3: ['☁️', 'Overcast'],
   45: ['🌫️', 'Fog'], 48: ['🌫️', 'Icy fog'],
@@ -331,28 +440,229 @@ const WMO_INFO = {
 };
 function wxInfo(code) { return WMO_INFO[code] || ['🌡️', 'Condition ' + code]; }
 
+function wxNumber(value) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+function wxPercent(value) {
+  const n = wxNumber(value);
+  return n == null ? null : Math.max(0, Math.min(100, n));
+}
+function wxFixed(value, digits = 0) {
+  const n = wxNumber(value);
+  return n == null ? '—' : n.toFixed(digits);
+}
+function wxNextDateKey(key) {
+  const [y, m, d] = String(key).split('-').map(Number);
+  const date = new Date(Date.UTC(y, m - 1, d + 1));
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-${String(date.getUTCDate()).padStart(2, '0')}`;
+}
+function wxWallTimeKey(date) {
+  const wall = WS.utcToWall(date);
+  return `${dateKey(wall)}T${String(wall.getHours()).padStart(2, '0')}:${String(wall.getMinutes()).padStart(2, '0')}`;
+}
+function wxSelectedDateKey() {
+  return dateKey(S.date instanceof Date && !isNaN(S.date) ? S.date : new Date());
+}
+function wxTimezone() {
+  return Hor.getPrefs().tz || S.site.tz || 'auto';
+}
+function wxNightBounds() {
+  try {
+    const w = nightWindow();
+    const start = wxWallTimeKey(w.startT), end = wxWallTimeKey(w.endT);
+    if (start && end && end > start) {
+      return { start, end, label: `${start.slice(11)}–${end.slice(11)}` };
+    }
+  } catch (_) { /* the fixed fallback below is still useful */ }
+  const selected = wxSelectedDateKey();
+  const next = wxNextDateKey(selected);
+  return { start: `${selected}T20:00`, end: `${next}T04:00`, label: '20:00–04:00' };
+}
+async function wxFetchJSON(url) {
+  const ac = new AbortController();
+  const timer = setTimeout(() => ac.abort(), 15000);
+  try {
+    const response = await fetch(url, { signal: ac.signal });
+    if (!response.ok) throw new Error('HTTP ' + response.status);
+    return await response.json();
+  } finally {
+    clearTimeout(timer);
+  }
+}
+function wxRows(data) {
+  const h = data && data.hourly || {};
+  const aq = data && data.air_quality && data.air_quality.hourly || {};
+  const times = Array.isArray(h.time) ? h.time : [];
+  const aqIndex = new Map((Array.isArray(aq.time) ? aq.time : []).map((t, i) => [t, i]));
+  const value = (key, i) => wxNumber(Array.isArray(h[key]) ? h[key][i] : null);
+  return times.map((time, i) => {
+    const ai = aqIndex.get(time);
+    const aqValue = (key) => ai == null || !Array.isArray(aq[key]) ? null : wxNumber(aq[key][ai]);
+    const temperature = value('temperature_2m', i);
+    const dewPoint = value('dew_point_2m', i);
+    return {
+      time,
+      weatherCode: value('weather_code', i),
+      temperature,
+      dewPoint,
+      dewSpread: temperature != null && dewPoint != null ? temperature - dewPoint : null,
+      apparentTemperature: value('apparent_temperature', i),
+      humidity: wxPercent(value('relative_humidity_2m', i)),
+      cloudTotal: wxPercent(value('cloud_cover', i)),
+      cloudLow: wxPercent(value('cloud_cover_low', i)),
+      cloudMid: wxPercent(value('cloud_cover_mid', i)),
+      cloudHigh: wxPercent(value('cloud_cover_high', i)),
+      rainProbability: wxPercent(value('precipitation_probability', i)),
+      precipitation: value('precipitation', i),
+      rain: value('rain', i),
+      showers: value('showers', i),
+      snowfall: value('snowfall', i),
+      visibility: value('visibility', i),
+      wind: value('wind_speed_10m', i),
+      gusts: value('wind_gusts_10m', i),
+      dust: aqValue('dust'),
+      aerosol: aqValue('aerosol_optical_depth'),
+      pm25: aqValue('pm2_5'),
+    };
+  }).filter((row) => row.time);
+}
+function wxRowsForNight(data) {
+  const rows = wxRows(data);
+  const { start, end } = wxNightBounds();
+  const startHour = `${start.slice(0, 13)}:00`;
+  const endHour = `${end.slice(0, 13)}:00`;
+  const endInclusive = end.slice(14, 16) !== '00';
+  return rows.filter((row) => row.time >= startHour &&
+    (endInclusive ? row.time <= endHour : row.time < endHour));
+}
+function wxDewRisk(row) {
+  if (row.dewSpread == null) return { label: '—', cls: 'unknown' };
+  if (row.dewSpread <= 1.5) return { label: 'High', cls: 'bad' };
+  if (row.dewSpread <= 3) return { label: 'Moderate', cls: 'warn' };
+  return { label: 'Low', cls: 'good' };
+}
+function wxRainState(row) {
+  const code = row.weatherCode == null ? 0 : row.weatherCode;
+  if (code >= 95) return { label: 'Storm', cls: 'bad' };
+  if ((row.precipitation != null && row.precipitation > 0.05) ||
+      (row.rain != null && row.rain > 0.05) ||
+      (row.showers != null && row.showers > 0.05) ||
+      (row.snowfall != null && row.snowfall > 0.05)) {
+    const snow = (code >= 71 && code <= 77) || (code >= 85 && code <= 86);
+    return { label: snow ? 'Snow' : 'Rain', cls: 'bad' };
+  }
+  if (row.rainProbability != null && row.rainProbability >= 35) {
+    return { label: 'Possible', cls: 'warn' };
+  }
+  return { label: 'Dry', cls: 'good' };
+}
+function wxSkyClarity(row) {
+  if (row.visibility == null && row.aerosol == null) return { label: 'Unknown', cls: 'unknown' };
+  const km = row.visibility == null ? null : row.visibility / 1000;
+  const aod = row.aerosol;
+  return {
+    label: (km != null && km < 2) || (aod != null && aod >= 0.5) ? 'Poor' :
+      (km != null && km < 5) || (aod != null && aod >= 0.25) ? 'Fair' : 'Good',
+    cls: (km != null && km < 2) || (aod != null && aod >= 0.5) ? 'bad' :
+      (km != null && km < 5) || (aod != null && aod >= 0.25) ? 'warn' : 'good',
+  };
+}
+function wxRowScore(row) {
+  let score = 100;
+  if (row.cloudTotal != null) score -= row.cloudTotal * 0.55;
+  if (row.rainProbability != null) score -= row.rainProbability * 0.25;
+  const rain = wxRainState(row);
+  if (rain.cls === 'bad') score -= 40;
+  else if (rain.cls === 'warn') score -= 8;
+  const dew = wxDewRisk(row);
+  if (dew.cls === 'bad') score -= 12;
+  else if (dew.cls === 'warn') score -= 6;
+  const clarity = wxSkyClarity(row);
+  if (clarity.cls === 'bad') score -= 12;
+  else if (clarity.cls === 'warn') score -= 5;
+  return Math.max(0, Math.min(100, Math.round(score)));
+}
+function wxForecastSummary(rows) {
+  const clouds = rows.map((r) => r.cloudTotal).filter((v) => v != null);
+  const rain = rows.map((r) => r.rainProbability).filter((v) => v != null);
+  const dewHigh = rows.find((r) => wxDewRisk(r).cls === 'bad');
+  const dewWarn = rows.find((r) => wxDewRisk(r).cls === 'warn');
+  const clarity = rows.map((r) => wxSkyClarity(r));
+  const maxRain = rain.length ? Math.max(...rain) : null;
+  const maxCloud = clouds.length ? Math.max(...clouds) : null;
+  const wet = rows.some((r) => wxRainState(r).cls === 'bad');
+  const poorClarity = clarity.some((r) => r.cls === 'bad');
+  const fairClarity = clarity.some((r) => r.cls === 'warn');
+  const scores = rows.map(wxRowScore);
+  const score = scores.length ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : null;
+  const red = wet || (maxRain != null && maxRain >= 55) || (maxCloud != null && maxCloud >= 85);
+  const warn = !red && ((maxRain != null && maxRain >= 20) || (maxCloud != null && maxCloud >= 20) ||
+    !!dewHigh || !!dewWarn || poorClarity || fairClarity);
+  const status = red ? { label: 'Poor', cls: 'bad' } :
+    warn ? { label: 'Fair', cls: 'warn' } :
+      rows.length ? { label: 'Good', cls: 'good' } : { label: 'Unknown', cls: 'unknown' };
+  const firstTime = (row) => row ? row.time.slice(11, 16) : '';
+  return {
+    cloud: clouds.length ? `${Math.min(...clouds)}–${Math.max(...clouds)}%` : '—',
+    rain: maxRain == null ? '—' : wet ? `${Math.round(maxRain)}% · rain risk` :
+      maxRain >= 35 ? `${Math.round(maxRain)}% possible` : `${Math.round(maxRain)}% max`,
+    clarity: poorClarity ? 'Poor' : fairClarity ? 'Fair' : rows.length ? 'Good' : 'Unknown',
+    clarityCls: poorClarity ? 'bad' : fairClarity ? 'warn' : rows.length ? 'good' : 'unknown',
+    dew: dewHigh ? `High after ${firstTime(dewHigh)}` : dewWarn ? `Moderate after ${firstTime(dewWarn)}` : rows.length ? 'Low' : '—',
+    dewCls: dewHigh ? 'bad' : dewWarn ? 'warn' : rows.length ? 'good' : 'unknown',
+    status, score,
+    detail: red ? (wet ? 'Rain or storm risk' : 'Very cloudy outlook') :
+      warn ? 'Some cloud, dew, or haze possible' : rows.length ? 'Clear and dry outlook' : 'No night forecast available',
+  };
+}
+function wxHourlyMarkup(rows) {
+  return rows.map((row) => {
+    const [icon] = wxInfo(row.weatherCode);
+    const dew = wxDewRisk(row);
+    const rain = wxRainState(row);
+    const clarity = wxSkyClarity(row);
+    const cloud = row.cloudTotal == null ? '—' : `${Math.round(row.cloudTotal)}%`;
+    const rainText = row.rainProbability == null ? rain.label : `${Math.round(row.rainProbability)}%`;
+    const rainAmount = row.precipitation == null ? '' : `<small>${wxFixed(row.precipitation, 1)} mm</small>`;
+    const cloudWidth = row.cloudTotal == null ? 0 : Math.round(row.cloudTotal);
+    return `<div class="wx-hour" title="${row.time.slice(0, 16).replace('T', ' ')} site time">
+      <div class="wx-hour-time"><span>${row.time.slice(11, 16)}</span><span class="wx-hour-icon">${icon}</span></div>
+      <div class="wx-hour-metric"><small>Cloud</small><span class="wx-meter"><i style="width:${cloudWidth}%"></i></span><b>${cloud}</b></div>
+      <div class="wx-hour-metric"><small>Rain</small><b class="wx-${rain.cls}">${rainText}</b>${rainAmount}</div>
+      <div class="wx-hour-metric"><small>Clarity</small><b class="wx-${clarity.cls}">${clarity.label}</b></div>
+      <div class="wx-hour-metric"><small>Dew</small><b class="wx-${dew.cls}">${dew.label}</b></div>
+    </div>`;
+  }).join('');
+}
+
 async function loadWeather() {
   const chip = $('#wxChip');
   if (!chip) return;
-  WX_STATE.loading = true; WX_STATE.error = false;
+  const gen = ++_wxGen;
+  WX_STATE.loading = true; WX_STATE.error = false; WX_STATE.airError = false;
   wxRenderChip();
   const { lat, lon } = S.site;
+  const tz = encodeURIComponent(wxTimezone());
   const url = 'https://api.open-meteo.com/v1/forecast?latitude=' + lat + '&longitude=' + lon +
-    '&current=temperature_2m,apparent_temperature,relative_humidity_2m,weather_code,cloud_cover,wind_speed_10m,wind_direction_10m,wind_gusts_10m,precipitation' +
-    '&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max' +
-    '&timezone=auto&forecast_days=4';
+    '&hourly=temperature_2m,apparent_temperature,relative_humidity_2m,dew_point_2m,precipitation_probability,precipitation,rain,showers,snowfall,weather_code,cloud_cover,cloud_cover_low,cloud_cover_mid,cloud_cover_high,visibility,wind_speed_10m,wind_direction_10m,wind_gusts_10m' +
+    '&timezone=' + tz + '&forecast_days=4';
+  const airUrl = 'https://air-quality-api.open-meteo.com/v1/air-quality?latitude=' + lat + '&longitude=' + lon +
+    '&hourly=pm10,pm2_5,dust,aerosol_optical_depth&timezone=' + tz + '&forecast_days=4';
   try {
-    const ac = new AbortController();
-    const to = setTimeout(() => ac.abort(), 15000);
-    const r = await fetch(url, { signal: ac.signal });
-    clearTimeout(to);
-    if (!r.ok) throw new Error('HTTP ' + r.status);
-    WX_STATE.data = await r.json();
+    const [weather, air] = await Promise.allSettled([wxFetchJSON(url), wxFetchJSON(airUrl)]);
+    if (gen !== _wxGen) return;
+    if (weather.status !== 'fulfilled') throw weather.reason || new Error('weather unavailable');
+    WX_STATE.data = weather.value;
+    WX_STATE.data.air_quality = air.status === 'fulfilled' ? air.value : null;
+    WX_STATE.airError = air.status !== 'fulfilled';
   } catch {
+    if (gen !== _wxGen) return;
     WX_STATE.error = true; WX_STATE.data = null;
   } finally {
-    WX_STATE.loading = false;
+    if (gen === _wxGen) WX_STATE.loading = false;
   }
+  if (gen !== _wxGen) return;
   wxRenderChip();
   if (!$('#weatherPanel').classList.contains('hidden')) wxRenderPanel();
 }
@@ -361,14 +671,24 @@ function wxChipText() {
   if (WX_STATE.loading) return '⏳ loading weather…';
   if (WX_STATE.error) return '⚠️ weather unavailable — click to retry';
   if (!WX_STATE.data) return '☁️ Weather';
-  const c = WX_STATE.data.current;
-  const [icon] = wxInfo(c.weather_code);
-  return `${icon} ${Math.round(c.temperature_2m)}°C · ${Math.round(c.wind_speed_10m)} km/h`;
+  const summary = wxForecastSummary(wxRowsForNight(WX_STATE.data));
+  return summary.score == null ? 'Weather · no night forecast' : `${summary.status.label} tonight · ${summary.score}/100`;
 }
 
 function wxRenderChip() {
   const chip = $('#wxChip');
   if (chip) chip.textContent = wxChipText();
+  const dot = $('#wxStatusDot'), btn = $('#btnWeather');
+  const summary = WX_STATE.data ? wxForecastSummary(wxRowsForNight(WX_STATE.data)) : null;
+  const status = WX_STATE.error ? { label: 'Unavailable', cls: 'bad' } :
+    summary ? summary.status : { label: 'Weather', cls: 'unknown' };
+  if (dot) {
+    dot.className = `wx-status-dot wx-${status.cls}`;
+    dot.textContent = status.cls === 'unknown' ? '○' : '●';
+  }
+  if (btn) btn.title = summary && summary.score != null
+    ? `${status.label} observing conditions tonight, score ${summary.score} of 100 — click for details`
+    : 'Observing weather for the selected night — click to load';
 }
 
 /** Re-fetch weather when the active site changed, but only if the user has
@@ -389,32 +709,24 @@ function wxRenderPanel() {
       '<p class="hint">Weather comes from Open-Meteo and is only fetched when you click the chip. Try again in a moment.</p>';
     return;
   }
-  const d = WX_STATE.data, c = d.current, daily = d.daily || {};
-  const [icon, label] = wxInfo(c.weather_code);
-  const days = (daily.time || []).map((t, i) => {
-    const dt = new Date(t + 'T12:00:00');
-    const [di] = wxInfo((daily.weather_code || [])[i] ?? 0);
-    const hi = daily.temperature_2m_max ? Math.round(daily.temperature_2m_max[i]) : '—';
-    const lo = daily.temperature_2m_min ? Math.round(daily.temperature_2m_min[i]) : '—';
-    const pc = daily.precipitation_probability_max ? daily.precipitation_probability_max[i] : null;
-    return `<div class="wx-day"><div class="wx-di">${di}</div><div>${dt.toLocaleDateString(undefined, { weekday: 'short' })}</div><div class="wx-t">${hi}°/${lo}°</div>${pc != null ? `<div class="wx-p">💧${pc}%</div>` : ''}</div>`;
-  }).join('');
+  const d = WX_STATE.data;
+  const rows = wxRowsForNight(d);
+  const summary = wxForecastSummary(rows);
+  const bounds = wxNightBounds();
   body.innerHTML = `
-    <div class="wx-now">
-      <span class="wx-icon">${icon}</span>
-      <span class="wx-big">${Math.round(c.temperature_2m)}°C</span>
-      <span class="sub" style="flex:1">${label}<br>feels like ${Math.round(c.apparent_temperature)}°</span>
+    <div class="wx-rating wx-rating-${summary.status.cls}">
+      <div class="wx-rating-head"><span class="wx-status-dot wx-${summary.status.cls}">${summary.status.cls === 'unknown' ? '○' : '●'}</span><strong>${summary.status.label} night</strong><b>${summary.score == null ? '—' : summary.score}/100</b></div>
+      <div class="wx-rating-detail">${summary.detail}</div>
     </div>
     <div class="wx-grid">
-      <div><span>Wind</span><b>${Math.round(c.wind_speed_10m)} km/h</b></div>
-      <div><span>Gusts</span><b>${Math.round(c.wind_gusts_10m)} km/h</b></div>
-      <div><span>Humidity</span><b>${Math.round(c.relative_humidity_2m)}%</b></div>
-      <div><span>Clouds</span><b>${Math.round(c.cloud_cover)}%</b></div>
-      <div><span>Rain now</span><b>${c.precipitation ? c.precipitation.toFixed(1) + ' mm' : '0 mm'}</b></div>
-      <div><span>Updated</span><b>${(c.time || '').slice(11, 16) || '—'}</b></div>
+      <div><span>Cloud cover</span><b>${summary.cloud}</b></div>
+      <div><span>Rain warning</span><b class="wx-${summary.status.cls === 'bad' ? 'bad' : summary.rain.includes('possible') ? 'warn' : 'good'}">${summary.rain}</b></div>
+      <div><span title="Haze proxy, not an astronomical transparency measurement">Sky clarity</span><b class="wx-${summary.clarityCls}">${summary.clarity}</b></div>
+      <div><span>Dew risk</span><b class="wx-${summary.dewCls}">${summary.dew}</b></div>
     </div>
-    ${days ? `<div class="wx-days">${days}</div>` : ''}
-    <p class="hint" style="margin-top:8px">Weather by <a href="https://open-meteo.com/" target="_blank" rel="noopener" style="color:var(--accent)">Open-Meteo</a>, for the active site.</p>`;
+    <div class="wx-section-title"><b>Dark-hour forecast</b><span>${wxSelectedDateKey()} · ${bounds.label} site time</span></div>
+    ${rows.length ? `<div class="wx-hourly-head"><span>Time</span><span>Cloud</span><span>Rain</span><span>Clarity</span><span>Dew</span></div><div class="wx-hourly">${wxHourlyMarkup(rows)}</div>` : '<p class="hint">No dark-hour forecast is available for this selected night.</p>'}
+    <p class="hint" style="margin-top:8px">Sky clarity is a haze proxy, not an astronomical transparency measurement. Dew risk is estimated from temperature and dew point. Forecast by <a href="https://open-meteo.com/" target="_blank" rel="noopener" style="color:var(--accent)">Open-Meteo</a>.</p>`;
 }
 
 /* ---------- Wikipedia thumbnails with IndexedDB cache ---------- */
@@ -561,7 +873,13 @@ function route() {
   // leaving the Horizon editor with unsaved edits: flush them (never lose them)
   if (S.view === 'horizon' && view !== 'horizon' && Hor.horizonUnsaved()) Hor.flushHorizonEdits();
   S.view = view;
-  document.querySelectorAll('#tabs a').forEach((a) => a.classList.toggle('active', a.dataset.v === S.view));
+  document.querySelectorAll('#tabs a').forEach((a) => {
+    const selected = a.dataset.v === S.view;
+    a.classList.toggle('active', selected);
+    a.setAttribute('aria-selected', String(selected));
+  });
+  const viewPanel = $('#view');
+  if (viewPanel) viewPanel.setAttribute('aria-labelledby', `tab-${S.view}`);
   if (S.view === 'tonight') { renderTonight(); applyTonightMarker(); }
   else if (S.view === 'sky') renderSky();
   else if (S.view === 'catalog') renderCatalog();
@@ -665,6 +983,17 @@ function fmtDur(min) {
   return `${Math.floor(m / 60)}h ${String(m % 60).padStart(2, '0')}m`;
 }
 
+function explainVisibility(reason, row) {
+  if (reason === 'visible') {
+    return `visible for ${fmtDur(row.visibleMinutes || row.visN * row.stepMin * 1440)}`;
+  }
+  if (reason === 'blocked_by_horizon') return 'blocked because of horizon';
+  if (reason === 'below_minimum_altitude') return 'below minimum altitude';
+  if (reason === 'outside_selected_window') return 'outside the selected window';
+  if (reason === 'never_rises') return 'never rises in this window';
+  return 'no usable visibility interval';
+}
+
 function renderTonight(silent) {
   // `silent` (pref changes, auto-refresh): keep the current cards on screen
   // and swap in the new ones when the compute finishes — no blank-splash
@@ -761,14 +1090,22 @@ function renderTonight(silent) {
       const [altNow, azNow] = E.altaz(o.ra_hours * 15, o.dec_deg, jdSel, lat, lon);
       const ceilNow = pano ? Hor.ceilFor(pano, azNow) : { ceil: Hor.NO_BLOCK, ceilTop: null };
       const visNow = sampleVisible(altNow, minAlt, ceilNow.ceil, ceilNow.ceilTop);
+      const selectedInWindow = selTime >= win.startT && selTime <= win.endT;
+      const selectedReason = visibilityReason(
+        altNow, minAlt, ceilNow.ceil, ceilNow.ceilTop, selectedInWindow);
       const pop = popularityFactor(o);
       // popularity is a silent TIEBREAKER (like the desktop): the pure
       // visibility score decides, popularity only separates equal scores
       const score = Math.round((moonAware ? st.sMoon : st.sClassic) * 10) / 100;
-      rows.push({ o, maxAlt: st.maxAlt, altNow, visNow, score,
+      rows.push({ o, maxAlt: st.maxAlt, altNow, visNow, selectedReason, score,
                   bestRun: st.bestRun, bestStart: st.bestStart,
-                  transitJd: st.transitJd, visN: st.visN,
-                  obsPct: st.pct, blockedPct: st.blockedPct, pop });
+                  bestEnd: st.bestEnd, transitJd: st.transitJd,
+                  culminationAlt: st.culminationAlt, riseJd: st.riseJd,
+                  setJd: st.setJd, visN: st.visN,
+                  visibleMinutes: st.visibleMinutes,
+                  visibilityReason: st.visibilityReason,
+                  obsPct: st.pct, blockedPct: st.blockedPct,
+                  stepMin: step, pop });
     }
     rows.sort((a, b) => (b.score - a.score) || (b.pop - a.pop));
     // share the computed visibility with the catalog column
@@ -797,24 +1134,48 @@ function renderTonight(silent) {
     const darkH = Math.round(((darkEnd - darkStart) / 3600000 + (darkEnd < darkStart ? 24 : 0)) * 10) / 10;
     const darkLabel = ({ astronomical: 'astronomical night', nautical: 'nautical night', civil: 'civil night', fallback: 'fixed window (no full darkness)' }[win.level] || 'night');
     const visibleCount = visibleAll.length;   // the real count, not the top-8 list
+    const windowMs = Math.max(1, darkEnd.getTime() - darkStart.getTime());
+    const selectedPct = Math.max(0, Math.min(100,
+      ((selTime.getTime() - darkStart.getTime()) / windowMs) * 100));
+    const sessionSite = S.site.label ||
+      [S.site.lat.toFixed(2), S.site.lon.toFixed(2)].join(', ');
 
     const pickItem = (r) => {
       const o = r.o;
       const tags = [o.messier, o.ngcic].filter(Boolean).join(' · ');
       const win = r.bestRun > 0
-        ? `clear ${fmtClock(E.dateFromJD(r.bestStart))} – ${fmtClock(E.dateFromJD(r.bestStart + r.bestRun * step))}`
-        : 'no clear window';
+        ? `clear ${fmtClock(E.dateFromJD(r.bestStart))} – ${fmtClock(E.dateFromJD(r.bestEnd || r.bestStart + r.bestRun * step))}`
+        : explainVisibility(r.visibilityReason, r);
       const fOwn = filterAdviceBadge(o);
       return `<li data-id="${esc(o.id)}">
         <span class="dot" style="background:${typeColor(o)}"></span>
         <span><span class="p-name">${esc(o.primary_name)}</span>${tags ? `<span class="p-tags">${esc(tags)}</span>` : ''}${fOwn}</span>
         <span class="p-right">
-          <b>${r.maxAlt.toFixed(0)}°</b>
-          <span class="p-vis">${r.visN ? `${r.obsPct}% of night · ${fmtDur(r.visN * step * 1440)} visible` : 'not clear tonight'}</span>${win}</span>
+          <b title="culminates at ${fmtClock(E.dateFromJD(r.transitJd))}">${r.maxAlt.toFixed(0)}°</b>
+          <span class="p-vis">${r.visN ? `${r.obsPct}% of night · ${fmtDur(r.visibleMinutes)} visible` : explainVisibility(r.visibilityReason, r)}</span>${win}<small>culminates ${fmtClock(E.dateFromJD(r.transitJd))}</small></span>
       </li>`;
     };
 
     const html = `
+      <section class="session-head">
+        <div>
+          <p class="eyebrow">Session plan</p>
+          <h1>Tonight</h1>
+          <p class="session-context">${esc(sessionSite)} · night of ${dateKey(nightAnchor())}</p>
+        </div>
+        <div class="session-facts">
+          <span>Selected</span><b>${fmtClock(selTime)}</b>
+          <span>Dark window</span><b>${darkH} · ${fmtClock(darkStart)}–${fmtClock(darkEnd)}</b>
+        </div>
+      </section>
+      <section class="night-track" aria-label="Booked observing window">
+        <div class="track-head"><strong>Booked night</strong><span>${darkLabel}</span></div>
+        <div class="track-bar">
+          <span class="track-window"></span>
+          <span class="track-marker" style="left:${selectedPct.toFixed(2)}%"></span>
+        </div>
+        <div class="track-scale"><span>${fmtClock(darkStart)}</span><span>selected ${fmtClock(selTime)}</span><span>${fmtClock(darkEnd)}</span></div>
+      </section>
       <div class="grid3">
         <div class="card">
           <h3>Dark time</h3>
@@ -840,12 +1201,12 @@ function renderTonight(silent) {
         <div class="card"><h3>Visible at ${fmtClock(selTime)}</h3><ul class="pick">${nowVisible.length ? nowVisible.map((r) => `<li data-id="${esc(r.o.id)}">
           <span class="dot" style="background:${typeColor(r.o)}"></span>
           <span><span class="p-name">${esc(r.o.primary_name)}</span>${r.o.messier ? `<span class="p-tags">${esc(r.o.messier)}</span>` : ''}</span>
-          <span class="p-right"><b>${r.altNow.toFixed(0)}° alt</b>transit ${fmtClock(E.dateFromJD(r.transitJd))}</span>
+          <span class="p-right"><b>${r.altNow.toFixed(0)}° alt</b>culminates ${fmtClock(E.dateFromJD(r.transitJd))} at ${r.maxAlt.toFixed(0)}°</span>
         </li>`).join('') : '<li style="cursor:default">nothing clear at the selected time</li>'}</ul></div>
         <div class="card"><h3>Rising later tonight</h3><ul class="pick">${risingLater.length ? risingLater.map((r) => `<li data-id="${esc(r.o.id)}">
           <span class="dot" style="background:${typeColor(r.o)}"></span>
           <span><span class="p-name">${esc(r.o.primary_name)}</span>${r.o.messier ? `<span class="p-tags">${esc(r.o.messier)}</span>` : ''}</span>
-          <span class="p-right">transit ${fmtClock(E.dateFromJD(r.transitJd))}<b>peaks ${r.maxAlt.toFixed(0)}°</b></span>
+          <span class="p-right">culminates ${fmtClock(E.dateFromJD(r.transitJd))}<b>peaks ${r.maxAlt.toFixed(0)}°</b></span>
         </li>`).join('') : '<li style="cursor:default">everything already up or setting</li>'}</ul></div>
       </div>
       <p class="cat-count" style="margin-top:10px;text-align:center">night of ${dateKey(nightAnchor())} · ${esc(S.site.label || `${S.site.lat.toFixed(2)}, ${S.site.lon.toFixed(2)}`)} · horizon: ${pano ? esc(pano.name) : 'none'} · click any target for details</p>`;
@@ -925,11 +1286,12 @@ function dtoLocalInput(d) {
 
 function renderSky() {
   const box = $('#view');
+  const V = vizTheme();
   const magMax = advMode() ? 20 : 14;   // desktop setup.js parity (14; 20 in advanced)
   const base = activeCatalog();
   box.innerHTML = `
     <div class="sky-wrap">
-      <div class="sky-canvas-box card"><canvas id="sky"></canvas></div>
+      <div class="sky-canvas-box card"><canvas id="sky" role="img" aria-label="All-sky polar chart" aria-describedby="skyChartSummary"></canvas><p id="skyChartSummary" class="visually-hidden" role="note">All-sky chart. Select an object to inspect its details.</p></div>
       <div class="sky-side">
         <div class="card">
           <h3>Time</h3>
@@ -953,13 +1315,13 @@ function renderSky() {
         <div class="card">
           <h3>Legend</h3>
           <ul class="legend">
-            <li><span class="dot" style="background:#ffd166;border-radius:50%"></span>Sun</li>
-            <li><span class="dot" style="background:#e6e9ff;border-radius:50%"></span>Moon</li>
-            <li><span class="dot" style="background:transparent;border:2px dashed #7bf1a8;border-radius:50%"></span>min altitude</li>
-            ${Hor.activePano() ? '<li><span class="dot" style="background:#ff6b6b"></span>blocked by horizon</li>' : ''}
+            <li><span class="dot" style="background:${V.sun};border-radius:50%"></span>Sun</li>
+            <li><span class="dot" style="background:${V.moon};border-radius:50%"></span>Moon</li>
+            <li><span class="dot" style="background:transparent;border:2px dashed ${V.minStroke};border-radius:50%"></span>min altitude</li>
+            ${Hor.activePano() ? `<li><span class="dot" style="background:${V.obstacleStroke}"></span>blocked by horizon</li>` : ''}
             ${(Hor.activePano() && Hor.activePano().paintMode === 'sky' && !Hor.activePano().blockAbove)
               ? '<li><span class="dot hatch"></span>above band: open (assumed)</li>' : ''}
-            ${Object.entries(TYPE_COLORS).map(([t, c]) => `<li><span class="dot" style="background:${c}"></span>${TYPE_LABELS[t]}</li>`).join('')}
+            ${Object.entries(TYPE_COLORS).map(([t, c]) => `<li><span class="dot" style="background:${V.types[t] || c}"></span>${TYPE_LABELS[t]}</li>`).join('')}
           </ul>
         </div>
         <div class="card"><h3>Hint</h3><p class="sub" style="font-size:13px">Click an object to open its detail panel. The chart is an all-sky polar view: center = zenith, rim = horizon, north at top. <b>Scroll = zoom · drag = pan · double-click = reset</b> — zooming opens a rectangular window over the chart, so you see more sky than a circular magnifier.</p></div>
@@ -1009,6 +1371,7 @@ function renderSky() {
   }
 
   function draw() {
+    const C = vizTheme();
     const W = cvs.clientWidth;
     const cx = W / 2, cy = W / 2;
     const R = W / 2 - 22;
@@ -1019,7 +1382,7 @@ function renderSky() {
     skyClamp(W);
 
     // grid
-    ctx.strokeStyle = 'rgba(124, 196, 255, .16)';
+    ctx.strokeStyle = C.grid;
     ctx.lineWidth = 1;
     ctx.beginPath(); ctx.arc(cx, cy, R, 0, Math.PI * 2); ctx.stroke();
     for (const alt of [20, 40, 60]) {
@@ -1027,16 +1390,16 @@ function renderSky() {
     }
     // min-altitude ring (planning prefs)
     const minRing = Hor.effectiveMinAlt();
-    ctx.strokeStyle = 'rgba(123, 241, 168, .55)';
+    ctx.strokeStyle = C.minStroke;
     ctx.lineWidth = 1.2;
     ctx.setLineDash([6, 5]);
     ctx.beginPath(); ctx.arc(cx, cy, R * (1 - minRing / 90), 0, Math.PI * 2); ctx.stroke();
     ctx.setLineDash([]);
-    ctx.fillStyle = 'rgba(123, 241, 168, .9)';
+    ctx.fillStyle = C.minLabel;
     ctx.font = '10.5px system-ui, sans-serif';
     ctx.textAlign = 'left';
     ctx.fillText(`min ${minRing.toFixed(0)}°`, cx + (R * (1 - minRing / 90)) + 6, cy + 3);
-    ctx.strokeStyle = 'rgba(124, 196, 255, .10)';
+    ctx.strokeStyle = C.gridSub;
     for (let az = 0; az < 360; az += 30) {
       const a = E.D2R * az;
       ctx.beginPath();
@@ -1044,7 +1407,7 @@ function renderSky() {
       ctx.lineTo(cx + R * Math.sin(a), cy - R * Math.cos(a));
       ctx.stroke();
     }
-    ctx.fillStyle = 'rgba(127, 151, 184, .85)';
+    ctx.fillStyle = C.axis;
     ctx.font = '11px system-ui, sans-serif';
     ctx.textAlign = 'center';
     for (const [az, t] of [[0, 'N'], [90, 'E'], [180, 'S'], [270, 'W']]) {
@@ -1067,8 +1430,8 @@ function renderSky() {
         const { ceil } = Hor.ceilFor(pano, az);
         ceilPts.push(radiusFor(az, ceil > Hor.NO_BLOCK + 0.5 ? Math.min(ceil, 90) : 0));
       }
-      ctx.fillStyle = 'rgba(255, 107, 107, .15)';
-      ctx.strokeStyle = 'rgba(255, 107, 107, .85)';
+      ctx.fillStyle = C.obstacleFill;
+      ctx.strokeStyle = C.obstacleStroke;
       ctx.lineWidth = 1.4;
       ctx.beginPath();
       ceilPts.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
@@ -1109,7 +1472,7 @@ function renderSky() {
           minY = Math.min(minY, y); maxY = Math.max(maxY, y);
         }
         const diag = (maxX - minX) + (maxY - minY);
-        ctx.strokeStyle = 'rgba(210, 225, 255, .28)';
+        ctx.strokeStyle = C.assumedHatch;
         ctx.lineWidth = 1;
         for (let o = -diag; o < diag; o += 9) {
           ctx.beginPath();
@@ -1121,8 +1484,8 @@ function renderSky() {
       };
       if (pano.paintMode === 'sky') {
         if (pano.blockAbove) {
-          ctx.fillStyle = 'rgba(255, 107, 107, .15)';
-          ctx.strokeStyle = 'rgba(255, 107, 107, .85)';
+          ctx.fillStyle = C.obstacleFill;
+          ctx.strokeStyle = C.obstacleStroke;
           ctx.lineWidth = 1.4;
           for (const run of Hor.overhangRuns(pano, 2)) {
             const pts = [];
@@ -1175,15 +1538,15 @@ function renderSky() {
 
     // sun and moon
     plotAltAz(sunAlt, sunAz, (x, y) => {
-      ctx.shadowColor = '#ffd166'; ctx.shadowBlur = 22;
-      ctx.fillStyle = '#ffd166';
+      ctx.shadowColor = C.sun; ctx.shadowBlur = C.sunBlur;
+      ctx.fillStyle = C.sun;
       ctx.beginPath(); ctx.arc(x, y, 9, 0, Math.PI * 2); ctx.fill();
       ctx.shadowBlur = 0;
       skyItems.push({ x, y, id: 'SUN', label: 'Sun' });
     });
     plotAltAz(moonAlt, moonAz, (x, y) => {
-      ctx.shadowColor = '#e6e9ff'; ctx.shadowBlur = 16;
-      ctx.fillStyle = '#e6e9ff';
+      ctx.shadowColor = C.moon; ctx.shadowBlur = C.moonBlur;
+      ctx.fillStyle = C.moon;
       ctx.beginPath(); ctx.arc(x, y, 7, 0, Math.PI * 2); ctx.fill();
       ctx.shadowBlur = 0;
       skyItems.push({ x, y, id: 'MOON', label: 'Moon' });
@@ -1224,15 +1587,21 @@ function renderSky() {
         if (!ok) continue;
         placed.push({ x: tx + w / 2, y: ty, w });
         ctx.save();
-        ctx.shadowColor = 'rgba(0,0,0,.9)';
-        ctx.shadowBlur = 4;
-        ctx.fillStyle = 'rgba(219, 233, 255, .85)';
+        ctx.shadowColor = C.targetShadow;
+        ctx.shadowBlur = C.labelBlur;
+        ctx.fillStyle = C.targetLabel;
         ctx.fillText(c.text, tx, ty);
         ctx.restore();
       }
     }
 
     // obstruction-free note: horizon line already drawn
+    const summary = $('#skyChartSummary');
+    if (summary) {
+      const when = S.skyTime.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+      const targets = skyItems.filter((item) => item.o).length;
+      summary.textContent = `All-sky polar chart at ${when}; ${targets} catalog objects are plotted. Center is zenith, rim is horizon, and the selected horizon profile is shown as blocked sky.`;
+    }
   }
 
   function posEl(ev) {
@@ -1354,26 +1723,18 @@ function renderSky() {
     timeEl.value = dtoLocalInput(S.skyTime);
   };
   syncControls();
-  // every control here also announces the change, so the always-visible topbar
-  // scrub (bound to 'sky:time') never keeps showing a stale time
-  const announceTime = () => window.dispatchEvent(new CustomEvent('sky:time'));
   slider.addEventListener('input', () => {
     const r = scrubRange();
     S.skyTime = new Date(r.start.getTime() + Number(slider.value) * 60000);
-    syncControls();
-    draw();
-    announceTime();
+    announceSkyTime();
   });
   timeEl.addEventListener('input', () => {
     const v = timeEl.value;
-    if (v) { S.skyTime = WS.wallToUtc(new Date(v)); clampSkyTime(); syncControls(); draw(); announceTime(); }
+    if (v) { S.skyTime = WS.wallToUtc(new Date(v)); clampSkyTime({ repaint: true }); }
   });
   $('#sky-now').addEventListener('click', () => {
     S.skyTime = new Date();
-    clampSkyTime();
-    syncControls();
-    draw();
-    announceTime();
+    clampSkyTime({ repaint: true });
   });
   // magnitude limit: re-filter the candidate pool, then one redraw (no re-render,
   // no refetch) - the desktop #skyMag slider behaves the same way
@@ -1387,7 +1748,11 @@ function renderSky() {
   });
 
   if (skyTimeHandler) window.removeEventListener('sky:time', skyTimeHandler);
-  skyTimeHandler = () => { try { syncControls(); draw(); } catch { /* view gone */ } };
+  skyTimeHandler = (ev) => { try {
+    if (S.view !== 'sky') return;
+    syncControls();
+    if (ev.detail?.repaint !== false) draw();
+  } catch { /* view gone */ } };
   window.addEventListener('sky:time', skyTimeHandler);
 
   sizeCanvas();
@@ -1521,6 +1886,7 @@ function renderCatalog() {
     <div class="cat-stats">
       <span class="cat-count">${list.length.toLocaleString()} of ${CAT.length.toLocaleString()} objects${advMode() ? '' : ' (standard mode)'}${hiddenNotVisible ? ` · ${hiddenNotVisible} below ${minVis()}%` : ''}</span>
       <span class="cat-count" id="pct-status"></span>
+      <button class="btn small" id="cat-export-provenance" type="button" title="Download catalog source, aliases and designation history">Download provenance</button>
     </div>
     <div class="card" style="padding:8px 10px">
       <div class="catwrap">
@@ -1532,7 +1898,7 @@ function renderCatalog() {
             const fOwn = filterAdviceBadge(o);
             const fp = showFrame ? rigFramePct(o) : null;
             const tier = TIER.get(o.id) || 'F';
-            return `<tr data-id="${esc(o.id)}">
+            return `<tr data-id="${esc(o.id)}" tabindex="0" role="button" aria-label="Open details for ${esc(o.primary_name)}">
               <td><span class="tname">${esc(o.primary_name)}</span> ${tags ? `<span class="tags">${esc(tags)}</span>` : ''}${fOwn}</td>
               <td class="tier"><span class="tier-badge t-${tier.toLowerCase()}" title="${tierTitle(o, tier)}">${tier}</span></td>
               <td class="num">${o.vmag != null ? o.vmag.toFixed(1) : '—'}</td>
@@ -1569,7 +1935,15 @@ function renderCatalog() {
     else { S.cat.sort = k; S.cat.up = k === 'pct' ? false : true; } // visibility: descending first
     renderCatalog();
   }));
-  document.querySelectorAll('tbody tr').forEach((tr) => tr.addEventListener('click', () => openDetail(tr.dataset.id)));
+  document.querySelectorAll('table.cat tbody tr[data-id]').forEach((tr) => {
+    const open = () => openDetail(tr.dataset.id);
+    tr.addEventListener('click', open);
+    tr.addEventListener('keydown', (ev) => {
+      if (ev.key !== 'Enter' && ev.key !== ' ') return;
+      ev.preventDefault();
+      open();
+    });
+  });
   $('#pg-prev').addEventListener('click', () => { if (S.cat.page > 0) { S.cat.page--; renderCatalog(); } });
   $('#pg-next').addEventListener('click', () => { if (S.cat.page < pages - 1) { S.cat.page++; renderCatalog(); } });
   $('#cat-con').addEventListener('change', (ev) => { S.cat.con = ev.target.value; S.cat.page = 0; renderCatalog(); });
@@ -1582,6 +1956,7 @@ function renderCatalog() {
     Hor.setPrefs({ minVis: v });
   });
   $('#cat-minvis').addEventListener('change', () => { S.cat.page = 0; renderCatalog(); });
+  $('#cat-export-provenance').addEventListener('click', downloadCatalogProvenance);
   if (qHadFocus) {                       // typing must not be interrupted
     const inp = $('#cat-q');
     if (inp) { inp.focus(); if (qCaret != null) inp.setSelectionRange(qCaret, qCaret); }
@@ -1593,6 +1968,21 @@ function renderCatalog() {
   if (!S.cat.q.trim() && (S.cat.sort === 'pct' || minVis() > 0)) warmPct(list);
 }
 
+function downloadCatalogProvenance() {
+  const payload = CAT_PROV && typeof CAT_PROV === 'object'
+    ? CAT_PROV : { schema_version: 1, objects: {} };
+  const blob = new Blob([JSON.stringify(payload, null, 2) + '\n'],
+                        { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'nightseam-catalog-provenance.json';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 0);
+}
+
 /** Compute visibility for every row of the current filter (background chunks),
  *  then re-render so the min-visibility gate and the % sort see the whole list.
  *
@@ -1602,6 +1992,7 @@ function renderCatalog() {
  *  rather than tens). */
 function warmPct(list) {
   const g = obsNightGrid();
+  const epoch = obsEpoch;
   if (!(g.jd1 > g.jd0) || !list.length) return;
   const missing = list.filter((o) => !obsCache.has(obsKey(g, o.id)));
   const status = document.querySelector('#pct-status');
@@ -1611,6 +2002,7 @@ function warmPct(list) {
   busy(true, 'computing visibility…');
   let i = 0;
   const tick = () => {
+    if (epoch !== obsEpoch) return;
     const t0 = performance.now();
     while (i < missing.length && performance.now() - t0 < 14) {
       const chunk = missing.slice(i, i + CHUNK);
@@ -1636,9 +2028,11 @@ function warmPct(list) {
 /** Lazily compute and fill the "% tonight" column for the current page. */
 function fillPctCells(objs) {
   const g = obsNightGrid();
+  const epoch = obsEpoch;
   if (!(g.jd1 > g.jd0) || !objs.length) return;
   let i = 0;
   const tick = () => {
+    if (epoch !== obsEpoch) return;
     const t0 = performance.now();
     while (i < objs.length && performance.now() - t0 < 14) {
       const o = objs[i];
@@ -1659,6 +2053,7 @@ function fillPctCells(objs) {
 function openDetail(id) {
   const o = byId.get(id);
   if (!o) return;
+  const provenance = CAT_PROV?.objects?.[o.id];
   const modal = $('#modal');
   const pano = Hor.activePano();
   const { lat, lon } = S.site;
@@ -1713,6 +2108,9 @@ function openDetail(id) {
             <dt>Size</dt><dd>${esc(fmtSizeU(o.size_am)) || '—'}</dd>
             <dt>Constellation</dt><dd>${esc(o.constellation || '—')}</dd>
             <dt>RA / Dec (J2000)</dt><dd>${E.formatRA(o.ra_hours)} · ${E.formatDec(o.dec_deg)}</dd>
+            ${provenance ? `<dt>Catalog source</dt><dd title="${esc(provenance.source_version || 'unknown')}">${esc(provenance.source || 'unknown')} · ${esc(provenance.source_file || '')}</dd>
+            <dt>Aliases</dt><dd>${provenance.aliases?.length ? esc(provenance.aliases.join(' · ')) : '—'}</dd>
+            <dt>Designation history</dt><dd>${provenance.designation_history?.length ? esc(provenance.designation_history.map((x) => x.designation).join(' → ')) : '—'}</dd>` : '<dt>Catalog source</dt><dd>not available</dd>'}
             <dt>Right now</dt><dd>alt ${altNow.toFixed(1)}°, az ${azNow.toFixed(0)}°</dd>
             <dt>Tonight</dt><dd>rises ${fmtClock(dayInfo.rise)} · transits ${fmtClock(dayInfo.transit)} · sets ${fmtClock(dayInfo.set)} · peaks ${dayInfo.maxAlt.toFixed(0)}°</dd>
             ${moonRow('Moon dist now', sepNow)}
@@ -1726,14 +2124,24 @@ function openDetail(id) {
       </div>
       <div class="tonight-box">
         <h3>Altitude tonight <span class="cat-count">(local time)</span></h3>
-        <canvas id="graph"></canvas>
-        <div class="graph-legend">
-          <span><i class="sw" style="background:#7bf1a8"></i>clear</span>
-          <span><i class="sw" style="background:#ff6b6b"></i>blocked</span>
-          <span><i class="sw" style="background:#ffb86b"></i>below min</span>
-          <span><i class="sw" style="background:#3a4a66"></i>below horizon</span>
-          <span><i class="sw" style="background:#ffd166"></i>moon</span>
-          ${pano ? '<span><i class="sw" style="background:#ff6b6b"></i>obstruction</span>' : ''}
+        <canvas id="graph" role="img" aria-label="Target altitude and visibility chart" aria-describedby="graphSummary"></canvas>
+        <p id="graphSummary" class="visually-hidden" role="note">Altitude chart for the selected target.</p>
+        <div class="chart-legend" aria-label="Altitude chart legend">
+          <div class="chart-legend-group">
+            <strong class="chart-legend-heading">Target state</strong>
+            <span class="chart-legend-item"><i class="legend-swatch state-clear"></i><span><b>Clear</b><small>above minimum and unobstructed</small></span></span>
+            <span class="chart-legend-item"><i class="legend-swatch state-warn"></i><span><b>Below minimum</b><small>above the horizon, but too low</small></span></span>
+            <span class="chart-legend-item"><i class="legend-swatch state-blocked"></i><span><b>Blocked</b><small>the horizon or ceiling blocks it</small></span></span>
+            <span class="chart-legend-item"><i class="legend-swatch state-below"></i><span><b>Below horizon</b><small>not astronomically visible</small></span></span>
+          </div>
+          <div class="chart-legend-group">
+            <strong class="chart-legend-heading">Chart guides</strong>
+            <span class="chart-legend-item"><i class="legend-swatch guide-min"></i><span><b>Minimum altitude</b><small>your selected visibility threshold</small></span></span>
+            <span class="chart-legend-item"><i class="legend-swatch guide-moon"></i><span><b>Moon altitude</b><small>dash-dot line · white phase discs</small></span></span>
+            <span class="chart-legend-item"><i class="legend-swatch guide-twilight"></i><span><b>Twilight</b><small>shaded time outside the dark window</small></span></span>
+            <span class="chart-legend-item"><i class="legend-swatch guide-window"></i><span><b>Best window</b><small>longest clear run tonight</small></span></span>
+            ${pano ? `<span class="chart-legend-item"><i class="legend-swatch guide-obstruction"></i><span><b>Obstruction ceiling</b><small>lower: short dash · upper: dash-dot</small></span></span>` : ''}
+          </div>
         </div>
         <p class="win-note" id="win-note"></p>
       </div>
@@ -1801,6 +2209,14 @@ function openDetail(id) {
   const darkWin = E.pickDarkWindow(info, nightAnchor(), siteNoon(nightAnchor()));
   const jdDusk = E.julianDay(darkWin.dusk), jdDawn = E.julianDay(darkWin.dawn);
   const inNight = samples.map((s) => s.t >= jdDusk && s.t <= jdDawn);
+  const detailReasonCounts = Object.create(null);
+  let detailVisibleFullN = 0;
+  samples.forEach((s, i) => {
+    const reason = visibilityReason(s.alt, minAlt, s.ceil.ceil, s.ceil.ceilTop, inNight[i]);
+    s.reason = reason;
+    if (inNight[i]) detailReasonCounts[reason] = (detailReasonCounts[reason] || 0) + 1;
+    if (reason === 'visible') detailVisibleFullN++;
+  });
 
   // best window = longest clear run INSIDE the dark window ([start, end) over
   // samples - the same half-open contract as the table's bestRun)
@@ -1818,11 +2234,29 @@ function openDetail(id) {
   $('#win-note').textContent = winNote;
   const visCount = samples.reduce((a, s, i) => a + (s.vis && inNight[i] ? 1 : 0), 0);
   const nightSamples = inNight.filter(Boolean).length || 1;
+  const detailSummary = summarizeVisibility({
+    visibleSamples: visCount,
+    visibleFullSamples: detailVisibleFullN,
+    stepMin: durMs / 60000 / steps,
+    maxAlt: dayInfo.maxAlt,
+    reasonCounts: detailReasonCounts,
+  });
+  const detailReasonText = (reason) => {
+    if (reason === 'visible') return `visible for ${fmtDur(detailSummary.visibleMinutes)}`;
+    if (reason === 'blocked_by_horizon') return 'blocked because of horizon';
+    if (reason === 'below_minimum_altitude') return 'below minimum altitude';
+    if (reason === 'outside_selected_window') return 'outside the selected window';
+    if (reason === 'never_rises') return 'never rises in this window';
+    return 'no usable visibility interval';
+  };
   const obsEl = $('#d-obs');
   if (obsEl) {
     const pct = Math.round(100 * visCount / nightSamples);
     const visMin = visCount * (durMs / 60000 / steps);
-    obsEl.textContent = visCount ? `${pct}% of night · ${fmtDur(visMin)} visible (min ${minAlt.toFixed(0)}°${pano ? ` + horizon "${esc(pano.name)}"` : ''})` : 'nothing clear at your min altitude / horizon';
+    const usable = bestStart >= 0 && best > 1
+      ? ` · usable ${fmtClock(E.dateFromJD(jd0 + (bestStart / steps) * (jd1 - jd0)))}–${fmtClock(E.dateFromJD(jd0 + ((bestStart + best) / steps) * (jd1 - jd0)))}`
+      : '';
+    obsEl.textContent = `${detailReasonText(detailSummary.reason)}${usable} · culmination ${fmtClock(dayInfo.transit)} at ${dayInfo.maxAlt.toFixed(0)}° (min ${minAlt.toFixed(0)}°${pano ? ` + horizon "${esc(pano.name)}"` : ''})`;
   }
 
   const g = $('#graph');
@@ -1838,15 +2272,27 @@ function openDetail(id) {
   const yOf = (alt) => padT + (1 - (alt + 10) / 100) * (H - padT - padB);
 
   function drawGraph(hoverMs = null) {
+    const C = vizTheme();
+    const summary = $('#graphSummary');
+    if (summary) {
+      const name = o.primary_name || 'selected target';
+      const reason = detailSummary.reason === 'visible'
+        ? `visible for ${Math.round(detailSummary.visibleMinutes || 0)} minutes`
+        : detailReasonText(detailSummary.reason);
+      const usable = bestStart >= 0 && best > 1
+        ? ` Usable interval ${fmtClock(new Date(tStart.getTime() + (bestStart / steps) * durMs))} to ${fmtClock(new Date(tStart.getTime() + ((bestStart + best) / steps) * durMs))}.`
+        : '';
+      summary.textContent = `${name} altitude chart. Maximum altitude ${dayInfo.maxAlt.toFixed(1)} degrees at ${fmtClock(dayInfo.transit)}; ${reason}.${usable}`;
+    }
     gCtx.clearRect(0, 0, W, H);
     // twilight bands
     const bands = [
-      [info.sunset, info.civilDusk, '#123a58'],
-      [info.civilDusk, info.nauticalDusk, '#0e2c46'],
-      [info.nauticalDusk, info.astroDusk, '#0a2036'],
-      [info.astroDawn, info.nauticalDawn, '#0a2036'],
-      [info.nauticalDawn, info.civilDawn, '#0e2c46'],
-      [info.civilDawn, info.sunrise, '#123a58'],
+      [info.sunset, info.civilDusk, C.twilight[0]],
+      [info.civilDusk, info.nauticalDusk, C.twilight[1]],
+      [info.nauticalDusk, info.astroDusk, C.twilight[2]],
+      [info.astroDawn, info.nauticalDawn, C.twilight[3]],
+      [info.nauticalDawn, info.civilDawn, C.twilight[4]],
+      [info.civilDawn, info.sunrise, C.twilight[5]],
     ];
     for (const [a, b, col] of bands) {
       if (!a || !b) continue;
@@ -1858,14 +2304,14 @@ function openDetail(id) {
       }
     }
     // horizon + 20° line
-    gCtx.strokeStyle = 'rgba(255,255,255,.22)'; gCtx.lineWidth = 1;
+    gCtx.strokeStyle = C.horizonLine; gCtx.lineWidth = 1;
     gCtx.setLineDash([]);
     gCtx.beginPath(); gCtx.moveTo(padL, yOf(0)); gCtx.lineTo(W - padR, yOf(0)); gCtx.stroke();
-    gCtx.strokeStyle = 'rgba(123, 241, 168, .35)'; gCtx.setLineDash([4, 4]);
+    gCtx.strokeStyle = C.minStroke; gCtx.setLineDash([4, 4]);
     gCtx.beginPath(); gCtx.moveTo(padL, yOf(20)); gCtx.lineTo(W - padR, yOf(20)); gCtx.stroke();
     gCtx.setLineDash([]);
     // axis
-    gCtx.fillStyle = 'rgba(127,151,184,.9)';
+    gCtx.fillStyle = C.axis;
     gCtx.font = '10px ui-monospace, monospace';
     gCtx.textAlign = 'right';
     for (const alt of [0, 20, 40, 60, 80]) gCtx.fillText(`${alt}°`, padL - 6, yOf(alt) + 3);
@@ -1878,21 +2324,30 @@ function openDetail(id) {
     // best window highlight
     if (bestStart >= 0 && best > 1) {
       const x1 = xOf((bestStart / steps) * durMs), x2 = xOf(((bestStart + best) / steps) * durMs);
-      gCtx.fillStyle = 'rgba(123, 241, 168, .10)';
+      gCtx.fillStyle = C.goodFill;
       gCtx.fillRect(x1, padT, x2 - x1, H - padT - padB);
     }
     // min altitude line
-    gCtx.strokeStyle = 'rgba(123, 241, 168, .5)'; gCtx.lineWidth = 1; gCtx.setLineDash([4, 4]);
+    gCtx.strokeStyle = C.minStroke; gCtx.lineWidth = 1; gCtx.setLineDash(C.guideMinDash);
     gCtx.beginPath(); gCtx.moveTo(padL, yOf(minAlt)); gCtx.lineTo(W - padR, yOf(minAlt)); gCtx.stroke();
     gCtx.setLineDash([]);
-    gCtx.fillStyle = 'rgba(123, 241, 168, .85)'; gCtx.font = '10px ui-monospace, monospace'; gCtx.textAlign = 'right';
+    gCtx.fillStyle = C.minLabel; gCtx.font = '10px ui-monospace, monospace'; gCtx.textAlign = 'right';
     gCtx.fillText(`min ${minAlt.toFixed(0)}°`, W - padR - 4, yOf(minAlt) - 4);
+
+    // Keep every data mark inside the plot rectangle. In particular, the Moon
+    // is allowed to be below -10°; it should disappear at the chart floor,
+    // not spill into the time labels below the graph.
+    gCtx.save();
+    gCtx.beginPath();
+    gCtx.rect(padL, padT, W - padL - padR, H - padT - padB);
+    gCtx.clip();
+
     // obstruction ceilings (active panorama)
     if (pano) {
       gCtx.lineWidth = 1.4;
       const ceilY = (c) => yOf(Math.max(-10, Math.min(92, c)));
-      gCtx.setLineDash([5, 4]);
-      gCtx.strokeStyle = 'rgba(255, 107, 107, .9)';
+      gCtx.setLineDash(C.guideCeilingDash);
+      gCtx.strokeStyle = C.ceiling;
       gCtx.beginPath();
       let anyCeil = false, started = false;
       samples.forEach((s, i) => {
@@ -1903,7 +2358,8 @@ function openDetail(id) {
         if (!started) { gCtx.moveTo(x, y); started = true; } else gCtx.lineTo(x, y);
       });
       if (anyCeil) gCtx.stroke();
-      gCtx.strokeStyle = 'rgba(255, 209, 102, .8)';
+      gCtx.setLineDash(C.guideCeilingTopDash);
+      gCtx.strokeStyle = C.ceilingTop;
       gCtx.beginPath();
       let anyTop = false; started = false;
       samples.forEach((s, i) => {
@@ -1917,18 +2373,34 @@ function openDetail(id) {
       gCtx.setLineDash([]);
     }
     // moon
-    gCtx.strokeStyle = 'rgba(255, 209, 102, .75)'; gCtx.lineWidth = 1.6; gCtx.setLineDash([5, 4]);
+    gCtx.strokeStyle = C.moonLine; gCtx.lineWidth = 1.6; gCtx.setLineDash(C.guideMoonDash);
     gCtx.beginPath();
-    samples.forEach((s, i) => { const x = xOf((i / steps) * durMs), y = yOf(s.mAlt); i ? gCtx.lineTo(x, y) : gCtx.moveTo(x, y); });
+    let moonPen = false;
+    const moonPoints = [];
+    samples.forEach((s, i) => {
+      if (!Number.isFinite(s.mAlt) || s.mAlt < -10 || s.mAlt > 90) {
+        moonPen = false;
+        return;
+      }
+      const x = xOf((i / steps) * durMs), y = yOf(s.mAlt);
+      moonPen ? gCtx.lineTo(x, y) : gCtx.moveTo(x, y);
+      moonPoints.push({ i, x, y });
+      moonPen = true;
+    });
     gCtx.stroke(); gCtx.setLineDash([]);
+    const markerStep = Math.max(1, Math.round(samples.length / 9));
+    moonPoints.forEach((p) => {
+      if (p.i % markerStep !== 0 || p.y <= padT + 5 || p.y >= H - padB - 5) return;
+      drawMoonPhaseMarker(gCtx, p.x, p.y, E.moonPhase(samples[p.i].t), C);
+    });
     // object curve, colored per visibility state
-    const STATE_COLORS = { below: 'rgba(86, 106, 134, .55)', blocked: '#ff6b6b', warn: '#ffb86b', clear: '#7bf1a8' };
+    const STATE_COLORS = { below: C.below, blocked: C.bad, warn: C.warn, clear: C.good };
     gCtx.lineWidth = 2.4;
     for (let i = 0; i < steps; i++) {
       const s = samples[i];
       const x1 = xOf((i / steps) * durMs), y1 = yOf(s.alt);
       const x2 = xOf(((i + 1) / steps) * durMs), y2 = yOf(samples[i + 1].alt);
-      gCtx.strokeStyle = STATE_COLORS[s.state] || '#7bf1a8';
+      gCtx.strokeStyle = STATE_COLORS[s.state] || C.good;
       gCtx.beginPath(); gCtx.moveTo(x1, y1); gCtx.lineTo(x2, y2); gCtx.stroke();
     }
     // hover crosshair
@@ -1937,17 +2409,18 @@ function openDetail(id) {
       const i = Math.round((ms / durMs) * steps);
       const s = samples[i];
       const x = xOf((i / steps) * durMs), y = yOf(s.alt);
-      gCtx.strokeStyle = 'rgba(255,255,255,.5)'; gCtx.lineWidth = 1;
+      gCtx.strokeStyle = C.crosshair; gCtx.lineWidth = 1;
       gCtx.beginPath(); gCtx.moveTo(x, padT); gCtx.lineTo(x, H - padB); gCtx.stroke();
-      gCtx.fillStyle = '#0b1526';
+      gCtx.fillStyle = C.crosshairFill;
       gCtx.beginPath(); gCtx.arc(x, y, 4.5, 0, Math.PI * 2); gCtx.fill();
-      gCtx.strokeStyle = '#8fd3ff'; gCtx.stroke();
+      gCtx.strokeStyle = C.crosshairStroke; gCtx.stroke();
       tip.innerHTML = `<b>${fmtClock(new Date(tStart.getTime() + (i / steps) * durMs))}</b><br>alt ${s.alt.toFixed(1)}° · moon ${s.mAlt.toFixed(1)}°`;
       const rr = g.getBoundingClientRect();
       tip.hidden = false;
       tip.style.left = Math.round(rr.left + Math.min(x + 14, W - 190)) + 'px';
       tip.style.top = Math.round(rr.top + Math.max(10, y - 40) + 8) + 'px';
     }
+    gCtx.restore();
   }
 
   drawGraph();
@@ -2261,6 +2734,7 @@ async function renderSettings() {
     } else {
       S.site = { ...S.site, lat, lon };
     }
+    announcePlannerChange('site', { cause: 'site-edit', siteId: rec ? rec.id : null });
     if (qnote) qnote.textContent = rec ? 'saved — ' + rec.name : 'saved';
     refreshView();
   };
@@ -2278,7 +2752,11 @@ async function renderSettings() {
     const radio = li.querySelector('input[type=radio]');
     if (radio) radio.addEventListener('change', () => {
       const s = SITES.find((x) => x.id === li.dataset.id);
-      if (s) { applyActiveSite(s); closeModal(); refreshView(); refreshWeatherForSite(); }
+      if (s) {
+        applyActiveSite(s);
+        announcePlannerChange('site', { cause: 'active-site', siteId: s.id });
+        closeModal(); refreshView(); refreshWeatherForSite();
+      }
     });
   });
   modal.querySelectorAll('[data-editsite]').forEach((b) => b.addEventListener('click', () => openSiteForm(sites.find((s) => s.id === b.dataset.editsite))));
@@ -2290,6 +2768,7 @@ async function renderSettings() {
     if (!SITES.length) { closeModal(); return; }
     const still = SITES.find((x) => x.id === S.site.id);
     applyActiveSite(still || SITES[0]);
+    announcePlannerChange('site', { cause: 'site-delete', siteId: S.site.id });
     closeModal(); refreshView();
   }));
   $('#set-add-site').addEventListener('click', () => openSiteForm(null));
@@ -2298,7 +2777,9 @@ async function renderSettings() {
   modal.querySelectorAll('[data-editrig]').forEach((b) => b.addEventListener('click', () => openRigForm(rigs.find((r) => r.id === b.dataset.editrig))));
   modal.querySelectorAll('[data-delrig]').forEach((b) => b.addEventListener('click', async () => {
     if (!confirm('Delete this rig?')) return;
-    await WS.deleteRigRec(b.dataset.delrig);
+    const rigId = b.dataset.delrig;
+    await WS.deleteRigRec(rigId);
+    announcePlannerChange('rig', { cause: 'rig-delete', rigId });
     closeModal(); renderSettings();
   }));
   $('#set-add-rig').addEventListener('click', () => showRigPicker());
@@ -2340,13 +2821,13 @@ async function renderSettings() {
   // to meta/safety and rolls the records back if a write fails. A malformed
   // bundle throws before anything is destroyed.
   async function applyWebSnapshot(data, current) {
-    const staged = await WS.restoreBackup(data, current);  // sites / rigs / targets
-    // WB7 (review): a bundle without a panorama section must not silently
-    // replace the user's horizons with an empty set.
-    if (!staged.panos) throw new Error('missing panorama section');
-    const norm = Hor.normalizePanos(staged.panos);
-    if (!norm) throw new Error('malformed panorama section');
-    if (!Hor.applyPanosSnapshot(norm || { panos: [], activeId: null })) {
+    // Normalize the horizon payload BEFORE restoreBackup clears IndexedDB.
+    // `stageBackup` validates the outer shape; this validates the actual editor
+    // record contract and turns the staged bundle into one complete model.
+    const norm = Hor.normalizePanos(data && data.panos);
+    if (!norm) throw new Error('missing panorama section or malformed panorama data');
+    const staged = await WS.restoreBackup({ ...data, panos: norm }, current);
+    if (!Hor.applyPanosSnapshot(staged.panos)) {
       throw new Error('saving panoramas failed (storage full or unavailable)');
     }
     if (staged.prefs) Hor.setPrefs(staged.prefs);
@@ -2436,6 +2917,7 @@ async function saveSiteForm() {
   SITES = await WS.getSites();
   if (!SITES.some((s) => s.id === S.site.id)) applyActiveSite(rec);
   else if (S.site.id === id) applyActiveSite(rec);
+  announcePlannerChange('site', { cause: 'site-save', siteId: rec.id });
   refreshWeatherForSite();
   renderSettings();
 }
@@ -2460,12 +2942,14 @@ function showRigPicker() {
   box.querySelectorAll('[data-addpreset]').forEach((b) => b.addEventListener('click', async () => {
     const p = WS.DEFAULT_RIGS[+b.dataset.addpreset];
     if (!p) return;
+    const rigId = 'r' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
     await WS.saveRigRec({
-      id: 'r' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+      id: rigId,
       name: p.name, focal_mm: p.focal_mm, sensor_w: p.sensor_w, sensor_h: p.sensor_h,
       fov_w: WS.fovArcmin(p.focal_mm, p.sensor_w), fov_h: WS.fovArcmin(p.focal_mm, p.sensor_h),
       fov_unit: 'arcmin',
     });
+    announcePlannerChange('rig', { cause: 'rig-add', rigId });
     await renderSettings();                        // keeps the Rigs tab open
   }));
 }
@@ -2510,6 +2994,7 @@ async function saveRigForm() {
   rec.fov_w = WS.fovArcmin(rec.focal_mm, rec.sensor_w);
   rec.fov_h = WS.fovArcmin(rec.focal_mm, rec.sensor_h);
   await WS.saveRigRec(rec);
+  announcePlannerChange('rig', { cause: 'rig-save', rigId: rec.id });
   renderSettings();
 }
 
@@ -2549,7 +3034,9 @@ async function saveTargetForm() {
     blurb: $('#sf-target-blurb').value.trim(),
     wiki: null, messier: null, ngcic: null, other: '',
     _adv: false,
-  };  await WS.saveTargetRec(rec);
+  };
+  await WS.saveTargetRec(rec);
+  announcePlannerChange('preferences', { cause: 'catalog-target', targetId: rec.id });
   upsertTarget(rec);
   renderSettings();
 }
@@ -2636,6 +3123,10 @@ async function boot() {
   window.addEventListener('unhandledrejection', (ev) => showErr(ev.reason));
   const tipEl = $('#tooltip');
   S.detailResize = null;
+  document.addEventListener('theme:changed', () => {
+    if (S.view === 'sky') renderSky();
+    if (S.detailResize) S.detailResize();
+  });
   try {
     // WE-06: probe storage BEFORE anything renders. If it is blocked, say so and
     // stop - the old path rejected inside `WS.getSites()` and left the splash up
@@ -2652,6 +3143,16 @@ async function boot() {
     const res = await fetch('catalog.json?v=' + CATALOG_TOKEN);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     CAT = await res.json();
+    try {
+      const prov = await fetch('catalog-provenance.json?v=' + CATALOG_PROVENANCE_TOKEN);
+      if (prov.ok) {
+        const candidate = await prov.json();
+        if (candidate && typeof candidate === 'object' &&
+            candidate.objects && typeof candidate.objects === 'object') {
+          CAT_PROV = candidate;
+        }
+      }
+    } catch { /* provenance is optional for older/static deployments */ }
     // ALIGNMENT (0.6.31): rank the set the CURRENT MODE shows - the desktop
     // does exactly the same over `S.catalog` (static/js/targets.js), so the two
     // apps cannot disagree about a letter. In standard mode that set is the
@@ -2711,7 +3212,11 @@ async function boot() {
   const ts = $('#tb-site');
   if (ts) ts.addEventListener('change', (ev) => {
     const s = SITES.find((x) => x.id === ev.target.value);
-    if (s) { applyActiveSite(s); refreshView(); refreshWeatherForSite(); }
+    if (s) {
+      applyActiveSite(s);
+      announcePlannerChange('site', { cause: 'active-site', siteId: s.id });
+      refreshView(); refreshWeatherForSite();
+    }
   });
   $('#btn-settings').addEventListener('click', () => {
     const mp = $('#menuPanel'); if (mp) mp.classList.add('hidden');
@@ -2738,7 +3243,10 @@ async function boot() {
     if (ev.type === 'change') refreshView();
   };
   $('#tb-minalt').addEventListener('input', applyMinAlt);
-  $('#tb-minalt').addEventListener('change', applyMinAlt);
+  $('#tb-minalt').addEventListener('change', (ev) => {
+    applyMinAlt(ev);
+    announcePlannerChange('preferences', { cause: 'min-useful-alt' });
+  });
 
   // — topbar: night of (date) —
   const dateEl = $('#tb-date');
@@ -2755,7 +3263,11 @@ async function boot() {
         // null, because object detail and the grid fallbacks dereference it
         S.date = WS.effToday();
       }
+      announcePlannerChange('date', {
+        cause: 'calendar', dateKey: dateKey(S.date),
+      });
       refreshView();
+      refreshWeatherForSite();
     });
   }
 
@@ -2778,8 +3290,7 @@ async function boot() {
       // while the time stays inside it, so crossing noon never snaps back.
       const r = scrubRange();
       S.skyTime = new Date(r.start.getTime() + Number(scrub.value) * 60000);
-      if (scrubT) scrubT.textContent = fmtClock(S.skyTime);
-      window.dispatchEvent(new CustomEvent('sky:time'));
+      announceSkyTime();
     };
     scrub.addEventListener('input', onScrub);
     window.addEventListener('sky:time', syncScrub);
@@ -2838,7 +3349,10 @@ async function boot() {
       ev.stopPropagation();
       if (wxPanel.classList.contains('hidden')) {
         wxPanel.classList.remove('hidden');
-        if (!WX_STATE.data && !WX_STATE.error && !WX_STATE.loading) loadWeather();
+        if (!WX_STATE.loading && (!WX_STATE.data || WX_STATE.error)) {
+          WX_STATE.error = false;
+          loadWeather();
+        }
         else wxRenderPanel();
       } else {
         wxPanel.classList.add('hidden');
@@ -2915,17 +3429,22 @@ async function boot() {
   });
   $('#tzSelect').addEventListener('change', (ev) => {
     Hor.setPrefs({ tz: ev.target.value || '' });
+    announcePlannerChange('preferences', { cause: 'timezone' });
     const s = activeSite();
     if (s) applyActiveSite(s);
     refreshView();
   });
-  $('#moonAware').addEventListener('change', (ev) => { Hor.setPrefs({ moonAware: ev.target.checked }); refreshView(); });
+  $('#moonAware').addEventListener('change', (ev) => {
+    Hor.setPrefs({ moonAware: ev.target.checked });
+    announcePlannerChange('preferences', { cause: 'moon-aware' });
+    refreshView();
+  });
   // View full day: re-derive the scrub range live and pull the selected time
   // into it (e.g. 1 pm clamps back to dusk when switching the night window on).
   $('#viewFullDay').addEventListener('change', (ev) => {
     Hor.setPrefs({ viewFullDay: ev.target.checked });
-    clampSkyTime();
-    window.dispatchEvent(new CustomEvent('sky:time'));
+    announcePlannerChange('preferences', { cause: 'view-full-day' });
+    clampSkyTime({ repaint: true });
   });
   $('#bortle').addEventListener('input', (ev) => {
     Hor.setPrefs({ bortle: Hor.num(ev.target.value) || 4 });
@@ -2933,17 +3452,37 @@ async function boot() {
   });
   $('#bortle').addEventListener('change', (ev) => {
     Hor.setPrefs({ bortle: Hor.num(ev.target.value) || 4 });
+    announcePlannerChange('preferences', { cause: 'bortle' });
     refreshMenuUI(); syncTopPrefs(); refreshView();
   });
-  $('#fltBb').addEventListener('change', (ev) => { Hor.setPrefs({ fltBb: ev.target.checked }); refreshView(); });
-  $('#fltHa').addEventListener('change', (ev) => { Hor.setPrefs({ fltHa: ev.target.checked }); refreshView(); });
-  $('#fltOiii').addEventListener('change', (ev) => { Hor.setPrefs({ fltOiii: ev.target.checked }); refreshView(); });
-  $('#sizeUnit').addEventListener('change', (ev) => { Hor.setPrefs({ sizeUnit: ev.target.value }); refreshView(); });
+  $('#fltBb').addEventListener('change', (ev) => {
+    Hor.setPrefs({ fltBb: ev.target.checked });
+    announcePlannerChange('preferences', { cause: 'filters' }); refreshView();
+  });
+  $('#fltHa').addEventListener('change', (ev) => {
+    Hor.setPrefs({ fltHa: ev.target.checked });
+    announcePlannerChange('preferences', { cause: 'filters' }); refreshView();
+  });
+  $('#fltOiii').addEventListener('change', (ev) => {
+    Hor.setPrefs({ fltOiii: ev.target.checked });
+    announcePlannerChange('preferences', { cause: 'filters' }); refreshView();
+  });
+  $('#sizeUnit').addEventListener('change', (ev) => {
+    Hor.setPrefs({ sizeUnit: ev.target.value });
+    announcePlannerChange('preferences', { cause: 'size-unit' }); refreshView();
+  });
   $('#rigSelect').addEventListener('change', (ev) => {
     Hor.setPrefs({ activeRigId: ev.target.value || '' });
+    announcePlannerChange('rig', { cause: 'active-rig', rigId: ev.target.value || '' });
     refreshView();
   });
+  $('#skyBrightnessProvider').addEventListener('change', (ev) => {
+    const provider = ev.target.value || 'eog';
+    Hor.setPrefs({ skyBrightnessProvider: provider });
+    refreshSkyBrightnessForSite(activeSite() || S.site);
+  });
   refreshMenuUI();
+  refreshSkyBrightnessProviderMenu();
 
   // rigs for the framing selector — presets are a PICKER, never defaults.
   // 0.6.1/0.6.2 stored them in this browser; drop those leftovers once (an
@@ -2992,9 +3531,7 @@ async function boot() {
     if (ev.key === 'ArrowLeft' || ev.key === 'ArrowRight') {
       const mins = ev.shiftKey ? E.SCRUB_SHIFT_STEP_MIN : E.SCRUB_STEP_MIN;
       S.skyTime = new Date(S.skyTime.getTime() + (ev.key === 'ArrowRight' ? mins : -mins) * 60000);
-      clampSkyTime();   // never scrub past the active range (night window by default)
-      window.dispatchEvent(new CustomEvent('sky:time'));
-      if (S.view === 'sky') draw();
+      clampSkyTime({ repaint: true }); // never scrub past the active range (night window by default)
       ev.preventDefault();
     }
   });
@@ -3005,13 +3542,16 @@ async function boot() {
   // Debounced: the topbar scrub fires on every pointer move, and re-ranking
   // during a drag would stutter the slider.
   let tonightScrubTimer = null;
-  window.addEventListener('sky:time', () => {
+  window.addEventListener('sky:time', (ev) => {
     if (S.view !== 'tonight') return;
     // BUG-005: the selection just moved, so the on-screen cards no longer
     // describe it - clear the render marker NOW and let the paint below set it
     // again. Without this a check that reads the marker between the scrub and
     // the debounce would see the PREVIOUS selection as current.
     applyTonightMarker();
+    // A site/date refresh paints Tonight itself. Keep the marker invalidation,
+    // but do not schedule a second ranking pass behind that direct render.
+    if (ev.detail?.repaint === false) return;
     clearTimeout(tonightScrubTimer);
     tonightScrubTimer = setTimeout(() => {
       if (S.view === 'tonight') renderTonight(true);
@@ -3040,22 +3580,22 @@ async function boot() {
     }
   });
 
-  // seed the scrub inside the window: loading during the day must not show a
-  // daylight "visible at" time (it starts at the first allowed instant)
+  // Escape is the universal dismissal key for the detail/setup dialogs. The
+  // modal wrapper is shared by both, so route the key through the visible
+  // close button instead of duplicating modal-specific state here.
+  document.addEventListener('keydown', (ev) => {
+    if (ev.key !== 'Escape') return;
+    const modal = document.querySelector('#modal:not([hidden])');
+    const close = modal?.querySelector('.modal .close');
+    if (!close) return;
+    ev.preventDefault();
+    close.click();
+  });
+
+  // Seed the scrub inside the window: loading during the day must not show a
+  // daylight "visible at" time (it starts at the first allowed instant). Route
+  // below performs the one initial visible render.
   clampSkyTime();
-  // BUG-005: `clampSkyTime()` announces the moved selection on `sky:time`, but
-  // the debounced re-render lives in the scrub handler below - so at boot the
-  // announcement arrived with no listener and the Tonight view kept the PRE-CLAMP
-  // paint (browser check: painted 14:00:00.984, scrubber 14:06:12.500). Clear the
-  // marker for the stale paint and repaint the clamped selection.
-  if (S.view === 'tonight') {
-    applyTonightMarker();
-    if (tonightRenderedMs == null
-        || !(S.skyTime instanceof Date)
-        || tonightRenderedMs !== S.skyTime.getTime()) {
-      renderTonight(true);
-    }
-  }
   route();
 }
 

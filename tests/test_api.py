@@ -108,6 +108,15 @@ def test_settings_rejects_bad_size_unit(client):
     assert r.status_code == 400
 
 
+def test_sky_brightness_provider_setting_is_explicit_and_validated(client):
+    assert client.get("/api/state").json()["sky_brightness_provider"] == "eog"
+    assert client.post("/api/settings", json={
+        "sky_brightness_provider": "blackmarble"}).status_code == 200
+    assert client.get("/api/state").json()["sky_brightness_provider"] == "blackmarble"
+    assert client.post("/api/settings", json={
+        "sky_brightness_provider": "unknown"}).status_code == 400
+
+
 # ------------------------------------------------------------------ sites / rigs
 
 def test_sites_crud_and_first_is_active(client):

@@ -5,10 +5,11 @@
 > it as read-only, never commit/tag/deploy there. The `web/` sub-version shares
 > this repo's history and tags.
 
-> **Design: read `DESIGN.md` before ANY UI work.** Glass (`dome`) is the design
-> language and the web default; follow its tokens and the `themes.css` dome
-> blocks in `web/` and `static/`. "Classic" is a flat fallback, not a second
-> language.
+> **Design: read `DESIGN.md` before ANY UI work.** Workbench (`workbench`) is
+> the default design language across the app and web planner; Glass (`dome`) is
+> the optional alternate. Follow the corresponding `themes.css` blocks in
+> `web/` and `static/`. Legacy `classic`/empty/unknown values normalize to
+> Workbench; they are not a third theme.
 
 NightSeam: a desktop DSO-planning app - a local FastAPI server plus a vanilla-JS
 UI, no JS bundler/npm. ALL astronomy and planning math lives in `core/` (ES
@@ -26,7 +27,8 @@ calculation stay local. `README.md` has the feature list.
 > how it was verified; `ENVIRONMENT.md` = measured facts about the agent
 > sandbox (pipes, browser gate, scratch DACLs); `README.md` = user-facing
 > features; `DESIGN.md` = the UI language; `BUGS.md` = the CURRENT confirmed,
-> unresolved findings with implementation hints. Closed audit/review bundles
+> unresolved findings with implementation hints; `IMPLEMENTATION_PLAN.md` = the
+> sequenced plan for the current review backlog and product roadmap. Closed audit/review bundles
 > were removed from the working tree on 2026-09-17; Git history is their archive.
 
 ## Invariants (pinned by tests - do not regress)
@@ -449,8 +451,8 @@ calculation stay local. `README.md` has the feature list.
     `Get-CimInstance Win32_Process`).
   - If 8407 is briefly taken at boot, `free_port()` silently picks a RANDOM port
     (written to `instance.json`).
-- Tests: `python -m pytest tests/` (625 collected as of the 0.6.35 working tree -
-  re-derive with `--collect-only -q` rather than trusting this line). Single test:
+- Tests: `python -m pytest tests/`; use `python -m pytest tests/ --collect-only -q`
+  to obtain the current collection count. Single test:
   `python -m pytest tests/test_js_parity.py -k name`. API tests use
   `create_app(db, prefetch=False)` (no image-cache thread). The `client` fixture
   must leave `data/panos` in the tmp dir it patches in.
@@ -460,8 +462,7 @@ calculation stay local. `README.md` has the feature list.
     external `--basetemp` workaround does not restore a clean run either.
     `tests/conftest.py` therefore OVERRIDES the `tmp_path` fixture with a dir under
     the gitignored, sandbox-owned `logs/.pytest-tmp`, so a plain
-    `python -m pytest tests/` is clean: **0 assertion failures** (625 tests as of
-    the 0.6.35 working tree - re-derive the count, do not trust it here).
+    `python -m pytest tests/` is clean: **0 assertion failures**.
 - JS checks (run after touching `static/` OR `web/`): `python scripts/check_js.py`
   runs all of them and exits non-zero on hard failures:
   - `check_js_imports.py` - broken relative ES-module imports / missing named exports
@@ -537,11 +538,17 @@ calculation stay local. `README.md` has the feature list.
 
 ## Current review status
 
-- `BUGS.md` is the active backlog, and as of the 0.6.35 working tree it holds NO
-  open defect: BUG-001..BUG-006 shipped in 0.6.34 (gates: `--web` 18/18,
-  `--desktop` 9/9 after the DS5 check was added), and the four carried-over
-  items - CR2, DS4, DS5, WB7 - were reassessed and closed with mutation-proven
-  pins. BUG-003's live carrier is a `<meta http-equiv>` policy in
+- `BUGS.md` is the active backlog. The 0.6.35 status below is historical; the
+  2026-09-20 review addendum records the validated working-tree fixes and the
+  two product-policy decisions still requiring an owner choice. The current
+  pass reached 637 tests, `check_core.py`, `check_js.py`, and a 32/32 browser
+  gate covering both shells, both themes, and the accessibility smoke checks;
+  its dirty snapshot is recorded in
+  `RELEASES.md` and is not a tagged release.
+  Historical gates were `--web` 18/18 and `--desktop` 9/9 after the DS5 check
+  was added, and the four carried-over items - CR2, DS4, DS5, WB7 - were
+  reassessed and closed with mutation-proven pins. BUG-003's live carrier is a
+  `<meta http-equiv>` policy in
   `web/index.html` because nginx serves `/astro` and the host exposes no
   directive field (measured 2026-09-17); `--prod-url` passes.
   `RELEASES.md` has the evidence, `DECISIONS.md` the reasoning.
@@ -550,7 +557,7 @@ calculation stay local. `README.md` has the feature list.
 - The previously accepted/deferred `CR2`, `DS4`, `DS5` and `WB7` items were all
   reassessed and CLOSED in the 0.6.35 working tree, each with a mutation-proven
   pin (`BUGS.md` records what each turned out to be, including the two whose
-  original note was imprecise). The backlog now holds no open defect.
+  original note was imprecise). Later review findings are tracked separately.
 
 ## Versioning and release
 
@@ -600,11 +607,13 @@ calculation stay local. `README.md` has the feature list.
   `scripts/check_catalog_token.py`, wired into `scripts/check_js.py`, and pinned
   by `tests/test_cache_tokens.py` (mutation-tested). Do NOT add
   `{cache:'no-store'}` - the file must stay cacheable.
-  Current (0.6.35 working tree, after the CR2/DS4/DS5/WB7 pass):
-  `app.js?v=100` (index.html) / `CATALOG_TOKEN = '10'`, `astro.js?v=23`,
-  `horizon.js?v=56`, `format.js?v=30`, `nightrank.js?v=22`, `webstore.js?v=33`,
-  `dragwin.js?v=1`, `style.css?v=24`,
-  `themes.css?v=5`; the core stub is `web/core.js?v=35` (bump = re-bake,
+  Current (0.6.35 working tree, after the EOG sky-brightness pass and
+  accessibility foundation + horizon metadata + catalog provenance): `app.js?v=124` (index.html) /
+  `CATALOG_TOKEN = '10'`, `CATALOG_PROVENANCE_TOKEN = '1'`, `astro.js?v=27`, `horizon.js?v=64`,
+  `format.js?v=34`, `nightrank.js?v=26`, `webstore.js?v=38`,
+  `skybrightness.js?v=4`, `dragwin.js?v=1`, `viztheme.js?v=5`,
+  `style.css?v=33`, `themes.css?v=11`; the core stub is `web/core.js?v=41`
+  (bump = re-bake,
   enforced by `scripts/check_core.py`). Every core change cascades: the re-bake
   moves the stub token and changes the bytes of every module importing it, so
   those tokens move in the same commit. The historic registers (the 0.6.32
@@ -775,11 +784,13 @@ calculation stay local. `README.md` has the feature list.
   explicit min alt) and scales moon scoring. Keyboard: ArrowLeft/Right scrub
   (6 min; Shift 60), `n` cycles tabs. `edge_space` sets tab width
   (`calc(100vw - 2*var(--edge-space))`).
-- Themes: `themes.css` are token overrides of `style.css`'s `:root`, switched via
-  `<html data-theme>`. One shared HTML skeleton - structural themes use
-  position:fixed/flex/transforms, never moved IDs or JS. Keep z-index below 100
-  (toasts 300, popover 60, modal 40, #versionTag 5); never override `.hidden` or
-  set `display` on the app-toggled `#tabs-cat`/`#plannerControls`/`#tabs`/`#nightInfo`.
+- Themes: `themes.css` are token/structural overrides of `style.css`'s `:root`,
+  switched via `<html data-theme>`. `workbench` is the canonical default;
+  `dome` is the optional Glass presentation. One shared HTML skeleton -
+  structural themes use position:fixed/flex/transforms, never moved IDs or JS.
+  Keep z-index below 100 (toasts 300, popover 60, modal 40, #versionTag 5);
+  never override `.hidden` or set `display` on the app-toggled
+  `#tabs-cat`/`#plannerControls`/`#tabs`/`#nightInfo`.
 - A11y: every modal opens with `role="dialog" aria-modal="true"
   aria-labelledby=<h2 id>`; the delegated Tab focus trap is `util.js::initFocusTrap`
   (wired at boot). Search inputs have an accessible name; click-only controls
@@ -906,8 +917,11 @@ calculation stay local. `README.md` has the feature list.
   in the same commit, and verify it at a WIDE viewport (`test_ui_invariants.py`).
 - Catalog/type/emoji formatting is a known encoding-mojibake hotspot - run
   `check_encoding.py`.
-- The dev mirror `<workspace>\Astro-Web` is BEHIND this repo; the robocopy sync runs
-  mirror -> repo, so copy changed files into the mirror first or skip it.
+- The canonical development workspace is
+  `<workspace>\Nightseam-programm`. The old
+  `<workspace>\AstroPilot-local` checkout and `<workspace>\Astro-Web` mirror are legacy
+  copies, not working trees for current development; do not sync changes into
+  them as part of normal work.
 
 ## Phase C (0.6.20): Python astronomy removed
 
@@ -940,6 +954,7 @@ NightSeam release. There is NO compatibility shim (deliberate, do not "fix"):
 an in-place update starts on a FRESH database (rename `data/astropilot.db` to
 `data/nightseam.db` by hand to keep old data); pre-rename setup zips/backups are
 rejected; installs <= 0.5.12 cannot see updates; browser storage keys are
-`nightseam-*`; only `ns-version.js` exists. Do NOT rename the working directory
-`<workspace>\AstroPilot-local`, the dev mirror `<workspace>\Astro-Web`, or the deploy path
+`nightseam-*`; only `ns-version.js` exists. Do NOT rename the canonical working
+directory `<workspace>\Nightseam-programm`, the
+legacy `<workspace>\AstroPilot-local`/`<workspace>\Astro-Web` copies, or the deploy path
 `/astro`.

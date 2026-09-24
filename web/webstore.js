@@ -10,7 +10,7 @@
  * the app moved to nightseam.de, so every visitor starts on a fresh origin.
  */
 
-import { offsetEastMin, wallFromUtcMs, utcFromWallMs } from './core.js?v=35';
+import { offsetEastMin, wallFromUtcMs, utcFromWallMs } from './core.js?v=42';
 
 const DB_NAME = 'nightseam-db-v1';
 const DB_VER = 1;
@@ -316,10 +316,16 @@ export async function loadVersion() {
 
 /* --------------------------- backup / restore --------------------------- */
 
-/** The authoritative theme value (the localStorage key the boot script reads). */
+/** The authoritative theme value (the localStorage key the boot script reads).
+ * Workbench is the flat, focused default; classic and the empty value are
+ * legacy aliases. Glass keeps its stable dome id. */
 export function currentTheme() {
-  try { return localStorage.getItem('nightseam_theme') === 'classic' ? 'classic' : 'dome'; }
-  catch { return 'dome'; }
+  try {
+    const value = localStorage.getItem('nightseam_theme');
+    const theme = value === 'dome' ? 'dome' : 'workbench';
+    if (value !== theme) localStorage.setItem('nightseam_theme', theme);
+    return theme;
+  } catch { return 'workbench'; }
 }
 
 export async function collectBackup(prefs, panos, theme) {
@@ -332,7 +338,8 @@ export async function collectBackup(prefs, panos, theme) {
     exportedAt: new Date().toISOString(),
     // the theme is stored in its own localStorage key (not in prefs) - back up
     // the key the boot script actually reads, so a restore can re-apply it
-    theme: (theme === 'classic' || theme === 'dome') ? theme : currentTheme(),
+    theme: (theme === 'dome' || theme === 'workbench') ? theme
+      : (theme === 'classic' || theme === '') ? 'workbench' : currentTheme(),
     prefs: prefs || {},
     panos: panos || { panos: [], activeId: null },
     sites: sites.map((r) => r.val),
@@ -407,28 +414,27 @@ export function stageBackup(data) {
     numbers: ['ra_hours', 'dec_deg', 'vmag'],
     strings: ['primary_name', 'otype', 'size_am', 'constellation', 'blurb'],
   });
-  // WE-02 (0.6.32 review): the panorama section must be validated HERE, with
-  // everything else. It used to be accepted as opaque, so a bundle with an
-  // unusable pano section was rejected only AFTER the caller had cleared and
-  // rewritten the sites/rigs/targets (`Hor.normalizePanos` runs later) - which
-  // contradicts the "stages/validates the whole bundle BEFORE any write"
-  // contract in AGENTS.md and could leave the rejected bundle's records behind.
-  let panos = null;
-  if (data.panos && typeof data.panos === 'object') {
-    if (!Array.isArray(data.panos.panos)) {
-      throw new Error('backup panorama section is not a list of panoramas');
-    }
-    panos = data.panos;
+  // WE-02 (0.6.32 review): the panorama section is required and its outer
+  // shape must be validated HERE, with everything else. The UI performs the
+  // deeper horizon normalization before calling restoreBackup, so no caller
+  // can clear IndexedDB and only then discover that the panorama payload was
+  // unusable.
+  if (!data.panos || typeof data.panos !== 'object') {
+    throw new Error('backup panorama section is missing');
   }
+  if (!Array.isArray(data.panos.panos)) {
+    throw new Error('backup panorama section is not a list of panoramas');
+  }
+  const panos = data.panos;
   return {
     sites: (Array.isArray(data.sites) ? data.sites : []).map(siteOf).filter(Boolean),
     rigs: (Array.isArray(data.rigs) ? data.rigs : []).map(rigOf).filter(Boolean),
     targets: (Array.isArray(data.targets) ? data.targets : []).map(targetOf).filter(Boolean),
     prefs: (data.prefs && typeof data.prefs === 'object') ? data.prefs : null,
     panos,
-    // must match currentTheme(); ignore an unknown/legacy value rather than
-    // writing junk into the theme key
-    theme: (data.theme === 'classic' || data.theme === 'dome') ? data.theme : null,
+    // Keep unknown values out of localStorage. The old flat names are safe
+    // aliases and are staged under the new canonical default name.
+    theme: data.theme === 'dome' ? 'dome' : 'workbench',
   };
 }
 
@@ -468,7 +474,10 @@ export function lastSafetySnapshot() { return get('meta', 'safety'); }
 export async function restoreBackup(data, current) {
   const staged = stageBackup(data);          // validate FIRST - no writes yet
   if (current) {
-    try { await set('meta', 'safety', current); } catch { /* best effort */ }
+    const safetyOk = await set('meta', 'safety', current);
+    if (!safetyOk) {
+      throw new Error('could not store the safety snapshot; restore was not started');
+    }
   }
   try {
     await writeStaged(staged);

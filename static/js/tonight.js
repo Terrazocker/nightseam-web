@@ -64,6 +64,31 @@ export function renderTonight() {
     const mins = Math.max(0, Math.round((new Date(N.dawn+"Z") - new Date(N.dusk+"Z"))/60000));
     return `${Math.floor(mins/60)}h ${String(mins%60).padStart(2,"0")}m`;
   })() : "\u2014";
+  const site = (S.cfg?.sites || []).find(
+    (s) => String(s.id) === String(S.activeSiteId)) || (S.cfg?.sites || [])[0];
+  const darkStart = N.dusk ? new Date(N.dusk + "Z") : null;
+  const darkEnd = N.dawn ? new Date(N.dawn + "Z") : null;
+  const selected = parseUTC(curTimeISO());
+  const spanMs = darkStart && darkEnd ? Math.max(1, darkEnd - darkStart) : 1;
+  const selectedPct = darkStart && darkEnd
+    ? Math.max(0, Math.min(100, (selected - darkStart) / spanMs * 100)) : 0;
+  const brief = $("#nightBrief");
+  if (brief) brief.innerHTML = `
+    <div>
+      <p class="eyebrow">Session plan</p>
+      <h1>Tonight</h1>
+      <p class="session-context">${esc(site?.name || "Active site")} · selected ${fmtT(selected)}</p>
+    </div>
+    <div class="session-facts">
+      <span>Selected</span><b>${fmtT(selected)}</b>
+      <span>Dark window</span><b>${darkH} · ${fmtHM(N.dusk)}–${fmtHM(N.dawn)}</b>
+    </div>
+    <section class="night-track" aria-label="Booked observing window">
+      <div class="track-head"><strong>Booked night</strong><span>planning window</span></div>
+      <div class="track-bar"><span class="track-window"></span>
+        <span class="track-marker" style="left:${selectedPct.toFixed(2)}%"></span></div>
+      <div class="track-scale"><span>${fmtHM(N.dusk)}</span><span>selected ${fmtT(selected)}</span><span>${fmtHM(N.dawn)}</span></div>
+    </section>`;
 
   // busiest hour: the moment with the most observable targets
   const nT = N.timeline.n;

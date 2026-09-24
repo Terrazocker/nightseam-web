@@ -1,10 +1,202 @@
 # BUGS.md - current NightSeam findings
 
-This is the active defect backlog. It records findings that are confirmed in the
-current tree but are not fixed yet. `AGENTS.md` remains the implementation
-contract, `DECISIONS.md` records durable choices, and `RELEASES.md` records what
-actually shipped. Closed historical review bundles were removed from the working
-tree on 2026-09-17; Git history remains the archive.
+This is the active defect backlog and review evidence. It records unresolved
+findings plus current-tree fixes that are still unreleased. `AGENTS.md` remains
+the implementation contract, `DECISIONS.md` records durable choices, and
+`RELEASES.md` records what actually shipped. Closed historical review bundles
+were removed from the working tree on 2026-09-17; Git history remains the
+archive.
+
+## Current review addendum - 2026-09-20 (unreleased working tree)
+
+This addendum records the second review of the moved workspace at
+`<workspace>\Nightseam-programm`. The separate
+environmental/ranking tool is intentionally outside this review. The findings
+were initially recorded before the implementation pass below; the follow-up
+status is kept here so the active backlog remains truthful.
+
+The initial review baseline was 629 tests and a 19/19 web browser gate. The
+implementation pass below has since reached 637 passing tests, passing
+`python scripts/check_core.py` and `python scripts/check_js.py`, and a 32/32
+browser gate covering both shells, both themes, and the new accessibility
+smoke checks. A fresh dirty snapshot was also built and
+`scripts/check_release.py --allow-dirty` reports zero errors and one expected
+dirty/off-tag warning. Nothing has been tagged or deployed; see
+`IMPLEMENTATION_PLAN.md` for the ordered implementation and remaining roadmap.
+
+### Current review priority summary
+
+| ID | Priority | Status | Finding |
+|---|---|---|---|
+| REL-001 | P1 | Staged; release guard passing | Required theme modules were untracked until staged |
+| BUG-008 | P1 | Fixed in working tree; unreleased | Panorama edits could leave planner results and caches stale |
+| BUG-009 | P1 | Fixed in working tree; unreleased | Web backup restore could write before required validation was complete |
+| BUG-010 | P2 | Fixed in working tree; unreleased | Desktop editor autosaved despite the explicit-save design contract |
+| BUG-011 | P2 | Fixed in working tree; unreleased | Desktop Clear/Undo behavior diverged from the editor contract |
+| BUG-012 | P2 | Fixed in working tree; unreleased | Weather retry was inert after an error |
+| DEC-003 | P2 | Open contract | Site elevation has no defined computational meaning |
+| DEC-004 | P3 | Fixed in working tree; unreleased | Unknown theme values normalized differently in web restore |
+| A11Y-001 | P2 | Foundation fixed; audit remains | Canvas charts and shell controls lacked a consistent accessible contract |
+| DOC-003 | P3 | Corrected in working tree | Operational documentation still contained old workspace references |
+
+### Implementation follow-up - 2026-09-20
+
+The implementation pass made the deterministic fixes below. They remain marked
+unreleased because no tag or deployment has been made, but the required local
+validation has now passed.
+
+| Finding | Working-tree change | Current evidence |
+|---|---|---|
+| REL-001 | The three theme modules are staged and the release guard verifies their tracking. | Full suite and `check_release.py --allow-dirty` pass. |
+| BUG-008 | Added the shared `planner:changed` event/revision contract, all-input emitters, desktop panorama invalidation, and web observation-cache invalidation. | 637 tests, `check_core.py`, `check_js.py`, and 32/32 browser checks pass. |
+| BUG-009 | Web restore now validates the complete panorama section and aborts when the safety snapshot cannot be written. | `tests/js/web_backup.mjs`, full suite, and release checks pass. |
+| BUG-010 | Desktop ordinary edits remain in memory until Save or editor navigation; page-exit persistence is best effort. | Full suite, UI invariants, and packed-app browser checks pass. |
+| BUG-011 | Clear uses the in-page confirmation dialog and is undoable; undo/redo, mode, revert, and calibration synchronize controls. | Full suite, UI invariants, and packed-app browser checks pass. |
+| BUG-012 | Retry clears the prior error and starts a fresh generation-guarded request when no request is active. | Full suite, JS behavior checks, and browser checks pass. |
+| DEC-004 | Web backup restore canonicalizes unknown/legacy theme values to Workbench, preserving Glass only for the explicit `dome` value. | `tests/js/web_backup.mjs` and both-theme browser checks pass. |
+| A11Y-001 | Added tab semantics, chart text alternatives, dialog Escape dismissal, visible focus styling, high-contrast and reduced-motion media rules, and browser checks in both shells. | Full suite, JS guards, and 32/32 browser checks pass; manual screen-reader/focus-restoration QA remains. |
+
+The elevation contract remains decision-gated. The recommended safe default is
+metadata-only until an observer model, horizon dip, refraction assumptions, and
+valid ranges are specified. Solar-system ephemeris policy is likewise still a
+product decision; neither is being guessed in this pass.
+
+### A11Y-001 - chart and shell accessibility foundation (PARTIALLY FIXED IN WORKING TREE; UNRELEASED)
+
+The review found that the canvas charts were visually useful but exposed almost
+no semantic information to assistive technology. The web planner tabs also had
+no reliable selected-state contract, and the browser shell had no explicit
+high-contrast/reduced-motion policy. The web detail dialog did not dismiss on
+Escape, leaving keyboard users with a visible dialog that could intercept the
+next interaction.
+
+**Resolution.** Both shells now expose tablist/tab state, chart roles and
+textual summaries, focus-visible styling, high-contrast tuning, and reduced-
+motion rules. The shared web dialog closes through Escape, and the browser
+gate checks the real web and packed desktop DOMs under the current theme matrix.
+
+**Still open.** This is a foundation, not a claim of a completed WCAG audit.
+Focus restoration after every dialog/menu/inspector transition, screen-reader
+announcements for all dynamic planner updates, and manual testing with actual
+assistive technologies remain follow-up work.
+
+### REL-001 - required theme modules were untracked
+
+`app/theme.py`, `static/js/viztheme.js`, and `web/viztheme.js` exist in the
+working tree but are not tracked. They are imported by tracked runtime files:
+
+- `app/database.py` and `app/server.py` import the Python theme normalizer.
+- `static/js/detail.js`, `static/js/skymap.js`, and `static/js/skyview.js`
+  import the desktop visualization theme module.
+- `web/app.js` imports the web visualization theme module.
+
+The local checkout worked because these files were present. A commit, patch,
+source archive, or deployment assembled from tracked changes alone would have
+failed at server import time or browser module-load time. This was a
+release/staging blocker, not a runtime failure in the dirty checkout.
+
+**Resolution.** The three files are staged, and the release guard now resolves
+the required modules from tracked/source-backed files before packaging.
+
+### BUG-008 - panorama edits could leave planner state stale (FIXED IN WORKING TREE; UNRELEASED)
+
+The desktop editor applies edits to its in-memory panorama and schedules a
+persist, but the save path does not recompute the active night or refresh the
+derived target views. `Pano.refreshOverlay()` is also a no-op. A user can paint
+an obstruction, see it in Horizon, and still see old target visibility,
+ceiling, percentage, or ranking values until an unrelated night reload or
+preference change occurs.
+
+The web shell has the same class of defect through cache reuse. The observation
+cache key includes the panorama id but not a profile/content revision, and the
+Horizon view supplies an empty change callback. Leaving Horizon can therefore
+reuse catalog percentages and sorting calculated against the previous profile.
+Backup restore of a panorama with the same id has the same risk.
+
+**Resolution.** `core/plannerstate.js` now provides the shared revision/event
+contract. Both shells emit it for panorama and other calculation inputs; the
+desktop refreshes derived views and the web versions observation caches by
+panorama revision. The planner-state tests and the 30/30 browser gate cover
+the resulting behavior.
+
+### BUG-009 - web backup restore could write before complete validation (FIXED IN WORKING TREE; UNRELEASED)
+
+The web backup staging path validates the panorama section only when that
+section is present. The restore then writes the staged sites, rigs, and targets.
+The UI discovers a missing panorama section only after the write and attempts a
+rollback. A tab close, crash, quota failure, or rollback failure can therefore
+leave a partially replaced store.
+
+The safety snapshot write is also treated as best effort: failure is not checked
+before the destructive write proceeds. That removes the main recovery guarantee
+exactly when storage is under pressure.
+
+**Resolution.** Restore now validates and normalizes the complete staged model
+before destructive writes, and an unsuccessful safety snapshot aborts the
+operation. `tests/js/web_backup.mjs` covers malformed bundles, safety-write
+refusal, and rollback.
+
+### BUG-010 - desktop editor autosaved despite the explicit-save contract (FIXED IN WORKING TREE; UNRELEASED)
+
+The design contract says panorama edits affect planning immediately in memory
+but persist on Save or when leaving the editor. The desktop editor instead
+starts a roughly 900 ms timer after painting, clearing, mode changes, undo, redo,
+and calibration edits. The Save button is consequently closer to “flush now”
+than an explicit persistence boundary.
+
+**Resolution.** Ordinary edits remain in memory until explicit Save or editor
+navigation; page-exit persistence is only a best-effort safety net. Dirty state
+and save-status behavior are covered by the editor/UI tests.
+
+### BUG-011 - Clear and Undo behavior was inconsistent (FIXED IN WORKING TREE; UNRELEASED)
+
+Desktop Clear immediately changes the panorama without the in-page confirmation
+dialog required by the design. Clear and mode changes also do not consistently
+call the undo-button synchronization path, so the UI can show Undo disabled even
+when a gesture has just created an undo entry. The web editor already follows a
+different, dialog-based flow.
+
+**Resolution.** Clear now uses the in-page confirmation dialog and creates one
+undoable gesture. Undo/redo, mode, revert, and calibration synchronize their
+controls through the shared history contract.
+
+### BUG-012 - weather retry was inert after failure (FIXED IN WORKING TREE; UNRELEASED)
+
+Both shells display a message that invites the user to click to retry. The click
+handler only starts a request when there is no existing error, so after the first
+failed request the advertised retry action does nothing. Changing site or date
+may trigger another request, but that is not an adequate replacement for the
+visible retry affordance.
+
+**Resolution.** Retry is allowed whenever no request is active, clears the old
+error, and preserves the generation guard. Source/UI tests and the browser gate
+cover retry after rejection in both shells.
+
+### DOC-003 - operational documentation still named old workspace roots (CORRECTED IN WORKING TREE)
+
+The moved repository runs correctly from the new `G:\` path, but
+`REVIEW-PROMPT.md` and several `AGENTS.md` operational/deployment references
+still contain old development roots or mirror locations. No active runtime
+dependency on the old main workspace path was found.
+
+**Resolution.** Current workspace references now use the canonical G: checkout;
+the old D: paths are labeled as legacy/archive or credentials-only references
+where they remain necessary.
+
+### Related open contracts
+
+The elevation and theme-normalization findings are recorded in `DECISIONS.md`
+because they require an explicit product/architecture decision before a safe
+implementation can be chosen. The shared invalidation model is also recorded
+there as a proposed cross-shell contract.
+
+### Release readiness note
+
+The current working tree is validated as a dirty development snapshot, not as a
+tagged release. A fresh executable and release ZIP were produced, and
+`scripts/check_release.py --allow-dirty` reports zero errors and one expected
+dirty/off-tag warning. The clean-tag release sequence remains intentionally
+unrun because no release was requested.
 
 Baseline for this pass: `master` at `510ce69` (`v0.6.33-3-g510ce69`). The full
 suite passed 598 tests, `scripts/check_js.py` passed, and the worktree was clean
@@ -29,8 +221,12 @@ system Chrome.
 | BUG-004 | P2 | Fixed + pinned | Some malformed backup shapes escape as HTTP 500 |
 | BUG-005 | P2 | Fixed + gate verified | The Tonight browser check races its own 120 ms debounce |
 | BUG-006 | P3 | Fixed + pinned | Deleting the active panorama leaves a stale setting |
+| BUG-007 | P2 | Fixed + live | Public web weather fetch was blocked by the document CSP |
 | DOC-001 | P3 | Corrected earlier | README said Shift scrubbed 10 minutes; the code uses 60 |
 | DOC-002 | P3 | Corrected earlier | CATALOG said `--live` fetched the popularity source; the flag is removed |
+
+The independent EOG/TESS validation work is now tracked separately in
+`<workspace>\LightMap`.
 
 ## BUG-003 - production HTML has no effective CSP (CLOSED, meta carrier)
 
@@ -165,6 +361,28 @@ maps that to a 400. Regressions:
 `::test_activating_an_unknown_panorama_id_is_refused`,
 `::test_the_database_refuses_a_dangling_active_pointer`.
 
+### BUG-007 - public web weather fetch was blocked by the document CSP (CLOSED)
+
+**Evidence (2026-09-19).** Clicking Weather on both the live beta origin
+(`/beta/`) and the main origin (`/astro/`) ends in the same generic
+"Could not load weather" state. The live document policies both declare
+`connect-src 'self' https://en.wikipedia.org` but do not allow
+`https://api.open-meteo.com`. The web shell fetches Open-Meteo directly from
+`web/app.js::loadWeather`; its catch block hides the browser's precise failure
+and presents it as an offline/provider error. A direct Open-Meteo forecast
+request returned JSON during this check, so the confirmed cause is the site's
+document policy, not a provider outage.
+
+**Fixed and verified.** `https://api.open-meteo.com` is now in the `connect-src`
+directive in both policy carriers (`web/index.html` and `web/.htaccess`), and
+`tests/test_prod_csp.py::test_the_weather_provider_is_allowlisted_in_both_csp_carriers`
+pins the agreement. The two files were deployed to both `/beta` and `/astro` on
+2026-09-19. A live in-app browser check confirmed that both sites' document CSP
+allows Open-Meteo and that the Weather panel populates with current conditions
+and the four-day forecast. The repository Playwright gate remains unavailable in
+this Windows sandbox because its browser subprocess is denied WinError 5; this
+was compensated by the live browser check.
+
 ## Pre-existing accepted/deferred items - ALL CLOSED in 0.6.35
 
 These were documented before the 0.6.34 audit and were not rediscovered as new
@@ -222,6 +440,6 @@ file; Git history preserves the investigation.
 
 The fix pass followed that rule. BUG-003 is closed with the policy live on the
 origin (production smoke PASS), and BUG-005 with the browser gate green
-(`--web` 18/18, `--desktop` 8/8). Nothing in this file is a confirmed OPEN defect
-any more - what remains is the release decision and the deferred items below,
-which are recorded here so they are not rediscovered as findings.
+(`--web` 18/18, `--desktop` 8/8). BUG-007 is closed with its source pin and live
+weather verification; the deferred items below are recorded here so they are not
+rediscovered as findings.

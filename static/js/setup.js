@@ -2,23 +2,33 @@
 
 import { $, esc, api, toast, fmtFovPair, watchCaps, applyEdgeSpace, num,
          setDisplayZone, todayLocal, isCustomId } from "./util.js";
-import { S } from "./state.js";
+import { S, announcePlannerChange } from "./state.js";
 import { loadNight, scheduleLoadNight } from "./night.js";
 import { updateTimeLabel } from "./header.js";
 import { renderTargets } from "./targets.js";
 import { effectiveMinAlt } from "./derive.js";
 import { resetPlanningCaches } from "./planning_client.js";
 
+let SETUP_RETURN_FOCUS = null;
+
 export async function openSites() {
+  SETUP_RETURN_FOCUS = document.activeElement instanceof HTMLElement
+    ? document.activeElement : null;
   $("#sitesModal").classList.remove("hidden");
   showMtab("sites");
   hideRigAdd();
   renderSitesTable(await api("/api/sites"));
   renderRigsTable();
   renderCustomList();
+  $("#sitesClose").focus({ preventScroll: true });
 }
 export function closeSites() {
   $("#sitesModal").classList.add("hidden");
+  const returnFocus = SETUP_RETURN_FOCUS;
+  SETUP_RETURN_FOCUS = null;
+  if (returnFocus && returnFocus.isConnected && !returnFocus.hidden) {
+    returnFocus.focus({ preventScroll: true });
+  }
 }
 
 function showMtab(name) {
@@ -121,6 +131,7 @@ export function bindSetup() {
         headers:{"Content-Type":"application/json"},
         body: JSON.stringify({ size_unit: e.target.value })});
     } catch { /* api() toasted; the local value stays applied */ }
+    announcePlannerChange("preferences", { cause: "size-unit" });
     renderTargets();
     if ($("#libUnit")) $("#libUnit").value = e.target.value;
     document.dispatchEvent(new CustomEvent("detail:changed"));
@@ -133,6 +144,7 @@ export function bindSetup() {
         headers:{"Content-Type":"application/json"},
         body: JSON.stringify({ active_rig_id: id === null ? 0 : id })});
     } catch { /* api() toasted; the local value stays applied */ }
+    announcePlannerChange("rig", { cause: "active-rig", rigId: id });
     renderTargets();
     document.dispatchEvent(new CustomEvent("detail:changed"));
   });
@@ -147,6 +159,7 @@ export function bindSetup() {
           headers:{"Content-Type":"application/json"},
           body: JSON.stringify({ filters })});
       } catch { /* api() toasted; the local value stays applied */ }
+      announcePlannerChange("preferences", { cause: "filters" });
       renderTargets();
       document.dispatchEvent(new CustomEvent("detail:changed"));
     });
@@ -312,6 +325,7 @@ export function applyCfgToUI() {
     $("#skyMagVal").textContent = (+$("#skyMag").max).toFixed(1);
   }
   refreshRigUI();
+  document.dispatchEvent(new CustomEvent("site:changed"));
 }
 
 export async function refreshCfgOnly() {
@@ -351,6 +365,7 @@ function renderSitesTable(sites) {
       headers:{"Content-Type":"application/json"},
       body: JSON.stringify({ active_site_id:+b.dataset.use })});
     await refreshCfgOnly(); renderSitesTable(sites); loadNight();
+    announcePlannerChange("site", { cause: "active-site", siteId: +b.dataset.use });
   }));
   tb.querySelectorAll("[data-del]").forEach(b => b.addEventListener("click", async () => {
     await api("/api/sites/"+b.dataset.del, { method:"DELETE" });
@@ -387,6 +402,7 @@ function renderRigsTable() {
         headers:{"Content-Type":"application/json"},
         body: JSON.stringify({ active_rig_id:+b.dataset.ur })});
     } catch { /* api() toasted; the local value stays applied */ }
+    announcePlannerChange("rig", { cause: "active-rig", rigId: +b.dataset.ur });
     refreshRigUI(); renderRigsTable(); renderTargets();
     document.dispatchEvent(new CustomEvent("detail:changed"));
   }));

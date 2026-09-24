@@ -1,4 +1,4 @@
-"""One-command JS health check: runs seven HARD guards - the four static/js
+"""One-command JS health check: runs eight HARD guards - the four static/js
 checkers (imports, DOM ids, `node --check` syntax) plus the encoding guard
 (shipped text must be UTF-8, never double-encoded - see check_encoding.py for
 the 0.6.9 mojibake that reached the live web app), the cache-token pair
@@ -39,6 +39,7 @@ def main() -> int:
     hard += _run("check_js_syntax")  # parses the modules (no node = exit 2)
     hard += _run("check_encoding")   # UTF-8 / no cp1252 mojibake in shipped text
     hard += _run("check_catalog_token")  # catalog.json cache-bust pairing
+    hard += _run("check_catalog_provenance")  # provenance sidecar pairing
     hard += _run("check_js_tokens")      # per-module ?v= token vs module bytes
     hard += _run("check_core")           # baked core drift + source guard
     _run("check_js_defs")            # heuristic - candidates only

@@ -33,14 +33,16 @@
 export const HISTORY_KEYS = {
   azOffset: 'azOffset', altBottom: 'altBottom', altTop: 'altTop', fov: 'fov',
   paintMode: 'paintMode', strokes: 'strokes', blockAbove: 'blockAbove',
-  profile: 'profile', profileTop: 'profileTop',
+  profile: 'profile', profileTop: 'profileTop', landmarks: 'landmarks',
+  provenance: 'provenance', confidence: 'confidence',
 };
 
 /** The desktop's record shape, ready to pass as `keys`. */
 export const HISTORY_KEYS_DESKTOP = {
   azOffset: 'az_offset', altBottom: 'alt_bottom', altTop: 'alt_top', fov: 'fov',
   paintMode: 'paint_mode', strokes: 'strokes', blockAbove: 'block_above',
-  profile: 'profile', profileTop: 'profile_top',
+  profile: 'profile', profileTop: 'profile_top', landmarks: 'landmarks',
+  provenance: 'provenance', confidence: 'confidence',
 };
 
 /** How many history entries one panorama keeps. A drag is ONE entry (committed
@@ -58,6 +60,14 @@ const arr = (v) => (Array.isArray(v) ? v : []);
  *  how this surfaced. */
 const clone = (v) => arr(v).map((s) => (s && typeof s === 'object' ? { ...s } : s));
 
+const cloneValue = (v) => {
+  if (Array.isArray(v)) return v.map(cloneValue);
+  if (v && typeof v === 'object') {
+    return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, cloneValue(x)]));
+  }
+  return v;
+};
+
 /** Serialize a record's editable state. `keys` maps the canonical names to the
  *  record's own properties; the short JSON keys are the wire format and must
  *  stay stable (a stored history is never persisted, but tests compare them). */
@@ -71,6 +81,15 @@ export function snapshot(state, keys = HISTORY_KEYS) {
   if (!s.length) {
     out.pr = arr(state[keys.profile]).slice();
     out.pt = arr(state[keys.profileTop]).slice();
+  }
+  if (keys.landmarks && state[keys.landmarks] !== undefined) {
+    out.lm = cloneValue(state[keys.landmarks]);
+  }
+  if (keys.provenance && state[keys.provenance] !== undefined) {
+    out.pv = cloneValue(state[keys.provenance]);
+  }
+  if (keys.confidence && state[keys.confidence] !== undefined) {
+    out.cf = cloneValue(state[keys.confidence]);
   }
   return JSON.stringify(out);
 }
@@ -86,6 +105,9 @@ export function applySnapshot(state, snap, keys = HISTORY_KEYS) {
     state[keys.profile] = o.pr;
     state[keys.profileTop] = o.pt;
   }
+  if (o.lm !== undefined && keys.landmarks) state[keys.landmarks] = o.lm;
+  if (o.pv !== undefined && keys.provenance) state[keys.provenance] = o.pv;
+  if (o.cf !== undefined && keys.confidence) state[keys.confidence] = o.cf;
   return state;
 }
 

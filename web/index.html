@@ -20,15 +20,15 @@
      Keep the directives in step with `web/.htaccess`: the tests in
      `tests/test_prod_csp.py` compare both against the same rule table, and the
      browser gate reads whichever one the live document carries. -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-L8aiDzZyJ9k2GW9FggYfWKbcrM22h1LPcHxs0Ov+uCE='; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://upload.wikimedia.org; connect-src 'self' https://en.wikipedia.org; base-uri 'self'; form-action 'self'; object-src 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-MuhKQH9PAUOpe+xRJwpI/rHBZrPBvgVXN9NSrMvuoqY='; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://upload.wikimedia.org; connect-src 'self' https://en.wikipedia.org https://api.open-meteo.com https://air-quality-api.open-meteo.com; base-uri 'self'; form-action 'self'; object-src 'none'">
 <script>
 /* apply the saved theme before first paint (synchronous, no server).
-   Glass is the default look; "Classic" is the older flat blue look. */
-(function(){try{var t=localStorage.getItem('nightseam_theme')||'dome';document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
+   Workbench is the default; old Classic/empty values migrate to it. */
+(function(){try{var v=localStorage.getItem('nightseam_theme'),t=v==='dome'?'dome':'workbench';document.documentElement.setAttribute('data-theme',t);if(v!==t)localStorage.setItem('nightseam_theme',t);}catch(e){document.documentElement.setAttribute('data-theme','workbench');}})();
 </script>
 <link rel="icon" type="image/png" href="app.png">
-<link rel="stylesheet" href="style.css?v=24">
-<link rel="stylesheet" href="themes.css?v=5">
+<link rel="stylesheet" href="style.css?v=33">
+<link rel="stylesheet" href="themes.css?v=11">
 </head>
 <body>
 
@@ -69,6 +69,7 @@
     <div id="nightInfo" class="nightinfo"></div>
     <div class="popwrap weatherwrap">
       <button id="btnWeather" class="ghost weatherbtn" title="Weather for the active site — click to load">
+        <span id="wxStatusDot" class="wx-status-dot wx-unknown" aria-hidden="true">○</span>
         <span id="wxChip">☁️ Weather</span>
       </button>
       <div id="weatherPanel" class="popover weather-panel hidden">
@@ -85,6 +86,13 @@
         </div>
       </div>
     </div>
+    <div class="popwrap skybrightnesswrap">
+      <button id="btnSkyBrightness" class="ghost weatherbtn hidden" type="button"
+        title="EOG/VIIRS zenith sky-brightness estimate">
+        <span id="skyBrightnessStatusDot" class="wx-status-dot wx-unknown" aria-hidden="true">●</span>
+        <span id="skyBrightnessChip">Sky brightness</span>
+      </button>
+    </div>
     <div class="popwrap menuwrap">
       <button id="btnMenu" class="ghost menubtn" title="Options">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
@@ -95,8 +103,8 @@
         <div class="menu-section">
           <h4>Appearance</h4>
           <div class="theme-row" id="themeRow">
+            <button class="theme-btn" data-theme="workbench" id="themeWorkbench"><span class="sw" style="background:#c99a53"></span>Workbench</button>
             <button class="theme-btn" data-theme="dome" id="themeDome"><span class="sw" style="background:#8f7bff"></span>Glass</button>
-            <button class="theme-btn" data-theme="classic" id="themeClassic"><span class="sw" style="background:#4f9cff"></span>Classic</button>
           </div>
           <p class="hint">Pick the look; it applies instantly and is remembered.</p>
         </div>
@@ -179,6 +187,12 @@
             <input type="range" id="bortle" min="1" max="9" step="1" value="4" style="width:100%">
           </label>
           <p class="hint">1 = pristine dark sky, 9 = city centre. Darker skies lower the default minimum altitude and weaken moonlight penalties.</p>
+          <label class="inline">Sky brightness source
+            <select id="skyBrightnessProvider" style="width:100%">
+              <option value="eog">EOG / VIIRS</option>
+            </select>
+          </label>
+          <p class="hint">EOG is the default. NASA appears only when an enabled compatible pack is deployed; unavailable providers fall back to EOG.</p>
           <div class="chkrow">
             <label class="inline"><input type="checkbox" id="fltBb"> Broadband (L)</label>
             <label class="inline"><input type="checkbox" id="fltHa"> H&#945;</label>
@@ -201,14 +215,14 @@
   </div>
 </header>
 
-<nav class="tabs" id="tabs">
-  <a href="#tonight" data-v="tonight" class="active">Tonight</a>
-  <a href="#catalog" data-v="catalog">Targets</a>
-  <a href="#sky" data-v="sky">Sky View</a>
-  <a href="#horizon" data-v="horizon">Horizon &amp; Obstacles</a>
+<nav class="tabs" id="tabs" role="tablist" aria-label="Night planner views">
+  <a id="tab-tonight" href="#tonight" data-v="tonight" class="active" role="tab" aria-selected="true" aria-controls="view">Tonight</a>
+  <a id="tab-catalog" href="#catalog" data-v="catalog" role="tab" aria-selected="false" aria-controls="view">Targets</a>
+  <a id="tab-sky" href="#sky" data-v="sky" role="tab" aria-selected="false" aria-controls="view">Sky View</a>
+  <a id="tab-horizon" href="#horizon" data-v="horizon" role="tab" aria-selected="false" aria-controls="view">Horizon &amp; Obstacles</a>
 </nav>
 
-<main id="view">
+<main id="view" role="tabpanel" aria-labelledby="tab-tonight" tabindex="-1">
   <div class="splash" id="splash">
     <div class="splash-inner">
       <div class="spinner"></div>
@@ -221,9 +235,9 @@
   <p>NightSeam Web — browser port of NightSeam. Catalog: OpenNGC + supplement (12,176 objects) · <a href="https://github.com/mattiaverga/OpenNGC" target="_blank" rel="noopener" style="color:var(--muted)">OpenNGC</a> <a href="https://creativecommons.org/licenses/by-sa/4.0/" target="_blank" rel="noopener" style="color:var(--muted)">CC BY-SA 4.0</a> · images: <a href="https://commons.wikimedia.org/" target="_blank" rel="noopener" style="color:var(--muted)">Wikimedia Commons</a> · weather: <a href="https://open-meteo.com" target="_blank" rel="noopener" style="color:var(--muted)">Open-Meteo</a> · popularity: the popularity source (one-time snapshot, shipped with the catalog). Runs 100% client-side — no server involved. <span class="foot-ver" id="foot-ver">…</span></p>
 </footer>
 
-<div class="modal-wrap" id="modal" hidden></div>
+<div class="modal-wrap" id="modal" hidden aria-live="polite"></div>
 <div class="tooltip" id="tooltip" hidden></div>
 
-<script type="module" src="app.js?v=100"></script>
+  <script type="module" src="app.js?v=126"></script>
 </body>
 </html>

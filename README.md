@@ -13,11 +13,15 @@ whole catalog work fully offline. The only network calls are optional: object
 example images (Wikipedia, cached locally), the weather panel (Open-Meteo, on
 request) and a once-per-start version check against nightseam.de.
 
-**Docs:** `CATALOG.md` - where the catalogue comes from and how to rebuild it
+**Docs:** `DESIGN.md` - the Workbench and Glass UI design contract. `CATALOG.md`
+- where the catalogue comes from and how to rebuild it
 (sources, the popularity table, the web payload, cache tokens). `DECISIONS.md` -
 why the app works the way it does and what was rejected. `AGENTS.md` - the
-invariants, commands, release and deploy reference. `BUGS.md` - current confirmed
-issues and recommended implementation direction.
+invariants, commands, release and deploy reference. `RELEASES.md` - what each
+release or unreleased working tree shipped and how it was verified. `BUGS.md` -
+current confirmed issues and recommended implementation direction.
+`SKY_BRIGHTNESS.md` - the optional independent EOG/VIIRS zenith
+sky-brightness pack, model, validation boundary and rebuild command.
 
 There is also a **web version** — the same night-planning core, running 100%
 in your browser with no server:
@@ -35,6 +39,15 @@ Two modes, switched with the top-right button:
 
 - **Night Planner** - plan what to shoot and when.
 - **Image Catalog** - import, organize and inspect your capture sessions.
+
+### Themes
+
+**Workbench** is the default theme across the desktop app and web planner: an
+opaque graphite workspace with brass action states and compact controls. Open
+the hamburger menu and choose **Appearance → Glass** to switch to the retained
+Glass (`dome`) presentation with its floating panels and starfield. The landing
+page follows Workbench. Older Classic, empty, or unknown theme settings migrate
+to Workbench automatically, and web backups carry the selected theme.
 
 ## Features
 
@@ -56,11 +69,20 @@ Two modes, switched with the top-right button:
 - **Location-aware visibility** - enter your observing site(s) once; every
   calculation is done for your exact coordinates and elevation, including
   atmospheric refraction and precession.
+- **Optional zenith sky brightness** - an independently built EOG/VIIRS
+  nighttime-lights pack can provide a clear-sky zenith estimate in mpsas with
+  a plain quality band and coverage confidence. EOG is the default provider;
+  an explicitly enabled, sidecar-identified NASA Black Marble v1 pack can be
+  selected from Advanced → Sky brightness source, with automatic EOG fallback.
+  The signal is display-only: it does not replace your Bortle setting or alter
+  target ranking, and Lorenz is used only by the external validation tool.
 - **Panorama horizon masking** - import a 360-degree panorama photo taken from
   your telescope spot, calibrate it (azimuth rotation + elevation range) and
   simply paint over everything that blocks the sky. NightSeam converts your
   painting into an obstruction-height profile per azimuth degree; a sky-paint
-  mode can also mask the area *above* a visible band.
+  mode can also mask the area *above* a visible band. Named obstruction
+  landmarks, calibration notes, per-bin confidence and precise numeric profile
+  edits are retained with the panorama and remain undoable.
 - **Altitude graphs** - per object: altitude over the course of the night with
   green segments where the target is clear and high enough, red where an
   obstacle blocks it, amber where it is too low - plus the obstruction ceiling,
@@ -73,15 +95,22 @@ Two modes, switched with the top-right button:
   now / rising later, ranked by an imaging-quality score. Moon-aware ranking
   penalizes targets near a bright Moon (per object type) and honors your
   Bortle sky class (hamburger menu).
-- **Weather panel** - the top-bar weather chip loads the active site's current
-  conditions and a 4-day forecast from Open-Meteo. Nothing is fetched until you
-  click it, unless you turn on "always load on startup"; the weather is
-  display-only and never feeds the planning numbers.
+- **Weather panel** - the top-bar weather chip loads the selected site's
+  dark-hour forecast from Open-Meteo and reduces it to a night rating (0–100)
+  plus a green/yellow/red status symbol. It shows cloud cover, rain
+  probability and amount, a plain-language sky-clarity/haze proxy, and an
+  estimated dew risk from temperature versus dew point; daylight and noon
+  rows are omitted. Nothing is fetched until you click it, unless you turn on
+  "always load on startup"; weather remains display-only and never feeds the
+  planning numbers.
 - **Timezone-aware planning** - all times render in your machine's zone with
   DST applied per date (planning a December night in summer is not shifted).
   An optional IANA timezone picker (advanced mode) plans for a distant
   observing site.
 - **Constellation filter** keeps the target list tidy.
+- **Catalog provenance** - inspect each target's OpenNGC or NightSeam source,
+  source-file version, aliases and designation history, then download the full
+  reproducible provenance sidecar as JSON.
 
 ### Image Catalog
 
@@ -187,9 +216,9 @@ published algorithms - no internet service is involved:
 Object example images are not the only online content. Images are fetched from
 Wikipedia on demand and cached in `data\imgcache` (offline you get generated
 placeholders instead); loading the weather panel sends your active site's
-coordinates to Open-Meteo; and, once per start, the app checks whether a newer
-version is available. The catalogue with its popularity snapshot and every sky
-calculation are local.
+coordinates to Open-Meteo's forecast and air-quality services; and, once per
+start, the app checks whether a newer version is available. The catalogue with
+its popularity snapshot and every sky calculation are local.
 
 ## Accuracy notes
 
@@ -200,5 +229,6 @@ standard sidereal time and Saemundsson refraction (typical error well below
 phase. Obstacle comparisons use apparent altitudes on both sides consistently.
 
 Not included on purpose: satellite/planet positions, ephemeris-grade lunar
-librations. (The weather panel reports Open-Meteo conditions for your site; it
-is never an input to the planning numbers.)
+librations. Weather forecasts and the dew estimate are advisory display data;
+they are never inputs to the planning numbers and cannot guarantee local
+telescope conditions.

@@ -6,6 +6,7 @@ import { $, esc, TYPE_COLOR, TYPE_LABEL } from "./util.js";
 import { S } from "./state.js";
 import { CONSTELLATIONS, FIELD_STARS } from "./skydata.js";
 import { openDetail } from "./detail.js";
+import { vizTheme } from "./viztheme.js";
 
 let SM_POINTS = [];
 let SM_HOVER = null;
@@ -20,8 +21,11 @@ function xy(raH, decD, W, H) {
 function syncTypeLegend() {
   const lg = $("#smLegend");
   if (!lg) return;
-  lg.querySelectorAll("[data-type]").forEach(chip =>
-    chip.classList.toggle("off", S.disabledTypes.has(chip.dataset.type)));
+  const V = vizTheme();
+  lg.querySelectorAll("[data-type]").forEach(chip => {
+    chip.classList.toggle("off", S.disabledTypes.has(chip.dataset.type));
+    chip.style.setProperty("--c", V.types[chip.dataset.type] || TYPE_COLOR[chip.dataset.type] || V.text);
+  });
 }
 
 export function renderSkyMap() {
@@ -39,8 +43,9 @@ export function renderSkyMap() {
   const W = H * 2;
   cv.width = W * dpr; cv.height = H * dpr;
   const ctx = cv.getContext("2d");
+  const V = vizTheme();
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  ctx.fillStyle = "#0a0d15";
+  ctx.fillStyle = V.canvas;
   ctx.fillRect(0, 0, W, H);
 
   const L = S.library;
@@ -49,13 +54,13 @@ export function renderSkyMap() {
   const showLabels = ($("#smLabels") || {}).checked !== false;
   const sizeByInteg = ($("#smSize") || {}).checked !== false;
 
-  if (showCons) drawConstellations(ctx, W, H);
+  if (showCons) drawConstellations(ctx, W, H, V);
 
   // grid: RA hours + Dec every 15 deg
-  ctx.strokeStyle = "#1b2232";
+  ctx.strokeStyle = V.grid;
   ctx.lineWidth = 1;
   ctx.font = "10px Consolas, monospace";
-  ctx.fillStyle = "#4d5870";
+  ctx.fillStyle = V.axis;
   for (let h = 0; h < 24; h++) {
     const x = h / 24 * W;
     ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke();
@@ -75,7 +80,7 @@ export function renderSkyMap() {
     if (S.disabledTypes.has(o.otype)) continue;      // legend off
     const mins = o.total_exposure / 60;
     const r = sizeByInteg ? 3 + 9 * Math.sqrt(mins / maxMin) : 4.5;
-    const col = TYPE_COLOR[o.otype] || "#ffd166";
+    const col = V.types[o.otype] || TYPE_COLOR[o.otype] || V.text;
     const isHover = SM_HOVER && SM_HOVER.name === o.name;
     for (const wOff of [0, 1]) {            // wrap objects near RA 0h/24h
       const x = (o.ra_hours / 24 + wOff) * W;
@@ -86,7 +91,7 @@ export function renderSkyMap() {
       ctx.globalAlpha = isHover ? 1 : 0.8;
       ctx.beginPath(); ctx.arc(x, y, isHover ? r + 2 : r, 0, 7); ctx.fill();
       ctx.globalAlpha = 1;
-      ctx.strokeStyle = "rgba(0,0,0,.5)";
+      ctx.strokeStyle = V.objectOutline;
       ctx.lineWidth = 1;
       ctx.beginPath(); ctx.arc(x, y, r + 1.5, 0, 7); ctx.stroke();
       pts.push({ x, y, name: o.name, obj: o });
@@ -110,15 +115,19 @@ export function renderSkyMap() {
       if (!ok) continue;
       placed.push({ x: tx + w / 2, y: ty, w });
       ctx.save();
-      ctx.shadowColor = "rgba(0,0,0,.9)";
-      ctx.shadowBlur = 4;
-      ctx.fillStyle = "#e9edf6";
+      ctx.shadowColor = V.targetShadow;
+      ctx.shadowBlur = V.labelBlur;
+      ctx.fillStyle = V.targetLabel;
       ctx.fillText(text, tx, ty);
       ctx.restore();
     }
   }
 
   SM_POINTS = pts;
+  const summary = $("#skymapChartSummary");
+  if (summary) {
+    summary.textContent = `Image library sky map; ${objs.length} library objects are plotted. Right ascension runs left to right and declination runs from south to north.`;
+  }
 }
 
 function fmtDurShort(sec) {
@@ -129,16 +138,16 @@ function fmtDurShort(sec) {
   return `${sec}s`;
 }
 
-function drawConstellations(ctx, W, H) {
+function drawConstellations(ctx, W, H, V) {
   ctx.save();
-  ctx.fillStyle = "rgba(165,175,200,.35)";
+  ctx.fillStyle = V.fieldStar;
   for (const st of FIELD_STARS) {
     const [x, y] = xy(st[0], st[1], W, H);
     if (y < 0 || y > H) continue;
     ctx.beginPath(); ctx.arc(x, y, 1.05 * st[2], 0, 7); ctx.fill();
   }
 
-  ctx.strokeStyle = "rgba(150,160,185,.30)";
+  ctx.strokeStyle = V.constellation;
   ctx.lineWidth = 1;
   for (const con of CONSTELLATIONS) {
     if (!con.g.length) continue;
@@ -156,7 +165,7 @@ function drawConstellations(ctx, W, H) {
     ctx.stroke();
   }
 
-  ctx.fillStyle = "rgba(185,194,220,.50)";
+  ctx.fillStyle = V.constellationStar;
   for (const con of CONSTELLATIONS) {
     for (const [ra, de] of con.s) {
       const [x, y] = xy(ra, de, W, H);
@@ -165,7 +174,7 @@ function drawConstellations(ctx, W, H) {
     }
   }
 
-  ctx.fillStyle = "rgba(139,147,168,.62)";
+  ctx.fillStyle = V.constellationLabel;
   ctx.font = "10px Segoe UI";
   ctx.textAlign = "center";
   for (const con of CONSTELLATIONS) {
@@ -241,8 +250,9 @@ export function bindSkyMap() {
       e.preventDefault();
       chip.click();
     });
+    const V = vizTheme();
     lg.innerHTML = Object.keys(TYPE_COLOR).map(t =>
-      `<div class="lgchip${S.disabledTypes.has(t) ? " off" : ""}" data-type="${t}" role="button" tabindex="0" style="--c:${TYPE_COLOR[t]}"><i></i>${TYPE_LABEL[t] || t}</div>`
+      `<div class="lgchip${S.disabledTypes.has(t) ? " off" : ""}" data-type="${t}" role="button" tabindex="0" style="--c:${V.types[t] || TYPE_COLOR[t]}"><i></i>${TYPE_LABEL[t] || t}</div>`
     ).join("");
     lg.addEventListener("click", e => {
       const chip = e.target.closest("[data-type]");

@@ -109,6 +109,7 @@ const assert = (cond, m) => { if (!cond) fail(m); };
 
 const DATAURL = 'data:image/jpeg;base64,' + Buffer.from('JPEGBYTES').toString('base64');
 const blank720 = () => new Array(720).fill(-90);
+const emptyPanos = { panos: [], activeId: null };
 const panoRec = (over = {}) => ({
   id: 'p1', name: 'p', azOffset: 0, altBottom: 0, altTop: 60, fov: 360,
   paintMode: 'obstacle', strokes: [], profile: blank720(), profileTop: blank720(),
@@ -145,12 +146,12 @@ assert(threw, 'stageBackup must reject a foreign bundle');
 const staged = WS.stageBackup({
   app: 'nightseam-web', theme: 'classic',
   sites: [{ id: 's1', name: 'Home', lat: 1, lon: 2 }],
-  rigs: [], targets: [], prefs: { bortle: 5 },
+  rigs: [], targets: [], prefs: { bortle: 5 }, panos: emptyPanos,
 });
-assert(staged.theme === 'classic', 'theme classic preserved');
+assert(staged.theme === 'workbench', 'legacy classic theme migrates to workbench');
 assert(staged.sites.length === 1, 'one valid site staged');
-assert(WS.stageBackup({ app: 'nightseam-web', theme: 'weird' }).theme === null,
-  'unknown theme value must normalize to null');
+assert(WS.stageBackup({ app: 'nightseam-web', theme: 'weird', panos: emptyPanos }).theme === 'workbench',
+  'unknown theme value must normalize to workbench');
 
 /* 4. exportPanosWithImages -> normalize round trip (image survives) ------ */
 H.applyPanosSnapshot({
@@ -168,11 +169,11 @@ await WS.writeStaged(WS.stageBackup({
   app: 'nightseam-web',
   sites: [{ id: 's1', name: 'Home', lat: 1, lon: 2 }],
   rigs: [{ id: 'r1', name: 'Rig', focal_mm: 100 }],
-  targets: [],
+  targets: [], panos: emptyPanos,
 }));
 const backup = await WS.collectBackup({ bortle: 6 }, { panos: [], activeId: null }, 'classic');
 assert(backup.app === 'nightseam-web' && backup.version === 2, 'backup carries schema version 2');
-assert(backup.theme === 'classic', 'collectBackup carries the theme');
+assert(backup.theme === 'workbench', 'collectBackup carries the canonical theme');
 assert(backup.sites.length === 1 && backup.rigs.length === 1, 'collectBackup reads the stores');
 
 /* 5b. View full day preference round-trips (ITEM 1) ---------------------- */
@@ -180,20 +181,21 @@ const vfd = await WS.collectBackup(
   { bortle: 6, viewFullDay: true }, { panos: [], activeId: null }, 'classic');
 assert(vfd.prefs.viewFullDay === true, 'collectBackup carries viewFullDay');
 assert(WS.stageBackup(vfd).prefs.viewFullDay === true, 'stageBackup preserves viewFullDay');
-assert(WS.stageBackup({ app: 'nightseam-web', prefs: { viewFullDay: false } }).prefs.viewFullDay === false,
+assert(WS.stageBackup({ app: 'nightseam-web', prefs: { viewFullDay: false }, panos: emptyPanos }).prefs.viewFullDay === false,
   'an imported bundle keeps the viewFullDay value');
 
 /* 6. malformed restore does NOT destroy current data -------------------- */
 const beforeSites = (await WS.all('sites')).length;
 let bad = false;
-try { await WS.restoreBackup({ app: 'nightseam-web', sites: [] }, null); } catch { bad = true; }
-assert(!bad, 'a valid empty-site bundle is allowed');
+try { await WS.restoreBackup({ app: 'nightseam-web', sites: [], panos: null }, null); } catch { bad = true; }
+assert(bad && (await WS.all('sites')).length === beforeSites,
+  'a bundle missing its panorama section is rejected before any write');
 await WS.writeStaged(WS.stageBackup({
-  app: 'nightseam-web', sites: [{ id: 's1', name: 'Home', lat: 1, lon: 2 }],
+  app: 'nightseam-web', sites: [{ id: 's1', name: 'Home', lat: 1, lon: 2 }], panos: emptyPanos,
 }));
 const countBefore = (await WS.all('sites')).length;
 let rejected = false;
-try { await WS.restoreBackup({ app: 'nope' }, null); } catch { rejected = true; }
+try { await WS.restoreBackup({ app: 'nope', panos: emptyPanos }, null); } catch { rejected = true; }
 assert(rejected && (await WS.all('sites')).length === countBefore,
   'invalid bundle throws and leaves storage intact');
 
@@ -202,7 +204,16 @@ const safety = await WS.collectBackup({ bortle: 6 }, { panos: [], activeId: null
 const incoming = {
   app: 'nightseam-web',
   sites: [{ id: 's-new', name: 'New', lat: 9, lon: 9 }],
+  panos: emptyPanos,
 };
+const safetyFailureBefore = (await WS.all('sites')).map((r) => r.val.id).sort();
+globalThis.__idbFailPutCount = { meta: 1 };
+let safetyFailed = false;
+try { await WS.restoreBackup(incoming, safety); } catch { safetyFailed = true; }
+assert(safetyFailed, 'a safety snapshot write failure must stop the restore');
+const afterSafetyFailure = (await WS.all('sites')).map((r) => r.val.id).sort();
+assert(JSON.stringify(afterSafetyFailure) === JSON.stringify(safetyFailureBefore),
+  'a failed safety snapshot must leave data untouched');
 globalThis.__idbFailPutCount = { sites: 1 };
 let failed = false;
 try { await WS.restoreBackup(incoming, safety); } catch { failed = true; }

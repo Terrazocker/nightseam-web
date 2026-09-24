@@ -92,6 +92,9 @@ function packDerived(objects, count) {
   const visBits = new Uint8Array(total), aboveBits = new Uint8Array(total);
   const obsPct = new Int32Array(n), blockedN = new Int32Array(n);
   const score = new Float64Array(n), scoreMoon = new Float64Array(n);
+  const maxAlt = new Float64Array(n), visibleMinutes = new Float64Array(n);
+  const transitJd = new Float64Array(n), riseJd = new Float64Array(n), setJd = new Float64Array(n);
+  const reason = new Array(n);
   const bS = new Int32Array(n), bE = new Int32Array(n);
   const aS = new Int32Array(n), aE = new Int32Array(n);
   for (let j = 0; j < n; j++) {
@@ -103,15 +106,24 @@ function packDerived(objects, count) {
     }
     obsPct[j] = o.obs_pct; blockedN[j] = o.blocked_n;
     score[j] = o.score; scoreMoon[j] = o.score_moon;
+    maxAlt[j] = o.max_alt; visibleMinutes[j] = o.visible_minutes || 0;
+    transitJd[j] = Number.isFinite(o.transit_jd) ? o.transit_jd : NaN;
+    riseJd[j] = Number.isFinite(o.rise_jd) ? o.rise_jd : NaN;
+    setJd[j] = Number.isFinite(o.set_jd) ? o.set_jd : NaN;
+    reason[j] = o.visibility_reason || "no_usable_window";
     bS[j] = o.best ? o.best[0] : -1; bE[j] = o.best ? o.best[1] : -1;
     aS[j] = o.best_above ? o.best_above[0] : -1; aE[j] = o.best_above ? o.best_above[1] : -1;
   }
-  return { visBits, aboveBits, obsPct, blockedN, score, scoreMoon, bS, bE, aS, aE };
+  return { visBits, aboveBits, obsPct, blockedN, score, scoreMoon,
+    maxAlt, visibleMinutes, transitJd, riseJd, setJd, reason,
+    bS, bE, aS, aE };
 }
 
 const DERIVED_TRANSFER = (d) => [
   d.visBits.buffer, d.aboveBits.buffer, d.obsPct.buffer, d.blockedN.buffer,
   d.score.buffer, d.scoreMoon.buffer, d.bS.buffer, d.bE.buffer, d.aS.buffer, d.aE.buffer,
+  d.maxAlt.buffer, d.visibleMinutes.buffer, d.transitJd.buffer,
+  d.riseJd.buffer, d.setJd.buffer,
 ];
 
 async function runNight(m) {

@@ -17,7 +17,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from .database import (Database, import_bundle_shape, prepare_import_bundle,
-                       _accepted_records, finite_or_none)
+                       finite_or_none)
 from .paths import data_dir, safe_join, safe_rel
 from .version import app_version
 
@@ -59,30 +59,6 @@ MAX_MEMBER_BYTES = 1 << 30          # 1 GiB per zip member (same cap as ingest)
 # image library, and the upload itself is capped at 2 GiB compressed).
 MAX_RESTORE_BYTES = 4 << 30         # 4 GiB of restored payload, total
 MAX_RESTORE_FILES = 5000            # and a matching bound on the record count
-
-
-def _write_member(zf: zipfile.ZipFile, member: str, target: Path,
-                  limit: int) -> int:
-    """Stream one zip member into `target`, or return 0 when it is absent.
-
-    Streaming (never `zf.read`) keeps the restore's memory peak at one 1 MB
-    chunk, and `limit` is the REMAINING budget of the whole restore, so a
-    crafted bundle cannot spend it all on one member (SP-01). Raises ValueError
-    when the member is larger than the budget.
-
-    Thin wrapper over `_PayloadStage.stage` + immediate commit: the restore
-    itself goes through the journal (BUG-001) and never calls a bare writer, so
-    this exists for tests and tools that want the PY-03 temp-file behaviour
-    (write to `.part`, rename only when the member is complete) without a
-    journal."""
-    stage = _PayloadStage(target.parent, target.parent)
-    try:
-        written = stage.stage(zf, member, target, limit)
-        stage.commit()
-    except BaseException:
-        stage.rollback()
-        raise
-    return written
 
 
 def _reject_oversized_bundle(panos: list, images: list,
