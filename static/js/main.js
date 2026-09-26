@@ -44,14 +44,25 @@ function renderSkyBrightnessChip() {
         ? "wx-bad" : "wx-unknown";
   dot.classList.add(cls);
   dot.textContent = "●";
-  chip.textContent = `SQM ${result.zenithMpsas.toFixed(2)} · ${result.quality}`;
+  // Label correction (LightMap audit WP-2.1-docs): the value is a *modelled*
+  // zenith brightness derived from an all-sky calibration, not an SQM
+  // instrument reading, and `quality` is a modelled-brightness band, not a
+  // confidence band. Surface coverage and lowConfidence separately so a
+  // low-confidence value is distinguishable from a bright one.
   const coverage = Math.round((result.coverage || 0) * 100);
+  const confidence = result.lowConfidence
+    ? "low confidence" : `${coverage}% coverage`;
+  chip.textContent = `Modelled ${result.zenithMpsas.toFixed(2)} · ` +
+    `${result.quality} brightness · ${confidence}`;
   const provider = result.providerLabel || result.provider || "Sky brightness";
   const year = result.sourceYear ? ` · ${result.sourceYear}` : "";
   const fallback = result.fallbackReason ? " · EOG fallback" : "";
-  button.title = `${provider}${year} · zenith sky brightness ` +
-    `${result.zenithMpsas.toFixed(2)} mag/arcsec² · ${coverage}% source coverage` +
-    (result.lowConfidence ? " · low confidence" : "") + fallback;
+  button.title = `${provider}${year} · modelled zenith sky brightness ` +
+    `${result.zenithMpsas.toFixed(2)} mag/arcsec² (derived from an all-sky ` +
+    `calibration; not an SQM reading) · ${coverage}% source coverage` +
+    (result.lowConfidence ? " · low confidence" : "") + fallback +
+    ` · indicator colour shows modelled brightness (${result.quality}), ` +
+    "not confidence";
   button.classList.remove("hidden");
 }
 
