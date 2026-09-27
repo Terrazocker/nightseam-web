@@ -297,7 +297,7 @@ export function applyCfgToUI() {
   $("#fltOiii").checked = !!F.narrowband_oiii;
   $("#sizeUnit").value = S.cfg.size_unit || "arcmin";
   if ($("#libUnit")) $("#libUnit").value = S.cfg.size_unit || "arcmin";
-  applyEdgeSpace(S.cfg.edge_space ?? 200);
+  applyEdgeSpace(S.cfg.edge_space ?? 16);
   if ($("#advMode")) $("#advMode").checked = !!S.cfg.adv_mode;
   if ($("#viewFullDay")) $("#viewFullDay").checked = !!S.cfg.view_full_day;
   if ($("#tzSection")) {

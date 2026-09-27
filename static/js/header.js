@@ -54,18 +54,39 @@ export function bindHeader() {
     }).catch(() => {}), 400);
   });
 
-  const slider = $("#timeSlider");
-  let raf = null;
-  slider.addEventListener("input", e => {
-    S.tIdx = +e.target.value;
-    if (raf) return;                       // coalesce to one update per frame
-    raf = requestAnimationFrame(() => {
-      raf = null;
-      updateTimeLabel();
-      announcePlannerChange("selection", { cause: "scrub", tIdx: S.tIdx });
-      document.dispatchEvent(new CustomEvent("time:changed"));
+  const sliders = [$("#timeSlider"), $("#skyTimeSlider"), $("#tonightTimeSlider")].filter(Boolean);
+  let sliderRaf = null;
+  const commitTimeSelection = (cause) => {
+    updateTimeLabel();
+    announcePlannerChange("selection", { cause, tIdx: S.tIdx });
+    document.dispatchEvent(new CustomEvent("time:changed"));
+  };
+  const inputTimeSelection = (event) => {
+    const source = event.currentTarget || event.target;
+    const lo = Number(source.min) || 0, hi = Number(source.max) || 0;
+    S.tIdx = Math.max(lo, Math.min(hi, Number(source.value) || 0));
+    if (sliderRaf != null) return;        // coalesce drag updates to one frame
+    sliderRaf = requestAnimationFrame(() => {
+      sliderRaf = null;
+      commitTimeSelection("scrub");
     });
-  });
+  };
+  for (const slider of sliders) {
+    slider.addEventListener("input", inputTimeSelection);
+    slider.addEventListener("keydown", (event) => {
+      if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+      event.preventDefault();
+      if (sliderRaf != null) {
+        cancelAnimationFrame(sliderRaf);
+        sliderRaf = null;
+      }
+      const lo = Number(slider.min) || 0, hi = Number(slider.max) || 0;
+      const step = event.shiftKey ? 10 : 1;
+      const sign = event.key === "ArrowRight" ? 1 : -1;
+      S.tIdx = Math.max(lo, Math.min(hi, S.tIdx + sign * step));
+      commitTimeSelection("keyboard");
+    });
+  }
 
   // preferences popover controls
   let _muaPersist = null;
@@ -137,33 +158,6 @@ export function bindHeader() {
     }).catch(() => {}), 400);
   });
 
-  bindTheme();
-}
-
-/* ---------- appearance themes ---------- */
-
-export function applySavedTheme(name) {
-  name = name === "dome" ? "dome" : "workbench";
-  document.documentElement.setAttribute("data-theme", name);
-  for (const b of document.querySelectorAll("#themeRow .theme-btn"))
-    b.classList.toggle("active", (b.dataset.theme || "") === name);
-  document.dispatchEvent(new Event("theme:changed"));
-}
-
-function bindTheme() {
-  const row = $("#themeRow");
-  if (!row) return;
-  row.addEventListener("click", e => {
-    const b = e.target.closest(".theme-btn");
-    if (!b) return;
-    const name = b.dataset.theme === "dome" ? "dome" : "workbench";
-    applySavedTheme(name);
-    api("/api/settings", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" }, silent: true,
-      body: JSON.stringify({ theme: name })
-    }).catch(() => {});
-  });
 }
 
 export function renderNightInfo() {
@@ -193,10 +187,28 @@ function durStrLocal(N) {
 
 export function updateTimeLabel() {
   const el = $("#timeLabel");
-  if (!el) return;
-  if (!S.night) { el.textContent = ""; return; }
+  const local = $("#skyTimeLabel");
+  const tonight = $("#tonightTimeLabel");
+  if (!S.night) {
+    if (el) el.textContent = "";
+    if (local) local.textContent = "";
+    if (tonight) tonight.textContent = "";
+    return;
+  }
+  const [lo, hi] = scrubWindowRange();
+  S.tIdx = Math.max(lo, Math.min(hi, S.tIdx));
   const d = new Date(S.night.timeline.times_iso[S.tIdx] + "Z");
-  el.textContent = fmtT(d);
+  const label = fmtT(d);
+  if (el) el.textContent = label;
+  if (local) local.textContent = label;
+  if (tonight) tonight.textContent = label;
+  for (const slider of [$("#timeSlider"), $("#skyTimeSlider"), $("#tonightTimeSlider")]) {
+    if (!slider) continue;
+    slider.min = String(lo);
+    slider.max = String(hi);
+    slider.value = String(S.tIdx);
+    slider.setAttribute("aria-valuetext", label);
+  }
 }
 
 /** Re-derive the scrub slider bounds (night window by default, whole payload
@@ -206,10 +218,11 @@ export function applyScrubRange() {
   const slider = $("#timeSlider");
   if (!slider || !S.night) return;
   const [lo, hi] = scrubWindowRange();
-  slider.min = String(lo);
-  slider.max = String(hi);
+  for (const control of [slider, $("#skyTimeSlider"), $("#tonightTimeSlider")].filter(Boolean)) {
+    control.min = String(lo);
+    control.max = String(hi);
+  }
   S.tIdx = Math.max(lo, Math.min(hi, S.tIdx));
-  slider.value = String(S.tIdx);
   updateTimeLabel();
   document.dispatchEvent(new CustomEvent("time:changed"));
 }

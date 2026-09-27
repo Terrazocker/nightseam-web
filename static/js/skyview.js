@@ -1,10 +1,10 @@
 /* Sky view: polar whole-dome chart */
 
-import { $, clamp, esc, TYPE_COLOR, TYPE_LABEL } from "./util.js";
+import { $, clamp, esc, fmtHM, TYPE_COLOR, TYPE_LABEL } from "./util.js";
 import { S } from "./state.js";
 import { statusOf, desigLine, activeProfile, activeTopProfile, activeBandTop,
-         activePaintMode, shortName, aboveHorizon, magVisible,
-         skyClampZoom, skyViewMatrix, skyScreenToBase,
+         activePaintMode, shortName, aboveHorizon, magVisible, objScore,
+         skyClampZoom, skyViewMatrix, skyScreenToBase, windowEndISO,
          skyClampFocus } from "./derive.js";
 import { openDetail } from "./detail.js";
 import { passesFilters } from "./targets.js";
@@ -14,6 +14,7 @@ import { vizTheme } from "./viztheme.js";
 
 let SKY_HOVER = null;
 let SKY_POINTS = [];
+let SKY_SELECTED_ID = null;
 let SKY_ZOOM = 1;
 let SKY_FX = null;    // focus point (base coords) under the viewport centre
 let SKY_FY = null;
@@ -83,7 +84,10 @@ export function bindSky() {
   });
   cv.addEventListener("click", () => {
     if (_suppressClick) return;
-    if (SKY_HOVER) openDetail(SKY_HOVER.id);
+    if (SKY_HOVER) {
+      SKY_SELECTED_ID = SKY_HOVER.id;
+      renderSky();
+    }
   });
   cv.addEventListener("wheel", e => {
     e.preventDefault();
@@ -541,11 +545,105 @@ export function renderSky() {
   if ($("#showMoon").checked) drawSunMoon(ctx,cx,cy,R,V);
 
   SKY_POINTS=pts;
+  drawSkyInspector();
   const summary = $("#skyChartSummary");
   if (summary) {
     const iso = S.night.times_iso && S.night.times_iso[S.tIdx];
     const when = iso ? new Date(iso).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" }) : "the selected time";
     summary.textContent = `All-sky polar chart at ${when}; ${pts.length} catalog objects are plotted. Center is zenith, rim is horizon, and the selected horizon profile is shown as blocked sky.`;
+  }
+}
+
+function drawSkyInspector() {
+  const selected = $("#skySelectedTarget");
+  const chart = $("#skySelectedAltitude");
+  const visible = $("#skyVisibleNow");
+  const horizon = $("#skyHorizonStatus");
+  const when = $("#skySelectedTime");
+  if (!selected || !chart || !visible || !S.night) return;
+  const idx = Math.max(0, Math.min(S.tIdx, S.night.timeline.n - 1));
+  const plotted = new Set(SKY_POINTS.map((p) => p.id));
+  const candidates = S.night.objects.filter((o) => S.meta[o.id] && plotted.has(o.id));
+  let object = candidates.find((o) => o.id === SKY_SELECTED_ID);
+  if (!object) object = candidates.find((o) => statusOf(o, idx).code === "vis") || candidates[0] || null;
+  if (object) SKY_SELECTED_ID = object.id;
+  const iso = S.night.timeline.times_iso[idx];
+  if (when) when.textContent = fmtHM(iso);
+  if (!object) {
+    selected.innerHTML = '<span class="hint">No catalog target is plotted at this magnitude limit.</span>';
+    horizon.textContent = "";
+    visible.innerHTML = '<p class="hint">No targets are visible at the selected time.</p>';
+    drawSelectedAltitude(chart, null, idx);
+    return;
+  }
+  const meta = S.meta[object.id];
+  const alt = Number(object.alt?.[idx]);
+  const az = Number(object.az?.[idx]);
+  const state = statusOf(object, idx);
+  const best = object.best && object.best[1] > object.best[0]
+    ? `${fmtHM(S.night.timeline.times_iso[object.best[0]])}–${fmtHM(windowEndISO(S.night.timeline.times_iso, object.best[1], S.night.timeline.step_min))}`
+    : "No clear window in the scoring span";
+  selected.innerHTML = `<strong>${esc(meta.primary_name)}</strong><span class="sub">${esc(desigLine(meta))}</span>
+    <div class="sky-selected-facts"><span>Altitude <b>${Number.isFinite(alt) ? `${alt.toFixed(1)}°` : "—"}</b></span>
+    <span>Azimuth <b>${Number.isFinite(az) ? `${az.toFixed(0)}°` : "—"}</b></span>
+    <span>Status <b class="statuspill st-${esc(state.code)}">${esc(state.text)}</b></span>
+    <span>Best window <b>${esc(best)}</b></span></div>
+    <button class="btn small" id="skySelectedDetail" type="button">Open target details</button>`;
+  $("#skySelectedDetail")?.addEventListener("click", () => openDetail(object.id, { opener: chart }));
+  if (horizon) horizon.textContent = `Selected time ${fmtHM(iso)} · minimum useful altitude ${S.minAlt.toFixed(0)}° · ${state.text}.`;
+  drawSelectedAltitude(chart, object, idx);
+
+  const visibleNow = candidates.filter((o) => statusOf(o, idx).code === "vis")
+    .sort((a, b) => objScore(b) - objScore(a) || (S.meta[b.id].popularity || 0) - (S.meta[a.id].popularity || 0))
+    .slice(0, 8);
+  visible.innerHTML = visibleNow.length ? visibleNow.map((o, i) => {
+    const m = S.meta[o.id];
+    return `<button class="sky-visible-target${o.id === object.id ? " selected" : ""}" type="button" data-sky-target="${esc(o.id)}">
+      <span class="mono">${String(i + 1).padStart(2, "0")}</span><strong>${esc(m.primary_name)}</strong><span class="mono">${Number(o.alt[idx]).toFixed(0)}°</span></button>`;
+  }).join("") : '<p class="hint">No catalog targets are visible at this time.</p>';
+  visible.querySelectorAll("[data-sky-target]").forEach((button) => button.addEventListener("click", () => {
+    SKY_SELECTED_ID = button.dataset.skyTarget;
+    renderSky();
+  }));
+}
+
+function drawSelectedAltitude(canvas, object, idx) {
+  const width = canvas.clientWidth || 300;
+  const height = canvas.clientHeight || 100;
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = Math.round(width * dpr);
+  canvas.height = Math.round(height * dpr);
+  const ctx = canvas.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, width, height);
+  const style = getComputedStyle(document.documentElement);
+  const token = (name, fallback) => style.getPropertyValue(name).trim() || fallback;
+  const L = 27, R = 8, T = 8, B = 20, plotW = width - L - R, plotH = height - T - B;
+  const y = (alt) => T + (90 - Math.max(-10, Math.min(90, alt))) / 100 * plotH;
+  ctx.font = "9px Consolas, monospace";
+  ctx.textAlign = "right";
+  ctx.textBaseline = "middle";
+  [0, 30, 60, 90].forEach((alt) => {
+    const yy = y(alt);
+    ctx.strokeStyle = token("--border", "#35434A");
+    ctx.beginPath(); ctx.moveTo(L, yy); ctx.lineTo(width - R, yy); ctx.stroke();
+    ctx.fillStyle = token("--dim", "#A8B5B8"); ctx.fillText(`${alt}°`, L - 4, yy);
+  });
+  if (!object?.alt?.length) return;
+  const max = object.alt.length - 1;
+  const x = (i) => L + i / Math.max(1, max) * plotW;
+  ctx.setLineDash([4, 3]); ctx.strokeStyle = token("--warn", "#C38B32");
+  ctx.beginPath(); ctx.moveTo(L, y(S.minAlt)); ctx.lineTo(width - R, y(S.minAlt)); ctx.stroke();
+  ctx.setLineDash([]); ctx.beginPath();
+  object.alt.forEach((alt, i) => i ? ctx.lineTo(x(i), y(alt)) : ctx.moveTo(x(i), y(alt)));
+  ctx.strokeStyle = token("--accent", "#6DA89B"); ctx.lineWidth = 1.8; ctx.stroke();
+  ctx.strokeStyle = token("--text", "#E8EFED"); ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(x(idx), T); ctx.lineTo(x(idx), T + plotH); ctx.stroke();
+  const times = S.night.timeline.times_iso;
+  ctx.fillStyle = token("--dim", "#A8B5B8"); ctx.textAlign = "center"; ctx.textBaseline = "top";
+  if (times?.length) {
+    ctx.fillText(fmtHM(times[0]), L, T + plotH + 5);
+    ctx.fillText(fmtHM(times.at(-1)), width - R, T + plotH + 5);
   }
 }
 

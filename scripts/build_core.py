@@ -17,6 +17,7 @@ Usage: python scripts/build_core.py
 from __future__ import annotations
 
 import hashlib
+import argparse
 import json
 import re
 import shutil
@@ -88,6 +89,19 @@ def next_previous(old_hash: str | None, old_previous: str | None,
     return old_hash
 
 
+def previous_for_bake(old_hash: str | None, old_previous: str | None,
+                      new_hash: str, *, retire_model_bearing_previous: bool = False
+                      ) -> str | None:
+    """Select N-1, with the narrow one-time retirement escape hatch.
+
+    The retirement flag is used only when a model-bearing core module is
+    removed. Ordinary builds keep the documented current + N-1 policy.
+    """
+    if retire_model_bearing_previous:
+        return None
+    return next_previous(old_hash, old_previous, new_hash)
+
+
 def retention_keep(hash_: str, previous: str | None) -> set[str]:
     """The baked-core RETENTION POLICY, in one place (XL-02, 0.6.24 review).
 
@@ -113,8 +127,16 @@ def prune_baked_dirs(dest_root: Path, keep: set[str]) -> list[str]:
 
 
 def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--retire-model-bearing-previous", action="store_true",
+        help="one-time feature retirement: drop the old N-1 bake after its source is removed")
+    args = parser.parse_args()
     if not CORE.is_dir():
         print("build_core: core/ is missing")
+        return 1
+    if args.retire_model_bearing_previous and (CORE / "skybrightness.js").exists():
+        print("build_core: cannot retire the previous model bake while its source remains")
         return 1
     hash_, files = tree_hash()
     token = 1
@@ -128,7 +150,9 @@ def main() -> int:
             previous = old.get("previous") or None
         except (OSError, ValueError):
             pass
-    previous = next_previous(old_hash, previous, hash_)
+    previous = previous_for_bake(
+        old_hash, previous, hash_,
+        retire_model_bearing_previous=args.retire_model_bearing_previous)
     if old_hash and old_hash != hash_:
         token += 1
     names = export_names((CORE / "index.js").read_text(encoding="utf-8"))

@@ -30,7 +30,7 @@ import {
   historyRedo as coreHistoryRedo, historyMarkSaved as coreHistoryMarkSaved,
   historyDirty as coreHistoryDirty, PANO_HISTORY_LIMIT as coreHISTORY_LIMIT,
   PLANNER_CHANGE_EVENT, nextPlannerRevision, plannerChange, panoramaRevision,
-} from './core.js?v=42';
+} from './core.js?v=44';
 
 export {
   NO_BLOCK, BINS, MASK_W, MASK_H,
@@ -43,6 +43,7 @@ export {
 };
 
 const LS_KEY = 'nightseam_panos_v1';
+const PROFILE_HEIGHT = 150;
 let plannerRevision = 0;
 
 /** Publish the shared planner invalidation contract for this web shell. */
@@ -537,6 +538,47 @@ export function renderHorizon(box, onChanged) {
       <h3>${active ? `Horizon editor — ${esc(pano.name)}` : 'Horizon editor'}</h3>
       ${active ? haziEditorHTML(pano) : '<p class="sub">create or select a horizon to start painting.</p>'}
     </div>`;
+  const cards = [...box.querySelectorAll(':scope > .card')];
+  const layout = document.createElement('div');
+  layout.className = 'horizon-layout';
+  layout.innerHTML = `
+    <aside class="horizon-tools-rail" aria-label="Horizon tools"></aside>
+    <section class="horizon-stage" aria-label="Horizon editor"></section>
+    <aside class="horizon-settings-rail" aria-label="Horizon calibration and profile settings"></aside>`;
+  const tools = layout.querySelector('.horizon-tools-rail');
+  const stage = layout.querySelector('.horizon-stage');
+  const settings = layout.querySelector('.horizon-settings-rail');
+  if (cards[0]) tools.append(cards[0]);
+  const editor = cards[1];
+  if (editor) {
+    const title = editor.querySelector('h3');
+    if (title) {
+      title.classList.add('horizon-editor-title');
+      stage.append(title);
+    }
+    const controlBar = editor.querySelector('.ed-tools');
+    const hint = editor.querySelector('.ed-hint');
+    const calibration = editor.querySelector(':scope > .cal-grid');
+    const meta = [...editor.querySelectorAll(':scope > .horizon-meta')];
+    const canvasBox = editor.querySelector('#pano-box');
+    const profile = editor.querySelector('.horizon-profile-panel');
+    const profileSelection = editor.querySelector('.horizon-selected-bin');
+    if (controlBar) tools.append(controlBar);
+    if (hint) tools.append(hint);
+    if (calibration) settings.append(calibration);
+    meta.forEach((item) => settings.append(item));
+    if (profileSelection) settings.append(profileSelection);
+    if (settings.childElementCount) layout.append(settings);
+    const canvasStage = document.createElement('section');
+    canvasStage.className = 'horizon-canvas-stage';
+    canvasStage.setAttribute('aria-label', 'Panorama and obstruction profile');
+    if (canvasBox) canvasStage.append(canvasBox);
+    if (profile) canvasStage.append(profile);
+    if (canvasStage.childElementCount) stage.append(canvasStage);
+    const empty = editor.querySelector(':scope > .sub');
+    if (empty) stage.append(empty);
+  }
+  box.replaceChildren(layout);
   hideSplash(box);
 
   // panos list actions (skip the empty-state placeholder row, which has no controls)
@@ -784,9 +826,31 @@ function haziEditorHTML(p) {
         <button class="btn small" id="ed-fit" title="Fit the whole panorama">Fit</button>
       </div>
     </div>
-    <canvas id="pano-profile" width="720" height="56" role="img" aria-label="Obstruction profile preview" aria-describedby="panoProfileSummary"></canvas>
-    <p id="panoProfileSummary" class="visually-hidden" role="note">Obstruction profile preview.</p>
-    <p class="sub" style="margin-top:6px">Guides: amber = azimuth (N/E/S/W), green dashed = horizon (alt 0), blue = altitude; dashed blue profile = comparison. Profile preview scales to your alt-bottom / alt-top range &middot; edits apply to planning immediately; press Save to keep them.</p>`;
+    <section class="horizon-profile-panel" aria-labelledby="panoProfileHeading">
+      <header class="horizon-profile-heading"><h4 id="panoProfileHeading">Horizon profile</h4><span>720 bins · 0.5° per bin</span></header>
+      <canvas id="pano-profile" width="720" height="${PROFILE_HEIGHT}" tabindex="0" role="img" aria-label="Horizon profile by world azimuth" aria-describedby="panoProfileSummary panoProfileBinSummary"></canvas>
+      <p id="panoProfileSummary" class="visually-hidden" role="note">Horizon profile preview.</p>
+      <div class="horizon-profile-metrics" role="group" aria-label="Stored horizon profile summary">
+        <span><small>Azimuth coverage</small><b id="horizon-profile-coverage">—</b></span>
+        <span><small id="horizon-profile-peak-label">Highest obstruction</small><b id="horizon-profile-peak">—</b></span>
+        <span><small>Named landmarks</small><b id="horizon-profile-landmarks">0</b></span>
+        <span><small>Confidence recorded</small><b id="horizon-profile-confidence">0 / 0 bins</b></span>
+      </div>
+      <div class="horizon-profile-legend" aria-label="Profile chart legend">
+        <span><i class="profile-legend-stroke" aria-hidden="true"></i>Stored profile</span>
+        <span><i class="profile-legend-minimum" aria-hidden="true"></i>Minimum altitude</span>
+        <span><i class="profile-legend-compare" aria-hidden="true"></i>Comparison profile</span>
+        <span>Confidence recorded</span>
+      </div>
+      <details class="horizon-profile-help"><summary>Profile guide</summary>
+        <p>Click the graph to select a world-azimuth bin. The solid profile is stored data; the dashed blue line appears only when another horizon is selected for comparison. Amber marks the existing minimum-altitude guide.</p>
+        <p>Edits affect planning immediately. Press Save to keep them, or Revert to discard them.</p>
+      </details>
+    </section>
+    <section class="horizon-selected-bin" aria-labelledby="panoProfileBinHeading">
+      <h4 id="panoProfileBinHeading">Selected profile bin</h4>
+      <p id="panoProfileBinSummary" class="profile-bin-summary" role="status" aria-live="polite">Select a point on the profile to inspect its 0.5° world-azimuth bin.</p>
+    </section>`;
 }
 
 /** Small in-page confirm dialog (never a blocking browser alert/confirm). */
@@ -832,20 +896,31 @@ export function flushHorizonEdits() {
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 /* prefs — shared with app.js via module state */
+const RETIRED_PREF_KEYS = new Set([
+  'skyBrightnessProvider', 'theme', 'themeId', 'themeMode', 'themeVariant',
+]);
 let prefs = loadPrefs();
 export function getPrefs() { return prefs; }
 export const effectiveMinAlt = () => coreMinAlt(prefs.bortle, prefs.minAlt);
-export function setPrefs(patch) { prefs = { ...prefs, ...patch }; savePrefs(); }
+function cleanPrefs(value) {
+  const out = value && typeof value === 'object' && !Array.isArray(value) ? { ...value } : {};
+  for (const key of RETIRED_PREF_KEYS) delete out[key];
+  if (Array.isArray(out.savedTargetIds)) {
+    out.savedTargetIds = [...new Set(out.savedTargetIds.filter((id) =>
+      typeof id === 'string' && /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(id)))].slice(0, 2000);
+  } else delete out.savedTargetIds;
+  return out;
+}
+export function setPrefs(patch) { prefs = cleanPrefs({ ...prefs, ...patch }); savePrefs(); }
 function loadPrefs() {
   try {
     const raw = localStorage.getItem('nightseam_prefs_v1');
-    if (raw) return { bortle: 4, minAlt: null, moonAware: false, viewFullDay: false,
-      skyBrightnessProvider: 'eog', ...JSON.parse(raw) };
+    if (raw) return cleanPrefs({ bortle: 4, minAlt: null, moonAware: false, viewFullDay: false, edge: 16,
+      ...JSON.parse(raw) });
   } catch { /* ignore */ }
-  return { bortle: 4, minAlt: null, moonAware: false, viewFullDay: false,
-    skyBrightnessProvider: 'eog' };
+  return cleanPrefs({ bortle: 4, minAlt: null, moonAware: false, viewFullDay: false, edge: 16 });
 }
-function savePrefs() { try { localStorage.setItem('nightseam_prefs_v1', JSON.stringify(prefs)); } catch { /* ignore */ } }
+function savePrefs() { try { localStorage.setItem('nightseam_prefs_v1', JSON.stringify(cleanPrefs(prefs))); } catch { /* ignore */ } }
 
 /** parse decimal accepting comma (German locale), like num() in the original. */
 export function num(s) {
@@ -950,6 +1025,38 @@ function wireEditor(box, p, onChanged) {
     return Math.min(BINS - 1, Math.max(0, Math.round(a * 2)));
   }
 
+  function updateProfileMetrics() {
+    const coverage = $('#horizon-profile-coverage', box);
+    const peakLabel = $('#horizon-profile-peak-label', box);
+    const peak = $('#horizon-profile-peak', box);
+    const landmarks = $('#horizon-profile-landmarks', box);
+    const confidence = $('#horizon-profile-confidence', box);
+    const span = Math.max(1, Math.min(BINS, Math.round(Math.min(360, Number(p.fov) || 0) * 2)));
+    const start = ((Math.round(Number(p.azOffset || 0) * 2) % BINS) + BINS) % BINS;
+    const indices = Array.from({ length: span }, (_, i) => (start + i) % BINS);
+    const values = (arr) => indices.map((i) => Number(arr?.[i]))
+      .filter((value) => Number.isFinite(value) && value > NO_BLOCK && value <= 90);
+    const bottoms = values(p.profile);
+    const tops = values(p.profileTop);
+    const recorded = indices.reduce((n, i) => n + (p.confidence?.[i] != null
+      && Number.isFinite(Number(p.confidence[i])) ? 1 : 0), 0);
+    if (coverage) coverage.textContent = Number.isFinite(Number(p.fov))
+      ? `${Math.min(360, Number(p.fov)).toFixed(0)}°` : '—';
+    if (landmarks) landmarks.textContent = String(Array.isArray(p.landmarks) ? p.landmarks.length : 0);
+    if (confidence) confidence.textContent = `${recorded} / ${span} bins`;
+    if (peakLabel) peakLabel.textContent = p.paintMode === 'sky'
+      ? 'Band bottom / top' : 'Highest obstruction';
+    if (peak) {
+      if (p.paintMode === 'sky') {
+        const bottom = bottoms.length ? `${Math.max(...bottoms).toFixed(0)}°` : '—';
+        const top = tops.length ? `${Math.max(...tops).toFixed(0)}°` : '—';
+        peak.textContent = `${bottom} / ${top}`;
+      } else {
+        peak.textContent = bottoms.length ? `${Math.max(...bottoms).toFixed(0)}°` : '—';
+      }
+    }
+  }
+
   function readProfileBin() {
     const idx = profileIndex();
     const alt = $('#ed-profile-alt', box);
@@ -959,6 +1066,21 @@ function wireEditor(box, p, onChanged) {
     if (top) top.value = String(Number(p.profileTop?.[idx] ?? NO_BLOCK));
     const cv = normalizeHorizonConfidence(p.confidence)[idx];
     if (conf) conf.value = cv == null ? '' : String(cv);
+    const summary = $('#panoProfileBinSummary', box);
+    if (summary) {
+      const lower = Number(p.profile?.[idx] ?? NO_BLOCK);
+      const upper = Number(p.profileTop?.[idx] ?? NO_BLOCK);
+      const skyMode = p.paintMode === 'sky';
+      const lowerText = lower <= NO_BLOCK
+        ? (skyMode ? 'band bottom not recorded' : 'no obstruction')
+        : `${skyMode ? 'band bottom' : 'obstruction ceiling'} ${lower.toFixed(1)}°`;
+      const upperText = skyMode
+        ? ` · band top ${upper > NO_BLOCK && upper <= 90 ? `${upper.toFixed(1)}° (block above ${p.blockAbove ? 'on' : 'off'})` : 'not recorded'}`
+        : (p.blockAbove && upper > NO_BLOCK ? ` · upper boundary ${upper.toFixed(1)}°` : '');
+      const confidence = cv == null ? 'confidence not recorded' : `confidence ${(cv * 100).toFixed(0)}%`;
+      summary.textContent = `Azimuth ${(idx / 2).toFixed(1)}° · ${lowerText}${upperText} · ${confidence}.`;
+    }
+    drawProfile();
   }
 
   function renderLandmarkRows() {
@@ -1013,10 +1135,12 @@ function wireEditor(box, p, onChanged) {
   function fitCanvas() {
     const w = Math.max(64, boxEl.clientWidth || MASK_W);
     const dpr = window.devicePixelRatio || 1;
+    const sourceRatio = imgEl && imgEl.naturalWidth > 0
+      ? imgEl.naturalHeight / imgEl.naturalWidth : MASK_H / MASK_W;
     cvs.width = Math.round(w * dpr);
-    cvs.height = Math.round((w / MASK_W) * MASK_H * dpr);
+    cvs.height = Math.round(w * sourceRatio * dpr);
     profCvs.width = Math.round(w * dpr);
-    profCvs.height = Math.round((w / MASK_W) * 56 * dpr);
+    profCvs.height = Math.round(PROFILE_HEIGHT * dpr);
     overlay();
   }
 
@@ -1048,8 +1172,8 @@ function wireEditor(box, p, onChanged) {
     imgEl = null; imgErr = false;
     if (p._img) {
       const img = new Image();
-      img.onload = () => { imgEl = img; overlay(); };
-      img.onerror = () => { imgErr = true; overlay(); };
+      img.onload = () => { imgEl = img; fitCanvas(); };
+      img.onerror = () => { imgErr = true; fitCanvas(); };
       img.src = p._img;
     } else {
       overlay();
@@ -1076,7 +1200,7 @@ function wireEditor(box, p, onChanged) {
   function overlay() {
     ctxTransform();
     ctx.clearRect(0, 0, MASK_W, MASK_H);
-    if (imgEl && imgEl.complete && imgEl.naturalWidth) drawImageCover(ctx, imgEl, MASK_W, MASK_H);
+    if (imgEl && imgEl.complete && imgEl.naturalWidth) drawImageStage(ctx, imgEl, MASK_W, MASK_H);
     else drawGrid(imgErr);
     syncMaskCanvas();
     ctx.drawImage(maskCanvas, 0, 0, MASK_W, MASK_H);
@@ -1157,7 +1281,7 @@ function wireEditor(box, p, onChanged) {
       p.profile = prof;
       p.profileTop = top;
     }
-    const W = 720, H = 56;
+    const W = 720, H = PROFILE_HEIGHT;
     const sx = profCvs.width / W, sy = profCvs.height / H;
     profCtx.setTransform(sx, 0, 0, sy, 0, 0);
     profCtx.clearRect(0, 0, W, H);
@@ -1165,6 +1289,26 @@ function wireEditor(box, p, onChanged) {
     profCtx.fillRect(0, 0, W, H);
     const lo = Math.min(p.altBottom, 0);
     const hi = Math.max(p.altTop, 10);
+    const altY = (alt) => H - ((alt - lo) / Math.max(1, hi - lo)) * H;
+    const minimum = effectiveMinAlt();
+    const guides = [
+      { alt: 0, color: 'rgba(127,151,184,.52)', dash: [2, 4], label: 'horizon 0°' },
+      { alt: minimum, color: 'rgba(240,195,106,.82)', dash: [7, 4], label: `min ${minimum.toFixed(0)}°` },
+    ].filter((guide, i, all) => guide.alt >= lo && guide.alt <= hi
+      && all.findIndex((item) => Math.abs(item.alt - guide.alt) < 0.1) === i);
+    for (const guide of guides) {
+      const y = altY(guide.alt);
+      profCtx.save();
+      profCtx.strokeStyle = guide.color;
+      profCtx.fillStyle = guide.color;
+      profCtx.lineWidth = 1;
+      profCtx.setLineDash(guide.dash);
+      profCtx.beginPath(); profCtx.moveTo(0, y); profCtx.lineTo(W, y); profCtx.stroke();
+      profCtx.setLineDash([]);
+      profCtx.font = '10px system-ui';
+      profCtx.fillText(guide.label, 6, Math.max(12, y - 3));
+      profCtx.restore();
+    }
     // preview geometry: the SAME shared transform as the desktop (one x per
     // 720 bins across the full width), so the sky band is the exact complement
     // of the blocked region and never self-intersects or wraps the seam.
@@ -1239,9 +1383,17 @@ function wireEditor(box, p, onChanged) {
     }
     profCtx.fillStyle = 'rgba(127,151,184,.8)';
     profCtx.font = '9px system-ui';
-    profCtx.fillText(lo.toFixed(0) + '\u00B0', 2, 53);
+    profCtx.fillText(lo.toFixed(0) + '\u00B0', 2, H - 3);
     profCtx.fillText(hi.toFixed(0) + '\u00B0', 2, 12);
-    profCtx.fillText('profile \u2014 ' + paintMode() + ' \u00B7 alt ' + lo.toFixed(0) + '\u2026' + hi.toFixed(0) + '\u00B0', 540, 12);
+    profCtx.fillText('profile \u2014 ' + paintMode() + ' \u00B7 alt ' + lo.toFixed(0) + '\u2026' + hi.toFixed(0) + '\u00B0', 540, 14);
+    const selected = profileIndex();
+    const selectedX = selected / Math.max(1, BINS - 1) * W;
+    profCtx.strokeStyle = 'rgba(240,195,106,.95)';
+    profCtx.lineWidth = 1;
+    profCtx.setLineDash([3, 3]);
+    profCtx.beginPath(); profCtx.moveTo(selectedX, 0); profCtx.lineTo(selectedX, H); profCtx.stroke();
+    profCtx.setLineDash([]);
+    updateProfileMetrics();
   }
 
   function drawCropOverlay() {
@@ -1302,6 +1454,7 @@ function wireEditor(box, p, onChanged) {
       const modeName = p.paintMode === 'sky' ? 'sky-band' : 'obstacle';
       chartSummary.textContent = `Panorama horizon editor in ${modeName} mode. Azimuth offset ${p.azOffset.toFixed(1)} degrees, field of view ${p.fov.toFixed(1)} degrees, altitude range ${p.altBottom.toFixed(1)} to ${p.altTop.toFixed(1)} degrees.${dirty() ? ' Unsaved changes.' : ' Saved.'}`;
     }
+    updateProfileMetrics();
   }
 
   const rebuildMaskNow = () => { mask = rebuildMask(p.strokes, wrapsFor(p)); };
@@ -1635,6 +1788,23 @@ function wireEditor(box, p, onChanged) {
   if (readBin) readBin.addEventListener('click', readProfileBin);
   const azBin = $('#ed-profile-az', box);
   if (azBin) azBin.addEventListener('change', readProfileBin);
+  profCvs.tabIndex = 0;
+  profCvs.setAttribute('aria-describedby', 'panoProfileSummary panoProfileBinSummary');
+  profCvs.addEventListener('click', (ev) => {
+    const rect = profCvs.getBoundingClientRect();
+    const az = Math.max(0, Math.min(359.5, (ev.clientX - rect.left) / Math.max(1, rect.width) * 360));
+    $('#ed-profile-az', box).value = (Math.round(az * 2) / 2).toFixed(1);
+    readProfileBin();
+  });
+  profCvs.addEventListener('keydown', (ev) => {
+    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(ev.key)) return;
+    ev.preventDefault();
+    const current = num($('#ed-profile-az', box).value) || 0;
+    const next = ev.key === 'Home' ? 0 : ev.key === 'End' ? 359.5
+      : Math.max(0, Math.min(359.5, current + (ev.key === 'ArrowRight' ? 0.5 : -0.5)));
+    $('#ed-profile-az', box).value = next.toFixed(1);
+    readProfileBin();
+  });
   const applyBin = $('#ed-profile-apply', box);
   if (applyBin) applyBin.addEventListener('click', () => {
     const idx = profileIndex();
@@ -1725,14 +1895,15 @@ function wireEditor(box, p, onChanged) {
   }
 
   fitCanvas();
+  readProfileBin();
   loadImage();
   renderStatus();
 }
-function drawImageCover(ctx, img, w, h) {
-  const s = Math.max(w / img.width, h / img.height);
-  const dw = img.width * s, dh = img.height * s;
-  const dx = (w - dw) / 2, dy = (h - dh) / 2;
-  ctx.drawImage(img, dx, dy, dw, dh);
+function drawImageStage(ctx, img, w, h) {
+  // The backing store adopts the source image's aspect ratio. The canonical
+  // 720x360 editor transform then scales both photo and mask together into that
+  // aspect; all source pixels stay visible and stored coordinates stay fixed.
+  ctx.drawImage(img, 0, 0, w, h);
 }
 
 function clampNum(v, lo, hi, dflt) {

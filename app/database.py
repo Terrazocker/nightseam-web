@@ -232,7 +232,7 @@ def finite_or_none(value):
 
 _BOOL_SETTINGS = ("moon_aware", "adv_mode", "weather_auto", "view_full_day",
                   "wizard_done")
-_STR_SETTINGS = ("timezone", "theme", "sky_brightness_provider")
+_STR_SETTINGS = ("timezone", "theme")
 _SIZE_UNITS = ("arcmin", "arcsec", "deg")
 
 # Settings stored as a number but read back through an int()/float() coercion.
@@ -292,10 +292,10 @@ def _validate_import_settings(settings: dict) -> None:
             raise ValueError("settings.min_useful_alt must be a finite number")
     if "size_unit" in settings and settings["size_unit"] not in _SIZE_UNITS:
         raise ValueError("settings.size_unit must be arcmin, arcsec or deg")
-    if "sky_brightness_provider" in settings and settings["sky_brightness_provider"] not in (
-            "eog", "blackmarble"):
-        raise ValueError(
-            "settings.sky_brightness_provider must be eog or blackmarble")
+    # Sky-brightness providers were retired. Older setup bundles may still
+    # carry this key, including values that are no longer recognized; discard
+    # it before validation so a valid backup remains restorable.
+    settings.pop("sky_brightness_provider", None)
     if "filters" in settings and not isinstance(settings["filters"], dict):
         raise ValueError("settings.filters must be an object")
     if "favorites" in settings and not isinstance(settings["favorites"], list):
@@ -617,6 +617,14 @@ class Database:
         self.conn = sqlite3.connect(str(db_path), check_same_thread=False)
         self.conn.row_factory = sqlite3.Row
         self.conn.executescript(SCHEMA)
+        # One-way removal of the retired sky-brightness preference. Do this
+        # during database open, before the server can make its automatic
+        # safety backup, so future exports contain no dormant provider state.
+        self.conn.execute("DELETE FROM settings WHERE key='sky_brightness_provider'")
+        # Glass is no longer shipped. Normalize any saved theme before state is
+        # read or a safety backup is made.
+        self.conn.execute("UPDATE settings SET value=? WHERE key='theme'",
+                          (json.dumps("workbench"),))
         # NOTE: databases outlive the code (users carry them between
         # versions), so schema evolution MUST be additive: new tables go
         # into SCHEMA (CREATE TABLE IF NOT EXISTS), new columns use the

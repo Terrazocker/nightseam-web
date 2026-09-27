@@ -6,147 +6,185 @@ import { api } from "./util.js";
 import { loadNight } from "./night.js";
 import { recomputeNightDerived, effectiveMinAlt,
          SCRUB_STEP_MIN, SCRUB_SHIFT_STEP_MIN } from "./derive.js";
-import { bindHeader, renderNightInfo, updateTimeLabel, applySavedTheme } from "./header.js";
+import { bindHeader, renderNightInfo, updateTimeLabel } from "./header.js";
 import { bindTonight, renderTonight } from "./tonight.js";
 import { bindFilters, renderTargets, populateConstFilter } from "./targets.js";
 import { bindSetup, applyCfgToUI } from "./setup.js";
-import { bindDetail, drawAltChart } from "./detail.js";
+import { bindDetail, drawAltChart, refreshOpenDetail } from "./detail.js";
 import { bindSky, renderSky } from "./skyview.js";
 import { bindWeather, refreshWeatherForSite } from "./weather.js";
 import { checkForUpdates } from "./updater.js";
 import { Pano } from "./pano.js";
 import { bindArchive, applyArchiveUI, loadLibrary } from "./archive.js";
 import { bindSkyMap, renderSkyMap } from "./skymap.js";
-import { initDragWindows } from "./dragwin.js";
 import { requestPrefsDerived } from "./planning_client.js";
-import { estimateSiteZenithSkyBrightness, listSkyBrightnessProviders }
-  from "./skybrightness.js";
 import { PLANNER_CHANGE_EVENT } from "./core.js";
 
-let _skyBrightness = null;
-let _skyBrightnessGen = 0;
-
-function renderSkyBrightnessChip() {
-  const button = $("#btnSkyBrightness");
-  const dot = $("#skyBrightnessStatusDot");
-  const chip = $("#skyBrightnessChip");
-  if (!button || !dot || !chip) return;
-  for (const cls of ["wx-good", "wx-warn", "wx-bad", "wx-unknown"])
-    dot.classList.remove(cls);
-  const result = _skyBrightness;
-  if (!result || !result.available || result.zenithMpsas == null) {
-    button.classList.add("hidden");
-    return;
-  }
-  const cls = result.quality === "good" ? "wx-good" :
-    result.quality === "moderate" ? "wx-warn" :
-      (result.quality === "poor" || result.quality === "bright")
-        ? "wx-bad" : "wx-unknown";
-  dot.classList.add(cls);
-  dot.textContent = "●";
-  // Label correction (LightMap audit WP-2.1-docs): the value is a *modelled*
-  // zenith brightness derived from an all-sky calibration, not an SQM
-  // instrument reading, and `quality` is a modelled-brightness band, not a
-  // confidence band. Surface coverage and lowConfidence separately so a
-  // low-confidence value is distinguishable from a bright one.
-  const coverage = Math.round((result.coverage || 0) * 100);
-  const confidence = result.lowConfidence
-    ? "low confidence" : `${coverage}% coverage`;
-  chip.textContent = `Modelled ${result.zenithMpsas.toFixed(2)} · ` +
-    `${result.quality} brightness · ${confidence}`;
-  const provider = result.providerLabel || result.provider || "Sky brightness";
-  const year = result.sourceYear ? ` · ${result.sourceYear}` : "";
-  const fallback = result.fallbackReason ? " · EOG fallback" : "";
-  button.title = `${provider}${year} · modelled zenith sky brightness ` +
-    `${result.zenithMpsas.toFixed(2)} mag/arcsec² (derived from an all-sky ` +
-    `calibration; not an SQM reading) · ${coverage}% source coverage` +
-    (result.lowConfidence ? " · low confidence" : "") + fallback +
-    ` · indicator colour shows modelled brightness (${result.quality}), ` +
-    "not confidence";
-  button.classList.remove("hidden");
-}
-
-async function refreshSkyBrightnessForSite(site) {
-  const gen = ++_skyBrightnessGen;
-  _skyBrightness = null;
-  renderSkyBrightnessChip();
-  if (!site || !Number.isFinite(Number(site.lat)) || !Number.isFinite(Number(site.lon))) return;
-  const result = await estimateSiteZenithSkyBrightness(
-    Number(site.lat), Number(site.lon), {
-      provider: S.cfg.sky_brightness_provider || "eog",
+function observeChartContainer(selector, isActive, render) {
+  const container = $(selector);
+  if (!container || typeof ResizeObserver !== "function") return () => {};
+  let frame = null;
+  const observer = new ResizeObserver((entries) => {
+    if (!container.isConnected) {
+      observer.disconnect();
+      if (frame != null) cancelAnimationFrame(frame);
+      return;
+    }
+    const entry = entries.find((item) => item.target === container);
+    const rect = entry?.contentRect;
+    if (!isActive() || !rect || rect.width <= 0 || rect.height <= 0 ||
+        !container.getClientRects().length) return;
+    if (frame != null) cancelAnimationFrame(frame);
+    frame = requestAnimationFrame(() => {
+      frame = null;
+      if (container.isConnected && isActive() && container.clientWidth > 0 &&
+          container.clientHeight > 0) render();
     });
-  if (gen !== _skyBrightnessGen) return;
-  _skyBrightness = result;
-  renderSkyBrightnessChip();
-}
-
-async function refreshSkyBrightnessProviderMenu() {
-  const select = $("#skyBrightnessProvider");
-  if (!select) return;
-  const providers = await listSkyBrightnessProviders();
-  const wanted = String(S.cfg.sky_brightness_provider || "eog");
-  const usable = providers.length ? providers : [{
-    id: "eog", label: "EOG / VIIRS", enabled: true,
-  }];
-  select.innerHTML = usable.map((provider) => {
-    const option = document.createElement("option");
-    option.value = provider.id;
-    option.textContent = provider.label;
-    return option.outerHTML;
-  }).join("");
-  const actual = usable.some((provider) => provider.id === wanted) ? wanted : "eog";
-  select.value = actual;
-  if (actual !== wanted) S.cfg.sky_brightness_provider = actual;
-}
-
-function bindSkyBrightnessProvider() {
-  const select = $("#skyBrightnessProvider");
-  if (!select) return;
-  select.addEventListener("change", async (event) => {
-    const provider = event.target.value || "eog";
-    S.cfg.sky_brightness_provider = provider;
-    await api("/api/settings", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" }, silent: true,
-      body: JSON.stringify({ sky_brightness_provider: provider }),
-    }).catch(() => {});
-    const site = S.cfg.sites.find((s) => s.id === S.cfg.active_site_id) ||
-      S.cfg.sites[0];
-    refreshSkyBrightnessForSite(site);
   });
+  observer.observe(container);
+  return () => {
+    observer.disconnect();
+    if (frame != null) cancelAnimationFrame(frame);
+  };
+}
+
+function bindChartContainerObservers() {
+  const cleanup = [
+    observeChartContainer("#skyWrap",
+      () => document.body.dataset.primaryView === "sky", renderSky),
+    observeChartContainer("#skymapWrap",
+      () => document.body.dataset.primaryView === "image-catalog" &&
+        !$("#tab-skymap").hidden, renderSkyMap),
+  ];
+  window.addEventListener("pagehide", () => cleanup.forEach((dispose) => dispose()),
+    { once: true });
 }
 
 /* ---------------- tabs ---------------- */
-function bindTabs() {
-  for (const nav of [$("#tabs"), $("#tabs-cat")]) {
-    for (const b of nav.querySelectorAll(".tab")) {
-      const tabId = b.id || `${nav.id}-${b.dataset.tab}`;
-      b.id = tabId;
-      b.setAttribute("role", "tab");
-      b.setAttribute("aria-controls", `tab-${b.dataset.tab}`);
-      b.addEventListener("click", () => {
-        if (b.dataset.tab !== "horizon" && $("#tab-horizon").classList.contains("active")) {
-          Pano.onHide && Pano.onHide();
-        }
-        for (const n of [$("#tabs"), $("#tabs-cat")])
-          n.querySelectorAll(".tab").forEach(x => {
-            x.classList.remove("active");
-            x.setAttribute("aria-selected", "false");
-          });
-        b.classList.add("active");
-        b.setAttribute("aria-selected", "true");
-        $$(".tabpane").forEach(p => p.classList.remove("active"));
-        const pane = $(`#tab-${b.dataset.tab}`);
-        pane.classList.add("active");
-        pane.setAttribute("role", "tabpanel");
-        pane.setAttribute("aria-labelledby", tabId);
-        if (b.dataset.tab === "sky") renderSky();
-        if (b.dataset.tab === "horizon") Pano.onShow();
-        if (b.dataset.tab === "library") loadLibrary();
-        if (b.dataset.tab === "skymap") renderSkyMap();
-      });
-    }
+let _libraryLoaded = false;
+let _libraryLoadPromise = null;
+let _catalogChild = "library";
+
+function ensureLibraryLoaded() {
+  if (_libraryLoaded) return Promise.resolve(true);
+  if (_libraryLoadPromise) return _libraryLoadPromise;
+  _libraryLoadPromise = loadLibrary().then((loaded) => {
+    if (loaded) _libraryLoaded = true;
+    return loaded;
+  }).finally(() => { _libraryLoadPromise = null; });
+  return _libraryLoadPromise;
+}
+
+function selectTab(nav, button) {
+  for (const tab of nav.querySelectorAll('[role="tab"]')) {
+    const selected = tab === button;
+    tab.classList.toggle("active", selected);
+    tab.setAttribute("aria-selected", String(selected));
+    tab.tabIndex = selected ? 0 : -1;
   }
+}
+
+function selectCatalogChild(tab, { remember = true } = {}) {
+  const nav = $("#catalogTabs");
+  if (!nav || !tab) return;
+  selectTab(nav, tab);
+  const child = tab.dataset.tab;
+  _catalogChild = child;
+  if (remember) {
+    try { sessionStorage.setItem("nightseam_catalog_child", child); } catch {}
+  }
+  for (const pane of $("#tab-image-catalog").querySelectorAll(".catpane")) {
+    const active = pane.id === `tab-${child}`;
+    pane.classList.toggle("active", active);
+    pane.hidden = !active;
+  }
+  if (!(document.querySelector('#tab-image-catalog.active') &&
+        document.querySelector(`#tab-${child}.active`))) return;
+  if (child === "library" && !_libraryLoaded) void ensureLibraryLoaded();
+  if (child === "skymap") renderSkyMap();
+}
+
+function activatePrimaryTab(tab) {
+  const nav = $("#tabs");
+  const previous = nav.querySelector('[role="tab"].active')?.dataset.tab;
+  const next = tab.dataset.tab;
+  if (previous === "horizon" && next !== "horizon") Pano.onHide?.();
+  selectTab(nav, tab);
+  for (const pane of document.querySelectorAll("main > .tabpane")) {
+    const active = pane.id === `tab-${next}`;
+    pane.classList.toggle("active", active);
+    pane.hidden = !active;
+  }
+  const pane = $(`#tab-${next}`);
+  pane?.setAttribute("role", "tabpanel");
+  pane?.setAttribute("aria-labelledby", tab.id);
+  document.body.classList.toggle("image-catalog-view", next === "image-catalog");
+  document.body.dataset.primaryView = next;
+  document.dispatchEvent(new CustomEvent("primary-view:changed", { detail: { view: next } }));
+  $("#imageCatalogTools")?.classList.toggle("hidden", next !== "image-catalog");
+  if (next === "sky") renderSky();
+  if (next === "horizon") Pano.onShow();
+  if (next === "image-catalog") {
+    const child = $("#catalogTabs [data-tab='" + _catalogChild + "']") ||
+      $("#catalogTabs [data-tab='library']");
+    selectCatalogChild(child, { remember: false });
+  }
+}
+
+function bindTabList(nav, activate) {
+  for (const tab of nav.querySelectorAll(".tab")) {
+    if (!tab.id) tab.id = `${nav.id}-${tab.dataset.tab}`;
+    tab.setAttribute("role", "tab");
+    tab.setAttribute("aria-controls", `tab-${tab.dataset.tab}`);
+    tab.tabIndex = tab.classList.contains("active") ? 0 : -1;
+    tab.addEventListener("click", () => activate(tab));
+  }
+  nav.addEventListener("keydown", (event) => {
+    if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+    const tabs = [...nav.querySelectorAll('[role="tab"]')];
+    const current = Math.max(0, tabs.indexOf(event.target.closest('[role="tab"]')));
+    const next = event.key === "Home" ? 0 : event.key === "End" ? tabs.length - 1 :
+      (current + (event.key === "ArrowRight" ? 1 : -1) + tabs.length) % tabs.length;
+    event.preventDefault();
+    tabs[next].focus();
+    activate(tabs[next]);
+  });
+}
+
+function bindTabs() {
+  const primary = $("#tabs");
+  const catalog = $("#catalogTabs");
+  const panoSettings = $("#panoSettings");
+  const calibBox = $("#calibBox");
+  if (panoSettings && calibBox && calibBox.parentElement !== panoSettings) {
+    panoSettings.append(calibBox);
+    const syncPanoSettings = () => panoSettings.classList.toggle(
+      "hidden", calibBox.classList.contains("hidden"));
+    syncPanoSettings();
+    new MutationObserver(syncPanoSettings).observe(calibBox, {
+      attributes: true, attributeFilter: ["class"],
+    });
+  }
+  try {
+    const saved = sessionStorage.getItem("nightseam_catalog_child");
+    if (["library", "import", "skymap"].includes(saved)) _catalogChild = saved;
+  } catch {}
+  bindTabList(primary, activatePrimaryTab);
+  bindTabList(catalog, (tab) => selectCatalogChild(tab));
+  document.body.dataset.primaryView = primary.querySelector(".tab.active")?.dataset.tab || "tonight";
+  document.body.classList.toggle("image-catalog-view", document.body.dataset.primaryView === "image-catalog");
+  $("#btnTopIngest").addEventListener("click", () => {
+    activatePrimaryTab($("#tabs [data-tab='image-catalog']"));
+    selectCatalogChild($("#catalogTabs [data-tab='import']"));
+    $("#btnIngest").click();
+  });
+  $("#btnTopReindex").addEventListener("click", () => $("#btnArcReindex").click());
+  $("#btnTopExport").addEventListener("click", () => $("#btnLibExport").click());
+  // Inactive primary and child panels are hidden from both layout and assistive
+  // technology. Library remains the initial child until the user chooses one.
+  for (const pane of document.querySelectorAll("main > .tabpane")) pane.hidden = !pane.classList.contains("active");
+  for (const pane of $("#tab-image-catalog").querySelectorAll(".catpane"))
+    pane.hidden = !pane.classList.contains("active");
 }
 
 /* ---------------- full refresh ---------------- */
@@ -179,8 +217,6 @@ async function loadState() {
   const av = $("#aboutVersion");
   if (av) av.textContent = "v" + (S.cfg.version || "1.0.0");
 
-  applySavedTheme(S.cfg.theme);   // syncs the menu when the head script missed
-
   applyCfgToUI();
   $("#dateInput").value = todayLocal();   // zone-aware local date
 
@@ -198,30 +234,19 @@ async function loadState() {
 async function init() {
   $("#dateInput").value = new Date().toLocaleDateString("sv"); // YYYY-MM-DD local
 
-  // draggable popup windows (active in the Glass theme)
-  initDragWindows();
-
   // cross-view reactions
   document.addEventListener("night:loaded", () => {
     // a worker-built payload already carries the derived fields (bound during
     // the load); the sync/server paths derive here as before
     if (!S.night._derivedReady) recomputeNightDerived();
     renderAll();
+    refreshOpenDetail();
   });
   document.addEventListener("time:changed", () => {
     renderTonight(); renderTargets(); renderSky();
   });
-  document.addEventListener("site:changed", () => {
-    const site = S.cfg && (S.cfg.sites || []).find(s => s.id === S.cfg.active_site_id);
-    refreshSkyBrightnessForSite(site || (S.cfg && S.cfg.sites && S.cfg.sites[0]));
-  });
   document.addEventListener("favs:changed", () => {
     if ($("#tab-sky").classList.contains("active")) renderSky();
-  });
-  document.addEventListener("theme:changed", () => {
-    if ($("#tab-sky").classList.contains("active")) renderSky();
-    if ($("#tab-skymap").classList.contains("active")) renderSkyMap();
-    if (DETAIL_OPEN()) drawAltChart();
   });
   document.addEventListener("prefs:changed", async () => {
     // worker-side rescore on the retained tracks (async, cancellable); the
@@ -229,7 +254,7 @@ async function init() {
     const async_ok = await requestPrefsDerived();
     if (!async_ok) recomputeNightDerived();
     renderTonight(); renderTargets(); renderSky();
-    if (DETAIL_OPEN()) drawAltChart();
+    refreshOpenDetail();
   });
   document.addEventListener(PLANNER_CHANGE_EVENT, (event) => {
     if (!event.detail || event.detail.kind !== "panorama" || !S.night) return;
@@ -238,7 +263,7 @@ async function init() {
     // for the explicit persistence request to finish.
     recomputeNightDerived();
     renderAll();
-    if (DETAIL_OPEN()) drawAltChart();
+    refreshOpenDetail();
   });
 
   // re-render canvases after window resizes (debounced)
@@ -247,7 +272,8 @@ async function init() {
     clearTimeout(_rsT);
     _rsT = setTimeout(() => {
       if ($("#tab-sky").classList.contains("active")) renderSky();
-      if ($("#tab-skymap").classList.contains("active")) renderSkyMap();
+      if ($("#tab-image-catalog").classList.contains("active") &&
+          $("#tab-skymap").classList.contains("active")) renderSkyMap();
       if ($("#tab-horizon").classList.contains("active") && window.Pano &&
           window.Pano.img) window.Pano.render && window.Pano.render();
       if (DETAIL_OPEN()) drawAltChart();
@@ -256,7 +282,6 @@ async function init() {
 
   bindTabs();
   bindHeader();
-  bindSkyBrightnessProvider();
   bindTonight();
   bindFilters();
   bindSetup();
@@ -264,14 +289,18 @@ async function init() {
   bindSky();
   bindArchive();
   bindSkyMap();
+  bindChartContainerObservers();
   initFocusTrap();
 
   // keyboard shortcuts: arrows scrub the night, n cycles the tabs.
   // Modals and text entry keep their own keys.
   document.addEventListener("keydown", e => {
+    if (e.target.closest && e.target.closest('[role="tablist"]')) return;
     const tag = (e.target.tagName || "").toLowerCase();
     if (tag === "input" || tag === "textarea" || tag === "select") return;
-    if (document.querySelector(".modal:not(.hidden)")) return;  // modals own keys
+    if (document.querySelector('.modal[role="dialog"][aria-modal="true"]:not(.hidden)')) return;
+    if ((e.key === "ArrowLeft" || e.key === "ArrowRight") &&
+        e.target.closest?.("#detailModal.detail-docked .modal-box")) return;
     if (S.night) {
       if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
         const slider = $("#timeSlider");
@@ -296,7 +325,6 @@ async function init() {
   });
 
   await loadState();
-  await refreshSkyBrightnessProviderMenu();
   // bindWeather reads S.cfg.weather_auto, so it must run AFTER loadState -
   // otherwise "always load on startup" was always read as false
   bindWeather();
@@ -310,9 +338,9 @@ function DETAIL_OPEN() {
   return !$("#detailModal").classList.contains("hidden");
 }
 
-/* cycle to the next tab of the active mode */
+/* The N shortcut cycles only the five primary desktop views. */
 function nextTab() {
-  const nav = document.querySelector(S.catmode ? "#tabs-cat" : "#tabs");
+  const nav = document.querySelector("#tabs");
   if (!nav) return;
   const tabs = [...nav.querySelectorAll(".tab")];
   const cur = nav.querySelector(".tab.active");

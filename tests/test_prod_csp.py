@@ -11,21 +11,27 @@ and localStorage - the desktop shell ships a strict CSP in `app/server.py` and
 the static shell had none.
 """
 
-import re
+import importlib.util
 import sys
+import re
 from pathlib import Path
 
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT))
-
-from tests.browser.harness import _csp_problems, _inline_script_hashes  # noqa: E402
+HARNESS = ROOT / "tests" / "browser" / "harness.py"
+_HARNESS_NAME = "_nightseam_local_browser_harness"
+_HARNESS_SPEC = importlib.util.spec_from_file_location(_HARNESS_NAME, HARNESS)
+assert _HARNESS_SPEC and _HARNESS_SPEC.loader
+_HARNESS = importlib.util.module_from_spec(_HARNESS_SPEC)
+sys.modules[_HARNESS_NAME] = _HARNESS
+_HARNESS_SPEC.loader.exec_module(_HARNESS)
+_csp_problems = _HARNESS._csp_problems
+_inline_script_hashes = _HARNESS._inline_script_hashes
 
 # The deployed policy, copied from web/.htaccess.
 GOOD = (
-    "default-src 'self'; script-src 'self' 'sha256-L8aiDzZyJ9k2GW9FggYfWKbcrM22h1"
-    "LPcHxs0Ov+uCE='; style-src 'self'; img-src 'self' data: "
+    "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: "
     "https://upload.wikimedia.org; connect-src 'self' https://en.wikipedia.org "
     "https://api.open-meteo.com https://air-quality-api.open-meteo.com; "
     "base-uri 'self'; form-action 'self'; frame-ancestors 'none'; "
@@ -54,17 +60,16 @@ def test_the_repo_ships_a_policy_and_it_passes_its_own_check():
     assert "unsafe-eval" not in policy
 
 
-def test_the_htaccess_hash_matches_the_inline_bootstrap():
-    """Mutation shape: change index.html's bootstrap and the hash must be
-    recomputed (this is the assertion that fails first when it is not)."""
+def test_the_web_shell_has_no_inline_theme_bootstrap():
+    """The one-theme shell no longer needs pre-paint theme selection code."""
     hashes = _inline_script_hashes()
-    assert len(hashes) == 1, f"expected exactly one inline script, got {hashes}"
+    assert hashes == []
     text = (ROOT / "web" / ".htaccess").read_text(encoding="utf-8")
-    assert hashes[0] in text, (
-        f"the inline bootstrap hash {hashes[0]} is not in web/.htaccess")
+    assert "sha256-" not in text
     # the computed hash must come from the SHIPPED html, not a literal in a test
     html = (ROOT / "web" / "index.html").read_text(encoding="utf-8")
-    assert "nightseam_theme" in html, "the bootstrap changed shape"
+    assert 'data-theme="workbench"' in html
+    assert "nightseam_theme" not in html
 
 
 def test_the_weather_provider_is_allowlisted_in_both_csp_carriers():
@@ -82,26 +87,23 @@ def test_the_weather_provider_is_allowlisted_in_both_csp_carriers():
 @pytest.mark.parametrize("policy,expectation", [
     (None, "no Content-Security-Policy"),
     ("default-src 'self'", "no script-src"),
-    (GOOD.replace("script-src 'self' ", "script-src 'unsafe-inline' ",
-                  ).replace("'sha256-L8aiDzZyJ9k2GW9FggYfWKbcrM22h1"
-                            "LPcHxs0Ov+uCE='", ""), "unsafe-inline"),
+    (GOOD.replace("script-src 'self'", "script-src 'unsafe-inline'"),
+     "unsafe-inline"),
     (GOOD.replace("connect-src 'self' https://en.wikipedia.org "
                   "https://api.open-meteo.com https://air-quality-api.open-meteo.com; ", ""),
      "no connect-src"),
-    (GOOD.replace("'sha256-L8aiDzZyJ9k2GW9FggYfWKbcrM22h1LPcHxs0Ov+uCE='",
-                  "'sha256-STALEHASHSTALEHASHSTALEHASHSTALEHASHSTALEHASHSTAL='"),
-     "inline theme bootstrap hash"),
+    (GOOD.replace("script-src 'self'", "script-src 'self' 'unsafe-eval'"),
+     "unsafe-eval"),
 ])
 def test_a_broken_policy_is_rejected(policy, expectation):
     problems = _csp_problems(policy)
     assert any(expectation in p for p in problems), (expectation, problems)
 
 
-def test_unsafe_inline_is_flagged_even_alongside_a_hash():
-    """'unsafe-inline' is IGNORED when a hash is present, so it adds nothing but
-    silently widens the policy if the hash is ever dropped - it must be flagged
-    whenever it appears in script-src."""
-    policy = GOOD.replace("script-src 'self' ", "script-src 'self' 'unsafe-inline' ")
+def test_unsafe_inline_is_flagged_in_script_src():
+    """The current shell has no inline scripts, so script-src must not allow
+    inline code regardless of whether a hash happens to accompany it."""
+    policy = GOOD.replace("script-src 'self'", "script-src 'self' 'unsafe-inline'")
     assert any("unsafe-inline" in p for p in _csp_problems(policy))
 
 
@@ -126,9 +128,10 @@ def test_the_document_ships_a_meta_policy_that_passes():
     assert policy, ("web/index.html must carry the meta CSP - nginx serves the "
                     "HTML on this host, so web/.htaccess cannot reach it")
     assert _csp_problems(policy, document=True, from_meta=True) == []
-    # the inline bootstrap is hashed, never 'unsafe-inline'
+    # This one-theme shell has no inline script bootstrap.
     script_src = policy.split("script-src", 1)[1].split(";", 1)[0]
     assert "unsafe-inline" not in script_src
+    assert "sha256-" not in script_src
     assert "unsafe-eval" not in policy
 
 
@@ -181,5 +184,6 @@ def test_both_carriers_agree_on_the_directives_they_share():
         assert h[key] == m[key], f"{key} differs: {h[key]!r} vs {m[key]!r}"
     assert m["style-src"] == "'self' 'unsafe-inline'", (
         "inline style= attributes in index.html need this (see the docstring)")
-    assert _inline_script_hashes()[0] in meta
-    assert _inline_script_hashes()[0] in header
+    assert not _inline_script_hashes()
+    assert "sha256-" not in meta
+    assert "sha256-" not in header

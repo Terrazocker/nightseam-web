@@ -7,13 +7,8 @@
 # single XSS there reaches localStorage, IndexedDB (sites/rigs/targets/panoramas)
 # and every key the user owns.
 #
-# `script-src` is 'self' + the SHA-256 of the ONE inline theme bootstrap in
-# `index.html` - deliberately NOT 'unsafe-inline'. That script only applies the
-# saved theme before first paint; if the hash ever goes stale the worst case is
-# a one-frame flash of the default theme, never a broken app.
-# `tests/browser/harness.py::_csp_problems` recomputes the hash and fails
-# `python scripts/check_browser.py --prod-url https://nightseam.de/astro/` if it
-# does not match, so drift is detected rather than shipped.
+# `script-src` is restricted to same-origin modules; the document has no inline
+# scripts. `tests/browser/harness.py::_csp_problems` checks both carriers.
 #
 # MEASURED LIMIT OF THIS FILE (2026-09-15): on Plesk the static files are
 # fronted by NGINX, which serves .html/.js/.css itself, so these directives
@@ -52,7 +47,7 @@
 # leaving a broken site.
 
 <IfModule mod_headers.c>
-Header always set Content-Security-Policy "default-src 'self'; script-src 'self' 'sha256-MuhKQH9PAUOpe+xRJwpI/rHBZrPBvgVXN9NSrMvuoqY='; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://upload.wikimedia.org; connect-src 'self' https://en.wikipedia.org https://api.open-meteo.com https://air-quality-api.open-meteo.com; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; object-src 'none'"
+Header always set Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://upload.wikimedia.org; connect-src 'self' https://en.wikipedia.org https://api.open-meteo.com https://air-quality-api.open-meteo.com; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; object-src 'none'"
 Header always set Referrer-Policy "strict-origin-when-cross-origin"
 Header always set X-Content-Type-Options "nosniff"
 </IfModule>

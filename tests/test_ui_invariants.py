@@ -1,10 +1,9 @@
-"""UI invariants: popularity is a scoring input, and its SCORE is never visible.
+"""UI invariants: popularity is a scoring input, never a primary table column.
 
-The owner rule (0.6.30): the catalog may expose an ORDERING - the "Tier" column
-(A-F, from rank bands in `core/catalog.js`) is the default sort - but the
-The popularity source NUMBER itself may never be rendered, in any view: no score cell, no
-score in a tooltip, no detail row, no filter chip. These are text assertions on
-the two UIs: cheap, and they fail loudly when a future edit leaks the stat.
+The catalog may retain popularity as a secondary ordering option, but its
+primary table follows the compact Direction B columns and never exposes tier
+letters or the underlying the popularity source number. These text assertions fail loudly
+if either shell reintroduces those fields into the visible UI.
 
 The same file also pins the `hidden` handling, because that broke once: an
 author `display` beats the UA's `[hidden] { display:none }`, so a panel hidden
@@ -37,18 +36,14 @@ def _read(*parts) -> str:
     return path.read_text(encoding="utf-8")
 
 
-def test_web_catalog_shows_a_tier_and_never_the_popularity_score():
-    """The Tier column is allowed (owner decision, 0.6.30) - the SCORE is not.
-
-    `th('tier'` must be the sortable column, the letters must come from the
-    shared core helper, and nothing may interpolate the raw number into the DOM.
-    `${o.popularity` is the leak shape that matters: `o.popularity` itself is
-    fine (it is a ranking input), rendering it is not.
-    """
+def test_web_catalog_hides_popularity_from_the_primary_table():
+    """Popularity remains a secondary sort input, not a table field."""
     js = _read("web", "app.js")
-    assert "th('tier', 'Tier')" in js, "the catalog must offer the Tier column"
+    assert '<th>Designation</th><th>Common name</th>' in js
+    assert "th('tier', 'Tier')" not in js
+    assert "tier-badge" not in js
+    assert "<th>Frame</th>" not in js
     assert "assignPopularityTiers" in js, "tiers must come from core, not a copy"
-    assert "tier-badge" in js, "the tier cell must render the letter"
     assert "sort: 'tier'" in js, "the tier sort is the default (owner decision)"
     for forbidden in ("th('popularity'", "<dt>Popularity</dt>",
                       "popularityOf(o).toLocaleString", "popularity-aware",
@@ -364,18 +359,18 @@ def test_desktop_dialog_and_worker_invariants():
         "DE-15: the per-object ceilings (prefs rescore) must stay")
 
 
-def test_desktop_shows_a_tier_and_never_the_popularity_score():
-    """The desktop gets the SAME method as the web (0.6.30): a Tier column and a
-    tier sort that is the default, built from the shared core helpers - while the
-    The popularity source NUMBER stays unrendered, exactly like the web."""
+def test_desktop_hides_popularity_from_the_primary_table():
+    """The desktop keeps the secondary sort but follows the compact columns."""
     html = _read("static", "index.html")
     js = _read("static", "js", "targets.js")
+    assert "<th>#</th><th>Designation</th><th>Common name</th>" in html
     assert 'value="tier"' in html, "the desktop must offer the tier sort"
     assert html.index('value="tier"') < html.index('value="score"'), (
         "the tier sort must be the FIRST option, i.e. the default")
-    assert "<th>Tier</th>" in html, "the desktop must offer the Tier column"
+    assert "<th>Tier</th>" not in html
+    assert "<th>Frame</th>" not in html
     assert "assignPopularityTiers" in js, "tiers must come from core, not a copy"
-    assert "tierbadge" in js, "the tier cell must render the letter"
+    assert "tierbadge" not in js
     assert 'value="popularity"' not in html
     assert "popularity:" not in js                   # no score comparator key
     for forbidden in ("${m.popularity", "${o.popularity", "<dt>Popularity</dt>"):
@@ -383,9 +378,8 @@ def test_desktop_shows_a_tier_and_never_the_popularity_score():
 
 
 def test_desktop_frame_cell_is_green_until_it_needs_a_mosaic():
-    """0.6.30: the desktop's Frame pill is GREEN while the object fits in one
-    frame and AMBER once it needs a mosaic - the web's rule. The old ramp went red
-    above 100% (flagging a mosaic as an error) and amber above 85%."""
+    """Frame coverage advice keeps its green/amber semantics for secondary
+    filters and inspector content, without adding a Frame table column."""
     derive = _read("static", "js", "derive.js")
     assert 'cov.pct > 100 ? "st-low" : "st-vis"' in derive
     assert "cov.pct > 85" not in derive, "the 85% warning band is gone"

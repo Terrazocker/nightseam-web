@@ -118,7 +118,7 @@ const STEPS = [
       by trees or houses.</p>
       <ol style="margin:8px 0 0 18px;line-height:1.7">
         <li>Stand at your telescope and shoot a 360&deg; panorama (phone pano mode).</li>
-        <li>Open the <b>Horizon &amp; Obstacles</b> tab and import it.</li>
+        <li>Open the <b>Horizon</b> tab and import it.</li>
         <li>Match the N/E/S/W labels with reality, paint over obstacles, done.</li>
       </ol>
       <p style="margin-top:10px" class="hint">Until then every target is treated as

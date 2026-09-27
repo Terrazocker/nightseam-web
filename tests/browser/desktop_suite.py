@@ -99,35 +99,26 @@ def desktop_boot(c):
     c.assert_clean()
 
 
-@check("desktop-both-themes-render", "desktop")
-def desktop_both_themes_render(c):
-    """Exercise the packed desktop shell in both supported presentations."""
+@check("desktop-workbench-only-render", "desktop")
+def desktop_workbench_only_render(c):
+    """Exercise the sole supported Workbench presentation in both chart views."""
     boot(c)
-    accents = {}
-    for name in ("workbench", "dome"):
-        c.page.evaluate(
-            """(theme) => {
-                 const button = document.querySelector(
-                   `#themeRow .theme-btn[data-theme="${theme}"]`);
-                 if (!button) throw new Error(`missing theme button: ${theme}`);
-                 button.click();
-               }""", name)
-        c.page.wait_for_function(
-            """(theme) => document.documentElement.dataset.theme === theme""",
-            arg=name)
-        c.page.click("[data-tab='sky']")
+    c.expect_eq(c.page.locator("html").get_attribute("data-theme"), "workbench",
+                "the desktop must boot in the only supported Workbench presentation")
+    for view in ("sky", "tonight"):
+        c.page.click(f"[data-tab='{view}']")
         c.page.wait_for_timeout(250)
         accent = c.page.evaluate(
             """() => getComputedStyle(document.documentElement)
                        .getPropertyValue('--accent').trim()""")
-        c.expect(accent, f"{name} theme did not expose an accent token")
-        c.expect(c.page.locator("#skyCanvas").bounding_box(),
-                 f"Sky View canvas missing in {name} theme")
-        accents[name] = accent
-        c.page.click("[data-tab='tonight']")
-        c.page.wait_for_timeout(150)
-    c.expect(accents["workbench"] != accents["dome"],
-             f"theme palettes did not differ: {accents}")
+        c.expect(accent, "Workbench must expose an accent token")
+        if view == "sky":
+            c.expect(c.page.locator("#skyCanvas").bounding_box(),
+                     "Sky View canvas missing in Workbench")
+        else:
+            c.page.wait_for_selector("#tonightAltitudeOverview", state="visible")
+            c.expect(c.page.locator("#tonightAltitudeOverview").bounding_box(),
+                     "Tonight overview chart missing in Workbench")
     c.assert_clean()
 
 
@@ -137,7 +128,7 @@ def desktop_accessibility_essentials(c):
     its chart canvases, not only draw pixels."""
     boot(c)
     tabs = c.page.locator("#tabs[role='tablist'] .tab[role='tab']")
-    c.expect_eq(tabs.count(), 4, "the desktop planner tablist must expose four tabs")
+    c.expect_eq(tabs.count(), 5, "the desktop planner tablist must expose five tabs")
     c.expect_eq(c.page.locator("#tabs .tab[aria-selected='true']").count(), 1,
                 "exactly one desktop planner tab must be selected")
     c.page.click("[data-tab='sky']")
@@ -161,17 +152,634 @@ def desktop_accessibility_essentials(c):
     row.focus()
     c.page.keyboard.press("Enter")
     c.page.wait_for_selector("#detailModal:not(.hidden)")
+    details = c.page.locator("#detailModal details.catalog-details")
+    c.expect(not details.evaluate("el => el.open"),
+             "catalog provenance should start collapsed behind the target's live visibility summary")
+    details.locator("summary").click()
     c.expect("Catalog source" in c.page.inner_text("#dMeta")
              and "Designation history" in c.page.inner_text("#dMeta"),
              "the desktop detail must show catalog provenance")
     c.expect(text(c, "#altChartSummary"),
              "the desktop altitude chart needs a non-empty screen-reader summary")
+    overview_summary = text(c, "#tonightOverviewSummary").lower()
+    c.expect("horizon or ceiling blocked" in overview_summary and
+             "below your minimum altitude" in overview_summary and
+             "below the horizon" in overview_summary and
+             "fail the current visibility rules" not in overview_summary,
+             f"the desktop Tonight chart summary must describe each rendered state precisely: {overview_summary}")
     # The detail chart can still be painting while the modal header is visible;
     # dispatch the real DOM click without making Playwright wait for a fresh
     # hit-test frame. The close handler itself must still restore focus.
     c.page.evaluate("() => document.querySelector('#dClose')?.click()")
     c.expect(c.page.evaluate("() => document.activeElement?.matches('#targetRows tr[data-id]')"),
              "closing the desktop detail dialog must restore focus to its target row")
+    c.assert_clean()
+
+
+@check("desktop-docked-inspector-fit-and-shortcuts", "desktop")
+def desktop_docked_inspector_fit_and_shortcuts(c):
+    """Docked details stay vertically readable at planner widths, while their
+    arrow handling is scoped to the inspector container and global shortcuts
+    remain available to the workspace."""
+    boot(c)
+
+    def eval_stage(stage, script):
+        try:
+            return c.page.evaluate(script)
+        except Exception as exc:
+            raise AssertionError(f"{stage} geometry evaluation failed: {exc}") from exc
+
+    def choose_theme(theme):
+        c.expect_eq(theme, "workbench", "only Workbench is supported")
+        c.expect_eq(c.page.locator("html").get_attribute("data-theme"), "workbench",
+                    "the legacy theme system must not reappear")
+
+    def switch_view(view):
+        c.page.evaluate("""(name) => {
+          const tab = document.querySelector(`#tabs [data-tab="${name}"]`);
+          if (!tab) throw new Error(`missing primary tab: ${name}`);
+          tab.click();
+        }""", view)
+
+    def assert_fit(context):
+        c.page.wait_for_selector("#detailModal:not(.hidden) .modal-box", state="visible")
+        c.page.wait_for_function("""() => {
+          const canvas = document.querySelector('#altChart');
+          return canvas && canvas.clientWidth > 0 &&
+            canvas.width === Math.round(canvas.clientWidth * (devicePixelRatio || 1));
+        }""", timeout=10000)
+        state = eval_stage(f"{context} inspector", """() => {
+          const outer = document.querySelector('#detailModal');
+          const panel = outer.querySelector('.modal-box');
+          const hero = panel.querySelector('.detail-hero');
+          const visibility = panel.querySelector('#dVisibilitySummary');
+          const chart = panel.querySelector('.detail-chart');
+          const canvas = panel.querySelector('#altChart');
+          const panelRect = panel.getBoundingClientRect();
+          const img = panel.querySelector('#dImage');
+          const image = img.classList.contains('hidden')
+            ? panel.querySelector('#dImageFallback') : img;
+          const title = panel.querySelector('#dTitle');
+          const close = panel.querySelector('#dClose');
+          const details = panel.querySelector('details.catalog-details');
+          const collapsedByDefault = !details.open;
+          details.open = true;
+          const metaTable = panel.querySelector('#dMeta');
+          const metaValue = panel.querySelector('#dMeta td:last-child');
+          const metadataRows = [...metaTable.querySelectorAll('tr')].map((row) => {
+            const cells = row.querySelectorAll('td');
+            const label = cells[0], value = cells[1];
+            const range = document.createRange();
+            range.selectNodeContents(label);
+            const textRects = [...range.getClientRects()];
+            const labelRect = label.getBoundingClientRect();
+            const valueRect = value.getBoundingClientRect();
+            return { name: label.textContent.trim(), labelFits: textRects.length > 0 &&
+              textRects.every((r) => r.left >= labelRect.left - 1 && r.right <= labelRect.right + 1),
+              valueStartsInSecondCell: valueRect.left >= labelRect.right - 1 };
+          });
+          const designationHistory = metadataRows.find((row) =>
+            row.name.toLowerCase().includes('designation history')) || null;
+          const legend = panel.querySelector('.chart-legend');
+          const toggle = panel.querySelector('#chkMoon');
+          const disclosure = details.querySelector('summary');
+          const favorite = panel.querySelector('#dFavorite');
+          const dpr = window.devicePixelRatio || 1;
+          const rects = [title, close, favorite, image, hero, visibility, canvas, disclosure, metaValue, legend, toggle]
+            .map(el => el?.getBoundingClientRect());
+          const horizontalBounds = rects.every(r => r && r.width > 0 &&
+            r.left >= panelRect.left - 1 && r.right <= panelRect.right + 1 &&
+            r.left >= -1 && r.right <= innerWidth + 1);
+          const inPanelViewport = el => {
+            const r = el.getBoundingClientRect();
+            return r.top >= panelRect.top - 1 && r.bottom <= panelRect.bottom + 1 &&
+              r.top >= -1 && r.bottom <= innerHeight + 1;
+          };
+          const isTopmost = el => {
+            const r = el.getBoundingClientRect();
+            const hit = document.elementFromPoint(r.left + r.width / 2,
+              r.top + r.height / 2);
+            return !!hit && el.contains(hit);
+          };
+          const reach = el => {
+            let r = el.getBoundingClientRect();
+            if (r.top < panelRect.top) panel.scrollTop += r.top - panelRect.top;
+            else if (r.bottom > panelRect.bottom) panel.scrollTop += r.bottom - panelRect.bottom;
+            return inPanelViewport(el);
+          };
+          panel.scrollTop = 0;
+          const closeInitiallyVisible = inPanelViewport(close) && isTopmost(close);
+          const dialogHeaderVisible = isTopmost(title);
+          const reachable = [title, close, favorite, image, hero, visibility, canvas, disclosure, metaValue, legend, toggle]
+            .map(reach).every(Boolean);
+          const imageHeight = image.getBoundingClientRect().height;
+          panel.scrollTop = 0;
+          // Keep this geometry probe observational: opening provenance for
+          // reachability must not make the next view look pre-expanded.
+          details.open = false;
+          return {
+            docked: outer.classList.contains('detail-docked'),
+            role: outer.getAttribute('role'), modal: outer.getAttribute('aria-modal'),
+            panelWidth: panel.clientWidth, panelOverflow: panel.scrollWidth - panel.clientWidth,
+            contentWidth: panel.scrollWidth, contentOverflow: panel.scrollWidth - panel.clientWidth,
+            heroWidth: hero.getBoundingClientRect().width,
+            chartWidth: chart.getBoundingClientRect().width,
+            heroBeforeChart: hero.getBoundingClientRect().top < chart.getBoundingClientRect().top,
+            chartBeforeMetadata: chart.getBoundingClientRect().top < details.getBoundingClientRect().top,
+            collapsedByDefault, imageHeight, imageAndChartFit: horizontalBounds,
+            metadataLabelsFitTheirCells: metadataRows.length > 0 &&
+              metadataRows.every((row) => row.labelFits),
+            metadataValuesStartInSecondCell: metadataRows.length > 0 &&
+              metadataRows.every((row) => row.valueStartsInSecondCell),
+            metadataHasNoHorizontalOverflow: metaTable.scrollWidth - metaTable.clientWidth <= 1,
+            designationHistory,
+            closeInitiallyVisible, dialogHeaderVisible,
+            contentReachableAfterScroll: reachable,
+            canvasWidth: canvas.width,
+            expectedCanvasWidth: Math.round(canvas.clientWidth * dpr),
+            viewportHeight: innerHeight,
+            pageOverflow: document.documentElement.scrollWidth - innerWidth
+          };
+        }""")
+        c.expect(state["panelWidth"] > 0 and state["panelOverflow"] <= 1 and
+                 state["contentOverflow"] <= 1 and state["pageOverflow"] <= 1,
+                 f"{context}: detail dock/modal must not overflow horizontally: {state}")
+        c.expect(state["heroBeforeChart"] and state["chartBeforeMetadata"] and
+                 state["collapsedByDefault"] and state["heroWidth"] > 0 and
+                 state["chartWidth"] > 0 and state["contentReachableAfterScroll"],
+                 f"{context}: target facts, chart, and collapsed metadata must follow the required order and remain reachable: {state}")
+        c.expect(state["imageAndChartFit"] and state["closeInitiallyVisible"] and
+                 state["dialogHeaderVisible"],
+                 f"{context}: detail content must stay within the inspector and the close control must be visible: {state}")
+        c.expect(state["metadataLabelsFitTheirCells"] and
+                 state["metadataValuesStartInSecondCell"] and
+                 state["metadataHasNoHorizontalOverflow"],
+                 f"{context}: every metadata label must wrap inside its own cell without shifting its value: {state}")
+        if "M31" in context:
+            c.expect(state["designationHistory"] and state["designationHistory"]["labelFits"] and
+                     state["designationHistory"]["valueStartsInSecondCell"],
+                     f"{context}: M31 Designation history must stay within its label cell: {state}")
+        image_limit = 190 if state["docked"] else min(260, state["viewportHeight"] * .28) + 1
+        c.expect(state["imageHeight"] <= image_limit,
+                 f"{context}: detail image must fit its dock/modal layout: {state}")
+        c.expect_eq(state["canvasWidth"], state["expectedCanvasWidth"],
+                    f"{context}: detail chart must be redrawn for its dock width")
+        return state
+
+    def assert_tonight_structure(theme, width):
+        state = eval_stage(f"{theme} {width}px Tonight structure", """() => {
+          const head = document.querySelector('#nightBrief');
+          const facts = head.querySelector('.night-brief-facts');
+          const track = head.querySelector('.night-brief-times');
+          const h = head.getBoundingClientRect(), f = facts.getBoundingClientRect();
+          return { head: getComputedStyle(head).display,
+            facts: getComputedStyle(facts).display,
+            track: getComputedStyle(track).display,
+            columns: getComputedStyle(head).gridTemplateColumns.split(' ').length,
+            factsAfterTitle: f.top >= h.top,
+            headOverflow: head.scrollWidth - head.clientWidth,
+            trackOverflow: track.scrollWidth - track.clientWidth };
+        }""")
+        expected_columns = 1 if width <= 900 else 2
+        c.expect_eq(state["head"], "grid",
+                    f"{theme} {width}px: Tonight summary should remain a grid: {state}")
+        c.expect(state["facts"] == "grid" and state["track"] != "none" and
+                 state["columns"] == expected_columns and state["factsAfterTitle"] and
+                 state["headOverflow"] <= 1 and
+                 state["trackOverflow"] <= 1,
+                 f"{theme} {width}px: session facts and booked night must fit: {state}")
+
+    def assert_header_geometry(theme, width):
+        state = eval_stage(f"{theme} {width}px header", """() => {
+          const weatherChip = document.querySelector('#wxChip');
+          const oldWeather = weatherChip.textContent;
+          weatherChip.textContent = 'Weather forecast text long enough to exercise the ellipsis';
+          const bar = document.querySelector('#topbar').getBoundingClientRect();
+          const names = ['#timeLabel', '#btnWeather', '#btnMenu'];
+          const items = names.map((selector) => {
+            const el = document.querySelector(selector), style = getComputedStyle(el);
+            const r = el.getBoundingClientRect();
+            const visible = style.display !== 'none' && style.visibility !== 'hidden' &&
+              el.getClientRects().length > 0 && r.width > 0 && r.height > 0;
+            const hit = visible && ['#btnWeather', '#btnMenu'].includes(selector)
+              ? (() => { const target = document.elementFromPoint(r.left + r.width / 2,
+                  r.top + r.height / 2); return !!target && el.contains(target); })() : true;
+            return { selector, visible, hit, left: r.left, right: r.right,
+              top: r.top, bottom: r.bottom,
+              withinBar: !visible || (r.left >= bar.left - 1 && r.right <= bar.right + 1 &&
+                r.top >= bar.top - 1 && r.bottom <= bar.bottom + 1) };
+          });
+          const visibleItems = items.filter((item) => item.visible);
+          const collisions = [];
+          for (let i = 0; i < visibleItems.length; i++) for (let j = i + 1; j < visibleItems.length; j++) {
+            const a = visibleItems[i], b = visibleItems[j];
+            const x = Math.max(0, Math.min(a.right, b.right) - Math.max(a.left, b.left));
+            const y = Math.max(0, Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top));
+            if (x > 1 && y > 1) collisions.push([a.selector, b.selector, x, y]);
+          }
+          const textStyle = (el) => ({ overflow: getComputedStyle(el).overflow,
+            textOverflow: getComputedStyle(el).textOverflow,
+            clientWidth: el.clientWidth, scrollWidth: el.scrollWidth });
+          const chips = {
+            weatherButtonWidth: document.querySelector('#btnWeather').getBoundingClientRect().width,
+            weather: textStyle(weatherChip)
+          };
+          const tabsTop = document.querySelector('#tabs').getBoundingClientRect().top;
+          const tabsBottom = document.querySelector('#tabs').getBoundingClientRect().bottom;
+          weatherChip.textContent = oldWeather;
+          return { items, collisions, chips, barBottom: bar.bottom, tabsTop, tabsBottom,
+            tabsBelowBar: tabsTop >= bar.bottom - 1,
+            pageOverflow: document.documentElement.scrollWidth - innerWidth };
+        }""")
+        required = ("#timeLabel", "#btnWeather", "#btnMenu")
+        for selector in required:
+            item = next(item for item in state["items"] if item["selector"] == selector)
+            c.expect(item["visible"] and item["withinBar"],
+                     f"{theme} {width}px: required header control {selector} must fit in the topbar: {state}")
+        for selector in ("#btnWeather", "#btnMenu"):
+            item = next(item for item in state["items"] if item["selector"] == selector)
+            c.expect(item["hit"],
+                     f"{theme} {width}px: {selector} center must be hit-testable: {state}")
+        positions = [(item["selector"], round(item["left"]), round(item["right"]),
+                      round(item["top"]), round(item["bottom"])) for item in state["items"]]
+        c.expect(not state["collisions"] and state["pageOverflow"] <= 1,
+                 f"{theme} {width}px: header collision/page overflow: "
+                 f"{state['collisions']} / {state['pageOverflow']}; "
+                 f"items={positions}")
+        c.expect(state["chips"]["weatherButtonWidth"] <= 141 and
+                 state["chips"]["weather"]["overflow"] == "hidden" and
+                 state["chips"]["weather"]["textOverflow"] == "ellipsis",
+                 f"{theme} {width}px: Weather text must ellipsize inside its capped chip: {state}")
+        c.expect(state["tabsBelowBar"],
+                 f"Workbench {width}px: the tab dock must start below the topbar: {state}")
+
+    def assert_catalog_rail(theme, width):
+        state = eval_stage(f"{theme} {width}px Catalog rail", """() => {
+          const rail = document.querySelector('.catalog-filter-rail');
+          const advanced = document.querySelector('#moreCatalogFilters');
+          const wasAdvancedOpen = advanced.open;
+          advanced.open = true;
+          advanced.offsetHeight;
+          const railRect = rail.getBoundingClientRect();
+          const controls = [...rail.querySelectorAll(
+            'input[type=search], input[type=text], input[type=range], input[type=number], input[type=checkbox], select, button')]
+            .filter((el) => {
+              const style = getComputedStyle(el);
+              return style.display !== 'none' && style.visibility !== 'hidden' &&
+                el.getClientRects().length > 0;
+            }).map((el) => {
+              const r = el.getBoundingClientRect();
+              return { id: el.id || el.getAttribute('aria-label') || el.tagName,
+                left: r.left, right: r.right, top: r.top, bottom: r.bottom,
+                fits: r.left >= railRect.left - 1 && r.right <= railRect.right + 1 };
+            });
+          const wrap = document.querySelector('.catalog-results .tablewrap');
+          const table = document.querySelector('#targetTable');
+          const oldWidth = wrap.style.width;
+          wrap.style.width = '320px';
+          wrap.scrollLeft = 0;
+          const narrowClient = wrap.clientWidth, narrowScroll = wrap.scrollWidth;
+          wrap.scrollLeft = Math.min(120, narrowScroll);
+          const canScrollIndependently = wrap.scrollLeft > 0;
+          const narrowPageOverflow = document.documentElement.scrollWidth - innerWidth;
+          const railOverflow = rail.scrollWidth - rail.clientWidth;
+          wrap.style.width = oldWidth;
+          wrap.scrollLeft = 0;
+          advanced.open = wasAdvancedOpen;
+          const result = { controls, railOverflow,
+            overflowX: getComputedStyle(wrap).overflowX, tableWidth: table.scrollWidth,
+            tableViewportWidth: wrap.clientWidth, narrowClient, narrowScroll,
+            canScrollIndependently, narrowPageOverflow,
+            pageOverflow: document.documentElement.scrollWidth - innerWidth };
+          return result;
+        }""")
+        bad_controls = [control for control in state["controls"] if not control["fits"]]
+        c.expect(state["controls"] and not bad_controls and state["railOverflow"] <= 1,
+                 f"{theme} {width}px: Catalog rail controls/overflow: "
+                 f"{bad_controls}; {state['railOverflow']}")
+        c.expect(state["overflowX"] in ("auto", "scroll") and
+                 state["narrowScroll"] > state["narrowClient"] and
+                 state["canScrollIndependently"] and state["narrowPageOverflow"] <= 1 and
+                 state["pageOverflow"] <= 1,
+                 f"{theme} {width}px: Catalog results must scroll within their own table viewport: {state}")
+
+    for theme, widths in (("workbench", (1672, 1300, 1240, 1201, 1100, 900, 640, 360)),):
+        choose_theme(theme)
+        for width in widths:
+            c.page.set_viewport_size({"width": width, "height": 900})
+            c.page.evaluate("() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))")
+            assert_header_geometry(theme, width)
+
+    for theme in ("workbench",):
+        choose_theme(theme)
+        for width, height in ((1672, 941), (1240, 900)):
+            c.page.set_viewport_size({"width": width, "height": height})
+            c.page.evaluate("() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))")
+            switch_view("tonight")
+            assert_tonight_structure(theme, width)
+            target = c.page.locator("#topPicks .pick-target:visible").first
+            if target.count():
+                target.click()
+            else:
+                # A late-September default night can have no above-horizon
+                # Tonight cards. Open a deterministic catalog target, then
+                # return to Tonight so the same docked inspector is exercised.
+                switch_view("targets")
+                c.page.locator("#targetRows tr[data-id]").first.click()
+                c.page.wait_for_selector("#detailModal.detail-docked .modal-box", state="visible")
+                switch_view("tonight")
+            c.page.wait_for_selector("#detailModal.detail-docked .modal-box", state="visible")
+            assert_fit(f"{theme} {width}px Tonight")
+            for view in ("targets", "sky"):
+                switch_view(view)
+                c.page.wait_for_timeout(180)
+                c.expect(c.page.locator("#detailModal.detail-docked").is_visible(),
+                         f"{theme} {width}px: inspector should remain docked in {view}")
+                assert_fit(f"{theme} {width}px {view}")
+                if view == "targets":
+                    m31 = c.page.locator("#targetRows tr[data-id='ngc224']")
+                    m31.wait_for(state="visible", timeout=10000)
+                    m31.click()
+                    c.page.wait_for_function("() => /M31|Andromeda/i.test(document.querySelector('#dTitle')?.textContent || '')",
+                                             timeout=10000)
+                    assert_fit(f"{theme} {width}px M31 Catalog detail")
+                    assert_catalog_rail(theme, width)
+
+        if theme == "workbench":
+            panel = c.page.locator("#detailModal .modal-box")
+            switch_view("tonight")
+            c.expect_eq(panel.get_attribute("tabindex"), "0",
+                        "the detail container must be a keyboard focus target")
+            before_title = text(c, "#dTitle")
+            before_detail_arrow_time = int(c.page.locator("#timeSlider").input_value())
+            panel.focus()
+            c.page.keyboard.press("ArrowRight")
+            c.page.wait_for_function("(old) => document.querySelector('#dTitle')?.textContent !== old",
+                                     arg=before_title, timeout=10000)
+            c.expect_eq(int(c.page.locator("#timeSlider").input_value()),
+                        before_detail_arrow_time,
+                        "an arrow on the detail container must change target, not scrub time")
+
+            target_title = text(c, "#dTitle")
+            for slider_selector in ("#timeSlider", "#skyTimeSlider"):
+                if slider_selector == "#skyTimeSlider":
+                    switch_view("sky")
+                slider = c.page.locator(slider_selector)
+                before_time = int(slider.input_value())
+                arrow = "ArrowLeft" if before_time >= int(slider.get_attribute("max")) else "ArrowRight"
+                slider.focus()
+                c.page.keyboard.press(arrow)
+                c.page.wait_for_function("([sel, old]) => document.querySelector(sel)?.value !== old",
+                                         arg=[slider_selector, str(before_time)], timeout=10000)
+                c.expect_eq(text(c, "#dTitle"), target_title,
+                            f"{slider_selector} arrows must preserve the selected detail target")
+
+            switch_view("tonight")
+            slider_after = int(c.page.locator("#timeSlider").input_value())
+            c.page.evaluate("""() => { const e = document.querySelector('#nightInfo');
+                e.setAttribute('tabindex', '-1'); e.focus(); }""")
+            workspace_arrow = "ArrowLeft" if slider_after >= int(
+                c.page.locator("#timeSlider").get_attribute("max")) else "ArrowRight"
+            c.page.keyboard.press(workspace_arrow)
+            c.page.wait_for_function("(old) => document.querySelector('#timeSlider')?.value !== old",
+                                     arg=str(slider_after), timeout=10000)
+            c.expect_eq(text(c, "#dTitle"), target_title,
+                        "workspace arrows must scrub without changing the detail target")
+
+            c.page.locator("#dClose").focus()
+            c.page.keyboard.press("n")
+            c.page.wait_for_function("() => document.body.dataset.primaryView === 'targets'",
+                                     timeout=10000)
+            c.expect(c.page.locator("#detailModal.detail-docked").is_visible(),
+                     "N must cycle workspace tabs while the docked inspector is open")
+            switch_view("tonight")
+
+        # The compact breakpoint retains modal semantics and a reachable
+        # vertical detail flow rather than clipping its chart. Its focus trap
+        # owns focus and its N shortcut must not change the selected view.
+        c.page.set_viewport_size({"width": 900, "height": 900})
+        switch_view("tonight")
+        assert_tonight_structure(theme, 900)
+        c.page.wait_for_timeout(180)
+        c.expect_eq(c.page.locator("#detailModal").get_attribute("role"), "dialog",
+                    f"{theme}: compact inspector must remain a dialog")
+        assert_fit(f"{theme} 900px compact dialog")
+
+        if theme == "workbench":
+            panel = c.page.locator("#detailModal .modal-box")
+            c.page.locator("#dClose").focus()
+            c.page.keyboard.press("Tab")
+            c.expect(c.page.evaluate("""() => document.querySelector('#detailModal .modal-box')
+                ?.contains(document.activeElement)"""),
+                "compact detail focus must stay inside its modal")
+            compact_title = text(c, "#dTitle")
+            panel.focus()
+            c.page.keyboard.press("ArrowRight")
+            c.page.wait_for_function("(old) => document.querySelector('#dTitle')?.textContent !== old",
+                                     arg=compact_title, timeout=10000)
+            c.page.keyboard.press("n")
+            c.expect_eq(c.page.evaluate("() => document.body.dataset.primaryView"), "tonight",
+                        "compact modal N shortcuts must remain confined")
+
+        c.page.evaluate("() => document.querySelector('#dClose')?.click()")
+        c.page.wait_for_selector("#detailModal", state="hidden")
+        switch_view("targets")
+        m31 = c.page.locator("#targetRows tr[data-id='ngc224']")
+        m31.wait_for(state="visible", timeout=10000)
+        m31.click()
+        c.page.wait_for_function("() => /M31|Andromeda/i.test(document.querySelector('#dTitle')?.textContent || '')",
+                                 timeout=10000)
+        assert_fit(f"{theme} 900px M31 compact Catalog detail")
+        c.page.evaluate("() => document.querySelector('#dClose')?.click()")
+        c.page.wait_for_selector("#detailModal", state="hidden")
+        assert_catalog_rail(theme, 900)
+    c.assert_clean()
+
+
+@check("desktop-offline-image-fallback", "desktop")
+def desktop_offline_image_fallback(c):
+    """A missing optional target image has a stable, labelled offline tile."""
+    boot(c)
+    c.allow_console_errors("deliberately aborted optional target-image request")
+    c.allow_failed_responses("deliberately aborted optional target-image request")
+    c.page.route("**/api/object/*/image*", lambda route: route.abort())
+    target = c.page.locator("#topPicks .pick-target:visible").first
+    if target.count():
+        target.click()
+    else:
+        c.page.click("#tabs [data-tab='targets']")
+        c.page.locator("#targetRows tr[data-id]").first.click()
+    c.page.wait_for_selector("#dImageFallback:not(.hidden)", state="visible", timeout=15000)
+    c.expect_eq(text(c, "#dImageFallback"), "Image unavailable offline",
+                "the desktop detail must explain a missing offline image")
+    c.expect(c.page.locator("#dImage.hidden").count() == 1,
+             "a broken image element must not remain visible under its fallback")
+    c.page.evaluate("() => document.querySelector('#dClose')?.click()")
+    c.assert_clean()
+
+
+@check("desktop-image-catalog-navigation-and-retry", "desktop")
+def desktop_image_catalog_navigation_and_retry(c):
+    """The fifth primary tab owns three keyboard-selectable child tabs; the
+    top-bar import action opens Import Exposures, and a failed first library
+    load can be retried by returning to Library."""
+    boot(c)
+    calls = 0
+
+    def fail_first_library(route):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            route.fulfill(status=503, content_type="application/json",
+                          body='{"detail":"temporary browser-test failure"}')
+        else:
+            route.continue_()
+
+    c.allow_failed_responses("one deliberate Library retry response")
+    c.allow_console_errors("one deliberate Library retry response")
+    c.page.route("**/api/library", fail_first_library)
+    children = c.page.locator("#catalogTabs[role='tablist'] [role='tab']")
+    c.expect_eq(children.count(), 3,
+                "Image Catalog must expose Library, Import Exposures, and Sky Map")
+    c.page.click("#tabs [data-tab='image-catalog']")
+    c.page.wait_for_function("() => document.querySelector('#catalog-tab-library')?.getAttribute('aria-selected') === 'true'")
+    c.page.wait_for_timeout(250)
+    c.expect_eq(calls, 1, "entering Image Catalog must attempt the Library load")
+    c.expect(c.page.evaluate("() => getComputedStyle(document.querySelector('.planner-control-slot')).display === 'none'"),
+             "planner controls must be hidden while Image Catalog is active")
+    c.expect(c.page.evaluate("() => getComputedStyle(document.querySelector('#imageCatalogTools')).display !== 'none'"),
+             "Image Catalog actions must be visible in their primary view")
+
+    library = c.page.locator("#catalog-tab-library")
+    library.focus()
+    c.page.keyboard.press("ArrowRight")
+    c.page.wait_for_selector("#tab-import.active:not([hidden])")
+    c.expect(c.page.locator("#catalog-tab-import").get_attribute("aria-selected") == "true",
+             "ArrowRight must select Import Exposures in the child tablist")
+    c.page.keyboard.press("ArrowRight")
+    c.page.wait_for_selector("#tab-skymap.active:not([hidden])")
+    c.page.keyboard.press("ArrowLeft")
+    c.page.wait_for_selector("#tab-import.active:not([hidden])")
+
+    with c.page.expect_response(lambda r: r.url.endswith("/api/library") and r.status == 200):
+        c.page.click("#catalog-tab-library")
+    c.page.wait_for_selector("#tab-library.active:not([hidden])")
+    c.expect_eq(calls, 2,
+                "returning to Library must retry after its first load failed")
+
+    c.page.evaluate("""() => {
+        const nativeClick = HTMLInputElement.prototype.click;
+        window.__ns_fit_picker_opened = false;
+        HTMLInputElement.prototype.click = function() {
+          if (this.id === 'fitFiles') { window.__ns_fit_picker_opened = true; return; }
+          return nativeClick.call(this);
+        };
+      }""")
+    c.page.click("#btnTopIngest")
+    c.page.wait_for_selector("#tab-import.active:not([hidden])")
+    c.expect(c.page.evaluate("() => window.__ns_fit_picker_opened === true"),
+             "the top-bar Import FITS action must reach the file picker")
+    c.expect(c.page.locator("#catalog-tab-import").get_attribute("aria-selected") == "true",
+             "top-bar Import FITS must select Import Exposures first")
+    c.page.click("#catalog-tab-skymap")
+    c.page.wait_for_selector("#tab-skymap.active:not([hidden]) #skymapCanvas")
+    map_before = c.page.evaluate("""() => {
+      const cv = document.querySelector('#skymapCanvas');
+      return { width: cv.clientWidth, backing: cv.width, dpr: window.devicePixelRatio || 1 };
+    }""")
+    c.page.evaluate("""() => {
+      document.querySelector('#skymapWrap').style.setProperty('width', '480px', 'important');
+    }""")
+    c.page.wait_for_function("""(old) =>
+      document.querySelector('#skymapCanvas').clientWidth < old""",
+        arg=map_before["width"], timeout=10000)
+    map_after = c.page.evaluate("""() => {
+      const cv = document.querySelector('#skymapCanvas');
+      const dpr = window.devicePixelRatio || 1;
+      const rect = cv.getBoundingClientRect();
+      return { width: rect.width, height: rect.height,
+        backingWidth: cv.width, backingHeight: cv.height, dpr };
+    }""")
+    c.expect(map_after["backingWidth"] == round(map_after["width"] * map_after["dpr"]) and
+             map_after["backingHeight"] == round(map_after["height"] * map_after["dpr"]) and
+             map_after["backingWidth"] == 2 * map_after["backingHeight"],
+             f"Sky Map must preserve its 2:1 DPR canvas after container resize: {map_after}")
+    c.page.evaluate("() => document.querySelector('#skymapWrap').style.removeProperty('width')")
+    c.page.wait_for_timeout(150)
+    c.page.locator("#btnMenu").focus()
+    c.page.keyboard.press("n")
+    c.page.wait_for_selector("#tabs [data-tab='tonight'].active")
+    c.expect(c.page.locator("#tabs .tab[aria-selected='true']").get_attribute("data-tab") == "tonight",
+             "N must cycle from Image Catalog to the next primary view")
+    c.assert_clean()
+
+
+@check("desktop-sky-local-scrub-and-container-resize", "desktop")
+def desktop_sky_local_scrub_and_container_resize(c):
+    """The Sky View scrub mirrors the top-bar range and selected instant; a
+    chart-container-only width change resizes its DPR-aware canvas."""
+    boot(c)
+    c.page.click("#tabs [data-tab='sky']")
+    c.page.wait_for_selector("#skyCanvas[tabindex='0']")
+
+    def state():
+        return c.page.evaluate("""() => {
+          const top = document.querySelector('#timeSlider');
+          const local = document.querySelector('#skyTimeSlider');
+          return { topMin: top.min, topMax: top.max, topValue: top.value,
+            localMin: local.min, localMax: local.max, localValue: local.value,
+            topLabel: document.querySelector('#timeLabel').textContent,
+            localLabel: document.querySelector('#skyTimeLabel').textContent };
+        }""")
+
+    current = state()
+    c.expect((current["topMin"], current["topMax"], current["topValue"]) ==
+             (current["localMin"], current["localMax"], current["localValue"]),
+             f"the local and top-bar scrubs must start synchronized: {current}")
+    c.page.evaluate("""() => {
+        const local = document.querySelector('#skyTimeSlider');
+        const lo = Number(local.min), hi = Number(local.max);
+        local.value = String(Math.floor((lo + hi) / 2));
+        local.dispatchEvent(new Event('input', { bubbles: true }));
+      }""")
+    c.page.wait_for_function("""() => {
+        const top = document.querySelector('#timeSlider');
+        const local = document.querySelector('#skyTimeSlider');
+        return top.value === local.value &&
+          document.querySelector('#timeLabel').textContent ===
+          document.querySelector('#skyTimeLabel').textContent;
+      }""")
+    before_step = int(c.page.locator("#skyTimeSlider").input_value())
+    c.page.locator("#skyTimeSlider").focus()
+    c.page.keyboard.press("Shift+ArrowRight")
+    c.page.wait_for_function("""(before) =>
+        Number(document.querySelector('#skyTimeSlider').value) === before + 10""",
+        arg=before_step)
+    stepped = state()
+    c.expect(stepped["localValue"] == stepped["topValue"] and
+             stepped["localLabel"] == stepped["topLabel"],
+             f"Shift+Arrow must update both scrubbers and labels: {stepped}")
+
+    span_before = c.page.evaluate("""() => {
+      const s = document.querySelector('#skyCanvas'), b = document.querySelector('#skyWrap');
+      return { width: s.clientWidth, backing: s.width,
+        dpr: window.devicePixelRatio || 1, box: b.clientWidth };
+    }""")
+    c.page.evaluate("""() => {
+      const box = document.querySelector('#skyWrap');
+      box.style.setProperty('width', '360px', 'important');
+      box.style.setProperty('justify-self', 'start', 'important');
+    }""")
+    c.page.wait_for_function("""(old) => {
+      const s = document.querySelector('#skyCanvas');
+      return s.clientWidth < old &&
+        s.width === Math.round(s.clientWidth * (window.devicePixelRatio || 1));
+    }""", arg=span_before["width"], timeout=10000)
+    c.page.evaluate("""() => {
+      const box = document.querySelector('#skyWrap');
+      box.style.removeProperty('width'); box.style.removeProperty('justify-self');
+    }""")
+    c.page.wait_for_timeout(200)
     c.assert_clean()
 
 
@@ -332,42 +940,45 @@ def desktop_advanced_mode(c):
     c.assert_clean()
 
 
-@check("desktop-catalog-tier-minvis", "desktop")
-def desktop_catalog_tier_minvis(c):
-    """0.6.30: the targets table leads with the popularity TIER (A-F letters, and
-    the tier sort is the DEFAULT) and the Min-visibility slider gates the LIST.
-    Same method as the web, and the popularity source SCORE never appears."""
+@check("desktop-catalog-direction-b-density", "desktop")
+def desktop_catalog_direction_b_density(c):
+    """The compact primary Catalog table follows Direction B, while the
+    existing min-visibility gate continues to filter its result set."""
+    c.page.set_viewport_size({"width": 1672, "height": 941})
     boot(c)
+    c.page.click("[data-tab='targets']")
+    c.page.wait_for_selector("#targetRows tr[data-id]:visible")
     heads = c.page.evaluate(
         """() => Array.from(document.querySelectorAll('#targetTable thead th'))
                    .map(th => th.textContent.trim())""")
-    c.expect("Tier" in heads, f"the targets table must have a Tier column: {heads}")
-    c.expect(c.page.evaluate("() => document.querySelector('#fSort').value") == "tier",
-             "the tier sort must be the default")
-
-    tiers = c.page.evaluate(
-        """() => Array.from(document.querySelectorAll('#targetRows .tierbadge'))
-                   .map(e => e.textContent.trim())""")
-    c.expect(len(tiers) >= 10, f"expected tier letters in the table, got {len(tiers)}")
-    c.expect(set(tiers) <= set("ABCDEF"), f"tier letters must be A-F: {set(tiers)}")
-    order = {t: i for i, t in enumerate("ABCDEF")}
-    c.expect([order[t] for t in tiers] == sorted(order[t] for t in tiers),
-             f"the default view must be sorted A->F: {tiers[:12]}")
-
-    # the score itself must never be rendered: the top popularity values cannot
-    # collide with a magnitude/size/percentage, so finding one in a row is a leak
-    leaked = c.page.evaluate(
-        """async () => {
-             const txt = Array.from(document.querySelectorAll('#targetRows tr'))
-                              .slice(0, 25).map(tr => tr.textContent).join(' ');
-             const cat = await (await fetch('/api/catalog')).json();
-             const top = cat.map(o => Number(o.popularity) || 0)
-                            .sort((a, b) => b - a).slice(0, 50).map(String);
-             return top.filter(p => p.length >= 5 && txt.includes(p));
-           }""")
-    c.expect(not leaked, f"a popularity SCORE leaked into the table: {leaked[:3]}")
-
-    before = rows(c)
+    expected = ["#", "Designation", "Common name", "Type", "Mag", "Alt now",
+                "Night %", "Best window", "Status"]
+    c.expect_eq(heads, expected, f"the primary Catalog column order changed: {heads}")
+    state = c.page.evaluate("""() => {
+      const wrap = document.querySelector('.catalog-results .tablewrap');
+      const table = document.querySelector('#targetTable');
+      const rows = [...document.querySelectorAll('#targetRows tr[data-id]')];
+      const pager = document.querySelector('#targetPager');
+      const r = el => { const x = el?.getBoundingClientRect(); return x &&
+        {left:x.left,right:x.right,top:x.top,bottom:x.bottom,width:x.width,height:x.height}; };
+      return {rows: rows.length, wrap: r(wrap), table: r(table), pager: r(pager),
+        tableScroll: table?.scrollWidth, viewport: wrap?.clientWidth,
+        pageWidth: document.documentElement.scrollWidth, innerWidth,
+        forbidden: document.querySelectorAll('#targetRows .tierbadge, #targetRows td.frame').length,
+        sort: document.querySelector('#fSort')?.value};
+    }""")
+    c.expect(state["rows"] == 20,
+             f"the desktop Catalog should show a 20-row page: {state}")
+    c.expect(state["pager"] and state["pager"]["height"] > 0 and state["pager"]["top"] < 941,
+             f"the Catalog pager must fit the first viewport: {state}")
+    c.expect(state["tableScroll"] <= state["viewport"] + 1 and
+             state["pageWidth"] <= state["innerWidth"] + 1,
+             f"the nine columns must fit without clipping or page overflow: {state}")
+    c.expect(state["forbidden"] == 0 and state["sort"] == "tier",
+             f"secondary popularity sorting stays, but tier/frame cells do not: {state}")
+    before = int(c.page.evaluate(
+        """() => Number((document.querySelector('#resultCount')?.textContent || '')
+                     .match(/^\\s*([\\d,]+)/)?.[1].replaceAll(',', '') || 0)"""))
     c.page.evaluate(
         """() => { const el = document.querySelector('#fMinVis');
                    el.value = 60;
@@ -377,11 +988,14 @@ def desktop_catalog_tier_minvis(c):
         timeout=60000)
     pcts = c.page.evaluate(
         """() => Array.from(document.querySelectorAll('#targetRows tr'))
-                   .map(tr => parseInt(tr.children[8]?.textContent || '', 10))
+                   .map(tr => parseInt(tr.children[6]?.textContent || '', 10))
                    .filter(v => Number.isFinite(v))""")
     c.expect(pcts and min(pcts) >= 60,
              f"a row below the threshold survived the gate: {sorted(pcts)[:5]}")
-    c.expect(rows(c) < before, "the 60% gate must remove rows")
+    after_gate = int(c.page.evaluate(
+        """() => Number((document.querySelector('#resultCount')?.textContent || '')
+                     .match(/^\\s*([\\d,]+)/)?.[1].replaceAll(',', '') || 0)"""))
+    c.expect(after_gate < before, "the 60% gate must remove rows from the filtered result set")
 
     # 0 disables the gate again
     c.page.evaluate(
@@ -391,7 +1005,10 @@ def desktop_catalog_tier_minvis(c):
     c.page.wait_for_function(
         """() => !/below/.test(document.querySelector('#resultCount')?.textContent || '')""",
         timeout=60000)
-    c.expect(rows(c) >= before, "0% must show every row again")
+    after_reset = int(c.page.evaluate(
+        """() => Number((document.querySelector('#resultCount')?.textContent || '')
+                     .match(/^\\s*([\\d,]+)/)?.[1].replaceAll(',', '') || 0)"""))
+    c.expect(after_reset >= before, "0% must show every row again")
     c.page.evaluate(
         """() => fetch('/api/settings', { method: 'POST',
              headers: { 'Content-Type': 'application/json' },

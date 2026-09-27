@@ -320,6 +320,19 @@ export function windowText(o) {
          `<small>${Math.floor(mins/60)}h ${String(mins%60).padStart(2,"0")}m clear · ${Math.round(total)}m visible</small></span>`;
 }
 
+/* Single-line window label for dense ranked/catalog tables. Keep the verbose
+   reason and duration in the detail view; these compact lists already have a
+   separate visibility/status column. */
+export function compactWindowText(o) {
+  const tl = S.night?.timeline;
+  if (!tl?.times_iso?.length) return "—";
+  const range = o.best || o.best_above;
+  if (!range) return "—";
+  const [start, end] = range;
+  const label = `${fmtHM(tl.times_iso[start])}–${fmtHM(windowEndISO(tl.times_iso, end, tl.step_min))}`;
+  return o.best ? label : `${label} · obstructed`;
+}
+
 export function desigLine(m) {
   const parts = [];
   if (m.messier) parts.push(m.messier);

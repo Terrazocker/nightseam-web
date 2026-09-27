@@ -1,33 +1,12 @@
 /* Image Archive mode: mode switching, FITS import, library table */
 
-import { $, $$, esc, api, toast, setBusy, fmtSize, fmtDT, TYPE_LABEL,
-         bindKeyboardClick } from "./util.js";
+import { $, esc, api, toast, setBusy, fmtSize, fmtDT, TYPE_LABEL } from "./util.js";
 import { S } from "./state.js";
 import { renderSkyMap } from "./skymap.js";
 
 let _bound = false;
-
-/* ---------------- mode switching ---------------- */
-
-export function setMode(cat) {
-  S.catmode = cat;
-  document.body.classList.toggle("catmode", cat);
-  $("#btnModeTxt").textContent = cat ? "Night Planner" : "Image Catalog";
-  $("#btnMode .ic-tel").classList.toggle("hidden", cat);
-  $("#btnMode .ic-night").classList.toggle("hidden", !cat);
-  $("#btnMode").title = cat ? "Switch to the night planner" : "Switch to the image catalog";
-  $$("#tabs .tab, #tabs-cat .tab").forEach(b => b.classList.remove("active"));
-  $$(".tabpane").forEach(p => p.classList.remove("active"));
-  const def = cat ? "import" : "tonight";
-  document.querySelector(`#${cat ? "tabs-cat" : "tabs"} .tab[data-tab="${def}"]`)
-    .classList.add("active");
-  $(`#tab-${def}`).classList.add("active");
-  if (cat) loadLibrary();
-}
-
-export function toggleMode() {
-  setMode(!S.catmode);
-}
+let _selectedLibraryObject = null;
+let _selectedLibrarySession = 0;
 
 /* ---------------- state / archive folder ---------------- */
 
@@ -168,9 +147,9 @@ export async function loadLibrary() {
     renderLibrary();
     renderArchiveStats();
     loadImports();
-    if (($("#tabs-cat .tab.active") || {}).dataset &&
-        $("#tabs-cat .tab.active").dataset.tab === "skymap") renderSkyMap();
-  } catch (err) { /* api() already toasted */ }
+    if ($("#tab-image-catalog.active") && $("#tab-skymap.active")) renderSkyMap();
+    return true;
+  } catch (err) { /* api() already toasted */ return false; }
 }
 
 function fmtDur(sec) {
@@ -201,15 +180,39 @@ export function renderLibrary() {
   $("#libEmpty").classList.toggle("hidden", !L || L.objects.length > 0);
   if (!L || !L.objects.length) {
     box.innerHTML = '<tr><td colspan="8" class="hint">Nothing here yet.</td></tr>';
-    $("#libSummary").textContent = "";
+    $("#libraryHeroIdentity").innerHTML = '<p class="eyebrow">Image archive</p><h1>Library</h1><p class="sub">Import FITS exposures to start a local observing archive.</p>';
+    $("#libSummary").innerHTML = libraryMetricHTML(null);
+    $("#libraryObjectList").innerHTML = '<p class="hint">No indexed objects.</p>';
+    $("#librarySessions").innerHTML = '<tr><td colspan="8" class="hint">No capture sessions yet. Import FITS exposures to build the library.</td></tr>';
+    $("#librarySessionDetail").textContent = "No session selected.";
+    $("#librarySessionActions").innerHTML = '<p class="hint">Session actions appear when a session is selected.</p>';
+    $("#librarySessionCount").textContent = "0 recorded";
+    $("#libObjectCount").textContent = "0";
     return;
   }
   const sort = $("#libSort").value;
-  const objs = [...L.objects].sort((a, b) => {
+  const allObjects = [...L.objects].sort((a, b) => {
     if (sort === "integ") return b.total_exposure - a.total_exposure;
     if (sort === "sessions") return b.n_sessions - a.n_sessions;
     return String(a.name || "").localeCompare(String(b.name || ""));
   });
+  const q = $("#libSearch").value.trim().toLocaleLowerCase();
+  const objs = q ? allObjects.filter((o) =>
+    [o.name, o.designation, o.otype].some((x) => String(x || "").toLocaleLowerCase().includes(q))) : allObjects;
+  if (!allObjects.some((o) => o.name === _selectedLibraryObject))
+    _selectedLibraryObject = allObjects[0]?.name || null;
+  const selected = allObjects.find((o) => o.name === _selectedLibraryObject) || allObjects[0];
+  const selectedSessions = selected.sessions || [];
+  if (_selectedLibrarySession >= selectedSessions.length) _selectedLibrarySession = 0;
+  const selectedSession = selectedSessions[_selectedLibrarySession] || null;
+  $("#libObjectCount").textContent = q ? `${objs.length}/${allObjects.length}` : String(allObjects.length);
+  $("#libraryObjectList").innerHTML = objs.length ? objs.map((o) => {
+    const key = esc(o.name || "");
+    return `<button class="library-object${o.name === _selectedLibraryObject ? " active" : ""}" type="button" data-library-object="${key}" aria-pressed="${o.name === _selectedLibraryObject}">
+      <span><b>${esc(o.name || "?")}</b><small>${esc(o.designation || "no designation")}</small></span>
+      <small>${o.n_sessions} session${o.n_sessions === 1 ? "" : "s"}</small>
+    </button>`;
+  }).join("") : '<p class="hint">No objects match this search.</p>';
   box.innerHTML = objs.map(o => {
     const type = o.otype ? esc(TYPE_LABEL[o.otype] || o.otype) : "unknown";
     const editable = !o.object_id;
@@ -226,11 +229,114 @@ export function renderLibrary() {
         <button class="ghost lib-open" data-openobj="${key}" title="open the object's folder in the file explorer">&#128194;</button></td>
     </tr>`;
   }).join("");
-  const tot = fmtDur(L.total_exposure);
-  $("#libSummary").textContent =
-    `${objs.length} object${objs.length === 1 ? "" : "s"} \u00B7 ` +
-    `${L.total_images} image${L.total_images === 1 ? "" : "s"} \u00B7 ` +
-    `${tot} total integration`;
+  $("#libraryHeroIdentity").innerHTML = libraryIdentityHTML(selected);
+  $("#libSummary").innerHTML = libraryMetricHTML(selected);
+  renderLibrarySessions(selected, selectedSessions, selectedSession);
+}
+
+function libraryIdentityHTML(object) {
+  if (!object) return '<p class="eyebrow">Image archive</p><h1>Library</h1><p class="sub">No selected object.</p>';
+  const designation = String(object.designation || object.object_id || "").trim();
+  const name = String(object.name || "Unresolved object").trim();
+  const type = object.otype ? (TYPE_LABEL[object.otype] || object.otype) : "Type not recorded";
+  return `<p class="eyebrow">Image archive · ${esc(type)}</p><h1>${esc(designation || name)}</h1>` +
+    `<p class="library-hero-common">${esc(name)}${designation && name !== designation ? ` <span>${esc(designation)}</span>` : ""}</p>`;
+}
+
+function libraryObjectRollup(sessions) {
+  const totals = { light: 0, dark: 0, flat: 0, bias: 0, lightExposure: 0, filters: new Set() };
+  for (const session of sessions || []) {
+    const types = Object.entries(session.types || {});
+    for (const kind of ["light", "dark", "flat", "bias"]) {
+      const entry = types.find(([name]) => String(name).toLowerCase().includes(kind));
+      if (!entry) continue;
+      totals[kind] += Number(entry[1]?.n) || 0;
+      if (kind === "light") totals.lightExposure += Number(entry[1]?.exposure) || 0;
+    }
+    for (const [name] of Object.entries(session.filters || {}))
+      if (name !== "?") totals.filters.add(name);
+  }
+  return totals;
+}
+
+function libraryMetricHTML(object) {
+  const total = libraryObjectRollup(object?.sessions || []);
+  const fields = [
+    ["Sessions", (object?.sessions || []).length.toLocaleString()],
+    ["Light integration", fmtDur(total.lightExposure)],
+    ["Lights", total.light.toLocaleString()],
+    ["Darks", total.dark.toLocaleString()],
+    ["Flats", total.flat.toLocaleString()],
+    ["Bias", total.bias.toLocaleString()],
+    ["Filters", [...total.filters].sort().join(" · ") || "—"],
+  ];
+  return fields.map(([label, value]) =>
+    `<div class="library-metric"><span>${esc(label)}</span><b>${esc(value)}</b></div>`).join("");
+}
+
+function sessionFolderPaths(object, session) {
+  const images = object?.images || [];
+  const start = session?.start ? Date.parse(session.start) : null;
+  const end = session?.end ? Date.parse(session.end) : null;
+  const matching = images.filter((image) => {
+    const t = image.date_obs ? Date.parse(image.date_obs) : NaN;
+    return session?.undated ? !Number.isFinite(t)
+      : Number.isFinite(t) && t >= start && t <= end;
+  });
+  return [...new Set(matching.map((image) => String(image.file || "").split(/[\\/]/).slice(0, 2).filter(Boolean).join("/")))].filter(Boolean);
+}
+
+function renderLibrarySessions(object, sessions, activeSession) {
+  const heading = $("#librarySessionsHeading");
+  const count = $("#librarySessionCount");
+  if (heading) heading.textContent = object ? `Capture sessions · ${object.name}` : "Capture sessions";
+  if (count) count.textContent = `${sessions.length} recorded`;
+  const list = $("#librarySessions");
+  if (!list) return;
+  if (!sessions.length) {
+    list.innerHTML = '<tr><td colspan="8" class="hint">No capture sessions for this object.</td></tr>';
+    $("#librarySessionDetail").innerHTML = '<p class="hint">No session selected.</p>';
+    $("#librarySessionActions").innerHTML = '<p class="hint">Session actions appear when a session is selected.</p>';
+    return;
+  }
+  list.innerHTML = sessions.map((s, i) => {
+    const when = s.undated ? "No date recorded" : `${fmtDT(s.start)} – ${fmtDT(s.end)}`;
+    const filters = Object.keys(s.filters || {}).filter((name) => name !== "?").join(" · ");
+    const folders = sessionFolderPaths(object, s);
+    const typeCount = (needle) => Object.entries(s.types || {}).reduce((sum, [name, value]) =>
+      name.toLowerCase().includes(needle) ? sum + (Number(value.n) || 0) : sum, 0);
+    const folder = folders.length ? `<button class="library-folder-link" type="button" data-open-library-folder="${esc(folders[0])}" title="${esc(folders.join(" · "))}">${esc(folders[0].split("/").at(-1))}${folders.length > 1 ? ` +${folders.length - 1}` : ""}</button>` : '<span class="hint">Not recorded</span>';
+    const lightEntry = Object.entries(s.types || {}).find(([name]) => name.toLowerCase().includes("light"));
+    const lightExposure = Number(lightEntry?.[1]?.exposure) || 0;
+    return `<tr class="library-session${sessions.indexOf(activeSession) === i ? " active" : ""}" data-library-session="${i}" tabindex="0" aria-selected="${sessions.indexOf(activeSession) === i}">
+      <td>${esc(when)}</td><td class="mono">${typeCount("light")}</td><td class="mono">${typeCount("dark")}</td><td class="mono">${typeCount("flat")}</td><td class="mono">${typeCount("bias")}</td>
+      <td class="mono" title="Light frames only">${esc(fmtDur(lightExposure))}</td><td>${esc(filters || "—")}</td><td>${folder}</td></tr>`;
+  }).join("");
+  if (!activeSession) return;
+  const typeLabels = { light: "Lights", dark: "Darks", flat: "Flats", bias: "Bias" };
+  const typeRows = Object.entries(activeSession.types || {}).map(([kind, value]) =>
+    `<div><span>${esc(typeLabels[kind] || kind)}</span><b>${Number(value.n) || 0} · ${esc(fmtDur(value.exposure))}</b></div>`).join("");
+  const lightEntry = Object.entries(activeSession.types || {}).find(([name]) => name.toLowerCase().includes("light"));
+  const lightExposure = Number(lightEntry?.[1]?.exposure) || 0;
+  const filterText = Object.keys(activeSession.filters || {}).map(esc).join(" · ");
+  const folders = sessionFolderPaths(object, activeSession);
+  $("#librarySessionDetail").innerHTML = `<p class="session-date">${esc(activeSession.undated ? "No date recorded" : `${fmtDT(activeSession.start)} – ${fmtDT(activeSession.end)}`)}</p>
+    <dl class="library-session-facts"><div><dt>Frames</dt><dd>${activeSession.n_images}</dd></div><div><dt>Total exposure</dt><dd>${esc(fmtDur(activeSession.exposure))}</dd></div></dl>
+    <dl class="library-session-facts"><div><dt>Light integration</dt><dd>${esc(fmtDur(lightExposure))}</dd></div></dl>
+    <div class="library-frame-rollup">${typeRows || '<p class="hint">No frame-type rollup recorded.</p>'}</div>
+    <p class="library-filter-rollup"><span class="hint">Filters</span><br>${filterText || "No filter recorded"}</p>
+    <p class="library-filter-rollup"><span class="hint">Archive folders</span><br>${folders.length ? folders.map((rel) => `<button class="library-folder-link" data-open-library-folder="${esc(rel)}" type="button">${esc(rel)}</button>`).join(" ") : "Not recorded"}</p>`;
+  const actions = $("#librarySessionActions");
+  if (actions) {
+    const rel = folders[0] || "";
+    const canTargetSession = rel.split("/").filter(Boolean).length >= 2;
+    actions.innerHTML = `<h3>Actions</h3><div class="btnrow">
+      <button class="ghost" type="button" data-library-add="dark" data-library-folder="${esc(rel)}" ${canTargetSession ? "" : "disabled"}>+ Darks</button>
+      <button class="ghost" type="button" data-library-add="flat" data-library-folder="${esc(rel)}" ${canTargetSession ? "" : "disabled"}>+ Flats</button>
+      <button class="ghost" type="button" data-library-add="bias" data-library-folder="${esc(rel)}" ${canTargetSession ? "" : "disabled"}>+ Bias</button>
+      <button class="ghost" type="button" data-open-library-folder="${esc(rel)}" ${rel ? "" : "disabled"}>Open folder</button>
+      </div>`;
+  }
 }
 
 function sessionRowsHTML(o) {
@@ -307,10 +413,6 @@ export function bindArchive() {
   if (_bound) return;
   _bound = true;
 
-  $("#brand").addEventListener("click", toggleMode);
-  bindKeyboardClick($("#brand"), toggleMode);
-  $("#btnMode").addEventListener("click", toggleMode);
-
   // archive folder
   $("#btnArcBrowse").addEventListener("click", async () => {
     const bridge = window.pywebview && window.pywebview.api;
@@ -361,6 +463,7 @@ export function bindArchive() {
 
   // import
   $("#btnIngest").addEventListener("click", () => $("#fitFiles").click());
+  $("#btnLibraryIngest")?.addEventListener("click", () => $("#fitFiles").click());
   $("#fitFiles").addEventListener("change", e => {
     ingestFiles(e.target.files);
     e.target.value = "";
@@ -377,6 +480,14 @@ export function bindArchive() {
       e.preventDefault();
       dz.classList.remove("over");
       ingestFiles(e.dataTransfer.files);
+    });
+  }
+  const libraryDrop = $("#libraryDropZone");
+  if (libraryDrop) {
+    libraryDrop.addEventListener("dragover", (e) => { e.preventDefault(); libraryDrop.classList.add("over"); });
+    libraryDrop.addEventListener("dragleave", () => libraryDrop.classList.remove("over"));
+    libraryDrop.addEventListener("drop", (e) => {
+      e.preventDefault(); libraryDrop.classList.remove("over"); ingestFiles(e.dataTransfer.files);
     });
   }
   $("#btnClearResults").addEventListener("click", () => {
@@ -409,7 +520,53 @@ export function bindArchive() {
       const slug = o && o.images && o.images[0]
         ? o.images[0].file.split(/[\\/]/)[0] : op.dataset.openobj;
       openFolder(slug);
+      return;
     }
+    const row = e.target.closest("tr.librow");
+    if (row) {
+      _selectedLibraryObject = row.dataset.lib;
+      _selectedLibrarySession = 0;
+      renderLibrary();
+    }
+  });
+  $("#libSearch").addEventListener("input", renderLibrary);
+  $("#libraryObjectList").addEventListener("click", (e) => {
+    const button = e.target.closest("[data-library-object]");
+    if (!button) return;
+    _selectedLibraryObject = button.dataset.libraryObject;
+    _selectedLibrarySession = 0;
+    renderLibrary();
+  });
+  $("#librarySessions").addEventListener("click", (e) => {
+    const folder = e.target.closest("[data-open-library-folder]");
+    if (folder) { e.stopPropagation(); openFolder(folder.dataset.openLibraryFolder); return; }
+    const button = e.target.closest("[data-library-session]");
+    if (!button) return;
+    _selectedLibrarySession = Number(button.dataset.librarySession) || 0;
+    renderLibrary();
+  });
+  $("#librarySessions").addEventListener("keydown", (e) => {
+    const row = e.target.closest("tr[data-library-session]");
+    if (!row || e.target.closest("[data-open-library-folder]") || !["Enter", " "].includes(e.key)) return;
+    e.preventDefault();
+    _selectedLibrarySession = Number(row.dataset.librarySession) || 0;
+    renderLibrary();
+  });
+  $("#librarySessionRail").addEventListener("click", (e) => {
+    const folderButton = e.target.closest("[data-open-library-folder]");
+    if (folderButton) {
+      const rel = folderButton.dataset.openLibraryFolder;
+      if (rel) openFolder(rel);
+      return;
+    }
+    const addButton = e.target.closest("[data-library-add]");
+    if (!addButton) return;
+    const [slug, session] = String(addButton.dataset.libraryFolder || "").split("/");
+    if (!slug || !session) return;
+    _impSession = { slug, session };
+    calFrame = addButton.dataset.libraryAdd;
+    $("#catalog-tab-import").click();
+    $("#fitFilesCal").click();
   });
   const impBox = $("#importHistory");
   if (impBox) {

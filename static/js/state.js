@@ -16,7 +16,6 @@ export const S = {
   minAlt: 25,
   panos: [],          // full panorama records incl profile
   plannerRevision: 0, // monotonic cross-view invalidation revision
-  catmode: false,     // Image Archive mode active
   library: null,      // /api/library
   disabledTypes: new Set(),   // object types greyed out on the sky charts
   lastRows: null,     // last filtered targets rows (pagination)

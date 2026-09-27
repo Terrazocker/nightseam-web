@@ -311,6 +311,15 @@ assert(JSON.stringify(reimported.profileTop) === JSON.stringify(legacyCrop.profi
 const good = { app: 'nightseam-web', version: 2, sites: [], rigs: [], targets: [],
                prefs: {}, panos: { panos: [], activeId: null } };
 assert(WS.stageBackup(good), 'a current-format bundle must still stage');
+const savedPrefs = WS.stageBackup({ ...good, theme: 'dome', prefs: {
+  savedTargetIds: ['ngc224', 'u_capture', 'ngc224', 'bad/id', ' <img> '],
+  skyBrightnessProvider: 'nasa', theme: 'dome', themeVariant: 'glass',
+} }).prefs;
+assert(JSON.stringify(savedPrefs.savedTargetIds) === JSON.stringify(['ngc224', 'u_capture']),
+  'saved target IDs are deduplicated and unsafe IDs are dropped by backup validation');
+assert(!('skyBrightnessProvider' in savedPrefs) && !('theme' in savedPrefs) &&
+       !('themeVariant' in savedPrefs),
+  'backup validation strips retired brightness and theme-switch preferences');
 const future = { ...good, version: 99 };
 let futureErr = null;
 try { WS.stageBackup(future); } catch (e) { futureErr = e; }

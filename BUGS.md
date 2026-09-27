@@ -7,6 +7,62 @@ the implementation contract, `DECISIONS.md` records durable choices, and
 were removed from the working tree on 2026-09-17; Git history remains the
 archive.
 
+## Direction B UI implementation — 2026-09-26 (unreleased)
+
+The previously partial handoff has a functional implementation in the shared
+working tree. Both shells now have the Direction B layouts and interaction behavior, including the
+Tonight altitude overview, docked wide inspector and compact modal behavior,
+Image Catalog navigation, local Sky View scrub, container-driven canvas sizing,
+focus handling, and import/library retry flows. The web Horizon rails were
+constrained after screenshot review exposed overlap, and the compact desktop
+detail thumbnail no longer pushes target metadata below the first viewport.
+The acceptance plan and completion evidence are in
+`ui-concepts/direction-b/REMAINING_WORK.md`.
+
+| ID | Status | Current evidence |
+|---|---|---|
+| UIB-006 | Implemented | Deterministic 82-image matrix captured and visually reviewed. `check_js.py` passes; the final full browser gate passes 38/38. |
+| UIB-008 | Fixed in working tree | Wide details use a docked inspector, compact details remain modal, and browser checks cover focus entry, focus return, and selected-target activation. |
+| UIB-009 | Fixed in working tree | Sky View and Sky Map resize observers rebuild chart geometry; browser checks pass. |
+| UIB-010 | Fixed in working tree | Web Tonight legend styling and desktop Sky View local-time scrub are present and covered by the final browser gate. |
+| UIB-011 | Fixed in working tree | Chart marker/state synchronization and detail focus-return behavior are covered by browser checks. |
+| UIB-012 | Fixed in working tree | Five desktop primary tabs and nested Image Catalog navigation are covered. The web stylesheet token is `style.css?v=36`, and `AGENTS.md` reflects current web tokens. |
+| UIB-013 | Fixed in working tree | DOM handler stubs support the new initialization path; focused behavior checks and the JS gate pass. |
+
+Final checks on 2026-09-26: `python scripts/check_js.py` passed, and
+`python scripts/check_browser.py --all` passed **38/38** against a fresh dirty
+development build (`0.6.34-8-g3c12daf-dirty`). `python scripts/check_encoding.py`
+passed. The one required full-suite run passed **647 tests**, with one upstream
+Starlette/httpx deprecation warning. The current screenshot manifest records 42
+desktop and 40 web PNGs. The separate sky-brightness/core/data changes in this
+checkout remain outside this UI implementation. Nothing was staged, committed,
+tagged, deployed, or released.
+
+### Direction B post-completion fixes — updated 2026-09-27
+
+| ID | Priority | Status and current evidence |
+|---|---|---|
+| UIB-014 | P1 | Fixed in the working tree. Both shells use a single-column docked inspector in both themes; metadata wraps, images stay compact, charts redraw to their current width, and the expanded browser assertions verify horizontal bounds and scroll reachability. The compact desktop detail dialog now layers above sticky planner chrome so its title and close control remain visible. |
+| UIB-015 | P2 | Fixed in the working tree. Tonight facts and booked-night layout are shared across desktop themes; Catalog searches stay within their filter rails while result tables scroll independently. Browser coverage checks both themes at 1672, 1240, and 900 px. |
+| UIB-016 | P2 | Fixed in the working tree. Docked inspectors no longer suppress global shortcuts; Arrow target stepping is limited to the focused detail container, while both time sliders and workspace focus scrub without changing the selected target. Compact dialogs retain their focus trap and modal shortcut behavior. |
+| UIB-017 | P2 | Fixed in the working tree. The web Tonight chart has a visible six-item, theme-token-backed key that wraps at phone widths. The screenshot helper resets page and app scrollers after opening M31 detail and asserts the wide overview remains visible. |
+| UIB-018 | P3 | Fixed in the working tree. Desktop details show a labelled offline fallback when an optional image fails; generation guards prevent stale image callbacks from replacing the current target. The CSP permits the app's same-page image blob URLs, and the desktop Tonight summary now describes red as horizon/ceiling obstruction only. |
+| UIB-019 | P3 | Fixed in the working tree. Glass planner controls now compact through 1300 px while retaining a single toolbar row; the time slider and right-side chips fit without overlap. Browser geometry checks cover Glass at 1300, 1240, 1201, and 1100 px plus Workbench at 1240 px, including visible weather and sky-brightness chips. The rebuilt desktop screenshots show the 1240 px toolbar fitting. |
+| UIB-020 | P2 | Fixed in the working tree. `web/app.js` recalculates `--detail-top` from visible chrome and coalesces passive capture-phase scroll events into one animation frame while a docked detail is open; close and compact mode remove the listener and cancel pending work. Browser coverage opens M31 from a deep Tonight row, verifies the title and close control before and after returning to the page top at 1672 and 1240 px in both themes, then closes through the visible control. The capture helper also checks hit points before saving. |
+| UIB-021 | P3 | Fixed in the working tree. Desktop metadata labels wrap inside their existing 110 px cell with `overflow-wrap: anywhere`; values remain in the second cell. Browser assertions inspect rendered label text rectangles for every metadata row, the Designation history row, and table overflow at 1672, 1240, and 900 px in both themes. The final screenshots show the history label wrapping without touching its value. |
+| UIB-022 | P1 | Open. Desktop Glass Horizon at 1672 and 1240 px collapses the panorama/profile into narrow vertical strips while the settings form expands across the central workspace; the 900 px stacked layout is unaffected. The theme's two-column `.horiz-layout` rule conflicts with the base three-column grid and explicit `#panoSettings` column 3 placement. Evidence: `ui-concepts/direction-b/implementation/screenshots/desktop-horizon-glass-wide-1672x941.png` and `ui-concepts/direction-b/implementation/screenshots/desktop-horizon-glass-compact-1240x900.png`. |
+| UIB-023 | P2 | Open visual-fidelity finding. The 1672 px Workbench captures retain the Direction B tabs and broad palette but do not match the original images' information hierarchy and density: Tonight uses separate KPI cards and target cards instead of the compact brief/chart/timeline/ranked table; Catalog uses tall rows and a metadata-heavy inspector instead of a dense table with visible status and chart; Sky View's controls and long inspector displace the concept's chart/scrub/visible-target grouping; Library lacks the concept's prominent object rollup and detailed session table. The approved handoff explicitly omitted some illustrated fields and kept Image Catalog child tabs; those intentional omissions are excluded from this finding. |
+| UIB-024 | P2 | Open visual-fidelity finding. Desktop Workbench Horizon's synthetic panorama occupies only the top of a tall central stage, leaving a large blank region and pushing the profile to the bottom of the viewport. The original Horizon image gives the panorama and profile most of the central workspace. Confirm whether this is fixture-specific before changing the editor's image transform. |
+
+The 82 implementation screenshots and their capture and visual-review record
+are in `ui-concepts/direction-b/implementation/screenshots/README.md`. They
+were recaptured after the final CSS and screenshot-harness changes and checked
+at the required widths. The complete browser matrix passes 38/38, and the
+final full pytest run passes 647 tests. UIB-019 through UIB-021 are fixed in
+the working tree; UIB-022 through UIB-024 remain open from the 2026-09-27
+visual comparison. The run details are recorded in
+`ui-concepts/direction-b/REMAINING_WORK.md`.
+
 ## Current review addendum - 2026-09-20 (unreleased working tree)
 
 This addendum records the second review of the moved workspace at

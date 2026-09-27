@@ -394,8 +394,7 @@ def test_import_rejects_hostile_settings(db):
     forever (bortle null -> float(None) at every boot). Fail closed instead."""
     db.add_site("Home", 50.0, 7.8, 150)
     for bad in ({"bortle": None}, {"bortle": "x"}, {"min_useful_alt": "x"},
-                {"adv_mode": 1}, {"filters": []},
-                {"sky_brightness_provider": "unknown"}):
+                {"adv_mode": 1}, {"filters": []}):
         blob = _mutate_bundle(build_export_zip(db),
                               lambda s, bad=bad: s["settings"].update(bad))
         with pytest.raises(ValueError):
@@ -403,6 +402,40 @@ def test_import_rejects_hostile_settings(db):
     assert len(db.sites()) == 1
     db.set_setting("edge_space", 100)    # a later write must not persist a wipe
     assert len(db.sites()) == 1
+
+
+def test_legacy_brightness_setting_is_dropped_from_restore(db):
+    """A legacy provider key is inert compatibility data, not a bad setting
+    that should reject an otherwise valid backup."""
+    blob = _mutate_bundle(build_export_zip(db), lambda s: s["settings"].update(
+        {"sky_brightness_provider": {"unexpected": "value"}}))
+    apply_import_zip(db, blob)
+    assert db.setting("sky_brightness_provider") is None
+    exported = build_export_zip(db)
+    with zipfile.ZipFile(io.BytesIO(exported)) as zf:
+        setup = json.loads(zf.read("setup.json"))
+    assert "sky_brightness_provider" not in setup["settings"]
+
+
+def test_legacy_theme_and_brightness_rows_migrate_on_database_open(db):
+    """Opening an existing profile converges every retired theme to the sole
+    Workbench value and deletes the removed estimated-brightness preference."""
+    db.conn.execute("INSERT OR REPLACE INTO settings(key, value) VALUES(?, ?)",
+                    ("theme", json.dumps("dome")))
+    db.conn.execute("INSERT OR REPLACE INTO settings(key, value) VALUES(?, ?)",
+                    ("sky_brightness_provider", json.dumps("nasa")))
+    db.conn.commit()
+
+    reopened = Database(db.path)
+    try:
+        assert reopened.setting("theme") == "workbench"
+        assert reopened.setting("sky_brightness_provider") is None
+        reopened.import_bundle(settings={"theme": "classic"}, sites=[], rigs=[],
+                              panoramas=[], customs=[], images=[])
+        assert reopened.setting("theme") == "workbench"
+        assert reopened.all_settings()["theme"] == "workbench"
+    finally:
+        reopened.conn.close()
 
 
 def test_import_rejects_a_hostile_min_vis(db):

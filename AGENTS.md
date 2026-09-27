@@ -5,11 +5,11 @@
 > it as read-only, never commit/tag/deploy there. The `web/` sub-version shares
 > this repo's history and tags.
 
-> **Design: read `DESIGN.md` before ANY UI work.** Workbench (`workbench`) is
-> the default design language across the app and web planner; Glass (`dome`) is
-> the optional alternate. Follow the corresponding `themes.css` blocks in
-> `web/` and `static/`. Legacy `classic`/empty/unknown values normalize to
-> Workbench; they are not a third theme.
+> **Design: read `DESIGN.md` before ANY UI work.** Workbench is the single
+> design language across the app and web planner. Follow the Workbench role
+> tokens and component rules in `web/themes.css` and `static/themes.css`.
+> Legacy `dome`, `classic`, empty, and unknown values normalize to Workbench;
+> no alternate theme is shipped.
 
 NightSeam: a desktop DSO-planning app - a local FastAPI server plus a vanilla-JS
 UI, no JS bundler/npm. ALL astronomy and planning math lives in `core/` (ES
@@ -360,8 +360,9 @@ calculation stay local. `README.md` has the feature list.
 - Web backup is TRUTHFUL: `horizon.js::exportPanosWithImages()` embeds the
   compressed panorama photo and sets `hasImage` from the bytes actually
   included, so `hasImage === true` after a restore means the image really exists.
-  `collectBackup` carries the theme (its own `nightseam_theme` key) and a schema
-  `version`; `restoreBackup` stages/validates the whole bundle BEFORE any write
+  `collectBackup` carries the legacy-compatible `nightseam_theme` field as
+  `workbench` plus a schema `version`; restore normalizes old theme values and
+  removes retired preference keys. `restoreBackup` stages/validates the whole bundle BEFORE any write
   and rolls back to the `meta`/`safety` snapshot if a write fails. Pinned by
   `tests/js/web_backup.mjs`. A desktop restore clears `import_batches` (history
   of the replaced library). The `viewFullDay` preference rides in `prefs`
@@ -403,10 +404,10 @@ calculation stay local. `README.md` has the feature list.
 - **Rule:** anything special, advanced, experimental, or needed only by some
   users lives in the hamburger menu with a safe/quiet default - it must not
   occupy the primary working UI. Common-case controls stay visible.
-- **Menu groups/labels (BOTH apps):** *Appearance* (theme); *Display* (free
-  space per side, **View full day**, object size units); *Advanced* (advanced
-  catalog, timezone, moon-aware ranking, Bortle, equipment filters); *Data*
-  (Setup - sites/rigs/targets/backup); *About*.
+- **Menu groups/labels (BOTH apps):** *Display* (free space per side, **View
+  full day**, object size units); *Advanced* (advanced catalog, timezone,
+  moon-aware ranking, Bortle, equipment filters); *Data* (Setup - sites/rigs/
+  targets/backup); *About*.
 - **Safe defaults:** options start quiet - `viewFullDay` defaults to **false**,
   advanced catalog mode off. Persist on change; a display preference must not
   require a reload.
@@ -542,7 +543,7 @@ calculation stay local. `README.md` has the feature list.
   2026-09-20 review addendum records the validated working-tree fixes and the
   two product-policy decisions still requiring an owner choice. The current
   pass reached 637 tests, `check_core.py`, `check_js.py`, and a 32/32 browser
-  gate covering both shells, both themes, and the accessibility smoke checks;
+  gate covering both shells and the accessibility smoke checks;
   its dirty snapshot is recorded in
   `RELEASES.md` and is not a tagged release.
   Historical gates were `--web` 18/18 and `--desktop` 9/9 after the DS5 check
@@ -607,13 +608,13 @@ calculation stay local. `README.md` has the feature list.
   `scripts/check_catalog_token.py`, wired into `scripts/check_js.py`, and pinned
   by `tests/test_cache_tokens.py` (mutation-tested). Do NOT add
   `{cache:'no-store'}` - the file must stay cacheable.
-  Current (0.6.35 working tree, after the EOG sky-brightness pass,
-  accessibility foundation, horizon metadata, catalog provenance and detail
-  visibility summaries): `app.js?v=127` (index.html) /
-  `CATALOG_TOKEN = '10'`, `CATALOG_PROVENANCE_TOKEN = '1'`, `astro.js?v=28`, `horizon.js?v=65`,
-  `format.js?v=35`, `nightrank.js?v=27`, `webstore.js?v=39`,
-  `skybrightness.js?v=6`, `dragwin.js?v=1`, `viztheme.js?v=5`,
-  `style.css?v=33`, `themes.css?v=11`; the core stub is `web/core.js?v=42`
+  Current (0.6.35 working tree, after accessibility foundation, horizon
+  metadata, catalog provenance, detail visibility summaries, and the Direction B
+  fidelity pass): `app.js?v=137` (index.html) /
+  `CATALOG_TOKEN = '10'`, `CATALOG_PROVENANCE_TOKEN = '1'`, `astro.js?v=30`, `horizon.js?v=69`,
+  `format.js?v=37`, `nightrank.js?v=29`, `webstore.js?v=41`,
+  `viztheme.js?v=6`,
+  `style.css?v=44`, `themes.css?v=16`; the core stub is `web/core.js?v=44`
   (bump = re-bake,
   enforced by `scripts/check_core.py`). Every core change cascades: the re-bake
   moves the stub token and changes the bytes of every module importing it, so
@@ -785,10 +786,9 @@ calculation stay local. `README.md` has the feature list.
   explicit min alt) and scales moon scoring. Keyboard: ArrowLeft/Right scrub
   (6 min; Shift 60), `n` cycles tabs. `edge_space` sets tab width
   (`calc(100vw - 2*var(--edge-space))`).
-- Themes: `themes.css` are token/structural overrides of `style.css`'s `:root`,
-  switched via `<html data-theme>`. `workbench` is the canonical default;
-  `dome` is the optional Glass presentation. One shared HTML skeleton -
-  structural themes use position:fixed/flex/transforms, never moved IDs or JS.
+- Theme: `themes.css` carries Workbench tokens and component overrides for
+  `style.css`; both shells set `<html data-theme="workbench">`. Old values are
+  normalized at the settings and backup boundaries. Use one shared HTML skeleton.
   Keep z-index below 100 (toasts 300, popover 60, modal 40, #versionTag 5);
   never override `.hidden` or set `display` on the app-toggled
   `#tabs-cat`/`#plannerControls`/`#tabs`/`#nightInfo`.

@@ -25,6 +25,7 @@ const els = {};
 const makeEl = (sel) => ({
   sel, _l: {}, _q: {},
   innerHTML: '', textContent: '', value: '', checked: false, disabled: false,
+  selectedOptions: [],
   classList: { add() {}, remove() {}, toggle() {}, contains() { return false; } },
   addEventListener(type, fn) { (this._l[type] ||= []).push(fn); },
   dispatch(type, ev = {}) {
@@ -101,21 +102,6 @@ N.renderTonight();
 const cards = els['#topPicks'].innerHTML + els['#laterList'].innerHTML;
 check(!leaks(cards), 'tonight.js: a hostile id leaked into the card markup');
 check(!cards.includes('onerror='), 'tonight.js: an inline handler survived');
-
-/* The listener path that replaced the handler actually runs: fire the error
- * event the browser would fire for a broken thumbnail and look at the result. */
-const img = { dataset: {}, style: {}, _l: {}, _src: 'x',
-              addEventListener(t, f) { (this._l[t] ||= []).push(f); },
-              set src(v) { this._src = v; }, get src() { return this._src; } };
-globalThis.document.querySelectorAll = (sel) =>
-  (sel.includes('.thumb') || sel.includes('.pick-thumb')) ? [img] : [];
-T.renderTargets();
-N.renderTonight();
-check(typeof img._l.error?.[0] === 'function',
-      'the thumbnail error fallback is not bound as a listener');
-img._l.error[0]();
-check(img._src === 'x' || String(img._src).startsWith('data:image/gif'),
-      'targets.js: the broken-thumb fallback did not run');
 
 /* ---------------------- the CSP coupling ---------------------- */
 const fs = await import('node:fs');

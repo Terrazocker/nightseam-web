@@ -9,25 +9,30 @@ the check exists to prove. These are the offline halves: the rule table and the
 shape of the check itself.
 """
 
+import importlib.util
 import re
+import sys
 from pathlib import Path
 
 import pytest
 
 ROOT = Path(__file__).resolve().parent.parent
 HARNESS = ROOT / "tests" / "browser" / "harness.py"
+_HARNESS_NAME = "_nightseam_local_browser_harness"
+_HARNESS_SPEC = importlib.util.spec_from_file_location(_HARNESS_NAME, HARNESS)
+assert _HARNESS_SPEC and _HARNESS_SPEC.loader
+_HARNESS = importlib.util.module_from_spec(_HARNESS_SPEC)
+sys.modules[_HARNESS_NAME] = _HARNESS
+_HARNESS_SPEC.loader.exec_module(_HARNESS)
+_csp_problems = _HARNESS._csp_problems
 
 
 def _problems(policy, document=False):
-    import sys
-    sys.path.insert(0, str(ROOT))
-    from tests.browser.harness import _csp_problems
     return _csp_problems(policy, document=document)
 
 
 # The shipped web policy (web/.htaccess) with the hash of the current bootstrap.
-GOOD_WEB = ("default-src 'self'; script-src 'self' 'sha256-AAAAAAAAAAAAAAAAAAAA"
-            "AAAAAAAAAAAAAAAAAAAAAAAAAAA='; style-src 'self'; img-src 'self' "
+GOOD_WEB = ("default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' "
             "data:; connect-src 'self'; base-uri 'self'")
 
 
@@ -73,18 +78,17 @@ def test_the_document_check_keeps_every_policy_rule():
 
 
 def test_a_good_document_policy_passes():
-    """No false positives: the policy web/.htaccess ships - with the web
-    bootstrap hash - passes as a document policy."""
+    """No false positives: the policy web/.htaccess ships passes as a document
+    policy."""
     assert _problems(GOOD_WEB, document=True) == []
 
 
-def test_the_document_check_ignores_the_bootstrap_hash_requirement():
-    """`document=True` must not demand the web shell's hash: a policy that is
-    otherwise correct but carries a DIFFERENT (or no) hash is still fine for the
-    page response, because the page may be the desktop entry point."""
+def test_the_document_check_does_not_require_a_removed_bootstrap_hash():
+    """The current web shell has no inline bootstrap, so neither document nor
+    header checks should require a script hash that no longer exists."""
     without_hash = GOOD_WEB.replace(
         " 'sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA='", "")
-    assert _problems(without_hash, document=False), "hash check stopped working"
+    assert _problems(without_hash, document=False) == []
     assert _problems(without_hash, document=True) == []
 
 

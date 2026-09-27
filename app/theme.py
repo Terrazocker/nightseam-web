@@ -1,15 +1,16 @@
 """Theme names shared by the desktop server and its static UI."""
 
 THEME_WORKBENCH = "workbench"
+# Kept only as an import-compatibility name for callers that normalize legacy
+# saved settings. Glass is no longer a selectable or renderable theme.
 THEME_GLASS = "dome"
 
 
 def normalize_theme(value) -> str:
     """Return the one canonical theme name understood by the application.
 
-    ``classic`` and the empty value were the old flat/default theme names. They
-    remain accepted so existing settings and backups migrate without losing a
-    user's choice. Unknown values also fall back to the safe default rather than
-    being reflected into a document attribute or CSS selector.
+    Every legacy value, including ``dome``, resolves to Workbench. Keeping this
+    normalization at storage and import boundaries prevents an old setting or
+    backup from selecting a retired stylesheet.
     """
-    return THEME_GLASS if value == THEME_GLASS else THEME_WORKBENCH
+    return THEME_WORKBENCH

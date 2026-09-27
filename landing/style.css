@@ -1,7 +1,7 @@
 /* =====================================================================
    NightSeam landing page — classic hub site design.
    Multi-section classic layout (sticky nav, hero, features, stats, CTA,
-   footer) over the app's Glass starfield. System fonts, no JS, no
+   footer) over dark graphite surfaces. System fonts, no JS, no
    external assets. The starfield reuses the app's seam-free technique:
    one uniform 480px tile for all star layers.
    ===================================================================== */
@@ -390,8 +390,7 @@ header, main, footer { position: relative; z-index: 1; }
    DEFAULT WEBSITE LANGUAGE: WORKBENCH
 
    The landing pages share the planner's restrained visual language: solid
-   surfaces, brass action states and clear edges. The app's Glass theme stays
-   an in-app choice and is not imposed on the public information site.
+   surfaces, brass action states and clear edges. The planner and public information pages share the same graphite and brass roles.
    ===================================================================== */
 :root {
   --bg: #111315;

@@ -9,14 +9,19 @@ from __future__ import annotations
 
 import hashlib
 import re
+import struct
 import time
+import zlib
 from pathlib import Path
 
 from harness import ROOT, WEB_DIR, check
 
 # ---------------------------------------------------------------- helpers
 
-READY = ".pick li[data-id], .card, #cat-con"
+# The Direction B shell renders Tonight as a ranked table rather than the old
+# `.pick`/`.card` list. Wait for an actual populated target row so callers do
+# not continue against the static shell before the first planning render.
+READY = "#tonight-rank-table tbody tr[data-tonight-id]"
 
 
 def boot(c):
@@ -41,6 +46,27 @@ def canvas_digest(c, selector: str) -> str:
         """(sel) => { const cv = document.querySelector(sel);
              return cv ? cv.toDataURL() : null; }""", selector)
     return hashlib.sha256((data or "").encode()).hexdigest()
+
+
+def horizon_test_png(width: int, height: int) -> bytes:
+    """Tiny RGB panorama with edge colors to catch side-cropping in the editor."""
+    rows = bytearray()
+    for _y in range(height):
+        rows.append(0)
+        for x in range(width):
+            color = (220, 70, 75) if x < width * 0.12 else (
+                (80, 125, 230) if x >= width * 0.88 else (65, 145, 110))
+            rows.extend(color)
+
+    def chunk(tag: bytes, payload: bytes) -> bytes:
+        body = tag + payload
+        return (struct.pack(">I", len(payload)) + body
+                + struct.pack(">I", zlib.crc32(body) & 0xFFFFFFFF))
+
+    return (b"\x89PNG\r\n\x1a\n"
+            + chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0))
+            + chunk(b"IDAT", zlib.compress(rows, 6))
+            + chunk(b"IEND", b""))
 
 
 def open_editor(c):
@@ -96,8 +122,8 @@ def web_load_smoke(c):
     c.expect(re.search(r"\d+\.\d+\.\d+", about), f"about version not shown: {about!r}")
     c.expect(c.page.locator("#tb-site option").count() >= 1,
              "the site picker must be populated")
-    c.expect(c.page.locator(".pick li[data-id]").count() > 0,
-             "the Tonight view must list targets")
+    c.expect(c.page.locator(READY).count() > 0,
+             "the Tonight ranking must render at least one target row")
     c.assert_clean()
 
 
@@ -285,6 +311,65 @@ def web_pano_canvas_dpr_resize(c):
     c.assert_clean()
 
 
+@check("web-horizon-stage-preserves-photo-aspect", "web")
+def web_horizon_stage_preserves_photo_aspect(c):
+    """The panorama stage follows each source aspect and retains its edge pixels."""
+    boot(c)
+    tab(c, "horizon")
+    for label, width, height in (("wide", 144, 48), ("portraitish", 96, 72)):
+        expected = width / height
+        c.page.locator("#pano-file").set_input_files({
+            "name": f"aspect-{label}.png", "mimeType": "image/png",
+            "buffer": horizon_test_png(width, height),
+        })
+        c.page.wait_for_function(
+            """(expected) => {
+              const cv = document.querySelector('#pano-canvas');
+              if (!cv || cv.width < 80 || cv.height < 20) return false;
+              const ratio = cv.width / cv.height;
+              if (Math.abs(ratio - expected) > 0.03) return false;
+              const ctx = cv.getContext('2d');
+              const y = Math.floor(cv.height / 2);
+              const left = ctx.getImageData(Math.floor(cv.width * .02), y, 1, 1).data;
+              const right = ctx.getImageData(Math.floor(cv.width * .98), y, 1, 1).data;
+              return left[0] > left[2] && right[2] > right[0];
+            }""",
+            arg=expected, timeout=15000)
+        measured = c.page.evaluate("""() => {
+          const cv = document.querySelector('#pano-canvas');
+          const r = cv.getBoundingClientRect();
+          return { backing: cv.width / cv.height, display: r.width / r.height,
+            width: r.width, height: r.height };
+        }""")
+        c.expect(abs(measured["backing"] - expected) <= 0.03
+                 and abs(measured["display"] - expected) <= 0.05,
+                 f"{label} panorama source aspect was not preserved: {measured}")
+    c.assert_clean()
+
+
+@check("web-horizon-profile-region", "web")
+def web_horizon_profile_region(c):
+    """The Horizon view has a readable graph, honest summaries, and bin details in its rail."""
+    boot(c)
+    tab(c, "horizon")
+    c.page.click("#pano-blank")
+    panel = c.page.locator(".horizon-profile-panel")
+    panel.wait_for(state="visible", timeout=10000)
+    c.expect(panel.bounding_box()["height"] >= 190,
+             "the profile panel must reserve the required first-viewport height")
+    c.expect_eq(c.page.locator(".horizon-profile-metrics > span").count(), 4,
+                "profile summary must show coverage, profile value, landmarks, and confidence counts")
+    c.expect(c.page.locator(".horizon-selected-bin").is_visible(),
+             "selected-bin values belong in the settings rail")
+    c.page.locator("#pano-profile").click(position={"x": 220, "y": 70})
+    c.expect("Azimuth" in c.page.inner_text("#panoProfileBinSummary"),
+             "clicking the graph must update the right-rail selected-bin values")
+    metrics = c.page.inner_text(".horizon-profile-metrics")
+    c.expect("highest obstruction" in metrics.lower(),
+             f"obstacle mode must label the measured peak honestly: {metrics}")
+    c.assert_clean()
+
+
 @check("web-sky-band-no-diagonal-chord", "web")
 def web_sky_band_no_chord(c):
     """Regression pin (0.6.13 follow-up): the sky-mode blocked region is drawn
@@ -429,47 +514,32 @@ def web_tonight_render_marker_converges(c):
     c.expect_eq(c.page.evaluate("() => window.__ns_scrub_sel()"), want,
                 "the app's marker and its scrubber disagree about the selected "
                 "instant")
-    rows = c.page.eval_on_selector_all(".pick li[data-id]",
-                                       "els => els.map((e) => e.dataset.id)")
+    rows = c.page.eval_on_selector_all(
+        "#tonight-rank-table tbody tr[data-tonight-id]",
+        "els => els.map((e) => e.dataset.tonightId)")
     c.expect(rows, "the painted selection rendered no rows at all")
     c.assert_clean()
 
 
-@check("web-both-themes-render", "web")
-def web_both_themes_render(c):
-    """Exercise the real web shell in both supported presentations.
-
-    Source-level CSS checks cannot catch a theme bootstrap, event, or chart
-    rendering regression.  Switch through the actual theme controls and visit
-    the two canvas-heavy views while each theme is active.
-    """
+@check("web-workbench-only-render", "web")
+def web_workbench_only_render(c):
+    """Exercise the sole Workbench design and ensure retired theme controls stay absent."""
     boot(c)
-    accents = {}
-    for name in ("workbench", "dome"):
-        c.page.evaluate(
-            """(theme) => {
-                 const button = document.querySelector(
-                   `#themeRow .theme-btn[data-theme="${theme}"]`);
-                 if (!button) throw new Error(`missing theme button: ${theme}`);
-                 button.click();
-               }""", name)
-        c.page.wait_for_function(
-            """(theme) => document.documentElement.dataset.theme === theme
-                 && localStorage.getItem('nightseam_theme') === theme""",
-            arg=name)
-        c.page.click("#tabs a[data-v='sky']")
+    c.expect_eq(c.page.locator("html").get_attribute("data-theme"), "workbench",
+                "the web planner must boot in Workbench")
+    c.expect_eq(c.page.locator("#themeRow .theme-btn").count(), 0,
+                "the retired theme picker must stay absent")
+    for view in ("sky", "tonight"):
+        c.page.click(f"#tabs a[data-v='{view}']")
         c.page.wait_for_timeout(250)
         accent = c.page.evaluate(
             """() => getComputedStyle(document.documentElement)
                        .getPropertyValue('--accent').trim()""")
-        c.expect(accent, f"{name} theme did not expose an accent token")
-        c.expect(c.page.locator("#sky").bounding_box(),
-                 f"Sky View canvas missing in {name} theme")
-        accents[name] = accent
-        c.page.click("#tabs a[data-v='tonight']")
-        c.page.wait_for_timeout(150)
-    c.expect(accents["workbench"] != accents["dome"],
-             f"theme palettes did not differ: {accents}")
+        c.expect(accent, "Workbench must expose an accent token")
+        if view == "sky":
+            c.expect(c.page.locator("#sky").bounding_box(), "Sky View canvas missing")
+        else:
+            c.expect(c.page.locator("#tonightOverviewChart").bounding_box(), "Tonight chart missing")
     c.assert_clean()
 
 
@@ -477,19 +547,26 @@ def web_both_themes_render(c):
 def web_accessibility_essentials(c):
     """The real web DOM must expose tab semantics and text alternatives for
     the canvas charts after the dynamic views are rendered."""
+    c.page.set_viewport_size({"width": 1366, "height": 900})
     boot(c)
     tabs = c.page.locator("#tabs a[role='tab']")
     c.expect_eq(tabs.count(), 4, "the planner tablist must expose four tabs")
+    labels = [s.strip() for s in tabs.all_text_contents()]
+    c.expect_eq(labels, ["Tonight", "Catalog", "Sky View", "Horizon"],
+                "the web planner must use the four Direction B labels")
     c.expect_eq(c.page.locator("#tabs a[aria-selected='true']").count(), 1,
                 "exactly one web planner tab must be selected")
 
     tab(c, "sky")
     c.page.wait_for_selector("#sky[role='img'][aria-describedby='skyChartSummary']")
+    c.expect_eq(c.page.locator("#sky").get_attribute("tabindex"), "0",
+                "the Sky View canvas must be keyboard focusable")
     c.expect(c.page.inner_text("#skyChartSummary"),
              "the web sky chart needs a non-empty screen-reader summary")
 
     tab(c, "catalog")
     c.page.wait_for_selector(".cat tbody tr[data-id]")
+    c.page.locator("#cat-more summary").click()
     c.page.wait_for_selector("#cat-export-provenance")
     provenance = c.page.evaluate(
         """async () => { const r = await fetch('catalog-provenance.json?v=1');
@@ -510,14 +587,56 @@ def web_accessibility_essentials(c):
     row.focus()
     c.page.keyboard.press("Enter")
     c.page.wait_for_selector("#graph[role='img'][aria-describedby='graphSummary']")
+    c.page.locator("#modal .catalog-details > summary").click()
     c.expect("Catalog source" in c.page.inner_text("#modal")
              and "Designation history" in c.page.inner_text("#modal"),
              "the web detail must show catalog provenance")
     c.expect(c.page.inner_text("#graphSummary"),
              "the web altitude chart needs a non-empty screen-reader summary")
+    c.expect_eq(c.page.locator("#modal .modal").get_attribute("role"), "complementary",
+                "the wide target inspector must be exposed as a non-modal complementary panel")
+    c.expect(c.page.locator("#modal .modal").get_attribute("aria-modal") is None,
+             "the wide target inspector must not claim to be modal")
+    c.page.evaluate("""() => {
+        const panel = document.querySelector('#modal .modal');
+        const stops = [...panel.querySelectorAll('a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])')]
+          .filter((el) => el.getClientRects().length > 0);
+        stops.at(-1)?.focus();
+      }""")
+    c.page.keyboard.press("Tab")
+    c.expect(not c.page.evaluate("() => document.querySelector('#modal .modal')?.contains(document.activeElement)"),
+             "Tab must continue out of the wide, docked inspector")
     c.page.keyboard.press("Escape")
     c.expect(c.page.evaluate("() => document.activeElement?.matches('.cat tbody tr[data-id]')"),
              "closing the web detail dialog must restore focus to its catalog row")
+
+    c.page.set_viewport_size({"width": 900, "height": 900})
+    c.page.wait_for_timeout(180)
+    row.focus()
+    c.page.keyboard.press("Enter")
+    c.page.wait_for_selector("#modal:not([hidden]) .modal[role='dialog'][aria-modal='true']")
+    c.page.evaluate("""() => {
+        const panel = document.querySelector('#modal .modal');
+        const stops = [...panel.querySelectorAll('a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])')]
+          .filter((el) => el.getClientRects().length > 0);
+        stops.at(-1)?.focus();
+      }""")
+    c.page.keyboard.press("Tab")
+    c.expect(c.page.evaluate("() => document.querySelector('#modal .modal')?.contains(document.activeElement)"),
+             "Tab must wrap within the compact modal inspector")
+    c.page.keyboard.press("Escape")
+    c.expect(c.page.evaluate("() => document.activeElement?.matches('.cat tbody tr[data-id]')"),
+             "closing the compact inspector must restore focus to its source row")
+
+    tab(c, "tonight")
+    target_row = c.page.locator(READY).first
+    target_row.focus()
+    target_row_id = target_row.get_attribute("data-tonight-id")
+    c.page.keyboard.press("Enter")
+    c.page.wait_for_selector("#modal:not([hidden]) .modal")
+    c.page.keyboard.press("Escape")
+    c.expect(c.page.evaluate("(id) => document.activeElement?.matches(`#tonight-rank-table tbody tr[data-tonight-id=\"${id}\"]`)", target_row_id),
+             "closing a Tonight detail must restore focus to its ranked target row")
 
     tab(c, "horizon")
     c.page.wait_for_selector("#pano-blank")
@@ -531,6 +650,442 @@ def web_accessibility_essentials(c):
         c.page.wait_for_selector(selector, state="attached")
     c.expect(c.page.inner_text("#panoChartSummary"),
              "the web horizon editor needs a text alternative")
+    c.assert_clean()
+
+
+@check("web-saved-targets-persist-and-prune", "web")
+def web_saved_targets_persist_and_prune(c):
+    """Saved catalog targets persist in local prefs and are pruned after the
+    actual catalog is loaded; the saved-only filter uses those same IDs."""
+    c.page.set_viewport_size({"width": 1366, "height": 900})
+    boot(c)
+    tab(c, "catalog")
+    row = c.page.locator(".cat tbody tr[data-id='ngc224']").first
+    row.wait_for(state="visible", timeout=30000)
+    row.locator("[data-save-target]").click()
+    c.page.wait_for_function(
+        "() => document.querySelector('.cat tbody [data-save-target]')?.classList.contains('on')")
+    stored = c.page.evaluate("""async () => {
+      const Hor = await import('./horizon.js');
+      return Hor.getPrefs().savedTargetIds;
+    }""")
+    c.expect(stored == ["ngc224"], f"the selected catalog ID was not saved: {stored!r}")
+
+    c.page.locator("#cat-more summary").click()
+    c.page.locator("#cat-saved").check()
+    c.page.wait_for_function(
+        "() => document.querySelectorAll('.cat tbody tr[data-id]').length === 1")
+    c.expect_eq(c.page.locator(".cat tbody tr[data-id]").get_attribute("data-id"),
+                "ngc224", "saved-only filtering must use the persisted catalog ID")
+
+    c.page.evaluate("""async () => {
+      const Hor = await import('./horizon.js');
+      Hor.setPrefs({ savedTargetIds: ['ngc224', 'deleted-target'] });
+    }""")
+    c.page.reload(wait_until="domcontentloaded")
+    boot(c)
+    cleaned = c.page.evaluate("""async () => {
+      const Hor = await import('./horizon.js');
+      return Hor.getPrefs().savedTargetIds;
+    }""")
+    c.expect(cleaned == ["ngc224"],
+             f"an ID absent from the loaded catalog should be pruned: {cleaned!r}")
+    c.assert_clean()
+
+
+@check("web-docked-inspector-fit-and-tonight-key", "web")
+def web_docked_inspector_fit_and_tonight_key(c):
+    """The docked target details use a vertical, scrollable rail at both wide
+    planner widths and all supported themes; Tonight exposes the chart states
+    and guides as a wrapping, theme-token-backed key."""
+    boot(c)
+    c.allow_console_errors("optional target images may be absent from the bundled catalog")
+    c.allow_failed_responses("optional target images may be absent from the bundled catalog")
+    # Use the same deterministic site and session as the visual matrix so M31
+    # appears as a real Tonight pick rather than relying on the gate's August
+    # clock and generic Berlin seed.
+    c.page.evaluate("""async () => {
+      const WS = await import('./webstore.js?v=41');
+      const Hor = await import('./horizon.js?v=68');
+      await WS.saveSiteRec({ id: 'browser-direction-b-black-forest',
+        name: 'Black Forest', lat: 48, lon: 8.2, elev: 900, tz: 'Europe/Berlin' });
+      Hor.setPrefs({ activeSiteId: 'browser-direction-b-black-forest',
+        minAlt: 25, viewFullDay: false });
+    }""")
+    c.page.reload(wait_until="domcontentloaded")
+    c.page.wait_for_selector(READY, timeout=60000)
+    c.page.locator("#tb-date").fill("2026-09-26")
+    c.page.locator("#tb-date").dispatch_event("change")
+    tab(c, "sky")
+    c.page.wait_for_selector("#sky-time", state="visible")
+    c.page.locator("#sky-time").fill("2026-09-26T22:36")
+    c.page.locator("#sky-time").dispatch_event("input")
+    c.page.wait_for_function(
+        "() => document.querySelector('#sky-time')?.value === '2026-09-26T22:36'",
+        timeout=15000)
+    tab(c, "tonight")
+    c.wait_tonight_render()
+
+    def choose_theme(theme):
+        c.expect_eq(theme, "workbench", "only Workbench is supported")
+        c.expect_eq(c.page.locator("html").get_attribute("data-theme"), "workbench",
+                    "the retired theme system must remain absent")
+
+    def assert_dock_header_visible(context, *, check_tab_offset=False):
+        state = c.page.evaluate("""() => {
+          const title = document.querySelector('#m-title');
+          const close = document.querySelector('#m-close');
+          const visibleChrome = ['.topbar', '#tabs'].map((selector) => {
+            const el = document.querySelector(selector);
+            if (!el || !el.getClientRects().length) return null;
+            const r = el.getBoundingClientRect();
+            return r.bottom > 0 && r.top < innerHeight && r.right > 0 && r.left < innerWidth
+              ? r : null;
+          }).filter(Boolean);
+          const inspect = (el) => {
+            if (!el) return { visible: false, clear: false, hit: false, rect: null };
+            const r = el.getBoundingClientRect();
+            const visible = r.width > 0 && r.height > 0 && r.left >= -1 &&
+              r.right <= innerWidth + 1 && r.top >= -1 && r.bottom <= innerHeight + 1;
+            const clear = visibleChrome.every((chrome) => {
+              const x = Math.max(0, Math.min(r.right, chrome.right) - Math.max(r.left, chrome.left));
+              const y = Math.max(0, Math.min(r.bottom, chrome.bottom) - Math.max(r.top, chrome.top));
+              return x <= 1 || y <= 1;
+            });
+            const hit = visible && (() => {
+              const target = document.elementFromPoint(r.left + r.width / 2,
+                r.top + r.height / 2);
+              return !!target && el.contains(target);
+            })();
+            return { visible, clear, hit, rect: { top: r.top, bottom: r.bottom,
+              left: r.left, right: r.right } };
+          };
+          const tabs = document.querySelector('#tabs');
+          const tabsRect = tabs?.getBoundingClientRect();
+          const dockTop = parseFloat(getComputedStyle(document.documentElement)
+            .getPropertyValue('--detail-top'));
+          const expectedTop = Math.ceil(Math.max(0, ...visibleChrome.map((r) => r.bottom)));
+          return { title: inspect(title), close: inspect(close), dockTop, expectedTop,
+            tabsBottom: tabsRect?.bottom,
+            tabOffsetMatches: Number.isFinite(dockTop) &&
+              Math.abs(dockTop - expectedTop) <= 1 && Math.abs(dockTop - tabsRect.bottom) <= 1 };
+        }""")
+        for name in ("title", "close"):
+            c.expect(state[name]["visible"] and state[name]["clear"] and state[name]["hit"],
+                     f"{context}: docked detail {name} must be visible, unobscured by chrome, and hit-testable: {state}")
+        if check_tab_offset:
+            c.expect(state["tabOffsetMatches"],
+                     f"{context}: dock top must track the visible tab bottom within 1px: {state}")
+
+    def exercise_deep_tonight_detail(theme, width):
+        c.page.evaluate("""() => {
+          const target = document.querySelector("#tonight-rank-table tbody tr[data-tonight-id='ngc224']");
+          if (!target) throw new Error('Tonight is missing the M31 target row');
+          target.scrollIntoView({ block: 'center' });
+        }""")
+        c.page.wait_for_function("""() => {
+          const tabs = document.querySelector('#tabs');
+          return tabs && tabs.getBoundingClientRect().bottom <= 0;
+        }""", timeout=10000)
+        tabs_bottom = c.page.evaluate("() => document.querySelector('#tabs').getBoundingClientRect().bottom")
+        c.expect(tabs_bottom <= 0,
+                 f"{theme} {width}px: the Tonight M31 regression must begin with tabs above the viewport, got {tabs_bottom}")
+        c.page.locator("#tonight-rank-table tbody tr[data-tonight-id='ngc224']:visible").first.click()
+        c.page.wait_for_selector("#modal.detail-docked > .modal", state="visible")
+        c.page.evaluate("() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))")
+        assert_dock_header_visible(f"{theme} {width}px deep Tonight row")
+
+        c.page.evaluate("window.scrollTo(0, 0)")
+        c.page.wait_for_function("""() => {
+          const chrome = ['.topbar', '#tabs'].map((selector) => {
+            const el = document.querySelector(selector);
+            if (!el || !el.getClientRects().length) return 0;
+            const r = el.getBoundingClientRect();
+            return r.bottom > 0 && r.top < innerHeight ? r.bottom : 0;
+          });
+          const expected = Math.ceil(Math.max(0, ...chrome));
+          const actual = parseFloat(getComputedStyle(document.documentElement)
+            .getPropertyValue('--detail-top'));
+          return Number.isFinite(actual) && Math.abs(actual - expected) <= 1;
+        }""", timeout=10000)
+        c.page.evaluate("() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))")
+        assert_dock_header_visible(f"{theme} {width}px after returning to page top",
+                                  check_tab_offset=True)
+        c.page.locator("#m-close").click()
+        c.page.wait_for_function("() => document.querySelector('#modal')?.hidden")
+
+    def assert_night_structure(theme, width):
+        state = c.page.evaluate("""() => {
+          const brief = document.querySelector('.night-brief');
+          const plot = document.querySelector('#tonightOverviewChart');
+          const scrub = document.querySelector('.tonight-local-scrub');
+          const table = document.querySelector('#tonight-rank-table');
+          const rect = el => el?.getBoundingClientRect();
+          const b = rect(brief), p = rect(plot), s = rect(scrub), t = rect(table);
+          const rows = [...(table?.querySelectorAll('tbody tr[data-tonight-id]') || [])];
+          const fullRows = rows.filter(row => {
+            const r = row.getBoundingClientRect();
+            return r.width > 0 && r.height > 0 && r.right <= innerWidth + 1 && r.left >= -1;
+          }).length;
+          return { brief: !!b && b.width > 0, plot: !!p && p.width >= 250 && p.height > 0,
+            scrub: !!s && s.width > 0, table: !!t && t.width > 0,
+            tableScroll: table?.scrollWidth - table?.clientWidth,
+            pageOverflow: document.documentElement.scrollWidth - innerWidth,
+            overflows: [...document.querySelectorAll('body *')].map(el => {
+              const r = el.getBoundingClientRect();
+              return { id: el.id, cls: typeof el.className === 'string' ? el.className : '',
+                tag: el.tagName, left: Math.round(r.left), right: Math.round(r.right),
+                width: Math.round(r.width), scroll: el.scrollWidth, client: el.clientWidth };
+            }).filter(x => x.right > innerWidth + 1 || x.left < -1 || x.scroll > x.client + 1)
+              .sort((a,b) => (b.right-innerWidth) - (a.right-innerWidth)).slice(0,12),
+            rows: rows.length, fullRows };
+        }""")
+        c.expect(state["brief"] and state["plot"] and state["scrub"] and
+                 state["table"] and state["rows"] >= 3 and state["fullRows"] >= 3,
+                 f"{theme} {width}px: Tonight brief, altitude plot, scrub, and three ranked rows must render: {state}")
+        c.expect(state["tableScroll"] >= 0 and state["pageOverflow"] <= 1,
+                 f"{theme} {width}px: Tonight ranking may scroll internally but must not widen the page: {state}")
+
+    def assert_fit(context, *, docked):
+        state = c.page.evaluate("""() => {
+        const outer = document.querySelector('#modal');
+        const panel = outer.querySelector('.modal');
+        const hero = panel.querySelector('.detail-hero');
+        const image = panel.querySelector('#objimg-wrap');
+        const chart = panel.querySelector('#graph');
+        const title = panel.querySelector('#m-title');
+        const close = panel.querySelector('#m-close');
+        const visibility = panel.querySelector('#d-obs');
+        const details = panel.querySelector('details.catalog-details');
+        const collapsedByDefault = !details.open;
+        details.open = true;
+        const disclosure = details.querySelector('summary');
+        const metaValue = details.querySelector('.meta dd');
+        const legend = panel.querySelector('.chart-legend');
+        const action = panel.querySelector('#m-save-target');
+        const favorite = panel.querySelector('#m-session-fav');
+        const panelRect = panel.getBoundingClientRect();
+        const scrollOwner = outer.classList.contains('detail-docked') ? panel : outer;
+        const dpr = window.devicePixelRatio || 1;
+        const rects = [title, close, favorite, hero, image, visibility, chart,
+          disclosure, metaValue, legend, action].map(el => el?.getBoundingClientRect());
+        const horizontalBounds = rects.every(r => r && r.width > 0 &&
+          r.left >= panelRect.left - 1 && r.right <= panelRect.right + 1 &&
+          r.left >= -1 && r.right <= innerWidth + 1);
+        const inPanelViewport = el => {
+          const r = el.getBoundingClientRect();
+          const currentPanel = panel.getBoundingClientRect();
+          const top = Math.max(currentPanel.top, 0);
+          const bottom = Math.min(currentPanel.bottom, innerHeight);
+          return r.top >= top - 1 && r.bottom <= bottom + 1;
+        };
+        const isTopmost = el => {
+          const r = el.getBoundingClientRect();
+          const hit = document.elementFromPoint(r.left + r.width / 2,
+            r.top + r.height / 2);
+          return !!hit && el.contains(hit);
+        };
+        const reach = el => {
+          const r = el.getBoundingClientRect();
+          const ownerRect = scrollOwner.getBoundingClientRect();
+          if (r.top < ownerRect.top) scrollOwner.scrollTop += r.top - ownerRect.top;
+          else if (r.bottom > ownerRect.bottom) scrollOwner.scrollTop += r.bottom - ownerRect.bottom;
+          return inPanelViewport(el);
+        };
+        scrollOwner.scrollTop = 0;
+        const closeInitiallyVisible = inPanelViewport(close) && isTopmost(close);
+        const dialogHeaderVisible = isTopmost(title);
+        const reachability = Object.fromEntries([
+          ['title', title], ['close', close], ['favorite', favorite], ['hero', hero],
+          ['image', image], ['visibility', visibility], ['chart', chart],
+          ['details', disclosure], ['metadata', metaValue], ['legend', legend], ['action', action],
+        ].map(([name, el]) => [name, reach(el)]));
+        const contentReachable = Object.values(reachability).every(Boolean);
+        const imageHeight = image.getBoundingClientRect().height;
+        scrollOwner.scrollTop = 0;
+        return {
+          docked: outer.classList.contains('detail-docked'),
+          role: panel.getAttribute('role'), modal: panel.getAttribute('aria-modal'),
+          panelWidth: panel.clientWidth, panelOverflow: panel.scrollWidth - panel.clientWidth,
+          contentWidth: panel.scrollWidth, contentOverflow: panel.scrollWidth - panel.clientWidth,
+          heroWidth: hero.getBoundingClientRect().width,
+          chartWidth: chart.getBoundingClientRect().width,
+          heroBeforeChart: hero.getBoundingClientRect().top < chart.getBoundingClientRect().top,
+          chartBeforeMetadata: chart.getBoundingClientRect().top < details.getBoundingClientRect().top,
+          collapsedByDefault, imageHeight, horizontalBounds, closeInitiallyVisible,
+          dialogHeaderVisible, contentReachable, reachability,
+          canvasWidth: chart.width, expectedCanvasWidth: Math.round(chart.clientWidth * dpr),
+          pageOverflow: document.documentElement.scrollWidth - innerWidth
+          };
+        }""")
+        c.expect_eq(state["docked"], docked, f"{context}: inspector presentation changed unexpectedly")
+        if docked:
+            c.expect_eq(state["role"], "complementary",
+                        f"{context}: docked detail must remain a complementary region")
+            c.expect(state["modal"] is None,
+                     f"{context}: docked detail must not claim aria-modal")
+        else:
+            c.expect_eq(state["role"], "dialog",
+                        f"{context}: compact detail must remain a dialog")
+            c.expect_eq(state["modal"], "true",
+                        f"{context}: compact detail must keep modal semantics")
+        c.expect(state["panelWidth"] > 0 and state["panelOverflow"] <= 1 and
+                 state["contentOverflow"] <= 1 and state["pageOverflow"] <= 1,
+                 f"{context}: detail must not create horizontal overflow: {state}")
+        c.expect(state["heroBeforeChart"] and state["chartBeforeMetadata"] and
+                 state["collapsedByDefault"] and state["heroWidth"] > 0 and
+                 state["chartWidth"] > 0 and state["contentReachable"],
+                 f"{context}: target facts, chart, and collapsed metadata must follow the required order and remain reachable: {state['reachability']}")
+        c.expect(state["horizontalBounds"] and state["closeInitiallyVisible"] and
+                 state["dialogHeaderVisible"],
+                 f"{context}: detail content must stay inside its panel with a reachable title and close control: {state}")
+        if docked:
+            c.expect(state["imageHeight"] <= 150,
+                     f"{context}: docked target image should stay compact: {state}")
+        c.expect_eq(state["canvasWidth"], state["expectedCanvasWidth"],
+                    f"{context}: detail graph must be drawn at its current width")
+
+    def open_detail_in_view(view):
+        if view == "tonight":
+            target = c.page.locator("#tonight-rank-table tbody tr[data-tonight-id]:visible").first
+            target.wait_for(state="visible", timeout=20000)
+            target.click()
+        elif view == "catalog":
+            row = c.page.locator("table.cat tbody tr[data-id]").first
+            row.wait_for(state="visible", timeout=20000)
+            row.click()
+        else:
+            c.page.wait_for_selector("#sky[tabindex='0']", state="visible")
+            target = c.page.locator("#sky-visible-now [data-sky-target]").first
+            target.wait_for(state="visible", timeout=15000)
+            target.click()
+            c.page.locator("#sky-selected-detail").click()
+        try:
+            c.page.wait_for_selector("#modal:not([hidden]) .modal", state="visible", timeout=20000)
+        except Exception as exc:
+            raise AssertionError(f"could not open target detail from the {view} view: {exc}") from exc
+
+    for theme in ("workbench",):
+        choose_theme(theme)
+        for width, height in ((1672, 941), (1240, 900)):
+            c.page.set_viewport_size({"width": width, "height": height})
+            tab(c, "tonight")
+            assert_night_structure(theme, width)
+            exercise_deep_tonight_detail(theme, width)
+            for view in ("tonight", "catalog", "sky"):
+                tab(c, view)
+                if view == "tonight":
+                    assert_night_structure(theme, width)
+                open_detail_in_view(view)
+                c.page.wait_for_selector("#modal.detail-docked > .modal", state="visible")
+                assert_fit(f"{theme} {width}px {view}", docked=True)
+                if view == "catalog":
+                    bounds = c.page.evaluate("""() => {
+                      const rail = document.querySelector('.cat-filter-rail').getBoundingClientRect();
+                      const search = document.querySelector('#cat-q').getBoundingClientRect();
+                      const table = document.querySelector('.catwrap');
+                      return { railLeft: rail.left, railRight: rail.right,
+                        searchLeft: search.left, searchRight: search.right,
+                        tableWidth: table.clientWidth, tableContentWidth: table.scrollWidth,
+                        pageOverflow: document.documentElement.scrollWidth - innerWidth };
+                    }""")
+                    c.expect(bounds["searchLeft"] >= bounds["railLeft"] - 1 and
+                             bounds["searchRight"] <= bounds["railRight"] + 1 and
+                             bounds["tableContentWidth"] >= bounds["tableWidth"] and
+                             bounds["pageOverflow"] <= 1,
+                             f"{theme} {width}px: Catalog search must fit the rail and table must scroll independently: {bounds}")
+                c.page.locator("#m-close").click()
+                c.page.wait_for_function("() => document.querySelector('#modal')?.hidden")
+
+        c.page.set_viewport_size({"width": 900, "height": 900})
+        tab(c, "tonight")
+        assert_night_structure(theme, 900)
+        open_detail_in_view("tonight")
+        c.page.wait_for_selector("#modal:not([hidden]) .modal[role='dialog'][aria-modal='true']",
+                                 state="visible")
+        assert_fit(f"{theme} 900px compact detail", docked=False)
+        c.page.locator("#m-close").click()
+        c.page.wait_for_function("() => document.querySelector('#modal')?.hidden")
+
+    for theme in ("workbench",):
+      choose_theme(theme)
+      for width, height in ((640, 900), (360, 800)):
+        c.page.set_viewport_size({"width": width, "height": height})
+        tab(c, "tonight")
+        c.page.wait_for_selector("#tonightOverviewChart")
+        c.page.wait_for_function("() => document.querySelectorAll('.tonight-chart-key [role=listitem]').length === 6")
+        key = c.page.evaluate("""() => {
+      const root = document.documentElement;
+      const styles = (sel) => getComputedStyle(document.querySelector(sel));
+      const probe = (value) => {
+        const el = document.createElement('i'); el.style.backgroundColor = value;
+        document.body.append(el); const color = getComputedStyle(el).backgroundColor; el.remove();
+        return color;
+      };
+      const box = document.querySelector('.tonight-chart-key');
+      const items = [...box.querySelectorAll('[role=listitem]')];
+      const visible = items.every((el) => getComputedStyle(el).display !== 'none' && el.getClientRects().length);
+      return {
+        labels: items.map((el) => el.textContent.trim()), visible,
+        wraps: getComputedStyle(box).flexWrap === 'wrap',
+        width: box.clientWidth, overflow: box.scrollWidth - box.clientWidth,
+        blocked: styles('.key-blocked').backgroundColor === probe(getComputedStyle(root).getPropertyValue('--viz-bad').trim()),
+        low: styles('.key-below-min').backgroundColor === probe(getComputedStyle(root).getPropertyValue('--viz-warn').trim()),
+        below: styles('.key-below-horizon').backgroundColor === probe(getComputedStyle(root).getPropertyValue('--viz-below').trim()),
+        twilight: styles('.key-twilight').backgroundColor === probe(getComputedStyle(root).getPropertyValue('--viz-twilight-3').trim()),
+        minimum: styles('.key-minimum').borderTopColor === probe(getComputedStyle(root).getPropertyValue('--viz-min-stroke').trim()),
+        selected: styles('.key-selected-time').borderLeftColor === probe(getComputedStyle(root).getPropertyValue('--viz-target-selected').trim()),
+        pageOverflow: document.documentElement.scrollWidth - innerWidth
+      };
+        }""")
+        labels = " ".join(key["labels"])
+        for phrase in ("Horizon or ceiling blocked", "Below minimum altitude", "Below horizon",
+                       "Twilight", "Minimum-altitude guide", "Selected time"):
+            c.expect(phrase in labels,
+                     f"{theme} {width}px Tonight's visible chart key is missing {phrase!r}: {key}")
+        for token_backed in ("blocked", "low", "below", "twilight", "minimum", "selected"):
+            c.expect(key[token_backed],
+                     f"{theme} {width}px Tonight chart key must use {token_backed} theme semantics: {key}")
+        c.expect(key["visible"] and key["wraps"] and key["overflow"] <= 1 and key["pageOverflow"] <= 1,
+                 f"{theme} {width}px Tonight chart key must wrap without horizontal overflow: {key}")
+    c.assert_clean()
+
+
+@check("web-sky-canvas-container-resize", "web")
+def web_sky_canvas_container_resize(c):
+    """The Sky View's resize observer follows its chart container even when
+    the browser viewport itself stays the same size."""
+    c.page.set_viewport_size({"width": 1366, "height": 900})
+    boot(c)
+    tab(c, "sky")
+    c.page.wait_for_selector("#sky[tabindex='0']")
+    before = c.page.evaluate("""() => {
+      const cv = document.querySelector('#sky');
+      return { width: cv.clientWidth, backing: cv.width,
+        dpr: window.devicePixelRatio || 1 };
+    }""")
+    c.page.evaluate("""() => {
+      const box = document.querySelector('.sky-canvas-box');
+      const cv = document.querySelector('#sky');
+      box.style.setProperty('width', `${Math.max(160, cv.clientWidth - 100)}px`, 'important');
+      box.style.setProperty('justify-self', 'start', 'important');
+    }""")
+    c.page.wait_for_function("""(old) => {
+      const cv = document.querySelector('#sky');
+      return cv.clientWidth < old &&
+        cv.width === Math.round(cv.clientWidth * (window.devicePixelRatio || 1));
+    }""", arg=before["width"], timeout=10000)
+    after = c.page.evaluate("""() => ({
+      width: document.querySelector('#sky').clientWidth,
+      backing: document.querySelector('#sky').width,
+      dpr: window.devicePixelRatio || 1 })""")
+    c.expect(after["backing"] == round(after["width"] * after["dpr"]),
+             f"the chart backing store must track its resized container: {after}")
+    c.page.evaluate("""() => {
+      const box = document.querySelector('.sky-canvas-box');
+      box.style.removeProperty('width'); box.style.removeProperty('justify-self');
+    }""")
+    c.page.wait_for_timeout(200)
     c.assert_clean()
 
 
@@ -586,6 +1141,7 @@ def web_mag_slider_changes_sky(c):
     boot(c)
     tab(c, "sky")
     c.page.wait_for_selector("#sky", state="visible", timeout=30000)
+    c.page.locator(".sky-controls-tray summary").click()
     c.page.wait_for_timeout(400)
     val0 = c.page.inner_text("#sky-mag-val").strip()
     dig0 = canvas_digest(c, "#sky")
@@ -686,31 +1242,6 @@ def web_pano_crop_recalibrate(c):
     c.assert_clean()
 
 
-# ---------------------------------------------------- catalog table (0.6.30)
-
-def seed_rig(c, fov_w: float):
-    """Give the shell an ACTIVE rig (IndexedDB record + prefs) so the Frame
-    column renders at all. Written through the app's own store, so the record
-    shape is the shipped one - never a guess."""
-    c.page.evaluate(
-        """async (fov) => {
-             const ws = await import('./webstore.js');
-             await ws.saveRigRec({ id: 'r-browser', name: 'Browser rig',
-                                   fov_w: fov, fov_h: fov * 0.7,
-                                   fov_unit: 'arcmin' });
-             const raw = JSON.parse(localStorage.getItem('nightseam_prefs_v1') || '{}');
-             raw.activeRigId = 'r-browser';
-             localStorage.setItem('nightseam_prefs_v1', JSON.stringify(raw));
-           }""", fov_w)
-
-
-def frame_cells(c):
-    return c.page.eval_on_selector_all(
-        "#view table.cat td.frame",
-        "els => els.map(e => ({ text: e.textContent.trim(),"
-        " span: e.firstElementChild ? e.firstElementChild.className : '' }))")
-
-
 @check("web-pref-change-keeps-unsaved-paint", "web")
 def web_pref_change_keeps_unsaved_paint(c):
     """WE-05 (0.6.32 review): a preference change while the editor is open must
@@ -793,14 +1324,10 @@ def web_search_indexes_the_designation_blob(c):
 def web_tonight_pool_includes_unmagnituded_standard_rows(c):
     """The Tonight candidate pool is core/visibility.js::inTonightPool.
 
-    It used to be an inline `o.vmag != null` in web/app.js, which silently threw
-    away the 45 of the 200 STANDARD-mode objects whose magnitude OpenNGC leaves
-    empty - IC 1396, the Running Man, NGC 281, the Flame, the Tulip, Simeis 147,
-    the Double Cluster, the Pipe Nebula, ... - while the comment above it claimed
-    exact desktop parity. The three lists show at most 16+8+8 rows, so a single
-    scrub position proves nothing; the check scans the window in 3 h steps and
-    requires several of those objects to appear, which the old filter made
-    impossible."""
+    Unknown-magnitude standard objects must qualify for the shared pool. The
+    Direction B ranked table deliberately shows only its top 16 rows, so the
+    UI portion scans the night and verifies at least one such row is rendered;
+    the core predicate is checked directly for all four representative IDs."""
     boot(c)
     bounds = c.page.eval_on_selector(
         "#tb-scrub", "el => ({ lo: Number(el.min), hi: Number(el.max) })")
@@ -828,30 +1355,36 @@ def web_tonight_pool_includes_unmagnituded_standard_rows(c):
                     "the Tonight view painted a different instant than the "
                     "scrub position names")
         ids |= set(c.page.eval_on_selector_all(
-            ".pick li[data-id]", "els => els.map((e) => e.dataset.id)"))
+            "#tonight-rank-table tbody tr[data-tonight-id]",
+            "els => els.map((e) => e.dataset.tonightId)"))
         pos += step
         if pos > bounds["hi"]:
             break
     c.expect(ids, "the Tonight lists rendered nothing at all")
-    # Every one of these has an EMPTY magnitude in the shipped catalogue, so the
-    # old inline filter excluded them from the candidate set entirely. The check
-    # asks for TWO of the four: the lists carry at most 16+8+8 rows and are
-    # ranked by score, so an individual object can legitimately miss the cut at
-    # every sampled instant - but the old filter made ALL FOUR impossible.
+    eligible = c.page.evaluate("""async () => {
+      const Core = await import('./core.js?v=44');
+      const catalog = await (await fetch('catalog.json?v=10')).json();
+      return ['ic1396', 'ngc1977', 'c14', 'pipe'].map(id => {
+        const row = catalog.find(item => item.id === id);
+        return { id, standard: !!row && !row._adv, magnitude: row?.vmag,
+          included: !!row && Core.inTonightPool(row.vmag, !!row._adv, Core.ADV_TONIGHT_MAG_CAP) };
+      });
+    }""")
+    c.expect(eligible and all(item["standard"] and item["magnitude"] is None and item["included"]
+                              for item in eligible),
+             f"unmagnituded standard targets must qualify for Tonight's shared pool: {eligible}")
+    # The ranking cap may hide some eligible candidates at every sampled time.
     found = [oid for oid in ("ic1396", "ngc1977", "c14", "pipe") if oid in ids]
-    c.expect(len(found) >= 2,
-             f"objects whose catalogue magnitude is EMPTY are missing from the "
-             f"Tonight pool: only {found} of ['ic1396', 'ngc1977', 'c14', 'pipe'] "
-             f"ever appeared (saw {len(ids)} distinct rows across the night). "
-             f"core/visibility.js::inTonightPool answers 'in' for them.")
+    c.expect(found,
+             f"the rendered ranking should include an unmagnituded candidate somewhere in the night: {found}")
     c.assert_clean()
 
 
 @check("web-catalog-advanced-minvis", "web")
 def web_catalog_advanced_minvis(c):
     """ADVANCED mode + the Min-visibility gate: the whole 12k list has to warm
-    through core's nightStatsBatch and then filter, and the WIDE table must not
-    push itself out of its card at a narrow viewport (the Tier column is new)."""
+    through core's nightStatsBatch and then filter, while the nine-column table
+    stays inside its results viewport at a narrow width."""
     c.goto("/")
     c.page.evaluate(
         """() => { const raw = JSON.parse(localStorage.getItem('nightseam_prefs_v1') || '{}');
@@ -958,83 +1491,38 @@ def web_catalog_advanced_minvis(c):
     c.expect(busy["top"] == base["top"] == idle["top"],
              f"the busy chip moved the table: {base['top']} -> {busy['top']} -> {idle['top']}")
     c.assert_clean()
-@check("web-catalog-tier-frame", "web")
-def web_catalog_tier_frame(c):
-    """0.6.30: the catalog's DEFAULT sort is the popularity TIER - the letters
-    A-F, never the popularity source score - and the Frame cell shows a PERCENTAGE
-    (green inside one frame, amber once the object needs a mosaic) instead of
-    the word 'fits'. Rendered DOM, not source text."""
-    boot(c)
-    seed_rig(c, 2)            # 2 arcmin: any real object is over 100%
+@check("web-catalog-direction-b-density", "web")
+def web_catalog_direction_b_density(c):
+    """Keep the primary Catalog table aligned with the Direction B contract:
+    20 dense rows, separate designation/common-name columns, full status and
+    best-window headers, and no popularity/frame columns in the results table."""
+    c.page.set_viewport_size({"width": 1672, "height": 941})
     boot(c)
     tab(c, "catalog")
-
-    head = c.page.inner_text('#view table.cat thead th[data-k="tier"]')
-    shown = head.encode("ascii", "backslashreplace").decode()   # console-safe
-    c.expect("tier" in head.lower(), f"the Tier column must exist: {shown!r}")
-    c.expect("\u25B2" in head, f"tier must be the DEFAULT sort, ascending: {shown!r}")
-
-    tiers = c.page.eval_on_selector_all(
-        "#view table.cat tbody .tier-badge",
-        "els => els.map(e => e.textContent.trim())")
-    c.expect(len(tiers) >= 10, f"expected a page of tier letters, got {len(tiers)}")
-    c.expect(set(tiers) <= set("ABCDEF"), f"tier letters must be A-F: {set(tiers)}")
-    order = {t: i for i, t in enumerate("ABCDEF")}
-    c.expect([order[t] for t in tiers] == sorted(order[t] for t in tiers),
-             f"the default view must be sorted A->F: {tiers[:12]}")
-
-    cells = frame_cells(c)
-    c.expect(cells, "the Frame column must render once a rig is active")
-    c.expect(all(re.fullmatch(r"\d+%|\u2014", x["text"]) for x in cells),
-             f"Frame must be a percentage, never 'fits': {[x['text'] for x in cells[:6]]}")
-    c.expect(any(x["span"] == "over" for x in cells),
-             "an object bigger than the frame must render as over 100% (amber)")
-
-    seed_rig(c, 3000)         # 50 degrees: nothing can overflow
-    boot(c)
-    tab(c, "catalog")
-    cells = frame_cells(c)
-    c.expect(all(re.fullmatch(r"\d+%|\u2014", x["text"]) for x in cells),
-             "Frame must stay a percentage at any FOV")
-    c.expect(any(x["span"] == "fit" for x in cells),
-             "an object inside the frame must render green")
-    c.expect(not any(x["span"] == "over" for x in cells),
-             "nothing can be over 100% inside a 50-degree frame")
-
-    # ---- Min visibility: the user's own gate on the list -------------------
-    c.expect(c.page.eval_on_selector("#cat-minvis", "el => el.value") == "1",
-             "the slider must default to 1% (drop what is never visible)")
-
-    def shown_total() -> int:
-        """The leading number of the count line ('N of M objects'): the page
-        itself always refills to 60 rows, so the FILTERED total is the evidence."""
-        m = re.match(r"\s*([\d,]+) of",
-                     c.page.inner_text("#view .cat-count:not(#pct-status)"))
-        return int(m.group(1).replace(",", "")) if m else -1
-
-    before = shown_total()
-    c.expect(before > 0, "the count line must report a filtered total")
-
-    def set_minvis(v):
-        # 'input' updates the preference (the render reads it), 'change' re-renders
-        c.page.eval_on_selector("#cat-minvis", """(el, val) => { el.value = val;
-            el.dispatchEvent(new Event('input', { bubbles: true }));
-            el.dispatchEvent(new Event('change', { bubbles: true })); }""", v)
-
-    set_minvis(60)
-    c.page.wait_for_function(
-        """() => /below 60%/.test(document.querySelector('.cat-count')?.textContent || '')""",
-        timeout=30000)
-    pcts = c.page.eval_on_selector_all(
-        "#view table.cat td.pct",
-        "els => els.map(e => parseInt(e.textContent, 10)).filter(v => Number.isFinite(v))")
-    c.expect(pcts and min(pcts) >= 60,
-             f"a row below the threshold survived the gate: {sorted(pcts)[:5]}")
-    c.expect(shown_total() < before, "the 60% gate must remove rows from the list")
-
-    set_minvis(0)             # 0 disables the gate
-    c.page.wait_for_function(
-        """() => !/below/.test(document.querySelector('.cat-count')?.textContent || '')""",
-        timeout=30000)
-    c.expect(shown_total() >= before, "0% must show every row again")
+    c.page.wait_for_selector(".cat-results table.cat tbody tr[data-id]")
+    state = c.page.evaluate("""() => {
+      const wrap = document.querySelector('.catwrap');
+      const table = wrap?.querySelector('table.cat');
+      const headers = [...(table?.querySelectorAll('thead th') || [])].map(el => el.textContent.trim());
+      const rows = [...(table?.querySelectorAll('tbody tr[data-id]') || [])];
+      const pager = document.querySelector('.cat-results .pager');
+      const box = el => { const r = el?.getBoundingClientRect(); return r &&
+        {left:r.left,right:r.right,top:r.top,bottom:r.bottom,width:r.width,height:r.height}; };
+      return {headers, rows: rows.length, firstRow: box(rows[0]), lastRow: box(rows.at(-1)),
+        wrap: box(wrap), pager: box(pager), tableWidth: box(table)?.width,
+        tableScrollWidth: table?.scrollWidth, wrapWidth: wrap?.clientWidth,
+        pageWidth: document.documentElement.scrollWidth, viewport: innerWidth,
+        advancedOpen: document.querySelector('#cat-more')?.open};
+    }""")
+    expected = ["#", "Designation", "Common name", "Type", "Mag", "Alt now", "Night %", "Best window", "Status"]
+    c.expect_eq(state["headers"], expected,
+                f"Catalog must expose the compact Direction B column order: {state}")
+    c.expect(state["rows"] == 20,
+             f"Catalog must show a 20-row page when enough results exist: {state}")
+    c.expect(state["pager"] and state["pager"]["height"] > 0 and state["pager"]["top"] < 941,
+             f"the first-page pager must remain in the reference viewport: {state}")
+    c.expect(state["tableWidth"] <= state["wrapWidth"] + 1 and state["tableScrollWidth"] <= state["wrapWidth"] + 1,
+             f"the requested columns must fit without horizontal table scrolling: {state}")
+    c.expect(state["pageWidth"] <= state["viewport"] + 1 and not state["advancedOpen"],
+             f"the result page must stay in the viewport and advanced filters start collapsed: {state}")
     c.assert_clean()

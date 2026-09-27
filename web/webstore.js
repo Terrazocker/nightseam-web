@@ -10,7 +10,7 @@
  * the app moved to nightseam.de, so every visitor starts on a fresh origin.
  */
 
-import { offsetEastMin, wallFromUtcMs, utcFromWallMs } from './core.js?v=42';
+import { offsetEastMin, wallFromUtcMs, utcFromWallMs } from './core.js?v=44';
 
 const DB_NAME = 'nightseam-db-v1';
 const DB_VER = 1;
@@ -316,13 +316,11 @@ export async function loadVersion() {
 
 /* --------------------------- backup / restore --------------------------- */
 
-/** The authoritative theme value (the localStorage key the boot script reads).
- * Workbench is the flat, focused default; classic and the empty value are
- * legacy aliases. Glass keeps its stable dome id. */
+/** Normalize the retired theme selector to the sole supported Workbench look. */
 export function currentTheme() {
   try {
     const value = localStorage.getItem('nightseam_theme');
-    const theme = value === 'dome' ? 'dome' : 'workbench';
+    const theme = 'workbench';
     if (value !== theme) localStorage.setItem('nightseam_theme', theme);
     return theme;
   } catch { return 'workbench'; }
@@ -338,9 +336,8 @@ export async function collectBackup(prefs, panos, theme) {
     exportedAt: new Date().toISOString(),
     // the theme is stored in its own localStorage key (not in prefs) - back up
     // the key the boot script actually reads, so a restore can re-apply it
-    theme: (theme === 'dome' || theme === 'workbench') ? theme
-      : (theme === 'classic' || theme === '') ? 'workbench' : currentTheme(),
-    prefs: prefs || {},
+    theme: currentTheme(),
+    prefs: cleanWebPrefs(prefs),
     panos: panos || { panos: [], activeId: null },
     sites: sites.map((r) => r.val),
     rigs: rigs.map((r) => r.val),
@@ -377,6 +374,16 @@ function cleanRecord(r, { numbers = [], strings = [] } = {}) {
  *  (v1 bundles differ only in not stamping a version at all, so they are still
  *  accepted). Bump this together with any INCOMPATIBLE bundle change. */
 export const BUNDLE_VERSION = 2;
+
+function cleanWebPrefs(value) {
+  const out = value && typeof value === 'object' && !Array.isArray(value) ? { ...value } : {};
+  for (const key of ['skyBrightnessProvider', 'theme', 'themeId', 'themeMode', 'themeVariant']) delete out[key];
+  if (Array.isArray(out.savedTargetIds)) {
+    out.savedTargetIds = [...new Set(out.savedTargetIds.filter((id) =>
+      typeof id === 'string' && /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(id)))].slice(0, 2000);
+  } else delete out.savedTargetIds;
+  return out;
+}
 
 /** Validate a backup into staged records WITHOUT touching storage.
  *  Throws on a malformed / foreign / too-new backup, so nothing is destroyed
@@ -430,11 +437,11 @@ export function stageBackup(data) {
     sites: (Array.isArray(data.sites) ? data.sites : []).map(siteOf).filter(Boolean),
     rigs: (Array.isArray(data.rigs) ? data.rigs : []).map(rigOf).filter(Boolean),
     targets: (Array.isArray(data.targets) ? data.targets : []).map(targetOf).filter(Boolean),
-    prefs: (data.prefs && typeof data.prefs === 'object') ? data.prefs : null,
+    prefs: (data.prefs && typeof data.prefs === 'object') ? cleanWebPrefs(data.prefs) : null,
     panos,
     // Keep unknown values out of localStorage. The old flat names are safe
     // aliases and are staged under the new canonical default name.
-    theme: data.theme === 'dome' ? 'dome' : 'workbench',
+    theme: 'workbench',
   };
 }
 

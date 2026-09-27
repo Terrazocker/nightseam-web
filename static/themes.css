@@ -1,1129 +1,37 @@
-/* =====================================================================
-   NightSeam UI themes.
-   Each theme is a complete design LANGUAGE: it overrides the design
-   tokens from style.css (:root) AND restyles the components (buttons,
-   tabs, cards, tables, badges, inputs, modals...) so the whole app
-   changes shape, not just colour. Active theme = <html data-theme="...">.
-   All palettes are offline-safe: system font stacks only.
-
-   Lineup: `workbench` default, `dome` GLASS (glassy starfield look).
-   Earlier flat values (empty/classic) migrate to Workbench; unknown values
-   fall back to the same safe default.
-   ===================================================================== */
-
-/* =====================================================================
-   THEME: dome - GLASS (the chosen direction)
-   Inside the observatory dome: a CSS-only starfield, floating glass
-   panels, centered pill navigation dock, sheet-style options menu.
-   =====================================================================
-
-/* =====================================================================
-   THEME: dome - OBSERVATORY GLASS
-   Inside the dome: translucent glass panels floating over a deep starfield.
-   Radical structural restyle: floating bar, pill tabs, glass sheets.
-   ===================================================================== */
-
-html[data-theme="dome"] {
-  color-scheme: dark;
-  --scheme: dark;
-  --bg: #070a16;
-  --bg2: #0c1020;
-  --panel: #0d1326;
-  --panel2: #111833;
-  --border: #1e2848;
-  --border-soft: #141c36;
-  --border2: #2a3660;
-  --text: #dfe7ff;
-  --dim: #93a3cc;
-  --faint: #7a8bb5;
-  --accent: #8f7bff;
-  --accent2: #4fd9c1;
-  --accent-ink: #0a0d1a;
-  --good: #45d6a0;
-  --warn: #ffb454;
-  --bad: #ff6b7a;
-  --gold: #ffd166;
-  --check: #8f7bff;
-  --check-ink: #0a0d1a;
-  --hover: #161e38;
-  --thumb1: #2a2250;
-  --thumb2: #0e0c1f;
-  --sky1: #04060f;
-  --sky2: #0e162b;
-  --chart-bg: #060a14;
-  --chip-bg: #0f1528;
-  --chip-border: #1e2848;
-  --tooltip-bg: #080c18f2;
-  --scroll-thumb: #1e2848;
-  --star-off: #2a3355;
-  --track: #1a2240;
-  --toast-info: #0d1326;
-  --toast-err: #1a0f18;
-  --toast-err-text: #ffd9d9;
-  --backdrop: #000a;
-  --shadow-lg: #000a;
-  --shadow-md: #000b;
-  --shadow-xl: #000c;
-  --moon: #ffd166;
-  --legend-ceil: #93a3cc;
-  --font-ui: "Segoe UI", "Aptos", system-ui, sans-serif;
-  --font-mono: Consolas, "Cascadia Mono", monospace;
-  --r-sm: 8px;
-  --r-md: 10px;
-  --r-lg: 16px;
-  --r-xl: 18px;
-  --r-2xl: 24px;
-  --r-pill: 999px;
-}
-
-/* === BODY: solid base - the whole sky lives in body::before below,
-   which is viewport-locked: scroll and window size can never slice a
-   document-relative gradient and create a visible tonal seam === */
-html[data-theme="dome"] body {
-  background: #070a15;
-  position: relative;
-}
-html[data-theme="dome"] body::before {
-  content: "";
-  position: fixed;
-  inset: 0;
-  z-index: 0;
-  pointer-events: none;
-  background:
-    /* small 1px stars - 480px tiles */
-    radial-gradient(1px 1px at 12% 24%, rgba(255,255,255,0.14) 0%, transparent 100%),
-    radial-gradient(1px 1px at 34% 58%, rgba(255,255,255,0.10) 0%, transparent 100%),
-    radial-gradient(1px 1px at 56% 12%, rgba(255,255,255,0.16) 0%, transparent 100%),
-    radial-gradient(1px 1px at 74% 66%, rgba(255,255,255,0.12) 0%, transparent 100%),
-    radial-gradient(1px 1px at 90% 34%, rgba(255,255,255,0.15) 0%, transparent 100%),
-    radial-gradient(1px 1px at 26% 82%, rgba(255,255,255,0.11) 0%, transparent 100%),
-    /* 2px stars - 480px tiles */
-    radial-gradient(2px 2px at 8% 42%, rgba(255,255,255,0.20) 0%, rgba(255,255,255,0.07) 50%, transparent 100%),
-    radial-gradient(2px 2px at 42% 74%, rgba(255,255,255,0.23) 0%, rgba(255,255,255,0.08) 50%, transparent 100%),
-    radial-gradient(2px 2px at 68% 26%, rgba(255,255,255,0.20) 0%, rgba(255,255,255,0.07) 50%, transparent 100%),
-    radial-gradient(2px 2px at 88% 84%, rgba(255,255,255,0.22) 0%, rgba(255,255,255,0.08) 50%, transparent 100%),
-    /* 3px bright stars - 480px tiles */
-    radial-gradient(3px 3px at 16% 62%, rgba(255,255,255,0.32) 0%, rgba(255,255,255,0.10) 40%, transparent 100%),
-    radial-gradient(3px 3px at 82% 38%, rgba(255,255,255,0.37) 0%, rgba(255,255,255,0.12) 40%, transparent 100%),
-    radial-gradient(3px 3px at 48% 12%, rgba(255,255,255,0.33) 0%, rgba(255,255,255,0.10) 40%, transparent 100%),
-    /* aurora sweeps */
-    radial-gradient(ellipse 80% 60% at 30% 70%, rgba(79,217,193,0.10) 0%, transparent 70%),
-    radial-gradient(ellipse 70% 50% at 70% 30%, rgba(143,123,255,0.08) 0%, transparent 70%),
-    /* smooth bottom vignette */
-    linear-gradient(180deg, rgba(0,0,0,0) 55%, rgba(2,4,10,0.28) 100%),
-    /* viewport-locked vertical sky gradient (bottom-most layer) -
-       smooth stops, no diagonal, no document-relative slicing */
-    linear-gradient(180deg, #0b1020 0%, #070a15 55%, #04060c 100%);
-  /* ALL star layers share ONE tile size (480px): mixed tile sizes
-     created per-band star-density differences that read as horizontal
-     seams. Uniform tiling = uniform density everywhere. */
-  background-size:
-    480px 480px, 480px 480px, 480px 480px, 480px 480px, 480px 480px, 480px 480px,
-    480px 480px, 480px 480px, 480px 480px, 480px 480px,
-    480px 480px, 480px 480px, 480px 480px,
-    100% 100%, 100% 100%, 100% 100%, 100% 100%;
-}
-
-/* Ensure in-flow chrome sits above the starfield.
-   .modal and #toasts keep their base position:fixed (z 40 / 300) -
-   they must NOT be turned relative or popups render in-flow at the
-   bottom of the document. */
-html[data-theme="dome"] header,
-html[data-theme="dome"] nav,
-html[data-theme="dome"] main {
-  position: relative;
-  z-index: 1;
-}
-
-/* === TOPBAR: floating glass bar === */
-html[data-theme="dome"] #topbar {
-  position: fixed;
-  top: 14px;
-  left: 14px;
-  right: 14px;
-  z-index: 55;
-  background: color-mix(in srgb, var(--panel) 72%, transparent);
-  backdrop-filter: blur(14px) saturate(140%);
-  -webkit-backdrop-filter: blur(14px) saturate(140%);
-  border: 1px solid rgba(255,255,255,0.08);
-  border-radius: 18px;
-  padding: 8px 18px;
-  box-shadow:
-    0 4px 24px rgba(0,0,0,0.4),
-    0 0 40px rgba(143,123,255,0.06),
-    inset 0 1px 0 rgba(255,255,255,0.06);
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-
-/* Brand glow */
-html[data-theme="dome"] .brand {
-  text-shadow: 0 0 12px rgba(143,123,255,0.4);
-}
-html[data-theme="dome"] .brand svg {
-  filter: drop-shadow(0 0 6px rgba(255,209,102,0.5));
-}
-
-/* Controls inside the glass bar */
-html[data-theme="dome"] .controls {
-  gap: 10px;
-}
-html[data-theme="dome"] .controls label {
-  font-size: 11.5px;
-  color: var(--dim);
-  letter-spacing: 0.02em;
-}
-/* Keep the glass bar on ONE row so the tab dock below never
-   overlaps it (the dock's offset is computed from a 54px bar). */
-html[data-theme="dome"] #topbar {
-  min-height: 54px;
-}
-html[data-theme="dome"] .controls {
-  gap: 8px;
-}
-html[data-theme="dome"] .controls label {
-  font-size: 11px;
-}
-html[data-theme="dome"] .minalt input[type=range] {
-  width: clamp(130px, 13vw, 170px);
-}
-html[data-theme="dome"] .scrub input[type=range] {
-  max-width: 150px;
-}
-html[data-theme="dome"] #topbar select,
-html[data-theme="dome"] #topbar input:not([type=range]):not([type=checkbox]) {
-  padding: 4px 8px;
-}
-html[data-theme="dome"] .topbar-right {
-  gap: 10px;
-}
-
-/* Mode button */
-html[data-theme="dome"] .modebtn {
-  border-radius: var(--r-pill);
-  background: transparent;
-  border: 1px solid rgba(255,255,255,0.1);
-  color: var(--gold);
-  transition: all 0.2s ease;
-}
-html[data-theme="dome"] .modebtn:hover {
-  background: color-mix(in srgb, var(--gold) 10%, transparent);
-  border-color: rgba(255,209,102,0.3);
-}
-html[data-theme="dome"] body.catmode .modebtn {
-  color: var(--accent);
-  border-color: rgba(143,123,255,0.3);
-}
-html[data-theme="dome"] body.catmode .modebtn:hover {
-  background: color-mix(in srgb, var(--accent) 10%, transparent);
-}
-
-/* Menu button */
-html[data-theme="dome"] .menubtn {
-  border-radius: var(--r-pill);
-  padding: 4px 8px;
-}
-
-/* Busy indicator: soft glowing orb */
-html[data-theme="dome"] #busy {
-  position: relative;
-}
-html[data-theme="dome"] .busy-dot {
-  width: 16px;
-  height: 16px;
-  border: 2px solid rgba(143,123,255,0.3);
-  border-top-color: var(--accent);
-  border-radius: 50%;
-  animation: dome-spin 1s linear infinite;
-  box-shadow: 0 0 12px rgba(143,123,255,0.4);
-}
-@keyframes dome-spin {
-  to { transform: rotate(360deg); }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  * { animation-duration: .01ms !important; animation-iteration-count: 1 !important;
-      transition-duration: .01ms !important; }
-}
-
-/* === TABS: floating pill dock, attached below the glass bar === */
-html[data-theme="dome"] #tabs,
-html[data-theme="dome"] #tabs-cat {
-  position: fixed;
-  top: 76px; /* bar bottom (14 + 54) + 8px gap - never overlaps the bar */
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 50;
-  background: color-mix(in srgb, var(--panel) 65%, transparent);
-  backdrop-filter: blur(12px) saturate(130%);
-  -webkit-backdrop-filter: blur(12px) saturate(130%);
-  border: 1px solid rgba(255,255,255,0.07);
-  border-radius: var(--r-pill);
-  padding: 6px;
-  gap: 4px;
-  box-shadow: 0 4px 20px rgba(0,0,0,0.3);
-}
-
-/* Neutralize base tab underline */
-html[data-theme="dome"] #tabs .tab,
-html[data-theme="dome"] #tabs-cat .tab {
-  border-bottom: none !important;
-}
-
-/* Tab pill chips */
-html[data-theme="dome"] .tab {
-  border-radius: var(--r-pill);
-  padding: 8px 18px;
-  font-size: 12.5px;
-  font-weight: 600;
-  color: var(--dim);
-  background: transparent;
-  border: 1px solid transparent;
-  transition: all 0.2s ease;
-}
-html[data-theme="dome"] .tab:hover {
-  color: var(--text);
-  background: color-mix(in srgb, var(--text) 5%, transparent);
-}
-
-/* Active tab: filled accent gradient + glow */
-html[data-theme="dome"] .tab.active {
-  background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 80%, var(--accent2)));
-  color: white;
-  border-color: transparent;
-  box-shadow:
-    0 2px 12px rgba(143,123,255,0.3),
-    inset 0 1px 0 rgba(255,255,255,0.15);
-  text-shadow: 0 1px 2px rgba(0,0,0,0.3);
-}
-
-/* === MAIN CONTENT: offset for floating chrome === */
-html[data-theme="dome"] main {
-  margin-top: 164px; /* bar 68 + dock ~49 + telemetry chip ~20 + gaps */
-  padding: 20px 24px 60px;
-}
-/* catalog mode hides the planner row - content can start higher */
-html[data-theme="dome"] body.catmode main {
-  margin-top: 150px;
-}
-
-/* Tab pane generous padding */
-html[data-theme="dome"] .tabpane {
-  padding: 20px 24px 50px;
-  max-width: calc(100vw - 2 * var(--edge-space, 200px));
-  margin: 0 auto;
-}
-
-/* === CARDS: glass tiles === */
-html[data-theme="dome"] .card,
-html[data-theme="dome"] .pick {
-  background: color-mix(in srgb, var(--panel) 65%, transparent);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(255,255,255,0.06);
-  border-radius: var(--r-lg);
-  box-shadow: 0 4px 16px rgba(0,0,0,0.2);
-  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
-}
-html[data-theme="dome"] .card:hover,
-html[data-theme="dome"] .pick:hover {
-  transform: translateY(-2px);
-  box-shadow:
-    0 8px 24px rgba(0,0,0,0.3),
-    0 0 20px rgba(143,123,255,0.08);
-  border-color: rgba(143,123,255,0.2);
-}
-html[data-theme="dome"] .card .k {
-  font-size: 10.5px;
-  letter-spacing: 0.08em;
-}
-html[data-theme="dome"] .card .v {
-  font-size: 20px;
-  font-weight: 700;
-}
-html[data-theme="dome"] .pick-thumb {
-  border-radius: var(--r-md);
-}
-html[data-theme="dome"] .pick .nm {
-  font-weight: 700;
-}
-
-/* === CHART AREAS: glass panels === */
-html[data-theme="dome"] .chart-layout {
-  gap: 20px;
-}
-html[data-theme="dome"] .chart-side {
-  width: 220px;
-  background: color-mix(in srgb, var(--panel) 55%, transparent);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-  border: 1px solid rgba(255,255,255,0.05);
-  border-radius: var(--r-lg);
-  padding: 12px 14px;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-}
-html[data-theme="dome"] .chart-side .menu-section {
-  border-bottom: 1px solid rgba(255,255,255,0.04);
-  padding: 10px 0;
-}
-html[data-theme="dome"] .chart-side .menu-section:last-child {
-  border-bottom: none;
-}
-html[data-theme="dome"] .chart-side .menu-section h4 {
-  font-size: 11px;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--dim);
-  margin-bottom: 8px;
-}
-/* Sky map: square viewport (rounded rect, like the web) so wheel-zoom shows
-   the full rectangular window instead of a circular clip; drop the glow box */
-html[data-theme="dome"] #skyCanvas {
-  border-radius: var(--r-md);   /* square/rect viewport, matching web canvas#sky */
-  border: 1px solid rgba(255,255,255,0.06);
-  box-shadow: none;
-}
-
-/* === HORIZON / PANORAMA panels === */
-html[data-theme="dome"] #panoPanel,
-html[data-theme="dome"] .archpanel {
-  background: color-mix(in srgb, var(--panel) 60%, transparent);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-  border: 1px solid rgba(255,255,255,0.05);
-  border-radius: var(--r-lg);
-  padding: 14px 16px;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-}
-html[data-theme="dome"] #panoPanel h3,
-html[data-theme="dome"] .archpanel h3 {
-  margin-top: 0;
-  letter-spacing: 0.04em;
-}
-html[data-theme="dome"] #panoStage {
-  border-radius: var(--r-lg);
-  border: 1px solid rgba(255,255,255,0.05);
-}
-
-/* Horizon layout */
-html[data-theme="dome"] .horiz-layout {
-  grid-template-columns: 340px 1fr;
-  gap: 20px;
-}
-
-/* Archive layout */
-html[data-theme="dome"] .arch-layout {
-  grid-template-columns: 340px 1fr;
-  gap: 20px;
-}
-
-/* === TABLES: glass containers === */
-html[data-theme="dome"] .tablewrap {
-  background: color-mix(in srgb, var(--panel) 50%, transparent);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  border: 1px solid rgba(255,255,255,0.05);
-  border-radius: var(--r-lg);
-  overflow: auto;
-  max-height: calc(100vh - 260px);
-}
-html[data-theme="dome"] #tab-targets .tablewrap {
-  border: none;
-}
-html[data-theme="dome"] #targetTable th {
-  background: color-mix(in srgb, var(--bg) 80%, transparent);
-  border-bottom: 1px solid rgba(255,255,255,0.06);
-  font-size: 10.5px;
-  letter-spacing: 0.06em;
-}
-html[data-theme="dome"] #targetTable td {
-  border-bottom: 1px solid rgba(255,255,255,0.03);
-}
-html[data-theme="dome"] #targetTable tr:hover td {
-  background: color-mix(in srgb, var(--accent) 4%, transparent);
-}
-html[data-theme="dome"] #libraryTable th {
-  background: color-mix(in srgb, var(--panel2) 70%, transparent);
-  border-bottom: 1px solid rgba(255,255,255,0.06);
-}
-html[data-theme="dome"] #libraryTable td {
-  border-bottom: 1px solid rgba(255,255,255,0.03);
-}
-html[data-theme="dome"] #libraryTable tr:hover td {
-  background: var(--hover);
-}
-
-/* === BADGES / PILLS === */
-html[data-theme="dome"] .typebadge,
-html[data-theme="dome"] .statuspill,
-html[data-theme="dome"] .fbadge {
-  border-radius: var(--r-pill);
-  font-size: 10.5px;
-  letter-spacing: 0.04em;
-}
-html[data-theme="dome"] .fbadge.ok {
-  background: color-mix(in srgb, var(--good) 15%, transparent);
-  color: var(--good);
-}
-html[data-theme="dome"] .fbadge.warn {
-  background: color-mix(in srgb, var(--warn) 15%, transparent);
-  color: var(--warn);
-}
-html[data-theme="dome"] .fbadge.bad {
-  background: color-mix(in srgb, var(--bad) 15%, transparent);
-  color: var(--bad);
-}
-
-/* === BUTTONS: gradient pills with glow === */
-html[data-theme="dome"] button,
-html[data-theme="dome"] .btnlink {
-  border-radius: var(--r-pill);
-  transition: all 0.2s ease;
-}
-html[data-theme="dome"] button:hover,
-html[data-theme="dome"] .btnlink:hover {
-  filter: none;
-  background: var(--hover);
-}
-html[data-theme="dome"] button:active,
-html[data-theme="dome"] .btnlink:active {
-  transform: scale(0.97);
-}
-html[data-theme="dome"] button.primary,
-html[data-theme="dome"] form button[type=submit] {
-  background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 80%, var(--accent2)));
-  color: white;
-  font-weight: 600;
-  border: none;
-  box-shadow: 0 0 18px color-mix(in srgb, var(--accent) 45%, transparent);
-}
-html[data-theme="dome"] button.primary:hover,
-html[data-theme="dome"] form button[type=submit]:hover {
-  box-shadow: 0 0 24px color-mix(in srgb, var(--accent) 60%, transparent);
-  transform: translateY(-1px);
-}
-html[data-theme="dome"] button.ghost,
-html[data-theme="dome"] button.danger {
-  background: transparent;
-  border: 1px solid rgba(255,255,255,0.1);
-}
-html[data-theme="dome"] button.danger {
-  color: var(--bad);
-  border-color: color-mix(in srgb, var(--bad) 30%, transparent);
-}
-html[data-theme="dome"] .tool {
-  border-radius: var(--r-pill);
-}
-
-/* === FORMS === */
-html[data-theme="dome"] input,
-html[data-theme="dome"] select,
-html[data-theme="dome"] textarea {
-  background: color-mix(in srgb, var(--bg2) 80%, transparent);
-  border: 1px solid rgba(255,255,255,0.08);
-  border-radius: var(--r-sm);
-  padding: 6px 10px;
-  transition: border-color 0.2s ease;
-}
-html[data-theme="dome"] input:focus,
-html[data-theme="dome"] select:focus,
-html[data-theme="dome"] textarea:focus {
-  border-color: var(--accent);
-  outline: none;
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 20%, transparent);
-}
-
-/* === CHECKBOXES: circular glass === */
-html[data-theme="dome"] input[type=checkbox] {
-  width: 16px; height: 16px; min-width: 16px; min-height: 16px;
-  padding: 0;                /* the generic input rule adds padding - kills it here */
-  border-radius: 50%;        /* circles, not pills */
-  border: 1.5px solid rgba(255,255,255,0.18);
-  background: transparent;
-}
-html[data-theme="dome"] input[type=checkbox]:checked {
-  background: var(--check);
-  border-color: var(--check);
-}
-html[data-theme="dome"] input[type=checkbox]:checked::after {
-  left: 5px; top: 2.5px;    /* center the checkmark in the circle */
-  border-color: var(--check-ink);
-}
-html[data-theme="dome"] input[type=checkbox]:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
-
-/* === RANGE SLIDERS === */
-html[data-theme="dome"] input[type=range]::-webkit-slider-runnable-track {
-  height: 6px;
-  border-radius: var(--r-pill);
-  background: linear-gradient(90deg, var(--track), color-mix(in srgb, var(--track) 80%, transparent));
-}
-html[data-theme="dome"] input[type=range]::-webkit-slider-thumb {
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  background: radial-gradient(circle at 30% 30%, color-mix(in srgb, var(--accent) 90%, white), var(--accent));
-  border: 2px solid rgba(255,255,255,0.2);
-  margin-top: -6px;
-  box-shadow: 0 2px 8px rgba(143,123,255,0.3);
-}
-html[data-theme="dome"] input[type=range]::-moz-range-track {
-  height: 6px;
-  border-radius: var(--r-pill);
-  background: linear-gradient(90deg, var(--track), color-mix(in srgb, var(--track) 80%, transparent));
-}
-html[data-theme="dome"] input[type=range]::-moz-range-thumb {
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  background: radial-gradient(circle at 30% 30%, color-mix(in srgb, var(--accent) 90%, white), var(--accent));
-  border: 2px solid rgba(255,255,255,0.2);
-  box-shadow: 0 2px 8px rgba(143,123,255,0.3);
-}
-
-/* === MENU SHEET: centered glass overlay === */
-html[data-theme="dome"] .menuwrap .popover,
-html[data-theme="dome"] .weatherwrap .popover {
-  position: fixed;
-  /* the topbar's backdrop-filter makes IT the containing block for
-     fixed descendants, so % offsets are relative to the bar - use
-     VIEWPORT units to center against the window itself */
-  top: 50vh;
-  left: 50vw;
-  transform: translate(-50%, -50%);
-  width: min(560px, 92vw);
-  max-height: 78vh;
-  overflow-y: auto;
-  background: color-mix(in srgb, var(--panel) 85%, transparent);
-  backdrop-filter: blur(20px) saturate(150%);
-  -webkit-backdrop-filter: blur(20px) saturate(150%);
-  border: 1px solid rgba(255,255,255,0.1);
-  border-radius: 24px;
-  padding: 20px 24px;
-  box-shadow:
-    0 24px 80px rgba(0,0,0,0.5),
-    0 0 60px rgba(143,123,255,0.08),
-    inset 0 1px 0 rgba(255,255,255,0.08);
-  z-index: 60;
-}
-
-/* Menu sections */
-html[data-theme="dome"] .menu-section {
-  padding: 12px 0;
-  border-bottom: 1px solid rgba(255,255,255,0.04);
-}
-html[data-theme="dome"] .menu-section:last-child {
-  border-bottom: none;
-}
-html[data-theme="dome"] .menu-section h4 {
-  font-size: 11px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-  color: var(--dim);
-  margin-bottom: 10px;
-  padding: 4px 10px;
-  background: color-mix(in srgb, var(--accent) 10%, transparent);
-  border-radius: var(--r-pill);
-  display: inline-block;
-}
-
-/* Theme picker buttons */
-html[data-theme="dome"] .theme-row {
-  gap: 8px;
-}
-html[data-theme="dome"] .theme-btn {
-  border-radius: var(--r-pill);
-  padding: 8px 12px;
-  border: 1px solid rgba(255,255,255,0.06);
-  background: transparent;
-  transition: all 0.2s ease;
-}
-html[data-theme="dome"] .theme-btn:hover {
-  background: var(--hover);
-  border-color: rgba(255,255,255,0.1);
-}
-html[data-theme="dome"] .theme-btn.active {
-  background: color-mix(in srgb, var(--accent) 15%, transparent);
-  border-color: var(--accent);
-  color: var(--accent);
-}
-html[data-theme="dome"] .theme-btn .sw {
-  border-radius: 50%;
-}
-
-/* === MODALS: glass boxes === */
-html[data-theme="dome"] .modal {
-  background: rgba(0,0,0,0.6);
-  backdrop-filter: blur(6px);
-  -webkit-backdrop-filter: blur(6px);
-}
-html[data-theme="dome"] .modal-box {
-  background: color-mix(in srgb, var(--bg2) 90%, transparent);
-  border: 1px solid rgba(255,255,255,0.08);
-  border-radius: var(--r-2xl);
-  box-shadow: 0 24px 80px rgba(0,0,0,0.5);
-}
-html[data-theme="dome"] .modal-box header {
-  background: color-mix(in srgb, var(--panel) 70%, transparent);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-  border-bottom: 1px solid rgba(255,255,255,0.06);
-  border-radius: var(--r-2xl) var(--r-2xl) 0 0;
-  padding: 16px 20px;
-  cursor: move;   /* popups are draggable by their header (dragwin.js) */
-  user-select: none;
-}
-/* grip hint on the sheet: the section label row is the drag handle */
-html[data-theme="dome"] #menuPanel .menu-section:first-child h4 {
-  cursor: move;
-  user-select: none;
-}
-html[data-theme="dome"] .modal-box h2 {
-  font-size: 18px;
-  font-weight: 600;
-}
-html[data-theme="dome"] .modal-box header .close {
-  border-radius: 50%;
-  width: 28px;
-  height: 28px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: transparent;
-  border: none;
-  color: var(--dim);
-  font-size: 18px;
-  transition: all 0.2s ease;
-}
-html[data-theme="dome"] .modal-box header .close:hover {
-  background: color-mix(in srgb, var(--bad) 15%, transparent);
-  color: var(--bad);
-}
-
-/* Modal tabs: pill chips */
-html[data-theme="dome"] .modal-tabs {
-  border-bottom: 1px solid rgba(255,255,255,0.04);
-  gap: 4px;
-  padding: 10px 20px;
-}
-html[data-theme="dome"] .modal-tabs .tab {
-  border-radius: var(--r-pill);
-  padding: 6px 14px;
-  font-size: 12px;
-  border: 1px solid transparent;
-}
-html[data-theme="dome"] .modal-tabs .tab.active {
-  background: color-mix(in srgb, var(--accent) 15%, transparent);
-  border-color: var(--accent);
-  color: var(--accent);
-}
-
-/* Detail grid */
-html[data-theme="dome"] .detail-grid {
-  gap: 24px;
-}
-html[data-theme="dome"] #dImage {
-  border-radius: var(--r-lg);
-  box-shadow: 0 4px 16px rgba(0,0,0,0.3);
-}
-html[data-theme="dome"] .kv td:first-child {
-  color: var(--dim);
-}
-html[data-theme="dome"] #altChart {
-  border-radius: var(--r-lg);
-  border: 1px solid rgba(255,255,255,0.05);
-}
-
-/* === TOASTS: glass notifications === */
-html[data-theme="dome"] #toasts {
-  top: 20px;
-  right: 20px;
-}
-html[data-theme="dome"] .toast {
-  background: color-mix(in srgb, var(--panel) 85%, transparent);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(255,255,255,0.08);
-  border-radius: var(--r-lg);
-  box-shadow: 0 8px 30px rgba(0,0,0,0.3);
-  padding: 10px 14px;
-}
-html[data-theme="dome"] .toast.info {
-  border-color: rgba(143,123,255,0.3);
-}
-
-/* === VERSION TAG === */
-html[data-theme="dome"] #versionTag {
-  opacity: 0.6;
-  position: fixed;   /* restore bottom-right corner placement */
-  right: 14px;
-  bottom: 8px;
-  z-index: 2;
-}
-
-/* === SCROLLBAR === */
-html[data-theme="dome"] ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-}
-html[data-theme="dome"] ::-webkit-scrollbar-thumb {
-  background: color-mix(in srgb, var(--scroll-thumb) 60%, transparent);
-  border-radius: var(--r-pill);
-}
-html[data-theme="dome"] ::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-/* === CHIP / BADGE GLOW === */
-html[data-theme="dome"] .chip {
-  border-radius: var(--r-pill);
-  background: color-mix(in srgb, var(--chip-bg) 60%, transparent);
-  border: 1px solid rgba(255,255,255,0.05);
-}
-
-/* === NIGHT INFO / ARCHIVE INFO === */
-html[data-theme="dome"] .nightinfo {
-  font-size: 12px;
-  color: var(--dim);
-}
-html[data-theme="dome"] .nightinfo b {
-  color: var(--text);
-}
-/* Telemetry sits as a CENTERED CHIP below the tab dock - out of the
-   bar's flex flow so the bar stays one row and nothing overlaps. */
-html[data-theme="dome"] #nightInfo {
-  position: fixed;
-  left: 50%;
-  transform: translateX(-50%);
-  top: 128px;
-  max-width: 78vw;
-  white-space: nowrap;
-  text-align: center;
-  z-index: 50;
-  font-size: 11.5px;
-}
-html[data-theme="dome"] .archinfo {
-  display: none;
-}
-
-/* === MIN ALT / SCRUB === */
-html[data-theme="dome"] .minalt {
-  gap: 8px;
-}
-html[data-theme="dome"] .minalt .mono {
-  color: var(--accent);
-  font-weight: 600;
-}
-html[data-theme="dome"] .scrub {
-  border-left: 1px solid rgba(255,255,255,0.06);
-  padding-left: 8px;
-}
-
-/* === DROP ZONE === */
-html[data-theme="dome"] #dropZone {
-  border: 2px dashed rgba(255,255,255,0.08);
-  border-radius: var(--r-lg);
-  padding: 24px 16px;
-  transition: all 0.2s ease;
-}
-html[data-theme="dome"] #dropZone.over {
-  border-color: var(--gold);
-  background: color-mix(in srgb, var(--gold) 5%, transparent);
-  box-shadow: 0 0 20px rgba(255,209,102,0.1);
-}
-
-/* === ARCH STATS === */
-html[data-theme="dome"] .archstats .stat {
-  background: color-mix(in srgb, var(--bg2) 60%, transparent);
-  border: 1px solid rgba(255,255,255,0.05);
-  border-radius: var(--r-md);
-}
-html[data-theme="dome"] .archstats .v {
-  color: var(--accent);
-}
-
-/* === IMP ITEM / INGEST ITEM === */
-html[data-theme="dome"] .imp-item,
-html[data-theme="dome"] .ingest-item {
-  background: color-mix(in srgb, var(--panel) 55%, transparent);
-  border: 1px solid rgba(255,255,255,0.04);
-  border-radius: var(--r-md);
-}
-
-/* === PANORAMA ITEMS === */
-html[data-theme="dome"] .pano-item {
-  border: 1px solid rgba(255,255,255,0.05);
-  border-radius: var(--r-md);
-}
-html[data-theme="dome"] .pano-item.active {
-  border-color: var(--good);
-  box-shadow: 0 0 12px color-mix(in srgb, var(--good) 20%, transparent);
-}
-
-/* === LOUPE === */
-html[data-theme="dome"] #loupeCv {
-  border-radius: 50%;
-  border: 2px solid var(--accent);
-  box-shadow: 0 4px 18px rgba(0,0,0,0.3);
-}
-
-/* === FILTER BAR === */
-html[data-theme="dome"] #filterBar {
-  gap: 12px;
-  margin: 12px 0 6px;
-}
-html[data-theme="dome"] #filterBar input[type=search] {
-  width: 260px;
-  border-radius: var(--r-pill);
-}
-
-/* === PAGER === */
-html[data-theme="dome"] .pager {
-  gap: 12px;
-  padding: 14px 0 2px;
-}
-html[data-theme="dome"] .pager .mono {
-  color: var(--dim);
-  font-size: 12px;
-  min-width: 190px;
-  text-align: center;
-}
-
-/* === LEGEND === */
-html[data-theme="dome"] .legend {
-  font-size: 12px;
-  color: var(--dim);
-  gap: 14px;
-}
-html[data-theme="dome"] .lg::before {
-  border-radius: 2px;
-}
-
-/* === LEGEND CHIPS === */
-html[data-theme="dome"] .lgchip {
-  border-radius: var(--r-pill);
-  padding: 2px 8px;
-}
-html[data-theme="dome"] .lgchip i {
-  border-radius: 50%;
-}
-
-/* === FRAME IMAGES === */
-html[data-theme="dome"] .frame img {
-  border-radius: var(--r-md);
-}
-
-/* === CAT MODE OVERRIDES === */
-html[data-theme="dome"] body.catmode .brand {
-  color: var(--gold);
-}
-html[data-theme="dome"] body.catmode .brand em {
-  color: var(--text);
-}
-
-/* === RESPONSIVE === */
-/* 901-1200px: compact the bar so it STAYS one row - the tab dock's
-   fixed offset (76px) assumes a single-row bar; a wrapped second row
-   would collide with the dock. */
-@media (max-width: 1200px) {
-  html[data-theme="dome"] .controls { gap: 4px; }
-  html[data-theme="dome"] .controls label { font-size: 10.5px; }
-  html[data-theme="dome"] #topbar select { max-width: 130px; }
-  html[data-theme="dome"] #topbar input[type=date] { max-width: 130px; }
-  html[data-theme="dome"] .minalt input[type=range] { width: clamp(110px, 11vw, 150px); }
-  html[data-theme="dome"] .scrub input[type=range] { max-width: 115px; }
-  html[data-theme="dome"] #topbar select,
-  html[data-theme="dome"] #topbar input:not([type=range]):not([type=checkbox]) {
-    padding: 3px 6px;
-    font-size: 11.5px;
-  }
-  html[data-theme="dome"] .topbar-right { gap: 6px; }
-  html[data-theme="dome"] .modebtn { padding: 3px 10px; font-size: 11.5px; }
-  /* trim decorative bits so the bar stays ONE row and never collides
-     with the fixed tab dock below it */
-  html[data-theme="dome"] .scrub .inline { display: none; }
-  html[data-theme="dome"] #btnModeTxt { display: none; }
-  html[data-theme="dome"] .scrub #timeLabel { font-size: 11px; }
-  /* even after trimming, ~1100px can wrap the bar to a 2nd row -
-     offset the dock + telemetry chip BELOW the worst-case bar so
-     nothing can collide */
-  html[data-theme="dome"] #tabs,
-  html[data-theme="dome"] #tabs-cat { top: 102px; }
-  html[data-theme="dome"] #nightInfo { top: 158px; }
-  html[data-theme="dome"] main { margin-top: 186px; }
-}
-@media (max-width: 900px) {
-  html[data-theme="dome"] #topbar {
-    top: 8px;
-    left: 8px;
-    right: 8px;
-    padding: 6px 12px;
-  }
-  html[data-theme="dome"] #tabs,
-  html[data-theme="dome"] #tabs-cat {
-    top: 96px; /* cushion for a possible second bar row on small windows */
-  }
-  html[data-theme="dome"] main {
-    margin-top: 162px;
-    padding: 16px 12px 40px;
-  }
-  html[data-theme="dome"] .tabpane {
-    padding: 16px 12px 40px;
-  }
-  html[data-theme="dome"] .horiz-layout,
-  html[data-theme="dome"] .arch-layout {
-    grid-template-columns: 1fr;
-  }
-  html[data-theme="dome"] .chart-layout {
-    flex-direction: column;
-  }
-  html[data-theme="dome"] .chart-side {
-    width: 100%;
-  }
-  html[data-theme="dome"] .nightinfo {
-    display: none;
-  }
-  html[data-theme="dome"] body {
-    font-size: 13px;
-  }
-}
-
-@media (max-width: 700px) {
-  html[data-theme="dome"] .modal-box.wide {
-    width: 98vw;
-    padding: 0 12px 16px;
-  }
-  html[data-theme="dome"] .detail-grid {
-    grid-template-columns: 1fr !important;
-  }
-}
-
-/* ===================================================================
-   DESIGNER NOTES - Structural changes & rationale
-   ===================================================================
-   1. BODY: Added deep indigo night gradient + CSS-only starfield via
-      body::before with radial-gradients for 1-3px star dots and a
-      subtle aurora sweep. No external assets, pointer-events:none.
-   
-   2. #topbar: Changed from full-width bar to floating glass bar with
-      position:fixed, 14px inset margins, 18px radius, backdrop-filter
-      blur + translucency. Creates the "inside the dome" floating lens.
-   
-   3. #tabs / #tabs-cat: Changed from full-width strip to centered
-      floating pill dock with position:fixed, transform:translateX(-50%),
-      glass background, pill radius. Active tab gets accent gradient +
-      glow instead of underline.
-   
-   4. Content offset: main gets margin-top:150px to account for
-      floating bar (60px) + dock (46px) + gaps. Prevents content
-      hiding under chrome.
-   
-   5. Cards (.card, .pick): Changed to glass tiles with translucent
-      color-mix backgrounds, backdrop-filter blur(12px), hover lift
-      effect (-2px translateY) + accent glow border.
-   
-   6. Charts: #skyCanvas gets rounded corners + faint glow. .chart-side
-      becomes a glass panel column with separated sections via
-      translucent hairlines.
-   
-   7. Panels (#panoPanel, .archpanel): Same glass language as cards.
-      #panoStage gets rounded corners.
-   
-   8. Tables: .tablewrap becomes glass container with translucent
-      background, blur, rounded corners. Headers and rows use
-      subtle rgba borders.
-   
-   9. Menu: Changed from absolute-positioned dropdown to centered
-      fixed glass sheet with heavy backdrop blur, big shadow, 24px
-      radius. Menu-section headers become pill-labeled section markers.
-   
-  10. Modals: .modal-box gets 22px radius, glass header with blur +
-      translucent hairline. Modal tabs become pill chips.
-   
-  11. Buttons: All buttons get pill radius (999px). Primary buttons
-      get gradient fill + outer glow (box-shadow). Ghost/danger buttons
-      get translucent borders.
-   
-  12. Form controls: Inputs get translucent backgrounds, rounded
-      corners, accent focus glow. Checkboxes get rounded glass shape.
-      Range sliders get thicker tracks + radial-gradient thumbs with
-      accent glow.
-   
-  13. Toasts: Changed to glass notifications with blur + rounded
-      corners. Info toasts get accent border.
-   
-  14. Scrollbar: Thinner, translucent, pill-shaped to match glass
-      language.
-   
-  15. Palette: Deep indigo night sky (#070a16 bg), translucent panels,
-      violet accent (#8f7bff), teal accent2 (#4fd9c1), gold moon
-      (#ffd166). Fonts: Segoe UI/Aptos for UI, Consolas/Cascadia Mono
-      for numbers. Radii generously rounded (r-2xl 24px, r-pill 999px).
-   
-  16. Responsive: Floating chrome adapts to smaller screens, chart
-      layouts stack vertically, nightinfo hides on mobile.
-   
-  17. Never set display on #tabs-cat (only layout properties).
-      Never override .hidden class. All controls remain visible and
-      reachable.
-   
-  18. z-index map (matches DESIGN.md section 9): topbar=55, tabs=50,
-      popover/sheet=60, modals=40, toasts=300, versionTag=5.
-   
-  19. Decorative pseudo-elements (stars, aurora) are pointer-events:none
-      and z-index:0, so they don't interfere with interaction.
-   
-  20. Depth achieved through layered box-shadows, backdrop-filter blur,
-      and translucent borders. Hover states include subtle transforms
-      and glow effects for tactile feedback.
-   =================================================================== */
-
-/* =====================================================================
-   THEME: workbench — PRECISION UTILITY
-
-   Shared with the browser shell: opaque graphite, brass action states and
-   compact controls. This is intentionally a scoped override so the existing
-   Glass theme remains a reversible presentation choice.
-   ===================================================================== */
-
 html[data-theme="workbench"] {
   color-scheme: dark;
-  --bg: #111315;
-  --bg2: #191c1e;
-  --panel: #1c2022;
-  --panel2: #202527;
-  --border: #343a3d;
-  --border-soft: #292e30;
-  --border2: #4a4b45;
-  --text: #e4e1d9;
-  --dim: #9a9d97;
-  --faint: #b5b4ab;
-  --accent: #c99a53;
-  --accent2: #9b7540;
-  --accent-ink: #17120b;
-  --good: #7fbd98;
-  --warn: #dfae61;
-  --bad: #d97870;
-  --gold: #dfae61;
-  --check: #c99a53;
-  --check-ink: #17120b;
-  --hover: #242a2b;
-  --thumb1: #303638;
-  --thumb2: #141718;
-  --sky1: #15191a;
-  --sky2: #24292a;
-  --chart-bg: #101314;
-  --chip-bg: #15191a;
-  --chip-border: #343a3d;
-  --tooltip-bg: #1b1f21;
-  --scroll-thumb: #3a4143;
-  --star-off: #5b625f;
-  --track: #3c4445;
+  --bg: #0B1115;
+  --bg2: #152027;
+  --panel: #10181B;
+  --panel2: #152027;
+  --raised: #152027;
+  --border: #293840;
+  --border-soft: #1E2B31;
+  --border2: #304049;
+  --text: #E7ECE8;
+  --dim: #9CAEB1;
+  --faint: #9CAEB1;
+  --accent: #F9C85D;
+  --accent2: #E8A948;
+  --accent-ink: #101316;
+  --good: #5BC68D;
+  --warn: #E8A948;
+  --bad: #C45B52;
+  --gold: #F9C85D;
+  --check: #F9C85D;
+  --check-ink: #101316;
+  --hover: #152027;
+  --thumb1: #293840;
+  --thumb2: #0B1115;
+  --sky1: #0B1115;
+  --sky2: #10181B;
+  --chart-bg: #0B1115;
+  --chip-bg: #152027;
+  --chip-border: #293840;
+  --tooltip-bg: #10181B;
+  --scroll-thumb: #293840;
+  --star-off: #9CAEB1;
+  --track: #304049;
   --toast-info: #1c2521;
   --toast-err: #2a1a18;
   --toast-err-text: #f0d9d5;
@@ -1131,8 +39,8 @@ html[data-theme="workbench"] {
   --shadow-lg: #0008;
   --shadow-md: #0009;
   --shadow-xl: #000b;
-  --moon: #dfae61;
-  --legend-ceil: #a9aaa2;
+  --moon: #E7ECE8;
+  --legend-ceil: #9CAEB1;
   --r-sm: 4px;
   --r-md: 5px;
   --r-lg: 6px;
@@ -1140,7 +48,6 @@ html[data-theme="workbench"] {
   --r-2xl: 7px;
   --r-pill: 99px;
 }
-
 html[data-theme="workbench"] body {
   background: var(--bg);
   font-size: 14px;
@@ -1148,10 +55,11 @@ html[data-theme="workbench"] body {
 html[data-theme="workbench"] #topbar {
   position: relative;
   z-index: 55;
-  background: #151819;
+  background: var(--bg);
   border-bottom: 1px solid var(--border);
-  padding: 9px 16px;
-  box-shadow: 0 2px 0 rgba(0,0,0,.22);
+  min-height: 48px;
+  padding: 5px 16px;
+  box-shadow: none;
 }
 html[data-theme="workbench"] .brand { color: var(--accent); }
 html[data-theme="workbench"] .brand em { color: var(--text); }
@@ -1162,7 +70,7 @@ html[data-theme="workbench"] #topbar button,
 html[data-theme="workbench"] select,
 html[data-theme="workbench"] input,
 html[data-theme="workbench"] textarea {
-  background: #111416;
+  background: var(--raised);
   border-color: var(--border);
   border-radius: 4px;
 }
@@ -1179,50 +87,57 @@ html[data-theme="workbench"] form button[type=submit] {
   border-color: var(--accent);
   color: var(--accent-ink);
 }
-html[data-theme="workbench"] .modebtn,
-html[data-theme="workbench"] .modebtn:hover { color: var(--accent); }
 html[data-theme="workbench"] .nightinfo { color: var(--dim); }
 html[data-theme="workbench"] .nightinfo b { color: var(--text); }
 html[data-theme="workbench"] .scrub { border-left-color: var(--border); }
 html[data-theme="workbench"] .popover {
-  background: #1b1f21;
+  background: var(--panel);
   border-color: var(--border);
   border-radius: 6px;
   box-shadow: 0 16px 34px rgba(0,0,0,.42);
 }
 html[data-theme="workbench"] .menu-section { border-bottom-color: var(--border-soft); }
-html[data-theme="workbench"] .theme-btn { border-radius: 4px; }
-html[data-theme="workbench"] .theme-btn.active {
-  color: var(--accent);
-  border-color: var(--accent);
-  background: rgba(201,154,83,.1);
-}
-
 html[data-theme="workbench"] #tabs,
-html[data-theme="workbench"] #tabs-cat {
-  background: #191c1e;
+html[data-theme="workbench"] #catalogTabs {
+  background: transparent;
+  border: 0;
   border-bottom: 1px solid var(--border);
 }
-html[data-theme="workbench"] #tabs .tab,
-html[data-theme="workbench"] #tabs-cat .tab {
+html[data-theme="workbench"] #tabs {
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+}
+html[data-theme="workbench"] #tabs .tab {
   border-radius: 0;
   border: 0;
   border-bottom: 2px solid transparent;
   background: transparent;
   color: var(--dim);
-  padding: 10px 15px 9px;
+  padding: 9px 15px 7px;
 }
-html[data-theme="workbench"] #tabs .tab:hover,
-html[data-theme="workbench"] #tabs-cat .tab:hover { color: var(--text); }
-html[data-theme="workbench"] #tabs .tab.active,
-html[data-theme="workbench"] #tabs-cat .tab.active {
+html[data-theme="workbench"] #tabs .tab:hover { color: var(--text); }
+html[data-theme="workbench"] #tabs .tab.active {
   color: var(--text);
   border-bottom-color: var(--accent);
   background: transparent;
 }
-
+html[data-theme="workbench"] #catalogTabs .tab {
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  padding: 7px 12px 5px;
+  color: var(--dim);
+  background: transparent;
+  font-size: 12px;
+}
+html[data-theme="workbench"] #catalogTabs .tab:hover { color: var(--text); }
+html[data-theme="workbench"] #catalogTabs .tab.active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+  background: transparent;
+}
 html[data-theme="workbench"] .tabpane {
-  padding: 22px 18px 44px;
+  padding: 14px 16px 32px;
 }
 html[data-theme="workbench"] .cards { gap: 10px; }
 html[data-theme="workbench"] .card,
@@ -1239,98 +154,20 @@ html[data-theme="workbench"] .card h3 {
   border-bottom-color: var(--border);
   color: var(--dim);
 }
-html[data-theme="workbench"] .session-head {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 18px;
-  align-items: end;
-  padding: 2px 0 12px;
-  border-bottom: 1px solid var(--border);
-}
-html[data-theme="workbench"] .session-head h1 {
-  margin: 2px 0 3px;
-  font-size: 25px;
-  font-weight: 650;
-  letter-spacing: -.02em;
-}
-html[data-theme="workbench"] .eyebrow {
-  margin: 0;
-  color: var(--accent);
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 1.4px;
-  font-weight: 700;
-}
-html[data-theme="workbench"] .session-context,
-html[data-theme="workbench"] .session-facts {
-  color: var(--dim);
-  font-size: 12px;
-}
-html[data-theme="workbench"] .session-facts {
-  display: grid;
-  grid-template-columns: auto auto;
-  gap: 3px 10px;
-  text-align: right;
-  font-family: var(--font-mono);
-}
-html[data-theme="workbench"] .session-facts b { color: var(--text); font-weight: 600; }
-html[data-theme="workbench"] .night-track {
-  grid-column: 1 / -1;
-  padding: 11px 13px 10px;
-  margin-top: 12px;
-  background: #15191a;
-  border: 1px solid var(--border);
-  border-radius: 5px;
-}
-html[data-theme="workbench"] .track-head,
-html[data-theme="workbench"] .track-scale {
-  display: flex;
-  justify-content: space-between;
-  gap: 10px;
-  color: var(--dim);
-  font-size: 11px;
-}
-html[data-theme="workbench"] .track-head strong { color: var(--text); font-weight: 600; }
-html[data-theme="workbench"] .track-bar {
-  position: relative;
-  height: 8px;
-  margin: 9px 0 6px;
-  background: #2a3031;
-  border: 1px solid #3a4142;
-  border-radius: 2px;
-}
-html[data-theme="workbench"] .track-window {
-  position: absolute;
-  inset: 1px;
-  background: var(--accent);
-  opacity: .78;
-  border-radius: 1px;
-}
-html[data-theme="workbench"] .track-marker {
-  position: absolute;
-  top: -5px;
-  width: 2px;
-  height: 16px;
-  background: #f3e7cc;
-  box-shadow: 0 0 0 1px #111315;
-}
 html[data-theme="workbench"] .pick {
-  background: #15191a;
-  border-color: #303638;
+  background: var(--panel);
+  border-color: var(--border);
   border-radius: 4px;
   box-shadow: none;
 }
 html[data-theme="workbench"] .pick:hover {
-  background: #1a1e1f;
+  background: var(--raised);
   border-color: var(--accent);
 }
 html[data-theme="workbench"] .pick-thumb { border-radius: 3px; }
 html[data-theme="workbench"] .pick .win { color: var(--accent); }
 html[data-theme="workbench"] .pick.blocked { border-left-color: var(--bad); }
 html[data-theme="workbench"] .pick.low { border-left-color: var(--warn); }
-
-/* Session-plan hierarchy: summary across the top, primary picks left, later
-   targets in a narrower work queue on the right. */
 html[data-theme="workbench"] #tab-tonight.active {
   display: grid;
   grid-template-columns: minmax(0, 1.45fr) minmax(280px, .8fr);
@@ -1361,9 +198,9 @@ html[data-theme="workbench"] .tablewrap {
 }
 html[data-theme="workbench"] table.cat th { color: var(--dim); }
 html[data-theme="workbench"] table.cat td { border-bottom-color: var(--border-soft); }
-html[data-theme="workbench"] table.cat tbody tr:hover { background: rgba(201,154,83,.08); }
+html[data-theme="workbench"] table.cat tbody tr:hover { background: rgba(249,200,93,.08); }
 html[data-theme="workbench"] .chip {
-  background: #15191a;
+  background: var(--raised);
   border-color: var(--border);
   border-radius: 4px;
 }
@@ -1379,14 +216,14 @@ html[data-theme="workbench"] .modal {
   backdrop-filter: none;
 }
 html[data-theme="workbench"] .modal-box {
-  background: #1b1f21;
+  background: var(--panel);
   border-color: var(--border);
   border-radius: 6px;
   box-shadow: 0 20px 50px rgba(0,0,0,.5);
 }
 html[data-theme="workbench"] .modal-box header,
 html[data-theme="workbench"] .modal-tabs {
-  background: #1b1f21;
+  background: var(--panel);
   border-bottom-color: var(--border);
 }
 html[data-theme="workbench"] #detailModal {
@@ -1404,174 +241,212 @@ html[data-theme="workbench"] #detailModal .modal-box {
 html[data-theme="workbench"] #dImage { border-radius: 4px; }
 html[data-theme="workbench"] .toast { border-radius: 4px; }
 html[data-theme="workbench"] .lgchip { border-radius: 4px; }
-html[data-theme="workbench"] ::-webkit-scrollbar-thumb { background: #3a4143; border-radius: 3px; }
-html[data-theme="workbench"] ::-webkit-scrollbar-track { background: #111315; }
-
-@media (max-width: 900px) {
-  html[data-theme="workbench"] #tab-tonight.active {
+html[data-theme="workbench"] ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
+html[data-theme="workbench"] ::-webkit-scrollbar-track { background: var(--bg); }
+@media (max-width: 900px){
+html[data-theme="workbench"] #tab-tonight.active {
     display: block;
   }
-  html[data-theme="workbench"] #tab-tonight #laterList { margin-bottom: 12px; }
-  html[data-theme="workbench"] .tabpane { padding: 16px 10px 34px; }
-  html[data-theme="workbench"] .session-head { display: block; }
-  html[data-theme="workbench"] .session-facts { margin-top: 8px; text-align: left; }
+html[data-theme="workbench"] #tab-tonight #laterList { margin-bottom: 12px; }
+html[data-theme="workbench"] .tabpane { padding: 16px 10px 34px; }
 }
-
-/* Canvas visualizations --------------------------------------------------
-   Canvas cannot read CSS variables directly. These semantic roles are the
-   contract consumed by static/js/viztheme.js, so a theme owns the chart
-   palette as well as the surrounding panels. */
-html[data-theme="dome"] {
-  --viz-canvas-bg: #081022;
-  --viz-sky-surface: radial-gradient(circle at 50% 55%, #0d1b33 0%, #081022 70%);
-  --viz-graph-surface: #081022;
-  --viz-grid: rgba(124,196,255,.16);
-  --viz-grid-strong: #39445f;
-  --viz-grid-sub: rgba(124,196,255,.10);
-  --viz-axis: rgba(127,151,184,.85);
-  --viz-dim: #98a2b8;
-  --viz-text: #e9edf6;
-  --viz-field-star: rgba(165,175,200,.32);
-  --viz-constellation: rgba(150,160,185,.30);
-  --viz-constellation-star: rgba(185,194,220,.50);
-  --viz-constellation-label: rgba(139,147,168,.62);
-  --viz-obstacle-fill: rgba(255,107,107,.18);
-  --viz-obstacle-stroke: rgba(255,107,107,.75);
-  --viz-blocked-dot: rgba(255,93,93,.40);
-  --viz-ceiling: #98a2b8;
-  --viz-ceiling-top: #ffd166;
-  --viz-assumed-hatch: rgba(210,225,255,.28);
-  --viz-min-fill: rgba(120,140,180,.10);
-  --viz-min-stroke: rgba(150,165,200,.55);
-  --viz-min-label: rgba(150,165,200,.85);
-  --viz-below: #4a5468;
-  --viz-bad: #ff6b6b;
-  --viz-warn: #ffb86b;
-  --viz-good: #7bf1a8;
-  --viz-good-fill: rgba(53,208,127,.09);
-  --viz-moon: #e6e9ff;
-  --viz-moon-line: rgba(143,211,255,.88);
-  --viz-moon-label: #555e73;
-  --viz-moon-marker: #ffffff;
-  --viz-moon-marker-shadow: #081022;
-  --viz-moon-marker-outline: #ffffff;
-  --viz-guide-min-dash: 8 4;
-  --viz-guide-moon-dash: 4 3 1 3;
-  --viz-guide-ceiling-dash: 3 4;
-  --viz-guide-ceiling-top-dash: 10 3 2 3;
-  --viz-sun: #ffd166;
-  --viz-sun-line: #ffd166;
-  --viz-sun-label: #8a763a;
-  --viz-target: #e9edf6;
-  --viz-target-label: #e9edf6;
-  --viz-target-shadow: rgba(0,0,0,.90);
-  --viz-favorite: #ffd700;
-  --viz-favorite-outer: rgba(0,0,0,.55);
-  --viz-crosshair: rgba(255,255,255,.50);
-  --viz-crosshair-fill: #0b1526;
-  --viz-crosshair-stroke: #8fd3ff;
-  --viz-object-outline: rgba(0,0,0,.50);
-  --viz-moon-band: rgba(143,211,255,.12);
-  --viz-horizon-line: rgba(255,255,255,.22);
-  --viz-twilight-shade: rgba(90,130,255,.07);
-  --viz-twilight-1: #123a58;
-  --viz-twilight-2: #0e2c46;
-  --viz-twilight-3: #0a2036;
-  --viz-twilight-4: #0a2036;
-  --viz-twilight-5: #0e2c46;
-  --viz-twilight-6: #123a58;
-  --viz-type-galaxy: #ffd166;
-  --viz-type-open-cluster: #7cc4ff;
-  --viz-type-globular: #9be0ff;
-  --viz-type-nebula: #7bf1a8;
-  --viz-type-planetary: #8fe3d9;
-  --viz-type-supernova-remnant: #ff8fa3;
-  --viz-type-asterism: #c9b8ff;
-  --viz-type-star-cloud: #e0e6ff;
-  --viz-sun-glow-blur: 22;
-  --viz-moon-glow-blur: 16;
-  --viz-label-shadow-blur: 4;
-}
-
 html[data-theme="workbench"] {
-  --viz-canvas-bg: #101314;
-  --viz-sky-surface: #15191a;
-  --viz-graph-surface: #101314;
-  --viz-grid: rgba(181,180,171,.22);
-  --viz-grid-strong: #62665f;
-  --viz-grid-sub: rgba(154,157,151,.34);
-  --viz-axis: #b5b4ab;
-  --viz-dim: #9a9d97;
-  --viz-text: #e4e1d9;
-  --viz-field-star: rgba(228,225,217,.30);
-  --viz-constellation: rgba(154,157,151,.38);
-  --viz-constellation-star: rgba(228,225,217,.55);
-  --viz-constellation-label: rgba(181,180,171,.72);
-  --viz-obstacle-fill: rgba(217,120,112,.20);
-  --viz-obstacle-stroke: rgba(217,120,112,.92);
-  --viz-blocked-dot: rgba(217,120,112,.50);
-  --viz-ceiling: #a9aaa2;
-  --viz-ceiling-top: #b2a6c7;
-  --viz-assumed-hatch: rgba(223,174,97,.36);
-  --viz-min-fill: rgba(169,170,162,.10);
-  --viz-min-stroke: rgba(193,198,190,.78);
-  --viz-min-label: #c3c6be;
-  --viz-below: #5b625f;
-  --viz-bad: #d97870;
-  --viz-warn: #dfae61;
-  --viz-good: #7fbd98;
-  --viz-good-fill: rgba(127,189,152,.12);
+  --viz-canvas-bg: #0B1115;
+  --viz-sky-surface: #0B1115;
+  --viz-graph-surface: #0B1115;
+  --viz-grid: rgba(48,64,73,.58);
+  --viz-grid-strong: #304049;
+  --viz-grid-sub: rgba(48,64,73,.36);
+  --viz-axis: #9CAEB1;
+  --viz-dim: #9CAEB1;
+  --viz-text: #E7ECE8;
+  --viz-field-star: rgba(231,236,232,.30);
+  --viz-constellation: rgba(156,174,177,.38);
+  --viz-constellation-star: rgba(231,236,232,.55);
+  --viz-constellation-label: rgba(156,174,177,.78);
+  --viz-obstacle-fill: rgba(196,91,82,.20);
+  --viz-obstacle-stroke: rgba(196,91,82,.92);
+  --viz-blocked-dot: rgba(196,91,82,.55);
+  --viz-ceiling: #9CAEB1;
+  --viz-ceiling-top: #F9C85D;
+  --viz-assumed-hatch: rgba(249,200,93,.36);
+  --viz-min-fill: rgba(249,200,93,.10);
+  --viz-min-stroke: rgba(249,200,93,.78);
+  --viz-min-label: #F9C85D;
+  --viz-below: #304049;
+  --viz-bad: #C45B52;
+  --viz-warn: #E8A948;
+  --viz-good: #5BC68D;
+  --viz-good-fill: rgba(91,198,141,.12);
   --viz-moon: #f3e7cc;
-  --viz-moon-line: rgba(123,169,199,.92);
-  --viz-moon-label: #b5b4ab;
+  --viz-moon-line: rgba(115,182,219,.92);
+  --viz-moon-label: #9CAEB1;
   --viz-moon-marker: #ffffff;
-  --viz-moon-marker-shadow: #101314;
+  --viz-moon-marker-shadow: #0B1115;
   --viz-moon-marker-outline: #ffffff;
   --viz-guide-min-dash: 9 4;
   --viz-guide-moon-dash: 4 3 1 3;
   --viz-guide-ceiling-dash: 3 4;
   --viz-guide-ceiling-top-dash: 10 3 2 3;
-  --viz-sun: #dfae61;
-  --viz-sun-line: #dfae61;
-  --viz-sun-label: #dfae61;
-  --viz-target: #e4e1d9;
-  --viz-target-label: #e4e1d9;
+  --viz-sun: #F9C85D;
+  --viz-sun-line: #F9C85D;
+  --viz-sun-label: #F9C85D;
+  --viz-target: #E7ECE8;
+  --viz-target-label: #E7ECE8;
+  --viz-target-selected: #F9C85D;
+  --viz-target-secondary: #73B6DB;
+  --viz-target-blocked: #C45B52;
   --viz-target-shadow: rgba(0,0,0,.78);
   --viz-favorite: #dfae61;
   --viz-favorite-outer: rgba(0,0,0,.75);
-  --viz-crosshair: rgba(228,225,217,.50);
-  --viz-crosshair-fill: #111315;
-  --viz-crosshair-stroke: #c99a53;
+  --viz-crosshair: rgba(231,236,232,.50);
+  --viz-crosshair-fill: #0B1115;
+  --viz-crosshair-stroke: #F9C85D;
   --viz-object-outline: rgba(0,0,0,.65);
   --viz-moon-band: rgba(123,169,199,.14);
-  --viz-horizon-line: rgba(228,225,217,.25);
-  --viz-twilight-shade: rgba(169,170,162,.07);
-  --viz-twilight-1: #2a3031;
-  --viz-twilight-2: #242a2b;
-  --viz-twilight-3: #1c2022;
-  --viz-twilight-4: #1c2022;
-  --viz-twilight-5: #242a2b;
-  --viz-twilight-6: #2a3031;
-  --viz-type-galaxy: #dfae61;
-  --viz-type-open-cluster: #8bb9b0;
-  --viz-type-globular: #c2b89a;
-  --viz-type-nebula: #7fbd98;
-  --viz-type-planetary: #a6c39e;
-  --viz-type-supernova-remnant: #d97870;
-  --viz-type-asterism: #b2a6c7;
-  --viz-type-star-cloud: #c4c6bd;
+  --viz-horizon-line: rgba(231,236,232,.25);
+  --viz-twilight-shade: rgba(156,174,177,.08);
+  --viz-twilight-1: #152027;
+  --viz-twilight-2: #152027;
+  --viz-twilight-3: #10181B;
+  --viz-twilight-4: #10181B;
+  --viz-twilight-5: #152027;
+  --viz-twilight-6: #152027;
+  --viz-type-galaxy: #F9C85D;
+  --viz-type-open-cluster: #73B6DB;
+  --viz-type-globular: #9CAEB1;
+  --viz-type-nebula: #5BC68D;
+  --viz-type-planetary: #73B6DB;
+  --viz-type-supernova-remnant: #C45B52;
+  --viz-type-asterism: #E8A948;
+  --viz-type-star-cloud: #E7ECE8;
   --viz-sun-glow-blur: 0;
   --viz-moon-glow-blur: 0;
   --viz-label-shadow-blur: 2;
 }
-
-html[data-theme="dome"] #skyCanvas,
-html[data-theme="dome"] #skymapCanvas,
 html[data-theme="workbench"] #skyCanvas,
 html[data-theme="workbench"] #skymapCanvas {
   background: var(--viz-sky-surface);
 }
-html[data-theme="dome"] #altChart,
 html[data-theme="workbench"] #altChart {
   background: var(--viz-graph-surface);
+}
+html[data-theme="workbench"] #tabs {
+  position: relative;
+  inset: auto;
+  transform: none;
+  z-index: 4;
+  min-height: 40px;
+  padding: 0 16px;
+}
+html[data-theme="workbench"] main {
+  margin: 0;
+  padding: 0;
+}
+html[data-theme="workbench"] .tabpane {
+  max-width: none;
+  padding: 14px var(--edge-space, 16px) 28px;
+}
+html[data-theme="workbench"] body.image-catalog-view main {
+  margin: 0;
+  padding: 0;
+}
+html[data-theme="workbench"] #catalogTabs {
+  width: max-content;
+  max-width: 100%;
+  margin: 0 0 10px;
+}
+html[data-theme="workbench"] .tonight-overview,
+html[data-theme="workbench"] .catalog-filter-rail,
+html[data-theme="workbench"] .catalog-results,
+html[data-theme="workbench"] .ingest-results {
+  border-color: var(--border);
+  background: var(--panel);
+}
+html[data-theme="workbench"] .catalog-filter-rail { border-radius: 4px; }
+html[data-theme="workbench"] .catalog-results { padding: 0; }
+html[data-theme="workbench"] .tonight-overview { border-radius: 4px; }
+html[data-theme="workbench"] .series-key { border-radius: 3px; }
+html[data-theme="workbench"] .series-key:hover { color: var(--text); background: var(--raised); }
+html[data-theme="workbench"] .chart-side .menu-section,
+html[data-theme="workbench"] #tab-library #libToolbar { border-color: var(--border); }
+html[data-theme="workbench"] .archpanel,
+html[data-theme="workbench"] .ingest-results { border-radius: 4px; }
+html[data-theme="workbench"] #detailModal.detail-docked {
+  position: fixed;
+  inset: 96px var(--edge-space, 16px) 12px auto;
+  display: block;
+  width: var(--inspector-width, 360px);
+  padding: 0;
+  z-index: 39;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  backdrop-filter: none;
+  pointer-events: none;
+  overflow: visible;
+}
+html[data-theme="workbench"] #detailModal.detail-docked .modal-box {
+  width: 100%;
+  height: 100%;
+  max-height: none;
+  margin: 0;
+  padding: 0 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--panel);
+  box-shadow: none;
+  pointer-events: auto;
+}
+html[data-theme="workbench"] #detailModal.detail-docked .modal-box header {
+  position: sticky;
+  top: 0;
+  padding: 10px 0 8px;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel);
+}
+html[data-theme="workbench"] body.detail-open main {
+  padding-right: calc(var(--inspector-width, 360px) + var(--edge-space, 16px) + 12px);
+}
+html[data-theme="workbench"] body.detail-open[data-primary-view="targets"] {
+  --inspector-width: min(35vw, 560px);
+}
+html[data-theme="workbench"] body.detail-open[data-primary-view="sky"] {
+  --inspector-width: min(37vw, 620px);
+}
+html[data-theme="workbench"] body.detail-open main .tabpane {
+  padding-right: 0;
+}
+@media (max-width: 1240px){
+html[data-theme="workbench"] #detailModal.detail-docked { width: min(32vw, 400px); }
+html[data-theme="workbench"] body.detail-open main {
+    padding-right: calc(min(32vw, 400px) + var(--edge-space, 16px) + 12px);
+  }
+}
+@media (max-width: 900px){
+html[data-theme="workbench"] main { padding-right: 10px; }
+html[data-theme="workbench"] body.detail-open main { padding-right: 10px; }
+html[data-theme="workbench"] .tabpane { padding-right: 0; padding-left: 0; }
+}
+html[data-theme="workbench"] #topbar {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr) 20px auto auto auto;
+  flex-wrap: nowrap;
+}
+html[data-theme="workbench"] .controls { flex-wrap: nowrap; min-width: 0; }
+html[data-theme="workbench"] #tab-tonight.active { display: block; }
+html[data-theme="workbench"] #tab-tonight #nightBrief,
+html[data-theme="workbench"] #tab-tonight #tonightCards,
+html[data-theme="workbench"] #tab-tonight #nowHeading,
+html[data-theme="workbench"] #tab-tonight #topPicks,
+html[data-theme="workbench"] #tab-tonight #laterList {
+  grid-column: auto;
+  align-self: auto;
+}
+@media (max-width: 900px){
+html[data-theme="workbench"] #topbar {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-rows: auto auto;
+  }
+html[data-theme="workbench"] .controls { flex-wrap: wrap; }
 }

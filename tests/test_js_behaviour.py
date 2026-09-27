@@ -57,13 +57,6 @@ def test_visibility_explainability_and_culmination_contract():
     assert "visibility explainability contract held" in out
 
 
-def test_sky_brightness_provider_dispatch_contract():
-    """The shared pack wire format must dispatch through provider-specific
-    equations and fail closed for an unknown provider."""
-    out = run_node_harness("skybrightness_provider.mjs")
-    assert "sky brightness provider contract held" in out
-
-
 def test_core_exports_that_no_other_test_named():
     """TO-09 (carry-over TS4): eight exported core functions were referenced
     nowhere under tests/; this drives each through a contract property."""

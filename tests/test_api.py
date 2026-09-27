@@ -108,13 +108,13 @@ def test_settings_rejects_bad_size_unit(client):
     assert r.status_code == 400
 
 
-def test_sky_brightness_provider_setting_is_explicit_and_validated(client):
-    assert client.get("/api/state").json()["sky_brightness_provider"] == "eog"
+def test_retired_sky_brightness_setting_is_ignored(client):
+    """Old clients may still submit the removed preference; it must not be
+    exposed or stored again."""
+    assert "sky_brightness_provider" not in client.get("/api/state").json()
     assert client.post("/api/settings", json={
-        "sky_brightness_provider": "blackmarble"}).status_code == 200
-    assert client.get("/api/state").json()["sky_brightness_provider"] == "blackmarble"
-    assert client.post("/api/settings", json={
-        "sky_brightness_provider": "unknown"}).status_code == 400
+        "sky_brightness_provider": "unknown"}).status_code == 200
+    assert "sky_brightness_provider" not in client.get("/api/state").json()
 
 
 # ------------------------------------------------------------------ sites / rigs

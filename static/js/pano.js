@@ -16,6 +16,7 @@ import { profileSegments, cropKeptBand, fovBinRel,
 export { profileSegments };
 
 const NBIN = 720;
+let _profileObserver = null;
 
 export const Pano = {
   cur: null,        // active record being edited
@@ -99,8 +100,27 @@ Pano.init = function () {
   }
   $("#btnAddPanoLandmark").addEventListener("click", addPanoLandmark);
   $("#btnReadPanoProfile").addEventListener("click", readPanoProfileBin);
-  $("#panoProfileAz").addEventListener("change", readPanoProfileBin);
+  $("#panoProfileAz").addEventListener("change", () => { readPanoProfileBin(); drawProfilePlot(); });
   $("#btnApplyPanoProfile").addEventListener("click", applyPanoProfileBin);
+  const profileCanvas = $("#panoProfileCanvas");
+  profileCanvas?.addEventListener("click", (event) => {
+    const rect = profileCanvas.getBoundingClientRect();
+    const left = 34, right = 8, width = Math.max(1, rect.width - left - right);
+    const az = clamp((event.clientX - rect.left - left) / width * 360, 0, 359.5);
+    $("#panoProfileAz").value = (Math.round(az * 2) / 2).toFixed(1);
+    readPanoProfileBin();
+    drawProfilePlot();
+  });
+  profileCanvas?.addEventListener("keydown", (event) => {
+    if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+    event.preventDefault();
+    const current = num($("#panoProfileAz").value) || 0;
+    const next = event.key === "Home" ? 0 : event.key === "End" ? 359.5
+      : clamp(current + (event.key === "ArrowRight" ? 0.5 : -0.5), 0, 359.5);
+    $("#panoProfileAz").value = next.toFixed(1);
+    readPanoProfileBin();
+    drawProfilePlot();
+  });
   $("#panoProfileCompare").addEventListener("change", () => {
     comparePanoProfile();
     render();
@@ -297,10 +317,19 @@ function addPanoLandmark() {
 function readPanoProfileBin() {
   if (!Pano.cur) return;
   const i = profileBinIndex();
-  $("#panoProfileAlt").value = String(Number(Pano.cur.profile?.[i] ?? -90));
-  $("#panoProfileTop").value = String(Number(Pano.cur.profile_top?.[i] ?? -90));
+  const lower = Number(Pano.cur.profile?.[i] ?? -90);
+  const upper = Number(Pano.cur.profile_top?.[i] ?? -90);
+  $("#panoProfileAlt").value = String(lower);
+  $("#panoProfileTop").value = String(upper);
   const c = normalizeHorizonConfidence(Pano.cur.confidence)[i];
   $("#panoProfileConfidence").value = c == null ? "" : String(c);
+  const summary = $("#panoProfileBinSummary");
+  if (summary) {
+    const lowerText = lower <= -90 ? "no lower obstruction" : `lower obstruction ${lower.toFixed(1)}°`;
+    const upperText = Pano.cur.block_above && upper > -90 ? ` · upper boundary ${upper.toFixed(1)}°` : "";
+    const confidence = c == null ? "confidence not recorded" : `confidence ${(c * 100).toFixed(0)}%`;
+    summary.textContent = `Azimuth ${(i / 2).toFixed(1)}° · ${lowerText}${upperText} · ${confidence}.`;
+  }
 }
 
 function applyPanoProfileBin() {
@@ -480,8 +509,16 @@ function normCrop() {
   return { x: x0, w: x1 - x0 };
 }
 
-Pano.onShow = function () { renderList(); render(); };
-Pano.onHide = function () { void flushSave(); };
+Pano.onShow = function () {
+  renderList(); render();
+  const panel = $(".pano-profile-panel");
+  if (panel && typeof ResizeObserver === "function") {
+    _profileObserver?.disconnect();
+    _profileObserver = new ResizeObserver(drawProfilePlot);
+    _profileObserver.observe(panel);
+  }
+};
+Pano.onHide = function () { _profileObserver?.disconnect(); void flushSave(); };
 Pano.render = render;   // exposed for the global resize handler
 
 Pano.refreshOverlay = function () {
@@ -754,13 +791,15 @@ function render() {
   const stage = $("#panoStage");
   if (!Pano.cur || !Pano.img || !Pano.img.complete) {
     $("#panoEmpty").classList.toggle("hidden", !!Pano.cur);
+    drawProfilePlot();
     return;
   }
   $("#panoEmpty").classList.add("hidden");
 
   const W = stage.clientWidth - 2;
   const ih = Pano.img.naturalHeight / Pano.img.naturalWidth;
-  const H = Math.round(clamp(W * ih, 200, innerHeight * 0.72));
+  const H = Math.max(1, Math.round(W * ih));
+  stage.style.aspectRatio = `${Pano.img.naturalWidth} / ${Pano.img.naturalHeight}`;
   const dpr = window.devicePixelRatio || 1;
   cv.width = W * dpr; cv.height = H * dpr;
   cv.style.height = H + "px";
@@ -807,6 +846,72 @@ function render() {
     const open = paintMode() === "sky" && !Pano.cur.block_above ? " Above-band sky is assumed open." : "";
     summary.textContent = `Panorama horizon editor in ${mode} mode. Azimuth offset ${(+$("#azOffset").value || 0).toFixed(1)} degrees, field of view ${(+$("#fovAz").value || 360).toFixed(1)} degrees, altitude range ${(+$("#altBottom").value || 0).toFixed(1)} to ${(+$("#altTop").value || 45).toFixed(1)} degrees.${open}`;
   }
+  drawProfilePlot();
+}
+
+function drawProfilePlot() {
+  const cv = $("#panoProfileCanvas");
+  if (!cv || !cv.clientWidth) return;
+  const W = cv.clientWidth, H = cv.clientHeight || 166;
+  const dpr = window.devicePixelRatio || 1;
+  cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
+  const ctx = cv.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, W, H);
+  const style = getComputedStyle(document.documentElement);
+  const color = (name, fallback) => style.getPropertyValue(name).trim() || fallback;
+  const L = 34, R = 8, T = 8, B = 22;
+  const pw = Math.max(1, W - L - R), ph = Math.max(1, H - T - B);
+  const y = (alt) => T + (90 - Math.max(0, Math.min(90, alt))) / 90 * ph;
+  ctx.fillStyle = color("--panel", "#10181B"); ctx.fillRect(0, 0, W, H);
+  ctx.font = "10px Consolas, monospace"; ctx.textAlign = "right"; ctx.textBaseline = "middle";
+  for (const alt of [0, 30, 60, 90]) {
+    const yy = y(alt);
+    ctx.strokeStyle = color("--border-soft", "#1E2B31");
+    ctx.beginPath(); ctx.moveTo(L, yy); ctx.lineTo(W - R, yy); ctx.stroke();
+    ctx.fillStyle = color("--dim", "#9CAEB1"); ctx.fillText(`${alt}°`, L - 5, yy);
+  }
+  const p = Pano.cur?.profile;
+  const valid = Array.isArray(p) && p.length === NBIN;
+  if (valid) {
+    ctx.beginPath();
+    p.forEach((value, i) => {
+      const alt = Number(value);
+      const xx = L + i / (NBIN - 1) * pw;
+      const yy = y(alt < 0 ? 0 : alt);
+      i ? ctx.lineTo(xx, yy) : ctx.moveTo(xx, yy);
+    });
+    ctx.strokeStyle = color("--bad", "#C45B52"); ctx.lineWidth = 1.5; ctx.stroke();
+    const top = Pano.cur?.profile_top;
+    if (Pano.cur?.block_above && Array.isArray(top) && top.length === NBIN) {
+      ctx.save(); ctx.setLineDash([5, 4]); ctx.beginPath();
+      top.forEach((value, i) => {
+        const xx = L + i / (NBIN - 1) * pw;
+        const yy = y(Number(value) < 0 ? 0 : Number(value));
+        i ? ctx.lineTo(xx, yy) : ctx.moveTo(xx, yy);
+      });
+      ctx.strokeStyle = color("--warn", "#E8A948"); ctx.stroke(); ctx.restore();
+    }
+  }
+  const selectedBin = profileBinIndex();
+  const selectedX = L + selectedBin / (NBIN - 1) * pw;
+  ctx.strokeStyle = color("--accent", "#F0C36A"); ctx.lineWidth = 1;
+  ctx.setLineDash([3, 3]); ctx.beginPath(); ctx.moveTo(selectedX, T); ctx.lineTo(selectedX, T + ph); ctx.stroke(); ctx.setLineDash([]);
+  if (valid) {
+    const selectedAlt = Number(p[selectedBin]);
+    if (Number.isFinite(selectedAlt) && selectedAlt > -90) {
+      ctx.fillStyle = color("--accent", "#F0C36A");
+      ctx.beginPath(); ctx.arc(selectedX, y(selectedAlt), 3.2, 0, Math.PI * 2); ctx.fill();
+    }
+  }
+  ctx.fillStyle = color("--dim", "#9CAEB1"); ctx.textAlign = "center"; ctx.textBaseline = "top";
+  for (const [az, label] of [[0, "N · 0°"], [90, "E · 90°"], [180, "S · 180°"], [270, "W · 270°"], [360, "N · 360°"]]) {
+    ctx.fillText(label, L + az / 360 * pw, H - B + 5);
+  }
+  const summary = $("#panoProfileSummary");
+  if (summary) summary.textContent = valid
+    ? `Stored horizon profile with ${NBIN} world-azimuth bins. The lower edge uses the obstruction color${Pano.cur?.block_above ? " and the upper blocked edge is dashed" : ""}.`
+    : "No stored horizon profile is available.";
 }
 
 /* magnifier overlay: samples the composite panorama canvas, works on hover

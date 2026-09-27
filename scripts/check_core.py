@@ -67,13 +67,6 @@ MOVED = (
     "moonAge",
     "sunAlt", "sunCrossings", "nightInfo", "pickDarkWindow", "scrubWindowMs",
     "scrubBounds", "scrubClamp", "sepDeg", "nightStats",
-    "skyDistanceKm", "eogWalkerAlpha", "eogAlrZlrRatio",
-    "zenithMpsasFromZlr", "zenithQualityForZlr",
-    "estimateZenithSkyBrightness", "estimateZenithSkyBrightnessFromGrid",
-    "blackMarbleSpreadWeight",
-    "estimateBlackMarbleZenithSkyBrightnessFromGrid",
-    "estimateSkyBrightnessFromGrid",
-    "decodeSkyBrightnessPack",
 )
 # The Python astronomy/planning layer was deleted in Phase C (0.6.20): these
 # snake_case cores must not reappear as Python definitions in app/ or scripts/.

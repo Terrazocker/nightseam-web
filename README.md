@@ -13,15 +13,13 @@ whole catalog work fully offline. The only network calls are optional: object
 example images (Wikipedia, cached locally), the weather panel (Open-Meteo, on
 request) and a once-per-start version check against nightseam.de.
 
-**Docs:** `DESIGN.md` - the Workbench and Glass UI design contract. `CATALOG.md`
+**Docs:** `DESIGN.md` - the Workbench UI design contract. `CATALOG.md`
 - where the catalogue comes from and how to rebuild it
 (sources, the popularity table, the web payload, cache tokens). `DECISIONS.md` -
 why the app works the way it does and what was rejected. `AGENTS.md` - the
 invariants, commands, release and deploy reference. `RELEASES.md` - what each
 release or unreleased working tree shipped and how it was verified. `BUGS.md` -
 current confirmed issues and recommended implementation direction.
-`SKY_BRIGHTNESS.md` - the optional independent EOG/VIIRS zenith
-sky-brightness pack, model, validation boundary and rebuild command.
 
 There is also a **web version** — the same night-planning core, running 100%
 in your browser with no server:
@@ -40,14 +38,11 @@ Two modes, switched with the top-right button:
 - **Night Planner** - plan what to shoot and when.
 - **Image Catalog** - import, organize and inspect your capture sessions.
 
-### Themes
+### Interface
 
-**Workbench** is the default theme across the desktop app and web planner: an
-opaque graphite workspace with brass action states and compact controls. Open
-the hamburger menu and choose **Appearance → Glass** to switch to the retained
-Glass (`dome`) presentation with its floating panels and starfield. The landing
-page follows Workbench. Older Classic, empty, or unknown theme settings migrate
-to Workbench automatically, and web backups carry the selected theme.
+Workbench is the sole planner language across desktop and web: opaque graphite
+surfaces, brass actions, compact controls, and no decorative starfield. Older
+theme values are normalized to Workbench during load and restore.
 
 ## Features
 
@@ -69,13 +64,10 @@ to Workbench automatically, and web backups carry the selected theme.
 - **Location-aware visibility** - enter your observing site(s) once; every
   calculation is done for your exact coordinates and elevation, including
   atmospheric refraction and precession.
-- **Optional zenith sky brightness** - an independently built EOG/VIIRS
-  nighttime-lights pack can provide a clear-sky zenith estimate in mpsas with
-  a plain quality band and coverage confidence. EOG is the default provider;
-  an explicitly enabled, sidecar-identified NASA Black Marble v1 pack can be
-  selected from Advanced → Sky brightness source, with automatic EOG fallback.
-  The signal is display-only: it does not replace your Bortle setting or alter
-  target ranking, and Lorenz is used only by the external validation tool.
+- **Manual sky-quality planning** - set your site's Bortle class in Advanced;
+  NightSeam keeps that entered value and uses the shared Bortle-based default
+  minimum altitude when no explicit minimum is set. Estimated satellite-light
+  brightness layers are no longer part of the app.
 - **Panorama horizon masking** - import a 360-degree panorama photo taken from
   your telescope spot, calibrate it (azimuth rotation + elevation range) and
   simply paint over everything that blocks the sky. NightSeam converts your

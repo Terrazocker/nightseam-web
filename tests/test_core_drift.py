@@ -83,8 +83,10 @@ def test_shell_sources_scan_pages_and_modules():
     assert "index.html" in web, "web/index.html must be scanned (inline script)"
     assert "app.js" in web
     src = guard.source_text(ROOT / "web" / "index.html")
-    assert "<script" not in src, "only the script BODIES may be scanned"
-    assert "nightseam_theme" in src, "the inline script body must be scanned"
+    html = (ROOT / "web" / "index.html").read_text(encoding="utf-8")
+    assert "<script" not in src, "the web entry document should ship no inline script bodies"
+    assert 'data-theme="workbench"' in html
+    assert "nightseam_theme" not in src, "theme selection is no longer bootstrapped inline"
     assert "Catalog: OpenNGC" not in src, "the page prose must not be scanned"
 
 
@@ -233,6 +235,17 @@ def test_baked_core_retention_keeps_current_and_n1(tmp_path):
     assert build.next_previous(None, None, "newhash") is None
     assert build.next_previous("newhash", "newhash", "newhash") is None
 
+    # The one-time model retirement path drops both a prior N-1 and the old
+    # current tree. Normal bakes still choose and retain N-1.
+    assert build.previous_for_bake("oldhash", "olderhash", "newhash") == "oldhash"
+    assert build.previous_for_bake(
+        "oldhash", "olderhash", "newhash",
+        retire_model_bearing_previous=True) is None
+    assert build.retention_keep(
+        "newhash", build.previous_for_bake(
+            "oldhash", "olderhash", "newhash",
+            retire_model_bearing_previous=True)) == {"newhash"}
+
     # the baker keeps current + N-1 and prunes the rest
     root = tmp_path / "core"
     for name in ("oldest", "prevhash", "newhash"):
@@ -256,6 +269,54 @@ def test_baked_core_retention_keeps_current_and_n1(tmp_path):
     assert "prune_baked_dirs(" in inspect.getsource(build.main)
     assert '"previous": previous' in inspect.getsource(build.main)
     assert "baked_dir_problems(" in inspect.getsource(guard.scan)
+
+
+def test_model_bake_retirement_prunes_old_tree_and_records_null(monkeypatch, tmp_path):
+    """The one-time feature retirement is wired through the real baker.
+
+    A normal changed bake preserves the old current tree as N-1. The explicit
+    retirement bake then removes that tree and records `previous: null`.
+    """
+    import json
+    import sys
+
+    guard = _guard()
+    build = guard._load_build()
+    repo = tmp_path / "repo"
+    core = repo / "core"
+    core.mkdir(parents=True)
+    (core / "index.js").write_text("export { ping } from './ping.js';\n", encoding="utf-8")
+    (core / "ping.js").write_text("export function ping() { return 1; }\n", encoding="utf-8")
+    (core / "core.manifest.json").write_text(json.dumps({
+        "hash": "oldhash", "token": 7, "previous": "olderhash", "files": {},
+    }), encoding="utf-8")
+    new_hash, _files = build.tree_hash(core)
+
+    web = repo / "web"
+    static_js = repo / "static" / "js"
+    for root in (web / "core", static_js / "core"):
+        for old in ("oldhash", "olderhash"):
+            model_tree = root / old
+            model_tree.mkdir(parents=True)
+            (model_tree / "skybrightness.js").write_text("retired model", encoding="utf-8")
+
+    monkeypatch.setattr(build, "CORE", core)
+    monkeypatch.setattr(build, "MANIFEST", core / "core.manifest.json")
+    monkeypatch.setattr(build, "WEB_DIR", web)
+    monkeypatch.setattr(build, "STATIC_JS", static_js)
+    monkeypatch.setattr(sys, "argv", ["build_core.py"])
+    assert build.main() == 0
+    normal = json.loads((core / "core.manifest.json").read_text(encoding="utf-8"))
+    assert normal["previous"] == "oldhash"
+    assert {p.name for p in (web / "core").iterdir()} == {"oldhash", new_hash}
+
+    monkeypatch.setattr(sys, "argv", ["build_core.py", "--retire-model-bearing-previous"])
+    assert build.main() == 0
+    retired = json.loads((core / "core.manifest.json").read_text(encoding="utf-8"))
+    assert retired["previous"] is None
+    for root in (web / "core", static_js / "core"):
+        assert {p.name for p in root.iterdir()} == {new_hash}
+        assert not (root / new_hash / "skybrightness.js").exists()
 
 
 def test_a_moved_concept_in_a_shell_subdirectory_is_caught():

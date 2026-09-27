@@ -25,6 +25,8 @@ const makeEl = (sel) => ({
   reset() { this._reset = true; },
   focus() {},
   appendChild() {},
+  append(...nodes) { this._appended = [...(this._appended || []), ...nodes]; },
+  setAttribute(name, value) { (this._attrs ||= {})[name] = String(value); },
   options: [],
 });
 globalThis.document = {
@@ -36,7 +38,10 @@ globalThis.document = {
   addEventListener(type, fn) { if (type === 'keydown') keydown.push(fn); },
   dispatchEvent() {},
   createElement: () => makeEl('created'),
-  body: { prepend() {} },
+  body: {
+    dataset: {}, classList: { add() {}, remove() {}, toggle() {}, contains() { return false; } },
+    prepend() {},
+  },
   documentElement: { setAttribute() {}, getAttribute() { return ''; } },
 };
 globalThis.CustomEvent = class { constructor(type) { this.type = type; } };

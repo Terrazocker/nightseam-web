@@ -23,12 +23,15 @@ WEB_CHECKS = [
     "web-pano-undo-redo-clear",
     "web-pano-storage-quota",
     "web-pano-canvas-dpr-resize",
+    "web-horizon-stage-preserves-photo-aspect",
+    "web-horizon-profile-region",
     "web-sky-band-no-diagonal-chord",
     "web-sun-moon-above-horizon",
     "web-scrub-changes-time",
     "web-mag-slider-changes-sky",
     "web-pano-crop-recalibrate",
-    "web-both-themes-render",
+    "web-catalog-direction-b-density",
+    "web-workbench-only-render",
     "web-accessibility-essentials",
 ]
 DESKTOP_CHECKS = [
@@ -37,9 +40,10 @@ DESKTOP_CHECKS = [
     "desktop-worker-kill-sync-fallback",
     "desktop-pref-rescore",
     "desktop-advanced-mode",
+    "desktop-catalog-direction-b-density",
     "desktop-scrub-window",
     "desktop-pano-crop-fov",
-    "desktop-both-themes-render",
+    "desktop-workbench-only-render",
     "desktop-accessibility-essentials",
 ]
 

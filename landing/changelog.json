@@ -167,7 +167,7 @@
  {
   "version": "0.5.11",
   "date": "2026-09-02",
-  "summary": "Targets are ranked with community popularity as a silent tiebreaker, and moon-aware scoring now accounts for the Moon's phase, your filters and your sky brightness (Bortle class)."
+  "summary": "Targets are ranked with community popularity as a silent tiebreaker, and moon-aware scoring now accounts for the Moon's phase, your filters and your Bortle class."
  },
  {
   "version": "0.5.10",

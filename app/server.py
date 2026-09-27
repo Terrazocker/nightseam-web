@@ -142,14 +142,9 @@ def _version_greater(a: str, b: str) -> bool:
 # depth). The load-bearing part is that NO remote origin may provide script:
 # `script-src 'self'` is what makes a hostile DNS/CA/host compromise unable to
 # run code in the 127.0.0.1 origin even if some future code tries a JSONP tag.
-#   * BUG-002: `'unsafe-inline'` is GONE from script-src. It was there for
-#     static/index.html's one inline theme bootstrap (which must run before first
-#     paint), and it also permitted inline EVENT HANDLERS - so an injected
-#     attribute (imported custom ids reached `data-delcust="${o.id}"`, imported
-#     `imagetyp` reached a `title`) became executable code. The bootstrap is
-#     allowlisted by its SHA-256 instead, exactly like the web shell's
-#     `web/.htaccess`; `tests/test_update_check_csp.py` recomputes the hash from
-#     the file and fails if it drifts.
+#   * BUG-002: `'unsafe-inline'` is GONE from script-src. The inline bootstrap
+#     and event handlers were removed; imported custom ids and `imagetyp` values
+#     are rendered without executable markup.
 #   * the two inline `onerror=` image fallbacks that used to live in
 #     static/js/{targets,tonight}.js are event listeners now, so no handler needs
 #     the exemption at all.
@@ -157,14 +152,14 @@ def _version_greater(a: str, b: str) -> bool:
 #     `style=`/`element.style` all over the UI, and inline STYLE cannot execute.
 #   * img-src is pinned to the hosts the desktop actually renders images from
 #     (cached Wikipedia/Wikidata thumbnails are full URLs; DSS cutouts and the
-#     API payloads answer from /api/object/...).
+#     API payloads answer from /api/object/..., whose full-size bytes are shown
+#     through a same-page blob URL).
 #   * connect-src keeps the weather panel working and stays restricted to it.
-_INLINE_BOOTSTRAP_SHA256 = "sha256-iV/AR7rIubNsaZQdsJmLBz8jRB940hetSdnl0VqFyM4="
 CSP_HEADER = (
     "default-src 'self'; "
-    f"script-src 'self' '{_INLINE_BOOTSTRAP_SHA256}'; "
+    "script-src 'self'; "
     "style-src 'self' 'unsafe-inline'; "
-    "img-src 'self' data: https://upload.wikimedia.org "
+    "img-src 'self' data: blob: https://upload.wikimedia.org "
     "https://commons.wikimedia.org https://alasky.cds.unistra.fr; "
     "connect-src 'self' https://api.open-meteo.com https://air-quality-api.open-meteo.com; "
     "worker-src 'self'; "
@@ -270,7 +265,6 @@ class SettingsIn(BaseModel):
     weather_auto: Optional[bool] = None
     view_full_day: Optional[bool] = None
     min_vis: Optional[int] = None
-    sky_brightness_provider: Optional[str] = None
 
 
 class RigIn(BaseModel):
@@ -525,7 +519,7 @@ def create_app(db: Database, *, prefetch: bool = True) -> FastAPI:
         # the UI ships as plain files served from the exe/source bundle; a
         # stale cached index.html next to fresh ES modules breaks the app
         # (missing DOM ids). Never cache the UI shell or its assets - including
-        # themes.css, which carries the whole Glass theme.
+        # themes.css, which carries the Workbench component overrides.
         if request.url.path in ("/", "/index.html", "/style.css",
                                 "/themes.css", "/favicon.ico") or \
                 request.url.path.startswith("/js/"):
@@ -555,9 +549,6 @@ def create_app(db: Database, *, prefetch: bool = True) -> FastAPI:
         # refuses such a value now; this is the second line of defence for a row
         # that got in some other way.
         min_vis = _finalize_num_setting(db.setting("min_vis", 1), 0, 100)
-        sky_provider = db.setting("sky_brightness_provider", "eog")
-        if sky_provider not in ("eog", "blackmarble"):
-            sky_provider = "eog"
         return {
             "version": APP_VERSION,
             "sites": db.sites(),
@@ -582,14 +573,13 @@ def create_app(db: Database, *, prefetch: bool = True) -> FastAPI:
             "wizard_done": bool(db.setting("wizard_done", False)),
             "profile_len": PROFILE_BINS,
             "image_dir": db.image_dir(),
-            "edge_space": db.setting("edge_space", 200),
+            "edge_space": db.setting("edge_space", 16),
             "adv_mode": bool(db.setting("adv_mode", False)),
             "bortle": db.setting("bortle", 4),
             "timezone": db.setting("timezone") or "",
             "theme": normalize_theme(db.setting("theme", None)),
             "weather_auto": bool(db.setting("weather_auto", False)),
             "view_full_day": bool(db.setting("view_full_day", False)),
-            "sky_brightness_provider": sky_provider,
             # the target list's Min-visibility gate (0 = off); see targets.js
             "min_vis": min_vis if min_vis is not None else 1,
         }
@@ -653,12 +643,6 @@ def create_app(db: Database, *, prefetch: bool = True) -> FastAPI:
             db.set_setting("view_full_day", bool(body.view_full_day))
         if body.min_vis is not None:
             db.set_setting("min_vis", max(0, min(100, int(body.min_vis))))
-        if body.sky_brightness_provider is not None:
-            provider = body.sky_brightness_provider.strip().lower()
-            if provider not in ("eog", "blackmarble"):
-                raise HTTPException(
-                    400, "sky_brightness_provider must be eog or blackmarble")
-            db.set_setting("sky_brightness_provider", provider)
         return {"ok": True}
 
     # ---------------- sites ----------------

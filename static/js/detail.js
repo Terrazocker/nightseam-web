@@ -1,7 +1,7 @@
 /* object detail modal + altitude-vs-time chart */
 
 import { $, clamp, parseUTC, esc, fmtHM, fmtT, toast, tzOffAt,
-         zoneHour,
+         zoneHour, api,
          TYPE_LABEL, constName, fmtSize } from "./util.js";
 import { S, IMG_VER } from "./state.js";
 import { filterAdvice, frameCoverage, moonAt, moonBandX,
@@ -14,6 +14,9 @@ let DETAIL = null;      // cached detail payload
 let DETAIL_HOVER = null;// hovered sample index for crosshair
 let _imgUrl = null;     // current blob URL assigned to #dImage
 let DETAIL_RETURN_FOCUS = null;
+let _detailGeneration = 0;
+let _detailHiddenForOtherView = false;
+let _detailResizeObserver = null;
 
 function revokeImgUrl() {
   if (_imgUrl) { URL.revokeObjectURL(_imgUrl); _imgUrl = null; }
@@ -28,26 +31,62 @@ function revokeImgUrl() {
  *  it here makes both guards (`:49` image upgrade, `:67` detail loader) see the
  *  close. */
 function closeDetail() {
+  _detailGeneration++;
   $("#detailModal").classList.add("hidden");
+  document.body.classList.remove("detail-open");
+  setDetailSemantics(false);
+  _detailHiddenForOtherView = false;
   DETAIL = null;
   S.currentId = null;
+  document.querySelectorAll("#targetRows tr.selected, #tonightRows tr.selected, #tonightRankTable tr.selected")
+    .forEach((row) => row.classList.remove("selected"));
   revokeImgUrl();
   const returnFocus = DETAIL_RETURN_FOCUS;
   DETAIL_RETURN_FOCUS = null;
-  if (returnFocus && returnFocus.isConnected && !returnFocus.hidden) {
+  const canRestoreFocus = returnFocus && returnFocus.isConnected &&
+    !returnFocus.closest("[hidden], .hidden, [inert]") &&
+    returnFocus.getClientRects().length > 0 && !returnFocus.matches(":disabled") &&
+    returnFocus.matches("button, a[href], input:not([type='hidden']), select, textarea, [tabindex]:not([tabindex='-1'])");
+  if (canRestoreFocus) {
     returnFocus.focus({ preventScroll: true });
+  } else {
+    const view = document.body.dataset.primaryView || "tonight";
+    document.querySelector(`#tabs [data-tab='${view}']`)?.focus({ preventScroll: true });
   }
 }
 
-export async function openDetail(id) {
-  S.currentId = id;
+function dockedDetail() {
+  return window.innerWidth > 900 && ["tonight", "targets", "sky"].includes(
+    document.body.dataset.primaryView);
+}
+
+function setDetailSemantics(docked) {
+  const modal = $("#detailModal");
+  modal.classList.toggle("detail-docked", docked);
+  modal.setAttribute("role", docked ? "complementary" : "dialog");
+  modal.setAttribute("aria-label", docked ? "Selected target inspector" : "Target details");
+  if (docked) modal.removeAttribute("aria-modal");
+  else modal.setAttribute("aria-modal", "true");
+  document.body.classList.toggle("detail-open", docked);
+}
+
+export async function openDetail(id, { refresh = false, opener = null } = {}) {
   const m = S.meta[id];
   if (!m) return;
-  DETAIL_RETURN_FOCUS = document.activeElement instanceof HTMLElement
-    ? document.activeElement : null;
+  const generation = ++_detailGeneration;
+  S.currentId = id;
+  document.querySelectorAll("#targetRows tr, #tonightRows tr, #tonightRankTable tr")
+    .forEach((row) => row.classList.toggle("selected",
+      row.dataset.id === id || row.dataset.tonightId === id));
+  if (!refresh) {
+    const source = opener || document.activeElement;
+    DETAIL_RETURN_FOCUS = source instanceof HTMLElement ? source : null;
+  }
   DETAIL_HOVER = null;
   $("#detailModal").classList.remove("hidden");
-  $("#dClose").focus({ preventScroll: true });
+  const docked = dockedDetail();
+  setDetailSemantics(docked);
+  if (!docked) $("#dClose").focus({ preventScroll: true });
 
   $("#dTitle").textContent = m.primary_name;
   const chips = [];
@@ -63,7 +102,20 @@ export async function openDetail(id) {
   // (capped at 8 s so a slow chain can never hog a browser connection and
   // starve other requests)
   const img = $("#dImage");
+  const fallback = $("#dImageFallback");
   revokeImgUrl();   // drop the previous object's blob before replacing it
+  img.classList.remove("hidden");
+  fallback.classList.add("hidden");
+  img.onload = () => {
+    if (generation !== _detailGeneration || S.currentId !== id) return;
+    img.classList.remove("hidden");
+    fallback.classList.add("hidden");
+  };
+  img.onerror = () => {
+    if (generation !== _detailGeneration || S.currentId !== id) return;
+    img.classList.add("hidden");
+    fallback.classList.remove("hidden");
+  };
   img.src = `/api/object/${id}/image?thumb=1&v=${IMG_VER}`;
   const upCtl = new AbortController();
   const upTimer = setTimeout(() => upCtl.abort(), 8000);
@@ -72,7 +124,7 @@ export async function openDetail(id) {
     .then(b => {
       if (!b) return;
       const u = URL.createObjectURL(b);
-      if (S.currentId === id) { _imgUrl = u; img.src = u; }
+      if (generation === _detailGeneration && S.currentId === id) { _imgUrl = u; img.src = u; }
       else URL.revokeObjectURL(u);   // modal closed while fetching - never leak
     })
     .catch(() => {})
@@ -90,7 +142,7 @@ export async function openDetail(id) {
     console.error(err);
     return;
   }
-  if (S.currentId !== id) return;   // another object was opened while loading:
+  if (generation !== _detailGeneration || S.currentId !== id) return;   // another request or target superseded this one
                                     // never paint this one's data under its title
   DETAIL = d;
   renderDetailMeta(m, DETAIL);
@@ -113,22 +165,41 @@ function renderDetailMeta(m, d) {
         (cov.fits ? `${cov.pct}% of frame width` : `~${cov.frames.toFixed(1)} frames`) +
         `</span> <small>${esc(activeRigName())}</small>`
       : "\u2014";
-  const rows = [
-    ["Type", esc(TYPE_LABEL[m.otype] || m.otype)],
-    ["Filters", adv ? `<span class="fbadge ${adv.cls}">${adv.text}</span>` : "no special filter needed"],
-    ["Magnitude", m.vmag != null ? m.vmag.toFixed(1) + " mag" : "\u2014"],
+  const selectedTrack = S.night?.objects?.find((o) => o.id === m.id);
+  const selectedIso = S.night?.timeline?.times_iso?.[S.tIdx];
+  const selectedAlt = Number(selectedTrack?.alt?.[S.tIdx]);
+  const selectedAz = Number(selectedTrack?.az?.[S.tIdx]);
+  const selectedPosition = selectedIso && Number.isFinite(selectedAlt)
+    ? `${fmtT(parseUTC(selectedIso))} · ${selectedAlt.toFixed(1)}° alt · ${Number.isFinite(selectedAz) ? selectedAz.toFixed(0) : "—"}° az`
+    : "No sampled position at the selected time";
+  const usableInterval = d.best
+    ? `${fmtHM(d.usable_start)}–${fmtHM(d.usable_end)} (${durStr(d.usable_start, d.usable_end)})`
+    : "No clear interval tonight";
+  const star = $("#dFavorite");
+  const isFavorite = (S.cfg?.favorites || []).includes(m.id);
+  star.classList.toggle("on", isFavorite);
+  star.setAttribute("aria-pressed", String(isFavorite));
+  star.title = isFavorite ? "Remove session target" : "Mark as a session target";
+  star.setAttribute("aria-label", `${isFavorite ? "Remove" : "Add"} ${m.primary_name} ${isFavorite ? "from" : "to"} session targets`);
+  $("#dHeroFacts").innerHTML = [
+    ["Type", TYPE_LABEL[m.otype] || m.otype],
+    ["Magnitude", m.vmag != null ? `${m.vmag.toFixed(1)} mag` : "No catalog magnitude"],
     ["Size", fmtSize(m.size_am, (S.cfg && S.cfg.size_unit) || "arcmin")],
+    ["Selected position", selectedPosition],
+  ].map(([label, value]) => `<div><span>${esc(label)}</span><b>${esc(value || "—")}</b></div>`).join("");
+  $("#dVisibilitySummary").innerHTML =
+    `<div><span class="detail-kicker">Tonight</span><b>${visibilityText(d)}</b></div>` +
+    `<div><span>Usable interval</span><b>${esc(usableInterval)}</b></div>` +
+    `<div><span>Culmination</span><b>${d.max_alt.toFixed(1)}° at ${esc(fmtHM(d.max_time))}</b></div>`;
+  const rows = [
+    ["Filters", adv ? `<span class="fbadge ${adv.cls}">${adv.text}</span>` : "no special filter needed"],
     ["Frame coverage", covTxt],
     ["Constellation", esc(constName(m.constellation))],
     ["RA (J2000)", `<span class="mono">${d.meta.ra_hms}</span>`],
     ["Dec (J2000)", `<span class="mono">${d.meta.dec_dms}</span>`],
     ...provenanceRows,
-    ["Visibility", visibilityText(d)],
-    ["Culmination", `${d.max_alt.toFixed(1)}\u00B0 at ${fmtHM(d.max_time)}`],
+    ...selectedTrackRows(m.id),
     ["Rise / set", `${fmtHM(d.rise_time)} \u00B7 ${fmtHM(d.set_time)}`],
-    ["Usable interval", d.best
-        ? `${fmtHM(d.usable_start)}\u2013${fmtHM(d.usable_end)} (${durStr(d.usable_start, d.usable_end)})`
-        : visibilityText(d)],
   ];
   $("#dMeta").innerHTML = rows.map(([k,v]) =>
     `<tr><td>${k}</td><td>${v}</td></tr>`).join("");
@@ -146,6 +217,18 @@ function durStr(aIso, bIso) {
   const mins = Math.max(0, Math.round((parseUTC(bIso) - parseUTC(aIso)) / 60000));
   if (!Number.isFinite(mins)) return "\u2014";
   return `${Math.floor(mins/60)}h ${String(mins%60).padStart(2,"0")}m`;
+}
+
+export function refreshOpenDetail() {
+  if (S.currentId && !$("#detailModal").classList.contains("hidden"))
+    openDetail(S.currentId, { refresh: true });
+}
+
+function selectedTrackRows(id) {
+  const track = S.night?.objects?.find((o) => o.id === id);
+  const iso = S.night?.timeline?.times_iso?.[S.tIdx];
+  if (!track || !iso || !Number.isFinite(Number(track.alt?.[S.tIdx]))) return [];
+  return [["Selected time", `${fmtT(parseUTC(iso))} · alt ${Number(track.alt[S.tIdx]).toFixed(1)}° · az ${Number(track.az?.[S.tIdx] || 0).toFixed(0)}°`]];
 }
 
 function visibilityText(d) {
@@ -174,27 +257,77 @@ function moonPhaseAt(dateObj) {
 }
 
 export function bindDetail() {
+  if (typeof ResizeObserver === "function") {
+    _detailResizeObserver = new ResizeObserver(entries => {
+      const entry = entries[entries.length - 1];
+      if (!entry || entry.contentRect.width <= 0 || !DETAIL || !S.currentId ||
+          $("#detailModal").classList.contains("hidden")) return;
+      drawAltChart();
+    });
+    _detailResizeObserver.observe($("#detailModal .detail-chart"));
+  }
   $("#dClose").addEventListener("click", () => {
     closeDetail();
+  });
+  $("#dFavorite").addEventListener("click", () => {
+    if (!S.currentId) return;
+    const id = S.currentId;
+    const favorites = new Set(S.cfg?.favorites || []);
+    if (favorites.has(id)) favorites.delete(id); else favorites.add(id);
+    S.cfg.favorites = [...favorites];
+    renderDetailMeta(S.meta[id], DETAIL);
+    api("/api/settings", { method: "POST", headers: { "Content-Type": "application/json" },
+      silent: true, body: JSON.stringify({ favorites: S.cfg.favorites }) })
+      .catch(() => {})
+      .finally(() => document.dispatchEvent(new CustomEvent("favs:changed")));
   });
   // rig/filter/unit changes made elsewhere re-render the open modal
   document.addEventListener("detail:changed", () => {
     if (DETAIL && S.currentId) renderDetailMeta(S.meta[S.currentId], DETAIL);
   });
+  document.addEventListener("time:changed", () => {
+    if (!DETAIL || !S.currentId) return;
+    renderDetailMeta(S.meta[S.currentId], DETAIL);
+    drawAltChart();
+  });
   $("#detailModal").addEventListener("mousedown", e => {
     if (e.target.id === "detailModal") closeDetail();
   });
   $("#chkMoon").addEventListener("change", drawAltChart);
-  window.addEventListener("resize", () => { if (DETAIL) drawAltChart(); });
+  window.addEventListener("resize", () => {
+    if (!S.currentId) return;
+    setDetailSemantics(dockedDetail());
+    if (DETAIL) drawAltChart();
+  });
+  document.addEventListener("primary-view:changed", (event) => {
+    if (!S.currentId) return;
+    const view = event.detail?.view || document.body.dataset.primaryView;
+    const modal = $("#detailModal");
+    if (!["tonight", "targets", "sky"].includes(view)) {
+      _detailHiddenForOtherView = !modal.classList.contains("hidden");
+      modal.classList.add("hidden");
+      setDetailSemantics(false);
+      return;
+    }
+    if (_detailHiddenForOtherView) {
+      modal.classList.remove("hidden");
+      _detailHiddenForOtherView = false;
+      openDetail(S.currentId, { refresh: true });
+      return;
+    }
+    setDetailSemantics(dockedDetail());
+    if (DETAIL) drawAltChart();
+  });
 
   document.addEventListener("keydown", e => {
-    if (e.key === "Escape") {
+    if (e.key === "Escape" && !$("#detailModal").classList.contains("hidden")) {
       $("#sitesModal").classList.add("hidden");
       closeDetail();
     }
     if (!DETAIL) return;
-    if (e.key === "ArrowRight") stepDetail(+1);
-    if (e.key === "ArrowLeft")  stepDetail(-1);
+    if (e.target !== $("#detailModal .modal-box")) return;
+    if (e.key === "ArrowRight") { e.preventDefault(); stepDetail(+1); }
+    if (e.key === "ArrowLeft")  { e.preventDefault(); stepDetail(-1); }
   });
 }
 
@@ -203,7 +336,7 @@ function stepDetail(dir) {
   let i = ids.indexOf(S.currentId);
   if (i < 0) return;
   i = (i + dir + ids.length) % ids.length;
-  openDetail(ids[i]);
+  openDetail(ids[i], { refresh: true });
 }
 
 /* ---------------- altitude chart ---------------- */
@@ -404,6 +537,23 @@ export function drawAltChart() {
   ctx.beginPath(); ctx.arc(X(mi), Y(d.alt[mi]), 3.2, 0, 7); ctx.fill();
   ctx.font = "11px Consolas, monospace";
   ctx.fillText(`${d.max_alt.toFixed(0)}\u00B0`, X(mi)+6, Y(d.alt[mi])-6);
+
+  const selectedIso = S.night?.timeline?.times_iso?.[S.tIdx];
+  if (selectedIso) {
+    const selectedMs = parseUTC(selectedIso).getTime();
+    let selectedI = 0, delta = Infinity;
+    for (let i = 0; i < nT; i++) {
+      const distance = Math.abs(parseUTC(d.times_iso[i]).getTime() - selectedMs);
+      if (distance < delta) { delta = distance; selectedI = i; }
+    }
+    const sx = X(selectedI), sy = Y(d.alt[selectedI]);
+    ctx.save(); ctx.setLineDash([4, 3]); ctx.strokeStyle = C.targetSelected; ctx.lineWidth = 1.2;
+    ctx.beginPath(); ctx.moveTo(sx, MT); ctx.lineTo(sx, H - MB); ctx.stroke(); ctx.restore();
+    ctx.fillStyle = C.targetSelected; ctx.beginPath(); ctx.arc(sx, sy, 4, 0, 7); ctx.fill();
+    ctx.fillStyle = C.targetSelected; ctx.font = "10px Consolas, monospace";
+    ctx.textAlign = sx > W - MR - 70 ? "right" : "left";
+    ctx.fillText(fmtT(parseUTC(selectedIso)), sx + (sx > W - MR - 70 ? -4 : 4), MT + 10);
+  }
 
   // single hover crosshair drawn as part of this pass
   if (DETAIL_HOVER != null) {

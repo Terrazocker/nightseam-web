@@ -46,27 +46,6 @@ after published algorithms in:
 (the algorithms themselves are mathematical facts and not copyrightable;
 this implementation is original code.)
 
-Zenith sky-brightness estimate — EOG VIIRS Nighttime Lights
-------------------------------------------------------------
-The optional zenith sky-brightness estimate is derived from the Earth
-Observation Group's Annual VNL nighttime-lights products:
-
-    Earth Observation Group, Annual VNL products
-    https://eogdata.mines.edu/products/vnl/
-    Product license and attribution terms:
-    https://eogdata.mines.edu/files/EOG_products_CC_License.pdf
-
-The shared estimator also implements the published simplified VIIRS sky-glow
-relationship from Duriscoe et al., "A simplified model of all-sky artificial
-sky glow derived from VIIRS Day/Night band data":
-
-    https://doi.org/10.1016/j.jqsrt.2018.04.028
-
-NightSeam does not download or redistribute the raw EOG rasters at runtime.
-An operator-built, reduced pack is optional and keeps its EOG source year and
-filenames in a sidecar metadata file. The Lorenz sky-brightness atlas is not a
-runtime input or shipped asset; it is permitted only as an external validation
-reference when a maintainer supplies comparison points.
 
 Object example images — Wikimedia
 ---------------------------------

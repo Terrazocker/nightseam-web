@@ -10,34 +10,30 @@ history, tests and `RELEASES.md` preserve their durable evidence.
 
 ---
 
-## 0.6.35 — Workbench is the default; Glass remains available
+## 2026-09-27 — Workbench is the only shipped presentation
 
-**Decision.** The new Workbench theme (`workbench`) is the canonical default for
-the desktop app and web planner, and the public landing page follows the same
-visual direction. The existing Glass theme (`dome`) remains selectable from
-Appearance so users can keep the earlier observatory-glass presentation.
+**Decision.** Workbench is the only presentation in the desktop app and web
+planner. There is no theme picker or Glass layout. Both shells use the same
+role palette; their component styles remain separate because their DOMs differ.
 
 **Why.** The planning workflow benefits from a restrained instrument-panel
 surface: opaque graphite keeps charts and target data legible, brass gives the
 user one clear action/focus signal, and the compact layout leaves more room for
-the actual night plan. Removing blur, glow, and decorative starfield from the
-default also makes the interface feel less ornamental without removing the
-alternate style for users who prefer it.
+the actual night plan. Opaque surfaces and compact controls keep chart and
+target information legible.
 
-**Compatibility.** `classic`, the empty value, and unknown values are accepted
-as legacy inputs and normalize to `workbench`; `dome` remains `dome`. Desktop
-settings and web backups use the same canonicalization rule, so changing the
-default does not strand an existing preference or backup.
+**Compatibility.** `dome`, `classic`, empty, and unknown values are accepted as
+legacy inputs and normalize to `workbench`. Desktop settings and web backups
+use the same canonicalization rule, so removing the picker does not strand an
+existing preference or backup.
 
-**What was rejected.** Replacing Glass outright would discard a working user
-choice; keeping Classic as a third selectable theme would create a second flat
-design language and a permanent compatibility burden. The two shells keep
-their own stylesheets because their DOMs differ, but both implement the same
-Workbench hierarchy and the same theme names.
+**What was rejected.** Keeping a second selectable presentation would add
+duplicate layout overrides and leave visual behavior dependent on a stored
+setting. Legacy values remain accepted only at the compatibility boundary.
 
 **Where enforced.** `app/theme.py`, `app/database.py`, `app/server.py`,
 `web/webstore.js`, `web/app.js`, `static/js/header.js`, `web/themes.css`,
-`static/themes.css`, `landing/style.css`, and the theme migration tests.
+`static/themes.css`, and the theme migration tests.
 
 ---
 
@@ -147,7 +143,7 @@ unknown values to pass through to DOM attributes would create compatibility and
 styling ambiguity.
 
 **Where to enforce.** Use one canonicalizer in `web/webstore.js`, update the
-backup tests, and keep the `data-theme` value limited to `workbench` or `dome`.
+backup tests, and keep the `data-theme` value fixed to `workbench`.
 
 ### Feature-data principle
 
@@ -185,40 +181,6 @@ technology remain required before calling accessibility complete.
 **Where enforced.** `static/index.html`, `web/index.html`, both shell chart
 renderers, `static/style.css`, `web/style.css`, and the paired browser checks
 `desktop-accessibility-essentials` / `web-accessibility-essentials`.
-
----
-
-## Unreleased — independent EOG zenith sky brightness
-
-**Decision.** Build the site's clear-sky zenith-brightness estimate from an
-operator-provided EOG Annual VNL radiance pack, using the shared published
-VIIRS sky-glow model in `core/skybrightness.js`. Keep Lorenz completely outside
-the product: it may supply comparison points to the separate validator, but it
-must not be an input, fallback, copied asset, or calibration source.
-
-**Why.** EOG is the independent measurement source the app can explain and
-rebuild from, while the Lorenz atlas is a finished derived rendering with
-different processing and assumptions. Separating the two makes the estimate
-auditable, avoids reverse-engineering or redistributing the atlas, and still
-gives maintainers a useful external sanity check.
-
-**Product boundary.** The raw EOG rasters are not fetched by the app. The
-offline builder reduces the 15-arcsecond `average-masked`, `cf_cvg`, and `cvg`
-products to a compact regular pack. The pack is optional; without it the
-shells remain fully functional and simply hide the chip. The estimate is
-display-only for now and never silently changes Bortle, ranking, or weather.
-
-**What was rejected.** (a) Looking up a precomputed Lorenz value at runtime -
-that would make the result dependent on the atlas rather than EOG. (b) Treating
-the result as a direct Bortle lookup - Bortle is an observing-class preference,
-while this is a modeled annual clear-sky radiance signal. (c) Bundling the raw
-EOG rasters - they are too large for the app and their download terms/access
-should remain with the operator who builds the reduced pack.
-
-**Where enforced.** `core/skybrightness.js`, `web/skybrightness.js`,
-`static/js/skybrightness.js`, `scripts/build_skybrightness.py`,
-`scripts/validate_skybrightness.mjs`, `SKY_BRIGHTNESS.md`, and the focused
-sky-brightness tests.
 
 ---
 
@@ -829,12 +791,10 @@ browser too, and never at the cost of a regression.
 **What deliberately did NOT move into `core/`:**
 
 - **CSS.** `web/style.css` + `web/themes.css` and `static/style.css` +
-  `static/themes.css` share only the design LANGUAGE (the Workbench and Glass
-  theme blocks), not the files - selector overlap is 23%/16%. The two shells
-  have different DOMs (a 6-pane tab app vs a JS-rendered single view), so a
-  shared stylesheet would be a rewrite with no correctness gain. The current
-  rule is: Workbench is the default, `dome` is the optional Glass alternate,
-  and structural themes never move IDs.
+  `static/themes.css` share the Workbench role language, not the files. The two
+  shells have different DOMs (a 6-pane tab app vs a JS-rendered single view),
+  so a shared stylesheet would be a rewrite with no correctness gain. There is
+  one structural style; legacy theme values normalize at load boundaries.
 - **Storage, backup and data delivery.** IndexedDB + `localStorage` versus
   SQLite + FastAPI is a platform split, not duplication. The web's
   stage-validate-commit restore remains the stronger model. **Audit correction,

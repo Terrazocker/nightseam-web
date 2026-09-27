@@ -1,25 +1,16 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="workbench">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>NightSeam — DSO Planner</title>
 <link rel="icon" href="/favicon.ico">
-<script>
-/* apply the saved theme before first paint (local sync fetch, ~1 ms).
-   No x.timeout here: the XHR spec forbids a timeout on a synchronous request,
-   and setting one throws before send() - which silently disabled this whole
-   block and caused a first-paint flash of the default theme. */
-(function(){try{var x=new XMLHttpRequest();x.open("GET","/api/state",false);x.send();
-var t="workbench";if(x.status===200){var v=JSON.parse(x.responseText).theme;t=v==="dome"?"dome":"workbench";}document.documentElement.setAttribute("data-theme",t);
-}catch(e){}})();
-</script>
 <link rel="stylesheet" href="/style.css">
 <link rel="stylesheet" href="/themes.css">
 </head>
 <body>
 <header id="topbar">
-  <div class="brand" id="brand" title="Switch mode" role="button" tabindex="0" aria-label="Switch mode">
+  <div class="brand" id="brand" title="NightSeam">
     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
       <path d="M12 2.81 L13.59 9.85 L20.63 11.44 L13.59 13.03 L12 20.06 L10.41 13.03 L3.38 11.44 L10.41 9.85 Z" fill="#ffd166" stroke="#d6a03c" stroke-width="0.5" stroke-linejoin="round"/>
       <path d="M18.38 4.12 L18.93 6.38 L21.19 6.94 L18.93 7.49 L18.38 9.75 L17.82 7.49 L15.56 6.94 L17.82 6.38 Z" fill="#e9eefa"/>
@@ -27,6 +18,7 @@ var t="workbench";if(x.status===200){var v=JSON.parse(x.responseText).theme;t=v=
     <span>Night<em>Seam</em></span>
   </div>
 
+  <div class="planner-control-slot">
   <div id="plannerControls" class="controls">
     <label>Site
       <select id="siteSelect"></select>
@@ -45,14 +37,16 @@ var t="workbench";if(x.status===200){var v=JSON.parse(x.responseText).theme;t=v=
 
     <div class="scrub">
       <span class="inline">&#9201;</span>
-      <input type="range" id="timeSlider" min="0" max="100" value="50" style="width:170px"
+      <input type="range" id="timeSlider" min="0" max="100" value="50"
         title="Scrub through the night - syncs all views">
       <strong id="timeLabel" class="mono"></strong>
     </div>
   </div>
+  </div>
 
   <span class="busy-slot"><span id="busy" class="hidden" title="working..."><span class="busy-dot"></span><span class="busy-txt"></span></span></span>
   <div class="topbar-right">
+    <div class="planner-status">
     <div id="nightInfo" class="nightinfo"></div>
     <span id="archiveInfo" class="archinfo mono hidden" title="Image archive folder"></span>
     <div class="popwrap weatherwrap">
@@ -74,27 +68,12 @@ var t="workbench";if(x.status===200){var v=JSON.parse(x.responseText).theme;t=v=
         </div>
       </div>
     </div>
-    <div class="popwrap skybrightnesswrap">
-      <button id="btnSkyBrightness" class="ghost weatherbtn hidden" type="button"
-        title="EOG/VIIRS zenith sky-brightness estimate">
-        <span id="skyBrightnessStatusDot" class="wx-status-dot wx-unknown" aria-hidden="true">●</span>
-        <span id="skyBrightnessChip">Sky brightness</span>
-      </button>
     </div>
-    <button id="btnMode" class="ghost modebtn" title="Switch to the image catalog">
-      <svg class="ic ic-tel" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-        <path d="M4 13 L13 7 L17 11 L8 17 Z"/>
-        <path d="M17 11 L20 8"/>
-        <path d="M10.5 12.5 L7 20"/>
-        <path d="M10.5 12.5 L14 20"/>
-        <circle cx="18.5" cy="15" r="1" fill="currentColor" stroke="none"/>
-      </svg>
-      <svg class="ic ic-night hidden" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-        <path d="M20 12.8 A9 9 0 1 1 11.2 3 A7 7 0 0 0 20 12.8 Z" fill="currentColor" stroke="none"/>
-        <circle cx="5.5" cy="6.5" r="1" fill="currentColor" stroke="none"/>
-      </svg>
-      <span id="btnModeTxt">Image Catalog</span>
-    </button>
+    <div id="imageCatalogTools" class="image-catalog-tools hidden" aria-label="Image Catalog actions">
+      <button id="btnTopIngest" class="ghost" type="button">Import FITS</button>
+      <button id="btnTopReindex" class="ghost" type="button">Reindex folders</button>
+      <button id="btnTopExport" class="ghost" type="button">Export library</button>
+    </div>
     <div class="popwrap menuwrap">
       <button id="btnMenu" class="ghost menubtn" title="Options">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
@@ -103,18 +82,9 @@ var t="workbench";if(x.status===200){var v=JSON.parse(x.responseText).theme;t=v=
       </button>
       <div id="menuPanel" class="popover menu-panel hidden">
         <div class="menu-section">
-          <h4>Appearance</h4>
-          <div class="theme-row" id="themeRow">
-            <button class="theme-btn" data-theme="workbench" id="themeWorkbench"><span class="sw" style="background:#c99a53"></span>Workbench</button>
-            <button class="theme-btn" data-theme="dome" id="themeDome"><span class="sw" style="background:#8f7bff"></span>Glass</button>
-          </div>
-          <p class="hint">Pick the look; it applies instantly and is
-          remembered.</p>
-        </div>
-        <div class="menu-section">
           <h4>Display</h4>
-          <label class="inline">Free space per side <span id="edgeSpaceVal" class="mono">200px</span></label>
-          <input type="range" id="edgeSpace" min="0" max="800" step="10" value="200" style="width:100%" aria-label="Free space per side">
+          <label class="inline">Free space per side <span id="edgeSpaceVal" class="mono">16px</span></label>
+          <input type="range" id="edgeSpace" min="0" max="800" step="2" value="16" style="width:100%" aria-label="Free space per side">
           <p class="hint">Lower fills big screens, raise centers content on
           ultrawide monitors.</p>
           <label class="inline"><input type="checkbox" id="viewFullDay"> View full day</label>
@@ -200,12 +170,6 @@ var t="workbench";if(x.status===200){var v=JSON.parse(x.responseText).theme;t=v=
           </label>
           <p class="hint">1 = pristine dark sky, 9 = city centre. Darker skies
           lower the default minimum altitude and weaken moonlight penalties.</p>
-          <label class="inline">Sky brightness source
-            <select id="skyBrightnessProvider" style="width:100%">
-              <option value="eog">EOG / VIIRS</option>
-            </select>
-          </label>
-          <p class="hint">EOG is the default. NASA appears only when an enabled compatible pack is deployed; unavailable providers fall back to EOG.</p>
           <div class="chkrow">
             <label class="inline"><input type="checkbox" id="fltBb"> Broadband (L)</label>
             <label class="inline"><input type="checkbox" id="fltHa"> H&#945;</label>
@@ -230,35 +194,54 @@ var t="workbench";if(x.status===200){var v=JSON.parse(x.responseText).theme;t=v=
 
 <nav id="tabs" role="tablist" aria-label="Night planner views">
   <button data-tab="tonight" class="tab active" role="tab" aria-selected="true" aria-controls="tab-tonight">Tonight</button>
-  <button data-tab="targets" class="tab" role="tab" aria-selected="false" aria-controls="tab-targets">Targets</button>
+  <button data-tab="targets" class="tab" role="tab" aria-selected="false" aria-controls="tab-targets">Catalog</button>
   <button data-tab="sky" class="tab" role="tab" aria-selected="false" aria-controls="tab-sky">Sky View</button>
-  <button data-tab="horizon" class="tab" role="tab" aria-selected="false" aria-controls="tab-horizon">Horizon &amp; Obstacles</button>
-</nav>
-
-<nav id="tabs-cat" role="tablist" aria-label="Image catalog views">
-  <button data-tab="import" class="tab active" role="tab" aria-selected="true" aria-controls="tab-import">Import Exposures</button>
-  <button data-tab="library" class="tab" role="tab" aria-selected="false" aria-controls="tab-library">Library</button>
-  <button data-tab="skymap" class="tab" role="tab" aria-selected="false" aria-controls="tab-skymap">Sky Map</button>
+  <button data-tab="horizon" class="tab" role="tab" aria-selected="false" aria-controls="tab-horizon">Horizon</button>
+  <button data-tab="image-catalog" class="tab" role="tab" aria-selected="false" aria-controls="tab-image-catalog">Image Catalog</button>
 </nav>
 
 <main>
   <!-- ================= TONIGHT ================= -->
   <section id="tab-tonight" class="tabpane active">
-    <div id="nightBrief" class="session-head"></div>
-    <div id="tonightCards" class="cards"></div>
-    <h3 id="nowHeading">Best targets right now</h3>
-    <div id="topPicks" class="pickgrid"></div>
-    <h3>Rising into position later tonight</h3>
-    <div id="laterList" class="pickgrid"></div>
+    <div class="tonight-layout">
+      <div class="tonight-main">
+        <div id="nightBrief" class="night-brief"></div>
+        <section class="panel-edge tonight-overview" aria-labelledby="tonightOverviewTitle">
+          <div class="panel-heading">
+            <div><h2 id="tonightOverviewTitle">Altitude through the night</h2><p class="hint">Select target tracks to show or hide them. This does not change ranking.</p></div>
+            <div id="tonightOverviewLegend" class="series-legend" aria-label="Target tracks shown in the altitude overview"></div>
+          </div>
+          <canvas id="tonightAltitudeOverview" role="img" aria-label="Altitude over time for selected targets" aria-describedby="tonightOverviewSummary"></canvas>
+          <p id="tonightOverviewSummary" class="visually-hidden" role="note">Altitude chart for targets in the selected observing window.</p>
+          <div class="tonight-local-scrub" role="group" aria-label="Tonight selected time">
+            <label for="tonightTimeSlider">Selected time <output id="tonightTimeLabel" class="mono"></output></label>
+            <input id="tonightTimeSlider" type="range" min="0" max="240" step="1" value="0" aria-label="Selected time in six-minute steps">
+          </div>
+        </section>
+        <section class="tonight-ranked panel-edge" aria-labelledby="nowHeading">
+          <div class="panel-heading"><h2 id="nowHeading">Best targets tonight</h2><span id="tonightRankCount" class="hint"></span></div>
+          <div class="tablewrap"><table id="tonightRankTable">
+            <thead><tr><th>#</th><th>Target</th><th>Relative score</th><th>Max altitude</th><th>Best usable interval</th><th>Visibility reason</th><th>Rises later</th></tr></thead>
+            <tbody id="tonightRows"></tbody>
+          </table></div>
+        </section>
+      </div>
+    </div>
   </section>
 
   <!-- ================= TARGETS ================= -->
   <section id="tab-targets" class="tabpane">
+    <div class="catalog-layout">
+    <aside class="catalog-filter-rail" aria-label="Catalog filters">
+    <div class="panel-heading"><h2>Filters</h2></div>
     <div id="filterBar">
       <label class="visually-hidden" for="fSearch">Search targets</label>
       <input type="search" id="fSearch" placeholder="Search M101, NGC 7000, Orion, galaxy...">
-      <select id="fType">
-        <option value="">All types</option>
+      <select id="fConst" title="constellation filter">
+        <option value="">All constellations</option>
+      </select>
+      <label for="fType" class="filter-label">Object types <small>Choose one or more</small></label>
+      <select id="fType" multiple size="4" aria-label="Filter by one or more object types">
         <option value="galaxy">Galaxies</option>
         <option value="globular">Globular clusters</option>
         <option value="open_cluster">Open clusters</option>
@@ -268,36 +251,50 @@ var t="workbench";if(x.status===200){var v=JSON.parse(x.responseText).theme;t=v=
         <option value="star_cloud">Star clouds</option>
         <option value="asterism">Asterisms / doubles</option>
       </select>
-      <label class="inline">Mag &le; <span id="magVal">11.0</span>
-        <input type="range" id="fMag" min="1" max="16" step="0.5" value="11">
-      </label>
-      <label class="inline" title="Hide targets whose share of tonight's dark window is below this. 0% shows every object, visible or not.">Min vis <span id="fMinVisVal">1%</span>
-        <input type="range" id="fMinVis" min="0" max="100" step="1" value="1">
-      </label>
-      <label class="inline"><input type="checkbox" id="fUnblocked" checked> clear window only</label>
-      <label class="inline"><input type="checkbox" id="fFav"> &#9733; session</label>
-      <select id="fConst" title="constellation filter">
-        <option value="">All constellations</option>
-      </select>
-      <select id="fSort">
-        <option value="tier">Sort: popularity tier</option>
-        <option value="score">Sort: imaging quality</option>
-        <option value="pct">Sort: observable night %</option>
-        <option value="maxalt">Sort: max altitude</option>
-        <option value="beststart">Sort: best time</option>
-        <option value="mag">Sort: magnitude</option>
-        <option value="name">Sort: name</option>
-      </select>
+      <fieldset class="visibility-filter"><legend>Visibility</legend>
+        <label><input type="radio" name="fVisibility" value="all" checked> All</label>
+        <label><input type="radio" name="fVisibility" value="now"> Visible now</label>
+        <label><input type="radio" name="fVisibility" value="later"> Rises later</label>
+        <label><input type="radio" name="fVisibility" value="none"> Not visible</label>
+      </fieldset>
+      <details id="moreCatalogFilters">
+        <summary>More filters</summary>
+        <div class="filter-advanced">
+          <label class="inline">Magnitude &le; <span id="magVal">11.0</span>
+            <input type="range" id="fMag" min="1" max="16" step="0.5" value="11">
+          </label>
+          <label class="inline" title="Hide targets whose share of tonight's dark window is below this. 0% shows every object, visible or not.">Min visible night <span id="fMinVisVal">1%</span>
+            <input type="range" id="fMinVis" min="0" max="100" step="1" value="1">
+          </label>
+          <label class="inline"><input type="checkbox" id="fUnblocked" checked> clear window only</label>
+          <label class="inline"><input type="checkbox" id="fFav"> &#9733; session targets</label>
+          <label class="inline"><input type="checkbox" id="fRig"> fits active rig</label>
+          <select id="fSort" aria-label="Sort catalog">
+            <option value="tier">Sort: popularity tier</option>
+            <option value="score">Sort: imaging quality</option>
+            <option value="pct">Sort: observable night %</option>
+            <option value="maxalt">Sort: max altitude</option>
+            <option value="beststart">Sort: best time</option>
+            <option value="mag">Sort: magnitude</option>
+            <option value="name">Sort: name</option>
+          </select>
+        </div>
+      </details>
+      <button id="btnFilterClear" class="ghost" type="button">Clear filters</button>
       <button id="btnCatalogProvenance" class="ghost" type="button"
               title="Download catalog source, aliases and designation history">Provenance JSON</button>
-      <span id="resultCount"></span>
     </div>
+    </aside>
+    <section class="catalog-results" aria-labelledby="catalogHeading">
+      <header class="catalog-results-head">
+        <div><h2 id="catalogHeading">Catalog</h2><p id="catalogContext" class="catalog-context"></p></div>
+        <span id="resultCount" class="catalog-count"></span>
+      </header>
     <div class="tablewrap">
       <table id="targetTable">
         <thead><tr>
-          <th></th><th>Object</th><th>Tier</th><th>Type</th><th>Mag</th><th>Size</th>
-          <th class="col-opt">Frame</th><th>Max alt</th><th>Night %</th>
-          <th>Clear window (best)</th><th>Status now</th>
+          <th>#</th><th>Designation</th><th>Common name</th><th>Type</th><th>Mag</th><th>Alt now</th><th>Night %</th>
+          <th>Best window</th><th>Status</th>
         </tr></thead>
         <tbody id="targetRows"></tbody>
       </table>
@@ -307,35 +304,55 @@ var t="workbench";if(x.status===200){var v=JSON.parse(x.responseText).theme;t=v=
       <span id="pagerInfo" class="mono"></span>
       <button id="pagerNext" class="ghost">Next &#8594;</button>
     </div>
+    </section>
+    </div>
   </section>
 
   <!-- ================= SKY VIEW ================= -->
   <section id="tab-sky" class="tabpane">
     <div class="chart-layout">
-      <div id="skyWrap" class="skywrap"><canvas id="skyCanvas" role="img" aria-label="All-sky polar chart" aria-describedby="skyChartSummary"></canvas>
-        <p id="skyChartSummary" class="visually-hidden" role="note">All-sky chart. Select an object to inspect its details.</p>
-        <div id="skyTip" class="tooltip hidden"></div>
+      <div class="sky-column">
+        <div id="skyWrap" class="skywrap"><canvas id="skyCanvas" tabindex="0" role="img" aria-label="All-sky polar chart" aria-describedby="skyChartSummary"></canvas>
+          <p id="skyChartSummary" class="visually-hidden" role="note">All-sky chart. Select an object to inspect its details.</p>
+          <div id="skyTip" class="tooltip hidden"></div>
+        </div>
+        <div class="sky-local-scrub" role="group" aria-label="Sky View selected time">
+          <label for="skyTimeSlider">Selected time <output id="skyTimeLabel" class="mono"></output></label>
+          <input id="skyTimeSlider" type="range" min="0" max="240" step="1" value="0"
+                 aria-label="Selected time in six-minute steps" aria-describedby="skyTimeHint">
+          <p id="skyTimeHint" class="hint">Arrow keys move six minutes; Shift + Arrow moves one hour. Range follows View full day.</p>
+        </div>
       </div>
       <aside class="chart-side">
-        <div class="menu-section">
-          <h4>Chart</h4>
-          <div class="chkrow side-chk">
-            <label class="inline"><input type="checkbox" id="showAll" checked> show objects outside filters</label>
-            <label class="inline"><input type="checkbox" id="showCons" checked> constellations</label>
-            <label class="inline"><input type="checkbox" id="showLabels" checked> names</label>
-            <label class="inline"><input type="checkbox" id="showMoon" checked> moon &amp; sun</label>
-            <label class="inline"><input type="checkbox" id="showMinAlt" checked> min-alt band</label>
-            <label class="inline">Mag &le; <span id="skyMagVal">10.0</span></label>
-            <input type="range" id="skyMag" min="0" max="14" step="0.5" value="10" style="width:140px" aria-label="Sky chart magnitude limit">
-            <button id="skyZoomReset" class="ghost">reset view</button>
-            <span class="hint">scroll = zoom &middot; drag = pan &middot; double-click = reset — zooming opens a rectangular window over the chart, so you see more sky than a circular magnifier</span>
+        <section class="sky-inspector panel-edge" aria-label="Selected target and visible targets">
+          <div class="panel-heading"><h3>Selected target</h3><span id="skySelectedTime" class="mono"></span></div>
+          <div id="skySelectedTarget" class="sky-selected-target"><span class="hint">Select an object on the chart.</span></div>
+          <canvas id="skySelectedAltitude" width="320" height="100" role="img" aria-label="Selected target altitude through the night"></canvas>
+          <h4>Visible now</h4><div id="skyVisibleNow" class="sky-visible-list"></div>
+          <p id="skyHorizonStatus" class="hint"></p>
+        </section>
+        <details class="chart-tray">
+          <summary>Chart controls and legend</summary>
+          <div class="menu-section">
+            <h4>Chart</h4>
+            <div class="chkrow side-chk">
+              <label class="inline"><input type="checkbox" id="showAll" checked> show objects outside filters</label>
+              <label class="inline"><input type="checkbox" id="showCons" checked> constellations</label>
+              <label class="inline"><input type="checkbox" id="showLabels" checked> names</label>
+              <label class="inline"><input type="checkbox" id="showMoon" checked> moon &amp; sun</label>
+              <label class="inline"><input type="checkbox" id="showMinAlt" checked> min-alt band</label>
+              <label class="inline">Mag &le; <span id="skyMagVal">10.0</span></label>
+              <input type="range" id="skyMag" min="0" max="14" step="0.5" value="10" style="width:140px" aria-label="Sky chart magnitude limit">
+              <button id="skyZoomReset" class="ghost">reset view</button>
+              <span class="hint">scroll = zoom &middot; drag = pan &middot; double-click = reset</span>
+            </div>
           </div>
-        </div>
-        <div class="menu-section">
-          <h4>Legend</h4>
-          <div id="typeLegend"></div>
-          <div id="skyPanoLegend"></div>
-        </div>
+          <div class="menu-section">
+            <h4>Legend</h4>
+            <div id="typeLegend"></div>
+            <div id="skyPanoLegend"></div>
+          </div>
+        </details>
       </aside>
     </div>
   </section>
@@ -460,11 +477,26 @@ var t="workbench";if(x.status===200){var v=JSON.parse(x.responseText).theme;t=v=
         <div id="panoEmpty">No panorama imported yet.</div>
         <div id="panoError" class="hidden"></div>
       </div>
+      <section class="pano-profile-panel panel-edge" aria-labelledby="panoProfileHeading">
+        <header class="panel-heading"><h3 id="panoProfileHeading">Horizon profile</h3><span class="hint">720 bins · 0.5° per bin</span></header>
+        <canvas id="panoProfileCanvas" tabindex="0" role="img" aria-label="Stored horizon profile by world azimuth" aria-describedby="panoProfileSummary panoProfileBinSummary"></canvas>
+          <p id="panoProfileSummary" class="visually-hidden" role="note">Stored obstruction profile by world azimuth.</p>
+          <p id="panoProfileBinSummary" class="profile-bin-summary" role="status" aria-live="polite">Select a point on the profile to inspect its 0.5° world-azimuth bin.</p>
+      </section>
+      <aside id="panoSettings" class="pano-settings-rail" aria-label="Horizon settings and history"></aside>
     </div>
   </section>
 
+  <!-- ================= IMAGE CATALOG ================= -->
+  <section id="tab-image-catalog" class="tabpane image-catalog-pane" role="tabpanel" aria-labelledby="tabs-image-catalog" hidden>
+    <nav id="catalogTabs" role="tablist" aria-label="Image Catalog views">
+      <button id="catalog-tab-library" data-tab="library" class="tab active" role="tab" aria-selected="true" aria-controls="tab-library" tabindex="0">Library</button>
+      <button id="catalog-tab-import" data-tab="import" class="tab" role="tab" aria-selected="false" aria-controls="tab-import" tabindex="-1">Import Exposures</button>
+      <button id="catalog-tab-skymap" data-tab="skymap" class="tab" role="tab" aria-selected="false" aria-controls="tab-skymap" tabindex="-1">Sky Map</button>
+    </nav>
+
   <!-- ================= IMPORT EXPOSURES ================= -->
-  <section id="tab-import" class="tabpane">
+  <section id="tab-import" class="catpane" role="tabpanel" aria-labelledby="catalog-tab-import" hidden>
     <div class="arch-layout">
       <aside class="archpanel">
         <h3>Image archive</h3>
@@ -511,44 +543,62 @@ var t="workbench";if(x.status===200){var v=JSON.parse(x.responseText).theme;t=v=
   </section>
 
   <!-- ================= LIBRARY ================= -->
-  <section id="tab-library" class="tabpane">
-    <div id="libToolbar" class="skytoolbar">
-      <label class="inline">Object size
-        <select id="libUnit">
-          <option value="arcmin">Arcminutes (&prime;)</option>
-          <option value="arcsec">Arcseconds (&Prime;)</option>
-          <option value="deg">Degrees (&deg;)</option>
-        </select>
-      </label>
-      <select id="libSort">
-        <option value="name">Sort: name</option>
-        <option value="integ">Sort: integration time</option>
-        <option value="sessions">Sort: sessions</option>
-      </select>
-      <select id="libExportFmt" style="width:64px">
-        <option value="csv">CSV</option>
-        <option value="json">JSON</option>
-      </select>
-      <button id="btnLibExport" class="ghost" title="Download the library">Export</button>
-      <span id="libSummary" class="hint"></span>
+  <section id="tab-library" class="catpane active" role="tabpanel" aria-labelledby="catalog-tab-library">
+    <div class="library-layout">
+      <aside class="library-object-rail" aria-label="Library objects">
+        <div class="panel-heading"><h2>Objects</h2><span id="libObjectCount" class="mono"></span></div>
+        <label class="visually-hidden" for="libSearch">Search library objects</label>
+        <input id="libSearch" type="search" placeholder="Search objects…">
+        <div id="libraryObjectList" class="library-object-list"></div>
+      </aside>
+      <section class="library-workspace" aria-label="Image library and capture sessions">
+        <header class="library-hero">
+          <div id="libraryHeroIdentity" class="library-hero-identity"><p class="eyebrow">Image archive</p><h1>Library</h1><p class="sub">Select an object to inspect its capture sessions.</p></div>
+          <div id="libSummary" class="library-summary" aria-label="Library totals"></div>
+        </header>
+        <section class="library-sessions" aria-labelledby="librarySessionsHeading">
+          <header class="panel-heading"><h2 id="librarySessionsHeading">Capture sessions</h2><span id="librarySessionCount" class="hint"></span></header>
+          <div class="tablewrap library-session-table-wrap">
+            <table id="librarySessionTable" class="library-session-table">
+              <thead><tr><th>Date / time</th><th>Lights</th><th>Darks</th><th>Flats</th><th>Bias</th><th>Light integration</th><th>Filters</th><th>Folder</th></tr></thead>
+              <tbody id="librarySessions"></tbody>
+            </table>
+          </div>
+        </section>
+        <section class="library-import-dock" aria-label="Import FITS exposures">
+          <div><h2>Import exposures</h2><p class="hint">Add FITS frames to the archive; originals are copied into the configured image folder.</p></div>
+          <div id="libraryDropZone"><button id="btnLibraryIngest" class="primary" type="button">Choose FITS files</button><span class="hint">or drop .fit / .fits files here</span></div>
+        </section>
+        <details class="library-all-objects">
+          <summary>All objects and archive tools</summary>
+          <div id="libToolbar" class="skytoolbar">
+            <label class="inline">Object size
+              <select id="libUnit"><option value="arcmin">Arcminutes (&prime;)</option><option value="arcsec">Arcseconds (&Prime;)</option><option value="deg">Degrees (&deg;)</option></select>
+            </label>
+            <select id="libSort"><option value="name">Sort: name</option><option value="integ">Sort: integration time</option><option value="sessions">Sort: sessions</option></select>
+            <select id="libExportFmt" style="width:64px"><option value="csv">CSV</option><option value="json">JSON</option></select>
+            <button id="btnLibExport" class="ghost" title="Download the library">Export</button>
+          </div>
+          <div class="tablewrap">
+            <table id="libraryTable"><thead><tr>
+              <th style="width:30px"></th><th>Object</th><th>Type</th><th>Size</th><th>Images</th><th>Integration</th><th>Sessions</th><th style="width:64px"></th>
+            </tr></thead><tbody></tbody></table>
+          </div>
+        </details>
+        <p id="libEmpty" class="hint hidden">No images ingested yet &mdash; choose FITS files above or use Import Exposures.</p>
+      </section>
+      <aside id="librarySessionRail" class="library-session-rail" aria-label="Selected session details">
+        <div class="panel-heading"><h2>Selected session</h2></div>
+        <div id="librarySessionDetail" class="hint">Choose an object and session to inspect its recorded exposure details.</div>
+        <div id="librarySessionActions" class="library-session-actions" aria-label="Selected session actions"></div>
+      </aside>
     </div>
-    <div class="tablewrap">
-      <table id="libraryTable">
-        <thead><tr>
-          <th style="width:30px"></th><th>Object</th><th>Type</th><th>Size</th>
-          <th>Images</th><th>Integration</th><th>Sessions</th><th style="width:64px"></th>
-        </tr></thead>
-        <tbody></tbody>
-      </table>
-    </div>
-    <p id="libEmpty" class="hint hidden">No images ingested yet &mdash; switch to the
-    Import Exposures tab and add your first .fit files.</p>
   </section>
 
   <!-- ================= SKY MAP ================= -->
-  <section id="tab-skymap" class="tabpane">
+  <section id="tab-skymap" class="catpane" role="tabpanel" aria-labelledby="catalog-tab-skymap" hidden>
     <div class="chart-layout">
-      <div id="skymapWrap" class="skywrap"><canvas id="skymapCanvas" role="img" aria-label="Image library sky map" aria-describedby="skymapChartSummary"></canvas>
+      <div id="skymapWrap" class="skywrap"><canvas id="skymapCanvas" tabindex="0" role="img" aria-label="Image library sky map" aria-describedby="skymapChartSummary"></canvas>
         <p id="skymapChartSummary" class="visually-hidden" role="note">Image library sky map. Select an object to inspect its details.</p>
         <div id="skymapTip" class="tooltip hidden"></div>
       </div>
@@ -568,27 +618,35 @@ var t="workbench";if(x.status===200){var v=JSON.parse(x.responseText).theme;t=v=
       </aside>
     </div>
   </section>
+  </section>
 </main>
 
 <!-- ============ object detail modal ============ -->
 <div id="detailModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="dTitle">
-  <div class="modal-box wide">
+  <div class="modal-box wide" tabindex="0">
     <header>
       <h2 id="dTitle"></h2>
       <span id="dNames"></span>
+      <button class="starbtn detail-favorite" id="dFavorite" type="button" aria-pressed="false" title="Mark as a session target" aria-label="Toggle session target">&#9733;</button>
       <button class="close" id="dClose" aria-label="Close details">&times;</button>
     </header>
-    <div class="detail-grid">
-      <div class="detail-info">
+    <section class="detail-hero" aria-label="Target overview">
+      <div class="detail-image-wrap">
         <img id="dImage" alt="">
-        <table class="kv" id="dMeta"></table>
-        <p id="dBlurb"></p>
+        <div id="dImageFallback" class="detail-image-fallback hidden" role="status" aria-live="polite">
+          Image unavailable offline
+        </div>
       </div>
-      <div class="detail-chart">
-        <canvas id="altChart" role="img" aria-label="Target altitude and visibility chart" aria-describedby="altChartSummary"></canvas>
-        <p id="altChartSummary" class="visually-hidden" role="note">Altitude chart for the selected target.</p>
-        <div id="chartTip" class="tooltip hidden"></div>
-        <div class="chart-legend" aria-label="Altitude chart legend">
+      <div class="detail-hero-copy">
+        <div id="dHeroFacts" class="detail-hero-facts"></div>
+        <div id="dVisibilitySummary" class="detail-visibility-summary" role="status" aria-live="polite"></div>
+      </div>
+    </section>
+    <section class="detail-chart" aria-label="Tonight's target visibility">
+      <canvas id="altChart" role="img" aria-label="Target altitude and visibility chart" aria-describedby="altChartSummary"></canvas>
+      <p id="altChartSummary" class="visually-hidden" role="note">Altitude chart for the selected target.</p>
+      <div id="chartTip" class="tooltip hidden"></div>
+      <div class="chart-legend" aria-label="Altitude chart legend">
           <div class="chart-legend-group">
             <strong class="chart-legend-heading">Target state</strong>
             <span class="chart-legend-item"><i class="legend-swatch state-clear"></i><span><b>Clear</b><small>above minimum and unobstructed</small></span></span>
@@ -605,9 +663,13 @@ var t="workbench";if(x.status===200){var v=JSON.parse(x.responseText).theme;t=v=
             <span class="chart-legend-item"><i class="legend-swatch guide-obstruction"></i><span><b>Obstruction ceiling</b><small>lower: short dash · upper: dash-dot</small></span></span>
             <label class="chart-legend-toggle"><input type="checkbox" id="chkMoon" checked> show Moon altitude</label>
           </div>
-        </div>
       </div>
-    </div>
+    </section>
+    <details class="catalog-details">
+      <summary>Catalog details</summary>
+      <table class="kv" id="dMeta"></table>
+      <p id="dBlurb"></p>
+    </details>
   </div>
 </div>
 

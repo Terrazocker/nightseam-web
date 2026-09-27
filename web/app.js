@@ -8,21 +8,18 @@
  *   • Settings — sites, rigs, custom targets, backup/restore (webstore.js)
  * All sky math runs client-side (astro.js, Meeus algorithms).
  */
-import * as E from './astro.js?v=28';
-import * as Hor from './horizon.js?v=65';
-import * as WS from './webstore.js?v=39';
-import { initDragWindows } from './dragwin.js?v=1';
+import * as E from './astro.js?v=30';
+import * as Hor from './horizon.js?v=69';
+import * as WS from './webstore.js?v=41';
 import { fmtSize, sizeArcmin, framePct, magVisible, skyClampZoom,
-         skyViewMatrix, skyScreenToBase, skyClampFocus } from './format.js?v=35';
-import { nightStats, nightStatsBatch, sampleVisible } from './nightrank.js?v=27';
+         skyViewMatrix, skyScreenToBase, skyClampFocus } from './format.js?v=37';
+import { nightStats, nightStatsBatch, sampleVisible } from './nightrank.js?v=29';
 import { TYPE_LABELS, TYPE_COLORS, searchBlob as coreSearchBlob,
          TIER_ORDER, assignPopularityTiers, wikiTitles,
          inTonightPool, PLANNER_CHANGE_EVENT, panoramaRevision,
-         visibilityReason, summarizeVisibility } from './core.js?v=42';
-import { popularityFactor as corePopularityFactor } from './core.js?v=42';
-import { vizTheme, drawMoonPhaseMarker } from './viztheme.js?v=5';
-import { estimateSiteZenithSkyBrightness, listSkyBrightnessProviders }
-  from './skybrightness.js?v=6';
+         visibilityReason, summarizeVisibility, computeNightTracks } from './core.js?v=44';
+import { popularityFactor as corePopularityFactor } from './core.js?v=44';
+import { vizTheme, drawMoonPhaseMarker } from './viztheme.js?v=6';
 
 const announcePlannerChange = Hor.announcePlannerChange;
 
@@ -73,7 +70,6 @@ function applyActiveSite(site) {
     sel.innerHTML = SITES.map((s) => `<option value="${esc(s.id)}"${s.id === site.id ? ' selected' : ''}>${esc(s.name)}</option>`).join('');
     sel.value = site.id;
   }
-  refreshSkyBrightnessForSite(site);
 }
 
 let CAT = null;                 // array of catalog objects
@@ -89,72 +85,9 @@ const S = {
   playing: false,
   view: 'tonight',
   detailId: null,
-  cat: { q: '', chip: 'all', con: '', sort: 'tier', up: true, page: 0 },
+  cat: { q: '', chip: 'all', con: '', types: [], visibility: 'all',
+    savedOnly: false, clearOnly: false, fitsRig: false, sort: 'tier', up: true, page: 0 },
 };
-
-let _skyBrightness = null;
-let _skyBrightnessGen = 0;
-
-function skyBrightnessClass(result) {
-  return result && result.quality === 'good' ? 'wx-good' :
-    result && result.quality === 'moderate' ? 'wx-warn' :
-      result && (result.quality === 'poor' || result.quality === 'bright')
-        ? 'wx-bad' : 'wx-unknown';
-}
-
-function renderSkyBrightnessChip() {
-  const button = $('#btnSkyBrightness');
-  const dot = $('#skyBrightnessStatusDot');
-  const chip = $('#skyBrightnessChip');
-  if (!button || !dot || !chip) return;
-  for (const cls of ['wx-good', 'wx-warn', 'wx-bad', 'wx-unknown']) dot.classList.remove(cls);
-  const result = _skyBrightness;
-  if (!result || !result.available || result.zenithMpsas == null) {
-    button.classList.add('hidden');
-    return;
-  }
-  const cls = skyBrightnessClass(result);
-  dot.classList.add(cls);
-  dot.textContent = '●';
-  chip.textContent = `SQM ${result.zenithMpsas.toFixed(2)} · ${result.quality}`;
-  const coverage = Math.round((result.coverage || 0) * 100);
-  const provider = result.providerLabel || result.provider || 'Sky brightness';
-  const year = result.sourceYear ? ` · ${result.sourceYear}` : '';
-  const fallback = result.fallbackReason ? ' · EOG fallback' : '';
-  button.title = `${provider}${year} · zenith sky brightness ` +
-    `${result.zenithMpsas.toFixed(2)} mag/arcsec² · ${coverage}% source coverage` +
-    (result.lowConfidence ? ' · low confidence' : '') + fallback;
-  button.classList.remove('hidden');
-}
-
-async function refreshSkyBrightnessForSite(site) {
-  const gen = ++_skyBrightnessGen;
-  _skyBrightness = null;
-  renderSkyBrightnessChip();
-  if (!site || !Number.isFinite(Number(site.lat)) || !Number.isFinite(Number(site.lon))) return;
-  const result = await estimateSiteZenithSkyBrightness(
-    Number(site.lat), Number(site.lon), {
-      provider: Hor.getPrefs().skyBrightnessProvider || 'eog',
-    });
-  if (gen !== _skyBrightnessGen) return;
-  _skyBrightness = result;
-  renderSkyBrightnessChip();
-}
-
-async function refreshSkyBrightnessProviderMenu() {
-  const select = $('#skyBrightnessProvider');
-  if (!select) return;
-  const providers = await listSkyBrightnessProviders();
-  const wanted = String(Hor.getPrefs().skyBrightnessProvider || 'eog');
-  const usable = providers.length ? providers : [{
-    id: 'eog', label: 'EOG / VIIRS', enabled: true,
-  }];
-  select.innerHTML = usable.map((provider) =>
-    `<option value="${esc(provider.id)}">${esc(provider.label)}</option>`).join('');
-  const actual = usable.some((provider) => provider.id === wanted) ? wanted : 'eog';
-  select.value = actual;
-  if (actual !== wanted) Hor.setPrefs({ skyBrightnessProvider: actual });
-}
 
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -191,6 +124,7 @@ function dateKey(d) { return `${d.getFullYear()}-${String(d.getMonth() + 1).padS
 
 /* visible-% cache shared between Tonight and Catalog (key: date|minAlt|pano|obj) */
 const obsCache = new Map();
+let tonightStatsById = new Map();
 let obsEpoch = 0;
 
 function invalidateObservationCache() {
@@ -207,6 +141,7 @@ if (typeof window !== 'undefined') {
     // owns the cache boundary so a future consumer cannot reuse an observation
     // computed for a different planner revision.
     if (kind !== 'selection') invalidateObservationCache();
+    if (S.detailId && kind !== 'selection') refreshOpenDetail();
     if (kind !== 'panorama') return;
     // All dependent views read the active panorama at render time. Repainting
     // here closes the gap between the editor's live in-memory edit and the
@@ -361,6 +296,45 @@ function advMode() { return !!Hor.getPrefs().advMode; }
 function activeCatalog() {
   return advMode() ? CAT : CAT.filter((o) => !o._adv);
 }
+
+const SAFE_TARGET_ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
+function savedTargetIds() {
+  const raw = Hor.getPrefs().savedTargetIds;
+  if (!Array.isArray(raw)) return [];
+  return [...new Set(raw.filter((id) => typeof id === 'string' && SAFE_TARGET_ID.test(id) && byId.has(id)))].slice(0, 2000);
+}
+function saveTargetIds(ids) {
+  const known = [...new Set(ids.filter((id) => typeof id === 'string' && SAFE_TARGET_ID.test(id) && byId.has(id)))].slice(0, 2000);
+  Hor.setPrefs({ savedTargetIds: known });
+  return new Set(known);
+}
+function updateSavedTargetButton(button, saved) {
+  if (!button) return;
+  button.classList.toggle('on', saved);
+  button.textContent = saved ? '★ Saved target' : '☆ Save target';
+  button.setAttribute('aria-pressed', String(saved));
+  button.setAttribute('aria-label', saved ? 'Remove from saved targets' : 'Save this target');
+  const indicator = document.querySelector(`#m-session-fav[data-id="${escAttr(button.dataset.id || '')}"]`);
+  if (indicator) {
+    indicator.classList.toggle('on', saved);
+    indicator.textContent = saved ? '★' : '☆';
+    indicator.setAttribute('aria-label', saved ? 'Saved target' : 'Not a saved target');
+  }
+}
+
+function selectedVisibility(o) {
+  const { lat, lon } = S.site;
+  const jd = E.julianDay(S.skyTime);
+  const [alt, az] = E.altaz(o.ra_hours * 15, o.dec_deg, jd, lat, lon);
+  const pano = Hor.activePano();
+  const ceiling = pano ? Hor.ceilFor(pano, az) : { ceil: Hor.NO_BLOCK, ceilTop: null };
+  const win = cachedNightWindow();
+  const inWindow = S.skyTime >= win.startT && S.skyTime <= win.endT;
+  const reason = visibilityReason(alt, Hor.effectiveMinAlt(), ceiling.ceil, ceiling.ceilTop, inWindow);
+  const night = tonightStatsById.get(o.id);
+  const bestAt = night?.bestStart != null ? E.dateFromJD(night.bestStart) : null;
+  return { alt, reason, visible: reason === 'visible', risesLater: !!bestAt && bestAt > S.skyTime, bestAt, night };
+}
 /** An object's size in the user's chosen unit. The formatting itself lives in
  *  web/format.js - the web twin of static/js/util.js::fmtSize, pinned by the
  *  "size" engine of tests/js/astro_parity.mjs. It handles BOTH shapes: the
@@ -388,7 +362,7 @@ function rigFramePct(o) {
 function filterAdviceBadge(o) {
   const a = Hor.filterAdvice(o.otype);
   if (!a) return '';
-  return `<span class="f-own ${a.ok ? 'ok' : 'warn'}" title="filter recommendation">${esc(a.text)}</span>`;
+  return `<span class="f-own ${a.ok ? 'ok' : 'warn'}" title="Filter recommendation: ${esc(a.text)}">${a.ok ? 'NB ✓' : 'NB'}</span>`;
 }
 
 /* ---- busy indicator (desktop parity) ---- */
@@ -400,24 +374,10 @@ function busy(on, text) {
   if (t) t.textContent = text || '';
 }
 
-/* ---- theme (desktop parity) ---- */
-const THEME_KEY = 'nightseam_theme';
-/** Commit a theme choice (user action): apply attribute + persist.
- *  Workbench is the new flat/default look. classic and the empty value are
- *  legacy aliases; only dome remains a separate selectable language. */
-function applyTheme(t) {
-  const name = t === 'dome' ? 'dome' : 'workbench';
-  document.documentElement.setAttribute('data-theme', name);
-  try { localStorage.setItem(THEME_KEY, name); } catch { /* ignore */ }
-  reflectTheme();
-  document.dispatchEvent(new Event('theme:changed'));
-}
-/** Sync the picker's active state only — never touches storage or the
- *  attribute (boot must not undo the theme the head script applied). */
-function reflectTheme() {
-  const t = document.documentElement.getAttribute('data-theme') || 'workbench';
-  const row = $('#themeRow');
-  if (row) row.querySelectorAll('.theme-btn').forEach((b) => b.classList.toggle('active', b.dataset.theme === t));
+/* Workbench is the only shipped visual language. */
+function applyTheme(_legacyValue) {
+  document.documentElement.setAttribute('data-theme', 'workbench');
+  try { localStorage.setItem('nightseam_theme', 'workbench'); } catch { /* ignore */ }
 }
 
 /* ---- weather: Open-Meteo, load-on-demand — nothing is fetched until the
@@ -870,9 +830,11 @@ function bootFailure(title, detail) {
 function route() {
   const h = location.hash || '#tonight';
   const view = ['tonight', 'sky', 'catalog', 'horizon'].includes(h.slice(1)) ? h.slice(1) : 'tonight';
+  if (S.detailId && view !== S.view) closeDetail();
   // leaving the Horizon editor with unsaved edits: flush them (never lose them)
   if (S.view === 'horizon' && view !== 'horizon' && Hor.horizonUnsaved()) Hor.flushHorizonEdits();
   S.view = view;
+  document.body.dataset.primaryView = view;
   document.querySelectorAll('#tabs a').forEach((a) => {
     const selected = a.dataset.v === S.view;
     a.classList.toggle('active', selected);
@@ -896,6 +858,179 @@ function renderHorizonView() {
 
 let tonightTimer = null;
 let tonightToken = 0;
+let tonightOverviewState = null;
+let tonightOverviewObserver = null;
+let tonightOverviewVisible = new Set();
+const TONIGHT_OVERVIEW_STEP = 6 / 1440;
+
+function syncTonightLocalScrub() {
+  const slider = document.querySelector('#tonight-time-scrub');
+  const output = document.querySelector('#tonight-time-label');
+  if (!slider) return;
+  const range = scrubRange();
+  const length = Math.max(1, Math.round((range.end.getTime() - range.start.getTime()) / 60000));
+  slider.min = '0';
+  slider.max = String(length);
+  slider.value = String(Math.max(0, Math.min(length,
+    Math.round((S.skyTime.getTime() - range.start.getTime()) / 60000))));
+  if (output) output.textContent = fmtClock(S.skyTime);
+}
+window.addEventListener('sky:time', syncTonightLocalScrub);
+
+function setTonightOverviewObjects(objects, state) {
+  const unique = [];
+  for (const o of objects) {
+    if (o && !unique.some((item) => item.id === o.id)) unique.push(o);
+    if (unique.length === 3) break;
+  }
+  const jd0 = E.julianDay(state.start);
+  const jd1 = E.julianDay(state.end);
+  const tracks = computeNightTracks(unique, jd0, jd1, TONIGHT_OVERVIEW_STEP,
+    state.site.lat, state.site.lon);
+  state.rows = unique.map((o) => ({ o }));
+  state.jd0 = jd0;
+  state.step = TONIGHT_OVERVIEW_STEP;
+  state.count = tracks.count;
+  state.alt = tracks.alt;
+  state.az = tracks.az;
+  if (!state.rows.some((row) => row.o.id === state.selectedId))
+    state.selectedId = state.rows[0]?.o.id || null;
+  return state;
+}
+
+function renderTonightOverviewKeys() {
+  const legend = document.querySelector('#tonightOverviewKeys');
+  const state = tonightOverviewState;
+  if (!legend || !state) return;
+  legend.innerHTML = state.rows.map((row, i) => `<label class="series-key">
+    <input type="checkbox" data-overview-id="${esc(row.o.id)}"
+      aria-label="Show ${esc(row.o.primary_name)} altitude track"
+      ${tonightOverviewVisible.has(row.o.id) ? 'checked' : ''}>
+    <span class="series-swatch series-${i}" aria-hidden="true"></span>
+    ${esc(row.o.messier || row.o.ngcic || row.o.primary_name)}</label>`).join('');
+}
+
+function focusTonightOverviewObject(id) {
+  const state = tonightOverviewState;
+  const o = byId.get(id);
+  if (!state || !o) return;
+  const previous = state.rows.map((row) => row.o).filter((item) => item.id !== id);
+  state.selectedId = id;
+  setTonightOverviewObjects([o, ...previous], state);
+  renderTonightOverviewKeys();
+  drawTonightOverview();
+}
+
+function drawTonightOverview() {
+  const canvas = document.querySelector('#tonightOverviewChart');
+  const state = tonightOverviewState;
+  if (!canvas || !state || !state.count || !state.rows.length || !canvas.clientWidth) return;
+  const dpr = window.devicePixelRatio || 1;
+  const W = canvas.clientWidth, H = canvas.clientHeight || 230;
+  canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr);
+  const ctx = canvas.getContext('2d');
+  const V = vizTheme();
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, W, H);
+  ctx.fillStyle = V.canvas; ctx.fillRect(0, 0, W, H);
+  const L = 42, R = 12, T = 18, B = 28;
+  const pw = Math.max(1, W - L - R), ph = Math.max(1, H - T - B);
+  const start = state.start.getTime(), end = state.end.getTime();
+  const span = Math.max(1, end - start);
+  const xAt = (date) => L + (date.getTime() - start) / span * pw;
+  const yAt = (alt) => T + (90 - Math.max(-10, Math.min(90, Number(alt) || 0))) / 100 * ph;
+  const clipX = (x) => Math.max(L, Math.min(W - R, x));
+  for (const altitude of [-10, 0, 30, 60, 90]) {
+    const y = yAt(altitude);
+    ctx.beginPath(); ctx.moveTo(L, y); ctx.lineTo(W - R, y);
+    ctx.strokeStyle = altitude === 0 ? V.gridStrong : V.grid; ctx.lineWidth = 1; ctx.stroke();
+    ctx.fillStyle = V.axis; ctx.font = '10px ui-monospace, monospace';
+    ctx.textAlign = 'right'; ctx.textBaseline = 'middle'; ctx.fillText(`${altitude}°`, L - 7, y);
+  }
+  const minAlt = Hor.effectiveMinAlt();
+  const minY = yAt(minAlt);
+  ctx.save(); ctx.setLineDash(V.guideMinDash); ctx.strokeStyle = V.minStroke;
+  ctx.beginPath(); ctx.moveTo(L, minY); ctx.lineTo(W - R, minY); ctx.stroke(); ctx.restore();
+  ctx.fillStyle = V.minLabel; ctx.textAlign = 'left'; ctx.textBaseline = 'bottom';
+  ctx.font = '10px ui-monospace, monospace'; ctx.fillText(`${minAlt}° min`, L + 4, minY - 3);
+
+  const darkStart = state.darkStart.getTime(), darkEnd = state.darkEnd.getTime();
+  const shade = (from, to) => {
+    const x0 = clipX(xAt(new Date(from))), x1 = clipX(xAt(new Date(to)));
+    if (x1 <= x0) return;
+    ctx.fillStyle = V.twilightShade;
+    ctx.fillRect(x0, T, x1 - x0, ph);
+  };
+  shade(start, Math.min(end, darkStart));
+  shade(Math.max(start, darkEnd), end);
+
+  const selected = Math.max(start, Math.min(end, state.selected.getTime()));
+  const markerX = clipX(L + (selected - start) / span * pw);
+
+  const point = (rowIndex, sampleIndex) => {
+    const flatIndex = rowIndex * state.count + sampleIndex;
+    const alt = state.alt[flatIndex], az = state.az[flatIndex];
+    const date = E.dateFromJD(state.jd0 + sampleIndex * state.step);
+    const time = date.getTime();
+    const inDarkWindow = time >= darkStart && time <= darkEnd;
+    const ceiling = state.pano
+      ? Hor.ceilFor(state.pano, az) : { ceil: Hor.NO_BLOCK, ceilTop: null };
+    const usable = sampleVisible(alt, minAlt, ceiling.ceil, ceiling.ceilTop);
+    const visibility = visibilityReason(alt, minAlt, ceiling.ceil,
+      ceiling.ceilTop, inDarkWindow);
+    return { alt, date, x: clipX(xAt(date)), y: yAt(alt), usable,
+      reason: usable && inDarkWindow ? 'visible' : visibility };
+  };
+  const reasonColor = (reason, base) => {
+    if (reason === 'blocked_by_horizon') return V.bad;
+    if (reason === 'below_minimum_altitude') return V.warn;
+    if (reason === 'below_horizon') return V.below;
+    return base;
+  };
+
+  ctx.save();
+  ctx.beginPath(); ctx.rect(L, T, pw, ph); ctx.clip();
+  const selectedSample = Math.max(0, Math.min(state.count - 1,
+    Math.round((E.julianDay(new Date(selected)) - state.jd0) / state.step)));
+  state.rows.forEach((row, rowIndex) => {
+    if (!tonightOverviewVisible.has(row.o.id)) return;
+    const base = row.o.id === state.selectedId ? V.targetSelected : V.targetSecondary;
+    const points = Array.from({ length: state.count }, (_, i) => point(rowIndex, i));
+    for (let i = 0; i < points.length - 1; i++) {
+      const a = points[i], b = points[i + 1];
+      const reason = [a.reason, b.reason].find((r) => r === 'blocked_by_horizon')
+        || [a.reason, b.reason].find((r) => r === 'below_minimum_altitude')
+        || (a.reason === 'below_horizon' && b.reason === 'below_horizon' ? 'below_horizon' : 'visible');
+      ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y);
+      ctx.strokeStyle = reasonColor(reason, base);
+      ctx.lineWidth = row.o.id === state.selectedId ? 2.2 : 1.6;
+      ctx.stroke();
+    }
+    const selectedPoint = points[selectedSample];
+    ctx.beginPath(); ctx.arc(selectedPoint.x, selectedPoint.y,
+      row.o.id === state.selectedId ? 4 : 3, 0, Math.PI * 2);
+    ctx.fillStyle = base; ctx.fill();
+    ctx.strokeStyle = V.canvas; ctx.lineWidth = 1.2; ctx.stroke();
+  });
+  ctx.restore();
+
+  ctx.save(); ctx.setLineDash([3, 3]); ctx.strokeStyle = V.targetSelected;
+  ctx.beginPath(); ctx.moveTo(markerX, T); ctx.lineTo(markerX, H - B); ctx.stroke(); ctx.restore();
+  ctx.fillStyle = V.targetSelected; ctx.textAlign = markerX > W - R - 54 ? 'right' : 'left';
+  ctx.textBaseline = 'top'; ctx.font = '600 10px ui-monospace, monospace';
+  ctx.fillText(fmtClock(state.selected), markerX + (markerX > W - R - 54 ? -4 : 4), 2);
+  ctx.fillStyle = V.axis; ctx.font = '10px ui-monospace, monospace';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+  for (let i = 0; i <= 4; i++) {
+    const date = new Date(start + span * i / 4), x = L + pw * i / 4;
+    ctx.fillText(fmtClock(date), x, H - B + 8);
+  }
+  const summary = document.querySelector('#tonightOverviewSummary');
+  if (summary) {
+    const names = state.rows.map((row) => row.o.primary_name).join(', ');
+    summary.textContent = `Apparent altitude tracks for ${names}, sampled every six minutes across the selected ${Hor.getPrefs().viewFullDay ? 'full day' : 'night'} scrub range. Gold identifies the selected target; blue identifies the other displayed targets. Red segments are horizon or ceiling blocked, amber segments are below your minimum altitude, and gray segments are below the horizon. Shaded time is outside dusk to dawn. The dashed vertical line and target markers follow the selected time.`;
+  }
+}
 /* BUG-005: a monotonic marker for "the Tonight view has finished painting the
  * selection I asked for". The browser check used to scrub, wait a nominal
  * 120 ms and read the rows - but the app itself debounces that scrub by 120 ms
@@ -983,9 +1118,13 @@ function fmtDur(min) {
   return `${Math.floor(m / 60)}h ${String(m % 60).padStart(2, '0')}m`;
 }
 
-function explainVisibility(reason, row) {
+function explainVisibility(reason, row = null) {
   if (reason === 'visible') {
-    return `visible for ${fmtDur(row.visibleMinutes || row.visN * row.stepMin * 1440)}`;
+    const minutes = Number.isFinite(row?.visibleMinutes) ? row.visibleMinutes
+      : Number.isFinite(row?.visN) && Number.isFinite(row?.stepMin)
+        ? row.visN * row.stepMin * 1440 : null;
+    return minutes != null && minutes > 0
+      ? `visible for ${fmtDur(minutes)}` : 'visible now';
   }
   if (reason === 'blocked_by_horizon') return 'blocked because of horizon';
   if (reason === 'below_minimum_altitude') return 'below minimum altitude';
@@ -1108,6 +1247,7 @@ function renderTonight(silent) {
                   stepMin: step, pop });
     }
     rows.sort((a, b) => (b.score - a.score) || (b.pop - a.pop));
+    tonightStatsById = new Map(rows.map((row) => [row.o.id, row]));
     // share the computed visibility with the catalog column
     {
       const g = { minAlt, pano, lat, lon, jd0, jd1, step };
@@ -1120,10 +1260,6 @@ function renderTonight(silent) {
     // clears all night must not top the list - the desktop's "Best targets"
     // applies the same night-window criterion (statusOf == vis).
     const top = rows.filter((r) => r.visN > 0).slice(0, 16);
-    const visibleAll = rows.filter((r) => r.visNow);
-    const nowVisible = visibleAll.slice().sort((a, b) => b.altNow - a.altNow).slice(0, 8);
-    const risingLater = rows.filter((r) => !r.visNow && r.maxAlt > 0)
-      .sort((a, b) => a.transitJd - b.transitJd).slice(0, 8);
 
     // The "Dark time" card shows the SAME window the ranking and % visibility
     // are computed on (win = the picked twilight level) - never a different
@@ -1133,86 +1269,120 @@ function renderTonight(silent) {
     const darkStart = win.startT, darkEnd = win.endT;
     const darkH = Math.round(((darkEnd - darkStart) / 3600000 + (darkEnd < darkStart ? 24 : 0)) * 10) / 10;
     const darkLabel = ({ astronomical: 'astronomical night', nautical: 'nautical night', civil: 'civil night', fallback: 'fixed window (no full darkness)' }[win.level] || 'night');
-    const visibleCount = visibleAll.length;   // the real count, not the top-8 list
-    const windowMs = Math.max(1, darkEnd.getTime() - darkStart.getTime());
-    const selectedPct = Math.max(0, Math.min(100,
-      ((selTime.getTime() - darkStart.getTime()) / windowMs) * 100));
     const sessionSite = S.site.label ||
       [S.site.lat.toFixed(2), S.site.lon.toFixed(2)].join(', ');
+    const oldOverviewIds = new Set(tonightOverviewState?.rows.map((row) => row.o.id) || []);
+    const oldOverviewVisible = tonightOverviewVisible;
+    const overviewObjects = [];
+    const selectedOverviewObject = S.detailId && byId.get(S.detailId);
+    if (selectedOverviewObject) overviewObjects.push(selectedOverviewObject);
+    for (const row of top) {
+      if (!overviewObjects.some((o) => o.id === row.o.id)) overviewObjects.push(row.o);
+      if (overviewObjects.length >= 3) break;
+    }
+    const overviewRange = scrubRange();
+    tonightOverviewState = setTonightOverviewObjects(overviewObjects, {
+      rows: [], start: overviewRange.start, end: overviewRange.end,
+      darkStart, darkEnd, selected: selTime, selectedId: S.detailId || overviewObjects[0]?.id,
+      site: { lat, lon }, pano,
+    });
+    tonightOverviewVisible = new Set(overviewObjects
+      .filter((o) => !oldOverviewIds.has(o.id) || oldOverviewVisible.has(o.id))
+      .map((o) => o.id));
 
-    const pickItem = (r) => {
-      const o = r.o;
-      const tags = [o.messier, o.ngcic].filter(Boolean).join(' · ');
-      const win = r.bestRun > 0
-        ? `clear ${fmtClock(E.dateFromJD(r.bestStart))} – ${fmtClock(E.dateFromJD(r.bestEnd || r.bestStart + r.bestRun * step))}`
-        : explainVisibility(r.visibilityReason, r);
-      const fOwn = filterAdviceBadge(o);
-      return `<li data-id="${esc(o.id)}">
-        <span class="dot" style="background:${typeColor(o)}"></span>
-        <span><span class="p-name">${esc(o.primary_name)}</span>${tags ? `<span class="p-tags">${esc(tags)}</span>` : ''}${fOwn}</span>
-        <span class="p-right">
-          <b title="culminates at ${fmtClock(E.dateFromJD(r.transitJd))}">${r.maxAlt.toFixed(0)}°</b>
-          <span class="p-vis">${r.visN ? `${r.obsPct}% of night · ${fmtDur(r.visibleMinutes)} visible` : explainVisibility(r.visibilityReason, r)}</span>${win}<small>culminates ${fmtClock(E.dateFromJD(r.transitJd))}</small></span>
-      </li>`;
-    };
-
+    const rankRows = top.slice(0, 16).map((r, i) => {
+      const tags = [r.o.messier, r.o.ngcic].filter(Boolean).join(' · ');
+      const bestEnd = r.bestEnd || r.bestStart + r.bestRun * step;
+      const durationMin = r.bestRun > 0 ? r.bestRun * step * 1440 : 0;
+      const duration = durationMin > 0 ? fmtDur(durationMin) : '—';
+      const best = r.bestRun > 0
+        ? `${fmtClock(E.dateFromJD(r.bestStart))}–${fmtClock(E.dateFromJD(bestEnd))} · ${duration}` : '—';
+      const reason = r.visNow ? 'Above minimum altitude; horizon clear' : explainVisibility(r.selectedReason, r);
+      const rise = Number.isFinite(r.riseJd) && r.riseJd > jdSel
+        ? `Rises ${fmtClock(E.dateFromJD(r.riseJd))}` : '—';
+      const topMaxScore = Math.max(0, ...top.map((row) => row.score));
+      const relative = topMaxScore > 0 && r.score > 0 ? Math.round(100 * r.score / topMaxScore) : null;
+      return `<tr data-tonight-id="${esc(r.o.id)}" tabindex="0" role="button" aria-label="Open details for ${esc(r.o.primary_name)}">
+        <td class="mono rank">${String(i + 1).padStart(2, '0')}</td>
+        <td><strong>${esc(r.o.primary_name)}</strong><small>${esc(tags || r.o.ngcic || '')}</small></td>
+        <td class="mono num">${relative == null ? '—' : relative}</td>
+        <td class="mono num">${r.maxAlt.toFixed(0)}°</td>
+        <td class="mono">${esc(best)}</td>
+        <td>${esc(reason)}</td><td class="mono">${esc(rise)}</td>
+      </tr>`;
+    }).join('');
     const html = `
-      <section class="session-head">
-        <div>
-          <p class="eyebrow">Session plan</p>
-          <h1>Tonight</h1>
-          <p class="session-context">${esc(sessionSite)} · night of ${dateKey(nightAnchor())}</p>
+      <section class="night-brief">
+        <div class="night-brief-title"><p class="eyebrow">Night plan</p><h1>Tonight</h1><span>${esc(sessionSite)} · ${dateKey(nightAnchor())}</span></div>
+        <div class="night-brief-facts">
+          <span><small>Selected</small><b>${fmtClock(selTime)}</b></span>
+          <span><small>${darkLabel} · dark window</small><b>${fmtClock(darkStart)}–${fmtClock(darkEnd)} · ${darkH} h</b></span>
+          <span><small>Moon phase</small><b>${mo.icon} ${(mo.illumination * 100).toFixed(0)}% · ${mo.name}</b></span>
         </div>
-        <div class="session-facts">
-          <span>Selected</span><b>${fmtClock(selTime)}</b>
-          <span>Dark window</span><b>${darkH} · ${fmtClock(darkStart)}–${fmtClock(darkEnd)}</b>
+        <div class="night-brief-times" aria-label="Sun and twilight times">
+          <span>Sunset <b>${fmtClock(win.info.sunset)}</b></span><span>Dusk <b>${fmtClock(darkStart)}</b></span>
+          <span>Dawn <b>${fmtClock(darkEnd)}</b></span><span>Sunrise <b>${fmtClock(win.info.sunrise)}</b></span>
         </div>
       </section>
-      <section class="night-track" aria-label="Booked observing window">
-        <div class="track-head"><strong>Booked night</strong><span>${darkLabel}</span></div>
-        <div class="track-bar">
-          <span class="track-window"></span>
-          <span class="track-marker" style="left:${selectedPct.toFixed(2)}%"></span>
+      <section class="tonight-overview" aria-labelledby="tonightOverviewTitle">
+        <header class="panel-heading"><div><h2 id="tonightOverviewTitle">Altitude through the night</h2><p class="sub">Track checkboxes only affect the plot; ranking is unchanged.</p></div>
+          <div class="series-legend" id="tonightOverviewKeys" aria-label="Show or hide target tracks"></div>
+        </header>
+        <canvas id="tonightOverviewChart" role="img" aria-label="Six-minute target altitude tracks with horizon visibility state" aria-describedby="tonightOverviewSummary"></canvas>
+        <div class="tonight-chart-key" role="list" aria-label="Altitude chart key">
+          <span role="listitem"><i class="tonight-key-swatch key-blocked" aria-hidden="true"></i>Horizon or ceiling blocked</span>
+          <span role="listitem"><i class="tonight-key-swatch key-below-min" aria-hidden="true"></i>Below minimum altitude</span>
+          <span role="listitem"><i class="tonight-key-swatch key-below-horizon" aria-hidden="true"></i>Below horizon</span>
+          <span role="listitem"><i class="tonight-key-swatch key-twilight" aria-hidden="true"></i>Twilight</span>
+          <span role="listitem"><i class="tonight-key-swatch key-minimum" aria-hidden="true"></i>Minimum-altitude guide</span>
+          <span role="listitem"><i class="tonight-key-swatch key-selected-time" aria-hidden="true"></i>Selected time</span>
         </div>
-        <div class="track-scale"><span>${fmtClock(darkStart)}</span><span>selected ${fmtClock(selTime)}</span><span>${fmtClock(darkEnd)}</span></div>
+        <p id="tonightOverviewSummary" class="visually-hidden" role="note">The chart shows apparent altitude tracks, horizon visibility state, the dark window, minimum-altitude guide, and selected-time marker.</p>
+        <div class="tonight-local-scrub" role="group" aria-label="Selected time for Tonight">
+          <label for="tonight-time-scrub">Selected time <output id="tonight-time-label" class="mono">${fmtClock(selTime)}</output></label>
+          <input id="tonight-time-scrub" type="range" min="0" max="1440" step="1" aria-label="Selected time in minutes">
+        </div>
       </section>
-      <div class="grid3">
-        <div class="card">
-          <h3>Dark time</h3>
-          <div class="big">${darkH} h</div>
-          <div class="sub">${darkLabel}<br>${fmtClock(darkStart)} – ${fmtClock(darkEnd)}</div>
-        </div>
-        <div class="card">
-          <h3>Moon</h3>
-          <div class="big">${mo.icon} ${(mo.illumination * 100).toFixed(0)}%</div>
-          <div class="sub">${mo.name}</div>
-        </div>
-        <div class="card">
-          <h3>Visible at ${fmtClock(selTime)}</h3>
-          <div class="big">${visibleCount}</div>
-          <div class="sub">catalog objects clear at the selected time</div>
-        </div>
-      </div>
-      <div class="card" style="margin-top:14px">
-        <h3>Best targets tonight</h3>
-        <ul class="pick">${top.length ? top.map(pickItem).join('') : '<li style="cursor:default">nothing tonight — check again in darker skies</li>'}</ul>
-      </div>
-      <div class="grid2" style="margin-top:14px">
-        <div class="card"><h3>Visible at ${fmtClock(selTime)}</h3><ul class="pick">${nowVisible.length ? nowVisible.map((r) => `<li data-id="${esc(r.o.id)}">
-          <span class="dot" style="background:${typeColor(r.o)}"></span>
-          <span><span class="p-name">${esc(r.o.primary_name)}</span>${r.o.messier ? `<span class="p-tags">${esc(r.o.messier)}</span>` : ''}</span>
-          <span class="p-right"><b>${r.altNow.toFixed(0)}° alt</b>culminates ${fmtClock(E.dateFromJD(r.transitJd))} at ${r.maxAlt.toFixed(0)}°</span>
-        </li>`).join('') : '<li style="cursor:default">nothing clear at the selected time</li>'}</ul></div>
-        <div class="card"><h3>Rising later tonight</h3><ul class="pick">${risingLater.length ? risingLater.map((r) => `<li data-id="${esc(r.o.id)}">
-          <span class="dot" style="background:${typeColor(r.o)}"></span>
-          <span><span class="p-name">${esc(r.o.primary_name)}</span>${r.o.messier ? `<span class="p-tags">${esc(r.o.messier)}</span>` : ''}</span>
-          <span class="p-right">culminates ${fmtClock(E.dateFromJD(r.transitJd))}<b>peaks ${r.maxAlt.toFixed(0)}°</b></span>
-        </li>`).join('') : '<li style="cursor:default">everything already up or setting</li>'}</ul></div>
-      </div>
-      <p class="cat-count" style="margin-top:10px;text-align:center">night of ${dateKey(nightAnchor())} · ${esc(S.site.label || `${S.site.lat.toFixed(2)}, ${S.site.lon.toFixed(2)}`)} · horizon: ${pano ? esc(pano.name) : 'none'} · click any target for details</p>`;
+      <section class="tonight-ranked" aria-labelledby="tonightRankHeading">
+        <header class="panel-heading"><h2 id="tonightRankHeading">Best targets tonight</h2><span class="sub">${top.length} targets with usable dark-window visibility</span></header>
+        <div class="tablewrap"><table id="tonight-rank-table">
+          <thead><tr><th>#</th><th>Target</th><th>Relative score</th><th>Max altitude</th><th>Best usable interval</th><th>Visibility reason</th><th>Rises later</th></tr></thead>
+          <tbody>${rankRows || '<tr><td colspan="7" class="sub">No targets have a clear window tonight.</td></tr>'}</tbody>
+        </table></div>
+      </section>
+      <p class="cat-count tonight-footnote">Horizon: ${pano ? esc(pano.name) : 'none'} · Select a target row for its detail panel.</p>`;
     if (token !== tonightToken || S.view !== 'tonight') return; // superseded / view switched
     box.innerHTML = html;
-    box.querySelectorAll('.pick li[data-id]').forEach((li) => li.addEventListener('click', () => openDetail(li.dataset.id)));
+    renderTonightOverviewKeys();
+    box.querySelectorAll('#tonight-rank-table tbody tr[data-tonight-id]').forEach((row) => {
+      const open = () => openDetail(row.dataset.tonightId, row);
+      row.addEventListener('click', open);
+      row.addEventListener('keydown', (ev) => {
+        if (ev.key !== 'Enter' && ev.key !== ' ') return;
+        ev.preventDefault(); open();
+      });
+    });
+    box.querySelector('#tonightOverviewKeys')?.addEventListener('change', (ev) => {
+      const input = ev.target.closest('input[data-overview-id]');
+      if (!input) return;
+      if (input.checked) tonightOverviewVisible.add(input.dataset.overviewId);
+      else tonightOverviewVisible.delete(input.dataset.overviewId);
+      drawTonightOverview();
+    });
+    const localScrub = box.querySelector('#tonight-time-scrub');
+    localScrub?.addEventListener('input', () => {
+      const range = scrubRange();
+      S.skyTime = new Date(range.start.getTime() + Number(localScrub.value) * 60000);
+      announceSkyTime();
+    });
+    syncTonightLocalScrub();
+    tonightOverviewObserver?.disconnect();
+    const overviewPanel = box.querySelector('.tonight-overview');
+    if (overviewPanel && typeof ResizeObserver === 'function') {
+      tonightOverviewObserver = new ResizeObserver(drawTonightOverview);
+      tonightOverviewObserver.observe(overviewPanel);
+    }
+    drawTonightOverview();
     hideSplash();
     // BUG-005: publish the painted selection so a check (or a user script) can
     // wait for THIS render instead of guessing a delay.
@@ -1224,6 +1394,7 @@ function renderTonight(silent) {
 /* ----------------------------- sky map ----------------------------- */
 
 let skyItems = [];
+let skySelectedTargetId = null;
 // uranometria-style rectangular viewport zoom: the chart is a circle in a
 // square, but zooming opens a RECTANGLE window (1..8x) over the chart —
 // the disc edge can leave the screen, so you see more sky than a circular
@@ -1290,29 +1461,36 @@ function renderSky() {
   const magMax = advMode() ? 20 : 14;   // desktop setup.js parity (14; 20 in advanced)
   const base = activeCatalog();
   box.innerHTML = `
-    <div class="sky-wrap">
-      <div class="sky-canvas-box card"><canvas id="sky" role="img" aria-label="All-sky polar chart" aria-describedby="skyChartSummary"></canvas><p id="skyChartSummary" class="visually-hidden" role="note">All-sky chart. Select an object to inspect its details.</p></div>
-      <div class="sky-side">
-        <div class="card">
+    <div class="sky-wrap sky-workspace">
+      <section class="sky-main" aria-label="All-sky chart and time controls">
+      <div class="sky-canvas-box card"><canvas id="sky" tabindex="0" role="img" aria-label="All-sky polar chart" aria-describedby="skyChartSummary"></canvas><p id="skyChartSummary" class="visually-hidden" role="note">All-sky chart. Select an object to inspect its details.</p></div>
+      <div class="sky-time-rail card" aria-label="Chart time controls">
           <h3>Time</h3>
           <label>Wall clock <input id="sky-time" type="datetime-local" value="${dtoLocalInput(S.skyTime)}"></label>
-          <label style="margin-top:12px">Scrub <output id="sky-sout"></output>
+          <label>Scrub <output id="sky-sout"></output>
             <input type="range" id="sky-slider" min="0" max="1440" step="15">
           </label>
-          <div class="btnrow" style="margin-top:12px">
+          <div class="btnrow">
             <button class="btn primary" id="sky-now">Now</button>
             <button class="btn" id="sky-reset" title="double-click the chart also resets">↺ Reset view</button>
           </div>
-          <p class="sub" style="margin-top:10px">${rangeLabel()}</p>
-        </div>
-        <div class="card">
-          <h3>Chart</h3>
-          <label>Mag ≤ <output id="sky-mag-val">${S.skyMag.toFixed(1)}</output>
+          <p class="sub">${rangeLabel()}</p>
+      </div>
+      </section>
+      <aside class="sky-side">
+        <section class="card sky-inspector" aria-label="Selected target and targets visible now">
+          <header class="panel-heading"><h3>Selected target</h3><span id="sky-selected-time" class="mono"></span></header>
+          <div id="sky-selected-target"><p class="sub">Select a target on the chart or from the visible list.</p></div>
+          <canvas id="sky-selected-altitude" width="320" height="110" role="img" aria-label="Selected target altitude across tonight"></canvas>
+          <header class="panel-heading"><h3>Visible now</h3><span id="sky-visible-count" class="sub"></span></header>
+          <div id="sky-visible-now" class="sky-visible-now"></div>
+        </section>
+        <details class="card sky-controls-tray">
+          <summary>Chart controls and legend</summary>
+          <label>Magnitude limit ≤ <output id="sky-mag-val">${S.skyMag.toFixed(1)}</output>
             <input type="range" id="sky-mag" min="0" max="${magMax}" step="0.5" value="${S.skyMag}">
           </label>
-          <p class="sub" style="margin-top:8px">dims objects fainter than the limit; at the faintest setting objects without a measured magnitude appear too</p>
-        </div>
-        <div class="card">
+          <p class="sub" style="margin-top:8px">Fainter objects are hidden. Objects without a measured magnitude appear at the faintest setting.</p>
           <h3>Legend</h3>
           <ul class="legend">
             <li><span class="dot" style="background:${V.sun};border-radius:50%"></span>Sun</li>
@@ -1323,9 +1501,9 @@ function renderSky() {
               ? '<li><span class="dot hatch"></span>above band: open (assumed)</li>' : ''}
             ${Object.entries(TYPE_COLORS).map(([t, c]) => `<li><span class="dot" style="background:${V.types[t] || c}"></span>${TYPE_LABELS[t]}</li>`).join('')}
           </ul>
-        </div>
-        <div class="card"><h3>Hint</h3><p class="sub" style="font-size:13px">Click an object to open its detail panel. The chart is an all-sky polar view: center = zenith, rim = horizon, north at top. <b>Scroll = zoom · drag = pan · double-click = reset</b> — zooming opens a rectangular window over the chart, so you see more sky than a circular magnifier.</p></div>
-      </div>
+          <p class="sub sky-chart-hint">All-sky polar chart: center is zenith, rim is horizon, north is at top. Scroll to zoom, drag to pan, and double-click to reset.</p>
+        </details>
+      </aside>
     </div>`;
   hideSplash();
 
@@ -1602,6 +1780,74 @@ function renderSky() {
       const targets = skyItems.filter((item) => item.o).length;
       summary.textContent = `All-sky polar chart at ${when}; ${targets} catalog objects are plotted. Center is zenith, rim is horizon, and the selected horizon profile is shown as blocked sky.`;
     }
+    drawSkyInspector(skyItems);
+  }
+
+  function drawSkyInspector(items) {
+    const selected = $('#sky-selected-target');
+    const list = $('#sky-visible-now');
+    const count = $('#sky-visible-count');
+    const chart = $('#sky-selected-altitude');
+    if (!selected || !list || !chart) return;
+    const plotted = items.filter((item) => item.o);
+    let target = plotted.find((item) => item.id === skySelectedTargetId)?.o;
+    const visibleRows = plotted.map((item) => ({ o: item.o, state: selectedVisibility(item.o) }))
+      .filter((entry) => entry.state.visible)
+      .sort((a, b) => (tonightStatsById.get(b.o.id)?.score || 0) - (tonightStatsById.get(a.o.id)?.score || 0) || b.state.alt - a.state.alt);
+    if (!target) target = visibleRows[0]?.o || plotted[0]?.o || null;
+    skySelectedTargetId = target?.id || null;
+    $('#sky-selected-time').textContent = fmtClock(S.skyTime);
+    if (!target) {
+      selected.innerHTML = '<p class="sub">No catalog targets are plotted at this magnitude limit.</p>';
+      drawSkyAltitude(chart, null, 0);
+    } else {
+      const state = selectedVisibility(target);
+      const night = state.night;
+      const end = night?.bestEnd || (night?.bestStart != null ? night.bestStart + night.bestRun * NIGHT_STEP_MIN / 1440 : null);
+      const best = night?.bestRun > 0
+        ? `${fmtClock(E.dateFromJD(night.bestStart))}–${fmtClock(E.dateFromJD(end))}` : 'No clear window in the scoring span';
+      selected.innerHTML = `<strong>${esc(target.primary_name)}</strong><span class="sub">${esc(TYPE_LABELS[target.otype] || target.otype || 'Target')}</span>
+        <div class="sky-selected-facts"><span>Altitude <b>${state.alt.toFixed(1)}°</b></span><span>Azimuth <b>${E.altaz(target.ra_hours * 15, target.dec_deg, E.julianDay(S.skyTime), S.site.lat, S.site.lon)[1].toFixed(0)}°</b></span>
+        <span>Status <b>${esc(explainVisibility(state.reason, state.night))}</b></span><span>Best window <b>${esc(best)}</b></span></div>
+        <button type="button" class="btn small" id="sky-selected-detail">Open target details</button>`;
+      $('#sky-selected-detail').addEventListener('click', () => openDetail(target.id));
+      const idx = Math.round((S.skyTime.getTime() - nightWindow().startT.getTime()) / (NIGHT_STEP_MIN * 60000));
+      drawSkyAltitude(chart, target, idx);
+    }
+    if (count) count.textContent = `${visibleRows.length} targets`;
+    list.innerHTML = visibleRows.slice(0, 8).map(({ o, state }, i) => `<button type="button" class="sky-visible-target${o.id === target?.id ? ' selected' : ''}" data-sky-target="${esc(o.id)}">
+      <span class="mono">${String(i + 1).padStart(2, '0')}</span><strong>${esc(o.primary_name)}</strong><span class="mono">${state.alt.toFixed(0)}°</span></button>`).join('') || '<p class="sub">No targets are visible at the selected time.</p>';
+    list.querySelectorAll('[data-sky-target]').forEach((button) => button.addEventListener('click', () => {
+      skySelectedTargetId = button.dataset.skyTarget;
+      draw();
+    }));
+  }
+
+  function drawSkyAltitude(canvas, target, selectedIndex) {
+    const w = canvas.clientWidth || 300, h = canvas.clientHeight || 110, dpr = devicePixelRatio || 1;
+    canvas.width = Math.round(w * dpr); canvas.height = Math.round(h * dpr);
+    const ctx = canvas.getContext('2d'); ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, w, h);
+    const css = getComputedStyle(document.documentElement), token = (k, fallback) => css.getPropertyValue(k).trim() || fallback;
+    const L = 30, R = 7, T = 8, B = 19, pw = w - L - R, ph = h - T - B;
+    const y = (alt) => T + (90 - Math.max(-10, Math.min(90, alt))) / 100 * ph;
+    ctx.font = '9px ui-monospace, monospace'; ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+    [0, 30, 60, 90].forEach((alt) => { const yy = y(alt); ctx.strokeStyle = token('--line', '#3B494B'); ctx.beginPath(); ctx.moveTo(L, yy); ctx.lineTo(w - R, yy); ctx.stroke(); ctx.fillStyle = token('--muted', '#A9B7B4'); ctx.fillText(`${alt}°`, L - 4, yy); });
+    if (!target) return;
+    const range = cachedNightWindow(), start = range.startT.getTime(), end = range.endT.getTime();
+    const steps = 48, x = (i) => L + i / steps * pw;
+    ctx.setLineDash([4, 3]); ctx.strokeStyle = token('--warning', '#C28B36'); ctx.beginPath(); ctx.moveTo(L, y(Hor.effectiveMinAlt())); ctx.lineTo(w - R, y(Hor.effectiveMinAlt())); ctx.stroke(); ctx.setLineDash([]);
+    ctx.beginPath();
+    for (let i = 0; i <= steps; i++) {
+      const date = new Date(start + (end - start) * i / steps);
+      const [alt] = E.altaz(target.ra_hours * 15, target.dec_deg, E.julianDay(date), S.site.lat, S.site.lon);
+      i ? ctx.lineTo(x(i), y(alt)) : ctx.moveTo(x(i), y(alt));
+    }
+    ctx.strokeStyle = token('--accent', '#6B9E93'); ctx.lineWidth = 1.8; ctx.stroke();
+    const selX = L + Math.max(0, Math.min(1, (S.skyTime.getTime() - start) / Math.max(1, end - start))) * pw;
+    ctx.strokeStyle = token('--text', '#E6ECEA'); ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(selX, T); ctx.lineTo(selX, T + ph); ctx.stroke();
+    ctx.fillStyle = token('--muted', '#A9B7B4'); ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+    ctx.fillText(fmtClock(range.startT), L, T + ph + 4); ctx.fillText(fmtClock(range.endT), w - R, T + ph + 4);
+    void selectedIndex;
   }
 
   function posEl(ev) {
@@ -1642,7 +1888,11 @@ function renderSky() {
       const d = (it.x - x) ** 2 + (it.y - y) ** 2;
       if (d < bestD) { bestD = d; best = it; }
     }
-    if (best && bestD < 140) openDetail(best.id);
+    if (best && bestD < 140) {
+      skySelectedTargetId = best.id;
+      draw();
+      openDetail(best.id, cvs);
+    }
   });
 
   // ---- rectangular viewport zoom: wheel = zoom-to-cursor, drag = pan,
@@ -1757,6 +2007,14 @@ function renderSky() {
 
   sizeCanvas();
   draw();
+  if (skyResizeObserver) skyResizeObserver.disconnect();
+  if (typeof ResizeObserver === 'function') {
+    skyResizeObserver = new ResizeObserver(() => {
+      if (S.view !== 'sky') return;
+      try { sizeCanvas(); draw(); } catch { /* view switched away */ }
+    });
+    skyResizeObserver.observe(box.querySelector('.sky-canvas-box'));
+  }
   // ONE resize listener for the app's lifetime: re-adding an anonymous one on
   // every render leaked handlers, and stale ones then drew on detached canvases
   if (skyResizeHandler) window.removeEventListener('resize', skyResizeHandler);
@@ -1769,12 +2027,12 @@ function renderSky() {
 
 let skyTimeHandler = null;
 let skyResizeHandler = null;
+let skyResizeObserver = null;
 
 /* ----------------------------- catalog ----------------------------- */
 
-/* Chip row for the catalog. Popularity is deliberately NOT a chip, and its
- * SCORE is never rendered anywhere: the catalog exposes a TIER letter (A-F, see
- * assignPopularityTiers) whose ordering is the only thing it reveals. */
+/* Chip row for the catalog. Popularity is deliberately NOT a chip or visible
+ * table column; the existing secondary sort remains available in More filters. */
 const CHIP_LABELS = { all: 'All', messier: 'Messier', bright: 'Bright <8', galaxies: 'Galaxies', nebulae: 'Nebulae', clusters: 'Clusters', custom: 'Custom' };
 const CHIP_FILTERS = {
   all: () => true,
@@ -1795,18 +2053,25 @@ function minVis() {
 }
 let hiddenNotVisible = 0;      // rows the list dropped for being below the threshold
 
-/** Tooltip for a tier cell - says what the letter means, without the number. */
-function tierTitle(o, tier) {
-  return (o.popularity || 0) > 0
-    ? `tier ${tier} of A-F: community observing popularity (A = most observed)`
-    : `tier ${tier}: no popularity data for this object`;
-}
-
 function filteredCatalog() {
   const f = S.cat;
   const q = f.q.trim().toLowerCase();
+  const saved = new Set(savedTargetIds());
   let out = activeCatalog().filter((o) => CHIP_FILTERS[f.chip](o));
   if (f.con) out = out.filter((o) => o.constellation === f.con);
+  if (f.types?.length) out = out.filter((o) => f.types.includes(o.otype));
+  if (f.savedOnly) out = out.filter((o) => saved.has(o.id));
+  if (f.clearOnly) out = out.filter((o) => (tonightStatsById.get(o.id)?.bestRun || 0) > 0);
+  if (f.fitsRig) out = out.filter((o) => {
+    const frame = rigFramePct(o);
+    return frame != null && frame <= 100;
+  });
+  if (f.visibility !== 'all') out = out.filter((o) => {
+    const v = selectedVisibility(o);
+    if (f.visibility === 'now') return v.visible;
+    if (f.visibility === 'later') return !v.visible && v.risesLater;
+    return !v.visible && !v.risesLater;
+  });
   if (q) out = out.filter((o) => blobOf(o).includes(q));
   const col = f.sort;
   const pctG = obsNightGrid();
@@ -1853,12 +2118,12 @@ function filteredCatalog() {
 function renderCatalog() {
   const box = $('#view');
   const list = filteredCatalog();
-  const perPage = 60;
+  const perPage = 20;
   const pages = Math.max(1, Math.ceil(list.length / perPage));
   if (S.cat.page >= pages) S.cat.page = 0;
   const slice = list.slice(S.cat.page * perPage, (S.cat.page + 1) * perPage);
-  const rig = activeRig();
-  const showFrame = !!rig && rig.fov_w > 0;
+  const saved = new Set(savedTargetIds());
+  const objectTypes = [...new Set(activeCatalog().map((o) => o.otype).filter(Boolean))].sort();
 
   const th = (key, label, num = false) =>
     `<th class="${num ? 'num' : ''}" data-k="${key}">${label}${S.cat.sort === key ? (S.cat.up ? ' ▲' : ' ▼') : ''}</th>`;
@@ -1870,45 +2135,67 @@ function renderCatalog() {
   // arrow-key press fires one - without this the slider would lose focus after
   // every step and keyboard stepping would stop at 1.
   const mvHadFocus = !!document.activeElement && document.activeElement.id === 'cat-minvis';
+  const moreFiltersOpen = !!$('#cat-more')?.open;
   box.innerHTML = `
+    <div class="catalog-layout">
+    <aside class="cat-filter-rail" aria-label="Catalog filters">
+      <h2>Filters</h2>
     <div class="cat-bar">
       <input type="search" id="cat-q" aria-label="Search the catalog" placeholder="Search: name, M 31, NGC 7000, galaxy, Cyg…" value="${esc(S.cat.q)}">
-      <div class="chips">${Object.keys(CHIP_FILTERS).map((c) => `<button class="chip${S.cat.chip === c ? ' on' : ''}" data-c="${c}">${CHIP_LABELS[c]}</button>`).join('')}</div>
       <select id="cat-con" title="constellation filter">
         <option value="">All constellations</option>
         ${CONSTELLATIONS.map((c) => `<option value="${esc(c)}"${S.cat.con === c ? ' selected' : ''}>${esc(c)}</option>`).join('')}
       </select>
-      <label class="minvis" title="Hide objects whose share of tonight's dark window is below this. 0% shows every object, visible or not.">Min visibility
-        <b id="cat-minvis-v">${minVis() > 0 ? minVis() + '%' : 'off'}</b>
-        <input type="range" id="cat-minvis" min="0" max="100" step="1" value="${minVis()}" aria-label="Minimum visibility percent">
-      </label>
+      <div class="chips" role="group" aria-label="Object category">${Object.keys(CHIP_FILTERS).map((c) => `<button class="chip${S.cat.chip === c ? ' on' : ''}" data-c="${c}">${CHIP_LABELS[c]}</button>`).join('')}</div>
+      <label class="cat-type-label" for="cat-type">Object types <small>Choose one or more</small></label>
+      <select id="cat-type" multiple size="4" aria-label="Filter by object type">${objectTypes.map((type) => `<option value="${esc(type)}"${S.cat.types.includes(type) ? ' selected' : ''}>${esc(TYPE_LABELS[type] || type)}</option>`).join('')}</select>
+      <fieldset class="cat-visibility"><legend>Visibility at selected time</legend>
+        ${[['all','All'],['now','Visible now'],['later','Rises later'],['none','Not visible']].map(([value,label]) => `<label><input type="radio" name="cat-visibility" value="${value}"${S.cat.visibility === value ? ' checked' : ''}> ${label}</label>`).join('')}
+      </fieldset>
+      <details class="cat-more" id="cat-more"${moreFiltersOpen ? ' open' : ''}><summary>More filters</summary><div class="cat-advanced">
+        <label class="minvis" title="Hide objects whose share of tonight's dark window is below this. 0% shows every object, visible or not.">Min visible night <b id="cat-minvis-v">${minVis() > 0 ? minVis() + '%' : 'off'}</b>
+          <input type="range" id="cat-minvis" min="0" max="100" step="1" value="${minVis()}" aria-label="Minimum visibility percent">
+        </label>
+        <label><input id="cat-clear" type="checkbox"${S.cat.clearOnly ? ' checked' : ''}> Has clear window</label>
+        <label><input id="cat-saved" type="checkbox"${S.cat.savedOnly ? ' checked' : ''}> Saved targets</label>
+        <label><input id="cat-rig" type="checkbox"${S.cat.fitsRig ? ' checked' : ''}> Fits active rig</label>
+        <select id="cat-sort" aria-label="Sort catalog">
+          ${[['tier','Popularity'],['pct','Visible night %'],['mag','Magnitude'],['maxalt','Maximum altitude'],['name','Name']].map(([key,label]) => `<option value="${key}"${S.cat.sort === key ? ' selected' : ''}>Sort: ${label}</option>`).join('')}
+        </select>
+        <button class="btn small" id="cat-export-provenance" type="button" title="Download catalog source, aliases and designation history">Download provenance</button>
+      </div></details>
+      <button class="btn small" id="cat-clear-filters" type="button">Clear filters</button>
     </div>
+    </aside>
+    <section class="cat-results" aria-label="Catalog results">
+      <header class="cat-results-head"><div><h2>Catalog</h2><p class="catalog-context">${esc(S.site.label || [S.site.lat.toFixed(2), S.site.lon.toFixed(2)].join(', '))} · ${dateKey(S.date)} · Min altitude ${Hor.effectiveMinAlt().toFixed(0)}°</p></div>
     <div class="cat-stats">
       <span class="cat-count">${list.length.toLocaleString()} of ${CAT.length.toLocaleString()} objects${advMode() ? '' : ' (standard mode)'}${hiddenNotVisible ? ` · ${hiddenNotVisible} below ${minVis()}%` : ''}</span>
       <span class="cat-count" id="pct-status"></span>
-      <button class="btn small" id="cat-export-provenance" type="button" title="Download catalog source, aliases and designation history">Download provenance</button>
     </div>
-    <div class="card" style="padding:8px 10px">
+      </header>
+      <div class="card catalog-table-card">
       <div class="catwrap">
-      <table class="cat">
-        <thead><tr>${th('name', 'Name')}${th('tier', 'Tier')}${th('mag', 'Mag', true)}${th('pct', '% visibility', true)}${th('type', 'Type')}${th('con', 'Con')}${th('size', 'Size', true)}${showFrame ? `<th class="frame" title="object size vs the active rig's frame width">Frame</th>` : ''}${th('ra', 'RA', true)}${th('dec', 'Dec', true)}</tr></thead>
+      <table class="cat catalog-dense">
+        <thead><tr><th>#</th><th>Designation</th><th>Common name</th>${th('type', 'Type')}${th('mag', 'Mag', true)}<th>Alt now</th>${th('pct', 'Night %', true)}<th>Best window</th><th>Status</th></tr></thead>
         <tbody>
-          ${slice.map((o) => {
-            const tags = [o.messier, o.ngcic].filter(Boolean).join(' · ');
+          ${slice.map((o, index) => {
+            const designation = [o.messier, o.ngcic].filter(Boolean).join(' · ') || o.id.toUpperCase();
             const fOwn = filterAdviceBadge(o);
-            const fp = showFrame ? rigFramePct(o) : null;
-            const tier = TIER.get(o.id) || 'F';
+            const current = selectedVisibility(o);
+            const night = current.night;
+            const bestEnd = night?.bestEnd || (night?.bestStart != null ? night.bestStart + night.bestRun * NIGHT_STEP_MIN / 1440 : null);
+            const best = night?.bestRun > 0 ? `${fmtClock(E.dateFromJD(night.bestStart))}–${fmtClock(E.dateFromJD(bestEnd))}` : '—';
+            const status = current.visible ? 'Visible now' : current.risesLater ? 'Rises later' : 'Not visible';
             return `<tr data-id="${esc(o.id)}" tabindex="0" role="button" aria-label="Open details for ${esc(o.primary_name)}">
-              <td><span class="tname">${esc(o.primary_name)}</span> ${tags ? `<span class="tags">${esc(tags)}</span>` : ''}${fOwn}</td>
-              <td class="tier"><span class="tier-badge t-${tier.toLowerCase()}" title="${tierTitle(o, tier)}">${tier}</span></td>
+              <td class="rank-cell mono">${S.cat.page * perPage + index + 1}</td>
+              <td class="designation-cell mono" title="${esc(designation)}"><button class="cat-save${saved.has(o.id) ? ' on' : ''}" type="button" data-save-target="${esc(o.id)}" aria-label="${saved.has(o.id) ? 'Remove' : 'Save'} ${esc(o.primary_name)}">${saved.has(o.id) ? '★' : '☆'}</button><span>${esc(designation)}</span></td>
+              <td class="common-cell" title="${esc(o.primary_name)}"><span class="tname">${esc(o.primary_name)}</span>${fOwn}</td>
+              <td class="type-cell" title="${esc(TYPE_LABELS[o.otype] || o.otype || '')}"><span class="tag-dot" style="color:${typeColor(o)}">●</span> ${esc(TYPE_LABELS[o.otype] || o.otype || '')}</td>
               <td class="num">${o.vmag != null ? o.vmag.toFixed(1) : '—'}</td>
+              <td class="num mono">${current.alt.toFixed(0)}°</td>
               <td class="num pct" data-objid="${escAttr(o.id)}">${cachedPctText(o.id)}</td>
-              <td><span class="tag-dot" style="color:${typeColor(o)}">●</span> ${esc(TYPE_LABELS[o.otype] || o.otype || "")}</td>
-              <td>${esc(o.constellation)}</td>
-              <td class="num">${esc(fmtSizeU(o.size_am))}</td>
-              ${showFrame ? `<td class="frame">${fp == null ? '—' : `<span class="${fp > 100 ? 'over' : 'fit'}" title="${fp > 100 ? `too large for one frame: needs ~${(fp / 100).toFixed(1)} frames` : `object spans ${fp}% of the frame width`}">${fp}%</span>`}</td>` : ''}
-              <td class="num">${E.formatRA(o.ra_hours)}</td>
-              <td class="num">${E.formatDec(o.dec_deg)}</td>
+              <td class="mono" title="${esc(best)}">${esc(best)}</td><td title="${esc(current.reason || '')}">${esc(status)}</td>
             </tr>`;
           }).join('')}
         </tbody>
@@ -1919,6 +2206,8 @@ function renderCatalog() {
       <button class="btn" id="pg-prev" ${S.cat.page === 0 ? 'disabled' : ''}>← prev</button>
       <span>page ${S.cat.page + 1} / ${pages}</span>
       <button class="btn" id="pg-next" ${S.cat.page >= pages - 1 ? 'disabled' : ''}>next →</button>
+    </div>
+    </section>
     </div>`;
   hideSplash();
 
@@ -1936,9 +2225,13 @@ function renderCatalog() {
     renderCatalog();
   }));
   document.querySelectorAll('table.cat tbody tr[data-id]').forEach((tr) => {
-    const open = () => openDetail(tr.dataset.id);
-    tr.addEventListener('click', open);
+    const open = () => openDetail(tr.dataset.id, tr);
+    tr.addEventListener('click', (ev) => {
+      if (ev.target.closest('[data-save-target]')) return;
+      open();
+    });
     tr.addEventListener('keydown', (ev) => {
+      if (ev.target.closest('[data-save-target]')) return;
       if (ev.key !== 'Enter' && ev.key !== ' ') return;
       ev.preventDefault();
       open();
@@ -1947,6 +2240,38 @@ function renderCatalog() {
   $('#pg-prev').addEventListener('click', () => { if (S.cat.page > 0) { S.cat.page--; renderCatalog(); } });
   $('#pg-next').addEventListener('click', () => { if (S.cat.page < pages - 1) { S.cat.page++; renderCatalog(); } });
   $('#cat-con').addEventListener('change', (ev) => { S.cat.con = ev.target.value; S.cat.page = 0; renderCatalog(); });
+  $('#cat-type').addEventListener('change', (ev) => { S.cat.types = [...ev.target.selectedOptions].map((option) => option.value); S.cat.page = 0; renderCatalog(); });
+  box.querySelectorAll('input[name="cat-visibility"]').forEach((input) => input.addEventListener('change', () => {
+    S.cat.visibility = box.querySelector('input[name="cat-visibility"]:checked')?.value || 'all';
+    S.cat.page = 0; renderCatalog();
+  }));
+  $('#cat-clear').addEventListener('change', (ev) => { S.cat.clearOnly = ev.target.checked; S.cat.page = 0; renderCatalog(); });
+  $('#cat-saved').addEventListener('change', (ev) => { S.cat.savedOnly = ev.target.checked; S.cat.page = 0; renderCatalog(); });
+  $('#cat-rig').addEventListener('change', (ev) => { S.cat.fitsRig = ev.target.checked; S.cat.page = 0; renderCatalog(); });
+  $('#cat-sort').addEventListener('change', (ev) => { S.cat.sort = ev.target.value; S.cat.up = ev.target.value === 'pct' ? false : true; S.cat.page = 0; renderCatalog(); });
+  $('#cat-clear-filters').addEventListener('click', () => {
+    S.cat = { ...S.cat, q: '', chip: 'all', con: '', types: [], visibility: 'all',
+      savedOnly: false, clearOnly: false, fitsRig: false, sort: 'tier', up: true, page: 0 };
+    Hor.setPrefs({ minVis: 0 });
+    renderCatalog();
+  });
+  box.querySelector('.cat tbody')?.addEventListener('click', (ev) => {
+    const button = ev.target.closest('[data-save-target]');
+    if (!button) return;
+    ev.preventDefault(); ev.stopPropagation();
+    const id = button.dataset.saveTarget;
+    const ids = new Set(savedTargetIds());
+    if (ids.has(id)) ids.delete(id); else ids.add(id);
+    saveTargetIds([...ids]);
+    if (S.cat.savedOnly) renderCatalog();
+    else {
+      button.classList.toggle('on', ids.has(id));
+      button.textContent = ids.has(id) ? '★' : '☆';
+      button.setAttribute('aria-label', `${ids.has(id) ? 'Remove' : 'Save'} ${byId.get(id)?.primary_name || id}`);
+      const detailSave = document.querySelector('#m-save-target');
+      if (detailSave?.dataset.id === id) updateSavedTargetButton(detailSave, ids.has(id));
+    }
+  });
   // The slider updates its label + the preference live, but only RE-RENDERS on
   // 'change': renderCatalog() rebuilds this whole bar, which would tear the
   // element out from under the pointer mid-drag.
@@ -2050,22 +2375,138 @@ function fillPctCells(objs) {
 
 /* ------------------------------ detail ----------------------------- */
 
-function openDetail(id) {
+let detailReturnFocus = null;
+let detailGeneration = 0;
+let detailGraphRedraw = null;
+let detailDockScrollListener = null;
+let detailDockScrollFrame = null;
+
+function targetDetailDocked() {
+  return S.view !== 'horizon' && window.innerWidth >= 1100;
+}
+
+function updateDetailSelectedTime() {
+  const o = S.detailId && byId.get(S.detailId);
+  const position = $('#m-selected-position');
+  const moon = $('#m-selected-separation');
+  const reasonEl = $('#m-selected-visibility');
+  if (!o || !position || !moon || !reasonEl) return;
+  const jd = E.julianDay(S.skyTime);
+  const { lat, lon } = S.site;
+  const [alt, az] = E.altaz(o.ra_hours * 15, o.dec_deg, jd, lat, lon);
+  const [moonAlt, moonAz] = E.moonAltAz(jd, lat, lon);
+  const separation = E.sepDeg(alt, az, moonAlt, moonAz);
+  const pano = Hor.activePano();
+  const ceiling = pano ? Hor.ceilFor(pano, az) : { ceil: Hor.NO_BLOCK, ceilTop: null };
+  const win = nightWindow();
+  const inNight = S.skyTime >= win.startT && S.skyTime <= win.endT;
+  const reason = visibilityReason(alt, Hor.effectiveMinAlt(), ceiling.ceil,
+    ceiling.ceilTop, inNight);
+  const reasonText = reason === 'visible' ? 'visible above minimum altitude' :
+    reason === 'blocked_by_horizon' ? 'blocked by horizon or ceiling' :
+      reason === 'below_minimum_altitude' ? 'below minimum altitude' :
+        reason === 'below_horizon' ? 'below horizon' : 'outside dusk-to-dawn window';
+  position.textContent = `${fmtClock(S.skyTime)} · alt ${alt.toFixed(1)}°, az ${az.toFixed(0)}°`;
+  moon.textContent = `${Math.round(separation)}°`;
+  reasonEl.textContent = reasonText;
+}
+
+function updateDetailDockTop() {
+  const modal = $('#modal');
+  if (!S.detailId || modal?.hidden || !modal?.classList.contains('detail-docked')) return;
+  const visibleBottom = (el) => {
+    if (!el || !el.getClientRects().length) return 0;
+    const rect = el.getBoundingClientRect();
+    return rect.bottom > 0 && rect.top < innerHeight ? rect.bottom : 0;
+  };
+  const top = Math.ceil(Math.max(0, visibleBottom($('.topbar')), visibleBottom($('#tabs'))));
+  document.documentElement.style.setProperty('--detail-top', `${top}px`);
+}
+
+function stopDetailDockScrollTracking() {
+  if (detailDockScrollListener) {
+    window.removeEventListener('scroll', detailDockScrollListener, true);
+    detailDockScrollListener = null;
+  }
+  if (detailDockScrollFrame !== null) {
+    window.cancelAnimationFrame(detailDockScrollFrame);
+    detailDockScrollFrame = null;
+  }
+}
+
+function startDetailDockScrollTracking() {
+  if (detailDockScrollListener) return;
+  detailDockScrollListener = () => {
+    if (detailDockScrollFrame !== null) return;
+    detailDockScrollFrame = window.requestAnimationFrame(() => {
+      detailDockScrollFrame = null;
+      updateDetailDockTop();
+    });
+  };
+  window.addEventListener('scroll', detailDockScrollListener, { passive: true, capture: true });
+}
+
+function syncDetailDock() {
+  if (!S.detailId) return;
+  const modal = $('#modal');
+  const docked = targetDetailDocked();
+  modal.classList.toggle('detail-docked', docked);
+  document.body.classList.toggle('detail-open', docked);
+  const panel = modal.querySelector('.modal');
+  if (panel) {
+    panel.setAttribute('role', docked ? 'complementary' : 'dialog');
+    panel.setAttribute('aria-labelledby', 'm-title');
+    if (docked) panel.removeAttribute('aria-modal');
+    else panel.setAttribute('aria-modal', 'true');
+  }
+  modal.onclick = (ev) => { if (!docked && ev.target === modal) closeDetail(); };
+  modal.onkeydown = (ev) => {
+    if (ev.key !== 'Escape') return;
+    ev.preventDefault();
+    ev.stopPropagation();
+    closeDetail();
+  };
+  if (docked) {
+    startDetailDockScrollTracking();
+    updateDetailDockTop();
+  } else {
+    stopDetailDockScrollTracking();
+    document.documentElement.style.removeProperty('--detail-top');
+  }
+}
+
+function refreshOpenDetail() {
+  const id = S.detailId;
+  if (!id) return;
+  if (!byId.has(id)) { closeDetail(); return; }
+  openDetail(id, null, { refresh: true });
+}
+
+function openDetail(id, opener = null, { refresh = false } = {}) {
   const o = byId.get(id);
   if (!o) return;
-  const provenance = CAT_PROV?.objects?.[o.id];
+  if (!refresh) detailReturnFocus = opener || document.activeElement;
   const modal = $('#modal');
+  const focusedDetailId = refresh && modal.contains(document.activeElement)
+    ? document.activeElement.id : null;
+  const preserveImage = refresh && S.detailId === id ? $('#objimg-wrap') : null;
+  const generation = ++detailGeneration;
+  S.detailId = id;
+  document.querySelectorAll("#tonight-rank-table tr, .cat-results table tr")
+    .forEach((row) => row.classList.toggle("selected", row.dataset.tonightId === id || row.dataset.id === id));
+  if (!refresh && S.view === 'tonight') focusTonightOverviewObject(id);
+  const provenance = CAT_PROV?.objects?.[o.id];
   const pano = Hor.activePano();
   const { lat, lon } = S.site;
   const info = E.nightInfo(nightAnchor(), lat, lon, siteNoon(nightAnchor()));
-  const jd = E.julianDay(new Date());
+  const jd = E.julianDay(S.skyTime);
   const [altNow, azNow] = E.altaz(o.ra_hours * 15, o.dec_deg, jd, lat, lon);
   // the SITE's 00:30, not the browser's (same anchoring rule as nightInfo)
   const localMidnight = WS.wallToUtc(new Date(
     S.date.getFullYear(), S.date.getMonth(), S.date.getDate(), 0, 30));
   const dayInfo = E.objectDayInfo(o.ra_hours * 15, o.dec_deg, localMidnight, lat, lon);
 
-  // Moon distance now + at tonight's peak (proximity awareness, like the smart-scope apps)
+  // Moon distance at the selected planner time + tonight's peak.
   const [moonAltNow, moonAzNow] = E.moonAltAz(jd, lat, lon);
   const sepNow = E.sepDeg(altNow, azNow, moonAltNow, moonAzNow);
   const illumNow = E.moonIllumination ? E.moonIllumination(jd) : 0;
@@ -2092,40 +2533,35 @@ function openDetail(id) {
   modal.innerHTML = `
     <div class="modal" role="dialog" aria-modal="true" aria-labelledby="m-title">
       <div class="modal-head">
-        <h2 id="m-title">${esc(o.primary_name)}</h2>
+        <h2 id="m-title" tabindex="-1">${esc(o.primary_name)}</h2>
+        <span class="detail-favorite" id="m-session-fav" data-id="${esc(id)}" role="img" aria-label="Not a saved target">☆</span>
         <button class="close" id="m-close" title="close" aria-label="Close">✕</button>
       </div>
       <span class="tags">${tags}</span>
-      <div class="detail-grid">
+      <section class="detail-hero" aria-label="Target overview">
         <div id="objimg-wrap">
           <img class="objimg" id="d-img" src="img/${encodeURIComponent(id)}.jpg" alt="">
           <div class="objimg-ph" id="d-imgph" style="display:none"></div>
         </div>
-        <div>
-          <dl class="meta">
+        <div class="detail-hero-copy">
+          <dl class="detail-hero-facts">
             <dt>Type</dt><dd><span style="color:${typeColor(o)}">●</span> ${esc(TYPE_LABELS[o.otype] || o.otype || "")}</dd>
-            <dt>Magnitude</dt><dd>${o.vmag != null ? o.vmag.toFixed(1) : '—'}</dd>
+            <dt>Magnitude</dt><dd>${o.vmag != null ? `${o.vmag.toFixed(1)} mag` : 'No catalog magnitude'}</dd>
             <dt>Size</dt><dd>${esc(fmtSizeU(o.size_am)) || '—'}</dd>
-            <dt>Constellation</dt><dd>${esc(o.constellation || '—')}</dd>
-            <dt>RA / Dec (J2000)</dt><dd>${E.formatRA(o.ra_hours)} · ${E.formatDec(o.dec_deg)}</dd>
-            ${provenance ? `<dt>Catalog source</dt><dd title="${esc(provenance.source_version || 'unknown')}">${esc(provenance.source || 'unknown')} · ${esc(provenance.source_file || '')}</dd>
-            <dt>Aliases</dt><dd>${provenance.aliases?.length ? esc(provenance.aliases.join(' · ')) : '—'}</dd>
-            <dt>Designation history</dt><dd>${provenance.designation_history?.length ? esc(provenance.designation_history.map((x) => x.designation).join(' → ')) : '—'}</dd>` : '<dt>Catalog source</dt><dd>not available</dd>'}
-            <dt>Right now</dt><dd>alt ${altNow.toFixed(1)}°, az ${azNow.toFixed(0)}°</dd>
-            <dt>Tonight</dt><dd>rises ${fmtClock(dayInfo.rise)} · transits ${fmtClock(dayInfo.transit)} · sets ${fmtClock(dayInfo.set)} · peaks ${dayInfo.maxAlt.toFixed(0)}°</dd>
-            ${moonRow('Moon dist now', sepNow)}
-            ${sepPeak != null ? moonRow('Moon dist @ peak', sepPeak) : ''}
-            <dt>Observable</dt><dd id="d-obs">—</dd>
+            <dt>Selected position</dt><dd id="m-selected-position">—</dd>
           </dl>
-          ${o.blurb ? `<p class="blurb">${esc(o.blurb)}</p>` : ''}
-          <p class="blurb" style="margin-top:8px;font-size:13px"><a class="wiki" id="d-wikilink" href="https://en.wikipedia.org/wiki/${encodeURIComponent(wiki.replace(/ /g, '_'))}" target="_blank" rel="noopener">Wikipedia ↗</a></p>
-          ${o.custom ? '<button class="btn small" id="m-del" style="margin-top:10px" title="remove this custom target">🗑 delete target</button>' : ''}
+          <dl class="detail-visibility-facts">
+            <dt>Visibility reason</dt><dd id="m-hero-visibility">Calculating…</dd>
+            <dt>Usable interval</dt><dd id="m-hero-window">—</dd>
+            <dt>Culmination</dt><dd>${fmtClock(dayInfo.transit)} · ${dayInfo.maxAlt.toFixed(0)}°</dd>
+          </dl>
         </div>
-      </div>
+      </section>
       <div class="tonight-box">
         <h3>Altitude tonight <span class="cat-count">(local time)</span></h3>
         <canvas id="graph" role="img" aria-label="Target altitude and visibility chart" aria-describedby="graphSummary"></canvas>
         <p id="graphSummary" class="visually-hidden" role="note">Altitude chart for the selected target.</p>
+        <p class="detail-observable" id="d-obs" role="status" aria-live="polite">Calculating visibility for tonight…</p>
         <div class="chart-legend" aria-label="Altitude chart legend">
           <div class="chart-legend-group">
             <strong class="chart-legend-heading">Target state</strong>
@@ -2145,24 +2581,65 @@ function openDetail(id) {
         </div>
         <p class="win-note" id="win-note"></p>
       </div>
+      <div class="detail-actions"><button class="btn small save-target" id="m-save-target" data-id="${esc(id)}" type="button">☆ Add to Tonight’s targets</button></div>
+      <details class="catalog-details">
+        <summary>Catalog details</summary>
+        <dl class="meta">
+          <dt>Constellation</dt><dd>${esc(o.constellation || '—')}</dd>
+          <dt>RA / Dec (J2000)</dt><dd>${E.formatRA(o.ra_hours)} · ${E.formatDec(o.dec_deg)}</dd>
+          <dt>Rise / set</dt><dd>${fmtClock(dayInfo.rise)} · ${fmtClock(dayInfo.set)}</dd>
+          <dt>Visibility at selected time</dt><dd id="m-selected-visibility">—</dd>
+          <dt>Moon separation at selected time</dt><dd id="m-selected-separation">—</dd>
+          ${provenance ? `<dt>Catalog source</dt><dd title="${esc(provenance.source_version || 'unknown')}">${esc(provenance.source || 'unknown')} · ${esc(provenance.source_file || '')}</dd>
+          <dt>Aliases</dt><dd>${provenance.aliases?.length ? esc(provenance.aliases.join(' · ')) : '—'}</dd>
+          <dt>Designation history</dt><dd>${provenance.designation_history?.length ? esc(provenance.designation_history.map((x) => x.designation).join(' → ')) : '—'}</dd>` : '<dt>Catalog source</dt><dd>not available</dd>'}
+          ${sepPeak != null ? moonRow('Moon dist @ culmination', sepPeak) : ''}
+        </dl>
+        ${o.blurb ? `<p class="blurb">${esc(o.blurb)}</p>` : ''}
+        <p class="blurb"><a class="wiki" id="d-wikilink" href="https://en.wikipedia.org/wiki/${encodeURIComponent(wiki.replace(/ /g, '_'))}" target="_blank" rel="noopener">Wikipedia ↗</a></p>
+        ${o.custom ? '<button class="btn small" id="m-del" style="margin-top:10px" title="remove this custom target">Delete custom target</button>' : ''}
+      </details>
     </div>`;
+  if (preserveImage) modal.querySelector('#objimg-wrap')?.replaceWith(preserveImage);
   modal.hidden = false;
+  syncDetailDock();
+  updateDetailSelectedTime();
+  if (refresh && focusedDetailId) {
+    const focusedAgain = document.getElementById(focusedDetailId);
+    if (focusedAgain && modal.contains(focusedAgain)) focusedAgain.focus({ preventScroll: true });
+  } else if (!refresh) $('#m-title').focus();
   $('#m-close').addEventListener('click', closeDetail);
-  modal.addEventListener('click', (ev) => { if (ev.target === modal) closeDetail(); });
+  const saveButton = modal.querySelector('#m-save-target');
+  if (saveButton) {
+    updateSavedTargetButton(saveButton, savedTargetIds().includes(id));
+    saveButton.addEventListener('click', () => {
+      const ids = new Set(savedTargetIds());
+      if (ids.has(id)) ids.delete(id); else ids.add(id);
+      const on = saveTargetIds([...ids]).has(id);
+      updateSavedTargetButton(saveButton, on);
+      if (S.view === 'catalog') {
+        const rowButton = document.querySelector(`[data-save-target="${escAttr(id)}"]`);
+        if (rowButton) { rowButton.classList.toggle('on', on); rowButton.textContent = on ? '★' : '☆'; }
+        if (S.cat.savedOnly) renderCatalog();
+      }
+    });
+  }
   wireDetailExtras(modal, o);
 
   // bundled photo first; if missing, fetch a Wikipedia thumbnail (cached)
   const dImg = $('#d-img');
   const dPh = $('#d-imgph');
-  let wikiStarted = false;
-  dImg.addEventListener('error', () => {
-    if (wikiStarted) return;
-    wikiStarted = true;
-    dImg.style.display = 'none';
-    dPh.style.display = 'flex';
-    dPh.textContent = 'loading Wikipedia photo…';
-    loadWikiThumb(o, dImg, dPh);
-  });
+  if (!preserveImage) {
+    let wikiStarted = false;
+    dImg.addEventListener('error', () => {
+      if (wikiStarted || S.detailId !== id) return;
+      wikiStarted = true;
+      dImg.style.display = 'none';
+      dPh.style.display = 'flex';
+      dPh.textContent = 'loading Wikipedia photo…';
+      loadWikiThumb(o, dImg, dPh);
+    });
+  }
 
   // ---- altitude chart ----
   // The span follows the SAME degeneracy policy as the scrub (shared in core):
@@ -2251,6 +2728,14 @@ function openDetail(id) {
     if (reason === 'never_rises') return 'never rises in this window';
     return 'no usable visibility interval';
   };
+  const heroReason = $('#m-hero-visibility');
+  if (heroReason) heroReason.textContent = detailReasonText(detailSummary.reason);
+  const heroWindow = $('#m-hero-window');
+  if (heroWindow) {
+    heroWindow.textContent = bestStart >= 0 && best > 1
+      ? `${fmtClock(E.dateFromJD(jd0 + (bestStart / steps) * (jd1 - jd0)))}–${fmtClock(E.dateFromJD(jd0 + ((bestStart + best) / steps) * (jd1 - jd0)))}`
+      : 'No clear interval tonight';
+  }
   const obsEl = $('#d-obs');
   if (obsEl) {
     const pct = Math.round(100 * visCount / nightSamples);
@@ -2263,13 +2748,16 @@ function openDetail(id) {
 
   const g = $('#graph');
   const gCtx = g.getContext('2d');
-  (function sizeG() {
-    const w = g.clientWidth;
+  const H = Math.max(200, g.clientHeight || 260), padL = 34, padR = 10, padT = 12, padB = 22;
+  let W = 0;
+  function sizeG() {
+    W = g.clientWidth;
+    if (!W) return;
     const dpr = window.devicePixelRatio || 1;
-    g.width = w * dpr; g.height = 300 * dpr;
+    g.width = Math.round(W * dpr); g.height = H * dpr;
     gCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  })();
-  const W = g.clientWidth, H = 300, padL = 34, padR = 10, padT = 12, padB = 22;
+  }
+  sizeG();
   const xOf = (ms) => padL + (ms / durMs) * (W - padL - padR);
   const yOf = (alt) => padT + (1 - (alt + 10) / 100) * (H - padT - padB);
 
@@ -2284,7 +2772,7 @@ function openDetail(id) {
       const usable = bestStart >= 0 && best > 1
         ? ` Usable interval ${fmtClock(new Date(tStart.getTime() + (bestStart / steps) * durMs))} to ${fmtClock(new Date(tStart.getTime() + ((bestStart + best) / steps) * durMs))}.`
         : '';
-      summary.textContent = `${name} altitude chart. Maximum altitude ${dayInfo.maxAlt.toFixed(1)} degrees at ${fmtClock(dayInfo.transit)}; ${reason}.${usable}`;
+      summary.textContent = `${name} altitude chart. Maximum altitude ${dayInfo.maxAlt.toFixed(1)} degrees at ${fmtClock(dayInfo.transit)}; ${reason}. Selected time ${fmtClock(S.skyTime)}, altitude ${samples[Math.max(0, Math.min(steps, Math.round(((S.skyTime.getTime() - tStart.getTime()) / durMs) * steps)))].alt.toFixed(1)} degrees.${usable}`;
     }
     gCtx.clearRect(0, 0, W, H);
     // twilight bands
@@ -2405,6 +2893,14 @@ function openDetail(id) {
       gCtx.strokeStyle = STATE_COLORS[s.state] || C.good;
       gCtx.beginPath(); gCtx.moveTo(x1, y1); gCtx.lineTo(x2, y2); gCtx.stroke();
     }
+    const selectedElapsed = Math.max(0, Math.min(durMs, S.skyTime.getTime() - tStart.getTime()));
+    const selectedIndex = Math.max(0, Math.min(steps, Math.round((selectedElapsed / durMs) * steps)));
+    const selectedSample = samples[selectedIndex];
+    const selectedX = xOf(selectedElapsed), selectedY = yOf(selectedSample.alt);
+    gCtx.strokeStyle = C.targetSelected; gCtx.lineWidth = 1.5; gCtx.setLineDash([3, 3]);
+    gCtx.beginPath(); gCtx.moveTo(selectedX, padT); gCtx.lineTo(selectedX, H - padB); gCtx.stroke();
+    gCtx.setLineDash([]); gCtx.fillStyle = C.targetSelected; gCtx.beginPath();
+    gCtx.arc(selectedX, selectedY, 4, 0, Math.PI * 2); gCtx.fill();
     // hover crosshair
     if (hoverMs != null) {
       const ms = Math.max(0, Math.min(durMs, hoverMs));
@@ -2426,6 +2922,11 @@ function openDetail(id) {
   }
 
   drawGraph();
+  detailGraphRedraw = () => {
+    if (generation !== detailGeneration || S.detailId !== id || modal.hidden) return;
+    sizeG();
+    drawGraph();
+  };
   g.addEventListener('mousemove', (ev) => {
     const r = g.getBoundingClientRect();
     const plotW = W - padL - padR;
@@ -2435,17 +2936,39 @@ function openDetail(id) {
   });
   g.addEventListener('mouseleave', () => { tip.hidden = true; drawGraph(); });
   if (S.detailResize) window.removeEventListener('resize', S.detailResize);
-  S.detailResize = () => { if (!modal.hidden) { sizeG(); drawGraph(); } };
+  S.detailResize = () => {
+    if (generation !== detailGeneration || S.detailId !== id || modal.hidden) return;
+    syncDetailDock(); sizeG(); drawGraph();
+  };
   window.addEventListener('resize', S.detailResize);
 }
 
 function closeDetail() {
+  detailGeneration++;
+  stopDetailDockScrollTracking();
   const modal = $('#modal');
   modal.hidden = true;
   modal.innerHTML = '';
+  modal.classList.remove('detail-docked');
+  modal.onclick = null;
+  modal.onkeydown = null;
+  document.body.classList.remove('detail-open');
+  document.documentElement.style.removeProperty('--detail-top');
+  S.detailId = null;
+  document.querySelectorAll("#tonight-rank-table tr, .cat-results table tr")
+    .forEach((row) => row.classList.remove("selected"));
   if (currentObjUrl) { URL.revokeObjectURL(currentObjUrl); currentObjUrl = null; }
   tip.hidden = true;
   if (S.detailResize) window.removeEventListener('resize', S.detailResize);
+  detailGraphRedraw = null;
+  const target = detailReturnFocus;
+  detailReturnFocus = null;
+  const focusableAndVisible = target && target.isConnected &&
+    !target.closest('[hidden], [inert]') && target.getClientRects().length > 0 &&
+    !target.matches(':disabled') &&
+    target.matches('button, a[href], input:not([type="hidden"]), select, textarea, [tabindex]:not([tabindex="-1"])');
+  if (focusableAndVisible) target.focus({ preventScroll: true });
+  else document.getElementById(`tab-${S.view}`)?.focus({ preventScroll: true });
 }
 
 /* ---- detail extras (custom-target delete) ---- */
@@ -2490,7 +3013,7 @@ const TZ_DATALIST = `<datalist id="tz-list">${TZ_LIST.map((t) => `<option value=
 
 function applyEdge() {
   const e = Hor.getPrefs().edge;
-  document.documentElement.style.setProperty('--edge', (Number.isFinite(e) ? e : 14) + 'px');
+  document.documentElement.style.setProperty('--edge', (Number.isFinite(e) ? e : 16) + 'px');
 }
 
 function refreshView() {
@@ -2532,6 +3055,9 @@ function syncCustomTargets(stored) {
     }
   }
   for (const t of (stored || [])) upsertTarget(t);
+  const cleanedSaved = savedTargetIds();
+  if (JSON.stringify(cleanedSaved) !== JSON.stringify(Hor.getPrefs().savedTargetIds || []))
+    Hor.setPrefs({ savedTargetIds: cleanedSaved });
 }
 
 const objName = (o) => o.primary_name || o.id;
@@ -3109,6 +3635,7 @@ function welcomeFlow() {
 /* ------------------------------- boot ------------------------------ */
 
 async function boot() {
+  WS.currentTheme(); // migrate any retired local theme value to Workbench
   // visible error reporting — never fail silently again
   const errBox = document.createElement('div');
   errBox.id = 'err-banner';
@@ -3125,9 +3652,9 @@ async function boot() {
   window.addEventListener('unhandledrejection', (ev) => showErr(ev.reason));
   const tipEl = $('#tooltip');
   S.detailResize = null;
-  document.addEventListener('theme:changed', () => {
-    if (S.view === 'sky') renderSky();
-    if (S.detailResize) S.detailResize();
+  window.addEventListener('sky:time', () => {
+    updateDetailSelectedTime();
+    detailGraphRedraw?.();
   });
   try {
     // WE-06: probe storage BEFORE anything renders. If it is blocked, say so and
@@ -3395,8 +3922,8 @@ async function boot() {
   const refreshMenuUI = () => {
     const prefs = Hor.getPrefs();
     const edge = $('#edgeSpace'), edgeV = $('#edgeSpaceVal');
-    if (edge) edge.value = String(Number.isFinite(prefs.edge) ? prefs.edge : 14);
-    if (edgeV) edgeV.innerHTML = `${Number.isFinite(prefs.edge) ? prefs.edge : 14}&nbsp;px`;
+    if (edge) edge.value = String(Number.isFinite(prefs.edge) ? prefs.edge : 16);
+    if (edgeV) edgeV.innerHTML = `${Number.isFinite(prefs.edge) ? prefs.edge : 16}&nbsp;px`;
     const adv = $('#advMode'); if (adv) adv.checked = !!prefs.advMode;
     const vfd = $('#viewFullDay'); if (vfd) vfd.checked = !!prefs.viewFullDay;
     const tzSec = $('#tzSection'); if (tzSec) tzSec.classList.toggle('hidden', !prefs.advMode);
@@ -3411,17 +3938,9 @@ async function boot() {
     const su = $('#sizeUnit'); if (su) su.value = prefs.sizeUnit || 'arcmin';
     const rs = $('#rigSelect'); if (rs) rs.value = prefs.activeRigId || '';
   };
-  reflectTheme(); // sync picker from whatever the head script applied (never undo it)
-  $('#themeRow').addEventListener('click', (ev) => {
-    const btn = ev.target.closest('.theme-btn');
-    if (!btn) return;
-    applyTheme(btn.dataset.theme || null);
-    Hor.setPrefs({ theme: btn.dataset.theme || '' });
-    initDragWindows(); // re-bind after layout change
-  });
   $('#edgeSpace').addEventListener('input', (ev) => {
     const v = Hor.num(ev.target.value);
-    Hor.setPrefs({ edge: Number.isFinite(v) ? v : 14 });
+    Hor.setPrefs({ edge: Number.isFinite(v) ? v : 16 });
     applyEdge();
     refreshMenuUI();
   });
@@ -3478,13 +3997,7 @@ async function boot() {
     announcePlannerChange('rig', { cause: 'active-rig', rigId: ev.target.value || '' });
     refreshView();
   });
-  $('#skyBrightnessProvider').addEventListener('change', (ev) => {
-    const provider = ev.target.value || 'eog';
-    Hor.setPrefs({ skyBrightnessProvider: provider });
-    refreshSkyBrightnessForSite(activeSite() || S.site);
-  });
   refreshMenuUI();
-  refreshSkyBrightnessProviderMenu();
 
   // rigs for the framing selector — presets are a PICKER, never defaults.
   // 0.6.1/0.6.2 stored them in this browser; drop those leftovers once (an
@@ -3497,8 +4010,6 @@ async function boot() {
     Hor.setPrefs(patch);
   }
   await reloadRigs();
-
-  initDragWindows();
 
   // click the brand logo to return to the main page (the site root) - it
   // carries role="button" tabindex="0", so Enter/Space must work too
@@ -3522,7 +4033,7 @@ async function boot() {
     const modal = $('#modal');
     if (modal && !modal.hidden) return;
     if (ev.key === 'n' || ev.key === 'N') {
-      const order = ['tonight', 'sky', 'catalog', 'horizon'];
+      const order = ['tonight', 'catalog', 'sky', 'horizon'];
       const next = order[(order.indexOf(S.view) + 1) % order.length];
       location.hash = '#' + next;
       return;
@@ -3545,6 +4056,10 @@ async function boot() {
   // during a drag would stutter the slider.
   let tonightScrubTimer = null;
   window.addEventListener('sky:time', (ev) => {
+    if (S.view === 'catalog') {
+      if (ev.detail?.repaint !== false) renderCatalog();
+      return;
+    }
     if (S.view !== 'tonight') return;
     // BUG-005: the selection just moved, so the on-screen cards no longer
     // describe it - clear the render marker NOW and let the paint below set it
@@ -3560,11 +4075,12 @@ async function boot() {
     }, 120);
   });
 
-  // a11y: keep Tab focus inside the open dialog
+  // a11y: only actual modal dialogs confine Tab. Docked inspectors are
+  // complementary regions, so focus must continue into the planner behind them.
   document.addEventListener('keydown', (ev) => {
     if (ev.key !== 'Tab') return;
-    const dialog = document.querySelector('#modal .modal:not([hidden])') ||
-                   document.querySelector('[role="dialog"]:not([hidden])');
+    const dialog = [...document.querySelectorAll('[role="dialog"][aria-modal="true"]')]
+      .find((el) => !el.closest('[hidden], [inert]') && el.getClientRects().length > 0);
     if (!dialog) return;
     const els = [...dialog.querySelectorAll('a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])')]
       // the Setup dialog hides whole tab panes and forms: only rendered

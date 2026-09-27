@@ -233,7 +233,7 @@ export function bindSkyMap() {
   cv.addEventListener("click", () => {
     if (!SM_HOVER) return;
     const o = SM_HOVER.obj;
-    if (o.object_id && S.meta && S.meta[o.object_id]) openDetail(o.object_id);
+    if (o.object_id && S.meta && S.meta[o.object_id]) openDetail(o.object_id, { opener: cv });
   });
   for (const id of ["smLabels", "smSize", "smCons"]) {
     $(`#${id}`).addEventListener("change", renderSkyMap);

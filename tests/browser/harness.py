@@ -381,7 +381,9 @@ def _attach(ctx: Ctx):
         if msg.type == "error":
             ctx.console_errors.append(msg.text[:300])
     def on_pageerror(err):
-        ctx.page_errors.append(str(err)[:300])
+        # Include a short stack so a page error reports its actual caller
+        # instead of only the often-ambiguous property access message.
+        ctx.page_errors.append(str(getattr(err, "stack", None) or err)[:900])
     def on_response(resp):
         try:
             if resp.status >= 400 and resp.url.startswith(ctx.origin):
@@ -548,8 +550,8 @@ def _csp_problems(policy: str | None, document: bool = False,
         bad.append("no script-src directive (default-src alone is weaker than "
                    "the desktop shell, which pins script-src)")
     elif "unsafe-inline" in low.split("script-src", 1)[1].split(";", 1)[0]:
-        bad.append("script-src allows 'unsafe-inline' (the web shell has NO "
-                   "inline handler; only the theme bootstrap needs a hash)")
+        bad.append("script-src allows 'unsafe-inline' (the one-theme shell has "
+                   "no inline script)")
     elif "unsafe-eval" in low:
         bad.append("script-src allows 'unsafe-eval'")
     if not document:
@@ -629,32 +631,17 @@ def _prod_smoke(browser, prod_url: str, artifacts: Path, verbose: bool) -> Resul
         c.expect(deployed, "the deployed version.json must be readable")
         c.expect(deployed in shown,
                  f"page shows {shown!r} but version.json says {deployed!r}")
-        # BUG-003 follow-up: a policy can be PRESENT and still break the page, and
-        # `style-src 'self'` does exactly that with NO console message - measured
-        # 2026-09-17, the theme swatches and sliders silently lost their inline
-        # styling while the app booted normally.
-        #
-        # The signal is "does a computed background exist at all", NOT a colour
-        # literal: the swatch's colour comes from its OWN inline `style=` attribute
-        # (`#8f7bff` for Glass, `#4f9cff` for Classic), so pinning a colour here
-        # would couple the gate to the current theme palette. When the attribute is
-        # dropped the element falls back to `background: none` on the class rule,
-        # i.e. `rgba(0, 0, 0, 0)` - which is what the negative control measured.
+        # A policy can be present while the page stylesheet fails to load. Check
+        # the fixed Workbench document identity and a real menu control's layout.
         style_ok = page.evaluate(
             """() => {
-                 const sw = document.querySelector('#themeDome .sw');
                  const rng = document.querySelector('#edgeSpace');
-                 const bg = sw ? getComputedStyle(sw).backgroundColor : null;
-                 const m = bg && bg.match(/rgba?\\((\\d+),\\s*(\\d+),\\s*(\\d+)(?:,\\s*([\\d.]+))?/);
-                 const opaque = !!m && (m[4] === undefined || Number(m[4]) > 0.05);
-                 return { swatch: bg, styled: opaque,
+                 return { theme: document.documentElement.dataset.theme,
                           rangeWidth: rng ? getComputedStyle(rng).width : null };
                }""")
-        c.expect(style_ok.get("styled"),
-                 f"the inline-styled theme swatch has no computed background "
-                 f"({style_ok}) - the policy is blocking inline STYLE (style-src "
-                 f"needs 'unsafe-inline'; the browser reports nothing when it "
-                 f"happens)")
+        c.expect(style_ok.get("theme") == "workbench" and style_ok.get("rangeWidth"),
+                 f"the Workbench stylesheet or menu controls are unavailable "
+                 f"under the document policy ({style_ok})")
         c.assert_clean()
     except Exception as exc:
         ok, err = False, f"{type(exc).__name__}: {exc}"

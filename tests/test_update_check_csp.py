@@ -153,17 +153,9 @@ def test_the_desktop_page_loads_no_remote_script(tmp_path):
     assert "/api/update-check" in body
 
 
-def test_the_desktop_csp_hashes_the_one_inline_bootstrap():
-    """BUG-002: `script-src` must NOT carry `'unsafe-inline'`.
-
-    It used to, for static/index.html's one inline theme bootstrap - but that
-    directive also permits inline EVENT HANDLERS, so an injected attribute
-    (imported custom ids reached `data-delcust="${o.id}"`, imported `imagetyp`
-    reached a `title`) executed as code. The bootstrap is allowlisted by its
-    SHA-256 now; this test recomputes the hash from the FILE, so a one-character
-    edit to that script fails here instead of silently losing the saved theme."""
-    import base64
-    import hashlib
+def test_the_desktop_shell_has_no_inline_scripts():
+    """The fixed Workbench page has no inline theme bootstrap and stays CSP
+    restricted to same-origin scripts."""
     import re
 
     from app.server import CSP_HEADER
@@ -175,14 +167,7 @@ def test_the_desktop_csp_hashes_the_one_inline_bootstrap():
     html = (ROOT / "static" / "index.html").read_text(encoding="utf-8")
     bodies = re.findall(r"<script(?![^>]*\bsrc=)[^>]*>(.*?)</script>", html,
                         re.S | re.I)
-    assert len(bodies) == 1, (
-        "index.html is expected to carry exactly one inline script (the theme "
-        "bootstrap); if that changed, revisit the script-src allowlist")
-    digest = hashlib.sha256(bodies[0].encode("utf-8")).digest()
-    wanted = "sha256-" + base64.b64encode(digest).decode("ascii")
-    assert wanted in CSP_HEADER, (
-        f"the inline theme bootstrap hash is stale: {wanted} is not in the CSP "
-        f"({CSP_HEADER})")
+    assert bodies == []
     # the inline handlers this exemption used to permit are gone from the shell.
     # The pattern requires the quote, so the explanatory comments that NAME the
     # removed attribute are not findings.

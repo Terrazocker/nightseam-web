@@ -1,13 +1,13 @@
 /* Targets tab: filters, sorting, paginated table rendering */
 
 import { $, $$, esc, api, fmtSize, fmtHM, TYPE_LABEL, TYPE_COLOR, constName } from "./util.js";
-import { S, IMG_VER } from "./state.js";
-import { statusOf, windowText, desigLine,
+import { S } from "./state.js";
+import { statusOf, compactWindowText, desigLine,
          objScore, filterAdvice, frameCoverage, coverageCell,
          popularityFactor } from "./derive.js";
 import { assignPopularityTiers, TIER_ORDER, dateFromJD } from "./core.js";
 
-const PAGE_SIZE = 250;
+const PAGE_SIZE = 20;
 let _page = 0;
 
 /* Popularity TIERS (A-F) - the same method as the web: the ORDER is shown as a
@@ -78,8 +78,25 @@ export function bindFilters() {
   });
   $("#fUnblocked").addEventListener("change", () => { resetPage(); renderTargets(); });
   $("#fFav").addEventListener("change", () => { resetPage(); renderTargets(); });
+  $("#fRig").addEventListener("change", () => { resetPage(); renderTargets(); });
+  $$("input[name='fVisibility']").forEach((el) => el.addEventListener("change", () => { resetPage(); renderTargets(); }));
   $("#fConst").addEventListener("change", () => { resetPage(); renderTargets(); });
   $("#fSort").addEventListener("change", () => { resetPage(); renderTargets(); });
+  $("#btnFilterClear").addEventListener("click", () => {
+    $("#fSearch").value = "";
+    $("#fConst").value = "";
+    $$("#fType option").forEach((option) => { option.selected = false; });
+    const all = $("input[name='fVisibility'][value='all']");
+    if (all) all.checked = true;
+    $("#fMag").value = "11"; $("#magVal").textContent = "11.0";
+    $("#fMinVis").value = "0"; $("#fMinVisVal").textContent = "off";
+    $("#fUnblocked").checked = false; $("#fFav").checked = false; $("#fRig").checked = false;
+    $("#fSort").value = "tier";
+    if (S.cfg) S.cfg.min_vis = 0;
+    api("/api/settings", { method: "POST", headers: { "Content-Type": "application/json" }, silent: true,
+      body: JSON.stringify({ min_vis: 0 }) }).catch(() => {});
+    resetPage(); renderTargets();
+  });
   $("#btnCatalogProvenance").addEventListener("click", downloadCatalogProvenance);
   $("#pagerPrev").addEventListener("click", () => {
     if (_page > 0) { _page--; renderTargets(true); }
@@ -145,13 +162,23 @@ function downloadCatalogProvenance() {
 export function passesFilters(m, o) {
   const q = $("#fSearch").value.trim().toLowerCase();
   if (q && !(m.search || "").toLowerCase().includes(q)) return false;
-  const ty = $("#fType").value;
-  if (ty && m.otype !== ty) return false;
+  const types = [...$("#fType").selectedOptions].map((option) => option.value);
+  if (types.length && !types.includes(m.otype)) return false;
   const magMax = +$("#fMag").value;
   if (m.vmag != null && m.vmag > magMax + 0.001) return false;
   if ($("#fUnblocked").checked && !(o.best && o.best[1]-o.best[0] >= 3)) return false;
   if ($("#fFav") && $("#fFav").checked &&
       !(S.cfg.favorites || []).includes(m.id)) return false;
+  const visibility = document.querySelector("input[name='fVisibility']:checked")?.value || "all";
+  const visibleNow = statusOf(o, S.tIdx).code === "vis";
+  const risesLater = !visibleNow && !!(o.best && o.best[0] > S.tIdx);
+  if (visibility === "now" && !visibleNow) return false;
+  if (visibility === "later" && !risesLater) return false;
+  if (visibility === "none" && (visibleNow || risesLater)) return false;
+  if ($("#fRig")?.checked) {
+    const coverage = frameCoverage(m);
+    if (!coverage || !coverage.fits) return false;
+  }
   const fc = $("#fConst").value;
   if (fc && m.constellation !== fc) return false;
   return true;
@@ -190,30 +217,6 @@ function sortObjects(list) {
   return list.sort(cmp);
 }
 
-/* A failed thumbnail must not draw the browser's broken-image glyph.
- *
- * This used to be an inline `onerror="this.src=..."` ATTRIBUTE on every <img>,
- * which BUG-002 had to get rid of: it is an inline event handler, so the desktop
- * CSP needed `script-src 'unsafe-inline'` - and that, in turn, is what made an
- * injected attribute (imported custom ids used to reach `data-delcust`) actually
- * EXECUTE. Bound as a listener now, once per element, and the CSP no longer has
- * to allow inline script. */
-const BROKEN_THUMB =
-  "data:image/gif;base64,R0lGODlhAQABAIAAAP///wAAACH5BAEAAAAALAAAAAABAAEAAAICRAEAOw==";
-function thumbFallbacks() {
-  $$("#targetRows .thumb").forEach(img => {
-    if (img.dataset.fbBound) return;
-    img.dataset.fbBound = "1";
-    img.addEventListener("error", () => { img.src = BROKEN_THUMB; });
-  });
-}
-
-function thumbHTML(id) {
-  // `esc` on the id: it is a catalog identifier interpolated into BOTH an
-  // attribute and a URL (an imported custom id used to be able to carry a quote)
-  return `<img class="thumb" loading="lazy" src="/api/object/${esc(id)}/image?thumb=1&v=${IMG_VER}">`;
-}
-
 export function renderTargets(fromPager = false) {
   if (!S.night) return;
   let rows;
@@ -241,6 +244,12 @@ export function renderTargets(fromPager = false) {
     (rows.length < S.catalog.length ? " \u00B7 filtered" : "") +
     (S.hiddenVis ? ` \u00B7 ${S.hiddenVis} below ${minVisPct()}%` : "");
 
+  const activeSite = (S.cfg?.sites || []).find(
+    (site) => String(site.id) === String(S.activeSiteId)) || (S.cfg?.sites || [])[0];
+  const context = $("#catalogContext");
+  if (context) context.textContent =
+    `${activeSite?.name || "Active site"} · ${S.night.date_local || "selected date"} · Min altitude ${S.minAlt.toFixed(0)}°`;
+
   const pages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
   if (_page >= pages) _page = pages - 1;
   const pageRows = rows.slice(_page * PAGE_SIZE, (_page + 1) * PAGE_SIZE);
@@ -249,28 +258,26 @@ export function renderTargets(fromPager = false) {
   const unit = (S.cfg && S.cfg.size_unit) || "arcmin";
   const favs = new Set(S.cfg.favorites || []);
 
-  $("#targetRows").innerHTML = pageRows.map(({o,m}) => {
+  $("#targetRows").innerHTML = pageRows.map(({o,m}, index) => {
     const st = statusOf(o, S.tIdx);
     const adv = filterAdvice(m);
-    const cov = frameCoverage(m);
     const fav = favs.has(m.id);
-    const culmination = Number.isFinite(o.transit_jd)
-      ? fmtHM(dateFromJD(o.transit_jd).toISOString()) : "--:--";
-    return `<tr data-id="${esc(m.id)}" tabindex="0" role="button" aria-label="Open details for ${esc(m.primary_name)}">
-      <td>${thumbHTML(m.id)}</td>
-      <td class="objcell"><button class="starbtn${fav?" on":""}" data-fav="${esc(m.id)}" title="mark for session">&#9733;</button><b>${esc(m.primary_name)}</b><span>${esc(desigLine(m))}${m.constellation?" \u00B7 "+esc(constName(m.constellation)):""}</span></td>
-      <td class="tiercell"><span class="tierbadge t-${tierOf(m).toLowerCase()}" title="${esc(tierTitle(m))}">${tierOf(m)}</span></td>
-      <td><span class="typebadge" style="color:${TYPE_COLOR[m.otype] || "#9ca5b5"};border-color:${(TYPE_COLOR[m.otype] || "#9ca5b5")}55">${esc(TYPE_LABEL[m.otype]||m.otype)}</span>${adv ? " " + adv.pill : ""}</td>
-      <td>${m.vmag!=null?m.vmag.toFixed(1):"&mdash;"}</td>
-      <td>${fmtSize(m.size_am, unit)}</td>
-      <td class="col-opt">${coverageCell(cov)}</td>
-      <td title="culminates at ${culmination}">${o.max_alt.toFixed(0)}&deg;</td>
-        <td title="share of the night window above ${S.minAlt}\u00B0 and unobstructed">${o.obs_pct!=null?o.obs_pct+"<small>%</small>":"&mdash;"}</td>
-      <td>${windowText(o)}</td>
-      <td><span class="statuspill ${stClass[st.code]}">${st.text}</span></td>
+    const alt = Number(o.alt?.[S.tIdx]);
+    const designation = desigLine(m) || m.id;
+    const statusText = st.code === "vis" ? "Visible now"
+      : o.best && o.best[0] > S.tIdx ? "Rises later" : "Not visible";
+    return `<tr class="${S.currentId === m.id ? "selected" : ""}" data-id="${esc(m.id)}" tabindex="0" role="button" aria-label="Open details for ${esc(m.primary_name)}">
+      <td class="mono rankcell">${String(_page * PAGE_SIZE + index + 1).padStart(2, "0")}</td>
+      <td class="designation-cell mono" title="${esc(designation)}"><button class="starbtn${fav?" on":""}" data-fav="${esc(m.id)}" title="mark for session" aria-label="Toggle ${esc(m.primary_name)} session target">&#9733;</button><span>${esc(designation)}</span></td>
+      <td class="common-cell${adv ? " has-advice" : ""}" title="${esc(m.primary_name)}"><span class="common-name">${esc(m.primary_name)}</span>${adv ? " " + adv.pill : ""}</td>
+      <td class="type-cell" title="${esc(TYPE_LABEL[m.otype]||m.otype)}"><span class="typebadge" style="color:${TYPE_COLOR[m.otype] || "#9ca5b5"};border-color:${(TYPE_COLOR[m.otype] || "#9ca5b5")}55">${esc(TYPE_LABEL[m.otype]||m.otype)}</span></td>
+      <td class="mono num">${m.vmag!=null?m.vmag.toFixed(1):"—"}</td>
+      <td class="mono num">${Number.isFinite(alt)?`${alt.toFixed(0)}°`:"—"}</td>
+      <td class="mono num" title="share of the dark window above ${S.minAlt}° and unobstructed">${o.obs_pct!=null?`${Math.round(o.obs_pct)}%`:"—"}</td>
+      <td class="mono" title="${esc(compactWindowText(o))}">${esc(compactWindowText(o))}</td>
+      <td title="${esc(st.text)}"><span class="statuspill ${stClass[st.code]}">${statusText}</span></td>
     </tr>`;
   }).join("");
-  thumbFallbacks();
 
   const pager = $("#targetPager");
   pager.classList.toggle("hidden", pages <= 1);
