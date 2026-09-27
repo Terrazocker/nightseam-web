@@ -84,6 +84,49 @@ def test_resolve_unmatched_returns_none():
     assert imglib.resolve_object([], "M31") is None
 
 
+def _resolver_row(oid, name, ra_hours=1.0, dec_deg=2.0, search=""):
+    return {
+        "id": oid, "primary_name": name, "messier": None, "ngcic": None,
+        "other": None, "otype": "galaxy", "size_am": "", "ra_hours": ra_hours,
+        "dec_deg": dec_deg, "search": search,
+    }
+
+
+def test_catalog_resolver_normalizes_once_and_preserves_match_order(monkeypatch):
+    rows = [
+        _resolver_row("same", "Atlas Alpha", search="Shared Alias"),
+        _resolver_row("second", "Atlas Bravo", search="Shared Alias"),
+        # The old resolver found this name token, then returned the first row
+        # for the duplicate ID by linearly scanning from the beginning.
+        _resolver_row("same", "Later Alias"),
+    ]
+    calls = 0
+    original = imglib.normalize_catalog
+
+    def counted_normalize(catalog):
+        nonlocal calls
+        calls += 1
+        return original(catalog)
+
+    monkeypatch.setattr(imglib, "normalize_catalog", counted_normalize)
+    resolver = imglib.CatalogResolver(rows)
+    assert calls == 1
+
+    # Equal-length prefix hits retain insertion-order tie resolution.
+    assert resolver.resolve("Atlas")["primary_name"] == "Atlas Alpha"
+    # A duplicate exact name keeps the first catalog row.
+    assert resolver.resolve("Shared Alias")["id"] == "same"
+    # Duplicate IDs resolve to their first row, as _by_id did previously.
+    assert resolver.resolve("Later Alias")["primary_name"] == "Atlas Alpha"
+
+
+def test_catalog_resolver_uses_coordinates_then_preserves_unresolved_result():
+    resolver = imglib.CatalogResolver([_resolver_row("near", "Nearby Object")])
+    assert resolver.resolve("unmatched_capture", 1.0, 2.0)["id"] == "near"
+    assert resolver.resolve("unmatched_capture", 15.0, -20.0) is None
+    assert imglib.CatalogResolver([]).resolve("M31") is None
+
+
 # ---------------------------------------------------------------- sessions
 
 def test_sessions_merge_across_midnight():

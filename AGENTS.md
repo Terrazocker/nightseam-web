@@ -11,14 +11,19 @@
 > Legacy `dome`, `classic`, empty, and unknown values normalize to Workbench;
 > no alternate theme is shipped.
 
-NightSeam: a desktop DSO-planning app - a local FastAPI server plus a vanilla-JS
-UI, no JS bundler/npm. ALL astronomy and planning math lives in `core/` (ES
-modules, shared and baked into BOTH shells); `app/` is storage/platform/IO, the
-old pure-Python Meeus modules were deleted in 0.6.20 (Phase C). Two modes: Night
-Planner and Image Catalog (FITS ingest + library). It reaches the network only
-for optional Wikipedia images, the Open-Meteo weather panel and the
-once-per-start update check - the catalog, the popularity snapshot and every
-calculation stay local. `README.md` has the feature list.
+NightSeam has a packaged local FITS Image Catalog and a full Night Planner in
+the web app and source-run desktop shell. The packaged executable opens its
+catalog-only `static/catalog.html` shell; `python main.py` keeps the full
+desktop planner shell (`static/index.html`) available. Both desktop shells use
+the local FastAPI server and vanilla-JS UI; there is no JS bundler/npm. ALL
+astronomy and planning math lives in `core/` (ES modules, shared by the source
+desktop and web planners); `app/` is storage/platform/IO, the old pure-Python Meeus
+modules were deleted in 0.6.20 (Phase C). The full source shell has Night
+Planner and Image Catalog modes (FITS ingest + library); the packaged app keeps
+Library, Import Exposures and the fixed archive Sky Map. Optional network use
+for Wikipedia images, Open-Meteo weather and the once-per-start update check
+belongs to the full planner shell; catalog storage and every calculation stay
+local. `README.md` has the feature list.
 
 > **Docs map.** This file is canonical for invariants, commands, release and
 > deploy. `CATALOG.md` = the data pipeline (sources -> CSV -> DB -> web payload
@@ -439,7 +444,8 @@ calculation stay local. `README.md` has the feature list.
 
 ## Commands
 
-- Run from source: `python main.py` (default port 8407; `--console` for logs,
+- Run from source: `python main.py` (full planner shell; default port 8407;
+  `--catalog-only` previews the packaged Image Catalog shell; `--console` for logs,
   `--no-browser` headless exits on the single-instance handoff, `--port N`,
   `--version` prints the version, `--browser` tab instead of app window,
   `--idle-exit-hours 0` to never idle-exit - the default 12 h kills a server an
@@ -450,6 +456,8 @@ calculation stay local. `README.md` has the feature list.
     confirm the listener's process NAME is `python.exe`
     (`Get-NetTCPConnection -LocalPort 8407` -> OwningProcess ->
     `Get-CimInstance Win32_Process`).
+  - The packaged exe defaults to the catalog-only shell; `--planner` explicitly
+    selects the legacy planner shell for maintenance/browser coverage.
   - If 8407 is briefly taken at boot, `free_port()` silently picks a RANDOM port
     (written to `instance.json`).
 - Tests: `python -m pytest tests/`; use `python -m pytest tests/ --collect-only -q`
@@ -788,7 +796,8 @@ calculation stay local. `README.md` has the feature list.
   (`calc(100vw - 2*var(--edge-space))`).
 - Theme: `themes.css` carries Workbench tokens and component overrides for
   `style.css`; both shells set `<html data-theme="workbench">`. Old values are
-  normalized at the settings and backup boundaries. Use one shared HTML skeleton.
+  normalized at the settings and backup boundaries. The planner shells share
+  one UI contract; the packaged catalog has its own archive-only shell.
   Keep z-index below 100 (toasts 300, popover 60, modal 40, #versionTag 5);
   never override `.hidden` or set `display` on the app-toggled
   `#tabs-cat`/`#plannerControls`/`#tabs`/`#nightInfo`.
@@ -800,8 +809,9 @@ calculation stay local. `README.md` has the feature list.
   computed AT the selected date (`tzOffAt()`, DST-aware) and renders via
   `fmtT()`/`zoneHour()` with the effective zone (the `timezone` setting, or machine
   local). Custom targets are deleted only via the `u_` id prefix.
-- A background `img-prefetch` thread starts on every app start and hits the
-  network; the server is otherwise local-only.
+- The full planner's default `create_app()` startup launches the optional
+  `img-prefetch` thread. Packaged catalog-only startup passes `prefetch=False`
+  and does not start that network worker; the server is otherwise local-only.
 - Never commit `data/` (db, panos, imgcache) or `logs/`; only
   `data/panos/.gitkeep` is tracked. `app/_version_baked.py`, `web/version.json`
   and `.pytest-tmp/` are gitignored.

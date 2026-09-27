@@ -962,6 +962,59 @@ html[data-theme="workbench"] #detailModal.detail-docked .chart-legend { grid-tem
 .library-all-objects > summary { padding: 9px 11px; cursor: pointer; color: var(--text); font-size: 12px; font-weight: 650; }
 .library-all-objects[open] > .skytoolbar, .library-all-objects[open] > .tablewrap { margin: 0 9px 9px; }
 
+/* The packaged executable's catalog shell has no planner toolbar or primary
+   tab row; keep archive actions and import progress in its compact header. */
+body.catalog-only #topbar {
+  display: flex;
+  justify-content: space-between;
+  min-width: 0;
+}
+body.catalog-only .catalog-product-label {
+  margin-left: 4px;
+  padding-left: 10px;
+  border-left: 1px solid var(--border);
+  color: var(--dim);
+  font-size: 11px;
+  font-weight: 500;
+}
+body.catalog-only .topbar-right {
+  min-width: 0;
+  margin-left: auto;
+}
+body.catalog-only #topbar > .busy-slot { display: inline-flex; }
+body.catalog-only #archiveInfo { display: inline-flex !important; }
+body.catalog-only .catalog-launch-notice {
+  padding: 9px 14px;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--text);
+  font-size: 12px;
+}
+body.catalog-only .image-catalog-pane {
+  min-height: calc(100vh - 48px);
+  padding: 10px var(--edge-space, 14px) 20px;
+}
+body.catalog-only .chart-layout { align-items: start; }
+body.catalog-only #skymapSelection {
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid var(--border);
+  background: var(--panel);
+}
+body.catalog-only #skymapSelection h2 { margin: 0 0 8px; font-size: 13px; }
+body.catalog-only .library-map-name { margin: 0; color: var(--text); font-size: 15px; font-weight: 650; }
+body.catalog-only .library-map-facts { display: grid; gap: 4px; margin: 10px 0 0; }
+body.catalog-only .library-map-facts > div { display: flex; justify-content: space-between; gap: 8px; border-bottom: 1px solid var(--border-soft); padding: 4px 0; }
+body.catalog-only .library-map-facts dt { color: var(--dim); }
+body.catalog-only .library-map-facts dd { margin: 0; text-align: right; font: 11px var(--font-mono); }
+
+@media (max-width: 640px) {
+  body.catalog-only #topbar { align-items: flex-start; flex-wrap: wrap; }
+  body.catalog-only .topbar-right { width: 100%; margin-left: 0; }
+  body.catalog-only #archiveInfo { display: none !important; }
+  body.catalog-only .image-catalog-tools { flex-wrap: wrap; }
+}
+
 /* Direction B: Sky View keeps the large polar chart and gives its right rail
    the selected target and current visibility facts; secondary controls stay
    behind a closed tray. */

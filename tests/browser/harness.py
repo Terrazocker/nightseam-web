@@ -5,9 +5,11 @@ browser that cannot launch is a HARD failure, exactly like a missing node in
 `tests/js/*` - never a silent skip):
 
   web      a static HTTP server over `web/`, opened in system Chrome
-  desktop  the PACKED `dist/NightSeam.exe`, copied into a throwaway temp dir
+  desktop  the PACKED `dist/NightSeam.exe` legacy planner shell, copied into a throwaway temp dir
            so its `data/` never touches the user's install, then driven over
-           the local FastAPI server it starts (`--no-browser`)
+           the local FastAPI server it starts (`--no-browser --planner`)
+  catalog  the PACKED exe's standard launch, which must stay in the archive
+           shell and avoid planner startup
 
 Every check gets a fresh, deterministic context: UTC timezone, en-US locale,
 dark scheme, fixed viewport, a pinned fake clock, and empty storage.  Checks
@@ -64,7 +66,7 @@ _TESTS: list[tuple[str, str, object]] = []
 
 def check(name: str, target: str):
     """Register a browser check under `name` for `target` ("web"/"desktop")."""
-    if target not in ("web", "desktop"):
+    if target not in ("web", "desktop", "catalog"):
         raise ValueError(target)
 
     def deco(fn):
@@ -124,9 +126,11 @@ class _QuietHandler(http.server.SimpleHTTPRequestHandler):
 class DesktopServer:
     """The packed exe, isolated in a temp dir (never the user's data)."""
 
-    def __init__(self, exe: Path = DEFAULT_EXE, seed: bool = True):
+    def __init__(self, exe: Path = DEFAULT_EXE, seed: bool = True,
+                 planner: bool = False):
         self.exe = Path(exe)
         self.seed = seed
+        self.planner = planner
         self.tmp: Path | None = None
         self.proc: subprocess.Popen | None = None
         self.port = 0
@@ -139,9 +143,12 @@ class DesktopServer:
         exe = self.tmp / "NightSeam.exe"
         shutil.copy2(self.exe, exe)
         self.port = free_port()
+        args = [str(exe), "--no-browser", "--port", str(self.port),
+                "--idle-exit-hours", "0"]
+        if self.planner:
+            args.append("--planner")
         self.proc = subprocess.Popen(
-            [str(exe), "--no-browser", "--port", str(self.port),
-             "--idle-exit-hours", "0"],
+            args,
             cwd=str(self.tmp), stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL, creationflags=_CREATE_NO_WINDOW)
         self.base = f"http://127.0.0.1:{self.port}/"
@@ -416,21 +423,28 @@ def run(channel: str = "chrome", targets=("web", "desktop"),
         return 0
 
     artifacts.mkdir(parents=True, exist_ok=True)
-    web_srv = desktop_srv = None
+    web_srv = desktop_srv = catalog_srv = None
     bases: dict[str, str] = {}
     try:
         if "web" in targets:
             web_srv = StaticServer(WEB_DIR)
             bases["web"] = web_srv.start()
         if "desktop" in targets:
-            desktop_srv = DesktopServer(exe)
+            # The release suite continues to exercise the full desktop source
+            # shell. Its standard launch is separately checked under `catalog`.
+            desktop_srv = DesktopServer(exe, planner=True)
             bases["desktop"] = desktop_srv.start()
+        if "catalog" in targets:
+            catalog_srv = DesktopServer(exe, seed=False)
+            bases["catalog"] = catalog_srv.start()
     except Exception as exc:
         print(f"check_browser FATAL: could not start a target: {exc}")
         if web_srv:
             web_srv.stop()
         if desktop_srv:
             desktop_srv.stop()
+        if catalog_srv:
+            catalog_srv.stop()
         return 2
 
     results: list[Result] = []
@@ -484,6 +498,8 @@ def run(channel: str = "chrome", targets=("web", "desktop"),
             web_srv.stop()
         if desktop_srv:
             desktop_srv.stop()
+        if catalog_srv:
+            catalog_srv.stop()
 
     failed = [r for r in results if not r.ok]
     print(f"check_browser: {len(results) - len(failed)}/{len(results)} passed")

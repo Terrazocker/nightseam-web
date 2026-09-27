@@ -35,6 +35,11 @@ interface theme tokens.
 
 ## Shared shell
 
+The desktop shell described here is the legacy/source-run planner. The standard
+packaged desktop executable is Image Catalog-only and does not show planner
+chrome or initialize planner views. It retains the nested Library, Import
+Exposures, and fixed archive Sky Map views.
+
 The planner header is about 48px high and the primary tab row about 40px. Content
 begins near y=100 with 14–16px gutters. Keep Site, Rig, date, and minimum
 altitude available in the planner chrome; place setup and advanced options in
@@ -42,9 +47,10 @@ the hamburger menu. Do not let optional controls push the common controls out of
 one row at desktop widths. Use the stored edge-space preference without
 overwriting it on load.
 
-Desktop tabs are Tonight, Catalog, Sky View, Horizon, and Image Catalog. The web
-planner has the first four. Image Catalog keeps Library, Import Exposures, and
-Sky Map as nested views, with Library as the default.
+Legacy/source desktop planner tabs are Tonight, Catalog, Sky View, Horizon, and
+Image Catalog. The web planner has the first four. Image Catalog keeps Library,
+Import Exposures, and Sky Map as nested views, with Library as the default; the
+packaged desktop executable launches directly into those nested views.
 
 ## Screen hierarchy
 

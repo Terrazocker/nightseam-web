@@ -2,13 +2,14 @@
 
     python scripts/check_browser.py [--web|--desktop|--all] [options]
 
-Drives a REAL browser engine (system Chrome by default) through the two
-NightSeam shells:
+Drives a REAL browser engine (system Chrome by default) through the NightSeam
+shells:
 
   web      https://<local static server over web/> in Chrome
   desktop  the PACKED dist/NightSeam.exe, copied into a throwaway temp dir so
            its data/ never touches the user's install, driven over the local
-           API server it starts (--no-browser)
+           API server it starts (--no-browser --planner)
+  catalog  the PACKED exe's standard launch, verified as archive-only
 
 If a browser cannot launch the gate FAILS (exit 2), exactly like a missing
 node in tests/js/* - there are no silent skips.  Everything runs offline and
@@ -36,6 +37,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tests" / "browser"
 import harness  # noqa: E402
 import web_suite  # noqa: E402,F401  (import registers the checks)
 import desktop_suite  # noqa: E402,F401
+import catalog_suite  # noqa: E402,F401  (default packed executable profile)
 
 
 def run_gate(**kwargs) -> int:
@@ -58,7 +60,8 @@ def run_gate(**kwargs) -> int:
 def main() -> int:
     ap = argparse.ArgumentParser(description="NightSeam real-browser gate")
     ap.add_argument("--web", action="store_true", help="only the web shell")
-    ap.add_argument("--desktop", action="store_true", help="only the packed exe")
+    ap.add_argument("--desktop", action="store_true",
+                    help="packed exe legacy planner plus catalog-only launch")
     ap.add_argument("--all", action="store_true",
                     help="both shells (default when neither --web nor --desktop)")
     ap.add_argument("--channel", default="chrome",
@@ -83,9 +86,9 @@ def main() -> int:
     if args.web:
         targets = ("web",)
     elif args.desktop:
-        targets = ("desktop",)
+        targets = ("desktop", "catalog")
     else:
-        targets = ("web", "desktop")
+        targets = ("web", "desktop", "catalog")
 
     return run_gate(
         channel=args.channel, targets=targets, exe=Path(args.exe),

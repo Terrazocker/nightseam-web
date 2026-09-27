@@ -7,13 +7,18 @@ are implemented and validated, with a manual screen-reader audit still open.
 Phases 7 and the elevation contract remain decision-gated. No tag or
 deployment was made.
 
+On 2026-09-27, the packaged local executable was separated into an Image
+Catalog-only launch shell; the source-run desktop and web planner remain
+available. Current implementation details and validation belong to the dated
+working-tree entry in `RELEASES.md` and the scope note in `BUGS.md`.
+
 Workspace reviewed: `<workspace>\Nightseam-programm`.
 
 This plan is deliberately limited to the NightSeam planner, catalog, editor,
 weather, packaging, accessibility, and astronomy roadmap. The separate
 environmental/ranking tool is not part of this plan.
 
-## Current baseline
+## Historical baseline — 2026-09-20
 
 The source was internally healthy enough to iterate, and the implementation
 pass has since added the shared invalidation, restore, editor, weather, and
@@ -22,11 +27,15 @@ target-explainability changes described below:
 - Initial baseline: `python -m pytest tests/ -q --tb=no`: 629 passed, 1 warning;
   `check_core.py`, `check_js.py`, focused regressions, and the web browser gate
   passed before this pass.
-- Current final evidence: the planner-state, visibility-explainability, web
+- Final evidence for that 2026-09-20 pass: the planner-state,
+  visibility-explainability, web
   backup, horizon metadata, JS behavior, UI invariant, core, catalog
   provenance, and JS checks pass; the full suite is 641 passed with one warning,
   the browser matrix is 32/32, and the dirty package/release gate is clean
   apart from its expected dirty/off-tag warning.
+
+These counts are a dated checkpoint, not the current verification record.
+See `RELEASES.md` for the latest working-tree validation.
 
 The immediate blockers and confirmed defects are documented in `BUGS.md`. This
 file defines the implementation order, dependencies, exit criteria, and longer

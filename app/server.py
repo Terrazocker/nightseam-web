@@ -27,7 +27,7 @@ from .database import (Database, PROFILE_BINS, _finalize_num_setting, new_id,
                        confidence_values_ok, normalize_horizon_landmarks,
                        normalize_horizon_provenance, profile_values_ok)
 from .fits import parse_dec_deg, parse_ra_hours
-from .imglib import name_key
+from .imglib import CatalogResolver, name_key
 from .ingest import ingest_one, obj_slug, reindex_library, rename_archive_folder
 from .paths import TOKEN_RE, data_dir, resource_dir, safe_join, safe_token, static_dir
 from .rig_presets import presets_payload as rig_presets_payload
@@ -458,7 +458,8 @@ def start_image_prefetch(db: Database) -> None:
 
 # ------------------------------------------------------------------ factory
 
-def create_app(db: Database, *, prefetch: bool = True) -> FastAPI:
+def create_app(db: Database, *, prefetch: bool = True,
+               catalog_only: bool = False) -> FastAPI:
     app = FastAPI(title="NightSeam", version=APP_VERSION, docs_url=None,
                   redoc_url=None, openapi_url=None)
 
@@ -520,7 +521,7 @@ def create_app(db: Database, *, prefetch: bool = True) -> FastAPI:
         # stale cached index.html next to fresh ES modules breaks the app
         # (missing DOM ids). Never cache the UI shell or its assets - including
         # themes.css, which carries the Workbench component overrides.
-        if request.url.path in ("/", "/index.html", "/style.css",
+        if request.url.path in ("/", "/index.html", "/catalog.html", "/style.css",
                                 "/themes.css", "/favicon.ico") or \
                 request.url.path.startswith("/js/"):
             resp.headers["Cache-Control"] = "no-store"
@@ -725,6 +726,8 @@ def create_app(db: Database, *, prefetch: bool = True) -> FastAPI:
 
     @app.get("/api/object/{oid}/image")
     def api_object_image(oid: str, thumb: bool = False):
+        if catalog_only:
+            raise HTTPException(404, "object images are unavailable in catalog-only mode")
         from .images import fetch_image, fetch_image_cached
         obj = db.get_object(oid)
         if obj is None:
@@ -999,10 +1002,12 @@ def create_app(db: Database, *, prefetch: bool = True) -> FastAPI:
             raise HTTPException(
                 500, f"Cannot create archive folder {archive}: {exc}")
         catalog = db.all_objects(advanced=True)
+        resolver = CatalogResolver(catalog)
         sess = session.strip()
         if not _SESSION_NAME_RE.match(sess):
             sess = None                  # not a sane folder name -> auto session
-        results = [await ingest_one(db, catalog, archive, f, frame, sess)
+        results = [await ingest_one(db, catalog, archive, f, frame, sess,
+                                    resolver=resolver)
                    for f in files]
 
         # record one history entry per (object, session, frame) group
@@ -1177,6 +1182,8 @@ def create_app(db: Database, *, prefetch: bool = True) -> FastAPI:
         unmatched path - and because this is the app's own JSON endpoint, not a
         cacheable document.
         """
+        if catalog_only:
+            raise HTTPException(404, "updates are unavailable in catalog-only mode")
         remote = _fetch_remote_version()
         if remote is None:
             return {"ok": False, "version": None, "update": False,
@@ -1229,11 +1236,26 @@ def create_app(db: Database, *, prefetch: bool = True) -> FastAPI:
 
     @app.get("/")
     def index():
+        # The packaged executable starts at this archive-only shell. Source
+        # runs keep the full planner shell unless main.py selects this mode.
+        filename = "catalog.html" if catalog_only else "index.html"
+        return FileResponse(sd / filename)
+
+    @app.get("/index.html")
+    def planner_index():
+        # The planner shell stays available to source/maintenance launches,
+        # but the packaged catalog-only server must not expose it by URL.
+        if catalog_only:
+            raise HTTPException(404, "planner shell is unavailable in catalog-only mode")
         return FileResponse(sd / "index.html")
+
+    @app.get("/catalog.html")
+    def catalog_index():
+        return FileResponse(sd / "catalog.html")
 
     app.mount("/", StaticFiles(directory=str(sd)), name="static")
 
-    if prefetch:
+    if prefetch and not catalog_only:
         start_image_prefetch(db)
 
     return app

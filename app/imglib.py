@@ -52,14 +52,10 @@ def normalize_catalog(catalog: list[dict]) -> list[dict]:
     return out
 
 
-def build_catalog_index(catalog: list[dict]) -> dict:
-    """Normalized (lowercase, no-space) designation/name -> object id.
-
-    'M101', 'NGC 5457' and 'Pinwheel' all land on 'm101'; 'ngc7000' matches
-    the spaced 'NGC 7000' because spaces are stripped on both sides.
-    """
+def _index_normalized_catalog(rows: list[dict]) -> dict:
+    """Build the name index from rows already returned by normalize_catalog."""
     idx: dict[str, str] = {}
-    for o in normalize_catalog(catalog):
+    for o in rows:
         keys = [o["messier"], o["ngcic"], o["other"],
                 o["primary_name"], o["search"], o["id"]]
         for k in keys:
@@ -72,46 +68,70 @@ def build_catalog_index(catalog: list[dict]) -> dict:
     return idx
 
 
+def build_catalog_index(catalog: list[dict]) -> dict:
+    """Normalized (lowercase, no-space) designation/name -> object id.
+
+    'M101', 'NGC 5457' and 'Pinwheel' all land on 'm101'; 'ngc7000' matches
+    the spaced 'NGC 7000' because spaces are stripped on both sides.
+    """
+    return _index_normalized_catalog(normalize_catalog(catalog))
+
+
+class CatalogResolver:
+    """Reusable catalog normalization and name/ID indexes for image ingest.
+
+    The first occurrence wins for duplicate names and IDs, matching the prior
+    `build_catalog_index` + `_by_id` lookup behavior.
+    """
+
+    def __init__(self, catalog: list[dict]):
+        self.rows = normalize_catalog(catalog)
+        self.name_to_id = _index_normalized_catalog(self.rows)
+        self.row_by_id: dict[str, dict] = {}
+        for row in self.rows:
+            self.row_by_id.setdefault(row["id"], row)
+
+    def resolve(self, name_hint: str | None = None,
+                ra_hours: float | None = None,
+                dec_deg: float | None = None) -> dict | None:
+        """Resolve name tokens first, then coordinates, else return None."""
+        if not self.rows:
+            return None
+        if name_hint:
+            tokens = extract_object_tokens(name_hint)
+            for token in tokens:
+                oid = self.name_to_id.get(_norm(token))
+                if oid:
+                    return self.row_by_id.get(oid)
+            # prefix fallback: 'andromeda' -> 'andromedagalaxy' (M31)
+            for token in tokens:
+                tok = _norm(token)
+                if len(tok) < 3:
+                    continue
+                hits = [k for k in self.name_to_id if k.startswith(tok)]
+                if hits:
+                    best = max(hits, key=len)
+                    return self.row_by_id.get(self.name_to_id[best])
+        if ra_hours is not None and dec_deg is not None:
+            best, best_d = None, None
+            for o in self.rows:
+                r = o["ra_hours"]
+                d = o["dec_deg"]
+                if r is None or d is None:
+                    continue
+                dist = angular_dist(ra_hours, dec_deg, r, d)
+                if dist <= MATCH_RADIUS_DEG and (best_d is None or dist < best_d):
+                    best, best_d = o, dist
+            if best:
+                return best
+        return None
+
+
 def resolve_object(catalog: list[dict], name_hint: str | None = None,
                    ra_hours: float | None = None,
                    dec_deg: float | None = None) -> dict | None:
-    """Best-effort match of a capture to a catalog row.
-
-    Order: designation/common-name tokens from the hint (OBJECT header or
-    file name) -> coordinates in the header -> None. The returned dict uses
-    the normalized shape (primary_name / size_am / otype / ...).
-    """
-    rows = normalize_catalog(catalog)
-    if not rows:
-        return None
-    if name_hint:
-        idx = build_catalog_index(rows)
-        for token in extract_object_tokens(name_hint):
-            oid = idx.get(_norm(token))
-            if oid:
-                return _by_id(rows, oid)
-        # prefix fallback: 'andromeda' -> 'andromedagalaxy' (M31)
-        for token in extract_object_tokens(name_hint):
-            tok = _norm(token)
-            if len(tok) < 3:
-                continue
-            hits = [k for k in idx if k.startswith(tok)]
-            if hits:
-                best = max(hits, key=len)
-                return _by_id(rows, idx[best])
-    if ra_hours is not None and dec_deg is not None:
-        best, best_d = None, None
-        for o in rows:
-            r = o["ra_hours"]
-            d = o["dec_deg"]
-            if r is None or d is None:
-                continue
-            dist = angular_dist(ra_hours, dec_deg, r, d)
-            if dist <= MATCH_RADIUS_DEG and (best_d is None or dist < best_d):
-                best, best_d = o, dist
-        if best:
-            return best
-    return None
+    """Compatibility wrapper for one-off catalog resolution."""
+    return CatalogResolver(catalog).resolve(name_hint, ra_hours, dec_deg)
 
 
 def _by_id(catalog: list[dict], oid: str) -> dict | None:

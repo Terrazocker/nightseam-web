@@ -7,6 +7,35 @@ artifact hashes, gate results, what was deployed and how it was verified live.
 
 Newest first.
 
+## UNRELEASED - 2026-09-27 packaged Image Catalog shell
+
+Not staged, tagged, or deployed. The standard packaged desktop now launches a
+dedicated Image Catalog shell with Library, Import Exposures, and the fixed
+archive Sky Map. The legacy desktop planner remains available from source and
+with `--planner`; the web planner and shared `core/` were unchanged. Catalog
+startup skips planner image prefetch, and catalog-only mode does not serve the
+planner shell at `/index.html` or expose the planner's object-image and update
+check routes. Those optional remote routes return 404 before network work. A
+planner request handed to an active catalog-only instance shows a
+close-and-relaunch notice instead of a blank route.
+
+Validation of this working-tree snapshot:
+
+- `python -m pytest tests/ -q --tb=no` -> **658 passed, 1 warning** in 274.59s.
+- `python -m pytest tests/test_desktop_catalog_mode.py tests/test_main.py -q`
+  -> **18 passed, 1 warning**.
+- `python scripts/check_js.py` -> **OK**; its 25 heuristic undefined-call
+  candidates are non-failing diagnostics.
+- `python scripts/check_encoding.py` and `git diff --check` -> **OK**.
+- `python scripts/check_browser.py --desktop` against the final executable
+  -> **16/16 passed** (15 legacy planner checks and the catalog-only flow).
+- `python scripts/check_browser.py --desktop --only desktop-catalog-only-launch`
+  -> **1/1 passed**.
+- `build.ps1 -AllowDirty` produced `dist\NightSeam.exe` (20.5 MB), version
+  `0.6.34-9-gd9f4f3a-dirty`. `app/_version_baked.py` remained unchanged.
+
+No release archive was created and no clean-tag or deployment claim is made.
+
 ## UNRELEASED - 2026-09-20 review implementation pass (final validation)
 
 Not tagged or deployed. This pass covered planner invalidation, panorama

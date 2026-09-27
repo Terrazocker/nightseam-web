@@ -713,6 +713,52 @@ def test_ingest_session_folders(client):
     assert g["n_sessions"] == 2
 
 
+def test_ingest_builds_one_catalog_resolver_per_request(client, monkeypatch):
+    original = server_mod.CatalogResolver
+    builds = []
+
+    def counted_resolver(catalog):
+        builds.append(len(catalog))
+        return original(catalog)
+
+    monkeypatch.setattr(server_mod, "CatalogResolver", counted_resolver)
+    response = client.post("/api/images/ingest", files=[
+        ("files", ("m31.fit", m31_fits(), "application/octet-stream")),
+        ("files", ("unknown.fit", unresolved_fits(),
+                   "application/octet-stream")),
+    ])
+    assert response.status_code == 200
+    results = response.json()["results"]
+    assert len(results) == 2 and all(r["ok"] for r in results)
+    assert results[0]["object"]["id"] == "ngc224"
+    assert results[1]["object"]["id"] is None
+    assert len(builds) == 1
+
+
+def test_unresolved_ingest_joins_exact_name_session_even_if_old_row_has_id(
+        client, db):
+    from app.fits import date_epoch
+    from app.ingest import session_folder_name
+
+    old_date = "2026-08-22T23:00:00"
+    db.add_image({
+        "file": "TestObj42/old.fit", "orig_name": "old.fit",
+        "object_id": "a-different-resolved-id", "object_name": "TestObj42",
+        "date_obs": old_date, "ingested_at": old_date,
+    })
+    new_frame = make_fits([
+        ("SIMPLE", "T"), ("OBJECT", "'TestObj42'"),
+        ("EXPTIME", "60"), ("DATE-OBS", "'2026-08-23T01:00:00'"),
+    ])
+    response = client.post("/api/images/ingest", files=[
+        ("files", ("new.fit", new_frame, "application/octet-stream"))])
+    assert response.status_code == 200
+    result = response.json()["results"][0]
+    assert result["ok"] and result["object"]["id"] is None
+    assert result["stored"].replace("\\", "/").split("/")[1] == \
+        session_folder_name(date_epoch(old_date))
+
+
 def test_library_session_rollups(client):
     """Sessions carry their own per-type/filter rollups (undated here)."""
     client.post("/api/images/ingest", files=[

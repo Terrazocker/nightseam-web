@@ -5,11 +5,11 @@
 import { $, esc, TYPE_COLOR, TYPE_LABEL } from "./util.js";
 import { S } from "./state.js";
 import { CONSTELLATIONS, FIELD_STARS } from "./skydata.js";
-import { openDetail } from "./detail.js";
 import { vizTheme } from "./viztheme.js";
 
 let SM_POINTS = [];
 let SM_HOVER = null;
+let SM_SELECTED = null;
 
 /* RA hours 0..24 -> x, Dec -90..+90 -> y (0h left, north up) */
 function xy(raH, decD, W, H) {
@@ -50,6 +50,10 @@ export function renderSkyMap() {
 
   const L = S.library;
   const objs = (L && L.objects) || [];
+  if (SM_SELECTED) {
+    SM_SELECTED = objs.find((object) => object.name === SM_SELECTED.name) || null;
+  }
+  renderSelection();
   const showCons = ($("#smCons") || {}).checked !== false;
   const showLabels = ($("#smLabels") || {}).checked !== false;
   const sizeByInteg = ($("#smSize") || {}).checked !== false;
@@ -75,6 +79,8 @@ export function renderSkyMap() {
   // library objects
   const maxMin = Math.max(1, ...objs.map(o => o.total_exposure / 60));
   const pts = [];
+  const accent = getComputedStyle(document.documentElement)
+    .getPropertyValue("--accent").trim() || "#F9C85D";
   for (const o of objs) {
     if (o.ra_hours == null || o.dec_deg == null) continue;
     if (S.disabledTypes.has(o.otype)) continue;      // legend off
@@ -82,18 +88,19 @@ export function renderSkyMap() {
     const r = sizeByInteg ? 3 + 9 * Math.sqrt(mins / maxMin) : 4.5;
     const col = V.types[o.otype] || TYPE_COLOR[o.otype] || V.text;
     const isHover = SM_HOVER && SM_HOVER.name === o.name;
+    const isSelected = SM_SELECTED && SM_SELECTED.name === o.name;
     for (const wOff of [0, 1]) {            // wrap objects near RA 0h/24h
       const x = (o.ra_hours / 24 + wOff) * W;
       if (x < -20 || x > W + 20) continue;
       const y = (1 - (o.dec_deg + 90) / 180) * H;
       if (y < -20 || y > H + 20) continue;
       ctx.fillStyle = col;
-      ctx.globalAlpha = isHover ? 1 : 0.8;
+      ctx.globalAlpha = isHover || isSelected ? 1 : 0.8;
       ctx.beginPath(); ctx.arc(x, y, isHover ? r + 2 : r, 0, 7); ctx.fill();
       ctx.globalAlpha = 1;
-      ctx.strokeStyle = V.objectOutline;
-      ctx.lineWidth = 1;
-      ctx.beginPath(); ctx.arc(x, y, r + 1.5, 0, 7); ctx.stroke();
+      ctx.strokeStyle = isSelected ? accent : V.objectOutline;
+      ctx.lineWidth = isSelected ? 2 : 1;
+      ctx.beginPath(); ctx.arc(x, y, isSelected ? r + 3 : r + 1.5, 0, 7); ctx.stroke();
       pts.push({ x, y, name: o.name, obj: o });
     }
   }
@@ -126,8 +133,37 @@ export function renderSkyMap() {
   SM_POINTS = pts;
   const summary = $("#skymapChartSummary");
   if (summary) {
-    summary.textContent = `Image library sky map; ${objs.length} library objects are plotted. Right ascension runs left to right and declination runs from south to north.`;
+    summary.textContent = `Image library sky map; ${objs.length} library objects are plotted. Select a marker for its archive summary. Right ascension runs left to right and declination runs from south to north.`;
   }
+}
+
+function renderSelection() {
+  const panel = $("#skymapSelection");
+  if (!panel) return;
+  if (!SM_SELECTED) {
+    const hasObjects = (S.library?.objects || []).length > 0;
+    panel.innerHTML = `<h2>Selected library object</h2><p class="hint">${hasObjects
+      ? "Select a plotted object to see its archive summary."
+      : "No mapped exposures yet. Import FITS files with object coordinates to populate this map."}</p>`;
+    return;
+  }
+  const object = SM_SELECTED;
+  const type = object.otype ? (TYPE_LABEL[object.otype] || object.otype) : "Unknown type";
+  const ra = Number.isFinite(Number(object.ra_hours))
+    ? `${Number(object.ra_hours).toFixed(2)}h` : "—";
+  const dec = Number.isFinite(Number(object.dec_deg))
+    ? `${Number(object.dec_deg).toFixed(2)}°` : "—";
+  const sessions = Number(object.n_sessions) || 0;
+  const images = Number(object.n_images) || 0;
+  panel.innerHTML = `<h2>Selected library object</h2>
+    <p class="library-map-name">${esc(object.name || "Unknown object")}</p>
+    <p class="hint">${esc(object.designation || type)}${object.designation ? ` · ${esc(type)}` : ""}</p>
+    <dl class="library-map-facts">
+      <div><dt>Images</dt><dd>${images}</dd></div>
+      <div><dt>Sessions</dt><dd>${sessions}</dd></div>
+      <div><dt>Integration</dt><dd>${esc(fmtDurShort(object.total_exposure))}</dd></div>
+      <div><dt>RA / Dec</dt><dd>${esc(ra)} · ${esc(dec)}</dd></div>
+    </dl>`;
 }
 
 function fmtDurShort(sec) {
@@ -230,10 +266,29 @@ export function bindSkyMap() {
   cv.addEventListener("mouseleave", () => {
     SM_HOVER = null; $("#skymapTip").classList.add("hidden"); renderSkyMap();
   });
-  cv.addEventListener("click", () => {
-    if (!SM_HOVER) return;
-    const o = SM_HOVER.obj;
-    if (o.object_id && S.meta && S.meta[o.object_id]) openDetail(o.object_id, { opener: cv });
+  cv.addEventListener("click", async (event) => {
+    const rect = cv.getBoundingClientRect();
+    const x = event.clientX - rect.left, y = event.clientY - rect.top;
+    let closest = null, distance = 225;
+    for (const point of SM_POINTS) {
+      const dx = point.x - x, dy = point.y - y, nextDistance = dx * dx + dy * dy;
+      if (nextDistance < distance) { distance = nextDistance; closest = point; }
+    }
+    if (!closest) return;
+    SM_HOVER = closest;
+    if (document.body.classList.contains("catalog-only")) {
+      SM_SELECTED = closest.obj;
+      renderSkyMap();
+      return;
+    }
+    const object = closest.obj;
+    if (object.object_id && S.meta && S.meta[object.object_id]) {
+      const { openDetail } = await import("./detail.js");
+      openDetail(object.object_id, { opener: cv });
+    } else {
+      SM_SELECTED = object;
+      renderSkyMap();
+    }
   });
   for (const id of ["smLabels", "smSize", "smCons"]) {
     $(`#${id}`).addEventListener("change", renderSkyMap);

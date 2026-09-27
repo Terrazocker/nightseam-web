@@ -20,7 +20,7 @@ log = logging.getLogger(__name__)
 
 MAX_INGEST_BYTES = 1 << 30          # 1 GiB per file
 HEADER_READ = 1_500_000             # fits._MAX_BLOCKS blocks ~= 1.47 MB
-_COPY_CHUNK = 1 << 16               # 64 KB streaming buffer
+_COPY_CHUNK = 1 << 20               # 1 MB streaming buffer
 
 
 def obj_slug(object_name: str) -> str:
@@ -72,9 +72,7 @@ def _session_dir(db: Database, archive: Path, slug: str, object_id,
     An explicit `session` upload target (calibration buttons) wins."""
     if session_override:
         return archive / slug / session_override
-    existing = [i for i in db.images()
-                if (object_id is not None and i["object_id"] == object_id)
-                or (object_id is None and i["object_name"] == object_name)]
+    existing = db.images_for_object(object_id, object_name)
     joined = imglib.session_for_image(existing, {"date_obs": date_obs})
     start = imglib.date_epoch(joined.get("start")) if joined else None
     return archive / slug / session_folder_name(start)
@@ -114,7 +112,8 @@ def _archive_target(archive: Path, name: str, slug: str,
 
 async def ingest_one(db: Database, catalog: list[dict], archive: Path,
                      f, frame_override: str | None = None,
-                     session_override: str | None = None) -> dict:
+                     session_override: str | None = None,
+                     resolver: imglib.CatalogResolver | None = None) -> dict:
     """Stream one uploaded .fit/.fits into the archive and record it.
 
     `f` is a fastapi UploadFile. Only the header block is buffered; the
@@ -141,7 +140,9 @@ async def ingest_one(db: Database, catalog: list[dict], archive: Path,
     hint = str(hdr.get("OBJECT") or "").strip() or stem
     ra_h = fitsio.parse_ra_hours(hdr.get("OBJCTRA") or hdr.get("RA"))
     dec_d = fitsio.parse_dec_deg(hdr.get("OBJCTDEC") or hdr.get("DEC"))
-    row = imglib.resolve_object(catalog, hint, ra_h, dec_d)
+    active_resolver = resolver if resolver is not None else \
+        imglib.CatalogResolver(catalog)
+    row = active_resolver.resolve(hint, ra_h, dec_d)
 
     if row:
         object_id = row["id"]

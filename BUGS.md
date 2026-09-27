@@ -63,6 +63,17 @@ the working tree; UIB-022 through UIB-024 remain open from the 2026-09-27
 visual comparison. The run details are recorded in
 `ui-concepts/direction-b/REMAINING_WORK.md`.
 
+### Packaged Image Catalog scope — 2026-09-27 (unreleased)
+
+The standard packaged desktop executable now starts the dedicated Image
+Catalog shell. It retains Library, Import Exposures, and the fixed archive Sky
+Map; the legacy planner shell remains available through source launch and the
+explicit packaged `--planner` switch. UIB-022 and UIB-024 describe the legacy
+planner's Horizon editor, which is absent from the standard packaged shell;
+they remain open for source planner users. UIB-023 still applies in part to the
+retained Library view's visual density and session detail. The web planner and
+shared `core/` were not changed for this scope.
+
 ## Current review addendum - 2026-09-20 (unreleased working tree)
 
 This addendum records the second review of the moved workspace at

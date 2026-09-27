@@ -498,7 +498,8 @@ export function bindArchive() {
   // library controls
   $("#libUnit").addEventListener("change", async e => {
     S.cfg.size_unit = e.target.value;
-    $("#sizeUnit").value = e.target.value;
+    const plannerSizeUnit = $("#sizeUnit");
+    if (plannerSizeUnit) plannerSizeUnit.value = e.target.value;
     await api("/api/settings", { method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ size_unit: e.target.value })});

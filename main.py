@@ -69,10 +69,31 @@ def existing_instance_url() -> str | None:
         return None
 
 
-def write_instance_file(port: int) -> None:
+def existing_instance_catalog_only(base_url: str) -> bool | None:
+    """Return the live singleton's shell mode, probing older instance files."""
+    try:
+        info = json.loads(_instance_file().read_text())
+        mode = info.get("catalog_only")
+        if isinstance(mode, bool):
+            return mode
+    except Exception:
+        pass
+
+    try:
+        from urllib.request import urlopen
+        with urlopen(f"{base_url.rstrip('/')}/index.html", timeout=2.0):
+            return False
+    except Exception as exc:
+        if getattr(exc, "code", None) == 404:
+            return True
+        return None
+
+
+def write_instance_file(port: int, *, catalog_only: bool = False) -> None:
     try:
         _instance_file().write_text(
-            json.dumps({"port": port, "pid": os.getpid()}))
+            json.dumps({"port": port, "pid": os.getpid(),
+                        "catalog_only": catalog_only}))
     except OSError:
         pass
 
@@ -124,6 +145,40 @@ class NoSignalServer(__import__("uvicorn").Server):
 
     def install_signal_handlers(self) -> None:  # noqa: D102
         pass
+
+
+def catalog_only_for_launch(override: bool | None = None, *,
+                            frozen: bool | None = None) -> bool:
+    """Packaged desktop launches use the archive shell; source runs keep the planner.
+
+    An explicit mode flag supports source preview and the legacy planner browser
+    checks, while the default follows how this program was launched.
+    """
+    if override is not None:
+        return bool(override)
+    if frozen is None:
+        frozen = bool(getattr(sys, "frozen", False))
+    return bool(frozen)
+
+
+def shell_url_for_launch(base_url: str, catalog_only: bool) -> str:
+    """Address the requested shell even when another mode owns the server."""
+    entry = "catalog.html" if catalog_only else "index.html"
+    return f"{base_url.rstrip('/')}/{entry}"
+
+
+def handoff_url_for_launch(base_url: str, requested_catalog_only: bool,
+                           running_catalog_only: bool | None) -> str:
+    """Avoid handing a planner launch to a catalog server's hidden route."""
+    if not requested_catalog_only and running_catalog_only is not False:
+        return (f"{base_url.rstrip('/')}/catalog.html"
+                "?planner-unavailable=1")
+    return shell_url_for_launch(base_url, requested_catalog_only)
+
+
+def create_launch_app(db: Database, *, catalog_only: bool):
+    """Build the selected local shell without planner-only startup work."""
+    return create_app(db, prefetch=not catalog_only, catalog_only=catalog_only)
 
 
 class JsApi:
@@ -198,13 +253,21 @@ def launch_app_window(url: str) -> bool:
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="NightSeam - DSO planning tool")
+    ap = argparse.ArgumentParser(
+        description="NightSeam - image archive and DSO planning tool")
     ap.add_argument("--version", action="version",
                     version=f"NightSeam {app_version()}")
     ap.add_argument("--port", type=int, default=8407)
     ap.add_argument("--host", default="127.0.0.1")
     ap.add_argument("--browser", action="store_true",
                     help="open in a regular browser tab instead of an app window")
+    app_mode = ap.add_mutually_exclusive_group()
+    app_mode.add_argument("--catalog-only", dest="catalog_only",
+                          action="store_true", default=None,
+                          help="open only the FITS Image Catalog shell")
+    app_mode.add_argument("--planner", dest="catalog_only",
+                          action="store_false", default=None,
+                          help="open the legacy full planner shell")
     ap.add_argument("--no-browser", action="store_true",
                     help="do not open any window (headless)")
     ap.add_argument("--console", action="store_true",
@@ -215,25 +278,29 @@ def main() -> int:
 
     ensure_stdio()
     log = setup_logging(args.console)
+    catalog_only = catalog_only_for_launch(args.catalog_only)
 
     # hand off to an already-running instance instead of shadowing it: two
     # instances would share one SQLite file and one archive folder, which can
     # truncate an in-flight ingest and tear the rolling .backup copy
     old_url = existing_instance_url()
     if old_url:
-        log.info("NightSeam already running at %s - handing off.", old_url)
+        old_catalog_only = existing_instance_catalog_only(old_url)
+        launch_url = handoff_url_for_launch(
+            old_url, catalog_only, old_catalog_only)
+        log.info("NightSeam already running - opening %s.", launch_url)
         if args.no_browser:
             return 0                     # headless launch: nothing to open
         if args.browser:
-            webbrowser.open(old_url)
+            webbrowser.open(launch_url)
         else:
-            if not run_native_window(old_url):
-                if not launch_app_window(old_url):
-                    webbrowser.open(old_url)
+            if not run_native_window(launch_url):
+                if not launch_app_window(launch_url):
+                    webbrowser.open(launch_url)
         return 0
 
     db = Database(paths.data_dir() / "nightseam.db")
-    app = create_app(db)
+    app = create_launch_app(db, catalog_only=catalog_only)
 
     port = free_port(args.port, args.host)
     url = f"http://{args.host}:{port}/"
@@ -260,7 +327,7 @@ def main() -> int:
         return 1
 
     log.info("NightSeam running at %s", url)
-    write_instance_file(port)
+    write_instance_file(port, catalog_only=catalog_only)
 
     idle_secs = args.idle_exit_hours * 3600.0
     ui_mode = "none" if args.no_browser else "browser" if args.browser else "window"

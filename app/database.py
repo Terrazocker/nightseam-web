@@ -384,6 +384,10 @@ CREATE TABLE IF NOT EXISTS images (
     imagetyp TEXT,
     ingested_at TEXT NOT NULL
 );
+CREATE INDEX IF NOT EXISTS idx_images_object_id_id
+    ON images(object_id, id);
+CREATE INDEX IF NOT EXISTS idx_images_object_name_id
+    ON images(object_name, id);
 CREATE TABLE IF NOT EXISTS observations (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     object_id TEXT NOT NULL,
@@ -1134,6 +1138,25 @@ class Database:
         with self.lock:
             return [dict(r) for r in self.conn.execute(
                 "SELECT * FROM images ORDER BY id")]
+
+    def images_for_object(self, object_id: str | None,
+                          object_name: str) -> list[dict]:
+        """Frames relevant to session-folder selection, in insertion order.
+
+        Unresolved imports historically match every row with the same exact
+        object_name, including rows that already have an object_id. Keep that
+        predicate while using indexes to avoid loading the full image library.
+        """
+        with self.lock:
+            if object_id is not None:
+                rows = self.conn.execute(
+                    "SELECT * FROM images WHERE object_id=? ORDER BY id",
+                    (object_id,))
+            else:
+                rows = self.conn.execute(
+                    "SELECT * FROM images WHERE object_name=? ORDER BY id",
+                    (object_name,))
+            return [dict(r) for r in rows]
 
     def image(self, img_id: int) -> dict | None:
         with self.lock:

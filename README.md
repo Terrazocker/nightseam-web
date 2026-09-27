@@ -2,16 +2,18 @@
 
 *Formerly AstroPilot — renamed in 0.6.0, now at <https://nightseam.de>.*
 
-A one-click desktop app for planning deep-sky astrophotography sessions around
-obstacles in your backyard (trees, houses, ...) - plus a full image-catalog
-mode that organizes your captured FITS frames.
+A local FITS image catalog for organizing captured frames, with the full
+deep-sky planning experience available on the web and in the source-run desktop
+shell.
 
 NightSeam runs as a small local web server and opens its UI in your default
 browser (or a native window). It ships with **no external runtime
 dependencies** on the target machine, and both the sky calculations and the
-whole catalog work fully offline. The only network calls are optional: object
-example images (Wikipedia, cached locally), the weather panel (Open-Meteo, on
-request) and a once-per-start version check against nightseam.de.
+whole catalog work fully offline. The packaged desktop executable opens the
+Image Catalog without background network requests. The source-run planner and
+web planner retain their optional online features, including example images
+and the on-request weather panel; the source-run desktop planner also checks
+for updates once per start.
 
 **Docs:** `DESIGN.md` - the Workbench UI design contract. `CATALOG.md`
 - where the catalogue comes from and how to rebuild it
@@ -33,7 +35,13 @@ MIT — see [LICENSE](LICENSE). Third-party data and service credits
 (OpenNGC CC BY-SA 4.0, Wikimedia images, Open-Meteo, the popularity source
 popularity snapshot) are listed in [NOTICE](NOTICE).
 
-Two modes, switched with the top-right button:
+The packaged desktop executable opens the Image Catalog only. It keeps the
+Library, FITS import/reindex workflow, recent calibration imports, and fixed
+archive Sky Map; it does not initialize the night planner. The full local
+planner remains available when running from source with `python main.py`, and
+the web planner remains unchanged.
+
+The full desktop source shell has two modes:
 
 - **Night Planner** - plan what to shoot and when.
 - **Image Catalog** - import, organize and inspect your capture sessions.
@@ -128,18 +136,19 @@ theme values are normalized to Workbench during load and restore.
 
 1. Download the latest release from <https://nightseam.de/download.html>.
 2. Double-click `NightSeam.exe`.
-3. Your browser (or the app window) opens `http://127.0.0.1:<port>`
-   automatically.
-4. First start: the wizard asks for your observing location (gear icon ->
-   Sites also works; "Use my location" fills it automatically).
-5. Horizon & Obstacles tab: import a panorama, calibrate, paint obstacles,
-   click "Use for planning".
-6. Switch to the Image Catalog for your captures: pick an archive folder,
-   import your light frames.
+3. Your browser (or the app window) opens the Image Catalog at
+   `http://127.0.0.1:<port>` automatically.
+4. Open **Import Exposures** to choose an archive folder, import FITS frames,
+   or reindex files already on disk. **Library** shows sessions and import
+   actions; **Sky Map** plots the stored library objects.
 
-The app checks once per start whether a newer version is available on
-nightseam.de and shows a toast if so; nothing is transmitted beyond the version
-request itself.
+The source-run desktop planner checks once per start whether a newer version
+is available on nightseam.de and shows a toast if so. The packaged Image
+Catalog does not run the updater or planner startup tasks.
+
+The local app uses one server for its shared archive and database. If a
+catalog-only window is already running when you request planner mode, it shows
+a notice to close that window and relaunch with `--planner`.
 
 All user data lives next to the exe in `data\` (SQLite DB + panorama images +
 image cache + import history). Quit via the shutdown endpoint
@@ -149,7 +158,10 @@ without requests (`--idle-exit-hours 0` disables that).
 ### Run from source
 
     pip install -r requirements.txt   # pyinstaller only needed for building
-    python main.py                    # add --console to see log output
+    python main.py                    # full local planner + Image Catalog
+    python main.py --catalog-only     # preview the packaged catalog shell
+    python main.py --planner          # explicitly open the legacy planner shell
+    python main.py --console          # add --console to see log output
 
 ## Building the exe yourself
 
@@ -185,13 +197,16 @@ choose "More info" -> "Run anyway".
     NightSeam.exe                native app window (default)
     --browser                     open in a regular browser tab instead
     --no-browser                  headless, no UI
+    --catalog-only                open only the FITS Image Catalog
+    --planner                     open the full desktop planner shell
     --port N                      fixed port (default 8407)
     --console                     also log to console
     --idle-exit-hours N           exit after N h without requests (default 12)
 
 ## Where do the numbers come from?
 
-All sky calculations are computed locally on your machine from standard
+The full planner (web or source-run desktop) computes sky positions locally on
+your machine from standard
 published algorithms - no internet service is involved:
 
 - **Sunrise / sunset / twilight** come from the Sun's geocentric position
@@ -205,12 +220,12 @@ published algorithms - no internet service is involved:
 - Object altitudes use J2000 catalog coordinates precessed to date plus
   standard sidereal time and refraction (typically well below 0.1 deg error).
 
-Object example images are not the only online content. Images are fetched from
-Wikipedia on demand and cached in `data\imgcache` (offline you get generated
-placeholders instead); loading the weather panel sends your active site's
-coordinates to Open-Meteo's forecast and air-quality services; and, once per
-start, the app checks whether a newer version is available. The catalogue with
-its popularity snapshot and every sky calculation are local.
+Object example images are fetched from Wikipedia on demand and cached in
+`data\imgcache` (offline you get generated placeholders instead); the planner's
+weather panel sends your active site's coordinates to Open-Meteo only when you
+request a forecast. The source-run desktop planner checks for updates once per
+start. The packaged desktop Image Catalog makes none of these planner requests.
+The catalogue with its popularity snapshot and every sky calculation are local.
 
 ## Accuracy notes
 
