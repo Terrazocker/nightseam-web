@@ -1,10 +1,9 @@
 # NightSeam Design Guide — Workbench
 
-Workbench is the only planner design language. Desktop and web share its visual
+Workbench is the only planner design language. The web uses these visual
 roles and information hierarchy; no theme picker or alternate presentation is
 shipped. Legacy theme values (`dome`, `classic`, empty, or unknown) normalize to
-`workbench` when settings or backups load. `app/theme.py` remains the desktop
-compatibility boundary, and `viztheme.js` remains the canvas palette adapter.
+`workbench` when settings or backups load. `web/viztheme.js` remains the canvas palette adapter.
 
 ## Visual language
 
@@ -29,28 +28,18 @@ blur, glow, starfields, decorative gradients, or translucent panels.
 | Chart grid | `#304049` |
 | Secondary line | `#73B6DB` |
 
-Keep these semantic roles in `static/themes.css`, `web/themes.css`, and the
+Keep these semantic roles in `web/themes.css`, and the
 canvas adapters. Data-driven colors such as catalog type colors remain data, not
 interface theme tokens.
 
-## Shared shell
+## Web shell
 
-The desktop shell described here is the legacy/source-run planner. The standard
-packaged desktop executable is Image Catalog-only and does not show planner
-chrome or initialize planner views. It retains the nested Library, Import
-Exposures, and fixed archive Sky Map views.
+The browser planner uses Tonight, Catalog, Sky View and Horizon. Keep Site,
+Rig, date and minimum altitude visible; setup and advanced options use the
+hamburger menu. Respect stored edge-space preferences. The header is about
+48px and tab row 40px, with 14–16px gutters.
 
-The planner header is about 48px high and the primary tab row about 40px. Content
-begins near y=100 with 14–16px gutters. Keep Site, Rig, date, and minimum
-altitude available in the planner chrome; place setup and advanced options in
-the hamburger menu. Do not let optional controls push the common controls out of
-one row at desktop widths. Use the stored edge-space preference without
-overwriting it on load.
-
-Legacy/source desktop planner tabs are Tonight, Catalog, Sky View, Horizon, and
-Image Catalog. The web planner has the first four. Image Catalog keeps Library,
-Import Exposures, and Sky Map as nested views, with Library as the default; the
-packaged desktop executable launches directly into those nested views.
+The local exposure catalog has its own design document in Nightseam-catalog.
 
 ## Screen hierarchy
 
@@ -68,13 +57,8 @@ packaged desktop executable launches directly into those nested views.
 - **Horizon:** fit the panorama at its source aspect ratio. Keep a readable
   profile, honest calibration summary, settings, and Save/Undo/Redo in the first
   viewport where practical. Profile bins use the shared world-azimuth geometry.
-- **Image Catalog:** keep an object rail, session workspace, and selected-session
-  rail. Lead with measured session rollups and frame groups; put the generic
-  all-object table behind disclosure.
-
 Across Tonight, Catalog, and Sky View, keep one selected target and one inspector.
-Desktop selection remains `S.tIdx`/`S.currentId`; web selection remains
-`S.skyTime`/`S.detailId`. Use the live catalog, planner tracks, FITS groupings, and
+Selection remains `S.skyTime`/`S.detailId`. Use the live catalog, planner tracks, FITS groupings, and
 stored panorama profiles; never substitute illustrative screenshot values for
 application data.
 
@@ -87,16 +71,7 @@ moon-aware ranking, timezone controls, and equipment filters stay in the menu.
 Primary actions use brass; secondary actions use neutral raised surfaces.
 
 At 1240×900 and 900×800, controls and primary screen regions remain usable.
-Web layouts must work at 640px and 360px without horizontal page overflow; use
-scrolling inside dense table regions where needed. Keep the controls reachable
-when rails stack, and do not scale charts below a size that makes their labels
-unclear.
-
-## Implementation boundaries
-
-Both shells share astronomy, planning, visibility, scoring, horizon geometry,
-and panorama history through `core/`. UI modules may format and arrange those
-results but must not add a second calculation path. Keep storage paths safe,
-backups staged before writes, and panorama strokes/profile precedence intact.
-Edit authored source modules and rebuild generated core trees with
-`scripts/build_core.py`; never hand-edit generated core files.
+Web layouts must work at
+640px and 360px without horizontal page overflow. Use scrolling inside dense
+table regions where needed. Keep controls reachable when rails stack, and do
+not scale charts below a size that makes their labels unclear.

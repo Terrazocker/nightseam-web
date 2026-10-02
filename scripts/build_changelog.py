@@ -30,6 +30,8 @@ ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "landing" / "changelog.json"
 
 CURATED = {
+    # Prepared for the next release; tags alone determine publication.
+    "0.6.35": "The Windows app now opens a local FITS Image Catalog with Library, Import Exposures and an archive Sky Map. Its native Windows frame supports moving, resizing, maximizing and Snap, and its layout adapts without scaling the text. Imports show files processed, elapsed time and separate counts for failures, already imported files and restored originals. Identical file contents are skipped even when renamed, while different captures sharing a filename remain separate. Existing libraries are checked without blocking the server on file hashing, and library export works from the native window. The full planner remains available from source and with --planner; its archive folder picker and Sky Map selection panel are repaired. Both planners use the Workbench design language. The experimental modeled sky-brightness feature has been removed, including its data and controls; this release does not present an estimated value as a measured sky reading. Sites, equipment, panoramas and existing library data are preserved.",
     # 0.6.34 is the security/reliability batch for the six findings in BUGS.md:
     # a refused restore can no longer overwrite your files, the desktop can no
     # longer execute an imported value, the web app finally enforces a policy,

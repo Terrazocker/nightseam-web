@@ -10,7 +10,7 @@ GENERATED - do not hand-edit. Re-run:
 
     python scripts/match_popularity.py            # offline, from the frozen snapshot
 
-Every designation of every `app/data/openned.csv` row is matched against
+Every designation of every `catalog_data/data/openned.csv` row is matched against
 the popularity source table and the HIGHEST score wins (`match_objects`), so the
 result does not depend on set/hash order and the standard-mode selection is
 reproducible.

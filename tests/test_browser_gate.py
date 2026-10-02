@@ -34,33 +34,18 @@ WEB_CHECKS = [
     "web-workbench-only-render",
     "web-accessibility-essentials",
 ]
-DESKTOP_CHECKS = [
-    "desktop-boot",
-    "desktop-worker-date-change",
-    "desktop-worker-kill-sync-fallback",
-    "desktop-pref-rescore",
-    "desktop-advanced-mode",
-    "desktop-catalog-direction-b-density",
-    "desktop-scrub-window",
-    "desktop-pano-crop-fov",
-    "desktop-workbench-only-render",
-    "desktop-accessibility-essentials",
-]
 
 
-def test_browser_runner_imports_both_suites():
+def test_browser_runner_imports_only_the_web_suite():
     src = (ROOT / "scripts" / "check_browser.py").read_text(encoding="utf-8")
-    assert "import web_suite" in src and "import desktop_suite" in src
-    assert "--web" in src and "--desktop" in src and "--prod-url" in src
+    assert "import web_suite" in src and "import desktop_suite" not in src
+    assert "--web" in src and "--desktop" not in src and "--prod-url" in src
 
 
 def test_browser_suites_register_the_review_classes():
     web = (ROOT / "tests" / "browser" / "web_suite.py").read_text(encoding="utf-8")
-    desk = (ROOT / "tests" / "browser" / "desktop_suite.py").read_text(encoding="utf-8")
     for name in WEB_CHECKS:
         assert f'"{name}"' in web, f"web check missing: {name}"
-    for name in DESKTOP_CHECKS:
-        assert f'"{name}"' in desk, f"desktop check missing: {name}"
 
 
 def test_browser_gate_is_browser_required_not_a_skip():
@@ -69,8 +54,8 @@ def test_browser_gate_is_browser_required_not_a_skip():
     assert "check_browser FATAL: browser" in harness
     assert "return 2" in harness
     agents = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
-    assert "scripts/check_browser.py --all" in agents
-    assert "HARD failure" in agents
+    assert "scripts/check_browser.py --web" in agents
+    assert "hard" in agents and "infrastructure failures, never skips" in agents
 
 
 def test_browser_gate_driver_start_failure_is_exit_2(monkeypatch, capsys):
@@ -113,68 +98,3 @@ def test_browser_harness_starts_the_driver_exactly_once():
     assert "_driver = sync_playwright().start()" not in src, (
         "the throw-away driver probe is back - it left the gate exiting 1 "
         "after every check passed")
-
-
-def _desktop_suite():
-    """tests/browser/desktop_suite.py (its `from harness import check` needs the
-    directory on sys.path, exactly as scripts/check_browser.py arranges)."""
-    import sys
-    browser_dir = str(ROOT / "tests" / "browser")
-    sys.path.insert(0, browser_dir)
-    try:
-        import desktop_suite
-        return desktop_suite
-    finally:
-        sys.path.remove(browser_dir)
-
-
-class _FakePage:
-    """A page that times out the first `fails` upload waits, then succeeds."""
-
-    def __init__(self, fails: int):
-        self.fails = fails
-        self.uploads = 0
-        self.waits = 0
-
-    def set_input_files(self, selector, path):
-        self.uploads += 1
-
-    def wait_for_function(self, script, arg=None, timeout=None):
-        self.waits += 1
-        if self.waits <= self.fails:
-            raise TimeoutError("cold start")
-
-    def evaluate(self, script):
-        return "pano-1"
-
-
-class _FakeCtx:
-    def __init__(self, fails: int):
-        self.page = _FakePage(fails)
-
-
-def test_pano_crop_upload_wait_survives_a_cold_first_round_trip():
-    """TR-12 (0.6.32 review): the crop check's upload wait timed out on a COLD
-    first launch (measured 91.9 s against a 90 s budget, then 3.0 s on an
-    immediate re-run), so the release gate could go red for a machine rather than
-    for a regression. The wait must stay above the measured cold start AND retry
-    a timed-out attempt; the retry is safe because the wait asks for a DIFFERENT
-    panorama id, so a second upload is simply another id."""
-    suite = _desktop_suite()
-    timeout, attempts = suite.upload_pano.__defaults__
-    assert timeout >= 150000, (
-        f"the upload wait is back under the measured cold start: {timeout} ms")
-    assert attempts >= 2, "a timed-out upload wait must be retried once"
-
-    c = _FakeCtx(fails=1)                       # one cold timeout, then it lands
-    assert suite.upload_pano(c, "x.png", None) == "pano-1"
-    assert c.page.uploads == 2, "the timed-out upload must be retried"
-
-    # a wait that keeps timing out must FAIL (never pass quietly)
-    c = _FakeCtx(fails=2)
-    try:
-        suite.upload_pano(c, "x.png", None)
-    except AssertionError as exc:
-        assert "did not land" in str(exc)
-    else:
-        pytest.fail("a persistently timing-out upload must raise")

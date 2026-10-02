@@ -3,8 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Download — NightSeam</title>
-<meta name="description" content="Download NightSeam for Windows — the deep-sky night planner with an image catalog for your FITS captures. Free, works offline, and what's new in each version.">
+<title>Changes — NightSeam</title>
+<meta name="description" content="NightSeam web planner release history. Plan deep-sky observing nights in your browser.">
 <link rel="icon" type="image/png" href="app.png">
 <link rel="stylesheet" href="style.css">
 </head>
@@ -19,7 +19,7 @@
     <nav class="nav">
       <a href="features.html">Features</a>
       <a href="about.html">About</a>
-      <a href="download.html">Download</a>
+      <a href="download.html">Changes</a>
       <a class="nav-cta" href="/astro">Launch the planner</a>
     </nav>
   </div>
@@ -28,26 +28,23 @@
 <main>
   <section class="hero hero-page">
     <div class="container hero-inner">
-      <p class="eyebrow">Download</p>
-      <h1>NightSeam for Windows</h1>
-      <p class="hero-sub">The desktop app for planning deep-sky observing nights — plus an image catalog that keeps your captures organized. Works offline; your data stays on your machine.</p>
+      <p class="eyebrow">Web planner</p>
+      <h1>NightSeam in your browser</h1>
+      <p class="hero-sub">Plan deep-sky observing nights in your browser. NightSeam Catalog is now a separate desktop project with its own releases.</p>
     </div>
   </section>
 
   <section class="section" style="padding-top:0">
     <div class="container dl-card">
       <div class="hero-actions">
-        <a class="cta" id="dlLink" href="/downloads/NightSeam-latest.zip">&#11015; Download for Windows</a>
+        <a class="cta" href="/astro">Launch the planner</a>
       </div>
-      <p class="hero-note" id="dlMeta">loading version…</p>
       <ul class="dl-facts">
-        <li>Everything works offline — planning, maps, catalogs, all of it.</li>
-        <li>No installation needed: unzip the download and double-click <code>NightSeam.exe</code>.</li>
-        <li>Your data (sites, panoramas, captures) lives in a <code>data</code> folder next to the app.</li>
-        <li>Free and open source.</li>
-        <li>Prefer not to install? <a href="/astro">Run the web version in your browser.</a></li>
+        <li>The sky calculations run locally in your browser.</li>
+        <li>Your sites, equipment and panoramas stay in browser storage.</li>
+        <li>Free and open source; no account needed.</li>
+        <li>Desktop catalog development and versioning are independent.</li>
       </ul>
-      <p class="hero-note" style="margin-top:14px">&#128737;&#65039; Windows may show &#8220;Unknown publisher&#8221; the first time — that is normal for a self-signed app. Choose <em>More info &#8594; Run anyway</em>.</p>
     </div>
   </section>
 
@@ -65,31 +62,13 @@
   <div class="container foot-inner">
     <span>&copy; 2026 NightSeam &mdash; deep-sky night planning</span>
     <span class="foot-links">
-      <a href="/astro">Planner</a> &middot; <a href="features.html">Features</a> &middot; <a href="download.html">Download</a>
+      <a href="/astro">Planner</a> &middot; <a href="features.html">Features</a> &middot; <a href="download.html">Changes</a>
       &middot; <a href="about.html">About</a> &middot; <a href="privacy.html">Privacy</a> &middot; <a href="impressum.html">Imprint</a>
     </span>
   </div>
 </footer>
 
 <script>
-/* current release from /downloads/version.json (same origin) */
-(function () {
-  try {
-    fetch('/downloads/version.json', { cache: 'no-store' })
-      .then(function (r) { return r.ok ? r.json() : null; })
-      .then(function (j) {
-        if (!j || !j.url) return;
-        var link = document.getElementById('dlLink');
-        var meta = document.getElementById('dlMeta');
-        if (link) link.href = j.url;
-        if (meta) {
-          meta.textContent = 'v' + j.version + ' · Windows 10/11 · ' +
-            (j.size ? Math.round(j.size / 1048576) + ' MB' : '~20 MB') + ' · free';
-        }
-      })
-      .catch(function () { /* static fallback stays */ });
-  } catch (e) { /* static fallback stays */ }
-})();
 /* what's new from changelog.json (same origin) */
 (function () {
   try {

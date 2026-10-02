@@ -1,241 +1,36 @@
-# NightSeam
+# NightSeam Web
 
-*Formerly AstroPilot — renamed in 0.6.0, now at <https://nightseam.de>.*
+NightSeam is a browser-based deep-sky night planner at
+[nightseam.de/astro](https://nightseam.de/astro/). This repository now owns only
+the website and landing pages. Astronomy and planning run locally in the browser;
+optional images and weather use the documented external services.
 
-A local FITS image catalog for organizing captured frames, with the full
-deep-sky planning experience available on the web and in the source-run desktop
-shell.
+The Windows exposure catalog was extracted on October 1, 2026 into the
+independent `<workspace>/Nightseam-catalog`
+repository, beginning at version 0.1.0. Its source, executable, tests, source
+library and packaged library live there. This repository keeps its existing
+branch/history and web version sequence.
 
-NightSeam runs as a small local web server and opens its UI in your default
-browser (or a native window). It ships with **no external runtime
-dependencies** on the target machine, and both the sky calculations and the
-whole catalog work fully offline. The packaged desktop executable opens the
-Image Catalog without background network requests. The source-run planner and
-web planner retain their optional online features, including example images
-and the on-request weather panel; the source-run desktop planner also checks
-for updates once per start.
+## Run and check
 
-**Docs:** `DESIGN.md` - the Workbench UI design contract. `CATALOG.md`
-- where the catalogue comes from and how to rebuild it
-(sources, the popularity table, the web payload, cache tokens). `DECISIONS.md` -
-why the app works the way it does and what was rejected. `AGENTS.md` - the
-invariants, commands, release and deploy reference. `RELEASES.md` - what each
-release or unreleased working tree shipped and how it was verified. `BUGS.md` -
-current confirmed issues and recommended implementation direction.
+```powershell
+python -m http.server 8080 --directory web
+python -m pytest tests/ -q --tb=no
+python scripts/check_js.py
+python scripts/check_browser.py --web
+```
 
-There is also a **web version** — the same night-planning core, running 100%
-in your browser with no server:
+No local FastAPI server, SQLite application database, desktop build or sibling
+checkout is needed. `web/catalog.json` is a committed browser payload. The catalog contains 12,176 objects. Its
+rebuild uses this repository's neutral catalog_data sources and popularity
+policy. core/ is the astronomy/planning authority; scripts/build_core.py bakes
+only the website's content-hashed core tree.
 
-- **Web app:** <https://nightseam.de/astro/>
-- **Landing page / downloads:** <https://nightseam.de/>
+Read AGENTS.md, DESIGN.md, CATALOG.md and DEVELOPMENT.md. Cache-token, core-drift,
+published astronomy anchors and real-browser checks remain release gates.
+Web deployment remains web/ to /astro and landing/ to /. No deployment or
+remote repository change was performed as part of the split.
 
-## License
-
-MIT — see [LICENSE](LICENSE). Third-party data and service credits
-(OpenNGC CC BY-SA 4.0, Wikimedia images, Open-Meteo, the popularity source
-popularity snapshot) are listed in [NOTICE](NOTICE).
-
-The packaged desktop executable opens the Image Catalog only. It keeps the
-Library, FITS import/reindex workflow, recent calibration imports, and fixed
-archive Sky Map; it does not initialize the night planner. The full local
-planner remains available when running from source with `python main.py`, and
-the web planner remains unchanged.
-
-The full desktop source shell has two modes:
-
-- **Night Planner** - plan what to shoot and when.
-- **Image Catalog** - import, organize and inspect your capture sessions.
-
-### Interface
-
-Workbench is the sole planner language across desktop and web: opaque graphite
-surfaces, brass actions, compact controls, and no decorative starfield. Older
-theme values are normalized to Workbench during load and restore.
-
-## Features
-
-### Night Planner
-
-- **DSO catalog** - the complete OpenNGC catalog: NGC/IC plus the OpenNGC
-  addendum, the notable objects with no NGC/IC number (Horsehead, Hyades,
-  Coalsack, Magellanic Clouds, Sculptor/Fornax dwarfs), plus a small
-  supplement of sixteen objects OpenNGC cannot represent (the Medusa and
-  Headphone nebulae, Barnard's Loop, the Alpha Persei Cluster, the Sadr
-  region, M40, M73, and the Tulip, Lion, Flying Bat/Squid, Dolphin Head,
-  Simeis 147 and Seahorse nebulae, LBN 437, LDN 1622 and the Pipe Nebula) -
-  12,176 objects to magnitude 20. Standard mode shows
-  the 200 MOST POPULAR of them (community observing counts from the popularity source,
-  shipped as a one-time snapshot and used as a silent ranking input);
-  **advanced mode** (hamburger menu) shows all 12,176. Each
-  object carries its designations - search "M101" or "NGC 5457" and you get
-  the same object.
-- **Location-aware visibility** - enter your observing site(s) once; every
-  calculation is done for your exact coordinates and elevation, including
-  atmospheric refraction and precession.
-- **Manual sky-quality planning** - set your site's Bortle class in Advanced;
-  NightSeam keeps that entered value and uses the shared Bortle-based default
-  minimum altitude when no explicit minimum is set. Estimated satellite-light
-  brightness layers are no longer part of the app.
-- **Panorama horizon masking** - import a 360-degree panorama photo taken from
-  your telescope spot, calibrate it (azimuth rotation + elevation range) and
-  simply paint over everything that blocks the sky. NightSeam converts your
-  painting into an obstruction-height profile per azimuth degree; a sky-paint
-  mode can also mask the area *above* a visible band. Named obstruction
-  landmarks, calibration notes, per-bin confidence and precise numeric profile
-  edits are retained with the panorama and remain undoable.
-- **Altitude graphs** - per object: altitude over the course of the night with
-  green segments where the target is clear and high enough, red where an
-  obstacle blocks it, amber where it is too low - plus the obstruction ceiling,
-  moon altitude, twilight shading and a hover tooltip.
-- **Sky view** - polar whole-dome chart with live positions of all catalog
-  objects, sun/moon and your painted obstacle silhouette, plus an optional
-  min-altitude band. Scrub through the night with the time slider
-  (arrow keys, Shift = 60 min).
-- **Tonight view** - dark-time summary, moon phase and the best targets right
-  now / rising later, ranked by an imaging-quality score. Moon-aware ranking
-  penalizes targets near a bright Moon (per object type) and honors your
-  Bortle sky class (hamburger menu).
-- **Weather panel** - the top-bar weather chip loads the selected site's
-  dark-hour forecast from Open-Meteo and reduces it to a night rating (0–100)
-  plus a green/yellow/red status symbol. It shows cloud cover, rain
-  probability and amount, a plain-language sky-clarity/haze proxy, and an
-  estimated dew risk from temperature versus dew point; daylight and noon
-  rows are omitted. Nothing is fetched until you click it, unless you turn on
-  "always load on startup"; weather remains display-only and never feeds the
-  planning numbers.
-- **Timezone-aware planning** - all times render in your machine's zone with
-  DST applied per date (planning a December night in summer is not shifted).
-  An optional IANA timezone picker (advanced mode) plans for a distant
-  observing site.
-- **Constellation filter** keeps the target list tidy.
-- **Catalog provenance** - inspect each target's OpenNGC or NightSeam source,
-  source-file version, aliases and designation history, then download the full
-  reproducible provenance sidecar as JSON.
-
-### Image Catalog
-
-- **FITS ingest** - upload light frames (or drop them on the pane); the object
-  is identified from the FITS header (OBJECT, coordinates) and the file name.
-  Frame types (lights/darks/flats/bias) come from the IMAGETYP header or are
-  forced per upload.
-- **Session archive layout** - originals are copied (never moved) into
-  `<archive>/<Object>/<session>/<lights|darks|flats|bias>/`, where the session
-  folder is the capture night (`YYYY-MM-DD_HHMM`); frames less than 12 h apart
-  share one folder, different nights get their own folders.
-- **Import history** - one entry per captured session, newest first, each with
-  +darks/+flats/+bias buttons that upload straight into that night's folder,
-  and an open-in-Explorer button.
-- **Library** - per-object rollups of frame types and filters, sessions with
-  date/duration and per-session statistics, thumbnail-free session expansion,
-  rename/retype for unresolved objects, CSV/JSON export, folder reindexing for
-  files placed on disk manually, and open-folder-in-Explorer per object.
-
-## Quick start
-
-### Packaged executable
-
-1. Download the latest release from <https://nightseam.de/download.html>.
-2. Double-click `NightSeam.exe`.
-3. Your browser (or the app window) opens the Image Catalog at
-   `http://127.0.0.1:<port>` automatically.
-4. Open **Import Exposures** to choose an archive folder, import FITS frames,
-   or reindex files already on disk. **Library** shows sessions and import
-   actions; **Sky Map** plots the stored library objects.
-
-The source-run desktop planner checks once per start whether a newer version
-is available on nightseam.de and shows a toast if so. The packaged Image
-Catalog does not run the updater or planner startup tasks.
-
-The local app uses one server for its shared archive and database. If a
-catalog-only window is already running when you request planner mode, it shows
-a notice to close that window and relaunch with `--planner`.
-
-All user data lives next to the exe in `data\` (SQLite DB + panorama images +
-image cache + import history). Quit via the shutdown endpoint
-(`/api/shutdown`) or kill the process; the app also exits by itself after 12 h
-without requests (`--idle-exit-hours 0` disables that).
-
-### Run from source
-
-    pip install -r requirements.txt   # pyinstaller only needed for building
-    python main.py                    # full local planner + Image Catalog
-    python main.py --catalog-only     # preview the packaged catalog shell
-    python main.py --planner          # explicitly open the legacy planner shell
-    python main.py --console          # add --console to see log output
-
-## Building the exe yourself
-
-    powershell -ExecutionPolicy Bypass -File build.ps1
-
-Creates an isolated `.venv-build`, installs dependencies and produces
-`dist\NightSeam.exe`.
-
-## Taking a usable panorama
-
-1. Stand at your telescope position.
-2. Shoot a 360-degree panorama at roughly telescope height (phone pano mode
-   works fine; keep the phone level).
-3. Note which direction the LEFT edge of the image points (e.g. stand facing
-   north and start panning eastwards -> left edge ~0 degrees).
-4. In the editor set *Azimuth at left edge* until the N/E/S/W labels line up
-   with reality, then adjust bottom/top elevation until the grid matches your
-   image geometry (bottom = 0 deg if the horizon sits at the image bottom).
-5. Use *Horizontal field of view* if your pano is not exactly 360 deg wide:
-   larger values cover ultra-wide panos, smaller values partial ones.
-   Azimuths outside the image stay unblocked.
-6. Use the **Crop tool** to trim empty margins or misaligned edges (drag a
-   rectangle, Apply). Cropping resets paint mask and profile.
-7. Paint over trees/houses with the brush (use the eraser to fix mistakes),
-   then "Use for planning". The red line shows the resulting obstruction
-   height that planning will respect.
-
-Windows may show a SmartScreen warning on first launch of a self-built exe -
-choose "More info" -> "Run anyway".
-
-### Command line switches
-
-    NightSeam.exe                native app window (default)
-    --browser                     open in a regular browser tab instead
-    --no-browser                  headless, no UI
-    --catalog-only                open only the FITS Image Catalog
-    --planner                     open the full desktop planner shell
-    --port N                      fixed port (default 8407)
-    --console                     also log to console
-    --idle-exit-hours N           exit after N h without requests (default 12)
-
-## Where do the numbers come from?
-
-The full planner (web or source-run desktop) computes sky positions locally on
-your machine from standard
-published algorithms - no internet service is involved:
-
-- **Sunrise / sunset / twilight** come from the Sun's geocentric position
-  (Meeus, *Astronomical Algorithms*, ch. 25, ~0.01 deg accuracy) combined with
-  your exact coordinates and elevation; rise/set are the crossings of the
-  apparent solar altitude through 0 deg, civil/nautical/astronomical night
-  begin when it passes -6/-12/-18 deg (including Saemundsson refraction).
-- **Moon phase / illumination percentage** is derived from the elongation
-  angle between Moon and Sun using a truncated lunar series (Meeus ch. 47,
-  ~0.3 deg), illuminated fraction k = (1 - cos(elongation)) / 2.
-- Object altitudes use J2000 catalog coordinates precessed to date plus
-  standard sidereal time and refraction (typically well below 0.1 deg error).
-
-Object example images are fetched from Wikipedia on demand and cached in
-`data\imgcache` (offline you get generated placeholders instead); the planner's
-weather panel sends your active site's coordinates to Open-Meteo only when you
-request a forecast. The source-run desktop planner checks for updates once per
-start. The packaged desktop Image Catalog makes none of these planner requests.
-The catalogue with its popularity snapshot and every sky calculation are local.
-
-## Accuracy notes
-
-Positions are computed from J2000 catalog coordinates with precession to date,
-standard sidereal time and Saemundsson refraction (typical error well below
-0.1 degree for stars/DSOs). Solar/lunar positions use compact Meeus series
-(~0.01 / ~0.3 degree) - plenty for twilight times, obstruction tests and moon
-phase. Obstacle comparisons use apparent altitudes on both sides consistently.
-
-Not included on purpose: satellite/planet positions, ephemeris-grade lunar
-librations. Weather forecasts and the dew estimate are advisory display data;
-they are never inputs to the planning numbers and cannot guarantee local
-telescope conditions.
+MIT; see LICENSE and NOTICE for OpenNGC, Wikimedia, Open-Meteo and popularity
+data credits. Recovery snapshots of the pre-split branch and working tree are
+kept locally in ignored logs/repository-split/.

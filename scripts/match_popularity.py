@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Match the OpenNGC catalog (app/data/openned.csv) against the popularity source
-popularity scores and write `app/popularity_data.py`.
+"""Match the OpenNGC catalog (catalog_data/data/openned.csv) against the popularity source
+popularity scores and write `catalog_data/popularity_data.py`.
 
-The scores are used for TWO things (see `app/catalog_data.py`): the silent
+The scores are used for TWO things (see `catalog_data/__init__.py`): the silent
 ranking tiebreaker and the standard-mode selection (the N most popular objects),
 so the match must be REPRODUCIBLE - it is: every designation of an object is
 considered and the highest score wins (see `match_objects`).
@@ -27,9 +27,9 @@ from collections import defaultdict
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-CSV_PATH = ROOT / "app" / "data" / "openned.csv"
+CSV_PATH = ROOT / "catalog_data" / "data" / "openned.csv"
 OUTPUT_JSON = ROOT / "data" / "popularity_snapshot.json"
-OUTPUT_MODULE = ROOT / "app" / "popularity_data.py"
+OUTPUT_MODULE = ROOT / "catalog_data" / "popularity_data.py"
 
 
 def load_cached_snapshot():
@@ -236,7 +236,7 @@ def read_csv():
     """Read the openned.csv file (the catalogue's `;`-separated layout).
 
     CD-03 (0.6.32 review): parsed with the `csv` module, exactly like
-    `app/database.py::_read_catalog_csv`. The generator
+    `catalog_data.loader.read_catalog`. The generator
     (`scripts/build_adv_catalog.py`) writes with `csv.writer(delimiter=";")`,
     which QUOTES any field containing `;`, `"` or a newline - the old
     `line.split(";")` mis-split such a row and dropped it through the length
@@ -272,21 +272,21 @@ def read_csv():
 
 
 def write_module(matches) -> None:
-    """Write `app/popularity_data.py` (sorted by id, with its provenance)."""
+    """Write `catalog_data/popularity_data.py` (sorted by id, with its provenance)."""
     lines = [
         '"""The popularity source popularity scores for the OpenNGC catalog.',
         "",
         "One entry per catalog id, used for TWO things:",
         "  * the SILENT ranking tiebreaker (visibility decides, popularity separates",
         "    equals - the number is never shown in either app), and",
-        "  * the STANDARD-MODE selection (`app/catalog_data.STANDARD_TOP_N`: the N",
+        "  * the STANDARD-MODE selection (`catalog_data.STANDARD_TOP_N`: the N",
         "    most popular objects are the standard catalog, the rest are advanced).",
         "",
         "GENERATED - do not hand-edit. Re-run:",
         "",
         "    python scripts/match_popularity.py            # offline, from the frozen snapshot",
         "",
-        "Every designation of every `app/data/openned.csv` row is matched against",
+        "Every designation of every `catalog_data/data/openned.csv` row is matched against",
         "the popularity source table and the HIGHEST score wins (`match_objects`), so the",
         "result does not depend on set/hash order and the standard-mode selection is",
         "reproducible.",

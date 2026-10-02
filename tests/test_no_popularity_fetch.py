@@ -27,11 +27,7 @@ SHIPPED_GLOBS = [
     "web/*.html",
     "web/core/**/*.js",
     "web/core/**/*.json",
-    "static/index.html",
-    "static/js/**/*.js",
     "core/**/*.js",
-    "app/*.py",
-    "app/data/*.py",
 ]
 DOMAIN = "popularity-source.invalid"
 

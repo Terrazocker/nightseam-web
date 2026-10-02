@@ -15,13 +15,6 @@ def _read(*parts):
     return (ROOT.joinpath(*parts)).read_text(encoding="utf-8")
 
 
-def test_desktop_shell_delegates_visibility_to_core():
-    derive = _read("static", "js", "derive.js")
-    assert "statusOf as coreStatusOf" in derive
-    assert "function statusOf" not in derive, "desktop kept a statusOf copy"
-    assert "effectiveMinAlt as coreMinAlt" in derive
-    assert "function effectiveMinAlt" not in derive, \
-        "desktop kept a min-alt rule copy"
 
 
 def test_web_shells_delegate_visibility_to_core():

@@ -52,7 +52,7 @@ which rewrites the generated block below; commit the script with that change.
 repair review demanded (the 0.6.25 shape and CRLF normalization).
 
 Only web/ modules (and the generated `web/core.js` stub, whose token lives in
-`web/app.js`) carry cache tokens - `static/` is loaded from disk by the
+`web/app.js`) carry cache tokens. The historic desktop was loaded by the
 pywebview shell.
 
 Usage: python scripts/check_js_tokens.py [--update] [--self-test]

@@ -1,11 +1,7 @@
-"""Cross-engine behaviour: static/js/astro.js vs web/astro.js vs core/.
+"""Web astronomy and source-core adapter contracts, with absolute reference values.
 
-The desktop and the web each own a JS astronomy layer (the web recomputes
-everything client-side; the desktop builds its tracks in a worker). The Python
-oracle (app/astro.py) was retired in Phase C, so this module no longer compares
-live Python: it drives the node engines (tests/js/astro_parity.mjs) and asserts
-their contracts, with ABSOLUTE values frozen from the oracle where one number is
-the point (the fixture-based oracle checks live in tests/test_core_fixtures.py).
+Published correctness anchors are maintained separately in test_reference_anchors.
+The frozen oracle values here provide regression coverage.
 """
 
 import json
@@ -118,12 +114,12 @@ def test_above_horizon_rule_identical_and_astronomical():
     alts = [-90, -18.5, -6, -0.01, 0, 0.01, 5, 45, 89.9]
     res = _run_node("abovehorizon", [{"alt": a} for a in alts])
     for a, r in zip(alts, res):
-        assert r["desktop"] is r["web"], (a, r)
-        assert r["desktop"] is (a > 0), (a, r)
-    assert _run_node("abovehorizon", [{"alt": -6}])[0]["desktop"] is False
+        assert r["core"] is r["web"], (a, r)
+        assert r["core"] is (a > 0), (a, r)
+    assert _run_node("abovehorizon", [{"alt": -6}])[0]["core"] is False
 
 
-def test_desktop_and_web_magnitude_rule_identical():
+def test_core_and_web_magnitude_rule_identical():
     """The chart magnitude limit is ONE rule (derive.js::magVisible =
     web/format.js::magVisible): a known magnitude shows at <= limit, an object
     without a magnitude shows only at the slider maximum."""
@@ -133,7 +129,7 @@ def test_desktop_and_web_magnitude_rule_identical():
             for mx in [14, 20]:
                 cases.append({"vmag": vmag, "limit": limit, "max": mx})
     for c, r in zip(cases, _run_node("mag", cases)):
-        assert r["desktop"] is r["web"], c
+        assert r["core"] is r["web"], c
     # absolute anchors
     assert _run_node("mag", [
         {"vmag": 5, "limit": 10, "max": 14},
@@ -143,17 +139,17 @@ def test_desktop_and_web_magnitude_rule_identical():
         {"vmag": 10, "limit": 10, "max": 14},
         {"vmag": 10.5, "limit": 10, "max": 14},
     ]) == [
-        {"vmag": 5, "limit": 10, "max": 14, "desktop": True, "web": True},
-        {"vmag": 12, "limit": 10, "max": 14, "desktop": False, "web": False},
-        {"vmag": None, "limit": 10, "max": 14, "desktop": False, "web": False},
-        {"vmag": None, "limit": 14, "max": 14, "desktop": True, "web": True},
-        {"vmag": 10, "limit": 10, "max": 14, "desktop": True, "web": True},
-        {"vmag": 10.5, "limit": 10, "max": 14, "desktop": False, "web": False},
+        {"vmag": 5, "limit": 10, "max": 14, "core": True, "web": True},
+        {"vmag": 12, "limit": 10, "max": 14, "core": False, "web": False},
+        {"vmag": None, "limit": 10, "max": 14, "core": False, "web": False},
+        {"vmag": None, "limit": 14, "max": 14, "core": True, "web": True},
+        {"vmag": 10, "limit": 10, "max": 14, "core": True, "web": True},
+        {"vmag": 10.5, "limit": 10, "max": 14, "core": False, "web": False},
     ]
 
 
 @pytest.mark.parametrize("W,H", [(800, 800), (1600, 800), (800, 1600), (2560, 1440)])
-def test_desktop_and_web_square_zoom_math_identical(W, H):
+def test_core_and_web_square_zoom_math_identical(W, H):
     """The "square zoom" geometry is identical in both apps and is a uniform
     (equal-axis) scale about a focus point: matrix.a == matrix.d, the disc
     centre maps to the canvas centre, screen<->base round-trips, and zoom/focus
@@ -167,7 +163,7 @@ def test_desktop_and_web_square_zoom_math_identical(W, H):
             cases.append({"zoom": zoom, "W": W, "H": H, "fx": fx, "fy": fy,
                           "sx": W * 0.3, "sy": H * 0.7})
     for c, r in zip(cases, _run_node("skyzoom", cases)):
-        d, w = r["desktop"], r["web"]
+        d, w = r["core"], r["web"]
         assert d == w, c
         z = d["zoom"]
         assert z == pytest.approx(min(8, max(1, c["zoom"]))), c
@@ -183,9 +179,9 @@ def test_desktop_and_web_square_zoom_math_identical(W, H):
         assert d["matrix"]["a"] * bx + d["matrix"]["e"] == pytest.approx(c["sx"], abs=1e-9)
         assert d["matrix"]["d"] * by + d["matrix"]["f"] == pytest.approx(c["sy"], abs=1e-9)
     assert _run_node("skyzoom", [{"zoom": 1, "W": W, "H": H, "fx": None, "fy": None,
-                                  "sx": W / 2, "sy": H / 2}])[0]["desktop"]["zoom"] == 1
+                                  "sx": W / 2, "sy": H / 2}])[0]["core"]["zoom"] == 1
     assert _run_node("skyzoom", [{"zoom": 99, "W": W, "H": H, "fx": None, "fy": None,
-                                  "sx": 0, "sy": 0}])[0]["desktop"]["zoom"] == 8
+                                  "sx": 0, "sy": 0}])[0]["core"]["zoom"] == 8
 
 
 # ------------------------------------------------------- clear-window contract
@@ -203,13 +199,6 @@ def _times(n: int) -> list[str]:
             f"{(18 * 60 + i * _STEP) % 60:02d}:00" for i in range(n)]
 
 
-def test_js_window_end_is_never_undefined_for_a_full_grid_run():
-    """The exact regression: a run ending at the last sample made the clients
-    index times_iso[n] (undefined) and render "--:--"/"NaNh NaNm"."""
-    res = _run_node("window", [{"flags": [True] * 12, "times": _times(12),
-                                "step": _STEP}])[0]
-    assert res["best"] == [0, 12]
-    assert res["endISO"] == "2026-09-10T19:12:00"   # 18:00 + 12 * 6 min
 
 
 # ------------------------------------------------- twilight-window selection
@@ -263,7 +252,7 @@ def test_web_twilight_choice_rule():
 # ranked differently in the two apps. The curves themselves now live in ONE
 # place per app and this test compares them number by number.
 
-def test_desktop_and_web_scoring_model_are_identical():
+def test_core_and_web_scoring_model_are_identical():
     res = _run_node("scoring", [])
 
     for otype, (desk, web) in res["MOON_TYPE_FACTOR"].items():
@@ -652,38 +641,13 @@ def test_web_frame_coverage_is_object_over_field():
     assert [r["pct"] for r in res] == [117, 39, 100, None, None]
 
 
-def test_desktop_frame_coverage_absolute():
-    """Same definition, worse of BOTH axes: max(ow/fw, oh/fh) in arcminutes."""
-    res = _run_node("frame", _FRAME_DESK_CASES)
-    got = [(r["pct"], r["fits"]) for r in res]
-    assert got == [(140, False), (70, True), (1279, False), (100, True),
-                   (0, True)], got
 
 
 # ================================================== E4 statusOf vs vis[]
-def test_desktop_status_of_matches_visibility_predicate():
-    """statusOf must say "Blocked" wherever the vis[] predicate blocks - the
-    sky-mode ceil_top ceiling included. The old statusOf ignored ceil_top, so a
-    balcony/overhang object showed "Observable" in the targets table while the
-    very same sample was counted blocked."""
-    cases = [
-        {"alt": 40, "ceil": -90, "ceilTop": None, "minAlt": 25},   # clear
-        {"alt": 50, "ceil": -90, "ceilTop": 30, "minAlt": 25},     # above ceiling
-        {"alt": 30, "ceil": -90, "ceilTop": 30, "minAlt": 25},     # exactly at
-        {"alt": 30.1, "ceil": -90, "ceilTop": 30, "minAlt": 25},   # just above
-        {"alt": 29.9, "ceil": -90, "ceilTop": 30, "minAlt": 25},   # just below
-        {"alt": 10, "ceil": 15, "ceilTop": None, "minAlt": 25},    # horizon obs
-        {"alt": -5, "ceil": -90, "ceilTop": None, "minAlt": 25},   # below horizon
-        {"alt": 20, "ceil": -90, "ceilTop": None, "minAlt": 25},   # too low
-        {"alt": 25, "ceil": -90, "ceilTop": None, "minAlt": 25},   # at min alt
-    ]
-    codes = [r["code"] for r in _run_node("status", cases)]
-    assert codes == ["vis", "blk", "blk", "blk", "vis",
-                     "blk", "hor", "low", "vis"], codes
 
 
 # ================================================== E5 min-altitude rule
-def test_min_alt_rule_identical_desktop_web():
+def test_min_alt_rule_matches_source_core():
     """The authoritative threshold: explicit min_useful_alt wins, else
     17 + 2*bortle. Desktop derive.js::effectiveMinAlt and web
     horizon.js::effectiveMinAlt must agree on every state (the desktop used to
@@ -697,12 +661,12 @@ def test_min_alt_rule_identical_desktop_web():
     ]
     res = _run_node("minalt", cases)
     for c, r in zip(cases, res):
-        assert r["desk"] == r["web"], (c, r)
-    assert [r["desk"] for r in res] == [19, 25, 31, 35, 20, 30, 5]
+        assert r["core"] == r["web"], (c, r)
+    assert [r["core"] for r in res] == [19, 25, 31, 35, 20, 30, 5]
 
 
 # ================================================== E7 filter advice model
-def test_filter_advice_model_identical():
+def test_filter_advice_absolute_values():
     """Emission objects need narrowband (Ha OR OIII); a broadband-only object
     only warns when the user owns narrowband but no broadband. The web used a
     different type map and only ever showed an ownership badge - the model must
@@ -721,9 +685,7 @@ def test_filter_advice_model_identical():
         {"otype": "unknown", "bb": False, "ha": False, "oiii": False},
     ]
     res = _run_node("advice", cases)
-    for c, r in zip(cases, res):
-        assert r["desk"] == r["web"], (c, r)
-    # absolute sanity on the shared model
+    # absolute sanity on the web model
     assert res[0]["web"] == {"ok": True, "text": "narrowband \u2713"}
     assert res[1]["web"] == {"ok": False, "text": "narrowband"}
     assert res[4]["web"] == {"ok": False, "text": "broadband \u2717"}
@@ -731,11 +693,10 @@ def test_filter_advice_model_identical():
 
 
 # ================================================== E8 keyboard scrub steps
-def test_scrub_step_constants_identical():
+def test_scrub_step_constants_absolute_values():
     """Plain arrow = 6 min (one night-grid sample), Shift = 60 min - the web
     had 60/10, the desktop 6/60, and the web comment claimed desktop parity."""
     res = _run_node("shortcut", [{}])
-    assert res["desk"] == [6, 60], res
     assert res["web"] == [6, 60], res
 
 
@@ -906,7 +867,7 @@ def test_scrub_window_follows_the_planner_and_matches_between_apps():
     assert len(res) == len(cases)
     for c, r, exp in zip(cases, res, expected):
         n0, n1, f0, f1 = exp
-        assert r["desk"] == r["web"], ("app parity", c["name"], c["viewFullDay"], r)
+        assert r["core"] == r["web"], ("app parity", c["name"], c["viewFullDay"], r)
         it = r["web"]
         if c["viewFullDay"]:
             assert (it["start"], it["end"]) == (f0, f1), (c["name"], it)
@@ -923,35 +884,6 @@ def test_scrub_window_follows_the_planner_and_matches_between_apps():
 
 
 # ================================================== desktop 24 h grid (ITEM A)
-def test_desktop_scrub_grid_maps_the_real_24h_payload():
-    """ITEM A: on the REAL desktop 24 h grid (site-zoned local noon -> +24 h at
-    the 6-min step), the desktop's scrubWindowRange() selects sunset..sunrise,
-    and the WHOLE grid with view_full_day; nightIndexRange() (SCORING) still
-    selects the twilight-level dusk..dawn in both states. Every scenario at both
-    toggle states, and the grid endpoints are the exact samples bracketing the
-    frozen crossings."""
-    cases, expected = [], []
-    for (name, _n0, _n1, t0, s_set, s_rise, dusk, dawn,
-         exp_lo, exp_hi, slo, shi) in _SCRUB_SCENARIOS:
-        times = [t0 + 6 * 60_000 * i for i in range(241)]
-        assert times[-1] - times[0] == 24 * 3600_000
-        base = {"times": [_iso_ms(t) for t in times], "step": 6,
-                "dusk": _iso_ms(dusk), "dawn": _iso_ms(dawn),
-                "sunset": _iso_ms(s_set) if s_set else None,
-                "sunrise": _iso_ms(s_rise) if s_rise else None}
-        for vfd in (False, True):
-            cases.append(dict(base, viewFullDay=vfd))
-            expected.append((exp_lo, exp_hi, slo, shi, vfd))
-
-    res = _run_node("scrubgrid", cases)
-    assert len(res) == len(cases)
-    for c, r, (elo, ehi, slo, shi, vfd) in zip(cases, res, expected):
-        if vfd:
-            assert (r["lo"], r["hi"]) == (0, 240), r
-        else:
-            assert (r["lo"], r["hi"]) == (elo, ehi), (c["sunset"], c["sunrise"], r)
-        assert (r["scoringLo"], r["scoringHi"]) == (slo, shi), r
-        assert r["lo"] <= r["hi"]
 
 
 # ======================================== popularity TIERS (0.6.30, web table)

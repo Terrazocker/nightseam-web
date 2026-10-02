@@ -135,15 +135,13 @@ def test_default_discovery_is_the_shipping_set():
     rel = {p.relative_to(ROOT).as_posix() for p in files}
 
     assert "web/app.js" in rel               # the web twin
-    assert "static/js/main.js" in rel        # the desktop UI
+    assert not any(p.startswith("static/") for p in rel)
     # TO-06: the shared core source AND both baked trees ship to the browser, so
     # the default set must parse them too - the docstring/AGENTS.md claimed this
     # coverage while ROOTS excluded it.
     assert "core/horizon.js" in rel
     assert "core/index.js" in rel
     assert any(p.startswith("web/core/") and p.endswith("/index.js") for p in rel)
-    assert any(p.startswith("static/js/core/") and p.endswith("/index.js")
-               for p in rel)
     assert len(files) >= 20
     assert all(p.suffix == ".js" for p in files)
     assert not any(p.name.endswith(".min.js") for p in files)

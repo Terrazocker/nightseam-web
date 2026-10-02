@@ -29,7 +29,6 @@ globalThis.localStorage = {
 };
 
 const H = await import(new URL("../../web/horizon.js", import.meta.url).href);
-const D = await import(new URL("../../static/js/pano.js", import.meta.url).href);
 
 const BINS = 720;
 let ok = true;
@@ -82,55 +81,6 @@ const imported = () => {
   assert(!H.historyDirty(h, rec), "undo back to the baseline is clean again");
   H.historyRedo(h, rec);
   assert(rec.paintMode === "sky" && rec.profile.every((v) => v === 90), "redo reapplies the switch");
-}
-
-/* ---- 3. desktop: same switch and the same undo round-trip ---- */
-const deskApi = typeof D.pushPanoUndo === "function" && typeof D.popPanoUndo === "function"
-  && typeof D.setEditableMode === "function" && typeof D.blankProfileForMode === "function";
-if (!deskApi) {
-  fail("desktop has no undoable paint-mode switch (pushPanoUndo/popPanoUndo/setEditableMode/blankProfileForMode) - DE-03");
-} else {
-  const rec = imported();
-  const before = [...rec.profile];
-  const stack = [];
-  D.pushPanoUndo(rec, stack);
-  assert(D.setEditableMode(rec, "sky") === true, "desktop switch reports the change");
-  assert(rec.paint_mode === "sky", "desktop switch sets the mode");
-  assert(rec.profile.every((v) => v === 90), "desktop switch re-derives the canonical sky blank");
-  assert(D.setEditableMode(rec, "sky") === false, "a no-op switch does nothing");
-  assert(D.popPanoUndo(rec, stack) === true, "desktop undo pops the snapshot");
-  assert(rec.paint_mode === "obstacle", "desktop undo restores the MODE");
-  assert(eqArr(rec.profile, before), "desktop undo restores the authoritative PROFILE (DE-03)");
-  // the reverse direction too: sky blank -> obstacle
-  rec.paint_mode = "sky"; D.blankProfileForMode(rec); D.setEditableMode(rec, "obstacle");
-  assert(rec.paint_mode === "obstacle" && rec.profile.every((v) => v === -90),
-    "obstacle switch re-derives the canonical obstacle blank");
-}
-
-/* ---- 4. CROSS-SHELL agreement on the deliberate switch ---- */
-if (deskApi) {
-  for (const mode of ["sky", "obstacle"]) {
-    const web = imported();
-    web.paintMode = mode; H.clearMask(web);
-    const desk = imported();
-    // start in the OTHER mode so the switch is real in both directions
-    desk.paint_mode = (mode === "sky") ? "obstacle" : "sky";
-    assert(D.setEditableMode(desk, mode) === true, `desktop switched to ${mode}`);
-    assert(eqArr(web.profile, desk.profile),
-      `both shells re-derive the same ${mode} profile (web vs desktop)`);
-  }
-}
-
-/* ---- 5. the switch is the ONLY place a mode change touches the profile ---- */
-if (deskApi) {
-  // A stroke-y record: the profile is DERIVED from the mask, so switching mode
-  // must not blank it here - the editor recomputes it from the strokes instead.
-  const rec = imported();
-  rec.strokes = [{ m: "b", x: 10, y: 10, r: 3 }];
-  const before = [...rec.profile];
-  D.setEditableMode(rec, "sky");
-  assert(eqArr(rec.profile, before),
-    "with strokes the switch leaves the profile for the mask re-derivation");
 }
 
 console.log(ok ? "pano mode semantics contract held" : "pano mode semantics contract FAILED");

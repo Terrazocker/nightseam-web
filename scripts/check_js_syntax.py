@@ -1,30 +1,9 @@
-"""Parse every JS module that actually ships with Node, so a module that
-cannot even be parsed (duplicate `const`, stray brace, unterminated template
-literal) is caught before it reaches the working tree.
+"""Parse every shipped web module and authored/baked core module with Node.
 
-None of the sibling checkers parse JavaScript - import paths, DOM ids and
-undefined identifiers are all text matching - so a module with a syntax error
-looked clean. The measured case: a duplicate `const` in `web/app.js` survived
-`check_js.py` and was only found by a manual `node --check`.
-
-Covers the desktop UI (`static/js/*.js`), the web app (`web/*.js`) - the same
-two graphs as the sibling checkers - plus the SHARED CORE source (`core/*.js`)
-and both baked, content-hashed trees (`web/core/<hash>/`,
-`static/js/core/<hash>/`), which are copies the browser loads verbatim.
-(TO-06, 0.6.24 review: this docstring and AGENTS.md claimed the core coverage
-while `ROOTS` excluded it.)
-
-Usage:
-    python scripts/check_js_syntax.py                  # everything that ships
-    python scripts/check_js_syntax.py --path web       # one app
-    python scripts/check_js_syntax.py --path web/app.js
-
-Exit codes: 0 = every module parses, 1 = at least one syntax error, 2 = the
-command line was wrong OR the check could not run at all. A missing node, a node
-that cannot be spawned and an unwritable scratch directory are all HARD failures
-with a FATAL line - never a silent skip: the aggregate `check_js.py` must not
-report OK while the only JS parser in the bundle did nothing (TO-03, 0.6.24
-review; the same rule as "a browser that cannot launch is a hard failure").
+Usage: python scripts/check_js_syntax.py [--path web/app.js]
+Exit 0: all modules parse; exit 1: syntax failure; exit 2: infrastructure or CLI
+failure. Missing Node, denied process creation or unwritable scratch files are
+hard failures, never a skip.
 """
 
 from __future__ import annotations
@@ -40,12 +19,12 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[1]
 
 # the JS that actually ships: the desktop UI and the web twin (flat modules)
-ROOTS = [REPO / "static" / "js", REPO / "web"]
+ROOTS = [REPO / "web"]
 
 # ... plus the shared core and its baked copies, which are scanned RECURSIVELY:
 # `core/` is the authored source and `<app>/core/<hash>/` are byte-for-byte copies
 # the browser loads, so a syntax error in any of them ships (TO-06).
-CORE_ROOTS = [REPO / "core", REPO / "web" / "core", REPO / "static" / "js" / "core"]
+CORE_ROOTS = [REPO / "core", REPO / "web" / "core"]
 
 # never shipped / never ours (a --path can point at one of these by accident)
 IGNORED_DIRS = {"node_modules", "whale", "dev"}

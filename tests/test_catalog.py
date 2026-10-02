@@ -1,7 +1,7 @@
 """Sanity checks on the OpenNGC catalog policy: the type vocabulary, the
 shipped popularity table, and the standard-mode selection rule.
 
-The catalog DATA itself is `app/data/openned.csv` (OpenNGC); the tests that
+The catalog DATA itself is `catalog_data/data/openned.csv` (OpenNGC); the tests that
 check its shape live in `tests/test_advanced_catalog.py`, and its identity
 (uniqueness, the standard/advanced split, the advertised size) in
 `tests/test_catalog_integrity.py`.
@@ -10,11 +10,11 @@ check its shape live in `tests/test_advanced_catalog.py`, and its identity
 import csv
 from pathlib import Path
 
-from app import catalog_data
-from app.catalog_data import STANDARD_TOP_N, TYPE_LABELS, standard_ids
-from app.popularity_data import POPULARITY
+import catalog_data
+from catalog_data import STANDARD_TOP_N, TYPE_LABELS, standard_ids
+from catalog_data.popularity_data import POPULARITY
 
-CSV = Path(__file__).resolve().parents[1] / "app" / "data" / "openned.csv"
+CSV = Path(__file__).resolve().parents[1] / "catalog_data" / "data" / "openned.csv"
 VALID_TYPES = set(TYPE_LABELS.keys())
 CSV_COLS = ("id", "primary_name", "messier", "ngcic", "other", "otype",
             "ra_hours", "dec_deg", "vmag", "size_am", "constellation",

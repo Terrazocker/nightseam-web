@@ -17,7 +17,7 @@ globalThis.localStorage = {
 };
 
 const H = await import(new URL("../../web/horizon.js", import.meta.url).href);
-const D = await import(new URL("../../static/js/pano.js", import.meta.url).href);
+const D = await import(new URL("../../core/horizon.js", import.meta.url).href);
 
 const BINS = 720;
 let ok = true;
@@ -160,7 +160,7 @@ const parCases = [
 for (const c of parCases) {
   const a = H.profileSegments(c.prof, 720, 56, c.ab, c.at, c.azOff, c.fov, c.skip);
   const b = D.profileSegments(c.prof, 720, 56, c.ab, c.at, c.azOff, c.fov, c.skip);
-  if (JSON.stringify(a) !== JSON.stringify(b)) fail("web/desktop profileSegments vertices differ");
+  if (JSON.stringify(a) !== JSON.stringify(b)) fail("web/core profileSegments vertices differ");
 }
 
 /* ---- 6. DEFAULT open above: overhang runs + assumed-open runs ---- */

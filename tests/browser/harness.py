@@ -1,25 +1,7 @@
-"""Shared plumbing for the real-browser release gate (tests/browser/*).
+"""Real-browser release checks for the standalone web planner.
 
-Two targets, both driven by Playwright against a REAL browser engine (a
-browser that cannot launch is a HARD failure, exactly like a missing node in
-`tests/js/*` - never a silent skip):
-
-  web      a static HTTP server over `web/`, opened in system Chrome
-  desktop  the PACKED `dist/NightSeam.exe` legacy planner shell, copied into a throwaway temp dir
-           so its `data/` never touches the user's install, then driven over
-           the local FastAPI server it starts (`--no-browser --planner`)
-  catalog  the PACKED exe's standard launch, which must stay in the archive
-           shell and avoid planner startup
-
-Every check gets a fresh, deterministic context: UTC timezone, en-US locale,
-dark scheme, fixed viewport, a pinned fake clock, and empty storage.  Checks
-assert something a user can see; implementation details are only used to reach
-a state.
-
-This is NOT a pytest suite (pytest only collects `test_*.py` / `*_test.py`;
-the modules here are named `*_suite.py` and take a `ctx`, not fixtures), so
-`python -m pytest tests/` never touches it.  `scripts/check_browser.py` is the
-runner.  Only stdlib + playwright are imported.
+Each check uses an isolated deterministic browser context. Missing browser
+infrastructure is a hard failure. No desktop executable or user data is used.
 """
 
 from __future__ import annotations
@@ -45,7 +27,6 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 WEB_DIR = ROOT / "web"
-DEFAULT_EXE = ROOT / "dist" / "NightSeam.exe"
 ARTIFACTS = ROOT / "tests" / "browser" / "artifacts"
 
 # Pinned wall clock: a real, non-degenerate late-summer night.  Passed as an
@@ -66,7 +47,7 @@ _TESTS: list[tuple[str, str, object]] = []
 
 def check(name: str, target: str):
     """Register a browser check under `name` for `target` ("web"/"desktop")."""
-    if target not in ("web", "desktop", "catalog"):
+    if target != "web":
         raise ValueError(target)
 
     def deco(fn):
@@ -121,67 +102,6 @@ class StaticServer:
 class _QuietHandler(http.server.SimpleHTTPRequestHandler):
     def log_message(self, *args):  # keep the gate output readable
         pass
-
-
-class DesktopServer:
-    """The packed exe, isolated in a temp dir (never the user's data)."""
-
-    def __init__(self, exe: Path = DEFAULT_EXE, seed: bool = True,
-                 planner: bool = False):
-        self.exe = Path(exe)
-        self.seed = seed
-        self.planner = planner
-        self.tmp: Path | None = None
-        self.proc: subprocess.Popen | None = None
-        self.port = 0
-        self.base = ""
-
-    def start(self, timeout: float = 45.0) -> str:
-        if not self.exe.is_file():
-            raise RuntimeError(f"packed exe not found: {self.exe}")
-        self.tmp = Path(tempfile.mkdtemp(prefix="ns-browser-"))
-        exe = self.tmp / "NightSeam.exe"
-        shutil.copy2(self.exe, exe)
-        self.port = free_port()
-        args = [str(exe), "--no-browser", "--port", str(self.port),
-                "--idle-exit-hours", "0"]
-        if self.planner:
-            args.append("--planner")
-        self.proc = subprocess.Popen(
-            args,
-            cwd=str(self.tmp), stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL, creationflags=_CREATE_NO_WINDOW)
-        self.base = f"http://127.0.0.1:{self.port}/"
-        deadline = time.time() + timeout
-        while time.time() < deadline:
-            if self.proc.poll() is not None:
-                raise RuntimeError(
-                    f"packed exe exited early (code {self.proc.returncode})")
-            try:
-                _http(self.base + "api/state", timeout=2.0)
-                break
-            except Exception:
-                time.sleep(0.3)
-        else:
-            raise RuntimeError("packed exe never answered /api/state")
-        if self.seed:
-            _http(self.base + "api/sites", "POST",
-                  {"name": "Gate Site", "lat": 52.52, "lon": 13.4, "elev": 34})
-            _http(self.base + "api/settings", "POST", {"wizard_done": True})
-        return self.base
-
-    def api(self, path: str, method: str = "GET", body: dict | None = None):
-        return _http(self.base + path.lstrip("/"), method, body)
-
-    def stop(self):
-        if self.proc is not None and self.proc.poll() is None:
-            self.proc.terminate()
-            try:
-                self.proc.wait(timeout=8)
-            except subprocess.TimeoutExpired:
-                self.proc.kill()
-        if self.tmp is not None:
-            shutil.rmtree(self.tmp, ignore_errors=True)
 
 
 # ---------------------------------------------------------------- context
@@ -408,12 +328,12 @@ def _attach(ctx: Ctx):
     ctx.page.on("response", on_response)
 
 
-def run(channel: str = "chrome", targets=("web", "desktop"),
-        exe: Path = DEFAULT_EXE, only: str | None = None,
+def run(channel: str = "chrome", targets=("web",),
+        only: str | None = None,
         headed: bool = False, prod_url: str | None = None,
         artifacts: Path = ARTIFACTS, verbose: bool = True) -> int:
     """Run the registered checks. Returns 0 (pass), 1 (failures) or 2 (the
-    infrastructure could not start - browser, server or packed exe)."""
+    infrastructure could not start - browser or server)."""
     from playwright.sync_api import sync_playwright
 
     selected = [(n, t, f) for (n, t, f) in all_checks()
@@ -423,28 +343,16 @@ def run(channel: str = "chrome", targets=("web", "desktop"),
         return 0
 
     artifacts.mkdir(parents=True, exist_ok=True)
-    web_srv = desktop_srv = catalog_srv = None
+    web_srv = None
     bases: dict[str, str] = {}
     try:
         if "web" in targets:
             web_srv = StaticServer(WEB_DIR)
             bases["web"] = web_srv.start()
-        if "desktop" in targets:
-            # The release suite continues to exercise the full desktop source
-            # shell. Its standard launch is separately checked under `catalog`.
-            desktop_srv = DesktopServer(exe, planner=True)
-            bases["desktop"] = desktop_srv.start()
-        if "catalog" in targets:
-            catalog_srv = DesktopServer(exe, seed=False)
-            bases["catalog"] = catalog_srv.start()
     except Exception as exc:
         print(f"check_browser FATAL: could not start a target: {exc}")
         if web_srv:
             web_srv.stop()
-        if desktop_srv:
-            desktop_srv.stop()
-        if catalog_srv:
-            catalog_srv.stop()
         return 2
 
     results: list[Result] = []
@@ -496,10 +404,6 @@ def run(channel: str = "chrome", targets=("web", "desktop"),
     finally:
         if web_srv:
             web_srv.stop()
-        if desktop_srv:
-            desktop_srv.stop()
-        if catalog_srv:
-            catalog_srv.stop()
 
     failed = [r for r in results if not r.ok]
     print(f"check_browser: {len(results) - len(failed)}/{len(results)} passed")

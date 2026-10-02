@@ -1,15 +1,9 @@
-"""Bake core/ to content-hashed URLs for both shells.
+"""Bake the web planner's authored core/ to content-hashed URLs.
 
-The core is authored once in core/*.js and copied to
-  web/core/<hash>/            (served by the static web host)
-  static/js/core/<hash>/      (bundled into the desktop exe via static/)
-plus a stable entry stub in each tree (web/core.js, static/js/core.js) whose
-explicit export list is derived from core/index.js. A core change therefore
-produces new URLs; the stub's cache token must be bumped by hand and is
-enforced by scripts/check_core.py.
-
-Byte identity is line-ending normalized (core.autocrlf=true on Windows), so a
-CRLF checkout and an LF checkout hash the same.
+web/core/<hash>/ contains generated modules and web/core.js is its stable
+explicit-export stub. Source changes bump the core manifest token; importers
+must bump in the same change. Keep the current tree and its recorded N-1 tree
+so cached old stubs still load. Never edit generated trees by hand.
 
 Usage: python scripts/build_core.py
 """
@@ -28,7 +22,6 @@ ROOT = Path(__file__).resolve().parent.parent
 CORE = ROOT / "core"
 MANIFEST = CORE / "core.manifest.json"
 WEB_DIR = ROOT / "web"
-STATIC_JS = ROOT / "static" / "js"
 STUB_NAME = "core.js"
 
 
@@ -160,7 +153,7 @@ def main() -> int:
         print("build_core: core/index.js has no explicit export list")
         return 1
     keep = retention_keep(hash_, previous)
-    for dest_root in (WEB_DIR / "core", STATIC_JS / "core"):
+    for dest_root in (WEB_DIR / "core",):
         stale = prune_baked_dirs(dest_root, keep)
         if stale:
             print("build_core: pruned stale baked dir(s): "
@@ -172,14 +165,12 @@ def main() -> int:
             target.write_bytes(normalize(p.read_bytes()))
     (WEB_DIR / STUB_NAME).write_text(stub_text(hash_, names),
                                      encoding="utf-8", newline="\n")
-    (STATIC_JS / STUB_NAME).write_text(stub_text(hash_, names),
-                                       encoding="utf-8", newline="\n")
     MANIFEST.write_text(
         json.dumps({"hash": hash_, "token": token, "previous": previous,
                     "files": files}, indent=2) + "\n",
         encoding="utf-8", newline="\n")
     print(f"build_core: hash={hash_} token={token} files={len(files)} "
-          f"-> web/core/{hash_} + static/js/core/{hash_}")
+          f"-> web/core/{hash_}")
     return 0
 
 

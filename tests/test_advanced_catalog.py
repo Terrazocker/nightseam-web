@@ -9,11 +9,10 @@ exactly it.
 import csv
 from pathlib import Path
 
-from app.catalog_data import STANDARD_TOP_N, TYPE_LABELS, standard_ids
-from app.database import Database
-from app.popularity_data import POPULARITY
+from catalog_data import STANDARD_TOP_N, TYPE_LABELS, standard_ids
+from catalog_data.popularity_data import POPULARITY
 
-CSV = Path(__file__).resolve().parents[1] / "app" / "data" / "openned.csv"
+CSV = Path(__file__).resolve().parents[1] / "catalog_data" / "data" / "openned.csv"
 COLS = ("id", "primary_name", "messier", "ngcic", "other", "otype", "ra_hours",
         "dec_deg", "vmag", "size_am", "constellation", "wiki",
         "blurb", "search")
@@ -59,7 +58,7 @@ def test_openngc_non_objects_are_not_shipped():
     the master entry), `NonEx` (nonexistent), single/double stars, `Other`,
     `Nova`. None of those ROWS ships - NGC 651 (Dup of NGC 650) and OpenNGC's
     M40 (`**`) / M73 (`Other`) / IC 1318 (`*`) rows are gone. The three notable
-    ones come back through `app/data/supplement.csv` instead, under their own
+    ones come back through `catalog_data/data/supplement.csv` instead, under their own
     ids and with the project's own types (see tests/test_supplement.py)."""
     ids = {r["id"] for r in _rows()}
     for oid in ("ngc651", "ngc6994", "m102"):
@@ -68,69 +67,3 @@ def test_openngc_non_objects_are_not_shipped():
     assert "b33" in ids             # Barnard 33 (Horsehead) - addendum, DrkN
     # the supplement's replacements exist, and are NOT OpenNGC ids
     assert {"m40", "m73", "ic1318"} <= ids
-
-
-def test_db_seeds_the_whole_catalog(tmp_path):
-    """`objects` = the standard-mode selection, `advanced_objects` = the rest,
-    disjoint, and together exactly the CSV."""
-    db = Database(tmp_path / "t.db")
-    std = db.all_objects()
-    adv = [o for o in db.all_objects(advanced=True) if o.get("_adv")]
-    assert len(std) == STANDARD_TOP_N
-    assert len(adv) == len(_rows()) - STANDARD_TOP_N
-    union = db.all_objects(advanced=True)
-    assert len(union) == len(_rows())
-    assert len({o["id"] for o in union}) == len(union)
-    assert not ({o["id"] for o in std} & {o["id"] for o in adv})
-    assert {o["id"] for o in std} == standard_ids([r["id"] for r in _rows()])
-    # every seeded id exists in the CSV, with the CSV's data
-    csv_by_id = {r["id"]: r for r in _rows()}
-    for o in union:
-        assert o["id"] in csv_by_id, o["id"]
-        assert o["primary_name"] == csv_by_id[o["id"]]["primary_name"]
-    # an OpenNGC object that the curated list used to own is just a normal row
-    ngc2242 = db.get_object("ngc2242")
-    assert ngc2242["otype"] == "planetary"
-    assert ngc2242["primary_name"] == "NGC 2242"
-
-
-def test_standard_rows_are_the_popular_ones_and_all_scored(tmp_path):
-    db = Database(tmp_path / "t.db")
-    std = db.all_objects()
-    assert all(o["popularity"] for o in std)
-    assert min(o["popularity"] for o in std) == min(
-        POPULARITY[i] for i in standard_ids([r["id"] for r in _rows()]))
-    # the most popular object in the catalog is in standard mode, and it is M42
-    top = max(std, key=lambda o: o["popularity"])
-    assert (top["id"], top["primary_name"]) == ("ngc1976", "Great Orion Nebula")
-
-
-def test_reseeding_is_idempotent(tmp_path):
-    p = tmp_path / "t.db"
-    first = Database(p)
-    std_before = {o["id"] for o in first.all_objects()}
-    again = Database(p)
-    assert {o["id"] for o in again.all_objects()} == std_before
-    assert again.advanced_count() == len(_rows()) - STANDARD_TOP_N
-
-
-def test_a_pre_openngc_database_is_rebuilt_on_open(tmp_path):
-    """A DB seeded by an older build holds the curated 197 in `objects` and the
-    pre-addendum advanced rows. Opening it must rebuild both tables into the
-    OpenNGC split (they are seed data, never user data)."""
-    p = tmp_path / "old.db"
-    db = Database(p)
-    db.conn.execute("DELETE FROM objects")
-    db.conn.execute("INSERT INTO objects(id, primary_name, otype) "
-                    "VALUES('m42','Orion Nebula','nebula')")
-    db.conn.execute("DELETE FROM advanced_objects")
-    db.conn.execute("INSERT INTO advanced_objects(id, primary_name, otype) "
-                    "VALUES('ngc9999','Stale Row','galaxy')")
-    db.conn.commit()
-    assert db.get_object("m42") is not None
-
-    fresh = Database(p)
-    assert fresh.get_object("m42") is None            # the curated row is gone
-    assert fresh.get_object("ngc9999") is None        # so is the stale advanced row
-    assert fresh.get_object("ngc1976") is not None    # M42 as OpenNGC names it
-    assert len(fresh.all_objects()) == STANDARD_TOP_N

@@ -1,24 +1,14 @@
 #!/usr/bin/env python3
-"""NightSeam Web build helpers — run from the NightSeam repo root.
+"""Independent NightSeam Web build helpers.
 
-  python web/build_web.py version [--db PATH]   # write web/version.json (git describe)
-  python web/build_web.py catalog [--db PATH]   # regenerate web/catalog.json from the DB
+  python web/build_web.py version
+  python web/build_web.py catalog [--catalog PATH] [--out PATH]
 
-The web app is a sub-version of NightSeam: catalog.json is ALWAYS derived
-from data/nightseam.db (objects + advanced_objects), and version.json is
-stamped from `git describe --tags --always --dirty` right before a deploy
-(tag BEFORE running version, exactly like the desktop build bakes
-_version_baked.py — and with the same `--dirty` flag, so a web build from
-uncommitted work can never advertise a clean tag).
-
-Both commands are idempotent. web/version.json is gitignored.
-
-NOTE (DSH sandbox): `version` pipes git's stdout (capture_output), which the
-sandbox denies with WinError 5 — run that one command with full access, or
-bake web/version.json by hand in the same shape.
+The catalog is built directly from committed CSV, supplement and popularity
+data, without a desktop install or SQLite. Version uses this repo's truthful
+git describe --tags --always --dirty result. web/version.json is gitignored.
 """
 import json
-import sqlite3
 import subprocess
 import sys
 from datetime import datetime, timezone
@@ -26,7 +16,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent   # NightSeam repo root
 WEB = ROOT / "web"
-DEFAULT_DB = ROOT / "data" / "nightseam.db"
+DEFAULT_CATALOG = ROOT / "catalog_data" / "data" / "openned.csv"
+sys.path.insert(0, str(ROOT))
+from catalog_data.loader import web_rows
 
 COLS = [
     "id", "primary_name", "messier", "ngcic", "other", "otype",
@@ -36,12 +28,12 @@ COLS = [
 
 
 def parse_args(argv):
-    db = DEFAULT_DB
+    db = DEFAULT_CATALOG
     out = None
     rest = []
     i = 0
     while i < len(argv):
-        if argv[i] == "--db" and i + 1 < len(argv):
+        if argv[i] == "--catalog" and i + 1 < len(argv):
             db = Path(argv[i + 1])
             i += 2
         elif argv[i] == "--out" and i + 1 < len(argv):
@@ -81,23 +73,10 @@ def cmd_version(db_path):
 
 
 def cmd_catalog(db_path, out=None):
-    if not Path(db_path).is_file():
-        raise SystemExit(
-            f"no database at {db_path}\n"
-            f"  data/nightseam.db is created and seeded on the app's first "
-            f"start - run `python main.py` once, or pass --db PATH")
-    con = sqlite3.connect(str(db_path))
-    con.row_factory = sqlite3.Row
-    out_rows = []
-    for table, adv in (("objects", False), ("advanced_objects", True)):
-        # insertion (rowid) order — the committed catalog.json follows the seed order
-        rows = con.execute(
-            f"SELECT {', '.join(COLS)} FROM {table}").fetchall()
-        for r in rows:
-            d = {c: r[c] for c in COLS}
-            d["_adv"] = adv
-            out_rows.append(d)
-    con.close()
+    try:
+        out_rows = web_rows(Path(db_path))
+    except (OSError, ValueError) as exc:
+        raise SystemExit(str(exc)) from exc
     target = out or (WEB / "catalog.json")
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(json.dumps(out_rows, separators=(",", ":")), encoding="utf-8")

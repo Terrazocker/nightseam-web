@@ -1,3 +1,40 @@
+# Independent website release record
+
+## Repository separation — October 1, 2026
+
+The current codex/direction-b-ui desktop snapshot was extracted to the
+independent Nightseam-catalog repository with VERSION 0.1.0. The original
+Nightseam-programm repository now owns only the website. The catalog keeps the
+same branch name with independent history and no remote; prior combined Git
+branches/tags and staged/working changes are saved in ignored recovery bundles
+and patches. Desktop source removed from the website has both a committed
+extraction snapshot and hash-verified pre-partition recovery copies.
+
+Source data/, packaged dist/data/, the existing executable and build environment
+were moved with byte verification. Configured external exposure archives were
+not altered. Website catalog generation now uses project-owned neutral data
+without an application database, retaining the exact committed payload bytes.
+Core baking, guards, tests, browser registration and releases are scoped to
+each project; website version history is unchanged. No remote push, upload or
+public deployment was performed.
+
+Validation completed October 2, 2026:
+- Initial full website pytest run: 249 passed, one optional local-snapshot
+  provenance skip, one missing documentation token-register assertion. The
+  register was restored from current source and that assertion passed on its
+  targeted rerun. The two added seed-tracking/privacy checks and all 23 web
+  release checks also passed together (25 checks). No test assertion was
+  weakened to conceal the documentation failure.
+- Complete website browser gate: 26/26 passed, with the web suite unchanged.
+- Final JS/import/DOM/syntax/encoding/core/cache guards passed. The independent
+  development release gate reported zero errors; off-tag/generated-version
+  warnings are expected before the final local commit/version stamp.
+- Seed CSVs preserve exact original bytes and literal search-field whitespace.
+  Root-only /data/ ignore rules protect user stores while neutral shipped seeds
+  remain tracked; the release guard refuses missing/untracked build inputs.
+
+## Historical combined-project entries
+
 # RELEASES.md - what each release shipped and how it was verified
 
 The per-release records moved out of `AGENTS.md` (which had grown past the
@@ -6,6 +43,332 @@ release PROCESS; this file keeps the RESULT of each release: tag, staged
 artifact hashes, gate results, what was deployed and how it was verified live.
 
 Newest first.
+
+## UNRELEASED - 2026-10-01 selected-session calibration actions
+
+- Fixed inactive calibration actions for legacy `Object/lights` archives and
+  previously indexed flat layouts. Darks, Flats and Bias now open the exposure
+  picker with a recorded image anchor identifying the selected object and logical
+  session. Recent-import actions use the corresponding recorded session too.
+  The import pane shows the target and chosen frame type. Unavailable sessions
+  explain why the action cannot proceed.
+- Added validated, nullable `images.session_date_obs` through an additive
+  migration. Automatic imports use the original capture date; explicit dated or
+  undated calibration attachments carry a separate logical grouping date. Original
+  `date_obs` and file bytes remain unchanged. Sessions publish exact image IDs;
+  attached calibration no longer disappears from the inspector because its actual
+  capture date is outside the selected light exposure's range. UTC comparisons
+  preserve fractional timestamps and the exact 12-hour boundary. Existing folder
+  naming conventions are retained.
+- The server derives object/path/session from the existing anchor, validates
+  positive SQLite-range IDs and calibration types before staging, and revalidates
+  the target before publication. Existing modern folders are reused; legacy
+  folders gain a canonical calibration subfolder without moving light exposures.
+  Global whole-byte duplicate skips retain their existing association. Setup
+  backup/restore carries and validates the association, rejecting malformed
+  metadata before writes. This resolves UIB-033.
+- Verified Open folder launches Windows Explorer in the current native app;
+  added clear success/error feedback. Renamed the toolbar action to Import and
+  replaced format jargon in labels, help and empty states with exposures. The
+  supported `.fit`/`.fits` input filters remain unchanged.
+
+Validation: **811 full-suite tests passed** (one upstream Starlette/httpx
+deprecation warning); focused backend and grouping checks passed, and four source
+browser checks passed, including genuine chooser events for all three calibration
+types in both desktop shells and preserved membership for out-of-date metadata.
+The native inspection ended when the user pressed Escape; no subsequent computer
+input was issued. Compilation and final JavaScript, DOM, encoding, cache and core
+guards passed. Development integrity passed with zero errors and the expected
+dirty/off-tag warning. Candidate: `dist/session-actions-candidate/NightSeam.exe`,
+version `0.6.34-10-gf5bb0c5-dirty`, SHA-256
+`ceac0303b20551fc33b573ff4e4867fbf743aa34915b5127e1f594f1b101e143`.
+The packaged/web browser gate passed **55/55 checks**. After the user closed the
+app, installed the verified candidate atomically as `dist/NightSeam.exe`; its
+hash matches the tested build. Library data remains intact. Previous executable:
+`dist/NightSeam.before-session-actions-20261001-212434.exe`.
+Changes are staged for review; no commit, tag or deployment was created.
+
+## UNRELEASED - 2026-10-01 open Library header and faster indexing
+
+- Removed the contextual object-export and format strip from both desktop
+  Library workspaces. Angular-size symbols are inline, keyboard-accessible unit
+  switches that persist the preference and stay synchronized with the planner.
+  Sessions, images and light integration now use open text without framed cards.
+  The packaged toolbar omits its logo and fits its controls in about 45 pixels;
+  the source planner retains its existing masthead. Global Export library remains
+  available as CSV, and existing API JSON/scoped export support remains intact.
+- Map names prefer the closest clear placement. Crowded or displaced names have
+  quiet leader lines back to their own marker. Session-count sizing, coordinates,
+  selection, hit testing and high-DPI geometry are preserved.
+- Reindex now builds one catalog matcher for all new files instead of rebuilding
+  it for every frame; unchanged-file scans do not load it. Duplicate candidates
+  prioritize the matching stored digest while still verifying the complete file.
+  Spooled uploads copy and hash in one worker call, preserving size limits and
+  waiting for an active copy to finish before cancellation cleanup.
+
+Isolated profiling used 48 distinct 4-MiB FITS files (192 MiB total), the full
+seeded catalog and temporary archives. The initial reindex baseline was 31.701 s,
+including 29.937 s rebuilding the matcher 48 times; the updated run took 2.295 s
+with one matcher. New imports measured 1.784 s before and 1.635 s after; identical
+imports measured 2.555 s before and 1.258 s after. A separate baseline repeat
+measured 38.636/1.821/2.366 s respectively, illustrating machine/load variability.
+These are local workload measurements, not promised throughput for other disks.
+The UI sends eight files per request; archive publication remains ordered.
+
+Validation: **765 full-suite tests passed** (one upstream Starlette/httpx
+deprecation warning), **168 focused ingest/API tests passed**, six source-browser
+checks passed, and final JavaScript, DOM, encoding, cache and shared-core guards
+passed, and **53/53 packaged/web browser checks passed**. The compiled candidate is
+`dist/open-design-candidate/NightSeam.exe`,
+version `0.6.34-10-gf5bb0c5-dirty`, SHA-256
+`61390814c97a70377a461252379dd3350f92a6fdd878eff390967f2c63385521`.
+After confirming the canonical app had closed, installed the verified candidate
+atomically as `dist/NightSeam.exe`, preserving the library data and the old build
+as `dist/NightSeam.before-open-design-20261001-204004.exe`. The installed hash
+matches the tested candidate. Development integrity passed with zero errors and
+the expected dirty/off-tag warning. Changes are staged for review; no commit,
+tag, public release, merge or deployment was created.
+
+## UNRELEASED - 2026-10-01 active-object Library and session-sized map
+
+- Archive map marker radius now depends only on capture-session count, using
+  validated `n_sessions` or the session-list length. The bounded 3-12 CSS-pixel
+  square-root scale is independent of image count and exposure; unknown counts
+  retain the minimum marker and display unavailable text. Names, selection,
+  coordinate geometry, hit testing, and DPR-aware drawing remain consistent.
+- Moved useful archive facts and controls into the top Library workspace header.
+  They show the active object's name, type, angular size, sessions, images, and
+  light-frame integration. Removed the duplicate all-object table/disclosures;
+  object sorting remains labelled in the Objects rail.
+- Added contextual CSV/JSON Export object with exact displayed-name filtering,
+  scoped JSON totals, and 404 for unmatched names. The top Export library action
+  remains global. Existing serializers and private-fingerprint exclusions remain
+  shared rather than duplicated in the client.
+- Removed obsolete dock grid rows and fixed the source planner's height chain.
+  Both desktop Library workspaces fill the remaining client height, with bounded
+  rail/table/detail scrolling and compact reflow. More window height reveals more
+  session rows; rows retain their normal density. Standard bottom gutters replace
+  the old unused region.
+
+Validation: **761 full-suite tests passed** (one upstream Starlette/httpx
+deprecation warning), **53/53 browser checks passed**, and the final JavaScript,
+DOM, encoding, cache-token, and shared-core guards passed. Focused checks covered
+API export scope/Unicode names, object switching, both desktop layouts, and map
+counts at DPR 1 and 2. The folder regression now verifies painted clipping through
+scrolling ancestors and unobstructed action hit targets, avoiding false overlap
+reports from invisible content.
+
+Rebuilt `dist/NightSeam.exe` in its existing folder, preserving library data and
+`dist/NightSeam.before-active-library-20261001-195459.exe` as the previous-build
+backup. Version: `0.6.34-10-gf5bb0c5-dirty`. SHA-256:
+`0c1c040fd64fb2e47ffd23f67475c328a8b2e6ad0681e3b395d32aa23a995ef9`.
+Development integrity (`check_release.py --allow-dirty --no-stage`) passed with
+zero errors and the expected dirty/off-tag warning. Changes are staged for
+review; no new commit, tag, merge, release bundle, or deployment was created.
+
+## UNRELEASED - 2026-10-01 Library, reindex, and map corrections
+
+- Removed the redundant bottom Library import panel from both desktop shells.
+  The top import action and dedicated Import Exposures workflow remain available.
+- Reindex preflights every FITS path before updating any index record or
+  fingerprint. It accepts `<object>/<session>/{lights,darks,flats,bias}/file`
+  and supported legacy `<object>/<frame-type>/file` layouts, including arbitrary
+  supported session names and case-insensitive frame folders. Unexpected flat,
+  unknown-frame, or excessively nested layouts return actionable HTTP 400.
+  Empty folders and non-FITS files are ignored. Rejection preserves the entire
+  existing index and archive bytes; it does not move or remove source files.
+- Archive folder links use unique containing directories rather than treating
+  filenames as folders. Long lists and detail content have bounded scrolling,
+  leaving totals and actions reachable. Root-folder actions work, and calibration
+  actions require a unique managed session. Reindex errors remain visible until
+  dismissed or retried.
+- Removed the map's dot-integration control text while retaining exposure-sized
+  markers. Object names are on by default, avoid overlapping labels, stay within
+  the plot, and remain visible for selected/hovered objects when general labels
+  are off. Desktop and narrow screenshots were visually checked.
+
+Validation: **160 focused ingest/API tests**, **757 full-suite tests** (one
+upstream Starlette/httpx deprecation warning), and **50/50 browser checks passed**.
+JavaScript, DOM, encoding, cache-token, and shared-core guards passed. The browser
+gate used the newly built `dist/catalog-ui-fix/NightSeam.exe` development candidate
+in isolated installs, including folder-error and crowded-map label regressions.
+The version matches authoritative Git describe: `0.6.34-10-gf5bb0c5-dirty`.
+The running installed executable and user library were left untouched while
+building and validating this candidate. After NightSeam closed, the validated
+candidate replaced `dist/NightSeam.exe` atomically; the previous executable is
+retained as `dist/NightSeam.before-folder-map-fixes-20261001-185934.exe`.
+Installed SHA-256: `b9a8ad4ae099191bb5ea6a41161271a58ba5fbb09fac34d99cf1bd657dd748b9`.
+Library data was not changed by installation.
+No new commit, tag, merge, or deployment was created.
+
+## UNRELEASED - 2026-10-01 full-review implementation pass
+
+The dated review is [REVIEW-FULL-0.6.34-10.md](reviews/current-pass/REVIEW-FULL-0.6.34-10.md).
+This entry describes the subsequent implementation; it is not a tagged release
+or deployment. Final integration validation passed on October 1.
+
+- PY-02: duplicate candidates use indexed metadata, and blocking file hashing
+  runs outside the event loop and long database critical sections. Final
+  duplicate detection and publication retain concurrency protection. Rename,
+  restore, archive configuration, panorama payload mutations and import history
+  share that serialization boundary; no archive RLock spans an await. Restore
+  journaling copies existing payloads so original paths remain available until
+  commit, preserving the three-phase restore contract.
+- PY-01/PY-04/PY-05: native placement uses physical monitor work areas, converts
+  older saved logical positions, and applies final geometry before WinForms
+  shows the window. Optional placement errors preserve the native frame and
+  downloads. Tests centrally isolate placement files from the user profile.
+- PY-06: one lazy Condition/deadline worker replaces per-event timer threads.
+  It reads coherent native geometry/state after the event burst, rejects stale
+  generations, and terminates on closing without blocking the GUI thread.
+- FE-01/FE-02: the source planner has the shared Sky Map selection target, and
+  the DOM guard no longer exempts that missing target.
+- FE-03: source-planner archive picking uses the available native bridge; the
+  native host publishes folder-picker capability for both desktop shells.
+- PY-07/PY-08/PY-09: stale owned PID-bearing stages are swept conservatively,
+  publication retries external filename collisions without overwriting files,
+  fingerprint bookkeeping is excluded from library/setup exports, and repaired
+  originals have their own status/count rather than inflating import history.
+- FE-04/FE-05/FE-06/FE-08: DOM coverage follows transitive module edges, browser
+  synchronization waits for observable state, native-chrome assertions inspect
+  actual affordances, and map keyboard instructions/role and Workbench tokens
+  replace the identified accessibility/styling inconsistencies.
+- Integration found a panorama crop/save race: a pending old calibration save
+  could overwrite the newly cropped field of view. Crop now completes pending
+  and in-flight saves before publishing, holds the editor stable, and awaits
+  refresh/reselection. Failed saves retain edits, and Undo/Redo availability is
+  reconciled afterward. API tests cover three crop calibrations; a browser
+  regression forces both an in-flight save and a newer queued edit, then checks
+  that the crop and the newer edit remain stored after leaving the editor.
+- Documentation now separates unresolved findings from dated implementation
+  evidence and future release prerequisites. Current guidance is Workbench-only.
+
+Focused native-window/main, ingest/API/backup/race checks and **4 source-browser
+checks** passed, as did **83 release-integrity/pre-tag regressions**. A disposable
+hidden WinForms form passed
+physical bounds restoration/snapshot on the actual 100% display. Regression
+tests simulate 125%, 150%, 200%, and mixed-monitor positions; real mixed-DPI
+hardware acceptance remains open.
+
+Final validation: **743 tests passed** (one upstream Starlette/httpx deprecation
+warning), and **48/48 browser checks passed** across the web planner, packaged
+planner, and catalog shells. JavaScript, DOM, encoding, cache-token, and shared
+core guards passed. The rebuilt `dist/NightSeam.exe` is a 20.5 MB development
+snapshot, version `0.6.34-10-gf5bb0c5-dirty`, built at 15:21:48 local time. The
+previous executable was backed up, and library data was preserved. Development
+integrity (`check_release.py --allow-dirty --no-stage`) reports zero errors and
+the expected dirty/off-tag warning; the older staged release ZIP was excluded.
+Repository integrity and whitespace checks passed. The implementation is staged
+for review, with no new commit, tag, merge, or deployment.
+
+The earlier stale-executable failure is superseded for the catalog by the
+previous rebuilt executable's seven passing packaged catalog checks below.
+That subset must not be described as a new full `--all` gate. Duplicate override
+behavior follows the requested global no-duplication rule. Issue-ID searches
+alone do not establish missing regression coverage: dedup behavior has backend
+and browser pins.
+
+Commit-integrity preparation includes the new runtime modules, tests and durable
+guides together with their importers; the release guard rejects missing or
+untracked runtime modules. The curated 0.6.35 entry is prepared and its pre-tag
+check passes, without creating a tag. The broken Codex scratch ref was backed up
+and removed while preserving its object; repository-wide history works again.
+Requested dated captures are retained locally and ignored, provenance copies
+remain intact, and historical commits/tags were not rewritten or garbage-collected.
+AGENTS.md was shortened from 67,165 to under 48,000 UTF-8 bytes, with supporting
+architecture/storage/web details moved to DEVELOPMENT.md.
+
+Future release prerequisites remain separate: create the clean release
+commit/tag when releasing, then refresh staging and version manifests through
+the documented process. The existing staged ZIP is the older September
+snapshot, not the current executable. Deployed cached-core compatibility needs
+verification when publishing the documented retirement exception. No current
+release-ready or live-compatibility claim is made.
+
+## UNRELEASED - 2026-10-01 catalog duplicate prevention
+
+UIB-034: full-content SHA-256 identity prevents repeated and renamed imports
+from creating another archive copy or library row. Skips appear as Already
+imported and do not increase exposure totals or import history. Different bytes
+with the same filename remain distinct. Existing duplicate records are not
+deleted. Legacy rows acquire measured fingerprints lazily; reindex shares the
+identity rule while retaining files already present on disk.
+
+This completed snapshot passed **703 pytest tests**, with one upstream
+Starlette/httpx deprecation warning, and JS/DOM/encoding/core guards after the
+suite restored its mutation fixtures. A rebuilt dirty development executable
+at `dist/NightSeam.exe` passed **7/7 isolated packaged catalog checks**, covering
+duplicate counters, import progress, exports, and responsive layout. The
+previous executable was backed up, the user's data folder was preserved, and
+the browser checks used a separate test library. These results precede the
+full-review implementation pass above.
+
+## UNRELEASED - 2026-10-01 catalog progress, export, and visual refinements
+
+UIB-031/UIB-032: import activity shows confirmed processed files/selected total,
+elapsed time, and conditional failure counts. Completed activity remains
+reviewable; interrupted requests distinguish unconfirmed outcomes from the
+unattempted remainder. Archive actions are locked during an operation. Native
+downloads are enabled before window creation, CSV/JSON downloads preserve the
+page, and fetch failures display an error. Export format remains accessible
+even when the library is empty. UIB-033 calibration attachment remains open
+in `BUGS.md`.
+
+The progress/export snapshot passed **132 focused tests**, **680 full-suite
+tests**, sequential JS/DOM/encoding/core guards, and **6/6 packaged catalog
+checks** against a separate development build. After the user closed the app,
+the verified executable replaced `dist/NightSeam.exe` with matching SHA-256;
+the prior executable was backed up and `dist/data` was preserved. Native Save As
+configuration was unit-tested and checked against the installed WebView2
+handler; a physical Save As interaction was not performed.
+
+Earlier same-day visual snapshots implemented centered checkbox ticks and
+Working status (UIB-029/UIB-030), stable catalog density and responsive Library
+composition (UIB-027), and aligned 2:1 RA/Dec canvas axes with coalesced drawing
+(UIB-028). The activity snapshot passed **18 layout cases**, keyboard toggles,
+the **680-test** suite, guards, and **4/4 packaged catalog checks**. Responsive
+checks included **22 viewport pairs**, breakpoint edges, populated sessions,
+long labels, actions, and DPR2 geometry; its **680-test** suite and **4/4
+packaged catalog checks** also passed. These are historical snapshots, not
+additional claims about the subsequent review-fix tree.
+
+## UNRELEASED - 2026-09-30 catalog Windows shell
+
+UIB-026 replaced the earlier custom frameless repair (UIB-025) with the standard
+Windows frame, native move/resize/caption behavior, and local placement
+persistence. Historical evidence: **33 focused tests**, JS guards, **3/3
+packaged catalog checks**, and **680 full-suite tests** passed. A later isolated
+source WebView2 launch rendered Library and exposed an inspectable native
+window; invoking Restore changed its caption state. System menu, Snap, taskbar,
+full keyboard moving/resizing, and physical multi-monitor acceptance were not
+established by those runs. The October review pass above repairs DPI coordinate
+handling and persistence scheduling; it does not turn those hardware acceptance
+gaps into completed checks.
+
+## UNRELEASED - 2026-09-26/27 Direction B UI implementation
+
+The shared layouts gained the Tonight brief/chart/ranked workspace, wide docked
+inspector and compact dialog behavior, catalog navigation, local Sky View
+scrub, container-driven canvases, focus behavior, and import/library retry flows.
+Follow-up fixes addressed inspector bounds, chart legend and compact metadata,
+shortcut scope, scroll-aware detail positioning, image-error fallback, and
+wrapping long labels (UIB-006/UIB-008 through UIB-021).
+
+The dated final snapshot passed **647 pytest tests**, JS/encoding guards, and
+**38/38 complete browser checks** against a fresh dirty development build
+(`0.6.34-8-g3c12daf-dirty`). Its screenshot matrix contained 42 desktop and 40
+web captures. The theme matrix described at that time included Glass; current
+presentation is Workbench-only. UIB-022's Glass-specific Horizon issue is
+superseded, while UIB-023/024's older visual claims are no longer supported by
+the current Tonight/Library structures and Horizon aspect/min-height code.
+Fresh evidence is required before reopening them. Screenshot and implementation
+detail remains in the Direction B records and Git history.
+
+The older `BUGS.md` statements of a current zero-error release guard and literal
+web cache tokens were historical evidence recorded before later changes.
+Release-ready results belong to their dated entries below; current tokens are
+validated by the guards, and a dirty development build does not establish a
+current staged release.
 
 ## UNRELEASED - 2026-09-27 packaged Image Catalog shell
 

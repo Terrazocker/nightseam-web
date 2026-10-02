@@ -1,4 +1,4 @@
-"""The committed supplement (`app/data/supplement.csv`).
+"""The committed supplement (`catalog_data/data/supplement.csv`).
 
 The catalogue is OpenNGC plus this one small, documented exception set: sixteen
 objects OpenNGC either lacks, files as non-objects, or cannot carry at all
@@ -16,12 +16,11 @@ from pathlib import Path
 
 import pytest
 
-from app.catalog_data import TYPE_LABELS
-from app.database import Database
+from catalog_data import TYPE_LABELS
 
 ROOT = Path(__file__).resolve().parents[1]
-SUPPLEMENT = ROOT / "app" / "data" / "supplement.csv"
-CATALOG = ROOT / "app" / "data" / "openned.csv"
+SUPPLEMENT = ROOT / "catalog_data" / "data" / "supplement.csv"
+CATALOG = ROOT / "catalog_data" / "data" / "openned.csv"
 COLS = ("id", "primary_name", "messier", "ngcic", "other", "otype", "ra_hours",
         "dec_deg", "vmag", "size_am", "constellation", "wiki", "blurb", "search")
 
@@ -170,12 +169,13 @@ def test_supplement_objects_are_unscored_or_scored_like_any_other(tmp_path):
     one (then Standard mode may show them), nothing invented if it does not. The
     SCORES themselves are never pinned - a live refresh moves them (see
     `AGENTS.md`); the ranking identity is `tests/test_catalog.py`'s business."""
-    from app.popularity_data import POPULARITY
-    db = Database(tmp_path / "t.db")
+    from catalog_data.popularity_data import POPULARITY
+    import json
+    rows = {row["id"]: row for row in json.loads((ROOT / "web" / "catalog.json").read_text(encoding="utf-8"))}
     for oid in EXPECTED:
-        row = db.get_object(oid)
+        row = rows.get(oid)
         assert row is not None, oid
-        assert db.get_object(oid)["popularity"] == POPULARITY.get(oid, 0)
+        assert row["popularity"] == POPULARITY.get(oid, 0)
     assert POPULARITY.get("ic1318") and POPULARITY.get("sh2-276")
     # all nine batch-2 rows are known to the popularity source, which is what lets the
     # standard-mode rule pick them up on its own

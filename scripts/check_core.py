@@ -1,17 +1,8 @@
-"""Fail when the baked core trees drift from core/, or when a moved concept is
-re-implemented outside core/.
+"""Reject web core drift, stale bakes, impure source and duplicate math.
 
-Modeled on scripts/check_catalog_token.py:
-  * core/ bytes hash to the manifest hash (bake not re-run -> fail)
-  * web/core/<hash>/ and static/js/core/<hash>/ are byte-identical to core/
-  * exactly one hash directory exists on each side (no stale bakes)
-  * both stable stubs point at the manifest hash
-  * the web stub's cache token matches the manifest token (bump discipline)
-  * core/ stays pure (no DOM/storage/network identifiers)
-  * the moved concepts cannot reappear as definitions in the shells
-
-Wired into scripts/check_js.py and scripts/check_release.py.
-Usage: python scripts/check_core.py
+Checks core/ hash and file manifest against web/core/<hash>/, exact current/N-1
+retention, stable stub/hash/token correspondence, core purity and moved concepts
+reimplemented in web modules, inline scripts, catalog_data or scripts.
 """
 
 from __future__ import annotations
@@ -27,8 +18,6 @@ ROOT = Path(__file__).resolve().parent.parent
 CORE = ROOT / "core"
 MANIFEST = CORE / "core.manifest.json"
 WEB_DIR = ROOT / "web"
-STATIC_JS = ROOT / "static" / "js"
-APP_DIR = ROOT / "app"
 SCRIPTS_DIR = ROOT / "scripts"
 
 # Functions that must exist only in core/. Keep in sync with core/index.js.
@@ -221,7 +210,7 @@ def scan() -> list[str]:
         problems.append("core/ per-file hashes differ from the manifest - "
                         "re-run scripts/build_core.py")
 
-    for label, dest_root in (("web", WEB_DIR / "core"), ("static", STATIC_JS / "core")):
+    for label, dest_root in (("web", WEB_DIR / "core"),):
         problems.extend(baked_dir_problems(label, dest_root, hash_, previous))
         for rel, digest in sorted(files.items()):
             fp = dest_root / hash_ / rel
@@ -230,7 +219,7 @@ def scan() -> list[str]:
             elif hashlib.sha256(build.normalize(fp.read_bytes())).hexdigest() != digest:
                 problems.append(f"{label}: {rel} differs from core/")
 
-    for label, stub in (("web", WEB_DIR / "core.js"), ("static", STATIC_JS / "core.js")):
+    for label, stub in (("web", WEB_DIR / "core.js"),):
         if not stub.is_file():
             problems.append(f"{label}: {stub.name} stub is missing")
             continue
@@ -252,18 +241,13 @@ def scan() -> list[str]:
             problems.append(
                 f"web/{rel}: core token {tok} != manifest token {token}")
 
-    static_edge = any(re.search(r"['\"]\./core\.js['\"]", source_text(p))
-                      for p in shell_sources(STATIC_JS) if p.name != "core.js")
-    if not static_edge:
-        problems.append("static: no './core.js' import found")
-
     for p in build.core_files(CORE):
         text = _read(p)
         for pattern in FORBIDDEN:
             if re.search(pattern, text):
                 problems.append(f"core/{p.name}: forbidden pattern {pattern}")
 
-    for base in (WEB_DIR, STATIC_JS):
+    for base in (WEB_DIR,):
         for p in shell_sources(base):
             if p.name == "core.js":
                 continue
@@ -310,11 +294,7 @@ def scan() -> list[str]:
 
     # Phase C: Python is IO/platform only - no astronomy/planning math may be
     # re-implemented in app/ or scripts/ (the retired modules or their cores).
-    for name in RETIRED_PY_MODULES:
-        if (APP_DIR / name).exists():
-            problems.append(f"app/{name}: retired in Phase C - astronomy lives "
-                            "in core/")
-    for base in (APP_DIR, SCRIPTS_DIR):
+    for base in (ROOT / "catalog_data", SCRIPTS_DIR):
         if not base.is_dir():
             continue
         for p in sorted(base.rglob("*.py")):

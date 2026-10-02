@@ -1,3 +1,13 @@
+# Independent website decisions
+
+On October 1, 2026 the local catalog and website became separate repositories.
+Each owns its source dependencies, catalog inputs, tests, builds and release
+versions. The catalog begins at 0.1.0; the website retains its existing history.
+No sibling source imports or symlinks are used. Existing archive paths and both
+desktop libraries were preserved. The remaining entries below are historical
+decisions from the combined project; references to removed cross-project paths
+describe that historical state, not current build requirements.
+
 # DECISIONS.md — why NightSeam works the way it does
 
 One entry per decision that an agent or maintainer would otherwise re-litigate.
@@ -9,6 +19,38 @@ audit/review bundles were removed from the working tree on 2026-09-17; Git
 history, tests and `RELEASES.md` preserve their durable evidence.
 
 ---
+
+## 2026-10-01 - FITS identity and nonblocking archive IO
+
+**Decision.** Complete FITS file bytes define identity through SHA-256. Renaming
+or selecting another session/frame override does not create another archive
+copy or library record. The UI explicitly reports Already imported. Future
+calibration sharing and reclassification need separate validated operations.
+
+**Why.** The user requires awareness of previous imports with no duplication.
+Destination-based identity would silently multiply identical exposures and
+inflate library totals. Hashes imported from a backup are not trusted identity
+evidence; local original bytes establish fingerprints.
+
+**Implementation.** Blocking file IO runs in workers under archive-operation
+serialization, separate from the short SQLite lock. Indexed candidates replace
+full-table per-upload scans. Positive fingerprints are verified against current
+original bytes. Reindex refreshes fingerprints after external archive edits.
+No SQLite RLock may be held across an await. Missing-original repair preserves
+the record and is reported separately from newly imported captures.
+
+## 2026-10-01 - Retired model and cached-core compatibility
+
+**Decision.** The experimental modeled sky-brightness feature was deliberately
+removed from both planner shells and shared core. Its controls/data are not part
+of the next release, and no modeled value is presented as a measured sky reading.
+
+The narrow `--retire-model-bearing-previous` bake excludes the old model-bearing
+tree from local distributions (`previous: null`). Ordinary bakes retain N-1.
+The exception does not authorize deleting deployed old trees referenced by
+cached stubs. Verify those remote files and keep compatibility trees available
+when deploying the retirement; publish modules before HTML. No deployment or
+live cached-client compatibility check is performed by this implementation pass.
 
 ## 2026-09-27 — Workbench is the only shipped presentation
 

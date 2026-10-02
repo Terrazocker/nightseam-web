@@ -11,7 +11,7 @@ Run from the repository root after placing the OpenNGC ``NGC.csv`` and
 
     python scripts/build_catalog_provenance.py
 
-The default command writes the same deterministic JSON to the desktop data
+The default command writes the same deterministic JSON to the catalog source
 directory and the static web directory.  The source files are not shipped;
 their SHA-256 digests make the exact input revision auditable and reproducible.
 """
@@ -27,12 +27,12 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-CATALOG = ROOT / "app" / "data" / "openned.csv"
+CATALOG = ROOT / "catalog_data" / "data" / "openned.csv"
 DEFAULT_NGC = ROOT / "data" / "NGC.csv"
 DEFAULT_ADDENDUM = ROOT / "data" / "addendum.csv"
-SUPPLEMENT = ROOT / "app" / "data" / "supplement.csv"
+SUPPLEMENT = ROOT / "catalog_data" / "data" / "supplement.csv"
 DEFAULT_OUTPUTS = (
-    ROOT / "app" / "data" / "catalog_provenance.json",
+    ROOT / "catalog_data" / "data" / "catalog_provenance.json",
     ROOT / "web" / "catalog-provenance.json",
 )
 PROVENANCE_MANIFEST = ROOT / "web" / "catalog-provenance.manifest.json"
@@ -297,7 +297,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--supplement", type=Path, default=SUPPLEMENT)
     parser.add_argument(
         "--out", type=Path, action="append", dest="outputs",
-        help="write one output path (repeatable; defaults to desktop + web)")
+        help="write one output path (repeatable; defaults to catalog source + web)")
     return parser.parse_args()
 
 

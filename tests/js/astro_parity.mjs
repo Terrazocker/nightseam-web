@@ -1,21 +1,6 @@
-/*
- * Node harness for the Python <-> JavaScript astronomy parity test.
- *
- * Usage:  node tests/js/astro_parity.mjs <desktop|web|window>
- *         (reads a JSON array of case objects on stdin, writes JSON on stdout)
- *
- *   desktop / web : precession + alt/az (+ gmst, sun, moon for web)
- *   window        : static/js/derive.js's longestRunJS / windowEndISO - the
- *                   clear-window contract shared with app/nightcalc.py
- *
- * tests/test_js_parity.py feeds the same inputs to app/astro.py and to this
- * harness, then compares the numbers. It exists because the three engines
- * (Python, static/js/astro.js, web/astro.js) agreed with each other while all
- * three were wrong (see tests/test_astro.py for the reference values that pin
- * the actual mathematics).
- */
+/* Node contracts for the standalone web planner and its pure source core. */
 const engine = process.argv[2];
-if (!["desktop", "web", "window", "darkwindow", "pick", "crosszone",
+if (!["web", "darkwindow", "pick", "crosszone",
      "scoring", "ceil", "size", "status", "frame", "advice", "minalt",
      "shortcut", "nightstats", "mag", "skyzoom", "abovehorizon",
      "scrubwindow", "scrubgrid", "timezone", "tier", "wikititles"].includes(engine)) {
@@ -44,11 +29,7 @@ const wallToUtc = (date, zone) => {
   return new Date(date.getTime() - (off + date.getTimezoneOffset()) * 60000);
 };
 
-const mod = engine === "desktop"
-  ? await import(new URL("../../static/js/astro.js", import.meta.url).href)
-  : engine === "window"
-    ? await import(new URL("../../static/js/derive.js", import.meta.url).href)
-    : await import(new URL("../../web/astro.js", import.meta.url).href);
+const mod = await import(new URL("../../web/astro.js", import.meta.url).href);
 
 const input = await new Promise((resolve, reject) => {
   let buf = "";
@@ -62,45 +43,45 @@ const cases = JSON.parse(input);
 
 if (engine === "size") {
   // display formatting: the web formatter (web/format.js) must produce exactly
-  // what the desktop's static/js/util.js::fmtSize does - catalog sizes are
+  // what the core's static/js/util.js::fmtSize does - catalog sizes are
   // arcminutes shown in ONE user-chosen unit, single-axis entries ("330",
   // "1.4") included. cases: [[size_am, unit], ...]
-  const [webFmt, deskUtil] = await Promise.all([
+  const [webFmt, coreUtil] = await Promise.all([
     import(new URL("../../web/format.js", import.meta.url).href),
-    import(new URL("../../static/js/util.js", import.meta.url).href),
+    import(new URL("../../core/index.js", import.meta.url).href),
   ]);
   process.stdout.write(JSON.stringify(cases.map(([s, unit]) => {
     const web = webFmt.fmtSize(s, unit);
-    const desktop = deskUtil.fmtSize(s, unit);
-    return { size: s, unit, web, desktop, ok: web === desktop };
+    const core = coreUtil.fmtSize(s, unit);
+    return { size: s, unit, web, core, ok: web === core };
   })));
 } else if (engine === "mag") {
-  // magnitude-limit rule: desktop derive.js::magVisible vs web format.js
-  const [desk, webFmt] = await Promise.all([
-    import(new URL("../../static/js/derive.js", import.meta.url).href),
+  // magnitude-limit rule: core derive.js::magVisible vs web format.js
+  const [core, webFmt] = await Promise.all([
+    import(new URL("../../core/index.js", import.meta.url).href),
     import(new URL("../../web/format.js", import.meta.url).href),
   ]);
   process.stdout.write(JSON.stringify(cases.map((c) => ({
     vmag: c.vmag, limit: c.limit, max: c.max,
-    desktop: desk.magVisible(c.vmag, c.limit, c.max),
+    core: core.magVisible(c.vmag, c.limit, c.max),
     web: webFmt.magVisible(c.vmag, c.limit, c.max),
   }))));
 } else if (engine === "abovehorizon") {
-  // selected-time visibility rule: desktop derive.js vs web astro.js
-  const [desk, web] = await Promise.all([
-    import(new URL("../../static/js/derive.js", import.meta.url).href),
+  // selected-time visibility rule: core derive.js vs web astro.js
+  const [core, web] = await Promise.all([
+    import(new URL("../../core/index.js", import.meta.url).href),
     import(new URL("../../web/astro.js", import.meta.url).href),
   ]);
   process.stdout.write(JSON.stringify(cases.map((c) => ({
     alt: c.alt,
-    desktop: desk.aboveHorizon(c.alt),
+    core: core.aboveHorizon(c.alt),
     web: web.aboveHorizon(c.alt),
   }))));
 } else if (engine === "skyzoom") {
-  // square-zoom geometry: desktop derive.js vs web format.js. Case:
+  // square-zoom geometry: core derive.js vs web format.js. Case:
   // {zoom, W, H, fx, fy, sx, sy} - fx/fy null = centered.
-  const [desk, webFmt] = await Promise.all([
-    import(new URL("../../static/js/derive.js", import.meta.url).href),
+  const [core, webFmt] = await Promise.all([
+    import(new URL("../../core/index.js", import.meta.url).href),
     import(new URL("../../web/format.js", import.meta.url).href),
   ]);
   const one = (m, c) => ({
@@ -111,7 +92,7 @@ if (engine === "size") {
   });
   process.stdout.write(JSON.stringify(cases.map((c) => ({
     W: c.W, H: c.H, zoom: c.zoom,
-    desktop: one(desk, c), web: one(webFmt, c),
+    core: one(core, c), web: one(webFmt, c),
   }))));
 } else if (engine === "pick") {
   // unit-test the twilight-preference rule (cascade + polar fallback) with
@@ -183,18 +164,18 @@ if (engine === "size") {
   process.stdout.write(JSON.stringify(out));
 } else if (engine === "scoring") {
   /* Compare the moon-aware scoring model of BOTH clients on one input grid.
-   * The curves live in static/js/derive.js (desktop) and web/astro.js (web);
+   * The curves live in static/js/derive.js (core) and web/astro.js (web);
    * this mode prints both so the Python test can assert they are identical. */
-  const desk = await import(new URL("../../static/js/derive.js", import.meta.url).href);
+  const core = await import(new URL("../../core/index.js", import.meta.url).href);
   const web = await import(new URL("../../web/astro.js", import.meta.url).href);
   const pairs = {
-    desktop: {
-      MOON_TYPE_FACTOR: desk.MOON_TYPE_FACTOR,
-      moonSensitivity: (ot) => desk.moonSensitivity(ot),
-      moonMinDist: (f, a) => desk.moonMinDist(f, a),
-      effectiveMoonGlow: (i, s, f, a) => desk.effectiveMoonGlow(i, s, f, a),
-      moonPenalty: (g, t, b) => desk.moonPenalty(g, t, b),
-      bortleMoonFactor: (b) => desk.bortleMoonFactor(b),
+    core: {
+      MOON_TYPE_FACTOR: core.MOON_TYPE_FACTOR,
+      moonSensitivity: (ot) => core.moonSensitivity(ot),
+      moonMinDist: (f, a) => core.moonMinDist(f, a),
+      effectiveMoonGlow: (i, s, f, a) => core.effectiveMoonGlow(i, s, f, a),
+      moonPenalty: (g, t, b) => core.moonPenalty(g, t, b),
+      bortleMoonFactor: (b) => core.bortleMoonFactor(b),
     },
     web: {
       MOON_TYPE_FACTOR: web.MOON_TYPE_FACTOR,
@@ -206,19 +187,19 @@ if (engine === "size") {
     },
   };
   const out = { MOON_TYPE_FACTOR: {}, sensitivity: [], minDist: [], glow: [], penalty: [], bortle: [] };
-  for (const [k, v] of Object.entries(pairs.desktop.MOON_TYPE_FACTOR)) {
+  for (const [k, v] of Object.entries(pairs.core.MOON_TYPE_FACTOR)) {
     out.MOON_TYPE_FACTOR[k] = [v, pairs.web.MOON_TYPE_FACTOR[k]];
   }
-  for (const ot of Object.keys(pairs.desktop.MOON_TYPE_FACTOR).concat(["unknown"])) {
-    out.sensitivity.push([ot, pairs.desktop.moonSensitivity(ot), pairs.web.moonSensitivity(ot)]);
+  for (const ot of Object.keys(pairs.core.MOON_TYPE_FACTOR).concat(["unknown"])) {
+    out.sensitivity.push([ot, pairs.core.moonSensitivity(ot), pairs.web.moonSensitivity(ot)]);
   }
   for (const f of ["narrowband", "oiii", "lrgb", "other"]) {
     for (const age of [0, 3.7, 7.38, 11, 14.76, 14.9]) {
-      out.minDist.push([f, age, pairs.desktop.moonMinDist(f, age), pairs.web.moonMinDist(f, age)]);
+      out.minDist.push([f, age, pairs.core.moonMinDist(f, age), pairs.web.moonMinDist(f, age)]);
       for (const illum of [0, 0.25, 0.62, 1]) {
         for (const sep of [0, 20, 45, 90, 120, 179.9]) {
           out.glow.push([f, age, illum, sep,
-            pairs.desktop.effectiveMoonGlow(illum, sep, f, age),
+            pairs.core.effectiveMoonGlow(illum, sep, f, age),
             pairs.web.effectiveMoonGlow(illum, sep, f, age)]);
         }
       }
@@ -227,12 +208,12 @@ if (engine === "size") {
   for (const g of [0, 0.3, 1]) {
     for (const t of [0.5, 1.0, 1.6]) {
       for (const b of [0.3, 0.64, 1.12]) {
-        out.penalty.push([g, t, b, pairs.desktop.moonPenalty(g, t, b), pairs.web.moonPenalty(g, t, b)]);
+        out.penalty.push([g, t, b, pairs.core.moonPenalty(g, t, b), pairs.web.moonPenalty(g, t, b)]);
       }
     }
   }
   for (let bortle = 1; bortle <= 9; bortle++) {
-    out.bortle.push([bortle, pairs.desktop.bortleMoonFactor(bortle), pairs.web.bortleMoonFactor(bortle)]);
+    out.bortle.push([bortle, pairs.core.bortleMoonFactor(bortle), pairs.web.bortleMoonFactor(bortle)]);
   }
   process.stdout.write(JSON.stringify(out));
 } else if (engine === "ceil") {
@@ -268,39 +249,16 @@ if (engine === "size") {
       ? T.zoneOffsetAtLocalNoon(c.tz, c.date)
       : T.offsetEastMin(c.tz, c.ms);
   })));
-} else if (engine === "status") {
-  /* E4: desktop derive.js statusOf must mirror the vis[] visibility predicate
-   * (incl. the sky-mode ceil_top ceiling). Case: {alt, ceil, ceilTop, minAlt}.
-   * ceilTop absent (undefined) means "no upper ceiling" (90.5 sentinel). */
-  const { S } = await import(new URL("../../static/js/state.js", import.meta.url).href);
-  const desk = await import(new URL("../../static/js/derive.js", import.meta.url).href);
-  process.stdout.write(JSON.stringify(cases.map((c) => {
-    S.minAlt = c.minAlt;
-    const o = { alt: [c.alt], ceil: [c.ceil],
-                ceil_top: c.ceilTop == null ? undefined : [c.ceilTop] };
-    return { code: desk.statusOf(o, 0).code };
-  })));
+
 } else if (engine === "frame") {
-  /* E3: frame coverage - web/format.js framePct (object span / frame width,
-   * arcminutes) vs the desktop's frameCoverage (object/field, worse of both
-   * axes). Case: {side, sizeAm, fovArcmin} or {side:"desktop", sizeAm, fovW,
-   * fovH}. Values above 100 = does not fit in one frame. */
-  const webFmt = await import(new URL("../../web/format.js", import.meta.url).href);
-  const { S } = await import(new URL("../../static/js/state.js", import.meta.url).href);
-  const desk = await import(new URL("../../static/js/derive.js", import.meta.url).href);
-  process.stdout.write(JSON.stringify(cases.map((c) => {
-    if (c.side === "web") return { pct: webFmt.framePct(c.sizeAm, c.fovArcmin) };
-    S.cfg = { rigs: [{ id: "r", fov_w: c.fovW, fov_h: c.fovH }], active_rig_id: "r" };
-    const cov = desk.frameCoverage({ size_am: c.sizeAm });
-    return cov ? { pct: cov.pct, fits: cov.fits, frames: +cov.frames.toFixed(2) }
-               : { pct: null };
-  })));
+  const F = await import(new URL("../../web/format.js", import.meta.url).href);
+  process.stdout.write(JSON.stringify(cases.map(c => ({pct: F.framePct(c.sizeAm, c.fovArcmin)}))));
 } else if (engine === "wikititles") {
   /* Wikipedia page candidates (0.6.32): the stored `wiki` title if any, then the
    * full "Messier N" (a bare "M101" is a DISAMBIGUATION page - motorways,
    * highways), then the NGC/IC designation, then the display name. Deduped, and
    * never empty for a real object. The same list is built in app/images.py for
-   * the desktop, whose chain then also skips disambiguation pages. */
+   * the core, whose chain then also skips disambiguation pages. */
   const core = await import(new URL("../../web/core.js", import.meta.url).href);
   process.stdout.write(JSON.stringify(cases.map((c) => core.wikiTitles(c.obj))));
 } else if (engine === "tier") {
@@ -319,44 +277,20 @@ if (engine === "size") {
     return { tier: core.tierForRank(c.rank) };
   })));
 } else if (engine === "advice") {
-  /* E7: the filter recommendation model - desktop derive.js filterAdvice vs
-   * web/horizon.js filterAdvice must agree on (ok, text). Case: {otype, bb,
-   * ha, oiii} = filter ownership. */
-  const { S } = await import(new URL("../../static/js/state.js", import.meta.url).href);
-  const desk = await import(new URL("../../static/js/derive.js", import.meta.url).href);
   const H = await import(new URL("../../web/horizon.js", import.meta.url).href);
-  process.stdout.write(JSON.stringify(cases.map((c) => {
-    S.cfg = { filters: { broadband: !!c.bb, narrowband_ha: !!c.ha,
-                         narrowband_oiii: !!c.oiii } };
-    const d = desk.filterAdvice({ otype: c.otype });
-    const w = H.filterAdvice(c.otype, { fltBb: !!c.bb, fltHa: !!c.ha,
-                                        fltOiii: !!c.oiii });
-    return { desk: d ? { ok: d.cls === "ok", text: d.text } : null,
-             web: w ? { ok: w.ok, text: w.text } : null };
+  process.stdout.write(JSON.stringify(cases.map(c => {
+    const w = H.filterAdvice(c.otype, {fltBb: !!c.bb, fltHa: !!c.ha, fltOiii: !!c.oiii});
+    return {web: w ? {ok: w.ok, text: w.text} : null};
   })));
 } else if (engine === "minalt") {
-  /* E5: the authoritative min-altitude rule - desktop derive.js
-   * effectiveMinAlt vs web/horizon.js effectiveMinAlt. Case: {bortle,
-   * explicit, value}. */
-  const { S } = await import(new URL("../../static/js/state.js", import.meta.url).href);
-  const desk = await import(new URL("../../static/js/derive.js", import.meta.url).href);
+  const C = await import(new URL("../../core/visibility.js", import.meta.url).href);
   const H = await import(new URL("../../web/horizon.js", import.meta.url).href);
-  process.stdout.write(JSON.stringify(cases.map((c) => {
-    S.cfg = { bortle: c.bortle,
-              min_useful_alt: c.explicit ? c.value : null,
-              min_useful_alt_explicit: !!c.explicit };
-    const d = desk.effectiveMinAlt(S.cfg);
-    H.setPrefs({ minAlt: c.explicit ? c.value : null, bortle: c.bortle });
-    return { desk: d, web: H.effectiveMinAlt() };
+  process.stdout.write(JSON.stringify(cases.map(c => {
+    H.setPrefs({minAlt: c.explicit ? c.value : null, bortle: c.bortle});
+    return {core: C.effectiveMinAlt(c.bortle, c.explicit ? c.value : null), web: H.effectiveMinAlt()};
   })));
 } else if (engine === "shortcut") {
-  /* E8: keyboard scrub steps - desktop derive.js vs web/astro.js */
-  const desk = await import(new URL("../../static/js/derive.js", import.meta.url).href);
-  const web = await import(new URL("../../web/astro.js", import.meta.url).href);
-  process.stdout.write(JSON.stringify({
-    desk: [desk.SCRUB_STEP_MIN, desk.SCRUB_SHIFT_STEP_MIN],
-    web: [web.SCRUB_STEP_MIN, web.SCRUB_SHIFT_STEP_MIN],
-  }));
+  process.stdout.write(JSON.stringify({web: [mod.SCRUB_STEP_MIN, mod.SCRUB_SHIFT_STEP_MIN]}));
 } else if (engine === "nightstats") {
   /* 11.2: the shared web scoring loop (web/nightrank.js) - absolute values.
    * Case: {obj:{ra_hours,dec_deg}, jd0, jd1, step, minAlt, lat, lon,
@@ -371,21 +305,13 @@ if (engine === "size") {
              sClassic: +st.sClassic.toFixed(6), sMoon: +st.sMoon.toFixed(6),
              maxAlt: +st.maxAlt.toFixed(6) };
   })));
-} else if (engine === "window") {
-  const out = cases.map((c) => {
-    const best = mod.longestRunJS(c.flags);
-    return {
-      best,
-      endISO: best ? mod.windowEndISO(c.times, best[1], c.step) : null,
-    };
-  });
-  process.stdout.write(JSON.stringify(out));
+
 } else if (engine === "scrubwindow") {
-  /* Scrub-range policy at BOTH states: desktop derive.js vs web/astro.js.
+  /* Scrub-range policy at BOTH states: core derive.js vs web/astro.js.
    * Case: {viewFullDay, nightStart, nightEnd, fullStart, fullEnd, probes[]}
    * with epoch-ms bounds; returns the chosen [start,end] and the clamped
    * probes, so the Python side can check the planner window AND parity. */
-  const desk = await import(new URL("../../static/js/derive.js", import.meta.url).href);
+  const core = await import(new URL("../../core/index.js", import.meta.url).href);
   const web = await import(new URL("../../web/astro.js", import.meta.url).href);
   const one = (m, c) => {
     const b = m.scrubBounds(c.viewFullDay, c.nightStart, c.nightEnd,
@@ -396,25 +322,9 @@ if (engine === "size") {
     };
   };
   process.stdout.write(JSON.stringify(cases.map((c) => ({
-    desk: one(desk, c), web: one(web, c),
+    core: one(core, c), web: one(web, c),
   }))));
-} else if (engine === "scrubgrid") {
-  /* ITEM A: the REAL desktop 24 h grid. Given the timeline + crossings Python
-   * computed, return the SCRUB index range (sunset..sunrise, or the whole grid
-   * with view_full_day) and the SCORING index range (dusk..dawn) that
-   * static/js/derive.js selects. */
-  const { S } = await import(new URL("../../static/js/state.js", import.meta.url).href);
-  const D = await import(new URL("../../static/js/derive.js", import.meta.url).href);
-  process.stdout.write(JSON.stringify(cases.map((c) => {
-    S.night = {
-      timeline: { times_iso: c.times, n: c.times.length, step_min: c.step },
-      dusk: c.dusk, dawn: c.dawn, sunset: c.sunset, sunrise: c.sunrise,
-    };
-    S.cfg = { view_full_day: !!c.viewFullDay };
-    const [lo, hi] = D.scrubWindowRange();
-    const [sl, sh] = D.nightIndexRange();
-    return { lo, hi, scoringLo: sl, scoringHi: sh };
-  })));
+
 } else {
   const out = cases.map((c) => {
     const r = {};
@@ -446,15 +356,6 @@ if (engine === "size") {
       r.illum = mod.moonIllumination(c.jd);
       r.age = mod.moonAge(c.jd);
       r.jd_rt = mod.julianDay(mod.dateFromJD(c.jd));
-    } else {
-      // the desktop engine takes J2000 coords and precesses once per object at
-      // the grid midpoint (derive.js: synthesizeAdvancedTracks) - mirror that
-      // usage instead of handing raw J2000 coords to the sample loop
-      const [pr, pd] = mod.precessJ2000ToDate(c.ra, c.dec, c.jd);
-      const frame = mod.altazFrame(c.lat, c.lon, [c.jd]);
-      const [alt, az] = mod.altazFrameApply(frame, pr, pd, 0);
-      r.alt = alt;
-      r.az = az;
     }
     return r;
   });

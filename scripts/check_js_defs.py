@@ -1,7 +1,5 @@
-"""Heuristic check: find function-style identifiers used inside static/js/*.js
-that are neither defined nor imported in that file (would throw at runtime).
-
-Deliberately rough - it reports candidates for manual review, not hard errors.
+"""Heuristic review of function identifiers in web modules.
+Reports candidates, not hard failures. The import/syntax guards are authoritative.
 """
 
 from __future__ import annotations
@@ -10,7 +8,7 @@ import re
 import sys
 from pathlib import Path
 
-JS_DIR = Path(__file__).resolve().parents[1] / "static" / "js"
+JS_DIR = Path(__file__).resolve().parents[1] / "web"
 
 BUILTINS = {
     # browser / JS

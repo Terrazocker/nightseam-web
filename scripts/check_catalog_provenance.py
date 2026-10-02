@@ -1,8 +1,6 @@
-"""Guard the catalog provenance sidecar and its cache-bust pairing.
-
-The sidecar is generated data, not a JavaScript module.  Both shells fetch or
-load it as a complete JSON document, so the web copy, desktop copy, catalog
-membership and the named ``CATALOG_PROVENANCE_TOKEN`` must stay in lockstep.
+"""Guard reproducible catalog provenance and its cache-token pairing.
+The committed source metadata, web sidecar, catalog membership, CSV digest,
+manifest and verified token/hash baseline must agree.
 """
 
 from __future__ import annotations
@@ -18,10 +16,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 APP = ROOT / "web" / "app.js"
 WEB = ROOT / "web" / "catalog-provenance.json"
-DESKTOP = ROOT / "app" / "data" / "catalog_provenance.json"
+SOURCE = ROOT / "catalog_data" / "data" / "catalog_provenance.json"
 MANIFEST = ROOT / "web" / "catalog-provenance.manifest.json"
 CATALOG = ROOT / "web" / "catalog.json"
-CSV = ROOT / "app" / "data" / "openned.csv"
+CSV = ROOT / "catalog_data" / "data" / "openned.csv"
 SELF = Path(__file__).resolve()
 
 _TOKEN_RE = re.compile(r"const CATALOG_PROVENANCE_TOKEN = '(\d+)'")
@@ -133,11 +131,11 @@ def scan() -> list[str]:
         problems.append(
             "web/app.js must fetch catalog-provenance.json through the named token")
 
-    if not WEB.is_file() or not DESKTOP.is_file():
-        problems.append("desktop and web catalog provenance sidecars are both required")
+    if not WEB.is_file() or not SOURCE.is_file():
+        problems.append("source and web catalog provenance sidecars are both required")
         return problems
-    if WEB.read_bytes() != DESKTOP.read_bytes():
-        problems.append("desktop and web catalog provenance sidecars differ")
+    if WEB.read_bytes() != SOURCE.read_bytes():
+        problems.append("source and web catalog provenance sidecars differ")
     digest = _sha(WEB)
 
     if not MANIFEST.is_file():

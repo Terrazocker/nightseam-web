@@ -1,4 +1,4 @@
-"""Generate app/data/openned.csv from the OpenNGC database (one-time dev task).
+"""Generate catalog_data/data/openned.csv from the OpenNGC database (one-time dev task).
 
 Source: https://github.com/mattiaverga/OpenNGC (CC BY-SA 4.0) - the NGC/IC
 catalog (`NGC.csv`) PLUS its addendum (`addendum.csv`: notable objects that have
@@ -26,7 +26,7 @@ ROOT = Path(__file__).resolve().parents[1]
 SRC = Path(sys.argv[1]) if len(sys.argv) > 1 else ROOT / "data" / "NGC.csv"
 SRC_ADDENDUM = (Path(sys.argv[2]) if len(sys.argv) > 2
                 else SRC.with_name("addendum.csv"))
-# The project's OWN supplement (app/data/supplement.csv, committed): the SIXTEEN
+# The project's OWN supplement (catalog_data/data/supplement.csv, committed): the SIXTEEN
 # objects OpenNGC cannot carry, in two batches. Batch 1 (7) is either absent
 # (Abell 21, Jones-Emberson 1, Sh2-276, Mel 20) or filed as a non-object
 # (IC 1318 is typed `*`, M73 `Other`, M40 `**`); batch 2 (9) lives outside
@@ -34,11 +34,11 @@ SRC_ADDENDUM = (Path(sys.argv[2]) if len(sys.argv) > 2
 # empty). The file uses the catalogue's own column layout, but it is PARSED here
 # (see `read_supplement`) and re-emitted through the same writer as the OpenNGC
 # rows; only id uniqueness is checked across all sources.
-SRC_SUPPLEMENT = ROOT / "app" / "data" / "supplement.csv"
-OUT = ROOT / "app" / "data" / "openned.csv"
+SRC_SUPPLEMENT = ROOT / "catalog_data" / "data" / "supplement.csv"
+OUT = ROOT / "catalog_data" / "data" / "openned.csv"
 
 sys.path.insert(0, str(ROOT))
-from app.fits import parse_ra_hours, parse_dec_deg
+from catalog_data.parsers import parse_ra_hours, parse_dec_deg
 
 
 def _load_source(path: Path) -> list[dict]:

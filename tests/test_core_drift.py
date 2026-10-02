@@ -98,7 +98,7 @@ def _stage(tmp_path: Path):
     manifest = json.loads((ROOT / "core" / "core.manifest.json").read_text(encoding="utf-8"))
     hash_ = manifest["hash"]
     shutil.copytree(ROOT / "core", tmp_path / "core")
-    for rel, shell in (("web", "web/horizon.js"), ("static/js", "static/js/pano.js")):
+    for rel, shell in (("web", "web/horizon.js"),):
         base = tmp_path / Path(rel)
         base.mkdir(parents=True, exist_ok=True)
         shutil.copytree(ROOT / Path(rel) / "core", base / "core")
@@ -108,10 +108,7 @@ def _stage(tmp_path: Path):
     guard.CORE = tmp_path / "core"
     guard.MANIFEST = guard.CORE / "core.manifest.json"
     guard.WEB_DIR = tmp_path / "web"
-    guard.STATIC_JS = tmp_path / "static" / "js"
-    guard.APP_DIR = tmp_path / "app"
     guard.SCRIPTS_DIR = tmp_path / "scripts"
-    guard.APP_DIR.mkdir()
     guard.SCRIPTS_DIR.mkdir()
     return guard, hash_
 
@@ -158,12 +155,6 @@ def test_mutations_fail_the_guard(tmp_path):
     # restore, then the Python side (Phase C): a retired module reappears (f)
     shutil.copy(ROOT / "web" / "horizon.js", shell)
     assert guard.scan() == []
-    (guard.APP_DIR / "nightcalc.py").write_text("def compute_night():\n    pass\n",
-                                                encoding="utf-8")
-    assert guard.scan(), "a retired Python astronomy module must FAIL the guard"
-
-    # ... or a script re-implements a moved core (g)
-    (guard.APP_DIR / "nightcalc.py").unlink()
     (guard.SCRIPTS_DIR / "bake.py").write_text("def altaz(ra, dec):\n    return 0\n",
                                                encoding="utf-8")
     assert guard.scan(), "Python astronomy math outside core/ must FAIL the guard"
@@ -293,8 +284,7 @@ def test_model_bake_retirement_prunes_old_tree_and_records_null(monkeypatch, tmp
     new_hash, _files = build.tree_hash(core)
 
     web = repo / "web"
-    static_js = repo / "static" / "js"
-    for root in (web / "core", static_js / "core"):
+    for root in (web / "core",):
         for old in ("oldhash", "olderhash"):
             model_tree = root / old
             model_tree.mkdir(parents=True)
@@ -303,7 +293,6 @@ def test_model_bake_retirement_prunes_old_tree_and_records_null(monkeypatch, tmp
     monkeypatch.setattr(build, "CORE", core)
     monkeypatch.setattr(build, "MANIFEST", core / "core.manifest.json")
     monkeypatch.setattr(build, "WEB_DIR", web)
-    monkeypatch.setattr(build, "STATIC_JS", static_js)
     monkeypatch.setattr(sys, "argv", ["build_core.py"])
     assert build.main() == 0
     normal = json.loads((core / "core.manifest.json").read_text(encoding="utf-8"))
@@ -314,7 +303,7 @@ def test_model_bake_retirement_prunes_old_tree_and_records_null(monkeypatch, tmp
     assert build.main() == 0
     retired = json.loads((core / "core.manifest.json").read_text(encoding="utf-8"))
     assert retired["previous"] is None
-    for root in (web / "core", static_js / "core"):
+    for root in (web / "core",):
         assert {p.name for p in root.iterdir()} == {new_hash}
         assert not (root / new_hash / "skybrightness.js").exists()
 

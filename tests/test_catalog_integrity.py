@@ -1,6 +1,6 @@
 """Catalog identity integrity.
 
-The catalog IS OpenNGC (`app/data/openned.csv`, built from `NGC.csv` +
+The catalog IS OpenNGC (`catalog_data/data/openned.csv`, built from `NGC.csv` +
 `addendum.csv`) - there is no hand-curated list any more. Two identity rules are
 pinned here:
 
@@ -23,11 +23,10 @@ from pathlib import Path
 
 import pytest
 
-from app.catalog_data import STANDARD_TOP_N, standard_ids
-from app.database import Database
+from catalog_data import STANDARD_TOP_N, standard_ids
 
 ROOT = Path(__file__).resolve().parents[1]
-CSV = ROOT / "app" / "data" / "openned.csv"
+CSV = ROOT / "catalog_data" / "data" / "openned.csv"
 CATALOG_JSON = ROOT / "web" / "catalog.json"
 TOKEN = re.compile(r"[a-z0-9][a-z0-9_-]{0,63}")
 
@@ -110,32 +109,38 @@ def test_composite_and_former_curated_ids_are_plain_openngc_rows(tmp_path):
     """`ngc2237`/`ngc7317` used to name curated COMPOSITES. They are now the
     OpenNGC rows they always were, and every id resolves to exactly one object
     in both the desktop DB and the web payload."""
-    db = Database(tmp_path / "t.db")
-    assert db.get_object("ngc2237")["primary_name"] == "Rosette A"
-    assert db.get_object("ngc7317")["primary_name"] == "NGC 7317"
-    ids = [o["id"] for o in db.all_objects(advanced=True)]
+    from catalog_data.loader import web_rows
+    rows = web_rows()
+    by_id = {row["id"]: row for row in rows}
+    assert by_id["ngc2237"]["primary_name"] == "Rosette A"
+    assert by_id["ngc7317"]["primary_name"] == "NGC 7317"
+    ids = [o["id"] for o in rows]
     assert len(ids) == len(set(ids))
 
 
 def test_curated_ids_are_gone_everywhere(tmp_path):
-    db = Database(tmp_path / "t.db")
+    from catalog_data.loader import web_rows
+    rows = web_rows()
+    by_id = {row["id"]: row for row in rows}
     for oid in ("m42", "m31", "m45", "lmc", "cr399"):
-        assert db.get_object(oid) is None, oid
+        assert by_id.get(oid) is None, oid
     # ... but the objects they named are present under their OpenNGC id
-    assert db.get_object("ngc1976") is not None      # M42
-    assert db.get_object("mel22") is not None        # M45
-    assert db.get_object("eso56-115") is not None    # LMC
+    assert by_id.get("ngc1976") is not None      # M42
+    assert by_id.get("mel22") is not None        # M45
+    assert by_id.get("eso56-115") is not None    # LMC
 
 
 def test_web_catalog_ids_unique_and_resolve_like_desktop(tmp_path):
     cat = json.loads(CATALOG_JSON.read_text(encoding="utf-8"))
     ids = [o["id"] for o in cat]
     assert len(ids) == len(set(ids)), "web/catalog.json has duplicate ids"
-    db = Database(tmp_path / "t.db")
-    union_ids = [o["id"] for o in db.all_objects(advanced=True)]
+    from catalog_data.loader import web_rows
+    rows = web_rows()
+    by_id = {row["id"]: row for row in rows}
+    union_ids = [o["id"] for o in rows]
     assert len(union_ids) == len(set(union_ids)), "desktop catalog union has duplicate ids"
     for o in cat:
-        got = db.get_object(o["id"])
+        got = by_id.get(o["id"])
         assert got is not None, o["id"]
         assert got["primary_name"] == o["primary_name"], o["id"]
 
@@ -171,9 +176,7 @@ ADVERTISED_SIZE = [
     ("landing/index.html", 2, [r"a small supplement: ([\d,]+) objects",
                                r"computed entirely in your browser\. ([\d,]+) objects"]),
     ("landing/about.html", 1, [r"<b>([\d,]+)</b><span>catalog objects</span>"]),
-    ("static/index.html", 1, [r"supplement OpenNGC cannot carry \(([\d,]+)\s+objects"]),
-    ("README.md", 2, [r"([\d,]+) objects to magnitude 20",
-                      r"shows all ([\d,]+)\."]),
+    ("README.md", 1, [r"The catalog contains ([\d,]+) objects\."]),
 ]
 
 
@@ -208,7 +211,7 @@ def test_advertised_catalog_size_matches_the_shipped_catalog():
     assert not problems, "\n".join(problems)
 
 
-def test_advertised_size_guard_catches_a_drifted_desktop_hint(tmp_path):
+def test_advertised_size_guard_catches_a_drifted_web_hint(tmp_path):
     """CD-08 (0.6.32 review) mutation proof, on a COPY of every claimed file: the
     desktop hint that actually drifted (12,160 against the shipped 12,176) must
     be reported - before this fix the file was not registered at all, so the
@@ -218,11 +221,11 @@ def test_advertised_size_guard_catches_a_drifted_desktop_hint(tmp_path):
         dest = tmp_path / rel
         dest.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy(ROOT / rel, dest)
-    hint = tmp_path / "static" / "index.html"
+    hint = tmp_path / "web" / "index.html"
     hint.write_text(hint.read_text(encoding="utf-8").replace("12,176", "12,160"),
                     encoding="utf-8")
     problems = _advertised_mismatches(tmp_path)
-    assert any("static/index.html" in p and "12,160" in p for p in problems), \
+    assert any("web/index.html" in p and "12,160" in p for p in problems), \
         f"the drifted desktop hint must be reported: {problems}"
     assert _advertised_mismatches(ROOT) == [], "the real tree must be clean"
 
@@ -235,23 +238,7 @@ def test_catalog_csv_and_web_payload_describe_the_same_catalog(tmp_path):
     cat = json.loads(CATALOG_JSON.read_text(encoding="utf-8"))
     assert len(cat) == len(rows)
     assert {o["id"] for o in cat} == {r["id"] for r in rows}
-    db = Database(tmp_path / "t.db")
-    assert db.advanced_count() + STANDARD_TOP_N == len(rows)
-
-
-def test_advanced_count_is_defined_once():
-    """CD-04 (review 0.6.32): `Database.advanced_count` existed TWICE in the
-    class body (app/database.py:397 and :464), so the second definition silently
-    shadowed the first - a future edit to the dead copy (a filter, a cached
-    count) would take effect or not depending on which one the editor happened
-    to open. One accessor."""
-    import ast
-    import inspect
-
-    from app.database import Database
-
-    tree = ast.parse(inspect.getsource(Database).lstrip())
-    cls = next(n for n in tree.body if isinstance(n, ast.ClassDef))
-    names = [n.name for n in cls.body
-             if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))]
-    assert names.count("advanced_count") == 1, names
+    from catalog_data.loader import web_rows
+    rows = web_rows()
+    by_id = {row["id"]: row for row in rows}
+    assert sum(row["_adv"] for row in rows) + STANDARD_TOP_N == len(rows)

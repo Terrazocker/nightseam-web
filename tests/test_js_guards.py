@@ -60,3 +60,38 @@ def test_a_missing_dom_id_is_detected(tmp_path):
     html.write_text('<div id="present"></div><div id="absent"></div>',
                     encoding="utf-8")
     assert mod.check("scratch", html, [js]) == 0
+
+
+def test_dom_guard_discovers_new_transitive_modules(tmp_path):
+    """A newly imported module is checked without editing a filename list."""
+    mod = _load("check_dom_ids")
+    html = tmp_path / "index.html"
+    html.write_text('<script type="module" src="/entry.js?v=2"></script>', encoding="utf-8")
+    (tmp_path / "entry.js").write_text("import './bridge.js';\n", encoding="utf-8")
+    (tmp_path / "bridge.js").write_text(
+        "export * from './exports.js?v=1';\nimport('./new.js');\n", encoding="utf-8")
+    (tmp_path / "exports.js").write_text("import './entry.js';\n", encoding="utf-8")
+    (tmp_path / "new.js").write_text("const node = $('#newly-missing');\n", encoding="utf-8")
+    (tmp_path / "unloaded.js").write_text("const node = $('#unloaded');\n", encoding="utf-8")
+    discovered = mod.discover_modules(html)
+    assert {p.name for p in discovered} == {"entry.js", "bridge.js", "exports.js", "new.js"}
+    assert mod.check("scratch", html, discovered) == 1
+    html.write_text(html.read_text(encoding="utf-8") + '<div id="newly-missing"></div>',
+                    encoding="utf-8")
+    assert mod.check("scratch", html, mod.discover_modules(html)) == 0
+    excluded = {("bridge.js", "new.js")}
+    assert "new.js" not in {p.name for p in mod.discover_modules(html, excluded)}
+    # A module excluded from one shell-conditional edge is still checked if
+    # another, reachable edge imports it.
+    with (tmp_path / "entry.js").open("a", encoding="utf-8") as entry:
+        entry.write("import './new.js';\n")
+    assert "new.js" in {p.name for p in mod.discover_modules(html, excluded)}
+
+
+def test_dom_guard_reports_missing_module_entry(tmp_path):
+    mod = _load("check_dom_ids")
+    html = tmp_path / "index.html"
+    html.write_text('<script type="module" src="gone.js"></script>', encoding="utf-8")
+    import pytest
+    with pytest.raises(ValueError, match="module file missing"):
+        mod.discover_modules(html)
