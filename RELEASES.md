@@ -1,5 +1,23 @@
 # Independent website release record
 
+## Local 0.6.35 release preparation - October 5, 2026
+
+Fresh full suite: 252 passed, one optional local popularity-snapshot provenance
+check skipped because the ignored snapshot is absent (123.96 seconds). No test
+failures. The full website browser gate passed 26/26. After correcting the
+website-only curated summary, all 23 release tests and seven pre-tag/curation
+tests passed. The development release integrity gate passed with zero errors
+and the expected dirty/off-tag warning before staging. Logs are under
+logs/repository-split/*-20261005.log.
+
+The pending 0.6.35 summary no longer advertises the removed combined Windows
+application. Its landing changelog entry is prepared before tagging, so normal
+post-tag generation can remain byte-identical. The deferred status-report work
+is saved in IMPLEMENTATION_PLAN.md; unresolved acceptance/elevation issues remain
+open. RELEASE_WORKFLOW.md records local integration, staging and the separate
+publication step. These results do not claim public deployment.
+
+
 ## Repository separation — October 1, 2026
 
 The current codex/direction-b-ui desktop snapshot was extracted to the

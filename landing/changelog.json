@@ -1,5 +1,10 @@
 [
  {
+  "version": "0.6.35",
+  "date": "2026-10-05",
+  "summary": "Website release: the planner uses the Workbench design, with improved layout and weather controls. The experimental modeled sky-brightness feature and its controls have been removed. Existing sites, equipment, panoramas and browser backups are preserved. The website and the Windows image catalog are now independent projects; catalog development and versions are maintained separately."
+ },
+ {
   "version": "0.6.34",
   "date": "2026-09-17",
   "summary": "A safety release for importing backups, plus a fix to the web app's \"tonight\" list. Restoring a setup file is now all-or-nothing: the whole backup is checked first, and your existing files are only replaced once it is known to be usable. Before this, a backup that mixed one good panorama with one broken record could overwrite that panorama's image and then report the import as failed - so \"nothing happened\" and \"your file was replaced\" could be the same message. The import boundary is also stricter about what it accepts: a malformed backup is refused with a clear message rather than an error page, and values that arrive from an imported file can no longer take effect as code - in the desktop app an imported target name or frame type was able to run as a click handler, which is no longer possible. Both apps now escape everything they display from imported data, and the desktop app's script policy no longer permits inline code at all. The web app now enforces a real Content-Security-Policy on the page itself, which it had been missing: its content is restricted to this site's own scripts and styles, plus the two hosts it legitimately loads images from. Separately, the web app's \"tonight\" list no longer lags behind the time scrubber: moving through the night refreshed the ranking asynchronously, so the suggestions could briefly describe the moment you were at before - the list now always matches the selected time, including at startup, and the automatic check that watches for this waits for the list to actually catch up. Deleting the panorama that planning was using also leaves the app with no active panorama instead of an active one that does not exist; activating one that is not there is refused. Everything else is unchanged."
@@ -167,7 +172,7 @@
  {
   "version": "0.5.11",
   "date": "2026-09-02",
-  "summary": "Targets are ranked with community popularity as a silent tiebreaker, and moon-aware scoring now accounts for the Moon's phase, your filters and your Bortle class."
+  "summary": "Targets are ranked with community popularity as a silent tiebreaker, and moon-aware scoring now accounts for the Moon's phase, your filters and your sky brightness (Bortle class)."
  },
  {
   "version": "0.5.10",
