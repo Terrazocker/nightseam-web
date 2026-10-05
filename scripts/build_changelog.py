@@ -31,6 +31,7 @@ OUT = ROOT / "landing" / "changelog.json"
 
 CURATED = {
     # Prepared for the next release; tags alone determine publication.
+    "0.6.36": "Website release: the planner uses the Workbench design, with improved layout and weather controls. The experimental modeled sky-brightness feature and its controls have been removed. Existing sites, equipment, panoramas and browser backups are preserved. The website and the Windows image catalog now develop independently. Catalog metadata stays byte-identical on Windows checkouts, so release integrity checks remain reproducible.",
     "0.6.35": "Website release: the planner uses the Workbench design, with improved layout and weather controls. The experimental modeled sky-brightness feature and its controls have been removed. Existing sites, equipment, panoramas and browser backups are preserved. The website and the Windows image catalog are now independent projects; catalog development and versions are maintained separately.",
     # 0.6.34 is the security/reliability batch for the six findings in BUGS.md:
     # a refused restore can no longer overwrite your files, the desktop can no

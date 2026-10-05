@@ -1,5 +1,10 @@
 [
  {
+  "version": "0.6.36",
+  "date": "2026-10-05",
+  "summary": "Website release: the planner uses the Workbench design, with improved layout and weather controls. The experimental modeled sky-brightness feature and its controls have been removed. Existing sites, equipment, panoramas and browser backups are preserved. The website and the Windows image catalog now develop independently. Catalog metadata stays byte-identical on Windows checkouts, so release integrity checks remain reproducible."
+ },
+ {
   "version": "0.6.35",
   "date": "2026-10-05",
   "summary": "Website release: the planner uses the Workbench design, with improved layout and weather controls. The experimental modeled sky-brightness feature and its controls have been removed. Existing sites, equipment, panoramas and browser backups are preserved. The website and the Windows image catalog are now independent projects; catalog development and versions are maintained separately."

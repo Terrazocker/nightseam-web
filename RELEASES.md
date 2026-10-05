@@ -1,5 +1,27 @@
 # Independent website release record
 
+## Local 0.6.36 release preparation - October 5, 2026
+
+Final full suite after the checkout fix: 253 passed, one optional local snapshot
+provenance skip, no failures (99.59 seconds). All 35 focused seed/provenance,
+release and curation checks passed. The website browser gate passed 26/26 in
+this pass; the subsequent fix changes checkout attributes, not browser behavior.
+
+The first locally tagged 0.6.35 staging attempt stopped at the provenance guard:
+Git's Windows line-ending conversion changed the source sidecar after switching
+branches, making it differ from the hash-paired web sidecar. A fresh-checkout
+regression reproduced the failure. .gitattributes now preserves exact bytes for
+the source provenance JSON and web catalog JSON payloads; the regression restores
+committed files with core.autocrlf=true and passes. Catalog payload/provenance
+content, hashes, cache tokens and astronomy fixtures were not changed.
+
+The original v0.6.35 tag is preserved and was not pushed or publicly deployed.
+The corrected candidate uses a new 0.6.36 entry prepared before its release
+commit/tag. Final tagged staging and fresh-checkout outcomes are captured in
+ignored logs/repository-split/web-0.6.36-readiness-20261005.json. No public website
+publication is authorized or claimed by this local preparation.
+
+
 ## Local 0.6.35 release preparation - October 5, 2026
 
 Fresh full suite: 252 passed, one optional local popularity-snapshot provenance

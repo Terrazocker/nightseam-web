@@ -1,2 +1,6 @@
 # Preserve source-data bytes and literal trailing spaces in search fields.
 catalog_data/data/*.csv -text whitespace=-blank-at-eol
+
+# Hash-paired catalog payloads must survive Windows checkout conversion.
+catalog_data/data/catalog_provenance.json -text
+web/catalog*.json -text

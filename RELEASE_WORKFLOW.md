@@ -7,7 +7,9 @@ repository, tags and packages; none are inputs to this release.
 
 1. Refresh origin and compare the working branch with master. Integrate only
    after reviewing any remote changes; prefer a fast-forward when possible.
-2. Curate scripts/build_changelog.py for the final website behavior. Prepare
+2. Verify a fresh Windows checkout preserves hash-paired seed/payload bytes;
+   .gitattributes must prevent line-ending conversion for those data files.
+   Curate scripts/build_changelog.py for the final website behavior. Prepare
    landing/changelog.json before the release commit, with the candidate version,
    the release commit's date and the same curated summary. Historical entries
    remain generated from their actual tags.
