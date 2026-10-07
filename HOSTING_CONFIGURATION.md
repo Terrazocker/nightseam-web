@@ -1,5 +1,25 @@
 # Prepared static delivery configuration
 
+## Observed after authorized deployment — October 7, 2026
+
+NightSeam Web v0.1.0 is deployed. Both entry routes and all 52 HTTP-readable
+release files match decoded SHA-256 hashes; both .htaccess files also match FTPS
+readback. Hosting redirects nightseam.de to www.nightseam.de. Tests cover that
+actual origin, fresh/cached Wikipedia photos, credits, sources and return visits.
+
+Live HTML/version/manifests report public,max-age=0,must-revalidate. Numeric-token
+app/catalog/provenance requests report public,max-age=31536000,immutable.
+Version and catalog manifests negotiate gzip with Vary:Accept-Encoding. HTML,
+app.js and the two large catalog JSON payloads did not negotiate gzip in the
+measured requests. Cache acceptance is complete; full text/large-payload
+compression remains HOST-DELIVERY-001. The local 4.091-second compressed benchmark
+is still a simulation, not a measured live performance result. FTPS access cannot
+configure the provider's nginx/Plesk controls; use supported host controls/support
+for this remaining setting, then remeasure the actual GET responses.
+
+Evidence: ignored logs/deployment-0.1.0-20261007/http-verified.json and
+browser-accepted.json. No provider log-policy or CDN change was made.
+
 October 6, 2026. ZAP-Hosting/Plesk, no CDN, as confirmed by the owner. The
 configured request-log policy is already recorded in Privacy and BUGS.md.
 This file covers delivery performance, not a new logging-policy request.

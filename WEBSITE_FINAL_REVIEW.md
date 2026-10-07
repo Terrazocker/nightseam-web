@@ -1,5 +1,11 @@
 # Website implementation and final review
 
+Publication follow-up, October 7: v0.1.0 is now on GitHub and deployed after
+owner authorization. RELEASES.md records complete backup/hash/live-browser and
+legacy cleanup evidence. Live caching passed; full text/large-payload compression
+and human AT/native zoom remain open. The pre-publication review below is retained
+as dated evidence, not the current deployment status.
+
 October 7, 2026. Reviewed the existing uncommitted overhaul plus the remaining
 website pass on codex/website-phase-two. No public deployment, clean release tag
 or commit was performed. The independent Windows catalog was not changed.

@@ -70,8 +70,12 @@ items do not mean public deployment or human acceptance has occurred. Final gate
 WEBSITE_FINAL_REVIEW.md and RELEASES.md record results and limitations.
 
 - [ ] Human AT/native zoom acceptance using ACCESSIBILITY_ACCEPTANCE.md.
-- [ ] Review/commit/new clean tag and separately authorized public deployment.
-- [ ] Verify actual host headers, live smoke, rollback backup and retired-file cleanup.
+- [x] Review/commit/new clean tag and separately authorized public deployment.
+- [x] Verify actual host headers, live smoke, rollback backup and retired-file cleanup.
+- [ ] HOST-DELIVERY-001: enable full text/large-payload compression through supported
+  host controls. Live caching is correct; compression acceptance remains partial.
 - [ ] Decide whether to commission separately scoped future features.
 
 Historical local browser refusal causation remains monitoring-only in BUGS.md.
+October 7 publication evidence and the 311-file rollback backup are recorded in
+RELEASES.md and ignored logs/deployment-0.1.0-20261007/. The v0.1.0 tag is unchanged.

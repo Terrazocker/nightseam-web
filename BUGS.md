@@ -2,16 +2,23 @@
 
 ## Current remaining gates — October 7, 2026
 
-Implementation and local release preparation are complete for the established
-website backlog. WEBSITE_FINAL_REVIEW.md and IMPLEMENTATION_PLAN.md are the
+Implementation, GitHub release and authorized deployment of v0.1.0 are complete
+for the established website backlog. WEBSITE_FINAL_REVIEW.md and IMPLEMENTATION_PLAN.md are the
 current status authority; dated findings below retain the history of earlier runs.
 
 - A11Y-001 remains open for a human screen-reader/native-browser-zoom pass.
   ACCESSIBILITY_ACCEPTANCE.md supplies exact steps. Browser keyboard, contrast,
   responsive and enlarged-content checks do not substitute for this acceptance.
-- Publication remains pending: reviewed clean commit/tag, authorized upload,
-  live cache/compression verification, smoke and explicit retired-file cleanup.
-  The verified local candidate is a dirty development snapshot, not a release.
+- Publication is complete: v0.1.0, validated upload/readback, live browser checks,
+  rollback backup and 81 retired photo deletions. The old attribution manifest
+  was already absent. All pre-existing remote core directories remain.
+- HOST-DELIVERY-001: live HTML/JS and the two large catalog JSON payloads do not
+  negotiate gzip. Cache-Control is correct; version/manifests do compress with
+  Vary:Accept-Encoding. Enable full text/large-payload compression via supported
+  Plesk/nginx controls/support, then measure actual GET responses. FTPS alone
+  cannot configure these provider controls. See HOSTING_CONFIGURATION.md and
+  logs/deployment-0.1.0-20261007/http-verified.json. Do not claim the local
+  compressed startup simulation as a live result.
 - BROWSER-LOCAL-001 remains monitoring-only: the runtime's five-connection queue
   accepted five paused-accept burst connections; the new queue of 64 accepted
   twenty. Historical artifacts identify refused local modules, but do not prove

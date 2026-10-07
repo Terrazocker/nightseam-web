@@ -260,3 +260,17 @@ The manifest identifies the actual source describe and lists retired server path
 from the tracked scripts/publication_cleanup.json ledger, independent of whether
 the deletions have already been committed. RELEASE_WORKFLOW.md owns publication,
 clean tagging, backup and rollback. Keep the catalog repository independent.
+
+## Deployment credentials
+
+The standard web/ftps_deploy.py helper accepts UTF-8 text with exact, case-sensitive
+KEY=value fields: FTP_HOST, FTP_USER, FTP_PASS and optional FTP_PORT (default 21).
+It splits at the first equals sign, ignores blank/comment lines, strips whitespace,
+and does not remove quotes around values. Keep values unquoted. Explicit FTPS and
+encrypted data transfer are enabled by the helper; no protocol field is needed.
+Pass an external credential file using --env PATH; its extension may be .txt.
+Credentials stay outside Git and are never included in publication archives.
+
+The October 7 deployment used an ignored in-memory adapter for the owner's existing
+short Name/Pwd format and the established Plesk endpoint. The provided credential
+file was not rewritten or copied into this repository. Never print its contents.

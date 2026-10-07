@@ -39,8 +39,9 @@ Advanced Catalog, startup and local release preparation passes are complete.
 [WEB_REMAINING_WORK_PLAN.md](WEB_REMAINING_WORK_PLAN.md) records completed work
 and the remaining external/manual gates.
 Optional source details load on demand with retry; elevation is recorded metadata
-and does not adjust visibility. Live compression/cache verification and human
-accessibility acceptance remain explicit publication checks.
+and does not adjust visibility. v0.1.0 is published and deployed, with verified
+live bytes, cache policy and browser acceptance. Full text/large-payload host
+compression and human accessibility acceptance remain open; see RELEASES.md.
 
 MIT; see LICENSE and NOTICE for OpenNGC, Wikimedia, Open-Meteo and popularity
 data credits. Recovery snapshots of the pre-split branch and working tree are

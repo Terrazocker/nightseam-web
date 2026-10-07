@@ -5,6 +5,11 @@ Current authority, October 7, 2026. The owner reset the public website series to
 Git tags and historical CURATED summaries remain evidence and do not restore old
 public entries. The catalog's source, tags and packages are independent.
 
+v0.1.0 is now released on GitHub and deployed (October 7, 2026). RELEASES.md
+records exact acceptance and cleanup. Future releases use a new unused version;
+do not rerun the initial tag creation or move v0.1.0. Host compression and human
+AT acceptance remain open separately from publication.
+
 ## Reviewable local candidate
 
 1. Preserve the working branch and unrelated uncommitted work. Read
@@ -12,8 +17,9 @@ public entries. The catalog's source, tags and packages are independent.
 2. Run full pytest once after final changes; run scripts/check_browser.py --web,
    scripts/check_js.py and scripts/check_release.py --allow-dirty --no-stage.
    Browser failures stay failures; infrastructure failures are never skips.
-3. Run scripts/pre_tag_check.py 0.1.0 and verify static public Changes still has
-   just the one independent entry. Keep all module/catalog/provenance tokens,
+3. Curate the next independent version, then run scripts/pre_tag_check.py for
+   that new version. The initial public ledger has just the 0.1.0 entry; append
+   truthful new entries for future releases. Keep all module/catalog/provenance tokens,
    references, core hashes and current plus N-1 retention aligned.
 4. python scripts/prepare_publication.py creates dist/publication-preview with
    both web and landing trees, complete SHA256 manifest and an explicit legacy
@@ -26,9 +32,10 @@ public entries. The catalog's source, tags and packages are independent.
 
 ## Clean independent release
 
-Review the final diff, commit the accepted preparation and choose the fresh
-independent v0.1.0 tag only after pre_tag_check passes. Never move inherited tags.
-The October 7 preparation found no existing v0.1.0 tag; recheck before tagging.
+Review the final diff, commit the accepted preparation and choose a fresh
+independent release tag only after pre_tag_check passes. Never move inherited tags.
+The initial v0.1.0 was created October 7; check local and remote tags before
+choosing the next unused version.
 Do not fast-forward or push other branches without reviewing their current state.
 At the clean new tag run python scripts/make_release.py, regenerate version/history
 and verify no tracked bytes drift. Run scripts/check_release.py against the clean

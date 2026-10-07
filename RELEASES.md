@@ -1,5 +1,42 @@
 # Independent website release record
 
+## Published — NightSeam Web 0.1.0, October 7, 2026
+
+Deployed the immutable v0.1.0 release at commit
+39ac0461c0ee4fc564c5e52fa509a896a068d8fb after explicit owner authorization.
+GitHub release: https://github.com/Terrazocker/nightseam/releases/tag/v0.1.0.
+The host's existing redirect serves the planner at https://www.nightseam.de/astro/.
+The independent Windows catalog and remote beta/download archives were untouched.
+
+Before writing, inventoried and backed up 311 files (26,994,503 bytes), including
+all ten existing remote core hash directories. Uploaded all 54 release files,
+dependencies before HTML, using fresh encrypted FTPS connections. FTPS readback
+SHA-256 matches all 54 files; decoded HTTP hashes match 52 readable files and
+both entry routes. Live version.json and footer report 0.1.0 / v0.1.0.
+
+Production smoke passed (one local smoke plus one live check, 2/2). Additional
+isolated live-browser acceptance verified 16 Tonight rows at the pinned night,
+Catalog/Sky/Horizon navigation, a decoded fresh M42 thumbnail, actual NASA/ESA
+credit and license, the same cached photo/credit after reload, OpenNGC source
+history and return-visit storage. The canonical www origin has no console/page
+errors or failed same-origin responses. All six public pages passed at 1240px
+and 360px; live screenshots were inspected. The original 295-test/50-browser
+release evidence remains the source validation; no shipped implementation changed.
+
+Only after acceptance, checked retired files against their backup hashes and
+deleted the 81 explicitly listed JPEGs. image-attributions.json was already
+absent. Every pre-existing core directory is retained. Backup, upload, hash,
+browser and cleanup receipts live in ignored logs/deployment-0.1.0-20261007/.
+No credential values were printed, copied into the repo or included in assets.
+
+Measured live cache policy is correct for entry HTML, versions/manifests and
+numeric-token assets. Version/manifests negotiate gzip, but HTML/JS and the large
+catalog/provenance JSON responses do not. HOST-DELIVERY-001 remains for supported
+Plesk/nginx compression configuration; this is not a failed deployment or a claim
+that the local compressed benchmark was observed live. Actual human AT/native
+zoom acceptance also remains pending. The release tag and published asset bytes
+remain unchanged by this subsequent documentation receipt.
+
 ## Release authorization — NightSeam Web 0.1.0, October 7, 2026
 
 The owner authorized the current accepted website overhaul for commit, a fresh

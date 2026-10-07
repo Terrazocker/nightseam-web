@@ -191,7 +191,9 @@ handoff's focusability and diagnostic-printing findings are fixed locally. A
 local server queue weakness is mitigated; historical refusal causation remains
 unconfirmed and is retained as monitoring work rather than claimed resolved.
 Phase 5 startup work and Phase 6 local acceptance/release preparation are complete.
-Real AT/native zoom, a clean reviewed tag and authorized publication remain.
+v0.1.0 was tagged, released on GitHub and deployed after authorization on October 7.
+Live hashes, caching, smoke, layouts and exact legacy cleanup passed. Human AT/native
+zoom and full text/large-payload hosting compression remain open.
 Current backlog authority: IMPLEMENTATION_PLAN.md; final review: WEBSITE_FINAL_REVIEW.md. Actual gate outcomes are recorded in RELEASES.md.
 Phase 3 layouts are approved and implemented in the sparse Workbench style.
 Offline reopening is a separate feature decision, not part of correcting copy.

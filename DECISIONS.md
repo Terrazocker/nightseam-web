@@ -1264,3 +1264,19 @@ Release preparation found that a cleanup inventory derived from git diff HEAD
 would vanish after committing deletions. Keep its 82 exact reviewed paths in a
 tracked ledger and validate allowed file paths; regenerate the clean publication
 snapshot without losing that later deployment/rollback evidence.
+
+## October 7, 2026 — Authorized production deployment
+
+Publish exactly the immutable v0.1.0 assets, preserving the existing www redirect,
+all old core hash directories and unrelated beta/download archives. Inventory and
+hash the rollback backup before uploading, put dependencies before every HTML
+page, read back deployed bytes, and accept real fresh/cached photos/credits and
+site layouts before exact retired-file cleanup. The credential file stays external;
+an ignored adapter reads its short field names in memory without altering it.
+
+The measured cache policy is correct. Compression works for small version/manifest
+JSON but not the observed HTML/JS/large JSON. Record that boundary as
+HOST-DELIVERY-001 for provider controls/support instead of modifying the released
+assets, inventing a performance result or assuming nginx honors every filter.
+Deployment receipt documentation is a follow-up to the immutable release tag;
+it does not create or retag a new software release.

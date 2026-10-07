@@ -4,7 +4,7 @@ Current authority, October 7, 2026. This repository owns only the public site an
 browser planner. The independent Windows catalog has its own repository/roadmap.
 Historical evidence remains in RELEASES/DECISIONS and superseded concept plans.
 
-## Implemented locally
+## Implemented and published as v0.1.0
 
 - Phases 1–3: bounded planning intervals, reliable Wikipedia photos/individual
   credits, truthful product/privacy copy, one independent 0.1.0 Changes entry,
@@ -22,6 +22,10 @@ Historical evidence remains in RELEASES/DECISIONS and superseded concept plans.
   exclusion, metadata-only elevation wording and invariant acceptance.
 - Phase 6 local preparation: integrated review, complete website candidate/manifest,
   release/pre-tag validation and explicit legacy cleanup/rollback steps.
+- October 7 publication: clean commit/tag and GitHub release, authorized live
+  deployment, 311-file rollback backup, complete byte verification, fresh/cached
+  photos and credits, all six public layouts and explicit retired-file cleanup.
+  Entry/version/manifest/tokened-asset cache policy is verified live.
 
 Detailed implementation: WEB_OPEN_DESIGN_IMPLEMENTATION_PLAN.md and
 WEB_REMAINING_WORK_PLAN.md. Final website review: WEBSITE_FINAL_REVIEW.md.
@@ -32,9 +36,10 @@ Actual validation results, not promises, are recorded in RELEASES.md.
 1. A11Y-001: real screen-reader announcements and native browser zoom. Automated
    checks are not human acceptance; ACCESSIBILITY_ACCEPTANCE.md is the concrete
    procedure. Current automation cannot control/listen to Windows AT.
-2. Release/publication: review/commit/new clean tag, separately authorized deploy,
-   actual host compression/cache verification, production smoke and explicit
-   retired-file cleanup. RELEASE_WORKFLOW.md and HOSTING_CONFIGURATION.md govern.
+2. HOST-DELIVERY-001: enable full text/large-catalog compression through supported
+   provider controls and verify live GET responses. Version/manifests compress;
+   HTML/JS and large JSON did not. Publication/cache/smoke/cleanup gates are closed.
+   HOSTING_CONFIGURATION.md records exact observed results and the host boundary.
 3. BROWSER-LOCAL-001 monitoring: old refused local module requests are documented;
    a queue-capacity weakness was reproduced and mitigated, but the precise cause
    of the historical browser failures was not independently established. Future
