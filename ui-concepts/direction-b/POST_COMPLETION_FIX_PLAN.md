@@ -1,5 +1,10 @@
 # Direction B UI: final fit and interaction repair
 
+Historical combined-project plan, superseded October 7, 2026. References below
+to Glass, desktop tabs and old file ownership are historical evidence, not current
+instructions. Use root AGENTS.md, DESIGN.md and IMPLEMENTATION_PLAN.md for the
+independent website; catalog implementation belongs in its separate repository.
+
 **Scope:** This is the implementation order for the confirmed post-completion findings UIB-014 through UIB-018 in BUGS.md. Keep the approved Direction B palette, five desktop primary tabs, three Image Catalog child tabs, four web tabs, existing astronomy/planning behavior, and the completed 35-case browser suite. The current 82 screenshots are evidence of the defects below, not proof of final visual acceptance.
 
 **Working tree:** Use the current shared checkout. Preserve the unrelated sky-brightness/core/data changes and the existing Direction B work. Do not reset, clean, stage, commit, tag, deploy, or release. Read DESIGN.md and CODER_HANDOFF_PLAN.md before touching UI code. No new backend fields, invented image/data values, or astronomy formulas are needed.

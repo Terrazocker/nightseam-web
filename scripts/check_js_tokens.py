@@ -92,44 +92,48 @@ _VERIFIED_BASELINE_JSON = r"""
 {
  "modules": {
   "app.js": {
-   "sha256": "e23126f83c1be550094f7e5b3ff9f014405880201d7383cb377b9fb8bfbb406f",
-   "token": "137"
+   "sha256": "70504aa41214d9eae8b94dd73c9ec663c6f4da6e71efed973389773686efde0f",
+   "token": "158"
   },
   "astro.js": {
-   "sha256": "701e6c144d71e29f4d52193efdd7100afddc6711ff1307bc4f43f04b5a3c9a89",
-   "token": "30"
+   "sha256": "60240d9dc9cea3a72b0a68e2927321ffc77d53700d36078b5ae46615048a1882",
+   "token": "31"
   },
   "core.js": {
-   "sha256": "0ee3dd575fec693eca9b1dda20d89d81a2719bf911b6a3d5261809f8fb68efa1",
-   "token": "44"
+   "sha256": "4b22686bc8c51ed425701cc5b997892b82c3603bb9429e20732851a7f95dad7b",
+   "token": "45"
   },
   "format.js": {
-   "sha256": "3a242e96a125ec1f021ce8c680304c67db802f4645acaa2a04f151cca85776c0",
-   "token": "37"
+   "sha256": "a4b95b0d672e52669858d6b01092056cbc5a2525a8554922587db4e68a86336f",
+   "token": "38"
   },
   "horizon.js": {
-   "sha256": "734e004817c73253c209c8c76560d25f95dca2a1b058c64923b6f3af95772fe5",
-   "token": "69"
+   "sha256": "8c0a45887f9fbec489e05ba8a55810e74c89bc290bdcfca5154cf8b2c0bf47d3",
+   "token": "74"
+  },
+  "imagecredits.js": {
+   "sha256": "8c8b650a0ad6ef6462eea251b67642103cb0eb9010c1f9dde09fce2ba7fa8952",
+   "token": "2"
   },
   "nightrank.js": {
-   "sha256": "439739548f095b801d303ba57a050341e9bfabe9455aba8f6bbd19458c10a4b1",
-   "token": "29"
+   "sha256": "b7d07b9d0cfd0ace51e6998d5f6ddde759d41cac204bd2f207a22912a0cf1008",
+   "token": "30"
   },
   "style.css": {
-   "sha256": "55badf7b5088038b4c5d8e4c9dbf9cb529bbb39e8d143d7c945a13e535f11453",
-   "token": "44"
+   "sha256": "34218763dbc4de1e37c844c5672f2b7a371c017162de37bbb0445a4e2bedbeeb",
+   "token": "50"
   },
   "themes.css": {
-   "sha256": "d9672cebd86596884594d1b83ab1cb616236b512ea6529278ad442381f81fa3a",
-   "token": "16"
+   "sha256": "3d3a4d37d6bec195f6e583c39bd73fb860a82f54e49b9cf95a8a3da10949816b",
+   "token": "18"
   },
   "viztheme.js": {
    "sha256": "78c5502fff9083dd46136133d95383148e69bf97c4da3b1521722177f727e27a",
    "token": "6"
   },
   "webstore.js": {
-   "sha256": "db09b96797c2508c61cc53ea55f633b509820401a9741ec08fa54b64e34d53b6",
-   "token": "41"
+   "sha256": "6074951b6c59b7a6495ae51bccb9f1b9d0767d644ca4a2ffa708a09237c64e38",
+   "token": "42"
   }
  }
 }

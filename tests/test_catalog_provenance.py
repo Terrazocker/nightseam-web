@@ -50,3 +50,9 @@ def test_provenance_sidecars_are_identical_and_cover_the_catalog():
 def test_provenance_cache_guard_is_clean():
     guard = _load_script("check_catalog_provenance.py")
     assert guard.scan() == []
+
+
+def test_provenance_guard_accepts_tokened_abort_options_only():
+    guard = _load_script('check_catalog_provenance.py')
+    assert guard._FETCH_RE.search("fetch('catalog-provenance.json?v=' + CATALOG_PROVENANCE_TOKEN, { signal: controller.signal })")
+    assert not guard._FETCH_RE.search("fetch('catalog-provenance.json?v=1', { signal: controller.signal })")

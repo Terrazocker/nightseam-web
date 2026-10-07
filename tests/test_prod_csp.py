@@ -31,8 +31,8 @@ _inline_script_hashes = _HARNESS._inline_script_hashes
 
 # The deployed policy, copied from web/.htaccess.
 GOOD = (
-    "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: "
-    "https://upload.wikimedia.org; connect-src 'self' https://en.wikipedia.org "
+    "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob: "
+    "https://upload.wikimedia.org https://thumb.wikimedia.org; connect-src 'self' https://en.wikipedia.org https://upload.wikimedia.org https://thumb.wikimedia.org "
     "https://api.open-meteo.com https://air-quality-api.open-meteo.com; "
     "base-uri 'self'; form-action 'self'; frame-ancestors 'none'; "
     "object-src 'none'"
@@ -79,9 +79,28 @@ def test_the_weather_provider_is_allowlisted_in_both_csp_carriers():
         r'^\s*Header\s+\S+\s+set\s+Content-Security-Policy\s+"([^"]+)"',
         text, re.M).group(1)
     meta = _meta_policy()
-    expected = "connect-src 'self' https://en.wikipedia.org https://api.open-meteo.com https://air-quality-api.open-meteo.com"
+    expected = "connect-src 'self' https://en.wikipedia.org https://upload.wikimedia.org https://thumb.wikimedia.org https://api.open-meteo.com https://air-quality-api.open-meteo.com"
     assert expected in header
     assert meta and expected in meta
+
+
+def test_photo_fetch_and_cached_blobs_are_narrowly_allowed_in_both_carriers():
+    """Photos fetch Wikimedia bytes then display an IndexedDB Blob, while
+    script sources and arbitrary network/image schemes stay restricted."""
+    text = (ROOT / "web" / ".htaccess").read_text(encoding="utf-8")
+    header = re.search(
+        r'^\s*Header\s+\S+\s+set\s+Content-Security-Policy\s+"([^"]+)"',
+        text, re.M).group(1)
+    for policy in (header, _meta_policy()):
+        sources = {part.strip().split()[0]: part.strip().split()[1:]
+                   for part in policy.split(";") if part.strip()}
+        assert sources["img-src"] == ["'self'", "data:", "blob:",
+                                      "https://upload.wikimedia.org", "https://thumb.wikimedia.org"]
+        assert sources["connect-src"] == ["'self'", "https://en.wikipedia.org",
+            "https://upload.wikimedia.org", "https://thumb.wikimedia.org", "https://api.open-meteo.com",
+            "https://air-quality-api.open-meteo.com"]
+        assert sources["script-src"] == ["'self'"]
+        assert sources["object-src"] == ["'none'"]
 
 
 @pytest.mark.parametrize("policy,expectation", [
@@ -89,7 +108,7 @@ def test_the_weather_provider_is_allowlisted_in_both_csp_carriers():
     ("default-src 'self'", "no script-src"),
     (GOOD.replace("script-src 'self'", "script-src 'unsafe-inline'"),
      "unsafe-inline"),
-    (GOOD.replace("connect-src 'self' https://en.wikipedia.org "
+    (GOOD.replace("connect-src 'self' https://en.wikipedia.org https://upload.wikimedia.org https://thumb.wikimedia.org "
                   "https://api.open-meteo.com https://air-quality-api.open-meteo.com; ", ""),
      "no connect-src"),
     (GOOD.replace("script-src 'self'", "script-src 'self' 'unsafe-eval'"),

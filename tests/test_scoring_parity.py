@@ -1,9 +1,12 @@
 """Phase 3b: batched scoring parity + mutation (owner-authorized semantics).
 
 The goldens (tests/fixtures/scoring_goldens.json) were captured from the
-pre-change per-sample-precession `nightStats`. The batched engine must keep
-every DISPLAYED field and the transit index bit-identical; only the continuous
-score doubles may drift by the authorized precess-once amount (<=2e-5).
+pre-change per-sample-precession `nightStats`, which counted the terminal node
+as an extra full interval. Keep that evidence unchanged: an independent direct
+sample oracle checks the historical counters, while bounded counters and
+durations exclude that terminal node. Frozen scores subtract its independently
+computed weight; the same precess-once tolerance (<=2e-5) still applies.
+Astronomical fields and full-grid blocked counts remain pinned to the goldens.
 
 The fixture also carries the 697 INPUT objects the stats were captured for, and
 the engine reads them from there: the parity proof must not change when

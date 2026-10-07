@@ -1,38 +1,68 @@
 # Independent website release workflow
 
-The website owns its existing 0.6.x release history. The catalog has its own
-repository, tags and packages; none are inputs to this release.
+Current authority, October 7, 2026. The owner reset the public website series to
+0.1.0. scripts/build_changelog.py PUBLIC_RELEASES owns that public ledger; inherited
+Git tags and historical CURATED summaries remain evidence and do not restore old
+public entries. The catalog's source, tags and packages are independent.
 
-## Prepare and validate locally
+## Reviewable local candidate
 
-1. Refresh origin and compare the working branch with master. Integrate only
-   after reviewing any remote changes; prefer a fast-forward when possible.
-2. Verify a fresh Windows checkout preserves hash-paired seed/payload bytes;
-   .gitattributes must prevent line-ending conversion for those data files.
-   Curate scripts/build_changelog.py for the final website behavior. Prepare
-   landing/changelog.json before the release commit, with the candidate version,
-   the release commit's date and the same curated summary. Historical entries
-   remain generated from their actual tags.
-3. Run the full pytest suite, scripts/check_browser.py --web, and relevant
-   release/curation tests. Record actual results in RELEASES.md.
-4. Run scripts/check_release.py --allow-dirty --no-stage before staging changes.
-   Review and commit the release preparation; fast-forward local master.
-5. Run scripts/pre_tag_check.py X.Y.Z before creating a new vX.Y.Z tag. Never
-   move an existing tag. Run scripts/make_release.py at the clean new tag.
-6. Run scripts/build_changelog.py at the tag and verify it changes no tracked
-   bytes. Check the web stage with scripts/check_release.py and archive the
-   manifest/results under ignored logs/. Staging contains the web planner;
-   landing files remain separately reviewed deployment inputs.
+1. Preserve the working branch and unrelated uncommitted work. Read
+   WEB_REMAINING_WORK_PLAN.md and the final receipt in RELEASES.md.
+2. Run full pytest once after final changes; run scripts/check_browser.py --web,
+   scripts/check_js.py and scripts/check_release.py --allow-dirty --no-stage.
+   Browser failures stay failures; infrastructure failures are never skips.
+3. Run scripts/pre_tag_check.py 0.1.0 and verify static public Changes still has
+   just the one independent entry. Keep all module/catalog/provenance tokens,
+   references, core hashes and current plus N-1 retention aligned.
+4. python scripts/prepare_publication.py creates dist/publication-preview with
+   both web and landing trees, complete SHA256 manifest and an explicit legacy
+   cleanup list from scripts/publication_cleanup.json, which survives committing
+   the deletions. It never reads/uploads credential files, commits, tags or deploys.
+   python scripts/prepare_publication.py --verify detects source/stage drift.
+5. This dirty candidate is a local review snapshot, not a clean public release.
+   web/version.json must remain truthful to git describe including --dirty.
+   Human screen-reader/native-zoom acceptance follows ACCESSIBILITY_ACCEPTANCE.md.
 
-## Publication is a separate step
+## Clean independent release
 
-Public website deployment requires user authorization after the local result is
-reviewable. Push the reviewed branch/tag only when publishing is authorized.
-Upload web to /astro and landing to / using web/ftps_deploy.py; its ordering must
-upload modules before HTML. Credentials stay outside Git.
+Review the final diff, commit the accepted preparation and choose the fresh
+independent v0.1.0 tag only after pre_tag_check passes. Never move inherited tags.
+The October 7 preparation found no existing v0.1.0 tag; recheck before tagging.
+Do not fast-forward or push other branches without reviewing their current state.
+At the clean new tag run python scripts/make_release.py, regenerate version/history
+and verify no tracked bytes drift. Run scripts/check_release.py against the clean
+web stage, then regenerate/verify the combined publication candidate. Record exact
+commit/tag/hash and evidence. No dirty snapshot may be advertised as that release.
 
-Preserve existing deployed core hash directories needed by cached clients.
-The model-retirement manifest exception has no previous local tree; do not use
-that as authority to delete old production trees. After upload, verify live
-version/module/catalog/core bytes and run the read-only production browser smoke.
-Do not describe a locally tagged/staged release as publicly deployed.
+## Publication and rollback
+
+Public deployment, host configuration and cleanup require separate owner
+authorization for the concrete reviewed candidate. Credentials remain outside Git.
+
+Before publishing, inventory and back up the existing remote HTML, version, assets,
+legacy image/attribution files and core directories using read-only FTPS operations.
+Keep the backup outside shipped trees. Do not rely on the local N-1 tree alone:
+older production core hashes may still be referenced by cached clients.
+
+Apply the prepared host policy only through supported provider controls; see
+HOSTING_CONFIGURATION.md for the nginx/Apache boundary and required live evidence.
+Upload the validated candidate web tree to /astro and landing tree to /. Recursive
+ftps_deploy uploadtree now uploads every module/data asset before any HTML entry
+point, including nested directories. Uploads do not remove existing remote files.
+
+Run read-only production smoke and compare decoded version/module/catalog/core
+hashes, live gzip/cache headers, current plus cached/return visits, photos and
+representative planning. Only then review publication.manifest.json's explicit
+cleanup paths: the 81 retired object JPEGs and /astro/image-attributions.json.
+Remove only verified retired paths after authorization; never delete all /astro/img,
+remote core directories or unknown files. Keep backups for rollback.
+
+If acceptance fails, stop cleanup. Restore the previous dependency/data/version
+files first, previous HTML last, and any retired images used by the old release.
+Restore prior host settings if they caused a problem. Smoke-check the restored
+site. Leave extra harmless core hashes in place rather than deleting cached-client
+dependencies. Document actual outcomes; upload success alone is not acceptance.
+
+Do not describe local fixes, staging, or a tag as public deployment. A11Y-001 and
+live delivery/publication gates remain explicit until their evidence is recorded.

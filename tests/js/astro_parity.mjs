@@ -300,7 +300,8 @@ if (engine === "size") {
     const st = NS.nightStats(c.obj, c.jd0, c.jd1, c.step, c.minAlt,
                              c.pano || null, c.lat, c.lon, c.ctx || {});
     return { n: st.n, visN: st.visN, blocked: st.blocked,
-             bestRun: st.bestRun, bestStart: st.bestStart,
+             bestRun: st.bestRun, bestStart: st.bestStart, bestEnd: st.bestEnd,
+             visibleMinutes: st.visibleMinutes,
              pct: st.pct, blockedPct: st.blockedPct,
              sClassic: +st.sClassic.toFixed(6), sMoon: +st.sMoon.toFixed(6),
              maxAlt: +st.maxAlt.toFixed(6) };

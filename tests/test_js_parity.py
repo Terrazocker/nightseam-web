@@ -741,14 +741,17 @@ def test_web_night_stats_absolute_values():
     visN == 0 and must not rank in "Best targets tonight"."""
     res = _run_node("nightstats", _NIGHTSTATS_CASES)
     c = res[0]
-    assert (c["visN"], c["pct"], c["bestRun"], c["blocked"]) == (21, 100, 21, 0)
+    assert (c["visN"], c["pct"], c["bestRun"], c["blocked"]) == (20, 100, 20, 0)
     assert c["bestStart"] == _NIGHTSTATS_CASES[0]["jd0"]
+    # Twenty six-minute cells fill two hours; the twenty-first node is dawn.
+    assert c["bestEnd"] == _NIGHTSTATS_CASES[0]["jd1"]
+    assert c["visibleMinutes"] == pytest.approx(120, abs=1e-5)
     never = res[1]
     assert (never["visN"], never["pct"], never["bestRun"]) == (0, 0, 0)
     low = res[2]
     assert (low["visN"], low["blocked"], low["blockedPct"]) == (0, 7, 33)
     moon = res[3]
-    assert moon["visN"] == 21 and moon["pct"] == 100
+    assert moon["visN"] == 20 and moon["pct"] == 100
     assert moon["sMoon"] == pytest.approx(0.392 * moon["sClassic"], abs=0.01)
     assert moon["sClassic"] > 0
     blocked = res[4]

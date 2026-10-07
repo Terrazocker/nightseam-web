@@ -1,5 +1,492 @@
 # Independent website release record
 
+## Release authorization — NightSeam Web 0.1.0, October 7, 2026
+
+The owner authorized the current accepted website overhaul for commit, a fresh
+v0.1.0 tag and GitHub release on codex/website-phase-two. The existing private
+Terrazocker/nightseam repository remains the remote; master and inherited tags
+are preserved. Exact immutable commit/asset hashes and clean-stage validation
+are recorded in the GitHub release and its downloadable release manifest.
+GitHub publication does not establish a deployment to nightseam.de.
+
+Pre-release review found a packaging issue: regeneration after committing the
+81 legacy photo deletions would drop their cleanup paths. The reviewed 82-path
+inventory now has a tracked ledger, validated path bounds and regression coverage
+for clean regeneration and invalid/duplicate paths. The single public 0.1.0 entry
+uses the actual release date, October 7. Planner modules/data are unchanged from
+the final 50/50 integrated browser gate; regenerated public history passed both
+landing browser checks. Full post-packaging suite: 295 passed, one existing skip
+(76.29s). JavaScript/core/catalog/cache guards pass. Human AT/native zoom and live
+host acceptance stay open.
+
+## Unreleased — Remaining backlog and integrated review, October 7, 2026
+
+Completed WEB_REMAINING_WORK_PLAN.md locally. Optional 6.74 MB provenance no
+longer blocks boot; one validated lazy request serves disclosures/export with
+timeout, retry, identity/connectivity checks and truthful failure states.
+Open disclosures survive refresh. Malformed source fields cannot create an
+empty authoritative download. No catalog/provenance bytes or core math changed.
+Elevation is explicitly metadata at entry; a browser check proves changing only
+elevation preserves planning and persists the recorded value.
+
+Encoding-safe browser diagnostics preserve exit 1 versus exit 2 on cp1252.
+The local gate server's listen queue is 64, with liveness/backlog diagnostics.
+Paused-accept bursts measured five accepted connections at the old default and
+twenty at the new capacity. Historical refusal causation remains unconfirmed;
+no retry/skip hides failures. Both integrated runs also printed a request-handler
+connection reset during context teardown; it is retained as diagnostic evidence.
+
+Recursive FTPS uploads now flatten/sort all assets before any HTML, including
+nested pages. Deployment/release helpers exclude credential files. Both public
+trees have prepared gzip and numeric-token cache rules with manifests/HTML
+revalidated. The local delivery simulator tests negotiation, ETag/304, cache
+reuse/invalidation. Review caught and fixed its per-request cache rebind.
+HOSTING_CONFIGURATION.md retains the actual Apache/nginx/live-verification gate.
+
+Comparable Chrome/CDP 5 Mbps/120 ms samples measured slow cold startup
+22.240s → 11.154s from lazy sources; slow warm 11.747s → 0.559s. Prepared-policy
+local simulation measured 4.091s cold / 0.420s warm and 1,134,682 cold wire bytes
+instead of 12,353,745. These are one-sample local measurements with actual HTTP
+caching and no request interception; they are not current host results.
+WEBSITE_FINAL_REVIEW.md records all scenarios and screenshot/copy review.
+
+Final validation: full pytest 288 passed, 1 existing optional-data skip (90.05s).
+JS syntax/import/encoding and core/catalog/provenance/cache guards passed for
+42 modules. Full browser gate 50/50 passed, including the two new provenance/
+elevation checks. Initial gate was 49/50: the older accessibility assertion
+assumed synchronous source loading; it now waits for the complete disclosure
+and retains both provenance/history assertions. Focused acceptance then passed,
+followed by the final full gate. No product error was suppressed.
+Development release preflight: 0 errors, expected v0.6.36-dirty warning;
+0.1.0 pre-tag and generated history checks pass. Tokens: app158, horizon74,
+style50, themes18, core45; register/references/baseline agree.
+
+The verified ignored dist/publication-preview contains 54 files, a SHA-256
+manifest, truthful v0.6.36-dirty describe and 82 explicit retired cleanup paths.
+It is a local review candidate, not a tagged release. Root docs now consolidate
+current authority and historical plans; release/rollback steps are concrete.
+All six public pages and all four planner views were inspected at desktop/phone
+widths. Real AT/native zoom, clean reviewed commit/tag, publication authorization,
+actual hosting headers, live smoke and cleanup remain external/manual gates.
+Future ephemeris/seeing/offline proposals are separately scoped, not advertised
+as shipped. No Git staging/commit/tag, public deployment or sibling changes.
+
+## Unreleased — Open workspace and advanced Catalog, October 6, 2026
+
+Implemented WEB_OPEN_DESIGN_IMPLEMENTATION_PLAN.md using the independent catalog
+as a read-only visual reference. Replaced contradictory Workbench overrides with
+a shared page surface, unframed workspace sections, transparent actions and
+underlined tabs. Retained clear inputs/focus/selection and bounded temporary
+dialogs/menus. Opened all four planner views and the full inline/docked inspector;
+Horizon canvas backgrounds/grid/profile marks now use semantic roles. Scheduled
+and cancelled Horizon container resizing to avoid an observer notification loop.
+Public-page composition remains approved; canonical theme references were updated.
+
+Advanced mode changes live instead of reloading the full application/catalog.
+Catalog shares a grid snapshot/panorama fingerprint, avoids per-row twilight
+rescans, filters search before visibility work and uses one owned/cancellable
+background job with small shared-core batches. Page fills use revision/generation
+guards. Core astronomy, catalog data and independent desktop files were unchanged
+by this task; earlier uncommitted phases remain present.
+
+The populated 720-bin profile benchmark measured first table/full visibility at
+1.21s/2.45s before and 0.13s/0.20s after on normal CPU. At 4x CPU slowdown it
+measured 6.57s/14.31s before and 0.25s/1.13s after; longest task fell from 5.55s
+to 0.11s, with no catalog refetch. These local timings are not network/hardware
+guarantees. Final focused acceptance also verified three cached scrubs in 0.12s
+at 4x slowdown without recomputing full-night percentages or retaining busy.
+
+Cache tokens: app156, horizon74, themes18; style50 and core45 unchanged by this
+task. Public references, AGENTS and verified baseline agree. Validation: full
+pytest 271 passed, 1 existing optional-data skip (80.29s); full browser gate
+48/48 passed, including live Advanced activation with a populated horizon and
+open-workspace/temporary-window boundaries. The subsequently extended focused
+scrub/cancellation check passed. JS/import/syntax/encoding/catalog/core/cache
+guards passed; development release preflight after pytest: 0 errors, expected
+v0.6.36-dirty warning. Diff whitespace check passes with repository CRLF handling.
+Desktop/phone captures in ignored logs/phase4/screenshots/ and populated Sky/
+Horizon captures in logs/open-design/ were inspected. Manual A11Y-001 acceptance
+remains pending. No staging, commit, tag or public deployment.
+
+## Unreleased — Simplify Tonight and filter/editor controls, October 6, 2026
+
+Removed Tonight's overview graph, track checkboxes/legend, unused six-minute
+track computation and observer; the brief, selected-time scrub and ranked table
+remain. Full target inspectors retain their altitude chart. Removed Horizon's
+calibration provenance controls/bindings and their UI-to-model assignment so
+existing saved/imported provenance survives Save, history and backups. Actual
+calibration and profile/confidence tools remain. Catalog object types now size
+to the complete available option count, without a fixed-height scrolling list.
+
+Cache tokens: app155, horizon73, style50; register, references and baseline agree.
+Validation: focused full-list/metadata Save/reload browser check passed, desktop/
+compact inspector and Tonight fit check passed; full pytest 271 passed, 1 existing
+optional-data skip (92.39s); JS/import/syntax/encoding/catalog/core/cache guards
+passed. Development release preflight: 0 errors with expected v0.6.36-dirty
+warning. Full browser gate: 46/46 passed. Desktop/phone captures in ignored
+logs/phase4/screenshots/ were refreshed and inspected. Diff whitespace check
+passes. No commit, tag or deployment.
+
+## Unreleased — Sky View single full inspector, October 6, 2026
+
+Removed the duplicate compact target facts and miniature altitude chart. Sky
+View now places collapsed chart controls/legend first in the rail, the shared
+full inspector next, and visible-now targets below. Target clicks open full
+details directly. Closing retains selection and a small reopen action. The
+inspector stays inline/complementary at every width, leaving map/time controls
+usable and avoiding a second reserved column. Its wrapper survives workspace
+rebuilds and is parked outside #view before routes or Setup dialogs take over.
+Removed the old theme rail-width override; desktop details now fit their rail.
+
+Cache tokens: app154, style49, themes17; entry points, AGENTS register and verified
+baseline agree. No core math changes. Validation: full pytest 271 passed,
+1 existing optional-data skip (80.93s); JS/import/syntax/encoding/catalog/core/
+cache guards pass; focused selection 6/6, single-inspector lifecycle 1/1,
+responsive detail fit 1/1 and interval agreement 1/1 pass. Development release
+preflight after pytest: 0 errors, expected v0.6.36-dirty warning; diff whitespace
+check passes. An earlier overlapping preflight saw pytest's deliberate invalid
+web/lib/geom.js token fixture; pytest removed it and the final preflight is clean.
+Visual captures at 1672/1240/360px are in ignored logs/sky-layout/. Full browser
+gate: 45/45 passed, including the new single-inspector lifecycle check. No
+commit, tag or deployment.
+
+## Unreleased — Phase 4 planner usability and accessibility, October 6, 2026
+
+Implemented readable header groups for observing setup and planned night/time,
+without shrinking text to fit; selected time remains visible on phones. Tonight's
+table has a named keyboard-accessible horizontal scroll region. The empty
+Horizon layout stacks correctly on phones, and upload/import actions are keyboard
+reachable without duplicate hidden-file-input stops. Target map labels retain
+screen font size while zooming, try nearby bounded positions and avoid each other;
+Tonight's end ticks align inward. Sky chart alternatives use the site clock.
+
+Options/Weather expose expanded/control relationships, allow only one panel open
+and restore trigger focus on Escape. Setup restores visible opener focus,
+including takeover of a wide inspector; both tab strips expose selection/panel
+relationships and support arrow/Home/End navigation. Scoped controls and scroll
+regions win over global time shortcuts. Modal stops exclude closed disclosures
+and unreachable controls; actual modals isolate background roots, while wide
+inspectors stay complementary. The trap is active during the first visit too.
+Quiet view/site/night/rig announcements replace the whole-dialog live region;
+local Setup statuses and validation errors keep their own announcement roles.
+
+Welcome now explains example Berlin coordinates, Options → Setup, optional rig
+Frame % estimates and Horizon. Invalid entries are preserved with readable
+feedback. Existing selection continuity, scoring, storage/backup and unsaved
+horizon-edit contracts are preserved. No core math or public-page redesign was
+changed. Final cache tokens: app152, horizon72, style48; references/register and
+verified baseline agree.
+
+Final validation: full pytest 271 passed, 1 existing optional-data skip
+(80.40 seconds); full browser gate 44/44 passed, exit 0, including five new
+Phase 4 checks and the existing six selection checks. JavaScript integrity passed
+for 42 modules, with import/syntax/DOM/encoding/catalog/provenance/token/core
+guards OK. Development release preflight returned 0 errors with the truthful
+v0.6.36-dirty warning. Diff whitespace check passed.
+
+Focused checks and screenshot review caught premature popover closure during
+intermediate blur, enlarged-layout table overflow, shortcut interference with
+scrolling, empty Horizon column specificity and duplicate upload accessibility
+targets; each was corrected before the final gates. The first full browser run
+passed 43/44: its Tonight row check assumed every row fit fully on screen despite
+allowing internal scrolling. It now validates containment in a named, reachable
+scroll region and keeps page-overflow checks; the corrected full gate passed
+44/44. A final local-status-role correction was followed by the final gates above.
+
+Eight screenshots cover all four views at 360/1240px; responsive checks also
+cover 640/900px and CSS enlargement. Evidence/manual checklist:
+logs/phase4/ACCEPTANCE.md and logs/phase4/screenshots/. Phase 4 implementation is
+complete locally. A11Y-001 remains open for actual screen-reader/native browser
+zoom acceptance; automated evidence does not claim that acceptance. A11Y-002 is
+resolved locally. Existing diagnostic-printing/server-refusal findings remain
+open. No staging, commit, branch change, release tag or deployment was performed.
+
+## Unreleased — Selection-agent handoff integrated, October 6, 2026
+
+Reviewed logs/target-selection-continuity/REPORT.md and its final browser
+transcript. The implementation and six checks were already in the shared working
+tree and included in subsequent primary-agent gates; no patch replay or branch
+change was needed. Added missing decision/design guidance and recorded the two
+unresolved focusability/diagnostic-printing findings. Updated Phase 4 status to
+reflect the completed selection, sorting and time-slider naming work.
+
+The agent's historical receipt records 268 pytest passes and one optional skip,
+JavaScript guards OK and a final 39/39 browser gate. Its app token142 is
+historical; current token145 is preserved. Handoff verification on the current
+tree: selection browser checks 6/6 passed; token self-test and guard passed;
+diff whitespace check passed. Only documentation changed during integration,
+so the latest full product validation below remains applicable. No follow-up
+behavior fixes, staging, commit, tag or deployment were performed.
+
+Additional quick verification requested by the owner: 31 focused browser-gate
+registration/UI invariant tests passed; JavaScript integrity checks passed for
+42 modules (no broken imports or syntax errors), with DOM, encoding, catalog,
+provenance, token and core guards OK. Development release preflight returned
+0 errors and the expected v0.6.36-dirty warning. The 20 heuristic possible-
+undefined candidates are unchanged advisory output, not failed checks. This
+quick pass does not replace the full validation or close the recorded follow-ups.
+
+## Unreleased — Catalog sorting and time-slider accessibility, October 6, 2026
+
+Removed the visible Popularity sorting option. Catalog now defaults to Name
+ascending and returns to that order when filters are cleared. Internal ranking
+and Standard 200 membership are unchanged. The upper time slider has the
+accessible name "Selected observing time" and exposes the displayed site clock
+through aria-valuetext, including after keyboard changes. App token is145;
+entry-point references, register and token baseline are aligned.
+
+Validation: focused UI invariants 24 passed; focused slider and accessibility
+browser checks each passed 1/1. Full pytest: 270 passed, 1 existing optional
+skip (88.19 seconds). JavaScript/import/DOM/cache/catalog/provenance/core/encoding
+guards passed. Development release preflight returned 0 errors with the truthful
+v0.6.36-dirty warning.
+
+The full browser gate passed 37/39. A saved-target check assumed M31 was the
+first row; corrected its assertion to address M31 explicitly under Name sorting,
+and its focused rerun passed 1/1. The single-notification check encountered the
+previously recorded local test-server ERR_CONNECTION_REFUSED; its focused rerun
+passed 1/1. All 39 cases passed across the full run and those targeted reruns,
+without claiming a clean full browser run or resolving BROWSER-LOCAL-001.
+Diff whitespace check passed. No commit, tag or deployment was performed.
+Broader accessibility work remains outside these two requested fixes.
+
+## Unreleased — Wikipedia-only object photos and brief docs review, October 6, 2026
+
+Removed all 81 legacy object JPEGs (7,562,979 bytes), the bundled attribution
+manifest and its obsolete generator. Opening details now loads from the existing
+Wikipedia/browser Blob cache directly, without a local-file request first.
+Author/license metadata and the exact image file link remain associated with
+cached bytes. Missing/transient photos retain the readable placeholder and
+retry behavior. Existing cached photos are preserved. The general Image credits
+page remains, with online-source guidance instead of the retired inventory.
+The asynchronous article link now also checks the active object/open inspector.
+App cache token is144 and imagecredits token2; guards/baseline are aligned.
+
+Updated About, Privacy, NOTICE and current architecture/backlog/roadmap guidance.
+IMAGE-001 is resolved by removal, without claiming historical usage rights were
+verified. Fixed stale HOST-001/Phase 3 and selection-status references, plus an
+obsolete desktop FITS grouping reference in DESIGN. Brief review confirms two
+existing Phase 4 oddities remain: visible Popularity sorting and the upper time
+slider's missing accessible name. No deeper review or unrelated planner fix.
+
+Validation: focused source/image/wiring checks 12 passed; photo browser checks
+3/3 passed; full pytest 270 passed, 1 existing optional skip (89.48 seconds).
+JavaScript/import/DOM/cache/catalog/provenance/core/encoding guards passed;
+development release preflight returned 0 errors with the truthful dirty warning.
+The full browser gate passed 38/39 checks; its keyboard close-modes check timed
+out waiting for the retired bundled-photo credit link. Replaced that fixture
+with controlled Wikipedia image/metadata responses; the focused rerun passed
+1/1, preserving its focus-trap/restoration assertions. All 39 cases passed across
+the full run and that corrected-fixture rerun. The initial focused photo check
+also caught hidden docked placeholders; explicit visibility fixed it before the
+final photo/full gates. Diff whitespace check passed.
+
+No commit, tag or deployment was performed. Production copies of obsolete photos
+still require removal during an authorized deployment; upload-only cannot delete
+them. That cleanup is recorded in Phase 6.
+
+## Unreleased — Owner-confirmed hosting logs, October 6, 2026
+
+Closed HOST-001 for the website configuration confirmed by the owner: daily
+rotation, seven retained archives, compression enabled, no email forwarding,
+and full IP addresses without anonymization. Privacy documents these settings
+alongside the active log and distinguishes separate provider records, without
+claiming an exact seven-day deletion deadline. Hosting changes were made by the
+owner. Image verification remains open; Phase 3 is complete locally.
+
+Validation: full pytest 270 passed, 1 existing optional skip (78.74 seconds);
+public browser checks 2/2 passed; development release preflight 0 errors with
+the expected dirty-version warning; diff whitespace check passed. No tag or
+deployment was made.
+
+## Unreleased — Public credits wording, October 6, 2026
+
+At the owner's request, removed the popularity source acknowledgement from About and
+NOTICE and its name from the Privacy catalog-request explanation. About now
+credits online photos through Wikipedia/Wikimedia and their original creators,
+with a simple Image credits link. Individual author/source/license information
+and accurate bundled-photo credits remain; catalog data and internal provenance
+are unchanged. No image permission or verification status is newly claimed.
+
+Validation: full pytest 270 passed, 1 existing optional skip (81.01 seconds);
+final public browser checks 2/2 passed; development release preflight 0 errors
+with the expected dirty-version warning; diff whitespace check passed. No
+deployment or release tag was made.
+
+## Unreleased — Independent website public history reset, October 6, 2026
+
+After approving the public design, the owner requested a fresh version series
+for each independent product. Changes (landing/download.html) and its JSON now
+contain only one website 0.1.0 entry, without the former archive. The approved
+design remains unchanged. PUBLIC_RELEASES explicitly defines public membership;
+regeneration cannot bring back inherited tag history. Legacy summaries remain
+internal release-guard evidence and older records remain available in Git.
+Current guidance supersedes the public history preservation described below.
+No tag, deployment, catalog change or guessed clean version stamp was made.
+
+Validation: focused source/release checks 40 passed; full pytest 270 passed,
+1 existing optional snapshot skip (87.14 seconds); full browser gate 39/39 passed,
+including static/no-JavaScript history and responsive public pages. Generator
+freshness and git diff --check passed. Development release preflight returned
+0 errors with the expected truthful v0.6.36-dirty warning. Initial restricted
+full runs were interrupted after slow progress; the completed runs used the
+documented Windows process-pipe access. Browser server connection-reset messages
+did not produce failed checks. Desktop/phone captures were visually inspected
+and saved under logs/website-history-reset/.
+
+## Unreleased — Website overhaul Phase 3, October 6, 2026
+
+Implemented the owner-approved sky-map public design locally on the existing
+codex/website-phase-two checkout. No deployment, release tag or catalog change.
+The separate selection task's files are preserved; Phase 3 does not author its
+planner behavior. App token142 resolves a detected cache pairing mismatch in
+those existing changes before integrated validation.
+
+All six public pages have a compact plain wordmark, concise introductions,
+canonical Workbench colors and a decorative vector sky-map hero. Panorama setup
+and calculated visibility lead; the early screenshot-heavy concept was replaced
+by the sparse style approved by the owner. No public JavaScript or bundler was
+added. Native phone navigation and expandable secondary sections work without
+JavaScript. Full privacy/source information and the 46 pre-split release records
+remain accessible. Optional first-night guidance is inside Features, not an
+exposed Home guide. Shared theme roles are loaded from /astro/themes.css?v=16;
+public CSS overrides layout without duplicating the palette or changing planner
+styles. Obsolete layered glass/starfield CSS is removed.
+
+The local preview mounts landing/ at / and web/ at /astro/, matching deployment
+addresses. Canonical/page-specific metadata and a 1200x630 share preview captured
+from the actual implemented Home are included. Public cache references are
+style.css?v=3, sky-map.svg?v=1 and social-preview.png?v=1. Core, catalog data,
+planner image bytes and image-attribution records are unchanged by Phase 3.
+
+Validation:
+- Full pytest: 268 passed, 1 existing optional local snapshot skip; 82.04 seconds.
+- Full browser gate: 39/39 passed, exit 0, including six selection-task checks.
+- Public acceptance covers all six pages, 360px/640px layouts, expanded content,
+  enlarged content via CSS zoom, keyboard phone menus/disclosures, disabled
+  JavaScript, at least 4.5:1 base/action text contrast, shared theme/map/share
+  resources and static release history. CSS zoom is not a manual native-browser
+  zoom or screen-reader acceptance claim; A11Y-001 remains separate.
+- Focused history/catalog/browser wiring: 24 passed. Public link, real PNG size
+  and preview mount isolation checks: 3 passed.
+- JavaScript/import/DOM/cache/core/catalog/provenance/encoding guards: passed.
+  The first guard run detected the existing app141 bytes/token mismatch; the
+  entry reference moved to142, then bump_web_tokens/check_js_tokens --update
+  verified the baseline. No guard was bypassed.
+- Static history freshness and git diff --check: passed. Initial Windows output
+  writes failed with Errno22 using absolute paths; generator destinations now use
+  workspace-relative paths when possible, and unchanged JSON is left untouched.
+- Development release preflight (--allow-dirty --no-stage): 0 errors, with the
+  expected truthful v0.6.36-dirty warning. No publication artifacts were staged.
+- Captured all six public pages at 1366x900 and 360x800. Visual review confirms
+  the approved open layout, compact controls and readable decorative treatment.
+
+Local preview: python scripts/preview_site.py --port 8081. Evidence and captures:
+logs/website-phase3-implementation/. Public publication dependencies HOST-001
+(log retention) and IMAGE-001 (historical photo rights) remain open. The past
+intermittent browser startup diagnostic is not declared fixed from this pass.
+Phase 3 is complete locally; Phases 4–6 remain the next full roadmap phases.
+
+## Unreleased — Website overhaul Phase 2, October 6, 2026
+
+Implemented locally on codex/website-phase-two, retaining the Phase 1 changes.
+No new commit/tag, public deployment or catalog repository change was performed.
+
+Home, Features, About, Privacy and Imprint now describe the independent browser
+planner, local saved planning data, loaded-tab offline limits, optional automatic
+weather, coordinates/timezone requests and external photo/credit services. The
+owner confirmed ZAP-Hosting and no CDN. Existing operator contact is retained;
+help uses that route and the source repository remains private. The planner's
+About/footer copy is consistent and no longer describes a combined browser port.
+
+Changes keeps its existing route and has generated static notes with native
+keyboard disclosures. The two website versions have distinct concise summaries;
+all 46 pre-split records are preserved exactly against Git HEAD. There is no
+runtime release-data fetch or loading-only no-JavaScript state. The generator
+--check validates both JSON and HTML; empty data has an explicit generated state.
+
+Per-image credits identify all 81 exact bundled JPEG hashes. Embedded evidence
+identifies DSS2/CDS sources for 44; the other 37 have explicit verification-pending
+records. Runtime Wikimedia thumbnails retain their exact file page and available
+plain-text author/license metadata with newly cached bytes. Older uncredited
+cache records remain unknown. Detailed credits are in the existing source
+section so the compact inspector stays compact. Both CSP carriers also allow
+the authentic thumb.wikimedia.org host narrowly. New credits use Workbench roles.
+
+Validation:
+- Final full pytest: 264 passed, 1 existing optional local popularity-snapshot
+  skip; 76.50 seconds. Initial catalog-copy checks exposed the intentionally
+  removed duplicate footer claim; the advertised-count register was corrected,
+  preserving value checks and their mutation proof.
+- JavaScript/import/DOM-ID/encoding/catalog/cache/core guards: passed. Advisory
+  undefined-symbol candidates remain informational, including injected fetcher.
+- Focused Phase 2 tests: 26 passed; focused final count/credit/UI checks: 38 passed.
+- Focused landing browser acceptance: 2/2 passed (all six pages, disabled
+  JavaScript, failed JSON tripwires, keyboard disclosures and 360px layout).
+- Focused final photo checks: 3/3 passed; compact-inspector check: 1/1 passed.
+- Final full browser acceptance: 32/32 passed, exit 0. All registered checks ran
+  in one browser/server sequence with no failed-check suppression or skips.
+  Failure artifacts now include failed-request URLs to aid future diagnosis.
+- Static-history generation check and git diff --check: passed.
+- Development source preflight (--allow-dirty --no-stage): 0 errors; expected
+  v0.6.36-dirty warning remains. No release artifacts were staged for publication.
+- App token140, imagecredits token1, attribution JSON request token1 and public
+  stylesheet token2; core/astronomy and catalog source data unchanged in Phase 2.
+
+An initial full browser run exposed overly tall inline image credits; moving
+these into the existing source disclosure fixed it. The cached-credit check now
+reads through that disclosure. Two later full attempts had a local startup
+ERR_CONNECTION_REFUSED before the application booted; that check passed in
+isolation. After adding request-failure diagnostics, the final full run passed
+32/32. Earlier failed attempts are retained in logs/browser/artifacts and were
+not counted as passes or skips. No root cause is confirmed and no startup fix
+is claimed; intermittent local infrastructure behavior is BROWSER-LOCAL-001.
+One server-side connection reset during context teardown did not cause a
+browser-check failure in the final run.
+
+Publication checks remain HOST-001 (log retention) and IMAGE-001 (37 incomplete
+source/rights records and applicable DSS survey acknowledgment/rights). Missing
+rights have not been asserted or invented. Phase 3 redesign remains unimplemented.
+
+## Unreleased — Website overhaul Phase 1, October 5, 2026
+
+Implemented locally on codex/website-phase-one; no new tag or public deployment.
+Shared scoring now bounds half-open observing cells at dawn, prorates partial
+cells and selects longest runs by actual duration. Tonight, Catalog, Sky View
+and target details use the shared endpoints/durations; chart context no longer
+produces an independent detail interval. Dawn is excluded from selected-time
+window membership. Grid anchors and astronomy calculations remain unchanged.
+
+Both photo policy carriers permit Wikimedia byte fetches and blob-image display
+without broadening script permissions. New strict browser checks verify bundled,
+fresh and persisted cached decoding plus unavailable-provider retry recovery.
+Browser failure artifacts now live under ignored logs/browser/artifacts.
+
+Validation:
+- Full pytest: 256 passed, 1 existing optional popularity-snapshot skip,
+  85.18 seconds. No launch failure counted as a skip.
+- Full planner browser gate: 30/30 passed, including the Berlin cross-view
+  regression and three decoded-photo checks.
+- Focused integration: 95 passed, including published reference anchors,
+  historical scoring parity, boundary and scoring-coefficient mutations.
+- JavaScript/import/encoding/catalog/token/core checks: passed. Existing advisory
+  undefined-symbol candidates remain informational; parser/import guards pass.
+- Development release preflight (--allow-dirty --no-stage): 0 errors; the
+  expected v0.6.36-dirty warning remains. Newly baked core files are registered
+  with Git for review; no release staging, commit, tag or upload was performed.
+- Frozen scoring fixtures are unchanged. The historical terminal-cell overcount
+  is independently reconciled in parity tests, with original score tolerances.
+- Core regenerated to 204c232bf69db731, token45; retained predecessor
+  d98ff03023ceb3cf. App token138; dependency tokens/register aligned.
+
+An early interval browser attempt raced boot's date-listener installation; its
+failure reporting also hit Windows console encoding. The helper now waits for
+initialized controls and the requested rendered date; rerun/full gate uses UTF-8
+and passes. This was test setup, not an application date defect.
+
+Phases 2–6, including public content/redesign and deployment, remain pending.
+
+
 ## Local 0.6.36 release preparation - October 5, 2026
 
 Final full suite after the checkout fix: 253 passed, one optional local snapshot

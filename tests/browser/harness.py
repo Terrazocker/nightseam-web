@@ -27,7 +27,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 WEB_DIR = ROOT / "web"
-ARTIFACTS = ROOT / "tests" / "browser" / "artifacts"
+ARTIFACTS = ROOT / "logs" / "browser" / "artifacts"
 
 # Pinned wall clock: a real, non-degenerate late-summer night.  Passed as an
 # ISO string on purpose - Playwright's numeric `clock.install(time=...)` is
@@ -38,6 +38,25 @@ TZ = "UTC"
 VIEWPORT = (1366, 900)
 
 _CREATE_NO_WINDOW = 0x08000000 if os.name == "nt" else 0
+
+
+def safe_print(*values, sep=' ', end='\n'):
+    """Preserve gate outcomes when Windows stdout cannot encode diagnostics."""
+    text = sep.join(str(v) for v in values) + end
+    try:
+        sys.stdout.write(text)
+    except UnicodeEncodeError:
+        encoding = getattr(sys.stdout, 'encoding', None) or 'utf-8'
+        sys.stdout.write(text.encode(encoding, 'backslashreplace').decode(encoding))
+
+
+class BrowserInfrastructureError(RuntimeError):
+    pass
+
+
+class BrowserHTTPServer(http.server.ThreadingHTTPServer):
+    # Concurrent module imports can exceed TCPServer's default queue of five.
+    request_queue_size = 64
 
 
 # ---------------------------------------------------------------- registry
@@ -84,15 +103,19 @@ def _http(url: str, method: str = "GET", body: dict | None = None,
 class StaticServer:
     """Threading HTTP server over a directory (no cache-busting rewritten)."""
 
-    def __init__(self, directory: Path):
-        handler = partial(_QuietHandler, directory=str(directory))
-        self.httpd = http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler)
+    def __init__(self, directory: Path, handler_class=None):
+        handler = partial(handler_class or _QuietHandler, directory=str(directory))
+        self.httpd = BrowserHTTPServer(("127.0.0.1", 0), handler)
         self.port = self.httpd.server_address[1]
         self._thread = threading.Thread(target=self.httpd.serve_forever, daemon=True)
 
     def start(self) -> str:
         self._thread.start()
         return f"http://127.0.0.1:{self.port}/"
+
+    def health(self):
+        return {'thread_alive': self._thread.is_alive(), 'port': self.port,
+                'listen_backlog': self.httpd.request_queue_size}
 
     def stop(self):
         self.httpd.shutdown()
@@ -117,6 +140,7 @@ class Ctx:
         self.console_errors: list[str] = []
         self.page_errors: list[str] = []
         self.bad_responses: list[str] = []
+        self.failed_requests: list[str] = []
         self.external_images: list[tuple[int, str]] = []
         self._allow_console = False
         self._allow_responses = False
@@ -284,6 +308,12 @@ def _install_stubs(page):
             pass
 
     page.route("https://popularity-source.invalid/", handler)
+    # Non-photo checks use an explicit no-thumbnail response. Dedicated photo
+    # checks override this route with decoded images, metadata and failures.
+    page.route("https://en.wikipedia.org/api/rest_v1/page/summary/**",
+               lambda route: route.fulfill(status=200,
+                   headers={"Access-Control-Allow-Origin": "*"},
+                   json={"type": "standard"}))
 
 
 def _new_context(browser, dpr: int = 1):
@@ -323,6 +353,9 @@ def _attach(ctx: Ctx):
                 ctx.external_images.append((resp.status, resp.url))
         except Exception:
             pass
+    def on_requestfailed(request):
+        ctx.failed_requests.append(f"{request.failure} {request.url}")
+    ctx.page.on("requestfailed", on_requestfailed)
     ctx.page.on("console", on_console)
     ctx.page.on("pageerror", on_pageerror)
     ctx.page.on("response", on_response)
@@ -339,7 +372,7 @@ def run(channel: str = "chrome", targets=("web",),
     selected = [(n, t, f) for (n, t, f) in all_checks()
                 if t in targets and (not only or only in n)]
     if not selected and not prod_url:
-        print("check_browser: no checks selected")
+        safe_print("check_browser: no checks selected")
         return 0
 
     artifacts.mkdir(parents=True, exist_ok=True)
@@ -350,7 +383,7 @@ def run(channel: str = "chrome", targets=("web",),
             web_srv = StaticServer(WEB_DIR)
             bases["web"] = web_srv.start()
     except Exception as exc:
-        print(f"check_browser FATAL: could not start a target: {exc}")
+        safe_print(f"check_browser FATAL: could not start a target: {exc}")
         if web_srv:
             web_srv.stop()
         return 2
@@ -367,12 +400,15 @@ def run(channel: str = "chrome", targets=("web",),
             try:
                 browser = p.chromium.launch(channel=channel, headless=not headed)
             except Exception as exc:
-                print(f"check_browser FATAL: browser '{channel}' could not "
+                safe_print(f"check_browser FATAL: browser '{channel}' could not "
                       f"launch ({exc}). Install it or pass --channel.")
                 return 2
             for name, target, fn in selected:
+                if not web_srv.health()['thread_alive']:
+                    raise BrowserInfrastructureError(f'Local test server stopped: {web_srv.health()}')
                 ctx_b, page = _new_context(browser)
                 c = Ctx(page, bases[target], target, artifacts)
+                c.server_health = web_srv.health
                 _attach(c)
                 t0 = time.time()
                 ok, err = True, ""
@@ -387,6 +423,10 @@ def run(channel: str = "chrome", targets=("web",),
                     err = (err + " | " if err else "") + str(exc)
                 if not ok:
                     _dump_failure(c, name, err)
+                    # Refused local module requests are infrastructure evidence,
+                    # never silently retried or converted into a passing check.
+                    if any('ERR_CONNECTION_REFUSED' in r and c.origin in r for r in c.failed_requests):
+                        safe_print(f'         local server health: {web_srv.health()}')
                 try:
                     ctx_b.close()
                 except Exception:
@@ -395,9 +435,9 @@ def run(channel: str = "chrome", targets=("web",),
                 results.append(Result(name, target, ok, err, dt))
                 if verbose:
                     mark = "PASS" if ok else "FAIL"
-                    print(f"  [{mark}] {target:7s} {name} ({dt:.1f}s)")
+                    safe_print(f"  [{mark}] {target:7s} {name} ({dt:.1f}s)")
                     if not ok:
-                        print(f"         {err[:400]}")
+                        safe_print(f"         {err[:400]}")
             if prod_url:
                 results.append(_prod_smoke(browser, prod_url, artifacts, verbose))
             browser.close()
@@ -406,7 +446,7 @@ def run(channel: str = "chrome", targets=("web",),
             web_srv.stop()
 
     failed = [r for r in results if not r.ok]
-    print(f"check_browser: {len(results) - len(failed)}/{len(results)} passed")
+    safe_print(f"check_browser: {len(results) - len(failed)}/{len(results)} passed")
     return 1 if failed else 0
 
 
@@ -573,9 +613,9 @@ def _prod_smoke(browser, prod_url: str, artifacts: Path, verbose: bool) -> Resul
             pass
     dt = time.time() - t0
     if verbose:
-        print(f"  [{'PASS' if ok else 'FAIL'}] web-prod production smoke ({dt:.1f}s)")
+        safe_print(f"  [{'PASS' if ok else 'FAIL'}] web-prod production smoke ({dt:.1f}s)")
         if not ok:
-            print(f"         {err[:400]}")
+            safe_print(f"         {err[:400]}")
     return Result("production-smoke", "web-prod", ok, err, dt)
 
 
@@ -590,6 +630,8 @@ def _dump_failure(c: Ctx, name: str, err: str):
             "name": name, "target": c.target, "url": c.page.url,
             "error": err, "console_errors": c.console_errors,
             "page_errors": c.page_errors, "bad_responses": c.bad_responses,
+            "failed_requests": c.failed_requests,
+            "server_health": getattr(c, 'server_health', lambda: None)(),
             "dom": (c.page.content() or "")[:4000],
         }, indent=1), encoding="utf-8")
     except Exception:

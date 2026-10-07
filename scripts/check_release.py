@@ -19,13 +19,13 @@ ROOT = Path(__file__).resolve().parents[1]
 ERROR = 'ERROR'
 WARNING = 'WARNING'
 SHIPPING_EXCLUDED = {'.gitignore', 'build_web.py', 'ftps_deploy.py', 'whale',
-                     'dev', 'node_modules', '__pycache__'}
+                     'dev', 'node_modules', '__pycache__', '.git', '.env'}
 
 def shipped_files(root=ROOT):
     base = Path(root) / 'web'
     return [p for p in base.rglob('*') if p.is_file()
             and not any(part in SHIPPING_EXCLUDED for part in p.relative_to(base).parts)
-            and p.suffix != '.pyc']
+            and p.suffix not in ('.pyc', '.env')]
 
 @dataclass
 class Finding:

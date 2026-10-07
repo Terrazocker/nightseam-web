@@ -1,53 +1,27 @@
-# NightSeam Web - response security headers for the /astro deployment.
-#
-# WHY THIS FILE EXISTS: the desktop shell ships a strict Content-Security-Policy
-# in `app/server.py` (CSP_HEADER), but the web shell is served as static files,
-# so it had NO policy at all - and it is the shell on a PUBLIC origin, loading
-# third-party images and running the user's stored data in the same context. A
-# single XSS there reaches localStorage, IndexedDB (sites/rigs/targets/panoramas)
-# and every key the user owns.
-#
-# `script-src` is restricted to same-origin modules; the document has no inline
-# scripts. `tests/browser/harness.py::_csp_problems` checks both carriers.
-#
-# MEASURED LIMIT OF THIS FILE (2026-09-15): on Plesk the static files are
-# fronted by NGINX, which serves .html/.js/.css itself, so these directives
-# arrive only on the paths nginx proxies (/astro/version.json does; /astro/
-# and /astro/app.js do NOT). Covering the HTML needs the same header at the
-# nginx layer (Plesk > domain > Apache & nginx Settings > Additional nginx
-# directives), e.g. `add_header Content-Security-Policy` with the same
-# value as the Header line below, marked `always`.
-#
-# BUG-003 (2026-09-17): this is now a HARD FAILURE of the production smoke, not
-# a note. `python scripts/check_browser.py --prod-url https://nightseam.de/astro/`
-# reads the policy from the PAGE response ONLY and fails when it is absent: a
-# policy on version.json/catalog.manifest.json protects nothing, because a CSP
-# covers the response that carries it and those are not the HTML a browser runs.
-# The nginx directive to add is the Header value below (`add_header
-# Content-Security-Policy "<that value>" always;` at the `/astro` location).
-#
-# MEASURED 2026-09-17, why the header below is NOT the live protection: /astro/
-# answers `server: nginx` + `content-type: text/html` with no policy header, i.e.
-# nginx serves the HTML itself and never reaches Apache - and this host exposes no
-# nginx directive field. The enforced policy therefore ships as a
-# `<meta http-equiv="Content-Security-Policy">` in web/index.html, carrying every
-# directive below EXCEPT `frame-ancestors` (ignored in a meta policy, so it is
-# deliberately omitted there). If the host ever gains the directive field, add the
-# line below and the header simply becomes the stronger of the two.
-#
-# `style-src 'unsafe-inline'` is REQUIRED, not a convenience relaxation: index.html
-# styles several controls with inline `style=` attributes (range widths, theme
-# swatches) and `style-src 'self'` blocks them SILENTLY - measured 2026-09-17,
-# Chrome logged no "Refused to" line and the page still booted; only the sliders
-# and swatches lost their styling. The `web-prod` check measures that at runtime
-# now (the green swatch must actually be green).
-#
-# mod_headers must be enabled (Plesk: Apache with mod_headers - the default).
-# If this file causes a 500, the module is off: remove the file rather than
-# leaving a broken site.
+# NightSeam static response policy for /astro.
+# The planner also carries a meta CSP in index.html. A meta policy cannot
+# enforce frame-ancestors; retain this response header where Apache serves it.
+# Plesk/nginx may serve static files without consulting .htaccess. See
+# HOSTING_CONFIGURATION.md; verify actual HTML/module/JSON responses after an
+# authorized deployment. These directives do not prove live hosting behavior.
+# Inline styles are required by editing controls; script execution stays self.
 
 <IfModule mod_headers.c>
-Header always set Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://upload.wikimedia.org; connect-src 'self' https://en.wikipedia.org https://api.open-meteo.com https://air-quality-api.open-meteo.com; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; object-src 'none'"
+Header always set Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://upload.wikimedia.org https://thumb.wikimedia.org; connect-src 'self' https://en.wikipedia.org https://upload.wikimedia.org https://thumb.wikimedia.org https://api.open-meteo.com https://air-quality-api.open-meteo.com; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; object-src 'none'"
 Header always set Referrer-Policy "strict-origin-when-cross-origin"
 Header always set X-Content-Type-Options "nosniff"
+</IfModule>
+
+<IfModule mod_deflate.c>
+AddOutputFilterByType DEFLATE text/html text/plain text/css text/javascript application/javascript application/json image/svg+xml
+</IfModule>
+
+<IfModule mod_headers.c>
+Header set Cache-Control "public, max-age=0, must-revalidate"
+<FilesMatch "\.(js|css|json|svg|png|jpe?g|ico|woff2?)$">
+Header set Cache-Control "public, max-age=31536000, immutable" "expr=%{QUERY_STRING} =~ m#(?:^|&)v=[0-9]+(?:&|$)#"
+</FilesMatch>
+<FilesMatch "^(version\.json|catalog\.manifest\.json|catalog-provenance\.manifest\.json)$">
+Header set Cache-Control "public, max-age=0, must-revalidate"
+</FilesMatch>
 </IfModule>

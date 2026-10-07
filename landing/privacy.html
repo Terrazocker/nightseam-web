@@ -1,87 +1,77 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="workbench">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Privacy — NightSeam</title>
+<meta name="description" content="Local saved planning data, online weather and photos, and website hosting explained.">
+<link rel="canonical" href="https://nightseam.de/privacy.html">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Privacy — NightSeam">
+<meta property="og:description" content="Local saved planning data, online weather and photos, and website hosting explained.">
+<meta property="og:url" content="https://nightseam.de/privacy.html">
+<meta property="og:image" content="https://nightseam.de/social-preview.png?v=1">
+<meta property="og:image:alt" content="NightSeam — know what you can see, with your panorama and calculated target visibility">
+<meta name="twitter:card" content="summary_large_image">
 <link rel="icon" type="image/png" href="app.png">
-<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="/astro/themes.css?v=18">
+<link rel="stylesheet" href="style.css?v=3">
 </head>
-<body>
-
-<header class="site-header">
-  <div class="container navrow">
-    <a class="brand" href="/">
-      <img class="brand-ico" src="app.png" alt="" width="34" height="34">
-      <span class="brand-name">Night<em>Seam</em></span>
-    </a>
-    <nav class="nav">
-      <a href="/">Home</a>
-      <a href="/astro">Planner</a>
-      <a href="impressum.html">Imprint</a>
-    </nav>
-  </div>
-</header>
-
-<main>
-  <section class="section legal">
-    <div class="container legal-body">
-      <h1>Privacy Policy</h1>
-
-      <h2>The short version</h2>
-      <p>NightSeam is designed to keep your data on your own device. Neither this
-      website nor the web planner stores anything about you on a server. There is
-      no account, no tracking, no analytics, no cookies beyond what your browser
-      needs to run the page.</p>
-
-      <h2>Web version (planner)</h2>
-      <ul>
-        <li><b>Local storage:</b> your observing sites, rigs and custom targets are
-        stored only in your browser's local data (IndexedDB /
-        localStorage) on your device. Nothing is uploaded.</li>
-        <li><b>Object catalog &amp; popularity data:</b> the object list is
-        derived from OpenNGC (CC BY-SA 4.0) and ships with the page. The
-        community popularity counts behind the ranking come from a
-        <a href="https://popularity-source.invalid/" target="_blank" rel="noopener">the popularity source</a>
-        snapshot taken <b>once</b>, when the catalog is built; the counts are
-        baked into the catalog file, so opening the planner does <b>not</b>
-        contact the popularity source or any other server.</li>
-        <li><b>Weather:</b> when you load the weather panel, your active site's
-        coordinates are sent to <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a>
-        to fetch a forecast. No other data is transmitted. Weather data
-        &copy; Open-Meteo.com.</li>
-        <li><b>Location:</b> the "use my location" button uses your browser's
-        geolocation API — it is only queried when you press the button, and the
-        coordinates are stored locally like any other site.</li>
-        <li><b>Object images:</b> example photos are either bundled with the
-        page or fetched from <a href="https://commons.wikimedia.org/" target="_blank" rel="noopener">Wikimedia Commons</a>
-        when you open an object's detail view.</li>
-      </ul>
-
-      <h2>Hosting / infrastructure</h2>
-      <p>The site is served via a hosting provider and a CDN, which process
-      standard technical data (IP address, user agent, request log) to deliver
-      the pages. We do not use this data for profiling, and we do not combine
-      it with any other data sources.</p>
-
-      <h2>Your rights</h2>
-      <p>You are in control of the data on your device: delete the storage in
-      your browser to remove your saved sites, equipment and panoramas. If you have questions, use the contact
-      details from the <a href="impressum.html">Imprint</a>.</p>
-
-      <p><a href="/">← Back to the start page</a></p>
-    </div>
-  </section>
-</main>
-
-<footer class="site-footer">
-  <div class="container foot-inner">
-    <span>&copy; 2026 NightSeam</span>
-    <span class="foot-links">
-      <a href="/astro">Planner</a> &middot; <a href="privacy.html">Privacy</a> &middot; <a href="impressum.html">Imprint</a>
-    </span>
-  </div>
-</footer>
-
+<body class="public-site">
+<a class="skip-link" href="#content">Skip to content</a>
+<header class="site-header"><div class="container navrow">
+<a class="brand" href="/" aria-label="NightSeam home">NightSeam</a>
+<div class="desktop-nav"><nav aria-label="Main navigation"><a href="features.html">Features</a><a href="about.html">About</a><a href="download.html">Changes</a></nav></div>
+<details class="mobile-menu"><summary aria-label="Navigation menu"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M3 6h18M3 12h18M3 18h18"/></svg></summary><nav aria-label="Mobile navigation"><a href="features.html">Features</a><a href="about.html">About</a><a href="download.html">Changes</a><a href="/astro/">Open planner</a></nav></details>
+</div></header>
+<main id="content" tabindex="-1" class="container"><section class="hero"><svg class="sky-map" aria-hidden="true" focusable="false" viewBox="0 0 960 760"><use href="sky-map.svg?v=1#sky-art"></use></svg><div class="hero-copy"><p class="eyebrow">Your data</p><h1>Privacy, explained.</h1><p class="hero-sub">Saved planning data stays in your browser.<br>Some online features contact external services.</p></div></section><section class="two-facts" aria-label="Privacy summary"><div><h2>On your device</h2><p>Sites, rigs and panoramas stay in browser storage; backups stay wherever you save them. Importing a panorama does not upload it to NightSeam.</p></div><div><h2>Online requests</h2><p>Weather sends your active site's coordinates and timezone to Open-Meteo. New photos use Wikipedia and Wikimedia.</p></div></section><details class="disclosure"><summary>Browser storage and backups</summary><div class="disclosure-body"><p>The browser planner runs astronomy calculations on your device, without an
+      account. It does not implement analytics tracking. Your saved sites, rigs,
+      custom targets, preferences, horizon profiles and panorama images stay in
+      your browser’s IndexedDB and localStorage. Importing a panorama or restoring
+      a backup does not upload that file to NightSeam.</p>
+      <p>Local storage is specific to the browser and site address. Clearing it
+      removes saved planning data. Export a JSON backup first if you want to keep
+      a separate copy; exported files remain wherever you save them.</p></div></details><details class="disclosure"><summary>Weather, photos and location</summary><div class="disclosure-body"><h2>Weather and air quality</h2><p>Loading weather sends your active site’s latitude, longitude and selected
+      timezone to the forecast and air-quality services at
+      <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a>.
+      The requests also specify forecast variables and a four-day forecast period;
+      your browser supplies normal connection information. Saved site names,
+      equipment, custom targets and panoramas are not included in these requests.</p>
+      <p>Weather loads when requested, or on startup if you enable “Always load on
+      startup.” After you have loaded weather, changing the active site can fetch
+      a new forecast. Disable the startup setting in the weather panel to prevent
+      that automatic startup request. Weather data &copy; Open-Meteo.com.</p><h2>Object photos</h2><p>Object details show available author, source and license credits.
+      Opening an object without a cached photo can
+      request an article summary and image credit metadata from
+      <a href="https://en.wikipedia.org/" target="_blank" rel="noopener">Wikipedia</a>
+      and a thumbnail from Wikimedia’s image service. Those services receive the
+      requested article or image path and normal connection information; saved
+      observing coordinates, rigs and panoramas are not sent with photo requests.
+      Downloaded thumbnails are cached locally in IndexedDB. Each image retains
+      its own license and credit requirements.</p><h2>Using your location</h2><p>The location button asks your browser for your position only when you
+      press it, subject to the browser’s permission controls. The browser’s own
+      location service may use network services. The resulting coordinates are
+      stored locally as site data and can subsequently be sent to Open-Meteo if
+      you load weather for that site.</p></div></details><details class="disclosure"><summary>Website requests and hosting</summary><div class="disclosure-body"><h2>Website requests</h2><p>Opening the site or planner requests pages, scripts, catalog files and
+      site graphics from the website’s host. These requests expose technical
+      connection information such as your IP address and browser request headers.
+      The catalog and Standard selection are prepared in advance and served by
+      this website; browsing them does not contact a separate catalog provider.
+      </p><h2>Hosting</h2><p>This site is hosted by
+      <a href="https://zap-hosting.com/en/webhosting-rent-a-webspace/" target="_blank" rel="noopener">ZAP-Hosting GmbH</a>,
+      without a content delivery network (CDN). The host and external services may
+      process technical request data to deliver their responses.</p>
+      <p>Website access and error logs can contain your IP address, the time of
+      the request, the requested URL, response status and transferred data size.
+      Our configured website logs rotate daily, with up to seven archived log
+      files retained alongside the current log. IP addresses are not anonymized
+      in this configuration. These settings describe our website logs, not any
+      separate records maintained by the hosting provider.</p><p>For questions
+      about hosting request logs, retention or your saved planning data, contact the operator
+      listed in the <a href="impressum.html">Imprint</a>.</p></div></details><details class="disclosure"><summary>Connection requirements</summary><div class="disclosure-body"><p>Open the planner online and let the catalog finish loading. Planning can
+      then continue in that open tab while disconnected. Offline reopening or
+      reloading is not guaranteed. Weather and uncached external photos need an
+      internet connection.</p></div></details><details class="disclosure"><summary>Questions and contact</summary><div class="disclosure-body"><p>For questions about request logs, retention or saved planning data, <a href="impressum.html">contact the operator →</a>.</p></div></details><p class="back-link"><a href="/">← Home</a></p></main>
+<footer class="site-footer container"><div class="foot-inner"><span>NightSeam · Browser night planner</span><nav aria-label="Footer navigation"><a href="/astro/">Planner</a><a href="features.html">Features</a><a href="about.html">About</a><a href="download.html">Changes</a><a href="privacy.html" aria-current="page">Privacy</a><a href="impressum.html">Imprint</a></nav></div></footer>
 </body>
 </html>

@@ -1,85 +1,55 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="workbench">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>About — NightSeam</title>
-<meta name="description" content="About NightSeam: a deep-sky night-planning app that runs 100% in your browser.">
+<meta name="description" content="How NightSeam plans observing nights in your browser, with sources and credits.">
+<link rel="canonical" href="https://nightseam.de/about.html">
+<meta property="og:type" content="website">
+<meta property="og:title" content="About — NightSeam">
+<meta property="og:description" content="How NightSeam plans observing nights in your browser, with sources and credits.">
+<meta property="og:url" content="https://nightseam.de/about.html">
+<meta property="og:image" content="https://nightseam.de/social-preview.png?v=1">
+<meta property="og:image:alt" content="NightSeam — know what you can see, with your panorama and calculated target visibility">
+<meta name="twitter:card" content="summary_large_image">
 <link rel="icon" type="image/png" href="app.png">
-<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="/astro/themes.css?v=18">
+<link rel="stylesheet" href="style.css?v=3">
 </head>
-<body>
-
-<header class="site-header">
-  <div class="container navrow">
-    <a class="brand" href="/">
-      <img class="brand-ico" src="app.png" alt="" width="34" height="34">
-      <span class="brand-name">Night<em>Seam</em></span>
-    </a>
-    <nav class="nav">
-      <a href="features.html">Features</a>
-      <a href="about.html">About</a>
-      <a href="download.html">Changes</a>
-      <a class="nav-cta" href="/astro">Launch the planner</a>
-    </nav>
-  </div>
-</header>
-
-<main>
-  <section class="hero hero-page">
-    <div class="container hero-inner">
-      <p class="eyebrow">About</p>
-      <h1>What is NightSeam?</h1>
-      <p class="hero-sub">A deep-sky night planner that runs entirely in your browser. NightSeam Catalog is developed separately as a desktop exposure library.</p>
-    </div>
-  </section>
-
-  <section class="section stats">
-    <div class="container stat-row">
-      <div class="stat"><b>12,176</b><span>catalog objects</span></div>
-      <div class="stat"><b>200</b><span>most popular targets</span></div>
-      <div class="stat"><b>0</b><span>servers involved</span></div>
-      <div class="stat"><b>100%</b><span>works offline</span></div>
-    </div>
-  </section>
-
-  <section class="section" style="padding-top:0">
-    <div class="container legal-body" style="max-width:820px">
-      <h2>How it works</h2>
-      <p>All calculations run on your device using standard astronomy algorithms —
-      no internet service is involved. Sun, moon and twilight times follow the
-      classic Meeus formulas, and object positions are accurate to well under
-      a tenth of a degree.</p>
-
-      <h2>Data, privacy &amp; credits</h2>
-      <ul>
+<body class="public-site">
+<a class="skip-link" href="#content">Skip to content</a>
+<header class="site-header"><div class="container navrow">
+<a class="brand" href="/" aria-label="NightSeam home">NightSeam</a>
+<div class="desktop-nav"><nav aria-label="Main navigation"><a href="features.html">Features</a><a href="about.html" aria-current="page">About</a><a href="download.html">Changes</a></nav></div>
+<details class="mobile-menu"><summary aria-label="Navigation menu"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M3 6h18M3 12h18M3 18h18"/></svg></summary><nav aria-label="Mobile navigation"><a href="features.html">Features</a><a href="about.html" aria-current="page">About</a><a href="download.html">Changes</a><a href="/astro/">Open planner</a></nav></details>
+</div></header>
+<main id="content" tabindex="-1" class="container"><section class="hero"><svg class="sky-map" aria-hidden="true" focusable="false" viewBox="0 0 960 760"><use href="sky-map.svg?v=1#sky-art"></use></svg><div class="hero-copy"><p class="eyebrow">About NightSeam</p><h1>Built around your observing site.</h1><p class="hero-sub">A browser planner for finding deep-sky targets that suit your night and skyline.</p></div></section><section class="editorial"><h2>Planning on your device.</h2><p>Astronomy calculations run in your browser. Saved sites, equipment and panoramas stay in browser storage.</p></section>
+<section class="editorial"><h2>A project with a clear focus.</h2><p>NightSeam plans observing nights. The Windows exposure catalog is developed separately.</p></section><details class="disclosure"><summary>Data sources and credits</summary><div class="disclosure-body"><p>The catalog includes <b>12,176</b> catalog objects and a deterministic Standard selection of 200 targets.</p><ul>
         <li><b>Catalog:</b> <a href="https://github.com/mattiaverga/OpenNGC" target="_blank" rel="noopener">OpenNGC</a>
             (CC BY-SA 4.0), plus a small supplement of objects OpenNGC cannot carry.</li>
-        <li><b>Popularity ranking:</b> community observing counts from
-            <a href="https://popularity-source.invalid/" target="_blank" rel="noopener">the popularity source</a>,
-            taken as a one-time snapshot and shipped inside the catalog;
-            the planner never contacts the popularity source at runtime.</li>
-        <li><b>Images:</b> <a href="https://commons.wikimedia.org/" target="_blank" rel="noopener">Wikimedia Commons</a>,
-            each image under its own license.</li>
+        <li><b>Images:</b> online object photos are sourced through
+            <a href="https://en.wikipedia.org/" target="_blank" rel="noopener">Wikipedia</a> and
+            <a href="https://commons.wikimedia.org/" target="_blank" rel="noopener">Wikimedia Commons</a>.
+            Credit belongs to the original image creators. Individual author, source and license
+            details are available with each photo. Photos load when you open an object and are
+            cached in your browser. The software’s MIT license does not cover third-party photos.</li>
         <li><b>Weather:</b> <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a>,
-            loaded on demand; weather data &copy; Open-Meteo.com.</li>
-        <li><b>Your data:</b> stays in browser storage on your device. Nothing is uploaded. See the <a href="privacy.html">privacy policy</a>.</li>
-        <li><b>License:</b> the software is free and open source (MIT license); the catalog data is
+            forecast and air-quality services, loaded on demand or with the optional automatic-weather setting; weather data &copy; Open-Meteo.com.</li>
+        <li><b>Saved planning data:</b> sites, rigs, custom targets and panoramas stay in browser storage.
+            Weather requests send your active site’s coordinates and timezone to Open-Meteo. See <a href="privacy.html">Privacy</a>.</li>
+        <li><b>License:</b> the planner is free to use and its software is MIT licensed; OpenNGC catalog data is
             CC BY-SA 4.0.</li>
-      </ul>
-    </div>
-  </section>
-</main>
+      </ul><p><a href="/astro/image-credits.html">Image credits →</a></p></div></details><details class="disclosure"><summary>Connection requirements</summary><div class="disclosure-body"><p>Astronomy calculations run on your device: object positions, Sun and Moon
+      positions, twilight times and usable observing windows. The planner combines
+      them with your site, date, equipment and skyline. Weather forecasts and new
+      external photos use separate online services.</p>
 
-<footer class="site-footer">
-  <div class="container foot-inner">
-    <span>&copy; 2026 NightSeam &mdash; deep-sky night planning</span>
-    <span class="foot-links">
-      <a href="/astro">Planner</a> &middot; <a href="features.html">Features</a> &middot; <a href="download.html">Changes</a>
-      &middot; <a href="about.html">About</a> &middot; <a href="privacy.html">Privacy</a> &middot; <a href="impressum.html">Imprint</a>
-    </span>
-  </div>
-</footer>
-
+      <p>Load the planner and its catalog online first. You can continue planning
+      in the loaded tab while disconnected, but offline reopening or reloading is
+      not guaranteed. Saved planning data is specific to your browser and site
+      address; export a JSON backup before clearing browser storage or moving to
+      another device.</p></div></details><section class="editorial contact"><h2>Questions or feedback?</h2><p><a href="impressum.html">Contact the project →</a><span class="link-divider" aria-hidden="true"> · </span><a href="privacy.html">Privacy</a></p><p class="small">For a problem report, include the planner version, browser and steps to reproduce. Share only the site or backup data you want the recipient to see.</p></section></main>
+<footer class="site-footer container"><div class="foot-inner"><span>NightSeam · Browser night planner</span><nav aria-label="Footer navigation"><a href="/astro/">Planner</a><a href="features.html">Features</a><a href="about.html" aria-current="page">About</a><a href="download.html">Changes</a><a href="privacy.html">Privacy</a><a href="impressum.html">Imprint</a></nav></div></footer>
 </body>
 </html>

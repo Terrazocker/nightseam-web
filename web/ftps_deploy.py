@@ -60,14 +60,14 @@ def args_of(argv):
 
 # Never uploaded: repo tooling / dev leftovers (names at any depth).
 SKIP = {".gitignore", "build_web.py", "ftps_deploy.py", "whale", "dev",
-        "node_modules", "__pycache__"}
+        "node_modules", "__pycache__", ".git", ".env"}
 
 
 def skip(name):
     # .pyc as well: a __pycache__ created by running the build scripts locally
     # got published once, and bytecode of the deploy tool has no business on
     # the webspace.
-    return name in SKIP or name.endswith(".pyc")
+    return name in SKIP or name.endswith((".pyc", ".env"))
 
 
 def upload_order(path: pathlib.Path):
@@ -187,21 +187,8 @@ def main():
             local, remote = pathlib.Path(argv[1]), argv[2].rstrip("/")
             check_placeholders(local, "--force" in argv)
             mkd_tree(ftp, remote)
-            items = sorted(local.iterdir(), key=upload_order)
-            for item in items:
-                if skip(item.name):
-                    continue
-                if item.is_dir():
-                    sub = f"{remote}/{item.name}"
-                    print(f"-> {sub}/")
-                    # recurse with the same command semantics
-                    ftp.cwd("/")  # keep paths absolute below
-                    mkd_tree(ftp, sub)
-                    _upload_tree(ftp, item, sub)
-                elif item.is_file():
-                    with open(item, "rb") as fh:
-                        ftp.storbinary(f"STOR {remote}/{item.name}", fh)
-                    print(f"uploaded {item.name} -> {remote}/{item.name}")
+            ftp.cwd("/")
+            _upload_tree(ftp, local, remote)
         elif cmd == "remove":
             target = (argv[1] if len(argv) > 1 else "").strip()
             # recursive delete with no undo: refuse the webspace root outright
@@ -229,17 +216,17 @@ def main():
 
 
 def _upload_tree(ftp, local_dir, remote_dir):
-    for item in sorted(local_dir.iterdir()):
-        if skip(item.name):
-            continue
-        if item.is_dir():
-            sub = f"{remote_dir}/{item.name}"
-            mkd_tree(ftp, sub)
-            _upload_tree(ftp, item, sub)
-        elif item.is_file():
-            with open(item, "rb") as fh:
-                ftp.storbinary(f"STOR {remote_dir}/{item.name}", fh)
-            print(f"uploaded {item.name} -> {remote_dir}/{item.name}")
+    # Flatten first: per-directory HTML-last sorting still publishes nested
+    # entry points before dependencies in later sibling directories.
+    files = [p for p in local_dir.rglob('*') if p.is_file()
+             and not any(skip(part) for part in p.relative_to(local_dir).parts)]
+    for item in sorted(files, key=lambda p: (*upload_order(p), p.relative_to(local_dir).as_posix())):
+        rel = item.relative_to(local_dir).as_posix()
+        destination = f"{remote_dir}/{rel}"
+        mkd_tree(ftp, destination.rsplit('/', 1)[0])
+        with open(item, "rb") as fh:
+            ftp.storbinary(f"STOR {destination}", fh)
+        print(f"uploaded {rel} -> {destination}")
 
 
 if __name__ == "__main__":

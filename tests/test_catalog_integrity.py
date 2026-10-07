@@ -170,12 +170,12 @@ def test_web_catalog_standard_split_matches_the_rule(tmp_path):
 # way to cover a new surface. `landing/features.html`'s "12,000 objects" is a
 # deliberate rounding (a feature blurb, not a catalogue count) and is not pinned.
 ADVERTISED_SIZE = [
-    ("web/index.html", 3, [r"Catalog: OpenNGC \+ supplement \(([\d,]+) objects\)",
+    ("web/index.html", 2, [r"Catalog: OpenNGC \+ supplement \(([\d,]+) objects\)",
                            r"supplement OpenNGC\s+cannot carry \(([\d,]+)\s+objects"]),
     ("web/app.js", 1, [r"search/sort across ([\d,]+) objects"]),
     ("landing/index.html", 2, [r"a small supplement: ([\d,]+) objects",
                                r"computed entirely in your browser\. ([\d,]+) objects"]),
-    ("landing/about.html", 1, [r"<b>([\d,]+)</b><span>catalog objects</span>"]),
+    ("landing/about.html", 1, [r"<b>([\d,]+)</b> catalog objects"]),
     ("README.md", 1, [r"The catalog contains ([\d,]+) objects\."]),
 ]
 

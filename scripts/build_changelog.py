@@ -1,25 +1,16 @@
-"""Generate landing/changelog.json from git release tags (newest first).
+"""Generate the independent website's static Changes page and public JSON.
 
-Run from the repo root:  python scripts/build_changelog.py
-                         python scripts/build_changelog.py --check
-The download page (landing/download.html) fetches changelog.json and
-renders "what's new". Summaries are CURATED user-facing text — big changes
-only, plain words — not raw commit messages.
+The owner reset public history to 0.1.0 on October 6, 2026. PUBLIC_RELEASES is
+an explicit website ledger; historical repository tags must not repopulate it.
+CURATED also retains legacy tag summaries for existing release/pre-tag guards,
+but those summaries are not public entries. Git describe remains truthful and
+this generator neither tags releases nor claims that an entry is deployed.
 
-Tags without a curated summary are skipped (versions only get an entry
-when there is something worth telling users about) — but they are no longer
-silently skipped: the run reports them in two classes and `--check` FAILS
-(exit 1) when a tag NEWER than the newest curated entry has no summary. That
-is the class that makes the download page go stale; the pre-0.4.2 backlog is
-historical noise and is only counted.
-
-`--check` writes nothing, so it is safe as a pre-flight gate.
-scripts/check_release.py reads the SAME CURATED table (by importing this
-file) and fails the release when the tag being released has no summary.
-Curate the entry BEFORE tagging: editing this file after the tag makes every
-published version string '-dirty'.
+Add a dated public ledger record and a non-empty CURATED summary for each future
+website entry. --check validates generation and curation without writing.
 """
 import argparse
+import html
 import json
 import os
 import subprocess
@@ -28,11 +19,17 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "landing" / "changelog.json"
+PAGE = ROOT / "landing" / "download.html"
+START = "<!-- BEGIN GENERATED RELEASE HISTORY -->"
+END = "<!-- END GENERATED RELEASE HISTORY -->"
+# Explicit independent-product history, separate from inherited Git tags.
+PUBLIC_RELEASES = [{"version": "0.1.0", "date": "2026-10-07"}]
 
 CURATED = {
-    # Prepared for the next release; tags alone determine publication.
-    "0.6.36": "Website release: the planner uses the Workbench design, with improved layout and weather controls. The experimental modeled sky-brightness feature and its controls have been removed. Existing sites, equipment, panoramas and browser backups are preserved. The website and the Windows image catalog now develop independently. Catalog metadata stays byte-identical on Windows checkouts, so release integrity checks remain reproducible.",
-    "0.6.35": "Website release: the planner uses the Workbench design, with improved layout and weather controls. The experimental modeled sky-brightness feature and its controls have been removed. Existing sites, equipment, panoramas and browser backups are preserved. The website and the Windows image catalog are now independent projects; catalog development and versions are maintained separately.",
+    "0.1.0": "NightSeam starts anew as an independent browser planner. Bring your own panorama and calculate when deep-sky targets clear your skyline, with planning data saved in your browser. The website and Windows catalog now have separate versions and development.",
+    # Curate before tagging; a tag does not establish public deployment.
+    "0.6.36": "Website packaging fix: catalog metadata keeps identical bytes on Windows checkouts, so release integrity checks remain reproducible. Planner behavior is unchanged from 0.6.35.",
+    "0.6.35": "The website and Windows image catalog are now independent projects. The browser planner uses Workbench, with improved layout and weather controls. Experimental modeled sky brightness has been removed. Existing sites, equipment, panoramas and browser backups are preserved.",
     # 0.6.34 is the security/reliability batch for the six findings in BUGS.md:
     # a refused restore can no longer overwrite your files, the desktop can no
     # longer execute an imported value, the web app finally enforces a policy,
@@ -208,7 +205,7 @@ def split_uncurated(tags, curated):
 
     `tags` is newest-first (git tag --sort=-version:refname). Only the first
     list matters for release integrity: those are the releases that happened
-    AFTER the newest entry the public changelog knows about. Everything older
+    AFTER the newest entry the repository release guard knows about. Everything older
     is the historical backlog (pre-0.4.2 tags) and is never curated. An EMPTY
     curated value is uncurated (TR-05 - it generates no entry)."""
     versions = [t.lstrip("v") for t in tags]
@@ -232,17 +229,62 @@ def build_entries(tags, dates, curated=None):
     return entries
 
 
+def public_entries(curated=None, releases=None):
+    """Public ledger order is explicit; legacy tags never determine membership."""
+    curated = CURATED if curated is None else curated
+    releases = PUBLIC_RELEASES if releases is None else releases
+    entries = []
+    seen = set()
+    for release in releases:
+        version = release["version"]
+        if version in seen:
+            raise ValueError(f"duplicate public release: {version}")
+        if not has_summary(curated, version):
+            raise ValueError(f"public release {version} needs a non-empty curated summary")
+        seen.add(version)
+        entries.append({"version": version, "date": release["date"], "summary": curated[version]})
+    return entries
+
+
+def render_entry(entry):
+    """Release content is escaped text, never executable markup."""
+    ver = html.escape(str(entry["version"]), quote=True)
+    date = html.escape(str(entry.get("date") or ""), quote=True)
+    notes = html.escape(str(entry.get("summary") or "").strip())
+    return (f'<article class="release-entry">\n'
+            f'  <h3 class="release-heading">v{ver} '
+            f'<time datetime="{date}" class="cl-date">{date}</time></h3>\n'
+            f'  <p class="cl-sum">{notes}</p>\n</article>')
+
+
+def render_history(entries):
+    parts = [START, '<section class="release-section" aria-label="Website releases">',
+             '  <div class="release-list" id="clList">']
+    parts.extend(render_entry(entry) for entry in entries)
+    if not entries:
+        parts.append('    <p class="hero-note">No website release notes are available yet.</p>')
+    parts.extend(['  </div>', '</section>', END])
+    return "\n".join(parts)
+
+
+def generated_page(source, entries):
+    if source.count(START) != 1 or source.count(END) != 1:
+        raise ValueError("Changes page needs one generated release-history marker pair")
+    before, middle = source.split(START, 1)
+    _, after = middle.split(END, 1)
+    return before + render_history(entries) + after
+
+
 def report(backlog, older, newest_curated):
     """Print the curation status; returns the number of blocking tags."""
     if backlog:
         shown = ", ".join(backlog[:8]) + (" ..." if len(backlog) > 8 else "")
         print(f"WARNING: {len(backlog)} release tag(s) SINCE the newest curated "
-              f"entry ({newest_curated}) have no summary, so the download "
-              f"page's \"What's new\" is stale: {shown}")
+              f"entry ({newest_curated}) have no summary for the repository "
+              f"release guard: {shown}")
         print("         Add a plain-words entry to CURATED above - commit it "
               "BEFORE tagging, or the published version string turns '-dirty'. "
-              "A tag that was web-only (no new desktop build) still deserves an "
-              "entry saying so.")
+              "Website-only changes still deserve their own entry.")
     if older:
         shown = ", ".join(older[:8]) + (" ..." if len(older) > 8 else "")
         print(f"note: {len(older)} further uncurated tag(s) predate the newest "
@@ -252,12 +294,11 @@ def report(backlog, older, newest_curated):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(
-        description="Generate landing/changelog.json from the curated summaries, "
-                    "or --check that no release since the newest curated entry "
-                    "is missing one.")
+        description="Generate static release history and JSON from curated summaries, "
+                    "or --check curation and generated-content consistency.")
     parser.add_argument("--check", action="store_true",
                         help="write nothing and exit non-zero when a release tag "
-                             "newer than the newest curated entry has no summary")
+                             "is uncurated or generated release history is stale")
     args = parser.parse_args(argv)
 
     tags = [t for t in git("tag", "--sort=-version:refname").splitlines() if t]
@@ -269,22 +310,35 @@ def main(argv=None):
     newest_curated = next((t.lstrip("v") for t in tags if t.lstrip("v") in CURATED),
                           "none")
 
+    try:
+        entries = public_entries()
+    except ValueError as exc:
+        print(f"public-history check: FAILED - {exc}")
+        return 1
+    json_text = json.dumps(entries, indent=1) + "\n"
+    source = PAGE.read_text(encoding="utf-8")
+    page_text = generated_page(source, entries)
+    stale = (not OUT.is_file() or OUT.read_text(encoding="utf-8") != json_text or source != page_text)
     if not args.check:
-        def date_of(tag):
-            return git("log", "-1", "--format=%ad", "--date=short", tag)
-
-        entries = build_entries(tags, date_of)
-        OUT.write_text(json.dumps(entries, indent=1) + "\n", encoding="utf-8")
+        if not OUT.is_file() or OUT.read_text(encoding="utf-8") != json_text:
+            destination = OUT.relative_to(Path.cwd()) if OUT.is_relative_to(Path.cwd()) else OUT
+            destination.write_bytes(json_text.encode("utf-8"))
+        if source != page_text:
+            destination = PAGE.relative_to(Path.cwd()) if PAGE.is_relative_to(Path.cwd()) else PAGE
+            destination.write_bytes(page_text.encode("utf-8"))
         print(f"{OUT}: {len(entries)} curated entries")
+        print(f"{PAGE}: static release history generated")
 
     blocking = report(backlog, older, newest_curated)
     if args.check:
         if blocking:
             print(f"curation check: FAILED - {blocking} release(s) after "
-                  f"{newest_curated} are missing from the public changelog.")
+                  f"{newest_curated} have no curated summary for the repository release guard.")
             return 1
-        print(f"curation check: OK - every release after {newest_curated} has a "
-              "curated summary.")
+        if stale:
+            print("release-history check: FAILED - generated JSON or HTML is stale; run scripts/build_changelog.py")
+            return 1
+        print(f"public-history check: OK - {len(entries)} independent website entry/entries; legacy tag curation also valid.")
     return 0
 
 

@@ -43,8 +43,10 @@ versions or recreate the combined desktop project here. The deprecated
 - Catalog/version helpers: python web/build_web.py catalog; python
   web/build_web.py version. Both use only this repository.
 - Before staging run python scripts/check_release.py with development flags
-  when appropriate. Release versions follow this repository's existing tags;
-  the catalog's v0.1.0 belongs only to its independent repository.
+  when appropriate. The owner reset the independent website's public version
+  series to 0.1.0 on October 6, 2026. Catalog versions remain independent.
+  Preserve inherited Git tags and truthful development version stamping;
+  the public history reset does not create a release tag or authorize deployment.
 - Every behavior change bumps the relevant ?v= cache token and entry-point
   references. catalog.json has CATALOG_TOKEN and its manifest; provenance has
   its own token/manifest. Run bump_web_tokens.py and check_js_tokens.py --update
@@ -61,16 +63,21 @@ versions or recreate the combined desktop project here. The deprecated
 
 Keep this register aligned with entry-point references and the core manifest.
 Current:
-- `web/app.js?v=137`
-- `web/astro.js?v=30`
-- `web/horizon.js?v=69`
-- `web/webstore.js?v=41`
-- `web/format.js?v=37`
-- `web/nightrank.js?v=29`
+- `web/app.js?v=158`
+- `web/astro.js?v=31`
+- `web/horizon.js?v=74`
+- `web/webstore.js?v=42`
+- `web/format.js?v=38`
+- `web/nightrank.js?v=30`
 - `web/viztheme.js?v=6`
-- `web/core.js?v=44`
-- `web/style.css?v=44`
-- `web/themes.css?v=16`
+- `web/imagecredits.js?v=2`
+- Public stylesheet: `landing/style.css?v=3`
+- Public decorative map: `landing/sky-map.svg?v=1`
+- Public share preview: `landing/social-preview.png?v=1`
+- Public pages load canonical role tokens: `/astro/themes.css?v=18`
+- `web/core.js?v=45`
+- `web/style.css?v=50`
+- `web/themes.css?v=18`
 
 ## Working discipline
 

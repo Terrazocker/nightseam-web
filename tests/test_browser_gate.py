@@ -16,6 +16,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 
 WEB_CHECKS = [
+    "web-interval-view-agreement",
     "web-load-smoke",
     "web-cache-tokens",
     "web-horizon-actions-not-full-width",
@@ -33,7 +34,18 @@ WEB_CHECKS = [
     "web-catalog-direction-b-density",
     "web-workbench-only-render",
     "web-accessibility-essentials",
+    "web-photos-online-only",
+    "web-photos-fresh-and-cached",
+    "web-photos-unavailable-retries",
 ]
+
+
+def test_phase4_browser_checks_are_registered():
+    runner = (ROOT / 'scripts/check_browser.py').read_text(encoding='utf-8')
+    suite = (ROOT / 'tests/browser/phase4_checks.py').read_text(encoding='utf-8')
+    assert 'import phase4_checks' in runner
+    for name in ('popovers-and-setup', 'disclosure-focus', 'first-visit', 'responsive-planner', 'map-labels'):
+        assert f'web-phase4-{name}' in suite
 
 
 def test_browser_runner_imports_only_the_web_suite():
@@ -86,6 +98,50 @@ def test_browser_gate_driver_start_failure_is_exit_2(monkeypatch, capsys):
     assert "check_browser FATAL" in out and "infrastructure" in out
 
 
+def test_restrictive_console_preserves_failure_categories(monkeypatch):
+    import importlib.util
+    import io
+    import sys
+    spec = importlib.util.spec_from_file_location('encoded_gate', ROOT/'scripts/check_browser.py')
+    gate = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(gate)
+    stream = io.TextIOWrapper(io.BytesIO(), encoding='cp1252', errors='strict')
+    monkeypatch.setattr(sys, 'stdout', stream)
+
+    def failed(**kwargs):
+        gate.harness.safe_print('FAIL: selected target → 星')
+        return 1
+
+    monkeypatch.setattr(gate.harness, 'run', failed)
+    assert gate.run_gate(targets=('web',)) == 1
+    stream.flush()
+    assert b'FAIL: selected target' in stream.buffer.getvalue()
+    assert b'\\u661f' in stream.buffer.getvalue()
+
+    def infrastructure(**kwargs): raise PermissionError('driver → 星')
+    monkeypatch.setattr(gate.harness, 'run', infrastructure)
+    assert gate.run_gate(targets=('web',)) == 2
+
+
+def test_local_module_import_burst_can_queue_while_accepting_is_busy():
+    import socket
+    from concurrent.futures import ThreadPoolExecutor
+    import sys
+    sys.path.insert(0, str(ROOT/'tests/browser'))
+    import harness
+    server = harness.BrowserHTTPServer(('127.0.0.1',0),lambda *a: None)
+    sockets = []
+    try:
+        def connect(_):
+            return socket.create_connection(server.server_address,timeout=1)
+        with ThreadPoolExecutor(max_workers=20) as pool:
+            sockets = list(pool.map(connect,range(20)))
+        assert len(sockets) == 20
+    finally:
+        for sock in sockets: sock.close()
+        server.server_close()
+
+
 def test_browser_harness_starts_the_driver_exactly_once():
     """The TO-02 conversion must NOT be implemented by probing the driver.
 
@@ -98,3 +154,31 @@ def test_browser_harness_starts_the_driver_exactly_once():
     assert "_driver = sync_playwright().start()" not in src, (
         "the throw-away driver probe is back - it left the gate exiting 1 "
         "after every check passed")
+
+
+def test_browser_gate_registers_public_pages_and_no_script_history():
+    runner = (ROOT / "scripts/check_browser.py").read_text(encoding="utf-8")
+    landing = (ROOT / "tests/browser/landing_checks.py").read_text(encoding="utf-8")
+    assert "import landing_checks" in runner
+    for name in ("web-landing-pages", "web-landing-history-no-js"):
+        assert f'@check("{name}", "web")' in landing
+
+
+def test_browser_gate_registers_the_selection_checks():
+    """WEB-REV-003: target-selection continuity lives in its own module so the
+    planner contract stays reviewable - and cannot silently disappear from the
+    gate (the runner imports it and every check stays registered)."""
+    runner = (ROOT / "scripts/check_browser.py").read_text(encoding="utf-8")
+    sel = (ROOT / "tests/browser/selection_checks.py").read_text(encoding="utf-8")
+    assert "import selection_checks" in runner
+    for name in ("web-selection-continuity", "web-selection-origins",
+                 "web-selection-close-modes", "web-selection-filter-restore",
+                 "web-selection-refresh-keeps-closed",
+                 "web-selection-replace-and-delete"):
+        assert f'@check("{name}", "web")' in sel, f"selection check missing: {name}"
+    app = (ROOT / "web/app.js").read_text(encoding="utf-8")
+    # the state contract itself: identity outlives the inspector, and the
+    # inspector's visibility is never inferred from the identity
+    assert "detailOpen: false," in app
+    assert "if (S.detailOpen && view !== S.view) closeDetail();" in app
+    assert "S.detailId = null;" in app, "an invalid selection must be clearable"

@@ -1,92 +1,37 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="workbench">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Features — NightSeam</title>
-<meta name="description" content="NightSeam features: tonight's picks, live polar sky map, horizon panoramas, sites and rigs — computed in your browser.">
+<meta name="description" content="Plan observing windows around your own panorama, site and skyline.">
+<link rel="canonical" href="https://nightseam.de/features.html">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Features — NightSeam">
+<meta property="og:description" content="Plan observing windows around your own panorama, site and skyline.">
+<meta property="og:url" content="https://nightseam.de/features.html">
+<meta property="og:image" content="https://nightseam.de/social-preview.png?v=1">
+<meta property="og:image:alt" content="NightSeam — know what you can see, with your panorama and calculated target visibility">
+<meta name="twitter:card" content="summary_large_image">
 <link rel="icon" type="image/png" href="app.png">
-<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="/astro/themes.css?v=18">
+<link rel="stylesheet" href="style.css?v=3">
 </head>
-<body>
-
-<header class="site-header">
-  <div class="container navrow">
-    <a class="brand" href="/">
-      <img class="brand-ico" src="app.png" alt="" width="34" height="34">
-      <span class="brand-name">Night<em>Seam</em></span>
-    </a>
-    <nav class="nav">
-      <a href="features.html">Features</a>
-      <a href="about.html">About</a>
-      <a href="download.html">Changes</a>
-      <a class="nav-cta" href="/astro">Launch the planner</a>
-    </nav>
-  </div>
-</header>
-
-<main>
-  <section class="hero hero-page">
-    <div class="container hero-inner">
-      <p class="eyebrow">Features</p>
-      <h1>A planner that knows the night sky</h1>
-      <p class="hero-sub">Everything is computed locally in your browser — the catalog, the sky and your data never leave the page.</p>
-    </div>
-  </section>
-
-  <section class="section">
-    <div class="container">
-      <div class="feature-grid">
-        <div class="feature-card">
-          <h3>&#127769; Tonight&rsquo;s picks</h3>
-          <p>Ranked targets with clear-window times, moon-aware scoring and a Bortle-adjusted view of what the night can deliver.</p>
-        </div>
-        <div class="feature-card">
-          <h3>&#128506; Live polar sky map</h3>
-          <p>Zoom, pan and scrub the all-sky chart with the sun, moon and 12,000 objects — a rectangular window that shows you more.</p>
-        </div>
-        <div class="feature-card">
-          <h3>&#9670; Ranked for the night</h3>
-          <p>Every target scored for real visibility — altitude, your painted horizon, the moon's phase, your filters and your Bortle setting.</p>
-        </div>
-        <div class="feature-card">
-          <h3>&#128752; Horizon panoramas</h3>
-          <p>Import a 360&deg; panorama, paint the trees and houses, and see which targets your skyline actually lets you see.</p>
-        </div>
-        <div class="feature-card">
-          <h3>&#128213; Sites, rigs &amp; timezones</h3>
-          <p>Your observing locations and equipment — per-site timezones, DST-aware, backed up as JSON.</p>
-        </div>
-        <div class="feature-card">
-          <h3>&#128187; 100% client-side</h3>
-          <p>The entire OpenNGC catalog ships with the page — works offline, nothing uploaded, no account.</p>
-        </div>
-        <div class="feature-card">
-          <h3>&#9925; Weather</h3>
-          <p>Current conditions and a 4-day forecast for your observing site — loaded on demand, nothing fetched until you click.</p>
-        </div>
-        <div class="feature-card">
-          <h3>&#128270; Rectangular sky zoom</h3>
-          <p>Wheel-zoom opens a rectangular window over the all-sky chart — more sky than a circular magnifier, with drag-pan and double-click reset.</p>
-        </div>
-      </div>
-
-      <div class="hero-actions" style="margin-top:40px;justify-content:center">
-        <a class="cta" href="/astro">Open the planner &rarr;</a>
-      </div>
-    </div>
-  </section>
-</main>
-
-<footer class="site-footer">
-  <div class="container foot-inner">
-    <span>&copy; 2026 NightSeam &mdash; deep-sky night planning</span>
-    <span class="foot-links">
-      <a href="/astro">Planner</a> &middot; <a href="features.html">Features</a> &middot; <a href="download.html">Changes</a>
-      &middot; <a href="about.html">About</a> &middot; <a href="privacy.html">Privacy</a> &middot; <a href="impressum.html">Imprint</a>
-    </span>
-  </div>
-</footer>
-
+<body class="public-site">
+<a class="skip-link" href="#content">Skip to content</a>
+<header class="site-header"><div class="container navrow">
+<a class="brand" href="/" aria-label="NightSeam home">NightSeam</a>
+<div class="desktop-nav"><nav aria-label="Main navigation"><a href="features.html" aria-current="page">Features</a><a href="about.html">About</a><a href="download.html">Changes</a></nav></div>
+<details class="mobile-menu"><summary aria-label="Navigation menu"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M3 6h18M3 12h18M3 18h18"/></svg></summary><nav aria-label="Mobile navigation"><a href="features.html" aria-current="page">Features</a><a href="about.html">About</a><a href="download.html">Changes</a><a href="/astro/">Open planner</a></nav></details>
+</div></header>
+<main id="content" tabindex="-1" class="container"><section class="hero"><svg class="sky-map" aria-hidden="true" focusable="false" viewBox="0 0 960 760"><use href="sky-map.svg?v=1#sky-art"></use></svg><div class="hero-copy"><p class="eyebrow">Features</p><h1>Plan around your own sky.</h1><p class="hero-sub">Your panorama. Your site. Your observing night.</p><a class="cta" href="/astro/">Open planner</a><p class="hero-note">Weather and new photos use online services.</p></div></section><section class="feature-rows" aria-label="Planning features">
+<div class="feature-row"><span class="row-number" aria-hidden="true">01</span><div><h2>Your panorama, your horizon.</h2><p>Add a panorama of your observing site and mark trees, roofs and other obstructions.</p></div></div>
+<div class="feature-row"><span class="row-number" aria-hidden="true">02</span><div><h2>Visibility, calculated.</h2><p>Find when a target clears your skyline and minimum altitude, for your site and date.</p></div></div>
+<div class="feature-row"><span class="row-number" aria-hidden="true">03</span><div><h2>The right targets for tonight.</h2><p>Compare usable observing windows, inspect targets and account for the Moon.</p></div></div>
+</section><details class="disclosure"><summary>More planning tools</summary><div class="disclosure-body"><h2>Sites, rigs and target details</h2><p>Keep observing locations, equipment and custom targets in this browser. Site timezones account for daylight saving time. Optional rig setup helps estimate coverage. Explore Tonight, Catalog, Sky View and Horizon using the same selected observing time.</p>
+<h2>Weather and air quality</h2><p>A four-day weather and air-quality forecast from Open-Meteo. Load it when needed, or enable “Always load on startup.” Requests include the active site's coordinates and timezone. After weather has been loaded, changing the active site can fetch a new forecast.</p>
+<h2>Connection requirements</h2><p>Open the planner online and let its catalog finish loading. Planning can then continue in that open tab without a connection. Reopening or reloading offline is not guaranteed. Weather and uncached external object photos need a connection. See <a href="privacy.html">Privacy</a> for the services used.</p>
+<h2>Your first night</h2><ol><li>Choose an observing site and its timezone.</li><li>Select your night and minimum altitude. Add a rig if you want coverage estimates.</li><li>Compare usable windows in Tonight and inspect a target at the selected time.</li><li>Add a panorama in Horizon and mark obstructions to plan around your skyline.</li><li>Save your setup and export a JSON backup before clearing browser storage or moving devices.</li></ol></div></details></main>
+<footer class="site-footer container"><div class="foot-inner"><span>NightSeam · Browser night planner</span><nav aria-label="Footer navigation"><a href="/astro/">Planner</a><a href="features.html" aria-current="page">Features</a><a href="about.html">About</a><a href="download.html">Changes</a><a href="privacy.html">Privacy</a><a href="impressum.html">Imprint</a></nav></div></footer>
 </body>
 </html>

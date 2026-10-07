@@ -8,18 +8,19 @@
  *   • Settings — sites, rigs, custom targets, backup/restore (webstore.js)
  * All sky math runs client-side (astro.js, Meeus algorithms).
  */
-import * as E from './astro.js?v=30';
-import * as Hor from './horizon.js?v=69';
-import * as WS from './webstore.js?v=41';
+import * as E from './astro.js?v=31';
+import * as Hor from './horizon.js?v=74';
+import * as WS from './webstore.js?v=42';
 import { fmtSize, sizeArcmin, framePct, magVisible, skyClampZoom,
-         skyViewMatrix, skyScreenToBase, skyClampFocus } from './format.js?v=37';
-import { nightStats, nightStatsBatch, sampleVisible } from './nightrank.js?v=29';
+         skyViewMatrix, skyScreenToBase, skyClampFocus } from './format.js?v=38';
+import { nightStats, nightStatsBatch, sampleVisible } from './nightrank.js?v=30';
 import { TYPE_LABELS, TYPE_COLORS, searchBlob as coreSearchBlob,
          TIER_ORDER, assignPopularityTiers, wikiTitles,
          inTonightPool, PLANNER_CHANGE_EVENT, panoramaRevision,
-         visibilityReason, summarizeVisibility, computeNightTracks } from './core.js?v=44';
-import { popularityFactor as corePopularityFactor } from './core.js?v=44';
+         visibilityReason } from './core.js?v=45';
+import { popularityFactor as corePopularityFactor } from './core.js?v=45';
 import { vizTheme, drawMoonPhaseMarker } from './viztheme.js?v=6';
+import { wikimediaCredit, wikiImageCredit, renderImageCredit } from './imagecredits.js?v=2';
 
 const announcePlannerChange = Hor.announcePlannerChange;
 
@@ -73,7 +74,8 @@ function applyActiveSite(site) {
 }
 
 let CAT = null;                 // array of catalog objects
-let CAT_PROV = { objects: {} }; // generated source/alias sidecar
+let CAT_PROV = null; // generated source/alias sidecar, loaded only on demand
+let catalogProvenanceRequest = null;
 let TIER = new Map();           // id -> popularity TIER letter (A-F); scores are never rendered
 const byId = new Map();         // id -> object
 const searchCache = new Map();  // object -> lowercase search blob
@@ -84,9 +86,19 @@ const S = {
   skyMag: 10,                     // all-sky chart magnitude limit (desktop #skyMag twin)
   playing: false,
   view: 'tonight',
+  // WEB-REV-003: ONE selected-target identity for Tonight, Catalog and Sky
+  // View (`detailId`), plus EXPLICIT inspector visibility (`detailOpen`).
+  // Before this, "open" was inferred from a populated `detailId`, so closing
+  // the inspector had to destroy the identity - and the Tonight overview and
+  // Sky View each kept a second, independently mutable selection id that then
+  // drifted (the Sky rail silently re-pointed itself at a fallback target on
+  // every redraw). Now `detailId` is the only selection writer's output and
+  // outlives the inspector; every view derives its highlighting from it, and
+  // only openDetail()/closeDetail() write `detailOpen`.
   detailId: null,
+  detailOpen: false,
   cat: { q: '', chip: 'all', con: '', types: [], visibility: 'all',
-    savedOnly: false, clearOnly: false, fitsRig: false, sort: 'tier', up: true, page: 0 },
+    savedOnly: false, clearOnly: false, fitsRig: false, sort: 'name', up: true, page: 0 },
 };
 
 const $ = (s) => document.querySelector(s);
@@ -128,6 +140,7 @@ let tonightStatsById = new Map();
 let obsEpoch = 0;
 
 function invalidateObservationCache() {
+  cancelCatalogWarm();
   obsEpoch++;
   obsCache.clear();
 }
@@ -141,7 +154,15 @@ if (typeof window !== 'undefined') {
     // owns the cache boundary so a future consumer cannot reuse an observation
     // computed for a different planner revision.
     if (kind !== 'selection') invalidateObservationCache();
-    if (S.detailId && kind !== 'selection') refreshOpenDetail();
+    if (kind === 'site') announceStatus(`Observing site: ${S.site.label}. Plan updated.`);
+    else if (kind === 'rig') announceStatus('Rig changed. Frame estimates updated.');
+    else if (kind === 'date') announceStatus('Planned night changed. Visibility updated.');
+    // WEB-REV-003: a catalog mutation may have removed the selected object -
+    // drop a genuinely gone selection wherever it is referenced. A merely
+    // FILTERED object stays selected; an open inspector refreshes its facts and
+    // a closed one STAYS closed (a populated detailId no longer means "open").
+    dropSelectionIfGone();
+    if (S.detailOpen && kind !== 'selection') refreshOpenDetail();
     if (kind !== 'panorama') return;
     // All dependent views read the active panorama at render time. Repainting
     // here closes the gap between the editor's live in-memory edit and the
@@ -152,10 +173,6 @@ if (typeof window !== 'undefined') {
   });
 }
 
-function computeObs(obj, jd0, jd1, step, minAlt, pano, lat, lon) {
-  const st = nightStats(obj, jd0, jd1, step, minAlt, pano, lat, lon);
-  return { pct: st.pct, blk: st.blockedPct };
-}
 /* ONE definition of the night window behind every visibility number, so the
    catalog % column and the Tonight ranking can never disagree with each other
    or with the desktop: astronomical twilight first, then nautical, then civil,
@@ -272,12 +289,17 @@ function obsKey(g, oid) {
   if (obsCache.size > 250000) obsCache.clear(); // guard against stale-site growth
   // the ANCHOR date (topbar "night of", else today at the site) - NOT today:
   // otherwise changing the date re-served the previous night's percentages
-  const panoKey = g.pano ? `${g.pano.id}:${panoramaRevision(g.pano)}` : '-';
-  return `${dateKey(nightAnchor())}|${g.minAlt.toFixed(2)}|${panoKey}|${g.lat.toFixed(2)}|${g.lon.toFixed(2)}|${oid}`;
+  // A grid is a short-lived snapshot, never reused after a planner edit. Hash
+  // its 720-bin profiles/strokes once, rather than once per object/cache hit.
+  if (!g.cachePrefix) {
+    const panoKey = g.pano ? `${g.pano.id}:${panoramaRevision(g.pano)}` : '-';
+    g.cachePrefix = `${dateKey(nightAnchor())}|${g.jd0}|${g.jd1}|${g.minAlt}|${panoKey}|${g.lat}|${g.lon}|`;
+  }
+  return g.cachePrefix + oid;
 }
 function escAttr(s) { return String(s).replace(/[^a-zA-Z0-9_-]/g, (c) => '\\' + c); }
-function cachedPctText(oid) {
-  const v = obsCache.get(obsKey(obsNightGrid(), oid));
+function cachedPctText(oid, g) {
+  const v = obsCache.get(obsKey(g, oid));
   if (!v) return '…';
   return `${v.pct}%`;
 }
@@ -329,7 +351,7 @@ function selectedVisibility(o) {
   const pano = Hor.activePano();
   const ceiling = pano ? Hor.ceilFor(pano, az) : { ceil: Hor.NO_BLOCK, ceilTop: null };
   const win = cachedNightWindow();
-  const inWindow = S.skyTime >= win.startT && S.skyTime <= win.endT;
+  const inWindow = S.skyTime >= win.startT && S.skyTime < win.endT;
   const reason = visibilityReason(alt, Hor.effectiveMinAlt(), ceiling.ceil, ceiling.ceilTop, inWindow);
   const night = tonightStatsById.get(o.id);
   const bestAt = night?.bestStart != null ? E.dateFromJD(night.bestStart) : null;
@@ -690,8 +712,8 @@ function wxRenderPanel() {
 }
 
 /* ---------- Wikipedia thumbnails with IndexedDB cache ---------- */
-// Only objects without a bundled photo fetch from Wikipedia, only when their
-// detail view is opened, thumbnails only. Results (image blobs AND definite
+// Object photos come from Wikipedia only when their detail view is opened.
+// Cached photos are reused first. Results (image blobs AND definite
 // "no photo" answers) are cached in IndexedDB per object; transient network
 // failures are NOT cached so they retry next open.
 function idbOpen() {
@@ -728,14 +750,18 @@ const NEG_TTL = 30 * 86400000; // remember "no photo" for 30 days
 const WIKI_API = 'https://en.wikipedia.org/api/rest_v1/page/summary/';
 let currentObjUrl = null;
 
-async function loadWikiThumb(o, imgEl, phEl) {
+async function loadWikiThumb(o, imgEl, phEl, creditEl) {
   if (window.matchMedia && window.matchMedia('(prefers-reduced-data: reduce)').matches) {
     phEl.textContent = 'photo skipped — reduced data mode';
     return;
   }
   const key = 'w:' + o.id;
   const cached = await idbGet(key);
-  if (cached && cached.blob) { showBlob(cached.blob); return; }
+  if (cached && cached.blob) {
+    showBlob(cached.blob);
+    renderImageCredit(creditEl, cached.credit);
+    return;
+  }
   if (cached && cached.missing && Date.now() - cached.ts < NEG_TTL) {
     phEl.textContent = 'no photo on Wikipedia — see the link below';
     return;
@@ -769,10 +795,17 @@ async function loadWikiThumb(o, imgEl, phEl) {
     if (!ir.ok) { transient = true; throw new Error('no-img'); }
     const blob = await ir.blob();
     if (!blob.type.startsWith('image/')) throw new Error('bad-type');
-    await idbSet(key, { blob, ts: Date.now() });
-    const link = document.querySelector('#d-wikilink');
-    if (link) link.href = 'https://en.wikipedia.org/wiki/' + encodeURIComponent(page.replace(/ /g, '_'));
+    const initialCredit = wikimediaCredit(resolvedSrc);
+    await idbSet(key, { blob, credit: initialCredit, page, ts: Date.now() });
+    // Display first: optional attribution metadata must not hold up the image.
     showBlob(blob);
+    renderImageCredit(creditEl, initialCredit);
+    const credit = await wikiImageCredit(resolvedSrc, { signal: ac.signal });
+    await idbSet(key, { blob, credit, page, ts: Date.now() });
+    renderImageCredit(creditEl, credit);
+    const link = imgEl.isConnected && S.detailOpen && S.detailId === o.id
+      && document.querySelector('#d-wikilink');
+    if (link) link.href = 'https://en.wikipedia.org/wiki/' + encodeURIComponent(page.replace(/ /g, '_'));
   } catch (err) {
     // Only a DEFINITIVE answer from Wikipedia is remembered: "no such page /
     // no thumbnail" (`no-thumb`) or "those bytes are not an image" (`bad-type`).
@@ -830,7 +863,11 @@ function bootFailure(title, detail) {
 function route() {
   const h = location.hash || '#tonight';
   const view = ['tonight', 'sky', 'catalog', 'horizon'].includes(h.slice(1)) ? h.slice(1) : 'tonight';
-  if (S.detailId && view !== S.view) closeDetail();
+  // WEB-REV-003: a view change closes the inspector but KEEPS the selected
+  // target identity (and its highlighting), so the next view shows the same
+  // selection and reopening that object reuses it.
+  if (S.detailOpen && view !== S.view) closeDetail();
+  parkDetailModal();
   // leaving the Horizon editor with unsaved edits: flush them (never lose them)
   if (S.view === 'horizon' && view !== 'horizon' && Hor.horizonUnsaved()) Hor.flushHorizonEdits();
   S.view = view;
@@ -839,6 +876,7 @@ function route() {
     const selected = a.dataset.v === S.view;
     a.classList.toggle('active', selected);
     a.setAttribute('aria-selected', String(selected));
+    a.tabIndex = selected ? 0 : -1;
   });
   const viewPanel = $('#view');
   if (viewPanel) viewPanel.setAttribute('aria-labelledby', `tab-${S.view}`);
@@ -846,6 +884,7 @@ function route() {
   else if (S.view === 'sky') renderSky();
   else if (S.view === 'catalog') renderCatalog();
   else renderHorizonView();
+  announceStatus(`${view === 'sky' ? 'Sky View' : view.charAt(0).toUpperCase() + view.slice(1)} view. Selected time ${fmtClock(S.skyTime)}, site time.`);
 }
 
 function renderHorizonView() {
@@ -858,11 +897,6 @@ function renderHorizonView() {
 
 let tonightTimer = null;
 let tonightToken = 0;
-let tonightOverviewState = null;
-let tonightOverviewObserver = null;
-let tonightOverviewVisible = new Set();
-const TONIGHT_OVERVIEW_STEP = 6 / 1440;
-
 function syncTonightLocalScrub() {
   const slider = document.querySelector('#tonight-time-scrub');
   const output = document.querySelector('#tonight-time-label');
@@ -877,160 +911,6 @@ function syncTonightLocalScrub() {
 }
 window.addEventListener('sky:time', syncTonightLocalScrub);
 
-function setTonightOverviewObjects(objects, state) {
-  const unique = [];
-  for (const o of objects) {
-    if (o && !unique.some((item) => item.id === o.id)) unique.push(o);
-    if (unique.length === 3) break;
-  }
-  const jd0 = E.julianDay(state.start);
-  const jd1 = E.julianDay(state.end);
-  const tracks = computeNightTracks(unique, jd0, jd1, TONIGHT_OVERVIEW_STEP,
-    state.site.lat, state.site.lon);
-  state.rows = unique.map((o) => ({ o }));
-  state.jd0 = jd0;
-  state.step = TONIGHT_OVERVIEW_STEP;
-  state.count = tracks.count;
-  state.alt = tracks.alt;
-  state.az = tracks.az;
-  if (!state.rows.some((row) => row.o.id === state.selectedId))
-    state.selectedId = state.rows[0]?.o.id || null;
-  return state;
-}
-
-function renderTonightOverviewKeys() {
-  const legend = document.querySelector('#tonightOverviewKeys');
-  const state = tonightOverviewState;
-  if (!legend || !state) return;
-  legend.innerHTML = state.rows.map((row, i) => `<label class="series-key">
-    <input type="checkbox" data-overview-id="${esc(row.o.id)}"
-      aria-label="Show ${esc(row.o.primary_name)} altitude track"
-      ${tonightOverviewVisible.has(row.o.id) ? 'checked' : ''}>
-    <span class="series-swatch series-${i}" aria-hidden="true"></span>
-    ${esc(row.o.messier || row.o.ngcic || row.o.primary_name)}</label>`).join('');
-}
-
-function focusTonightOverviewObject(id) {
-  const state = tonightOverviewState;
-  const o = byId.get(id);
-  if (!state || !o) return;
-  const previous = state.rows.map((row) => row.o).filter((item) => item.id !== id);
-  state.selectedId = id;
-  setTonightOverviewObjects([o, ...previous], state);
-  renderTonightOverviewKeys();
-  drawTonightOverview();
-}
-
-function drawTonightOverview() {
-  const canvas = document.querySelector('#tonightOverviewChart');
-  const state = tonightOverviewState;
-  if (!canvas || !state || !state.count || !state.rows.length || !canvas.clientWidth) return;
-  const dpr = window.devicePixelRatio || 1;
-  const W = canvas.clientWidth, H = canvas.clientHeight || 230;
-  canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr);
-  const ctx = canvas.getContext('2d');
-  const V = vizTheme();
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  ctx.clearRect(0, 0, W, H);
-  ctx.fillStyle = V.canvas; ctx.fillRect(0, 0, W, H);
-  const L = 42, R = 12, T = 18, B = 28;
-  const pw = Math.max(1, W - L - R), ph = Math.max(1, H - T - B);
-  const start = state.start.getTime(), end = state.end.getTime();
-  const span = Math.max(1, end - start);
-  const xAt = (date) => L + (date.getTime() - start) / span * pw;
-  const yAt = (alt) => T + (90 - Math.max(-10, Math.min(90, Number(alt) || 0))) / 100 * ph;
-  const clipX = (x) => Math.max(L, Math.min(W - R, x));
-  for (const altitude of [-10, 0, 30, 60, 90]) {
-    const y = yAt(altitude);
-    ctx.beginPath(); ctx.moveTo(L, y); ctx.lineTo(W - R, y);
-    ctx.strokeStyle = altitude === 0 ? V.gridStrong : V.grid; ctx.lineWidth = 1; ctx.stroke();
-    ctx.fillStyle = V.axis; ctx.font = '10px ui-monospace, monospace';
-    ctx.textAlign = 'right'; ctx.textBaseline = 'middle'; ctx.fillText(`${altitude}°`, L - 7, y);
-  }
-  const minAlt = Hor.effectiveMinAlt();
-  const minY = yAt(minAlt);
-  ctx.save(); ctx.setLineDash(V.guideMinDash); ctx.strokeStyle = V.minStroke;
-  ctx.beginPath(); ctx.moveTo(L, minY); ctx.lineTo(W - R, minY); ctx.stroke(); ctx.restore();
-  ctx.fillStyle = V.minLabel; ctx.textAlign = 'left'; ctx.textBaseline = 'bottom';
-  ctx.font = '10px ui-monospace, monospace'; ctx.fillText(`${minAlt}° min`, L + 4, minY - 3);
-
-  const darkStart = state.darkStart.getTime(), darkEnd = state.darkEnd.getTime();
-  const shade = (from, to) => {
-    const x0 = clipX(xAt(new Date(from))), x1 = clipX(xAt(new Date(to)));
-    if (x1 <= x0) return;
-    ctx.fillStyle = V.twilightShade;
-    ctx.fillRect(x0, T, x1 - x0, ph);
-  };
-  shade(start, Math.min(end, darkStart));
-  shade(Math.max(start, darkEnd), end);
-
-  const selected = Math.max(start, Math.min(end, state.selected.getTime()));
-  const markerX = clipX(L + (selected - start) / span * pw);
-
-  const point = (rowIndex, sampleIndex) => {
-    const flatIndex = rowIndex * state.count + sampleIndex;
-    const alt = state.alt[flatIndex], az = state.az[flatIndex];
-    const date = E.dateFromJD(state.jd0 + sampleIndex * state.step);
-    const time = date.getTime();
-    const inDarkWindow = time >= darkStart && time <= darkEnd;
-    const ceiling = state.pano
-      ? Hor.ceilFor(state.pano, az) : { ceil: Hor.NO_BLOCK, ceilTop: null };
-    const usable = sampleVisible(alt, minAlt, ceiling.ceil, ceiling.ceilTop);
-    const visibility = visibilityReason(alt, minAlt, ceiling.ceil,
-      ceiling.ceilTop, inDarkWindow);
-    return { alt, date, x: clipX(xAt(date)), y: yAt(alt), usable,
-      reason: usable && inDarkWindow ? 'visible' : visibility };
-  };
-  const reasonColor = (reason, base) => {
-    if (reason === 'blocked_by_horizon') return V.bad;
-    if (reason === 'below_minimum_altitude') return V.warn;
-    if (reason === 'below_horizon') return V.below;
-    return base;
-  };
-
-  ctx.save();
-  ctx.beginPath(); ctx.rect(L, T, pw, ph); ctx.clip();
-  const selectedSample = Math.max(0, Math.min(state.count - 1,
-    Math.round((E.julianDay(new Date(selected)) - state.jd0) / state.step)));
-  state.rows.forEach((row, rowIndex) => {
-    if (!tonightOverviewVisible.has(row.o.id)) return;
-    const base = row.o.id === state.selectedId ? V.targetSelected : V.targetSecondary;
-    const points = Array.from({ length: state.count }, (_, i) => point(rowIndex, i));
-    for (let i = 0; i < points.length - 1; i++) {
-      const a = points[i], b = points[i + 1];
-      const reason = [a.reason, b.reason].find((r) => r === 'blocked_by_horizon')
-        || [a.reason, b.reason].find((r) => r === 'below_minimum_altitude')
-        || (a.reason === 'below_horizon' && b.reason === 'below_horizon' ? 'below_horizon' : 'visible');
-      ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y);
-      ctx.strokeStyle = reasonColor(reason, base);
-      ctx.lineWidth = row.o.id === state.selectedId ? 2.2 : 1.6;
-      ctx.stroke();
-    }
-    const selectedPoint = points[selectedSample];
-    ctx.beginPath(); ctx.arc(selectedPoint.x, selectedPoint.y,
-      row.o.id === state.selectedId ? 4 : 3, 0, Math.PI * 2);
-    ctx.fillStyle = base; ctx.fill();
-    ctx.strokeStyle = V.canvas; ctx.lineWidth = 1.2; ctx.stroke();
-  });
-  ctx.restore();
-
-  ctx.save(); ctx.setLineDash([3, 3]); ctx.strokeStyle = V.targetSelected;
-  ctx.beginPath(); ctx.moveTo(markerX, T); ctx.lineTo(markerX, H - B); ctx.stroke(); ctx.restore();
-  ctx.fillStyle = V.targetSelected; ctx.textAlign = markerX > W - R - 54 ? 'right' : 'left';
-  ctx.textBaseline = 'top'; ctx.font = '600 10px ui-monospace, monospace';
-  ctx.fillText(fmtClock(state.selected), markerX + (markerX > W - R - 54 ? -4 : 4), 2);
-  ctx.fillStyle = V.axis; ctx.font = '10px ui-monospace, monospace';
-  ctx.textAlign = 'center'; ctx.textBaseline = 'top';
-  for (let i = 0; i <= 4; i++) {
-    const date = new Date(start + span * i / 4), x = L + pw * i / 4;
-    ctx.fillText(fmtClock(date), x, H - B + 8);
-  }
-  const summary = document.querySelector('#tonightOverviewSummary');
-  if (summary) {
-    const names = state.rows.map((row) => row.o.primary_name).join(', ');
-    summary.textContent = `Apparent altitude tracks for ${names}, sampled every six minutes across the selected ${Hor.getPrefs().viewFullDay ? 'full day' : 'night'} scrub range. Gold identifies the selected target; blue identifies the other displayed targets. Red segments are horizon or ceiling blocked, amber segments are below your minimum altitude, and gray segments are below the horizon. Shaded time is outside dusk to dawn. The dashed vertical line and target markers follow the selected time.`;
-  }
-}
 /* BUG-005: a monotonic marker for "the Tonight view has finished painting the
  * selection I asked for". The browser check used to scrub, wait a nominal
  * 120 ms and read the rows - but the app itself debounces that scrub by 120 ms
@@ -1220,8 +1100,7 @@ function renderTonight(silent) {
     const rows = [];
     for (const o of candidates) {
       const tf = tfOf(o);
-      // one shared scoring loop (web/nightrank.js) - also feeds the catalog
-      // % column via computeObs, so the two views can never disagree again
+      // One shared core scoring loop also feeds Catalog through nightStatsBatch.
       const st = nightStats(o, jd0, jd1, step, minAlt, pano, lat, lon, {
         moonAlt, moonAz, illum, moonAgeDays: moonAge, filterType,
         moonAware, typeF: tf, bortleF,
@@ -1229,7 +1108,7 @@ function renderTonight(silent) {
       const [altNow, azNow] = E.altaz(o.ra_hours * 15, o.dec_deg, jdSel, lat, lon);
       const ceilNow = pano ? Hor.ceilFor(pano, azNow) : { ceil: Hor.NO_BLOCK, ceilTop: null };
       const visNow = sampleVisible(altNow, minAlt, ceilNow.ceil, ceilNow.ceilTop);
-      const selectedInWindow = selTime >= win.startT && selTime <= win.endT;
+      const selectedInWindow = selTime >= win.startT && selTime < win.endT;
       const selectedReason = visibilityReason(
         altNow, minAlt, ceilNow.ceil, ceilNow.ceilTop, selectedInWindow);
       const pop = popularityFactor(o);
@@ -1271,29 +1150,10 @@ function renderTonight(silent) {
     const darkLabel = ({ astronomical: 'astronomical night', nautical: 'nautical night', civil: 'civil night', fallback: 'fixed window (no full darkness)' }[win.level] || 'night');
     const sessionSite = S.site.label ||
       [S.site.lat.toFixed(2), S.site.lon.toFixed(2)].join(', ');
-    const oldOverviewIds = new Set(tonightOverviewState?.rows.map((row) => row.o.id) || []);
-    const oldOverviewVisible = tonightOverviewVisible;
-    const overviewObjects = [];
-    const selectedOverviewObject = S.detailId && byId.get(S.detailId);
-    if (selectedOverviewObject) overviewObjects.push(selectedOverviewObject);
-    for (const row of top) {
-      if (!overviewObjects.some((o) => o.id === row.o.id)) overviewObjects.push(row.o);
-      if (overviewObjects.length >= 3) break;
-    }
-    const overviewRange = scrubRange();
-    tonightOverviewState = setTonightOverviewObjects(overviewObjects, {
-      rows: [], start: overviewRange.start, end: overviewRange.end,
-      darkStart, darkEnd, selected: selTime, selectedId: S.detailId || overviewObjects[0]?.id,
-      site: { lat, lon }, pano,
-    });
-    tonightOverviewVisible = new Set(overviewObjects
-      .filter((o) => !oldOverviewIds.has(o.id) || oldOverviewVisible.has(o.id))
-      .map((o) => o.id));
-
     const rankRows = top.slice(0, 16).map((r, i) => {
       const tags = [r.o.messier, r.o.ngcic].filter(Boolean).join(' · ');
-      const bestEnd = r.bestEnd || r.bestStart + r.bestRun * step;
-      const durationMin = r.bestRun > 0 ? r.bestRun * step * 1440 : 0;
+      const bestEnd = r.bestEnd;
+      const durationMin = bestEnd != null ? Math.max(0, (bestEnd - r.bestStart) * 1440) : 0;
       const duration = durationMin > 0 ? fmtDur(durationMin) : '—';
       const best = r.bestRun > 0
         ? `${fmtClock(E.dateFromJD(r.bestStart))}–${fmtClock(E.dateFromJD(bestEnd))} · ${duration}` : '—';
@@ -1324,28 +1184,13 @@ function renderTonight(silent) {
           <span>Dawn <b>${fmtClock(darkEnd)}</b></span><span>Sunrise <b>${fmtClock(win.info.sunrise)}</b></span>
         </div>
       </section>
-      <section class="tonight-overview" aria-labelledby="tonightOverviewTitle">
-        <header class="panel-heading"><div><h2 id="tonightOverviewTitle">Altitude through the night</h2><p class="sub">Track checkboxes only affect the plot; ranking is unchanged.</p></div>
-          <div class="series-legend" id="tonightOverviewKeys" aria-label="Show or hide target tracks"></div>
-        </header>
-        <canvas id="tonightOverviewChart" role="img" aria-label="Six-minute target altitude tracks with horizon visibility state" aria-describedby="tonightOverviewSummary"></canvas>
-        <div class="tonight-chart-key" role="list" aria-label="Altitude chart key">
-          <span role="listitem"><i class="tonight-key-swatch key-blocked" aria-hidden="true"></i>Horizon or ceiling blocked</span>
-          <span role="listitem"><i class="tonight-key-swatch key-below-min" aria-hidden="true"></i>Below minimum altitude</span>
-          <span role="listitem"><i class="tonight-key-swatch key-below-horizon" aria-hidden="true"></i>Below horizon</span>
-          <span role="listitem"><i class="tonight-key-swatch key-twilight" aria-hidden="true"></i>Twilight</span>
-          <span role="listitem"><i class="tonight-key-swatch key-minimum" aria-hidden="true"></i>Minimum-altitude guide</span>
-          <span role="listitem"><i class="tonight-key-swatch key-selected-time" aria-hidden="true"></i>Selected time</span>
-        </div>
-        <p id="tonightOverviewSummary" class="visually-hidden" role="note">The chart shows apparent altitude tracks, horizon visibility state, the dark window, minimum-altitude guide, and selected-time marker.</p>
         <div class="tonight-local-scrub" role="group" aria-label="Selected time for Tonight">
           <label for="tonight-time-scrub">Selected time <output id="tonight-time-label" class="mono">${fmtClock(selTime)}</output></label>
           <input id="tonight-time-scrub" type="range" min="0" max="1440" step="1" aria-label="Selected time in minutes">
         </div>
-      </section>
       <section class="tonight-ranked" aria-labelledby="tonightRankHeading">
         <header class="panel-heading"><h2 id="tonightRankHeading">Best targets tonight</h2><span class="sub">${top.length} targets with usable dark-window visibility</span></header>
-        <div class="tablewrap"><table id="tonight-rank-table">
+        <div class="tablewrap" tabindex="0" role="region" aria-label="Best targets table; scroll horizontally for all columns"><table id="tonight-rank-table">
           <thead><tr><th>#</th><th>Target</th><th>Relative score</th><th>Max altitude</th><th>Best usable interval</th><th>Visibility reason</th><th>Rises later</th></tr></thead>
           <tbody>${rankRows || '<tr><td colspan="7" class="sub">No targets have a clear window tonight.</td></tr>'}</tbody>
         </table></div>
@@ -1353,7 +1198,7 @@ function renderTonight(silent) {
       <p class="cat-count tonight-footnote">Horizon: ${pano ? esc(pano.name) : 'none'} · Select a target row for its detail panel.</p>`;
     if (token !== tonightToken || S.view !== 'tonight') return; // superseded / view switched
     box.innerHTML = html;
-    renderTonightOverviewKeys();
+    applySelectionHighlight();   // WEB-REV-003: derived from S.detailId
     box.querySelectorAll('#tonight-rank-table tbody tr[data-tonight-id]').forEach((row) => {
       const open = () => openDetail(row.dataset.tonightId, row);
       row.addEventListener('click', open);
@@ -1362,13 +1207,6 @@ function renderTonight(silent) {
         ev.preventDefault(); open();
       });
     });
-    box.querySelector('#tonightOverviewKeys')?.addEventListener('change', (ev) => {
-      const input = ev.target.closest('input[data-overview-id]');
-      if (!input) return;
-      if (input.checked) tonightOverviewVisible.add(input.dataset.overviewId);
-      else tonightOverviewVisible.delete(input.dataset.overviewId);
-      drawTonightOverview();
-    });
     const localScrub = box.querySelector('#tonight-time-scrub');
     localScrub?.addEventListener('input', () => {
       const range = scrubRange();
@@ -1376,13 +1214,6 @@ function renderTonight(silent) {
       announceSkyTime();
     });
     syncTonightLocalScrub();
-    tonightOverviewObserver?.disconnect();
-    const overviewPanel = box.querySelector('.tonight-overview');
-    if (overviewPanel && typeof ResizeObserver === 'function') {
-      tonightOverviewObserver = new ResizeObserver(drawTonightOverview);
-      tonightOverviewObserver.observe(overviewPanel);
-    }
-    drawTonightOverview();
     hideSplash();
     // BUG-005: publish the painted selection so a check (or a user script) can
     // wait for THIS render instead of guessing a delay.
@@ -1394,7 +1225,9 @@ function renderTonight(silent) {
 /* ----------------------------- sky map ----------------------------- */
 
 let skyItems = [];
-let skySelectedTargetId = null;
+// WEB-REV-003: Sky View has NO local selection id. The rail, its highlight and
+// the "Open target details" action all derive from the shared S.detailId, so
+// the chart can never silently re-point the selection at a fallback object.
 // uranometria-style rectangular viewport zoom: the chart is a circle in a
 // square, but zooming opens a RECTANGLE window (1..8x) over the chart —
 // the disc edge can leave the screen, so you see more sky than a circular
@@ -1456,6 +1289,9 @@ function dtoLocalInput(d) {
 }
 
 function renderSky() {
+  const focusedDetail = $('#modal')?.contains(document.activeElement) ? document.activeElement : null;
+  // Keep the shared inspector alive while replacing the Sky workspace.
+  parkDetailModal();
   const box = $('#view');
   const V = vizTheme();
   const magMax = advMode() ? 20 : 14;   // desktop setup.js parity (14; 20 in advanced)
@@ -1478,13 +1314,6 @@ function renderSky() {
       </div>
       </section>
       <aside class="sky-side">
-        <section class="card sky-inspector" aria-label="Selected target and targets visible now">
-          <header class="panel-heading"><h3>Selected target</h3><span id="sky-selected-time" class="mono"></span></header>
-          <div id="sky-selected-target"><p class="sub">Select a target on the chart or from the visible list.</p></div>
-          <canvas id="sky-selected-altitude" width="320" height="110" role="img" aria-label="Selected target altitude across tonight"></canvas>
-          <header class="panel-heading"><h3>Visible now</h3><span id="sky-visible-count" class="sub"></span></header>
-          <div id="sky-visible-now" class="sky-visible-now"></div>
-        </section>
         <details class="card sky-controls-tray">
           <summary>Chart controls and legend</summary>
           <label>Magnitude limit ≤ <output id="sky-mag-val">${S.skyMag.toFixed(1)}</output>
@@ -1503,9 +1332,18 @@ function renderSky() {
           </ul>
           <p class="sub sky-chart-hint">All-sky polar chart: center is zenith, rim is horizon, north is at top. Scroll to zoom, drag to pan, and double-click to reset.</p>
         </details>
+        <div id="sky-detail-host"></div>
+        <section id="sky-detail-empty" class="card" aria-label="Selected target"></section>
+        <section class="card sky-visible-card" aria-label="Targets visible now">
+          <header class="panel-heading"><h3>Visible now</h3><span id="sky-visible-count" class="sub"></span></header>
+          <div id="sky-visible-now" class="sky-visible-now"></div>
+        </section>
       </aside>
     </div>`;
   hideSplash();
+  syncDetailDock();
+  detailGraphRedraw?.();
+  if (focusedDetail?.isConnected) focusedDetail.focus({ preventScroll: true });
 
   const cvs = $('#sky');
   const ctx = cvs.getContext('2d');
@@ -1747,22 +1585,28 @@ function renderSky() {
       if (hit) skyItems.push({ x: hit.x, y: hit.y, id: o.id, label: o.primary_name, o });
     }
 
-    // names, greedily placed so they never sit on top of the dots (same
-    // approach as the desktop: label above-right of the dot, dark halo,
-    // brightest first, skipped when it would overlap an earlier label)
+    // Labels use screen coordinates: zoom moves their dots without enlarging
+    // the text. Try nearby positions, keeping each label inside the viewport.
     if (labelCands.length) {
+      ctx.save();
+      const matrix = skyViewMatrix(SKYV.zoom, W, W, SKYV.fx, SKYV.fy);
+      ctx.setTransform(_dpr, 0, 0, _dpr, 0, 0);
       ctx.font = 'bold 10.5px system-ui, sans-serif';
+      ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
       const placed = [];
       labelCands.sort((a, b) => a.prio - b.prio);
       for (const c of labelCands) {
-        const tx = Math.round(c.x) + 5, ty = Math.round(c.y) - 5;
+        const x = Math.round(matrix.a * c.x + matrix.e);
+        const y = Math.round(matrix.d * c.y + matrix.f);
+        if (x < 0 || x > W || y < 0 || y > W) continue;
         const w = ctx.measureText(c.text).width + 8, h = 14;
-        let ok = true;
-        for (const p of placed) {
-          if (Math.abs(tx + w / 2 - p.x) < (w + p.w) / 2 &&
-              Math.abs(ty - p.y) < h) { ok = false; break; }
-        }
-        if (!ok) continue;
+        const position = [[x + 6, y - 6], [x - w - 6, y - 6],
+          [x + 6, y + h + 3], [x - w - 6, y + h + 3]]
+          .find(([tx, ty]) => tx >= 3 && tx + w <= W - 3 &&
+            ty - h >= 3 && ty <= W - 3 && !placed.some((p) =>
+              Math.abs(tx + w / 2 - p.x) < (w + p.w) / 2 && Math.abs(ty - p.y) < h));
+        if (!position) continue;
+        const [tx, ty] = position;
         placed.push({ x: tx + w / 2, y: ty, w });
         ctx.save();
         ctx.shadowColor = C.targetShadow;
@@ -1771,83 +1615,36 @@ function renderSky() {
         ctx.fillText(c.text, tx, ty);
         ctx.restore();
       }
+      ctx.restore();
     }
 
     // obstruction-free note: horizon line already drawn
     const summary = $('#skyChartSummary');
     if (summary) {
-      const when = S.skyTime.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+      const when = `${dateKey(WS.utcToWall(S.skyTime))} ${fmtClock(S.skyTime)} site time`;
       const targets = skyItems.filter((item) => item.o).length;
       summary.textContent = `All-sky polar chart at ${when}; ${targets} catalog objects are plotted. Center is zenith, rim is horizon, and the selected horizon profile is shown as blocked sky.`;
     }
-    drawSkyInspector(skyItems);
+    drawSkyVisibleTargets(skyItems);
   }
 
-  function drawSkyInspector(items) {
-    const selected = $('#sky-selected-target');
+  function drawSkyVisibleTargets(items) {
     const list = $('#sky-visible-now');
     const count = $('#sky-visible-count');
-    const chart = $('#sky-selected-altitude');
-    if (!selected || !list || !chart) return;
-    const plotted = items.filter((item) => item.o);
-    let target = plotted.find((item) => item.id === skySelectedTargetId)?.o;
-    const visibleRows = plotted.map((item) => ({ o: item.o, state: selectedVisibility(item.o) }))
-      .filter((entry) => entry.state.visible)
+    if (!list) return;
+    const target = S.detailId && byId.get(S.detailId);
+    const visibleRows = items.filter(item => item.o)
+      .map(item => ({ o: item.o, state: selectedVisibility(item.o) }))
+      .filter(entry => entry.state.visible)
       .sort((a, b) => (tonightStatsById.get(b.o.id)?.score || 0) - (tonightStatsById.get(a.o.id)?.score || 0) || b.state.alt - a.state.alt);
-    if (!target) target = visibleRows[0]?.o || plotted[0]?.o || null;
-    skySelectedTargetId = target?.id || null;
-    $('#sky-selected-time').textContent = fmtClock(S.skyTime);
-    if (!target) {
-      selected.innerHTML = '<p class="sub">No catalog targets are plotted at this magnitude limit.</p>';
-      drawSkyAltitude(chart, null, 0);
-    } else {
-      const state = selectedVisibility(target);
-      const night = state.night;
-      const end = night?.bestEnd || (night?.bestStart != null ? night.bestStart + night.bestRun * NIGHT_STEP_MIN / 1440 : null);
-      const best = night?.bestRun > 0
-        ? `${fmtClock(E.dateFromJD(night.bestStart))}–${fmtClock(E.dateFromJD(end))}` : 'No clear window in the scoring span';
-      selected.innerHTML = `<strong>${esc(target.primary_name)}</strong><span class="sub">${esc(TYPE_LABELS[target.otype] || target.otype || 'Target')}</span>
-        <div class="sky-selected-facts"><span>Altitude <b>${state.alt.toFixed(1)}°</b></span><span>Azimuth <b>${E.altaz(target.ra_hours * 15, target.dec_deg, E.julianDay(S.skyTime), S.site.lat, S.site.lon)[1].toFixed(0)}°</b></span>
-        <span>Status <b>${esc(explainVisibility(state.reason, state.night))}</b></span><span>Best window <b>${esc(best)}</b></span></div>
-        <button type="button" class="btn small" id="sky-selected-detail">Open target details</button>`;
-      $('#sky-selected-detail').addEventListener('click', () => openDetail(target.id));
-      const idx = Math.round((S.skyTime.getTime() - nightWindow().startT.getTime()) / (NIGHT_STEP_MIN * 60000));
-      drawSkyAltitude(chart, target, idx);
-    }
+    syncSkyDetailPlaceholder();
     if (count) count.textContent = `${visibleRows.length} targets`;
     list.innerHTML = visibleRows.slice(0, 8).map(({ o, state }, i) => `<button type="button" class="sky-visible-target${o.id === target?.id ? ' selected' : ''}" data-sky-target="${esc(o.id)}">
       <span class="mono">${String(i + 1).padStart(2, '0')}</span><strong>${esc(o.primary_name)}</strong><span class="mono">${state.alt.toFixed(0)}°</span></button>`).join('') || '<p class="sub">No targets are visible at the selected time.</p>';
-    list.querySelectorAll('[data-sky-target]').forEach((button) => button.addEventListener('click', () => {
-      skySelectedTargetId = button.dataset.skyTarget;
+    list.querySelectorAll('[data-sky-target]').forEach(button => button.addEventListener('click', () => {
+      openDetail(button.dataset.skyTarget, button);
       draw();
     }));
-  }
-
-  function drawSkyAltitude(canvas, target, selectedIndex) {
-    const w = canvas.clientWidth || 300, h = canvas.clientHeight || 110, dpr = devicePixelRatio || 1;
-    canvas.width = Math.round(w * dpr); canvas.height = Math.round(h * dpr);
-    const ctx = canvas.getContext('2d'); ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, w, h);
-    const css = getComputedStyle(document.documentElement), token = (k, fallback) => css.getPropertyValue(k).trim() || fallback;
-    const L = 30, R = 7, T = 8, B = 19, pw = w - L - R, ph = h - T - B;
-    const y = (alt) => T + (90 - Math.max(-10, Math.min(90, alt))) / 100 * ph;
-    ctx.font = '9px ui-monospace, monospace'; ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
-    [0, 30, 60, 90].forEach((alt) => { const yy = y(alt); ctx.strokeStyle = token('--line', '#3B494B'); ctx.beginPath(); ctx.moveTo(L, yy); ctx.lineTo(w - R, yy); ctx.stroke(); ctx.fillStyle = token('--muted', '#A9B7B4'); ctx.fillText(`${alt}°`, L - 4, yy); });
-    if (!target) return;
-    const range = cachedNightWindow(), start = range.startT.getTime(), end = range.endT.getTime();
-    const steps = 48, x = (i) => L + i / steps * pw;
-    ctx.setLineDash([4, 3]); ctx.strokeStyle = token('--warning', '#C28B36'); ctx.beginPath(); ctx.moveTo(L, y(Hor.effectiveMinAlt())); ctx.lineTo(w - R, y(Hor.effectiveMinAlt())); ctx.stroke(); ctx.setLineDash([]);
-    ctx.beginPath();
-    for (let i = 0; i <= steps; i++) {
-      const date = new Date(start + (end - start) * i / steps);
-      const [alt] = E.altaz(target.ra_hours * 15, target.dec_deg, E.julianDay(date), S.site.lat, S.site.lon);
-      i ? ctx.lineTo(x(i), y(alt)) : ctx.moveTo(x(i), y(alt));
-    }
-    ctx.strokeStyle = token('--accent', '#6B9E93'); ctx.lineWidth = 1.8; ctx.stroke();
-    const selX = L + Math.max(0, Math.min(1, (S.skyTime.getTime() - start) / Math.max(1, end - start))) * pw;
-    ctx.strokeStyle = token('--text', '#E6ECEA'); ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(selX, T); ctx.lineTo(selX, T + ph); ctx.stroke();
-    ctx.fillStyle = token('--muted', '#A9B7B4'); ctx.textAlign = 'center'; ctx.textBaseline = 'top';
-    ctx.fillText(fmtClock(range.startT), L, T + ph + 4); ctx.fillText(fmtClock(range.endT), w - R, T + ph + 4);
-    void selectedIndex;
   }
 
   function posEl(ev) {
@@ -1889,7 +1686,7 @@ function renderSky() {
       if (d < bestD) { bestD = d; best = it; }
     }
     if (best && bestD < 140) {
-      skySelectedTargetId = best.id;
+      selectTarget(best.id);   // WEB-REV-003: same authoritative identity
       draw();
       openDetail(best.id, cvs);
     }
@@ -2053,7 +1850,7 @@ function minVis() {
 }
 let hiddenNotVisible = 0;      // rows the list dropped for being below the threshold
 
-function filteredCatalog() {
+function filteredCatalog(pctG) {
   const f = S.cat;
   const q = f.q.trim().toLowerCase();
   const saved = new Set(savedTargetIds());
@@ -2066,15 +1863,14 @@ function filteredCatalog() {
     const frame = rigFramePct(o);
     return frame != null && frame <= 100;
   });
+  if (q) out = out.filter((o) => blobOf(o).includes(q));
   if (f.visibility !== 'all') out = out.filter((o) => {
     const v = selectedVisibility(o);
     if (f.visibility === 'now') return v.visible;
     if (f.visibility === 'later') return !v.visible && v.risesLater;
     return !v.visible && !v.risesLater;
   });
-  if (q) out = out.filter((o) => blobOf(o).includes(q));
   const col = f.sort;
-  const pctG = obsNightGrid();
   out = [...out].sort((a, b) => {
     let v = 0;
     if (col === 'name') v = a.primary_name.localeCompare(b.primary_name);
@@ -2117,7 +1913,8 @@ function filteredCatalog() {
 
 function renderCatalog() {
   const box = $('#view');
-  const list = filteredCatalog();
+  const g = obsNightGrid();
+  const list = filteredCatalog(g);
   const perPage = 20;
   const pages = Math.max(1, Math.ceil(list.length / perPage));
   if (S.cat.page >= pages) S.cat.page = 0;
@@ -2148,7 +1945,7 @@ function renderCatalog() {
       </select>
       <div class="chips" role="group" aria-label="Object category">${Object.keys(CHIP_FILTERS).map((c) => `<button class="chip${S.cat.chip === c ? ' on' : ''}" data-c="${c}">${CHIP_LABELS[c]}</button>`).join('')}</div>
       <label class="cat-type-label" for="cat-type">Object types <small>Choose one or more</small></label>
-      <select id="cat-type" multiple size="4" aria-label="Filter by object type">${objectTypes.map((type) => `<option value="${esc(type)}"${S.cat.types.includes(type) ? ' selected' : ''}>${esc(TYPE_LABELS[type] || type)}</option>`).join('')}</select>
+      <select id="cat-type" multiple size="${Math.max(2, objectTypes.length)}" aria-label="Filter by object type">${objectTypes.map((type) => `<option value="${esc(type)}"${S.cat.types.includes(type) ? ' selected' : ''}>${esc(TYPE_LABELS[type] || type)}</option>`).join('')}</select>
       <fieldset class="cat-visibility"><legend>Visibility at selected time</legend>
         ${[['all','All'],['now','Visible now'],['later','Rises later'],['none','Not visible']].map(([value,label]) => `<label><input type="radio" name="cat-visibility" value="${value}"${S.cat.visibility === value ? ' checked' : ''}> ${label}</label>`).join('')}
       </fieldset>
@@ -2160,7 +1957,7 @@ function renderCatalog() {
         <label><input id="cat-saved" type="checkbox"${S.cat.savedOnly ? ' checked' : ''}> Saved targets</label>
         <label><input id="cat-rig" type="checkbox"${S.cat.fitsRig ? ' checked' : ''}> Fits active rig</label>
         <select id="cat-sort" aria-label="Sort catalog">
-          ${[['tier','Popularity'],['pct','Visible night %'],['mag','Magnitude'],['maxalt','Maximum altitude'],['name','Name']].map(([key,label]) => `<option value="${key}"${S.cat.sort === key ? ' selected' : ''}>Sort: ${label}</option>`).join('')}
+          ${[['name','Name'],['pct','Visible night %'],['mag','Magnitude'],['maxalt','Maximum altitude']].map(([key,label]) => `<option value="${key}"${S.cat.sort === key ? ' selected' : ''}>Sort: ${label}</option>`).join('')}
         </select>
         <button class="btn small" id="cat-export-provenance" type="button" title="Download catalog source, aliases and designation history">Download provenance</button>
       </div></details>
@@ -2184,7 +1981,7 @@ function renderCatalog() {
             const fOwn = filterAdviceBadge(o);
             const current = selectedVisibility(o);
             const night = current.night;
-            const bestEnd = night?.bestEnd || (night?.bestStart != null ? night.bestStart + night.bestRun * NIGHT_STEP_MIN / 1440 : null);
+            const bestEnd = night?.bestEnd;
             const best = night?.bestRun > 0 ? `${fmtClock(E.dateFromJD(night.bestStart))}–${fmtClock(E.dateFromJD(bestEnd))}` : '—';
             const status = current.visible ? 'Visible now' : current.risesLater ? 'Rises later' : 'Not visible';
             return `<tr data-id="${esc(o.id)}" tabindex="0" role="button" aria-label="Open details for ${esc(o.primary_name)}">
@@ -2194,7 +1991,7 @@ function renderCatalog() {
               <td class="type-cell" title="${esc(TYPE_LABELS[o.otype] || o.otype || '')}"><span class="tag-dot" style="color:${typeColor(o)}">●</span> ${esc(TYPE_LABELS[o.otype] || o.otype || '')}</td>
               <td class="num">${o.vmag != null ? o.vmag.toFixed(1) : '—'}</td>
               <td class="num mono">${current.alt.toFixed(0)}°</td>
-              <td class="num pct" data-objid="${escAttr(o.id)}">${cachedPctText(o.id)}</td>
+              <td class="num pct" data-objid="${escAttr(o.id)}">${cachedPctText(o.id, g)}</td>
               <td class="mono" title="${esc(best)}">${esc(best)}</td><td title="${esc(current.reason || '')}">${esc(status)}</td>
             </tr>`;
           }).join('')}
@@ -2210,6 +2007,7 @@ function renderCatalog() {
     </section>
     </div>`;
   hideSplash();
+  applySelectionHighlight();   // WEB-REV-003: derived from S.detailId
 
   $('#cat-q').addEventListener('input', (ev) => {
     S.cat.q = ev.target.value;
@@ -2251,7 +2049,7 @@ function renderCatalog() {
   $('#cat-sort').addEventListener('change', (ev) => { S.cat.sort = ev.target.value; S.cat.up = ev.target.value === 'pct' ? false : true; S.cat.page = 0; renderCatalog(); });
   $('#cat-clear-filters').addEventListener('click', () => {
     S.cat = { ...S.cat, q: '', chip: 'all', con: '', types: [], visibility: 'all',
-      savedOnly: false, clearOnly: false, fitsRig: false, sort: 'tier', up: true, page: 0 };
+      savedOnly: false, clearOnly: false, fitsRig: false, sort: 'name', up: true, page: 0 };
     Hor.setPrefs({ minVis: 0 });
     renderCatalog();
   });
@@ -2287,15 +2085,80 @@ function renderCatalog() {
     if (inp) { inp.focus(); if (qCaret != null) inp.setSelectionRange(qCaret, qCaret); }
   }
   if (mvHadFocus) { const el = $('#cat-minvis'); if (el) el.focus(); }
-  fillPctCells(slice);
+  fillPctCells(slice, g);
   // Warm whenever the list is gated or sorted by visibility - and never while
   // searching, because the gate is off then anyway.
-  if (!S.cat.q.trim() && (S.cat.sort === 'pct' || minVis() > 0)) warmPct(list);
+  if (!S.cat.q.trim() && (S.cat.sort === 'pct' || minVis() > 0)) warmPct(list, g);
+  else cancelCatalogWarm();
 }
 
-function downloadCatalogProvenance() {
-  const payload = CAT_PROV && typeof CAT_PROV === 'object'
-    ? CAT_PROV : { schema_version: 1, objects: {} };
+async function loadCatalogProvenance() {
+  if (CAT_PROV) return CAT_PROV;
+  if (catalogProvenanceRequest) return catalogProvenanceRequest;
+  catalogProvenanceRequest = (async () => {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 30000);
+    try {
+      const response = await fetch('catalog-provenance.json?v=' + CATALOG_PROVENANCE_TOKEN, { signal: controller.signal });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const candidate = await response.json();
+      const objects = candidate?.objects;
+      const standard = CAT.filter((o) => !o.custom);
+      if (candidate?.schema_version !== 1 || !objects || Array.isArray(objects) ||
+          candidate.catalog?.row_count !== standard.length ||
+          Object.keys(objects).length !== standard.length ||
+          standard.some((o) => {
+            const p = objects[o.id];
+            return !p || Array.isArray(p) || typeof p.source !== 'string' || !p.source.trim() ||
+              ['source_version', 'source_file'].some((key) => p[key] != null && typeof p[key] !== 'string') ||
+              (p.aliases != null && (!Array.isArray(p.aliases) || p.aliases.some((x) => typeof x !== 'string'))) ||
+              (p.designation_history != null && (!Array.isArray(p.designation_history) ||
+                p.designation_history.some((x) => !x || typeof x.designation !== 'string')));
+          })) {
+        throw new Error('Source data does not match this catalog.');
+      }
+      CAT_PROV = candidate;
+      return candidate;
+    } finally {
+      clearTimeout(timer);
+    }
+  })();
+  try { return await catalogProvenanceRequest; }
+  finally { catalogProvenanceRequest = null; }
+}
+
+function catalogSourceHTML(o) {
+  const p = CAT_PROV?.objects?.[o.id];
+  if (!p) return `<dt>Catalog source</dt><dd>${o.custom ? 'Custom target saved in this browser' : 'Expand details to load source information'}</dd>`;
+  return `<dt>Catalog source</dt><dd title="${esc(p.source_version || 'unknown')}">${esc(p.source)} · ${esc(p.source_file || '')}</dd>
+    <dt>Aliases</dt><dd>${p.aliases?.length ? esc(p.aliases.join(' · ')) : '—'}</dd>
+    <dt>Designation history</dt><dd>${p.designation_history?.length ? esc(p.designation_history.map((x) => x.designation).join(' → ')) : '—'}</dd>`;
+}
+
+async function showCatalogSource(o, container) {
+  if (o.custom || CAT_PROV) { container.innerHTML = catalogSourceHTML(o); return; }
+  container.innerHTML = '<dt>Catalog source</dt><dd role="status">Loading source information…</dd>';
+  try {
+    await loadCatalogProvenance();
+    if (container.isConnected && S.detailId === o.id) container.innerHTML = catalogSourceHTML(o);
+  } catch {
+    if (!container.isConnected || S.detailId !== o.id) return;
+    container.innerHTML = '<dt>Catalog source</dt><dd><span role="status">Source information could not be loaded. Planning is available.</span> <button class="btn small" type="button">Retry source information</button></dd>';
+    container.querySelector('button').addEventListener('click', () => showCatalogSource(o, container));
+  }
+}
+
+async function downloadCatalogProvenance(ev) {
+  const button = ev?.currentTarget;
+  if (button) { button.disabled = true; button.textContent = 'Loading sources…'; }
+  let payload;
+  try {
+    payload = await loadCatalogProvenance();
+  } catch {
+    announceStatus('Source information could not be loaded. Try Download provenance again.');
+    if (button?.isConnected) { button.disabled = false; button.textContent = 'Retry provenance download'; }
+    return;
+  }
   const blob = new Blob([JSON.stringify(payload, null, 2) + '\n'],
                         { type: 'application/json' });
   const url = URL.createObjectURL(blob);
@@ -2306,6 +2169,7 @@ function downloadCatalogProvenance() {
   a.click();
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 0);
+  if (button?.isConnected) { button.disabled = false; button.textContent = 'Download provenance'; }
 }
 
 /** Compute visibility for every row of the current filter (background chunks),
@@ -2315,62 +2179,84 @@ function downloadCatalogProvenance() {
  *  instead of one per object, with the 14 ms budget still checked between chunks,
  *  so even advanced mode's 12k rows stay responsive (and finish in a few seconds
  *  rather than tens). */
-function warmPct(list) {
-  const g = obsNightGrid();
-  const epoch = obsEpoch;
-  if (!(g.jd1 > g.jd0) || !list.length) return;
-  const missing = list.filter((o) => !obsCache.has(obsKey(g, o.id)));
+let catalogWarm = null;
+let catalogPageGeneration = 0;
+
+function cancelCatalogWarm() {
+  if (!catalogWarm) return;
+  clearTimeout(catalogWarm.timer);
+  catalogWarm = null;
+  busy(false);
   const status = document.querySelector('#pct-status');
-  const total = missing.length;
-  if (!total) return;
-  const CHUNK = 250;
-  busy(true, 'computing visibility…');
-  let i = 0;
-  const tick = () => {
-    if (epoch !== obsEpoch) return;
-    const t0 = performance.now();
-    while (i < missing.length && performance.now() - t0 < 14) {
-      const chunk = missing.slice(i, i + CHUNK);
-      const stats = nightStatsBatch(chunk, g.jd0, g.jd1, g.step, g.minAlt,
-                                    g.pano, g.lat, g.lon);
-      chunk.forEach((o, k) => obsCache.set(obsKey(g, o.id),
-        { pct: stats[k].pct, blk: stats[k].blockedPct }));
-      i += chunk.length;
+  if (status) status.textContent = '';
+}
+
+function warmPct(list, g) {
+  if (!(g.jd1 > g.jd0) || !list.length) return;
+  const prefix = obsKey(g, '');
+  if (catalogWarm && (catalogWarm.epoch !== obsEpoch || catalogWarm.prefix !== prefix)) cancelCatalogWarm();
+  const job = catalogWarm || { epoch: obsEpoch, prefix, pending: [], queued: new Set(), i: 0, timer: null };
+  for (const o of list) {
+    if (!obsCache.has(obsKey(g, o.id)) && !job.queued.has(o.id)) {
+      job.pending.push(o);
+      job.queued.add(o.id);
     }
-    if (status) status.textContent = `computing visibility… ${Math.round(100 * i / total)}%`;
-    if (i < missing.length) setTimeout(tick, 0);
+  }
+  if (!job.pending.length || catalogWarm) return;
+  catalogWarm = job;
+  busy(true, 'computing visibility…');
+  const tick = () => {
+    if (catalogWarm !== job) return;
+    if (job.epoch !== obsEpoch || S.view !== 'catalog') { cancelCatalogWarm(); return; }
+    const t0 = performance.now();
+    while (job.i < job.pending.length && performance.now() - t0 < 12) {
+      // Small shared-core batches bound work between yields on slower CPUs.
+      // Page fills may already have computed some queued objects.
+      const chunk = job.pending.slice(job.i, job.i + 32)
+        .filter((o) => !obsCache.has(obsKey(g, o.id)));
+      if (chunk.length) {
+        const stats = nightStatsBatch(chunk, g.jd0, g.jd1, g.step, g.minAlt,
+                                      g.pano, g.lat, g.lon);
+        chunk.forEach((o, k) => obsCache.set(obsKey(g, o.id),
+          { pct: stats[k].pct, blk: stats[k].blockedPct }));
+      }
+      job.i = Math.min(job.i + 32, job.pending.length);
+    }
+    const status = document.querySelector('#pct-status');
+    if (status) status.textContent = `computing visibility… ${Math.round(100 * job.i / job.pending.length)}%`;
+    if (job.i < job.pending.length) job.timer = setTimeout(tick, 0);
     else {
-      if (status) status.textContent = '';
-      busy(false);
+      cancelCatalogWarm();
       // only repaint if the catalog is still the visible view - otherwise this
       // stale chunk overwrote whatever the user had switched to
       if (S.view === 'catalog') renderCatalog();
     }
   };
-  tick();
+  // Return the first table to the browser before doing full-pool astronomy.
+  job.timer = setTimeout(tick, 0);
 }
 
 /** Lazily compute and fill the "% tonight" column for the current page. */
-function fillPctCells(objs) {
-  const g = obsNightGrid();
+function fillPctCells(objs, g) {
   const epoch = obsEpoch;
+  const generation = ++catalogPageGeneration;
   if (!(g.jd1 > g.jd0) || !objs.length) return;
-  let i = 0;
   const tick = () => {
-    if (epoch !== obsEpoch) return;
-    const t0 = performance.now();
-    while (i < objs.length && performance.now() - t0 < 14) {
-      const o = objs[i];
+    if (epoch !== obsEpoch || generation !== catalogPageGeneration || S.view !== 'catalog') return;
+    const missing = objs.filter((o) => !obsCache.has(obsKey(g, o.id)));
+    if (missing.length) {
+      const stats = nightStatsBatch(missing, g.jd0, g.jd1, g.step, g.minAlt, g.pano, g.lat, g.lon);
+      missing.forEach((o, k) => obsCache.set(obsKey(g, o.id),
+        { pct: stats[k].pct, blk: stats[k].blockedPct }));
+    }
+    for (const o of objs) {
       const key = obsKey(g, o.id);
-      let v = obsCache.get(key);
-      if (!v) { v = computeObs(o, g.jd0, g.jd1, g.step, g.minAlt, g.pano, g.lat, g.lon); obsCache.set(key, v); }
+      const v = obsCache.get(key);
       const cell = document.querySelector(`#view td[data-objid="${escAttr(o.id)}"]`);
       if (cell) cell.textContent = `${v.pct}%`;
-      i++;
     }
-    if (i < objs.length) setTimeout(tick, 0);
   };
-  tick();
+  setTimeout(tick, 0);
 }
 
 /* ------------------------------ detail ----------------------------- */
@@ -2381,11 +2267,169 @@ let detailGraphRedraw = null;
 let detailDockScrollListener = null;
 let detailDockScrollFrame = null;
 
+// Layout rectangles alone do not establish focusability: Chromium can report
+// them for links inside closed disclosures. Use the same rule for traps/restore.
+function reachableControl(el) {
+  if (!el?.isConnected || el.closest('[hidden], [inert], .hidden, .vhidden') ||
+      el.matches(':disabled') || !el.getClientRects().length) return false;
+  const style = getComputedStyle(el);
+  if (style.visibility === 'hidden' || style.visibility === 'collapse') return false;
+  for (let parent = el.parentElement; parent; parent = parent.parentElement) {
+    if (parent.matches('details:not([open])')) {
+      const summary = parent.querySelector(':scope > summary');
+      if (!summary?.contains(el)) return false;
+    }
+  }
+  return true;
+}
+
+function dialogStops(dialog) {
+  return [...dialog.querySelectorAll('a[href], button, input:not([type="hidden"]), select, textarea, summary, [tabindex]')]
+    .filter((el) => el.tabIndex >= 0 && reachableControl(el));
+}
+
+function restoreControlFocus(opener) {
+  const target = reachableControl(opener) ? opener : $(`#tab-${S.view}`);
+  target?.focus({ preventScroll: true });
+}
+
+function syncDialogBackground() {
+  const modal = $('#modal');
+  const active = !modal.hidden && !!modal.querySelector('[role="dialog"][aria-modal="true"]');
+  document.querySelectorAll('.topbar, #tabs, #view, .foot').forEach((el) => { el.inert = active; });
+  if (active && !modal.contains(document.activeElement)) {
+    modal.querySelector('.modal h2[tabindex], .modal .close')?.focus({ preventScroll: true });
+  }
+}
+
+function installDialogKeyboard() {
+  // Installed before the first-run welcome, so it follows the same contract.
+  document.addEventListener('keydown', (ev) => {
+    const dialog = $('#modal:not([hidden]) [role="dialog"][aria-modal="true"]');
+    if (!dialog || ev.key !== 'Tab') return;
+    const stops = dialogStops(dialog);
+    if (!stops.length) { ev.preventDefault(); dialog.focus(); return; }
+    const first = stops[0], last = stops.at(-1), cur = document.activeElement;
+    if (ev.shiftKey && (cur === first || !stops.includes(cur))) {
+      ev.preventDefault(); last.focus();
+    } else if (!ev.shiftKey && (cur === last || !stops.includes(cur))) {
+      ev.preventDefault(); first.focus();
+    }
+  });
+  document.addEventListener('keydown', (ev) => {
+    if (ev.key !== 'Escape') return;
+    const modal = $('#modal:not([hidden])');
+    const close = modal?.querySelector('.modal .close, #w-skip');
+    if (!close) return;
+    ev.preventDefault(); ev.stopPropagation(); close.click();
+  });
+}
+
+function announceStatus(message) {
+  const status = $('#plannerStatus');
+  if (status) status.textContent = message;
+}
+
+function setPopoverOpen(button, panel, open, restoreFocus = false) {
+  if (open) {
+    for (const [bid, pid] of [['btnMenu', 'menuPanel'], ['btnWeather', 'weatherPanel']]) {
+      if (pid !== panel.id) setPopoverOpen($('#' + bid), $('#' + pid), false);
+    }
+  }
+  panel.classList.toggle('hidden', !open);
+  button.setAttribute('aria-expanded', String(open));
+  if (!open && restoreFocus) button.focus({ preventScroll: true });
+}
+
+function wirePopover(button, panel, onOpen = () => {}) {
+  button.addEventListener('click', () => {
+    const open = panel.classList.contains('hidden');
+    setPopoverOpen(button, panel, open);
+    if (open) onOpen();
+  });
+  document.addEventListener('click', (ev) => {
+    if (!panel.contains(ev.target) && !button.contains(ev.target)) setPopoverOpen(button, panel, false);
+  });
+  document.addEventListener('keydown', (ev) => {
+    if (ev.key !== 'Escape' || panel.classList.contains('hidden')) return;
+    ev.preventDefault(); setPopoverOpen(button, panel, false, true);
+  });
+  panel.parentElement.addEventListener('focusout', () => {
+    setTimeout(() => {
+      if (!panel.contains(document.activeElement) && document.activeElement !== button) {
+        setPopoverOpen(button, panel, false);
+      }
+    });
+  });
+}
+
+/* ---- WEB-REV-003 selection/inspector state contract ----------------------
+ * `S.detailId` is the ONE authoritative selected-target identity shared by
+ * Tonight, Catalog and Sky View; `S.detailOpen` is the ONLY evidence that the
+ * inspector is showing. Ownership:
+ *   - selectTarget() / clearSelection() are the only writers of `S.detailId`;
+ *   - openDetail() / closeDetail() are the only writers of `S.detailOpen`;
+ *   - every highlight (ranked rows, catalog rows, Sky rail, Tonight overview)
+ *     is derived from `S.detailId` via applySelectionHighlight()/draws.
+ * A filtered-out target stays selected (filters never write selection); a
+ * target that left the authoritative catalog (byId) is dropped everywhere and
+ * its inspector closes. */
+function applySelectionHighlight() {
+  const id = S.detailId;
+  document.querySelectorAll("#tonight-rank-table tr, .cat-results table tr")
+    .forEach((row) => row.classList.toggle("selected",
+      !!id && (row.dataset.tonightId === id || row.dataset.id === id)));
+}
+
+function selectTarget(id) {
+  const next = id && byId.has(id) ? id : null;
+  if (S.detailId !== next) S.detailId = next;
+  applySelectionHighlight();
+  return S.detailId;
+}
+
+/** The selected object was deleted or left the catalog: the identity is
+ *  invalid, so it AND its inspector go together (never a headless stale id). */
+function clearSelection() {
+  S.detailId = null;
+  if (S.detailOpen) closeDetail();
+  applySelectionHighlight();
+}
+
+/** Invalid selections are cleared; FILTERED-OUT targets are not - they remain
+ *  selected with truthful facts until they genuinely disappear from byId. */
+function dropSelectionIfGone() {
+  if (S.detailId && !byId.has(S.detailId)) clearSelection();
+}
+
 function targetDetailDocked() {
-  return S.view !== 'horizon' && window.innerWidth >= 1100;
+  return S.view !== 'sky' && S.view !== 'horizon' && window.innerWidth >= 1100;
+}
+
+function parkDetailModal() {
+  const modal = $('#modal');
+  if (modal && modal.parentElement !== document.body) document.body.append(modal);
+}
+
+function syncSkyDetailPlaceholder() {
+  const empty = $('#sky-detail-empty');
+  if (!empty) return;
+  empty.hidden = S.detailOpen;
+  const target = S.detailId && byId.get(S.detailId);
+  const unplotted = target && !skyItems.some(item => item.id === target.id);
+  const note = 'Not plotted on the chart at the selected time or magnitude limit.';
+  const plotNote = $('#m-plot-note');
+  if (plotNote) { plotNote.hidden = !unplotted; plotNote.textContent = unplotted ? note : ''; }
+  if (S.detailOpen) return;
+  empty.innerHTML = target
+    ? `<button type="button" class="btn small" id="sky-selected-detail">Open ${esc(target.primary_name)} details</button>${unplotted ? `<p class="sub">${note}</p>` : ''}`
+    : '<p class="sub">Select a target on the chart or from the visible list.</p>';
+  $('#sky-selected-detail')?.addEventListener('click', ev => openDetail(target.id, ev.currentTarget));
 }
 
 function updateDetailSelectedTime() {
+  // WEB-REV-003: `S.detailId` alone is no longer evidence of an open inspector.
+  if (!S.detailOpen) return;
   const o = S.detailId && byId.get(S.detailId);
   const position = $('#m-selected-position');
   const moon = $('#m-selected-separation');
@@ -2399,7 +2443,7 @@ function updateDetailSelectedTime() {
   const pano = Hor.activePano();
   const ceiling = pano ? Hor.ceilFor(pano, az) : { ceil: Hor.NO_BLOCK, ceilTop: null };
   const win = nightWindow();
-  const inNight = S.skyTime >= win.startT && S.skyTime <= win.endT;
+  const inNight = S.skyTime >= win.startT && S.skyTime < win.endT;
   const reason = visibilityReason(alt, Hor.effectiveMinAlt(), ceiling.ceil,
     ceiling.ceilTop, inNight);
   const reasonText = reason === 'visible' ? 'visible above minimum altitude' :
@@ -2413,7 +2457,7 @@ function updateDetailSelectedTime() {
 
 function updateDetailDockTop() {
   const modal = $('#modal');
-  if (!S.detailId || modal?.hidden || !modal?.classList.contains('detail-docked')) return;
+  if (!S.detailOpen || modal?.hidden || !modal?.classList.contains('detail-docked')) return;
   const visibleBottom = (el) => {
     if (!el || !el.getClientRects().length) return 0;
     const rect = el.getBoundingClientRect();
@@ -2447,19 +2491,27 @@ function startDetailDockScrollTracking() {
 }
 
 function syncDetailDock() {
-  if (!S.detailId) return;
+  if (!S.detailOpen) return;
   const modal = $('#modal');
+  const host = S.view === 'sky' && $('#sky-detail-host');
+  const inline = !!host;
+  if (inline) {
+    if (modal.parentElement !== host) host.append(modal);
+  } else parkDetailModal();
   const docked = targetDetailDocked();
+  modal.classList.toggle('detail-inline', inline);
   modal.classList.toggle('detail-docked', docked);
   document.body.classList.toggle('detail-open', docked);
   const panel = modal.querySelector('.modal');
   if (panel) {
-    panel.setAttribute('role', docked ? 'complementary' : 'dialog');
+    panel.setAttribute('role', docked || inline ? 'complementary' : 'dialog');
     panel.setAttribute('aria-labelledby', 'm-title');
-    if (docked) panel.removeAttribute('aria-modal');
+    if (docked || inline) panel.removeAttribute('aria-modal');
     else panel.setAttribute('aria-modal', 'true');
   }
-  modal.onclick = (ev) => { if (!docked && ev.target === modal) closeDetail(); };
+  syncDialogBackground();
+  syncSkyDetailPlaceholder();
+  modal.onclick = (ev) => { if (!docked && !inline && ev.target === modal) closeDetail(); };
   modal.onkeydown = (ev) => {
     if (ev.key !== 'Escape') return;
     ev.preventDefault();
@@ -2476,9 +2528,11 @@ function syncDetailDock() {
 }
 
 function refreshOpenDetail() {
+  // WEB-REV-003: only an OPEN inspector refreshes in place - a closed one stays
+  // closed through every rerender and time change.
+  if (!S.detailOpen) return;
   const id = S.detailId;
-  if (!id) return;
-  if (!byId.has(id)) { closeDetail(); return; }
+  if (!id || !byId.has(id)) { clearSelection(); return; }
   openDetail(id, null, { refresh: true });
 }
 
@@ -2487,15 +2541,15 @@ function openDetail(id, opener = null, { refresh = false } = {}) {
   if (!o) return;
   if (!refresh) detailReturnFocus = opener || document.activeElement;
   const modal = $('#modal');
+  const keepCatalogDetailsOpen = refresh && !!modal.querySelector('details.catalog-details')?.open;
   const focusedDetailId = refresh && modal.contains(document.activeElement)
     ? document.activeElement.id : null;
   const preserveImage = refresh && S.detailId === id ? $('#objimg-wrap') : null;
+  const preserveCredit = preserveImage ? $('#d-imagecredit') : null;
   const generation = ++detailGeneration;
-  S.detailId = id;
-  document.querySelectorAll("#tonight-rank-table tr, .cat-results table tr")
-    .forEach((row) => row.classList.toggle("selected", row.dataset.tonightId === id || row.dataset.id === id));
-  if (!refresh && S.view === 'tonight') focusTonightOverviewObject(id);
-  const provenance = CAT_PROV?.objects?.[o.id];
+  // WEB-REV-003: opening the inspector selects the target through the ONE
+  // identity writer (replacing any previous selection everywhere).
+  selectTarget(id);
   const pano = Hor.activePano();
   const { lat, lon } = S.site;
   const info = E.nightInfo(nightAnchor(), lat, lon, siteNoon(nightAnchor()));
@@ -2538,10 +2592,11 @@ function openDetail(id, opener = null, { refresh = false } = {}) {
         <button class="close" id="m-close" title="close" aria-label="Close">✕</button>
       </div>
       <span class="tags">${tags}</span>
+      <p id="m-plot-note" class="sub" hidden></p>
       <section class="detail-hero" aria-label="Target overview">
         <div id="objimg-wrap">
-          <img class="objimg" id="d-img" src="img/${encodeURIComponent(id)}.jpg" alt="">
-          <div class="objimg-ph" id="d-imgph" style="display:none"></div>
+          <img class="objimg" id="d-img" alt="" style="display:none">
+          <div class="objimg-ph" id="d-imgph" style="display:flex">loading Wikipedia photo…</div>
         </div>
         <div class="detail-hero-copy">
           <dl class="detail-hero-facts">
@@ -2590,18 +2645,25 @@ function openDetail(id, opener = null, { refresh = false } = {}) {
           <dt>Rise / set</dt><dd>${fmtClock(dayInfo.rise)} · ${fmtClock(dayInfo.set)}</dd>
           <dt>Visibility at selected time</dt><dd id="m-selected-visibility">—</dd>
           <dt>Moon separation at selected time</dt><dd id="m-selected-separation">—</dd>
-          ${provenance ? `<dt>Catalog source</dt><dd title="${esc(provenance.source_version || 'unknown')}">${esc(provenance.source || 'unknown')} · ${esc(provenance.source_file || '')}</dd>
-          <dt>Aliases</dt><dd>${provenance.aliases?.length ? esc(provenance.aliases.join(' · ')) : '—'}</dd>
-          <dt>Designation history</dt><dd>${provenance.designation_history?.length ? esc(provenance.designation_history.map((x) => x.designation).join(' → ')) : '—'}</dd>` : '<dt>Catalog source</dt><dd>not available</dd>'}
           ${sepPeak != null ? moonRow('Moon dist @ culmination', sepPeak) : ''}
         </dl>
+        <dl class="meta" id="d-catalog-source">${catalogSourceHTML(o)}</dl>
         ${o.blurb ? `<p class="blurb">${esc(o.blurb)}</p>` : ''}
         <p class="blurb"><a class="wiki" id="d-wikilink" href="https://en.wikipedia.org/wiki/${encodeURIComponent(wiki.replace(/ /g, '_'))}" target="_blank" rel="noopener">Wikipedia ↗</a></p>
+        <p class="blurb" id="d-imagecredit" hidden></p>
         ${o.custom ? '<button class="btn small" id="m-del" style="margin-top:10px" title="remove this custom target">Delete custom target</button>' : ''}
       </details>
     </div>`;
   if (preserveImage) modal.querySelector('#objimg-wrap')?.replaceWith(preserveImage);
+  if (preserveCredit) modal.querySelector('#d-imagecredit')?.replaceWith(preserveCredit);
   modal.hidden = false;
+  S.detailOpen = true;   // WEB-REV-003: explicit inspector visibility
+  const catalogDetails = modal.querySelector('details.catalog-details');
+  const sourceContainer = modal.querySelector('#d-catalog-source');
+  catalogDetails.addEventListener('toggle', () => {
+    if (catalogDetails.open) showCatalogSource(o, sourceContainer);
+  });
+  catalogDetails.open = keepCatalogDetailsOpen;
   syncDetailDock();
   updateDetailSelectedTime();
   if (refresh && focusedDetailId) {
@@ -2626,20 +2688,11 @@ function openDetail(id, opener = null, { refresh = false } = {}) {
   }
   wireDetailExtras(modal, o);
 
-  // bundled photo first; if missing, fetch a Wikipedia thumbnail (cached)
+  // Reuse the browser photo cache or fetch a Wikipedia thumbnail directly.
   const dImg = $('#d-img');
   const dPh = $('#d-imgph');
-  if (!preserveImage) {
-    let wikiStarted = false;
-    dImg.addEventListener('error', () => {
-      if (wikiStarted || S.detailId !== id) return;
-      wikiStarted = true;
-      dImg.style.display = 'none';
-      dPh.style.display = 'flex';
-      dPh.textContent = 'loading Wikipedia photo…';
-      loadWikiThumb(o, dImg, dPh);
-    });
-  }
+  const dCredit = $('#d-imagecredit');
+  if (!preserveImage) loadWikiThumb(o, dImg, dPh, dCredit);
 
   // ---- altitude chart ----
   // The span follows the SAME degeneracy policy as the scrub (shared in core):
@@ -2678,48 +2731,24 @@ function openDetail(id, opener = null, { refresh = false } = {}) {
   const tEnd = new Date(t1.getTime());
   const durMs = tEnd - tStart;
 
-  // The statistics below use the SAME dark window as the targets table
-  // (dusk..dawn). The chart itself spans sunset-1h..sunrise+1h for visual
-  // context, and counting that wider span made the modal's "% of night" and
-  // "best window" disagree with the table (and with the desktop, which clips to
-  // dusk..dawn for exactly the same reason).
-  const darkWin = E.pickDarkWindow(info, nightAnchor(), siteNoon(nightAnchor()));
-  const jdDusk = E.julianDay(darkWin.dusk), jdDawn = E.julianDay(darkWin.dawn);
-  const inNight = samples.map((s) => s.t >= jdDusk && s.t <= jdDawn);
-  const detailReasonCounts = Object.create(null);
-  let detailVisibleFullN = 0;
-  samples.forEach((s, i) => {
-    const visibleAcrossChart = visibilityReason(
-      s.alt, minAlt, s.ceil.ceil, s.ceil.ceilTop, true) === 'visible';
-    const reason = visibilityReason(s.alt, minAlt, s.ceil.ceil, s.ceil.ceilTop, inNight[i]);
-    s.reason = reason;
-    if (inNight[i]) detailReasonCounts[reason] = (detailReasonCounts[reason] || 0) + 1;
-    if (visibleAcrossChart) detailVisibleFullN++;
-  });
-
-  // best window = longest clear run INSIDE the dark window ([start, end) over
-  // samples - the same half-open contract as the table's bestRun)
-  let run = 0, best = 0, bestStart = -1, curStart = -1;
-  for (let i = 0; i <= steps; i++) {
-    if (samples[i].vis && inNight[i]) {
-      if (run === 0) curStart = i;
-      run++;
-      if (run > best) { best = run; bestStart = curStart; }
-    } else run = 0;
-  }
-  const winNote = bestStart >= 0 && best > 1
-    ? `Best window (clear, ≥${minAlt.toFixed(0)}°): ${fmtClock(new Date(tStart.getTime() + (bestStart / steps) * durMs))} – ${fmtClock(new Date(tStart.getTime() + ((bestStart + best) / steps) * durMs))}`
+  // The wider chart grid is visual context only. All usable intervals and
+  // durations come from the same dusk-anchored scoring grid as the other views.
+  const detailWin = nightWindow();
+  const detailStats = nightStats(o, detailWin.jd0, detailWin.jd1,
+    detailWin.step, minAlt, pano, lat, lon);
+  const detailSummary = {
+    reason: detailStats.visibilityReason,
+    visibleMinutes: detailStats.visibleMinutes,
+  };
+  const hasBest = detailStats.bestEnd != null && detailStats.bestEnd > detailStats.bestStart;
+  const bestStartDate = hasBest ? E.dateFromJD(detailStats.bestStart) : null;
+  const bestEndDate = hasBest ? E.dateFromJD(detailStats.bestEnd) : null;
+  const bestWindowText = hasBest
+    ? `${fmtClock(bestStartDate)}–${fmtClock(bestEndDate)}` : '';
+  const winNote = hasBest
+    ? `Best window (clear, ≥${minAlt.toFixed(0)}°): ${bestWindowText}`
     : 'No clear window tonight';
   $('#win-note').textContent = winNote;
-  const visCount = samples.reduce((a, s, i) => a + (s.vis && inNight[i] ? 1 : 0), 0);
-  const nightSamples = inNight.filter(Boolean).length || 1;
-  const detailSummary = summarizeVisibility({
-    visibleSamples: visCount,
-    visibleFullSamples: detailVisibleFullN,
-    stepMin: durMs / 60000 / steps,
-    maxAlt: dayInfo.maxAlt,
-    reasonCounts: detailReasonCounts,
-  });
   const detailReasonText = (reason) => {
     if (reason === 'visible') return `visible for ${fmtDur(detailSummary.visibleMinutes)}`;
     if (reason === 'blocked_by_horizon') return 'blocked because of horizon';
@@ -2732,17 +2761,11 @@ function openDetail(id, opener = null, { refresh = false } = {}) {
   if (heroReason) heroReason.textContent = detailReasonText(detailSummary.reason);
   const heroWindow = $('#m-hero-window');
   if (heroWindow) {
-    heroWindow.textContent = bestStart >= 0 && best > 1
-      ? `${fmtClock(E.dateFromJD(jd0 + (bestStart / steps) * (jd1 - jd0)))}–${fmtClock(E.dateFromJD(jd0 + ((bestStart + best) / steps) * (jd1 - jd0)))}`
-      : 'No clear interval tonight';
+    heroWindow.textContent = hasBest ? bestWindowText : 'No clear interval tonight';
   }
   const obsEl = $('#d-obs');
   if (obsEl) {
-    const pct = Math.round(100 * visCount / nightSamples);
-    const visMin = visCount * (durMs / 60000 / steps);
-    const usable = bestStart >= 0 && best > 1
-      ? ` · usable ${fmtClock(E.dateFromJD(jd0 + (bestStart / steps) * (jd1 - jd0)))}–${fmtClock(E.dateFromJD(jd0 + ((bestStart + best) / steps) * (jd1 - jd0)))}`
-      : '';
+    const usable = hasBest ? ` · usable ${bestWindowText}` : '';
     obsEl.textContent = `${detailReasonText(detailSummary.reason)}${usable} · culmination ${fmtClock(dayInfo.transit)} at ${dayInfo.maxAlt.toFixed(0)}° (min ${minAlt.toFixed(0)}°${pano ? ` + horizon "${esc(pano.name)}"` : ''})`;
   }
 
@@ -2769,9 +2792,8 @@ function openDetail(id, opener = null, { refresh = false } = {}) {
       const reason = detailSummary.reason === 'visible'
         ? `visible for ${Math.round(detailSummary.visibleMinutes || 0)} minutes`
         : detailReasonText(detailSummary.reason);
-      const usable = bestStart >= 0 && best > 1
-        ? ` Usable interval ${fmtClock(new Date(tStart.getTime() + (bestStart / steps) * durMs))} to ${fmtClock(new Date(tStart.getTime() + ((bestStart + best) / steps) * durMs))}.`
-        : '';
+      const usable = hasBest
+        ? ` Usable interval ${fmtClock(bestStartDate)} to ${fmtClock(bestEndDate)}.` : '';
       summary.textContent = `${name} altitude chart. Maximum altitude ${dayInfo.maxAlt.toFixed(1)} degrees at ${fmtClock(dayInfo.transit)}; ${reason}. Selected time ${fmtClock(S.skyTime)}, altitude ${samples[Math.max(0, Math.min(steps, Math.round(((S.skyTime.getTime() - tStart.getTime()) / durMs) * steps)))].alt.toFixed(1)} degrees.${usable}`;
     }
     gCtx.clearRect(0, 0, W, H);
@@ -2812,8 +2834,9 @@ function openDetail(id, opener = null, { refresh = false } = {}) {
       gCtx.fillText(fmtClock(new Date(tStart.getTime() + ms)), xOf(ms), H - 6);
     }
     // best window highlight
-    if (bestStart >= 0 && best > 1) {
-      const x1 = xOf((bestStart / steps) * durMs), x2 = xOf(((bestStart + best) / steps) * durMs);
+    if (hasBest) {
+      const x1 = xOf(bestStartDate.getTime() - tStart.getTime());
+      const x2 = xOf(bestEndDate.getTime() - tStart.getTime());
       gCtx.fillStyle = C.goodFill;
       gCtx.fillRect(x1, padT, x2 - x1, H - padT - padB);
     }
@@ -2923,7 +2946,7 @@ function openDetail(id, opener = null, { refresh = false } = {}) {
 
   drawGraph();
   detailGraphRedraw = () => {
-    if (generation !== detailGeneration || S.detailId !== id || modal.hidden) return;
+    if (generation !== detailGeneration || !S.detailOpen || S.detailId !== id || modal.hidden) return;
     sizeG();
     drawGraph();
   };
@@ -2937,38 +2960,40 @@ function openDetail(id, opener = null, { refresh = false } = {}) {
   g.addEventListener('mouseleave', () => { tip.hidden = true; drawGraph(); });
   if (S.detailResize) window.removeEventListener('resize', S.detailResize);
   S.detailResize = () => {
-    if (generation !== detailGeneration || S.detailId !== id || modal.hidden) return;
+    if (generation !== detailGeneration || !S.detailOpen || S.detailId !== id || modal.hidden) return;
     syncDetailDock(); sizeG(); drawGraph();
   };
   window.addEventListener('resize', S.detailResize);
 }
 
-function closeDetail() {
+function closeDetail({ restoreFocus = true } = {}) {
+  // WEB-REV-003: closing only hides the inspector. `S.detailId` (the selected
+  // target identity) and its highlighting SURVIVE, so switching views and
+  // reopening the object keep working from the preserved identity.
   detailGeneration++;
+  S.detailOpen = false;
   stopDetailDockScrollTracking();
   const modal = $('#modal');
   modal.hidden = true;
   modal.innerHTML = '';
-  modal.classList.remove('detail-docked');
+  modal.classList.remove('detail-docked', 'detail-inline');
+  parkDetailModal();
   modal.onclick = null;
   modal.onkeydown = null;
+  syncDialogBackground();
   document.body.classList.remove('detail-open');
   document.documentElement.style.removeProperty('--detail-top');
-  S.detailId = null;
-  document.querySelectorAll("#tonight-rank-table tr, .cat-results table tr")
-    .forEach((row) => row.classList.remove("selected"));
+  applySelectionHighlight();   // keeps the selected rows highlighted
   if (currentObjUrl) { URL.revokeObjectURL(currentObjUrl); currentObjUrl = null; }
   tip.hidden = true;
   if (S.detailResize) window.removeEventListener('resize', S.detailResize);
   detailGraphRedraw = null;
-  const target = detailReturnFocus;
+  syncSkyDetailPlaceholder();
+  if (!restoreFocus) return;
+  const target = reachableControl(detailReturnFocus) ? detailReturnFocus
+    : S.view === 'sky' ? $('#sky-visible-now .selected') || $('#sky-selected-detail') : detailReturnFocus;
   detailReturnFocus = null;
-  const focusableAndVisible = target && target.isConnected &&
-    !target.closest('[hidden], [inert]') && target.getClientRects().length > 0 &&
-    !target.matches(':disabled') &&
-    target.matches('button, a[href], input:not([type="hidden"]), select, textarea, [tabindex]:not([tabindex="-1"])');
-  if (focusableAndVisible) target.focus({ preventScroll: true });
-  else document.getElementById(`tab-${S.view}`)?.focus({ preventScroll: true });
+  restoreControlFocus(target);
 }
 
 /* ---- detail extras (custom-target delete) ---- */
@@ -2980,9 +3005,13 @@ function wireDetailExtras(modal, o) {
     await WS.deleteTargetRec(o.id);
     CAT = CAT.filter((x) => x.id !== o.id);
     byId.delete(o.id);
-    closeDetail();
+    searchCache.delete(o);
+    // WEB-REV-003: the object is GONE from the authoritative catalog, so its
+    // selection is invalid: clear the identity and close its inspector. Then
+    // repaint the CURRENT view - never swap an unrelated view's body in.
+    clearSelection();
     if (S.cat.chip === 'custom') S.cat.chip = 'all';
-    renderCatalog();
+    refreshView();
   };
 }
 
@@ -3055,6 +3084,9 @@ function syncCustomTargets(stored) {
     }
   }
   for (const t of (stored || [])) upsertTarget(t);
+  // WEB-REV-003: a backup import REPLACES the custom targets - a selection
+  // whose object did not survive the replacement is invalid.
+  dropSelectionIfGone();
   const cleanedSaved = savedTargetIds();
   if (JSON.stringify(cleanedSaved) !== JSON.stringify(Hor.getPrefs().savedTargetIds || []))
     Hor.setPrefs({ savedTargetIds: cleanedSaved });
@@ -3065,6 +3097,7 @@ const objName = (o) => o.primary_name || o.id;
 /** Setup dialog — tabs mirror the desktop app: Sites / Rigs / Targets / Backup.
  *  The open tab survives a re-render (save/delete re-renders the whole dialog). */
 let SETTINGS_TAB = 'sites';
+let settingsReturnFocus = null;
 
 function showMTab(name) {
   SETTINGS_TAB = name;
@@ -3074,9 +3107,14 @@ function showMTab(name) {
     const on = b.dataset.mtab === name;
     b.classList.toggle('active', on);
     b.setAttribute('aria-selected', on ? 'true' : 'false');
+    b.tabIndex = on ? 0 : -1;
+    b.id = `set-tab-${b.dataset.mtab}`;
+    b.setAttribute('aria-controls', `mtab-${b.dataset.mtab}`);
   });
   modal.querySelectorAll('.mtabpane').forEach((p) => {
     p.classList.toggle('hidden', p.id !== 'mtab-' + name);
+    p.setAttribute('role', 'tabpanel');
+    p.setAttribute('aria-labelledby', p.id.replace('mtab-', 'set-tab-'));
   });
 }
 
@@ -3100,6 +3138,14 @@ async function reloadRigs() {
 }
 
 async function renderSettings() {
+  const wasClosed = $('#modal').hidden;
+  if (wasClosed || S.detailOpen) settingsReturnFocus = reachableControl(document.activeElement)
+    ? document.activeElement : $('#btnMenu');
+  // WEB-REV-003: #modal is shared - taking it over for Setup must close the
+  // inspector (the selected identity is preserved) instead of leaving stale
+  // "detail open" state that a later refresh could wrongly revive.
+  if (S.detailOpen) closeDetail({ restoreFocus: false });
+  parkDetailModal();
   await reloadRigs();  // WB3: rig edits must show up without a reload
   const modal = $('#modal');
   const sites = await WS.getSites();
@@ -3110,31 +3156,31 @@ async function renderSettings() {
 
   const siteRow = (s) => `
     <li data-id="${esc(s.id)}">
-      <input type="radio" name="site-active" ${active && s.id === active.id ? 'checked' : ''} title="use for planning">
+      <input type="radio" name="site-active" ${active && s.id === active.id ? 'checked' : ''} aria-label="Use ${esc(s.name)} for planning">
       <span class="p-name">${esc(s.name)}</span>
       <span class="p-tags">${s.lat.toFixed(3)}, ${s.lon.toFixed(3)} · ${s.elev || 0} m${s.tz ? ` · ${esc(s.tz)}` : ''}</span>
-      <button class="btn small" data-editsite="${esc(s.id)}">edit</button>
-      <button class="btn small" data-delsite="${esc(s.id)}" title="delete site">✕</button>
+      <button class="btn small" data-editsite="${esc(s.id)}" aria-label="Edit site ${esc(s.name)}">edit</button>
+      <button class="btn small" data-delsite="${esc(s.id)}" aria-label="Delete site ${esc(s.name)}">✕</button>
     </li>`;
   const rigRow = (r) => `
     <li data-id="${esc(r.id)}">
       <span class="p-name">${esc(r.name)}</span>
       <span class="p-tags">${r.focal_mm ? `${r.focal_mm} mm` : '—'}</span>
-      <button class="btn small" data-editrig="${esc(r.id)}">edit</button>
-      <button class="btn small" data-delrig="${esc(r.id)}" title="delete rig">✕</button>
+      <button class="btn small" data-editrig="${esc(r.id)}" aria-label="Edit rig ${esc(r.name)}">edit</button>
+      <button class="btn small" data-delrig="${esc(r.id)}" aria-label="Delete rig ${esc(r.name)}">✕</button>
     </li>`;
   const targetRow = (t) => `
     <li data-id="${esc(t.id)}">
       <span class="p-name">${esc(t.primary_name)}</span>
       <span class="p-tags">${esc(TYPE_LABELS[t.otype] || t.otype || "")} · RA ${E.formatRA(t.ra_hours)}, Dec ${E.formatDec(t.dec_deg)}${t.vmag != null ? ` · mag ${t.vmag.toFixed(1)}` : ''}</span>
-      <button class="btn small" data-edittarget="${esc(t.id)}">edit</button>
-      <button class="btn small" data-deltarget="${esc(t.id)}" title="delete target">✕</button>
+      <button class="btn small" data-edittarget="${esc(t.id)}" aria-label="Edit target ${esc(t.primary_name)}">edit</button>
+      <button class="btn small" data-deltarget="${esc(t.id)}" aria-label="Delete target ${esc(t.primary_name)}">✕</button>
     </li>`;
 
   modal.innerHTML = `
     <div class="modal settings" role="dialog" aria-modal="true" aria-labelledby="m-set-title">
       <div class="modal-head">
-        <h2 id="m-set-title">Setup</h2>
+        <h2 id="m-set-title" tabindex="-1">Setup</h2>
         <button class="close" id="m-close" title="close" aria-label="Close">✕</button>
       </div>
       <div class="modal-tabs" role="tablist" aria-label="Setup sections">
@@ -3153,7 +3199,7 @@ async function renderSettings() {
             <div class="btnrow">
               <button class="btn primary" id="sf-quick-save">Update active site</button>
               <button class="btn" id="sf-quick-locate">use my location</button>
-              <span class="sub" id="sf-quick-note" style="align-self:center"></span>
+              <span class="sub" id="sf-quick-note" role="status" style="align-self:center"></span>
             </div>
           </div>
         </div>
@@ -3166,7 +3212,8 @@ async function renderSettings() {
             <label>Name <input type="text" id="sf-site-name"></label>
             <label>Lat <input type="text" inputmode="decimal" id="sf-site-lat"></label>
             <label>Lon <input type="text" inputmode="decimal" id="sf-site-lon"></label>
-            <label>Elev (m) <input type="text" inputmode="decimal" id="sf-site-elev" value="0"></label>
+            <label>Elevation (m, metadata) <input type="text" inputmode="decimal" id="sf-site-elev" value="0" aria-describedby="sf-elevation-note"></label>
+            <p class="sub" id="sf-elevation-note">Recorded for this site. Elevation does not change visibility; use Horizon to describe local obstructions.</p>
             <label>Timezone <input type="text" id="sf-site-tz" list="tz-list" placeholder="browser default">${TZ_DATALIST}</label>
             <div class="btnrow"><button class="btn primary" id="sf-site-save">Save site</button><button class="btn" id="sf-site-cancel">Cancel</button></div>
           </div>
@@ -3193,7 +3240,7 @@ async function renderSettings() {
             <label>Focal (mm) <input type="text" inputmode="decimal" id="sf-rig-focal"></label>
             <label>Sensor W (mm) <input type="text" inputmode="decimal" id="sf-rig-sw"></label>
             <label>Sensor H (mm) <input type="text" inputmode="decimal" id="sf-rig-sh"></label>
-            <p class="sub" id="sf-rig-fov"></p>
+            <p class="sub" id="sf-rig-fov" role="status"></p>
             <div class="btnrow"><button class="btn primary" id="sf-rig-save">Save rig</button><button class="btn" id="sf-rig-cancel">Cancel</button></div>
           </div>
         </div>
@@ -3214,7 +3261,7 @@ async function renderSettings() {
             <label>Size (arcmin) <input type="text" id="sf-target-size" placeholder="e.g. 6x4"></label>
             <label>Constellation <input type="text" id="sf-target-con" placeholder="e.g. Ori"></label>
             <label>Notes <input type="text" id="sf-target-blurb"></label>
-            <p class="sub" id="sf-target-err"></p>
+            <p class="sub" id="sf-target-err" role="alert"></p>
             <div class="btnrow"><button class="btn primary" id="sf-target-save">Save target</button><button class="btn" id="sf-target-cancel">Cancel</button></div>
           </div>
         </div>
@@ -3226,8 +3273,8 @@ async function renderSettings() {
           <p class="sub">A backup covers sites, rigs, custom targets, horizon profiles and settings — the browser equivalent of the desktop app's ZIP export/import.</p>
           <div class="btnrow action-row" style="margin-top:10px">
             <button class="btn primary" id="set-export">⬇ Export backup (JSON)</button>
-            <label class="btn" for="set-import" style="text-align:center">⬆ Import backup</label>
-            <input type="file" id="set-import" accept="application/json,.json" class="vhidden">
+            <button class="btn" id="set-import-trigger">⬆ Import backup</button>
+            <input type="file" id="set-import" accept="application/json,.json" class="vhidden" hidden tabindex="-1">
           </div>
           <p class="sub" style="margin-top:8px">Free space per side lives in the hamburger menu under <b>Display</b>.</p>
         </div>
@@ -3235,12 +3282,23 @@ async function renderSettings() {
     </div>`;
   modal.hidden = false;
   showMTab(SETTINGS_TAB);
+  syncDialogBackground();
+  $('#m-set-title').focus({ preventScroll: true });
 
   $('#m-close').addEventListener('click', closeModal);
-  modal.addEventListener('click', (ev) => { if (ev.target === modal) closeModal(); });
+  modal.onclick = (ev) => { if (ev.target === modal) closeModal(); };
   // tab strip (desktop parity: Sites / Rigs / Targets / Backup)
   modal.querySelectorAll('.modal-tabs .tab').forEach((b) => {
     b.addEventListener('click', () => showMTab(b.dataset.mtab));
+    b.addEventListener('keydown', (ev) => {
+      if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(ev.key)) return;
+      ev.preventDefault();
+      const tabs = [...modal.querySelectorAll('.modal-tabs .tab')];
+      const i = tabs.indexOf(b);
+      const next = ev.key === 'Home' ? tabs[0] : ev.key === 'End' ? tabs.at(-1)
+        : tabs[(i + (ev.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length];
+      showMTab(next.dataset.mtab); next.focus();
+    });
   });
 
   // — quick active-site coordinates —
@@ -3329,8 +3387,11 @@ async function renderSettings() {
     const t = targets.find((x) => x.id === b.dataset.deltarget);
     if (!t || !confirm(`Delete custom target "${objName(t)}"?`)) return;
     await WS.deleteTargetRec(t.id);
+    const rec = byId.get(t.id) || t;
     CAT = CAT.filter((x) => x.id !== t.id);
     byId.delete(t.id);
+    searchCache.delete(rec);
+    dropSelectionIfGone();   // WEB-REV-003: deleted object -> selection cleared
     closeModal(); refreshView();
   }));
   $('#set-add-target').addEventListener('click', () => openTargetForm(null));
@@ -3363,6 +3424,7 @@ async function renderSettings() {
     return staged;
   }
 
+  $('#set-import-trigger').addEventListener('click', () => $('#set-import').click());
   $('#set-import').addEventListener('change', (ev) => {
     const f = ev.target.files && ev.target.files[0];
     ev.target.value = '';
@@ -3571,7 +3633,10 @@ async function saveTargetForm() {
 
 function closeModal() {
   const modal = $('#modal');
-  if (modal) { modal.hidden = true; modal.innerHTML = ''; }
+  if (modal) { modal.hidden = true; modal.innerHTML = ''; modal.onclick = null; }
+  syncDialogBackground();
+  restoreControlFocus(settingsReturnFocus);
+  settingsReturnFocus = null;
 }
 
 /** Re-read user data after a backup import (sites, targets, rigs). */
@@ -3592,41 +3657,54 @@ function welcomeFlow() {
     modal.innerHTML = `
       <div class="modal welcome" role="dialog" aria-modal="true" aria-labelledby="m-wel-title">
         <div class="modal-head">
-          <h2 id="m-wel-title">👋 Welcome to NightSeam Web</h2>
+          <h2 id="m-wel-title" tabindex="-1">Welcome to NightSeam</h2>
         </div>
-        <p class="sub">Where will you observe? You can add more sites any time via Setup in the top bar.</p>
+        <p class="sub">Choose where you will observe. The coordinates below are an example in Berlin; replace them with your own or use the example to explore.</p>
+        <p class="sub">Later, open <b>Options → Setup</b> to manage sites, rigs, targets and backups. A rig is optional: it adds Frame % estimates of how much of a target fits your camera. Visibility planning works without one.</p>
+        <p class="sub">Choose a night and time in the header. Add your panorama in Horizon to include local obstructions. Your planning data stays in this browser.</p>
         <div class="set-form">
           <label>Site name <input type="text" id="w-name" value="My observing site"></label>
           <label>Latitude <input type="text" inputmode="decimal" id="w-lat" value="52.52"></label>
           <label>Longitude <input type="text" inputmode="decimal" id="w-lon" value="13.40"></label>
-          <label>Elevation (m) <input type="text" inputmode="decimal" id="w-elev" value="0"></label>
+          <label>Elevation (m, metadata) <input type="text" inputmode="decimal" id="w-elev" value="0" aria-describedby="w-elevation-note"></label>
+          <p class="sub" id="w-elevation-note">Elevation is recorded only; it does not change visibility calculations.</p>
           <label>Timezone <input type="text" id="w-tz" list="tz-list" placeholder="browser default">${TZ_DATALIST}</label>
           <div class="btnrow" style="margin-top:12px">
             <button class="btn primary" id="w-save">Save my site</button>
             <button class="btn" id="w-geo">use my location</button>
-            <button class="btn" id="w-skip">Skip</button>
+            <button class="btn" id="w-skip">Use Berlin example</button>
           </div>
         </div>
+        <p id="w-status" class="sub" role="status"></p>
       </div>`;
     modal.hidden = false;
-    const finish = (site) => { modal.hidden = true; modal.innerHTML = ''; resolve(site); };
+    syncDialogBackground();
+    $('#m-wel-title').focus();
+    const finish = (site) => {
+      modal.hidden = true; modal.innerHTML = ''; syncDialogBackground();
+      $('#tab-tonight').focus(); resolve(site);
+    };
     $('#w-save').addEventListener('click', () => {
       const name = $('#w-name').value.trim() || 'My observing site';
       const lat = Hor.num($('#w-lat').value);
       const lon = Hor.num($('#w-lon').value);
       if (!Number.isFinite(lat) || lat < -90 || lat > 90 || !Number.isFinite(lon) || lon < -180 || lon > 180) {
-        $('#w-lat').value = 52.52; $('#w-lon').value = 13.4;
+        $('#w-status').textContent = 'Enter latitude from −90 to 90 and longitude from −180 to 180.';
+        $('#w-lat').focus();
         return;
       }
       const elev = Hor.num($('#w-elev').value);
       finish({ id: WS.NEW_SITE_ID(), name, lat, lon, elev: Number.isFinite(elev) ? elev : 0, tz: $('#w-tz').value.trim() || null });
     });
     $('#w-geo').addEventListener('click', () => {
-      if (!navigator.geolocation) return;
+      if (!navigator.geolocation) { $('#w-status').textContent = 'Location is unavailable. Enter coordinates manually.'; return; }
+      $('#w-status').textContent = 'Requesting your location…';
       navigator.geolocation.getCurrentPosition((pos) => {
+        if (modal.hidden || !$('#w-lat')) return;
         $('#w-lat').value = pos.coords.latitude;
         $('#w-lon').value = pos.coords.longitude;
-      }, () => { /* permission denied — user can type manually */ });
+        $('#w-status').textContent = 'Coordinates updated. Save your site to continue.';
+      }, () => { if ($('#w-status')) $('#w-status').textContent = 'Location was not available. Enter coordinates manually or use the example.'; });
     });
     $('#w-skip').addEventListener('click', () => finish(null));
   });
@@ -3635,6 +3713,7 @@ function welcomeFlow() {
 /* ------------------------------- boot ------------------------------ */
 
 async function boot() {
+  installDialogKeyboard();
   WS.currentTheme(); // migrate any retired local theme value to Workbench
   // visible error reporting — never fail silently again
   const errBox = document.createElement('div');
@@ -3672,16 +3751,6 @@ async function boot() {
     const res = await fetch('catalog.json?v=' + CATALOG_TOKEN);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     CAT = await res.json();
-    try {
-      const prov = await fetch('catalog-provenance.json?v=' + CATALOG_PROVENANCE_TOKEN);
-      if (prov.ok) {
-        const candidate = await prov.json();
-        if (candidate && typeof candidate === 'object' &&
-            candidate.objects && typeof candidate.objects === 'object') {
-          CAT_PROV = candidate;
-        }
-      }
-    } catch { /* provenance is optional for older/static deployments */ }
     // ALIGNMENT (0.6.31): rank the set the CURRENT MODE shows - the desktop
     // does exactly the same over `S.catalog` (static/js/targets.js), so the two
     // apps cannot disagree about a letter. In standard mode that set is the
@@ -3748,7 +3817,7 @@ async function boot() {
     }
   });
   $('#btn-settings').addEventListener('click', () => {
-    const mp = $('#menuPanel'); if (mp) mp.classList.add('hidden');
+    setPopoverOpen($('#btnMenu'), $('#menuPanel'), false);
     renderSettings();
   });
 
@@ -3758,6 +3827,7 @@ async function boot() {
     const eff = Hor.effectiveMinAlt();
     const mua = $('#tb-minalt'), muaV = $('#tb-minalt-val'), note = $('#tb-note');
     if (mua) mua.value = String(eff);
+    if (mua) mua.setAttribute('aria-valuetext', `${eff} degrees`);
     if (muaV) muaV.textContent = eff + '°';
     if (note) note.textContent = p.minAlt == null ? 'auto (bortle)' : 'explicit';
   };
@@ -3811,6 +3881,7 @@ async function boot() {
       const mins = Math.max(0, Math.min(len,
         Math.round((S.skyTime.getTime() - r.start.getTime()) / 60000)));
       scrub.value = String(mins);
+      scrub.setAttribute('aria-valuetext', fmtClock(S.skyTime));
       if (scrubT) scrubT.textContent = fmtClock(S.skyTime);
     };
     syncScrub();
@@ -3873,28 +3944,12 @@ async function boot() {
 
   // — weather chip (load-on-demand; auto-load toggle in the submenu) —
   const wxBtn = $('#btnWeather'), wxPanel = $('#weatherPanel');
-  if (wxBtn && wxPanel) {
-    wxBtn.addEventListener('click', (ev) => {
-      ev.stopPropagation();
-      if (wxPanel.classList.contains('hidden')) {
-        wxPanel.classList.remove('hidden');
-        if (!WX_STATE.loading && (!WX_STATE.data || WX_STATE.error)) {
-          WX_STATE.error = false;
-          loadWeather();
-        }
-        else wxRenderPanel();
-      } else {
-        wxPanel.classList.add('hidden');
-      }
-    });
-    document.addEventListener('click', (ev) => {
-      if (!(ev.target instanceof Element)) return;
-      if (!wxPanel.classList.contains('hidden') && !ev.target.closest('#weatherPanel') && !ev.target.closest('#btnWeather')) {
-        wxPanel.classList.add('hidden');
-      }
-    });
-    document.addEventListener('keydown', (ev) => { if (ev.key === 'Escape') wxPanel.classList.add('hidden'); });
-  }
+  if (wxBtn && wxPanel) wirePopover(wxBtn, wxPanel, () => {
+    if (!WX_STATE.loading && (!WX_STATE.data || WX_STATE.error)) {
+      WX_STATE.error = false;
+      loadWeather();
+    } else wxRenderPanel();
+  });
   const wxAuto = $('#wxAuto');
   if (wxAuto) {
     wxAuto.checked = !!Hor.getPrefs().weatherAuto;
@@ -3907,16 +3962,7 @@ async function boot() {
 
   // — hamburger menu (desktop parity) —
   const menuBtn = $('#btnMenu'), menuPanel = $('#menuPanel');
-  const closeMenu = () => { if (menuPanel) menuPanel.classList.add('hidden'); };
-  menuBtn.addEventListener('click', (ev) => {
-    ev.stopPropagation();
-    menuPanel.classList.toggle('hidden');
-  });
-  document.addEventListener('click', (ev) => {
-    if (!(ev.target instanceof Element)) return;
-    if (menuPanel && !menuPanel.classList.contains('hidden') && !ev.target.closest('#menuPanel') && !ev.target.closest('#btnMenu')) closeMenu();
-  });
-  document.addEventListener('keydown', (ev) => { if (ev.key === 'Escape') closeMenu(); });
+  wirePopover(menuBtn, menuPanel);
 
   const p = Hor.getPrefs();
   const refreshMenuUI = () => {
@@ -3946,7 +3992,12 @@ async function boot() {
   });
   $('#advMode').addEventListener('change', (ev) => {
     Hor.setPrefs({ advMode: ev.target.checked });
-    location.reload();
+    cancelCatalogWarm();
+    TIER = assignPopularityTiers(activeCatalog());
+    S.cat.page = 0;
+    refreshMenuUI();
+    refreshView();
+    announceStatus(ev.target.checked ? 'Advanced catalog enabled.' : 'Standard catalog enabled.');
   });
   $('#tzSelect').addEventListener('change', (ev) => {
     Hor.setPrefs({ tz: ev.target.value || '' });
@@ -4025,8 +4076,19 @@ async function boot() {
   }
 
   window.addEventListener('hashchange', () => { route(); });
+  $('#tabs').addEventListener('keydown', (ev) => {
+    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(ev.key)) return;
+    const tabs = [...document.querySelectorAll('#tabs a')];
+    const i = tabs.indexOf(ev.target);
+    if (i < 0) return;
+    ev.preventDefault();
+    const next = ev.key === 'Home' ? tabs[0] : ev.key === 'End' ? tabs.at(-1)
+      : tabs[(i + (ev.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length];
+    next.click(); next.focus();
+  });
   // keyboard shortcuts: n = cycle tabs; on sky view ←/→ scrub the night (Shift = 10 min)
   window.addEventListener('keydown', (ev) => {
+    if (ev.defaultPrevented || ev.target.closest?.('[role="tab"], [role="region"], [role="button"], button, summary, [contenteditable="true"]')) return;
     const tag = (ev.target.tagName || '').toUpperCase();
     if (['INPUT', 'SELECT', 'TEXTAREA'].includes(tag)) return;
     if (ev.ctrlKey || ev.metaKey || ev.altKey) return;
@@ -4073,41 +4135,6 @@ async function boot() {
     tonightScrubTimer = setTimeout(() => {
       if (S.view === 'tonight') renderTonight(true);
     }, 120);
-  });
-
-  // a11y: only actual modal dialogs confine Tab. Docked inspectors are
-  // complementary regions, so focus must continue into the planner behind them.
-  document.addEventListener('keydown', (ev) => {
-    if (ev.key !== 'Tab') return;
-    const dialog = [...document.querySelectorAll('[role="dialog"][aria-modal="true"]')]
-      .find((el) => !el.closest('[hidden], [inert]') && el.getClientRects().length > 0);
-    if (!dialog) return;
-    const els = [...dialog.querySelectorAll('a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])')]
-      // the Setup dialog hides whole tab panes and forms: only rendered
-      // controls may take focus, else Tab would land in an invisible field
-      .filter((el) => !el.closest('.vhidden') && el.getClientRects().length > 0);
-    if (!els.length) { ev.preventDefault(); return; }
-    const first = els[0], last = els[els.length - 1];
-    const cur = document.activeElement;
-    if (ev.shiftKey && (cur === first || !dialog.contains(cur))) {
-      ev.preventDefault(); last.focus();
-    } else if (!ev.shiftKey && cur === last) {
-      ev.preventDefault(); first.focus();
-    } else if (!dialog.contains(cur)) {
-      ev.preventDefault(); first.focus();
-    }
-  });
-
-  // Escape is the universal dismissal key for the detail/setup dialogs. The
-  // modal wrapper is shared by both, so route the key through the visible
-  // close button instead of duplicating modal-specific state here.
-  document.addEventListener('keydown', (ev) => {
-    if (ev.key !== 'Escape') return;
-    const modal = document.querySelector('#modal:not([hidden])');
-    const close = modal?.querySelector('.modal .close');
-    if (!close) return;
-    ev.preventDefault();
-    close.click();
   });
 
   // Seed the scrub inside the window: loading during the day must not show a

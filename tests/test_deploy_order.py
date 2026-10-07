@@ -40,7 +40,31 @@ def test_index_html_is_uploaded_last(tree):
 
 
 def test_skip_set_still_covers_deploy_tooling():
-    for name in ("ftps_deploy.py", "build_web.py", ".gitignore", "x.pyc"):
+    for name in ("ftps_deploy.py", "build_web.py", ".gitignore", "x.pyc", "ftp.env", ".env", ".git"):
         assert ftps_deploy.skip(name), name
     assert not ftps_deploy.skip("app.js")
     assert not ftps_deploy.skip("version.json")
+
+
+def test_recursive_upload_publishes_all_dependencies_before_any_html(tmp_path):
+    files = ('a/entry.html', 'a/z.js', 'z/dependency.js', 'z/core/hash/index.js',
+             'index.html', '.htaccess', 'dev/private.html', '__pycache__/ignored.pyc')
+    for name in files:
+        path = tmp_path / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b'content')
+
+    class FTP:
+        def __init__(self): self.uploads = []
+        def mkd(self, path): pass
+        def storbinary(self, command, stream):
+            assert stream.read() == b'content'
+            self.uploads.append(command.removeprefix('STOR /astro/'))
+
+    ftp = FTP()
+    ftps_deploy._upload_tree(ftp, tmp_path, '/astro')
+    assert set(ftp.uploads) == set(files) - {'dev/private.html', '__pycache__/ignored.pyc'}
+    html = [i for i, p in enumerate(ftp.uploads) if p.endswith('.html')]
+    assets = [i for i, p in enumerate(ftp.uploads) if not p.endswith('.html')]
+    assert max(assets) < min(html)
+    assert ftp.uploads[-1] == 'index.html'

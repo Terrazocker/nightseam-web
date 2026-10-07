@@ -20,10 +20,10 @@
      Keep the directives in step with `web/.htaccess`: the tests in
      `tests/test_prod_csp.py` compare both against the same rule table, and the
      browser gate reads whichever one the live document carries. -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://upload.wikimedia.org; connect-src 'self' https://en.wikipedia.org https://api.open-meteo.com https://air-quality-api.open-meteo.com; base-uri 'self'; form-action 'self'; object-src 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://upload.wikimedia.org https://thumb.wikimedia.org; connect-src 'self' https://en.wikipedia.org https://upload.wikimedia.org https://thumb.wikimedia.org https://api.open-meteo.com https://air-quality-api.open-meteo.com; base-uri 'self'; form-action 'self'; object-src 'none'">
 <link rel="icon" type="image/png" href="app.png">
-<link rel="stylesheet" href="style.css?v=44">
-<link rel="stylesheet" href="themes.css?v=16">
+<link rel="stylesheet" href="style.css?v=50">
+<link rel="stylesheet" href="themes.css?v=18">
 </head>
 <body>
 
@@ -39,35 +39,40 @@
   </div>
 
   <div class="planner-controls" id="plannerControls">
+    <div class="context-controls" role="group" aria-label="Observing setup">
     <label>Site <select id="tb-site"></select></label>
     <label title="Imaging rig — drives the Frame % (coverage) estimates">Rig
       <select id="rigSelect"></select>
     </label>
-    <label class="nightof">Night of
-      <input type="date" id="tb-date">
-    </label>
     <label class="minalt" title="Minimum useful altitude for planning">
-      Min alt
-      <input type="range" id="tb-minalt" min="5" max="70" step="1" value="25">
+      Min altitude
+      <input type="range" id="tb-minalt" aria-label="Minimum altitude" min="5" max="70" step="1" value="25">
       <span id="tb-minalt-val" class="mono">25&deg;</span>
       <span id="tb-note" class="note"></span>
     </label>
+    </div>
+    <div class="time-controls" role="group" aria-label="Planned night and time">
+    <label class="nightof">Night of
+      <input type="date" id="tb-date">
+    </label>
     <div class="scrub" title="Scrub the sky through its night — syncs Sky View">
-      <input type="range" id="tb-scrub" min="0" max="1440" step="15" value="0">
+      <span class="control-label">Time</span>
+      <input type="range" id="tb-scrub" aria-label="Selected observing time" min="0" max="1440" step="15" value="0">
       <strong id="tb-scrub-time" class="mono"></strong>
     </div>
+    </div>
+    <div id="nightInfo" class="nightinfo" aria-label="Moon and darkness for the planned night"></div>
   </div>
 
-  <span class="busy-slot"><span id="busy" class="hidden" title="working..."><span class="busy-dot"></span><span class="busy-txt"></span></span></span>
+  <span class="busy-slot"><span id="busy" class="hidden" role="status" title="working..."><span class="busy-dot" aria-hidden="true"></span><span class="busy-txt"></span></span></span>
 
   <div class="topbar-right">
-    <div id="nightInfo" class="nightinfo"></div>
     <div class="popwrap weatherwrap">
-      <button id="btnWeather" class="ghost weatherbtn" title="Weather for the active site — click to load">
+      <button id="btnWeather" class="ghost weatherbtn" aria-expanded="false" aria-controls="weatherPanel" title="Weather for the active site — click to load">
         <span id="wxStatusDot" class="wx-status-dot wx-unknown" aria-hidden="true">○</span>
         <span id="wxChip">☁️ Weather</span>
       </button>
-      <div id="weatherPanel" class="popover weather-panel hidden">
+      <div id="weatherPanel" class="popover weather-panel hidden" role="region" aria-label="Weather and weather options">
         <div class="menu-section">
           <h4>Weather · <span id="wxSite">active site</span></h4>
           <div id="wxBody">
@@ -82,12 +87,12 @@
       </div>
     </div>
     <div class="popwrap menuwrap">
-      <button id="btnMenu" class="ghost menubtn" title="Options">
+      <button id="btnMenu" class="ghost menubtn" aria-label="Options" aria-expanded="false" aria-controls="menuPanel" title="Options">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
           <path d="M4 6h16M4 12h16M4 18h16"/>
         </svg>
       </button>
-      <div id="menuPanel" class="popover menu-panel hidden">
+      <div id="menuPanel" class="popover menu-panel hidden" role="region" aria-label="Planner options">
         <div class="menu-section">
           <h4>Display</h4>
           <label class="inline" for="edgeSpace">Free space per side <span id="edgeSpaceVal" class="mono">16&nbsp;px</span></label>
@@ -181,8 +186,9 @@
         <div class="menu-section">
           <h4>About</h4>
           <p class="hint">NightSeam <span id="aboutVersion" class="mono">…</span> &mdash; deep-sky night planning.<br>
-          MIT licensed. Catalog: <a href="https://github.com/mattiaverga/OpenNGC" target="_blank" rel="noopener">OpenNGC</a> (CC BY-SA 4.0). Images: <a href="https://commons.wikimedia.org/" target="_blank" rel="noopener">Wikimedia Commons</a>. Weather: <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a>. Popularity: the popularity source (one-time snapshot, baked into the catalog).<br>
-          Runs 100% client-side &mdash; your data stays in this browser.</p>
+          MIT licensed. Astronomy calculations run on this device; planning data is saved in this browser.<br>
+          Optional weather and external object photos use online services.
+          <a href="../about.html">About &amp; help</a> · <a href="image-credits.html">Image credits</a> · <a href="../privacy.html">Privacy</a></p>
         </div>
       </div>
     </div>
@@ -206,12 +212,18 @@
 </main>
 
 <footer class="foot">
-  <p>NightSeam Web — browser port of NightSeam. Catalog: OpenNGC + supplement (12,176 objects) · <a href="https://github.com/mattiaverga/OpenNGC" target="_blank" rel="noopener" style="color:var(--muted)">OpenNGC</a> <a href="https://creativecommons.org/licenses/by-sa/4.0/" target="_blank" rel="noopener" style="color:var(--muted)">CC BY-SA 4.0</a> · images: <a href="https://commons.wikimedia.org/" target="_blank" rel="noopener" style="color:var(--muted)">Wikimedia Commons</a> · weather: <a href="https://open-meteo.com" target="_blank" rel="noopener" style="color:var(--muted)">Open-Meteo</a> · popularity: the popularity source (one-time snapshot, shipped with the catalog). Runs 100% client-side — no server involved. <span class="foot-ver" id="foot-ver">…</span></p>
+  <p>NightSeam Web · browser night planner. Planning data is saved in this browser.
+    <a href="../about.html" style="color:var(--muted)">About &amp; help</a> ·
+    <a href="image-credits.html" style="color:var(--muted)">Image credits</a> ·
+    <a href="../privacy.html" style="color:var(--muted)">Privacy</a> ·
+    <a href="../download.html" style="color:var(--muted)">Changes</a>
+    <span class="foot-ver" id="foot-ver">…</span></p>
 </footer>
 
-<div class="modal-wrap" id="modal" hidden aria-live="polite"></div>
+<div id="plannerStatus" class="visually-hidden" role="status" aria-live="polite" aria-atomic="true"></div>
+<div class="modal-wrap" id="modal" hidden></div>
 <div class="tooltip" id="tooltip" hidden></div>
 
-  <script type="module" src="app.js?v=137"></script>
+  <script type="module" src="app.js?v=158"></script>
 </body>
 </html>

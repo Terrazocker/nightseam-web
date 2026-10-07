@@ -17,6 +17,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tests" / "browser"
 
 import harness  # noqa: E402
 import web_suite  # noqa: E402,F401  (import registers the checks)
+import landing_checks  # noqa: E402,F401
+import selection_checks  # noqa: E402,F401  (WEB-REV-003 selection continuity)
+import phase4_checks  # noqa: E402,F401  (planner controls, focus and responsive layout)
+import remaining_checks  # noqa: E402,F401  (lazy source failure/retry and startup acceptance)
 
 
 def run_gate(**kwargs) -> int:
@@ -31,7 +35,7 @@ def run_gate(**kwargs) -> int:
     try:
         return harness.run(**kwargs)
     except Exception as exc:                       # noqa: BLE001
-        print(f"check_browser FATAL: browser infrastructure could not start "
+        harness.safe_print(f"check_browser FATAL: browser infrastructure could not start "
               f"({type(exc).__name__}: {exc}).")
         return 2
 
@@ -55,7 +59,7 @@ def main() -> int:
 
     if args.list:
         for name, target, _fn in harness.all_checks():
-            print(f"{target:7s} {name}")
+            harness.safe_print(f"{target:7s} {name}")
         return 0
 
     targets = ("web",)

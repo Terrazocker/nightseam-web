@@ -14,6 +14,7 @@
 /* The pure panorama/horizon geometry lives in core/ - baked to
    ./core/<hash>/ and imported through the stable ./core.js stub. The shell
    re-exports it so app.js/nightrank.js keep their public surface. */
+import { vizTheme } from './viztheme.js?v=6';
 import {
   NO_BLOCK, BINS, MASK_W, MASK_H,
   rebuildMask, wrapsFor, altOf, rowOfAlt, xOfAz, azOfX, profileFromMask,
@@ -30,7 +31,7 @@ import {
   historyRedo as coreHistoryRedo, historyMarkSaved as coreHistoryMarkSaved,
   historyDirty as coreHistoryDirty, PANO_HISTORY_LIMIT as coreHISTORY_LIMIT,
   PLANNER_CHANGE_EVENT, nextPlannerRevision, plannerChange, panoramaRevision,
-} from './core.js?v=44';
+} from './core.js?v=45';
 
 export {
   NO_BLOCK, BINS, MASK_W, MASK_H,
@@ -514,10 +515,10 @@ export function renderHorizon(box, onChanged) {
 
   const panoRow = (p) => `
     <li data-id="${esc(p.id)}">
-      <input type="radio" name="pano-active" ${p.id === active ? 'checked' : ''} title="use for planning">
+      <input type="radio" name="pano-active" ${p.id === active ? 'checked' : ''} aria-label="Use horizon ${esc(p.name)} for planning">
       <span class="p-name">${esc(p.name)}</span>
       <span class="p-tags">${p.paintMode} · ${p.fov}°${p.hasImage ? ' · 📷' : ''}</span>
-      <button class="btn small" data-del="${esc(p.id)}" title="delete">🗑</button>
+      <button class="btn small" data-del="${esc(p.id)}" aria-label="Delete horizon ${esc(p.name)}">🗑</button>
     </li>`;
 
   box.innerHTML = `
@@ -527,10 +528,10 @@ export function renderHorizon(box, onChanged) {
       <div style="margin-top:12px">
         <label>Name <input id="pano-name" type="text" value="backyard" style="width:120px"></label>
         <div class="btnrow action-row" style="margin-top:12px">
-          <label class="btn primary" for="pano-file" style="text-align:center" title="choose a photo">📷 Upload photo</label>
+          <label class="btn primary" for="pano-file" role="button" tabindex="0" style="text-align:center" title="choose a photo">📷 Upload photo</label>
           <button class="btn" id="pano-blank">Blank sky</button>
         </div>
-        <input type="file" id="pano-file" accept="image/*" class="vhidden">
+        <input type="file" id="pano-file" accept="image/*" class="vhidden" hidden tabindex="-1">
         <p class="sub" id="pano-note" style="margin-top:8px">Nothing is uploaded to any server. A compressed copy of the photo is saved in your browser's storage so it returns after a reload. Painting changes the live plan immediately; press Save in the editor to keep the changes (you are warned before switching or closing with unsaved edits).</p>
       </div>
     </div>
@@ -641,6 +642,10 @@ export function renderHorizon(box, onChanged) {
   }
 
   $('#pano-blank').addEventListener('click', () => mk(null));
+  box.querySelector('label[for="pano-file"]').addEventListener('keydown', (ev) => {
+    if (ev.key !== 'Enter' && ev.key !== ' ') return;
+    ev.preventDefault(); $('#pano-file').click();
+  });
   // the upload button is a <label for="pano-file"> — the browser opens the
   // file picker natively (no JS click involved, works in every browser);
   // drag & drop onto the page is wired once per view container below.
@@ -758,28 +763,6 @@ function haziEditorHTML(p) {
         <output id="ed-fov-v">${p.fov}\u00B0</output>
       </label>
     </div>
-    <details class="horizon-meta" open>
-      <summary>Calibration provenance</summary>
-      <div class="cal-grid">
-        <label>Method
-          <select id="ed-prov-source" aria-label="Calibration method">
-            ${['manual', 'compass', 'phone_metadata', 'plate_solve', 'imported', 'unknown'].map((v) => `<option value="${v}"${p.provenance?.source === v ? ' selected' : ''}>${v.replace('_', ' ')}</option>`).join('')}
-          </select>
-        </label>
-        <label>Captured
-          <input id="ed-prov-date" type="text" maxlength="40" placeholder="YYYY-MM-DD" value="${esc(p.provenance?.capturedAt || '')}">
-        </label>
-        <label>Operator
-          <input id="ed-prov-operator" type="text" maxlength="96" value="${esc(p.provenance?.operator || '')}">
-        </label>
-        <label>Orientation / reference
-          <input id="ed-prov-orientation" type="text" maxlength="160" placeholder="true north, compass, plate solve…" value="${esc(p.provenance?.orientation || '')}">
-        </label>
-      </div>
-      <label>Calibration notes
-        <textarea id="ed-prov-notes" rows="2" maxlength="320" placeholder="How was this panorama aligned?">${esc(p.provenance?.notes || '')}</textarea>
-      </label>
-    </details>
     <details class="horizon-meta">
       <summary>Named obstruction landmarks</summary>
       <div id="ed-landmarks" class="landmark-list" role="list"></div>
@@ -1002,13 +985,7 @@ function wireEditor(box, p, onChanged) {
 
   function syncMetadataFromUI() {
     const get = (id) => $(id, box);
-    p.provenance = normalizeHorizonProvenance({
-      source: get('#ed-prov-source')?.value,
-      capturedAt: get('#ed-prov-date')?.value,
-      operator: get('#ed-prov-operator')?.value,
-      orientation: get('#ed-prov-orientation')?.value,
-      notes: get('#ed-prov-notes')?.value,
-    });
+    // Provenance is retained from storage/import; it is no longer an editor field.
     const confidence = get('#ed-profile-confidence');
     if (confidence && confidence.value !== '') {
       const n = num(confidence.value);
@@ -1151,16 +1128,17 @@ function wireEditor(box, p, onChanged) {
   }
 
   function drawGrid(err) {
-    ctx.fillStyle = '#0c1830';
+    const V = vizTheme();
+    ctx.fillStyle = V.canvas;
     ctx.fillRect(0, 0, MASK_W, MASK_H);
-    ctx.strokeStyle = 'rgba(124,196,255,.15)';
+    ctx.strokeStyle = V.grid;
     ctx.lineWidth = 1;
     for (let i = 1; i < 8; i++) {
       const y = (i / 8) * MASK_H;
       ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(MASK_W, y); ctx.stroke();
     }
     if (err) {
-      ctx.fillStyle = 'rgba(255,190,107,.9)';
+      ctx.fillStyle = V.warn;
       ctx.font = '15px system-ui';
       ctx.textAlign = 'center';
       ctx.fillText('\uD83D\uDE15 could not decode this image (HEIC files need conversion)', MASK_W / 2, MASK_H / 2);
@@ -1214,6 +1192,7 @@ function wireEditor(box, p, onChanged) {
    *  drawn under ctxTransform), so a line that looks centered IS centered.
    *  Density rises with zoom; majors stay N/E/S/W + the horizon line. */
   function drawGuides() {
+    const V = vizTheme();
     ctx.save();
     ctx.textBaseline = 'alphabetic';
     const altStep = view.zoom >= 3 ? 5 : 15;
@@ -1232,12 +1211,12 @@ function wireEditor(box, p, onChanged) {
       // still skip when they fall outside.
       if (base) y = Math.min(Math.max(y, 6), MASK_H - 6);
       else if (y < 6 || y > MASK_H - 2) continue;
-      ctx.strokeStyle = base ? 'rgba(123,241,168,.6)' : 'rgba(124,196,255,.16)';
+      ctx.strokeStyle = base ? V.good : V.grid;
       ctx.lineWidth = base ? 1.4 : 1;
       ctx.setLineDash(base ? [7, 5] : []);
       ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(MASK_W, y); ctx.stroke();
       ctx.setLineDash([]);
-      ctx.fillStyle = base ? 'rgba(123,241,168,.9)' : 'rgba(200,214,240,.7)';
+      ctx.fillStyle = base ? V.good : V.axis;
       ctx.fillText((alt > 0 ? '+' : '') + alt + '\u00B0', 3, y - 3);
     }
     ctx.textAlign = 'center';
@@ -1248,25 +1227,25 @@ function wireEditor(box, p, onChanged) {
       if (x < -1 || x > MASK_W + 1) continue;
       const cardA = ((a % 360) + 360) % 360;
       const major = cardA % 90 === 0;
-      ctx.strokeStyle = major ? 'rgba(255,209,102,.6)' : 'rgba(255,209,102,.22)';
+      ctx.strokeStyle = major ? V.gridStrong : V.gridSub;
       ctx.lineWidth = major ? 1.3 : 1;
       ctx.setLineDash(major ? [] : [3, 4]);
       ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, MASK_H); ctx.stroke();
       ctx.setLineDash([]);
       const lab = major ? ['N', 'E', 'S', 'W'][cardA / 90] : cardA + '\u00B0';
-      ctx.fillStyle = major ? '#ffd166' : 'rgba(255,209,102,.75)';
+      ctx.fillStyle = major ? V.minLabel : V.axis;
       ctx.font = major ? 'bold 11px system-ui' : '10px system-ui';
       ctx.fillText(lab, x, 13);
     }
     if (fov < 359.5) {
       const xc = xOfAz(p, azOff + fov / 2);
       if (xc >= 0 && xc <= MASK_W) {
-        ctx.strokeStyle = 'rgba(255,255,255,.5)';
+        ctx.strokeStyle = V.dim;
         ctx.lineWidth = 1;
         ctx.setLineDash([2, 3]);
         ctx.beginPath(); ctx.moveTo(xc, 0); ctx.lineTo(xc, MASK_H); ctx.stroke();
         ctx.setLineDash([]);
-        ctx.fillStyle = 'rgba(255,255,255,.8)';
+        ctx.fillStyle = V.text;
         ctx.font = '10px system-ui';
         ctx.fillText('center', xc, MASK_H - 4);
       }
@@ -1275,6 +1254,7 @@ function wireEditor(box, p, onChanged) {
   }
 
   function drawProfile() {
+    const V = vizTheme();
     // Invariant: with no strokes the stored profile stays authoritative.
     if (p.strokes.length > 0) {
       const { prof, top } = profileFromMask(p, mask);
@@ -1285,15 +1265,15 @@ function wireEditor(box, p, onChanged) {
     const sx = profCvs.width / W, sy = profCvs.height / H;
     profCtx.setTransform(sx, 0, 0, sy, 0, 0);
     profCtx.clearRect(0, 0, W, H);
-    profCtx.fillStyle = '#081022';
+    profCtx.fillStyle = V.canvas;
     profCtx.fillRect(0, 0, W, H);
     const lo = Math.min(p.altBottom, 0);
     const hi = Math.max(p.altTop, 10);
     const altY = (alt) => H - ((alt - lo) / Math.max(1, hi - lo)) * H;
     const minimum = effectiveMinAlt();
     const guides = [
-      { alt: 0, color: 'rgba(127,151,184,.52)', dash: [2, 4], label: 'horizon 0°' },
-      { alt: minimum, color: 'rgba(240,195,106,.82)', dash: [7, 4], label: `min ${minimum.toFixed(0)}°` },
+      { alt: 0, color: V.dim, dash: [2, 4], label: 'horizon 0°' },
+      { alt: minimum, color: V.minStroke, dash: [7, 4], label: `min ${minimum.toFixed(0)}°` },
     ].filter((guide, i, all) => guide.alt >= lo && guide.alt <= hi
       && all.findIndex((item) => Math.abs(item.alt - guide.alt) < 0.1) === i);
     for (const guide of guides) {
@@ -1315,7 +1295,7 @@ function wireEditor(box, p, onChanged) {
     const azOff = 0, fov = 360;
     if (paintMode() === 'obstacle') {
       const segs = profileSegments(p.profile, W, H, lo, hi, azOff, fov, 90.5);
-      profCtx.strokeStyle = '#ff6b6b';
+      profCtx.strokeStyle = V.bad;
       profCtx.lineWidth = 2;
       profCtx.beginPath();
       for (const s of segs) {
@@ -1323,7 +1303,7 @@ function wireEditor(box, p, onChanged) {
       }
       profCtx.stroke();
     } else {
-      profCtx.fillStyle = 'rgba(120,230,140,.35)';
+      profCtx.fillStyle = V.goodFill;
       for (const pts of skyBandPolygons(p, W, H, lo, hi, azOff, fov)) {
         profCtx.beginPath();
         pts.forEach(([x, y], k) => (k ? profCtx.lineTo(x, y) : profCtx.moveTo(x, y)));
@@ -1335,7 +1315,7 @@ function wireEditor(box, p, onChanged) {
       // space - the same full-width transform as the band fill above.
       if (!p.blockAbove) {
         profCtx.save();
-        profCtx.strokeStyle = 'rgba(210,225,255,.28)';
+        profCtx.strokeStyle = V.assumedHatch;
         profCtx.lineWidth = 1;
         for (const pts of assumedOpenHatchPolys(p, W, H, lo, hi)) {
           profCtx.save();
@@ -1362,7 +1342,7 @@ function wireEditor(box, p, onChanged) {
     if (compare && Array.isArray(compare.profile) && compare.profile.length === BINS) {
       const compareSegs = profileSegments(compare.profile, W, H, lo, hi, azOff, fov, 90.5);
       profCtx.save();
-      profCtx.strokeStyle = 'rgba(120,190,255,.95)';
+      profCtx.strokeStyle = V.targetSecondary;
       profCtx.lineWidth = 1.5;
       profCtx.setLineDash([5, 3]);
       profCtx.beginPath();
@@ -1381,14 +1361,14 @@ function wireEditor(box, p, onChanged) {
       }
       profCtx.restore();
     }
-    profCtx.fillStyle = 'rgba(127,151,184,.8)';
+    profCtx.fillStyle = V.axis;
     profCtx.font = '9px system-ui';
     profCtx.fillText(lo.toFixed(0) + '\u00B0', 2, H - 3);
     profCtx.fillText(hi.toFixed(0) + '\u00B0', 2, 12);
     profCtx.fillText('profile \u2014 ' + paintMode() + ' \u00B7 alt ' + lo.toFixed(0) + '\u2026' + hi.toFixed(0) + '\u00B0', 540, 14);
     const selected = profileIndex();
     const selectedX = selected / Math.max(1, BINS - 1) * W;
-    profCtx.strokeStyle = 'rgba(240,195,106,.95)';
+    profCtx.strokeStyle = V.minStroke;
     profCtx.lineWidth = 1;
     profCtx.setLineDash([3, 3]);
     profCtx.beginPath(); profCtx.moveTo(selectedX, 0); profCtx.lineTo(selectedX, H); profCtx.stroke();
@@ -1771,17 +1751,7 @@ function wireEditor(box, p, onChanged) {
     commit();
   });
 
-  // Descriptive metadata is edited live but coalesced into one history entry
-  // when the field changes or the user presses Save. This keeps typing from
-  // consuming the bounded undo stack while still making a focused field dirty
-  // before navigation can flush it.
-  ['#ed-prov-source', '#ed-prov-date', '#ed-prov-operator',
-   '#ed-prov-orientation', '#ed-prov-notes'].forEach((sel) => {
-    const el = $(sel, box);
-    if (!el) return;
-    el.addEventListener('input', markMetadataPending);
-    el.addEventListener('change', () => { syncMetadataFromUI(); commitMetadata(); });
-  });
+  // Confidence edits become dirty immediately and are committed on Apply/Save.
   const confEl = $('#ed-profile-confidence', box);
   if (confEl) confEl.addEventListener('input', markMetadataPending);
   const readBin = $('#ed-profile-read', box);
@@ -1887,9 +1857,19 @@ function wireEditor(box, p, onChanged) {
   if (activeSession && activeSession.disconnect) activeSession.disconnect();
   activeSession = { panoId: p.id, hist, dirty, revert: revertSession, save: saveSession };
   if (typeof ResizeObserver !== 'undefined') {
-    const ro = new ResizeObserver(() => fitCanvas());
+    let resizeFrame = null;
+    const ro = new ResizeObserver(() => {
+      if (resizeFrame !== null) return;
+      resizeFrame = requestAnimationFrame(() => {
+        resizeFrame = null;
+        if (boxEl.isConnected) fitCanvas();
+      });
+    });
     ro.observe(boxEl);
-    activeSession.disconnect = () => ro.disconnect();
+    activeSession.disconnect = () => {
+      ro.disconnect();
+      if (resizeFrame !== null) cancelAnimationFrame(resizeFrame);
+    };
   } else {
     activeSession.disconnect = null;
   }

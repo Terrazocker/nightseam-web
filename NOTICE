@@ -24,18 +24,6 @@ original catalog, 18th century).
 Changes made to the OpenNGC-derived data: field selection and light
 normalization to the application's data model; no object data was invented.
 
-Popularity data — the popularity source
------------------------------
-The community popularity counts that rank the catalog (and select the 200
-"standard mode" targets) originate from the popularity source:
-
-    https://popularity-source.invalid/
-
-They are shipped as a ONE-TIME snapshot baked into the application's catalog
-data (`app/popularity_data.py` -> `web/catalog.json`). Neither NightSeam shell
-contacts the popularity source at runtime; the snapshot is refreshed deliberately by the
-maintainers with `scripts/match_popularity.py --live`.
-
 Astronomy algorithms
 --------------------
 Sun/moon positions, twilight, refraction and precession are implemented
@@ -47,34 +35,43 @@ after published algorithms in:
 this implementation is original code.)
 
 
-Object example images — Wikimedia
----------------------------------
-Example photos of objects are fetched at runtime from Wikipedia /
-Wikimedia Commons, and a subset is bundled with the web version. Each image
-is the work of its individual author and remains under its own license
-(typically CC BY-SA, CC BY, or public domain). Per-image credit and license
-details are available on the file pages:
+Object photos — Wikipedia and Wikimedia
+---------------------------------------
+Object photos load on demand through Wikipedia and Wikimedia image services.
+Credit belongs to the original image creators. The planner retains each fetched
+photo's exact file-page link and available author/license metadata alongside
+its browser cache. No object photographs are bundled with the website.
+The software MIT license does not cover these third-party photographs.
 
-    https://commons.wikimedia.org/
-    (search for the object's name, e.g. "Messier 42")
+For online thumbnails, Wikipedia supplies the image URL and its
+imageinfo API supplies author/license metadata when available. The planner
+links the exact Wikimedia file page derived from that image URL and keeps
+attribution with newly cached image bytes. Existing cached images may lack
+that record; unavailable attribution is displayed explicitly. The file page
+remains the authority for complete terms. Missing author/license metadata is
+not treated as permission or assigned a guessed license.
 
 Weather — Open-Meteo
 --------------------
 Weather data for observing sites is fetched from the Open-Meteo API:
 
     https://open-meteo.com/
-    Weather data © Open-Meteo.com, free for non-commercial use.
+Forecast and air-quality data are supplied by Open-Meteo. API data are
+licensed under CC BY 4.0; the free API service has separate non-commercial
+use and request-limit terms. Data displayed in NightSeam are selected and
+formatted for the observing-site weather summary.
+    https://open-meteo.com/en/licence
+    https://creativecommons.org/licenses/by/4.0/
     https://open-meteo.com/en/terms
 
-Browser & OS runtime components
--------------------------------
-The Windows executable embeds a Python 3.12 runtime plus:
-FastAPI, uvicorn, Starlette, Pydantic, pywebview, PyInstaller bootloader —
-all under permissive (BSD/MIT/Apache-2.0) licenses. Their license texts are
-distributed in the package source tree (.venv-build site-packages) and are
-available on request.
+Browser runtime
+---------------
+The website is static HTML, CSS and native JavaScript modules. It does not
+ship a Windows executable or embedded Python/server/browser runtime.
+Development tooling dependencies remain separate from browser release files.
 
 Meteor shower display data — public domain/general reference sources.
 
-If you believe a credit is missing or incorrect, please open an issue on the
-project's repository.
+The project repository is currently private. Public help and feedback use
+the operator contact in the website's Imprint, linked from About. No public
+source repository or issue tracker is advertised.

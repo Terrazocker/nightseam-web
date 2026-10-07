@@ -1,14 +1,127 @@
 # Independent website decisions
 
+## 2026-10-06 — Open planner surface and live catalog modes
+
+Apply the independent catalog's transparent actions, underlined tabs and open
+metrics/inner sections throughout the web planner. Use spacing/type/separators
+for hierarchy; keep input/focus affordances and bounded temporary dialogs/menus.
+Preserve the already approved public-page composition and canonical role palette.
+
+Fix Advanced loading in the web shell without a second astronomy implementation
+or a worker: repeated panorama hashing, per-row twilight scans and an unnecessary
+application reload were avoidable costs. Reuse each grid fingerprint, share page
+batches and own/cancel the warm job. The same populated-profile benchmark measured
+normal CPU activation/complete visibility at 1.21s/2.45s before and 0.13s/0.20s
+after; 4x CPU slowdown at 6.57s/14.31s before and 0.25s/1.13s after. Longest task
+under slowdown fell from 5.55s to 0.11s. These are local Chrome measurements, not
+network/hardware guarantees. Baseline/after JSON and the measurement script are
+in ignored logs/open-design/. Browser acceptance covers actual live toggles,
+populated-profile warming, search/date preservation and superseded work.
+
 On October 1, 2026 the local catalog and website became separate repositories.
 Each owns its source dependencies, catalog inputs, tests, builds and release
-versions. The catalog begins at 0.1.0; the website retains its existing history.
+versions. Both independent products begin their public version series at 0.1.0;
+the website reset was requested on October 6. Existing Git history stays intact.
 No sibling source imports or symlinks are used. Existing archive paths and both
 desktop libraries were preserved. The remaining entries below are historical
 decisions from the combined project; references to removed cross-project paths
 describe that historical state, not current build requirements.
 
 # DECISIONS.md — why NightSeam works the way it does
+
+## 2026-10-06 — Remove redundant Tonight graph and provenance entry
+
+The owner removed the Tonight overview graph and Horizon calibration provenance
+form. Keep Tonight's time control/ranking and the full inspector graph. Remove
+unused overview sampling, listeners and styles. Provenance removal is a UI change:
+preserve existing imported/saved metadata through Save, history and backup. Grow
+Catalog's multiple-select type list to the current complete option count rather
+than limiting it to four scrollable rows.
+
+## 2026-10-06 — One full inspector in the Sky View rail
+
+Remove the compact selected-target summary and miniature altitude chart from Sky
+View. Reuse the shared full inspector inline in that space, with collapsed chart
+controls/legend above and visible-now targets below. Deliberate target clicks
+open full details directly; closing, filtering and refreshing retain selection
+without reopening. Inline details remain complementary on phones too so users
+can operate the map and time controls. Park the shared wrapper outside #view
+before replacing its contents or opening Setup; never clone the inspector.
+
+## 2026-10-06 — Phase 4 readable controls and explicit focus behavior
+
+Group observing setup and planned night/time instead of fitting the header by
+shrinking text. Keep the clock visible and dense tables scrollable on phones.
+Use a shared reachable-control rule for modal trapping and focus restoration;
+closed disclosure descendants are excluded. Isolate background controls only
+for actual modals, keeping the wide inspector complementary. Popovers expose
+their expanded state and return focus on Escape; scoped arrow navigation wins
+over global scrub shortcuts. Onboarding describes the real menu and example
+site. Quiet status messages cover meaningful changes, without making entire
+dialogs live regions. This implements Phase 4; automated evidence does not close
+the outstanding real screen-reader/native-zoom acceptance.
+
+## 2026-10-06 — One target identity, explicit inspector visibility (WEB-REV-003)
+
+Tonight, Catalog and Sky View share S.detailId as their selected-target identity;
+S.detailOpen separately controls inspector visibility. Closing details or
+switching views preserves selection and highlighting. Filters do not replace
+the target; deletion or absence from the authoritative catalog clears it.
+Sky View and the Tonight overview cannot fabricate a selection. Separate mutable
+identities drifted under filters and redraws; explicit visibility keeps a closed
+inspector closed through refresh, resize and subscription callbacks.
+
+## 2026-10-06 — Remove visible popularity sorting and name the time slider
+
+The owner requested only these two planner fixes. Remove the Popularity option
+and use Name ascending initially and after clearing filters, keeping the visible
+selector consistent with actual ordering. This supersedes the historical tier
+default without changing internal ranking or Standard membership. Name the top
+slider Selected observing time and expose the displayed site clock through
+aria-valuetext. Broader manual accessibility acceptance remains open.
+
+## 2026-10-06 — Wikipedia-only object photos
+
+The owner requested removal of the legacy bundled image library. All 81 JPEGs,
+their attribution manifest and generator are removed. Opening object details
+now reuses the Wikipedia photo cache or fetches a thumbnail directly; it never
+probes a local object JPEG. Author/license metadata stays with cached bytes and
+the exact file-page link. Existing cached photos remain usable and missing
+photos keep their textual placeholder. This supersedes the bundled-image
+inventory/verification decisions below and resolves IMAGE-001 by removal,
+not by claiming permission for historical images. Branding, decorative public
+art and user panoramas are unchanged.
+
+## 2026-10-06 — Owner-confirmed website log configuration
+
+The owner changed Plesk to daily rotation with a maximum of seven log archives,
+compression enabled and no email forwarding, and cannot enable IP anonymization.
+Privacy documents full IPs and the actual rotation/file-count configuration,
+including the current active log. No strict seven-day cutoff, provider-wide
+retention rule or anonymization is inferred. HOST-001 is complete for this
+owner-confirmed website configuration; hosting settings were changed by the
+owner, not by an agent.
+
+## 2026-10-06 — Compact public image credits
+
+At the owner's request, About credits online photos through Wikipedia/Wikimedia
+and their original creators, with an Image credits link and individual photo
+author/source/license details retained. Bundled photos keep their actual source
+terms; they are not relabeled as Wikipedia images. The popularity source acknowledgement
+is removed from About and NOTICE; Privacy describes catalog requests without
+naming that source. Internal catalog provenance and selection data
+are unchanged; no permission grant or mandatory attribution condition was
+established in the source review. Existing image verification findings stay open.
+
+## 2026-10-06 — Independent website public history starts at 0.1.0
+
+The owner approved the public design and requested removal of all older Changes
+entries after the website/catalog split. The public page and JSON now contain
+one website 0.1.0 entry. This supersedes earlier public archive preservation
+decisions below. The explicit PUBLIC_RELEASES ledger, rather than inherited Git
+tags, determines public membership so regeneration cannot restore old notes.
+Legacy summaries remain internal release-guard evidence; Git tags are untouched.
+The entry prepares the new series and does not create a tag or publish a release.
 
 One entry per decision that an agent or maintainer would otherwise re-litigate.
 Format: **decision** → why → what was rejected → where it is enforced.
@@ -1036,3 +1149,118 @@ human source URL and license for attribution.
 Both copies are byte-identical and checked against the catalog id set, the
 desktop CSV hash, a manifest, and `CATALOG_PROVENANCE_TOKEN`. A future rebuild
 must bump that token and refresh the generated baseline in the same change.
+
+
+## 2026-10-05 — Bounded observing intervals and unchanged astronomy anchors
+
+Phase 1 corrects WEB-REV-001. A scoring node owns a positive-duration half-open
+cell [jd, jd + step), clipped to the authoritative night bounds. A terminal node
+at or after dawn owns no observing time. Partial first/final cells contribute
+proportional score and duration; the longest run is chosen by elapsed time.
+Sampling origins, precession midpoint, astronomical calculations and published
+reference anchors remain unchanged. Full-grid altitude/blocked diagnostics still
+use the original track nodes. No CO-07 grid alignment is introduced.
+
+Best-window endpoints and visible minutes come from core/scoring.js in every
+view. Detail charts retain wider context/hover samples, but those samples no
+longer establish a separate usable interval or duration. Selected-time window
+membership excludes dawn consistently with the half-open contract.
+
+Frozen scoring goldens retain their original bytes and historical terminal-node
+count. The parity runner independently reconstructs those historical counters,
+checks bounded counters against a direct-sample oracle, and subtracts only the
+independently calculated terminal contribution from frozen scores with the
+original tolerances. Scoring-coefficient and terminal-overcount mutations must
+fail. This is an intentional correction of elapsed-time aggregation, not a
+replacement of astronomy evidence.
+
+For WEB-REV-002, both document and server policies narrowly permit thumbnail
+fetches to https://upload.wikimedia.org and blob: image display. Script policy
+remains unchanged. Controlled browser checks require decoded images through
+fresh and persisted-cache paths and verify graceful unavailable/retry behavior.
+
+
+## 2026-10-06 — Honest browser-product copy and static release history
+
+The public product is the independent browser planner. The separate Windows
+catalog remains local-only; no new catalog download or public repository is
+implied. Astronomy calculations and saved planning data are local, while hosting,
+optional weather and external photos involve online requests. Offline reopening
+is not promised. Owner-confirmed hosting is ZAP-Hosting without a CDN; unknown
+log retention remains an explicit publication dependency.
+
+Keep /download.html as the compatible Changes route. Generate usable release
+HTML at build time, retain the JSON record, use native disclosures and preserve
+all pre-split history. A tag identifies release history, not deployment status.
+This removes the loading/fetch/no-JavaScript failure surface without introducing
+a bundler, server or extra release-status network dependency.
+
+Per-image credits identify actual bytes and available evidence. DSS institutional
+survey terms are not replaced with a blanket Commons/public-domain claim. Missing
+source/rights remain pending. Runtime Wikimedia credits refer to the exact file,
+store provider author/license metadata with new cached photos, and render as
+plain text with host-restricted source links. Detailed credit information belongs
+in the existing source disclosure, so attribution does not enlarge the compact
+photo area. Preserve current source-repository privacy and established contact.
+
+
+## Public design approval and implementation — October 6, 2026
+
+The owner approved a sparse Home with panorama/visibility messaging and a subdued
+sky-map background, followed by matching concepts for Features, About, Changes,
+Privacy and Imprint. This supersedes the first Phase 3 concept's planner
+screenshots, metric strips and exposed setup guide. Detailed facts are retained
+behind native disclosures; optional first-night guidance is in Features.
+
+Implement the visual blueprint in HTML/CSS and a small decorative vector, not a
+bitmap of generated page text or invented numerical chart results. Reuse canonical
+Workbench roles. Keep site and planner mounted independently at their existing
+public addresses, within this website repository. The catalog stays separate.
+No deployment, release tag or new public catalog offer is authorized by design
+approval. HOST-001 and IMAGE-001 were later resolved by owner-confirmed logging
+and removal of the legacy bundled inventory; the dated observations above
+describe their earlier state.
+
+## October 7, 2026 — Remaining website pass
+
+Keep optional catalog source history outside the startup critical path. Load it
+when the user opens Catalog details or exports provenance, with one validated
+request and an explicit retry path. Do not parallel-fetch all optional audit
+data at startup: that still competes for bandwidth before usable planning.
+Planning rows, source bytes/IDs, standard membership and core math stay unchanged.
+
+DEC-003 is resolved as metadata-only elevation for the current product. Adding a
+horizon dip silently would change the relationship to the owner's painted local
+obstructions. State the actual limitation beside elevation entry and prove the
+existing invariant; a future physical-model change needs deliberate new scope.
+
+Prepare compression and long caching only for versioned assets; revalidate entry
+points, versions and manifests. The Plesk Apache/nginx arrangement is not inferred
+from local behavior. Publishable configuration and a faithful local simulator
+provide a concrete review result; actual host response headers still need live
+acceptance after authorized deployment. No no-store workaround is used.
+
+Complete local preparation on the existing dirty branch without manufacturing a
+clean 0.1.0 build. The public ledger starts at 0.1.0 by owner request; inherited
+v0.6.x tags remain historical and git-describe truth remains v0.6.36-dirty here.
+A new reviewed clean commit/tag and explicit deployment authorization are distinct
+steps. Recursive upload ordering puts every asset before every HTML page, and
+the review manifest lists exact retired files without deleting anything remotely.
+
+Established backlog fixes and review are this pass's implementation scope. New
+ephemeris/seeing/offline capabilities are separately defined in
+FUTURE_FEATURE_SCOPE.md with source/accuracy/provider requirements. The optional
+scope question received no reply; no speculative integration is advertised as
+shipped. Real Windows assistive-technology/native zoom acceptance is retained
+explicitly because this environment cannot operate/listen to the required AT.
+
+## October 7, 2026 — GitHub release authorization
+
+The owner authorized committing and releasing the current website to GitHub.
+Use the fresh independent v0.1.0 tag and current codex/website-phase-two branch;
+preserve the remote master branch and every inherited tag. This GitHub release
+does not establish production deployment or close the human accessibility gate.
+Release preparation found that a cleanup inventory derived from git diff HEAD
+would vanish after committing deletions. Keep its 82 exact reviewed paths in a
+tracked ledger and validate allowed file paths; regenerate the clean publication
+snapshot without losing that later deployment/rollback evidence.

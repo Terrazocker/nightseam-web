@@ -69,6 +69,142 @@ def horizon_test_png(width: int, height: int) -> bytes:
             + chunk(b"IEND", b""))
 
 
+def search_catalog_row(c, object_id: str, search: str):
+    """Wait for the debounced search render, not a stale pre-filtered row."""
+    old_input = c.page.locator("#cat-q").element_handle()
+    c.page.fill("#cat-q", search)
+    c.page.dispatch_event("#cat-q", "input")
+    c.page.wait_for_function("(input) => !input.isConnected", arg=old_input,
+                             timeout=15000)
+    row = c.page.locator(f".cat tbody tr[data-id='{object_id}']")
+    row.wait_for(state="visible", timeout=30000)
+    return row
+
+
+def open_catalog_photo(c, object_id: str, search: str):
+    """Open a known object without depending on its current visibility/rank."""
+    tab(c, "catalog")
+    search_catalog_row(c, object_id, search).click()
+    c.page.wait_for_selector("#d-img", state="attached")
+
+
+def decoded_photo(c, width: int | None = None, height: int | None = None):
+    """A loaded response alone does not prove CSP permitted an image to decode."""
+    c.page.wait_for_function(
+        """() => { const img = document.querySelector('#d-img');
+             return img && img.complete && img.naturalWidth > 0
+               && img.naturalHeight > 0 && getComputedStyle(img).display !== 'none'; }""",
+        timeout=15000)
+    image = c.page.evaluate(
+        """async () => { const img = document.querySelector('#d-img');
+             await img.decode();
+             return {width: img.naturalWidth, height: img.naturalHeight, src: img.src,
+               placeholder: getComputedStyle(document.querySelector('#d-imgph')).display}; }""")
+    c.expect_eq(image["placeholder"], "none", "a decoded image must replace its placeholder")
+    if width is not None:
+        c.expect_eq(image["width"], width, "wrong decoded thumbnail width")
+    if height is not None:
+        c.expect_eq(image["height"], height, "wrong decoded thumbnail height")
+    return image
+
+
+def photo_credit_text(c):
+    """Read the full credit through the inspector's source disclosure."""
+    disclosure = c.page.locator("details.catalog-details")
+    if not disclosure.evaluate("element => element.open"):
+        disclosure.locator(":scope > summary").click()
+    credit = c.page.locator("#d-imagecredit")
+    credit.wait_for(state="visible")
+    return credit.inner_text()
+
+
+def photo_routes(c, transient=False):
+    """Exercise the real policy and loader using local deterministic responses.
+
+    Photos load directly from Wikipedia, without local image probes.
+    Both shipped policy carriers protect this document, so a missing allowlist
+    in either one fails the fresh/cached decode checks.
+    """
+    text = (WEB_DIR / ".htaccess").read_text(encoding="utf-8")
+    policy = re.search(
+        r'^\s*Header\s+\S+\s+set\s+Content-Security-Policy\s+"([^"]+)"',
+        text, re.M).group(1)
+
+    def document(route):
+        response = route.fetch()
+        headers = dict(response.headers)
+        headers["content-security-policy"] = policy
+        route.fulfill(response=response, headers=headers)
+
+    c.page.route(c.url("/"), document)
+    state = {"transient": transient, "deny_external": False, "wiki": 0, "image": 0, "credit": 0}
+    expected_errors = []
+    wiki_prefix = "https://en.wikipedia.org/api/rest_v1/page/summary/"
+    thumbnail = "https://thumb.wikimedia.org/wikipedia/commons/thumb/a/ab/Nightseam-test.png/330px-Nightseam-test.png"
+
+    def console(msg):
+        # Only the explicitly induced 503 responses are expected; never blanket
+        # ignore console/page errors, CSP violations or broken local resources.
+        if (msg.type == "error" and msg.location.get("url", "").startswith(wiki_prefix)
+                and "503" in msg.text and state["transient"]):
+            expected_errors.append(msg.text[:300])
+
+    c.page.on("console", console)
+
+    def wiki(route):
+        state["wiki"] += 1
+        if state["deny_external"]:
+            route.abort()
+        elif state["transient"]:
+            route.fulfill(status=503, headers={"Access-Control-Allow-Origin": "*"},
+                          content_type="application/json", body='{"error":"offline fixture"}')
+        else:
+            route.fulfill(status=200, headers={"Access-Control-Allow-Origin": "*"},
+                          json={"type": "standard", "title": "Pinwheel Galaxy",
+                                "thumbnail": {"source": thumbnail}})
+
+    def image(route):
+        state["image"] += 1
+        if state["deny_external"]:
+            route.abort()
+        else:
+            route.fulfill(status=200, headers={"Access-Control-Allow-Origin": "*"},
+                          content_type="image/png", body=horizon_test_png(24, 12))
+
+    def credit(route):
+        state["credit"] += 1
+        if state["deny_external"]:
+            route.abort()
+        else:
+            route.fulfill(status=200, headers={"Access-Control-Allow-Origin": "*"}, json={
+                "query": {"pages": {"1": {"imageinfo": [{"extmetadata": {
+                    "Artist": {"value": '<a href="https://example.org">Fixture author</a>'},
+                    "LicenseShortName": {"value": "CC BY 4.0"},
+                    "LicenseUrl": {"value": "https://creativecommons.org/licenses/by/4.0/"}}}]}}}})
+
+    c.page.route(wiki_prefix + "**", wiki)
+    c.page.route(thumbnail, image)
+    c.page.route("https://en.wikipedia.org/w/api.php?**", credit)
+    return state, expected_errors
+
+
+def stored_photo(c, object_id: str):
+    return c.page.evaluate(
+        """(id) => new Promise((resolve, reject) => {
+             const rq = indexedDB.open('nightseam-images', 1);
+             rq.onerror = () => reject(rq.error);
+             rq.onsuccess = () => {
+               const db = rq.result;
+               const get = db.transaction('thumbs').objectStore('thumbs').get('w:' + id);
+               get.onerror = () => { db.close(); reject(get.error); };
+               get.onsuccess = () => { const value = get.result; db.close();
+                 resolve(value ? {blob: value.blob instanceof Blob,
+                   size: value.blob?.size || 0, missing: !!value.missing,
+                   credit: value.credit || null} : null); };
+             };
+           })""", object_id)
+
+
 def open_editor(c):
     tab(c, "horizon")
     c.page.wait_for_selector("#pano-blank", timeout=20000)
@@ -460,21 +596,24 @@ def web_sun_moon_above_horizon(c):
 @check("web-scrub-changes-time", "web")
 def web_scrub_changes_time(c):
     boot(c)
+    slider = c.page.get_by_role("slider", name="Selected observing time", exact=True)
+    c.expect_eq(slider.count(), 1, "the top time slider needs an accessible name")
     before = c.page.inner_text("#tb-scrub-time").strip()
     c.expect(before, "the scrub must show a time")
-    c.page.evaluate(
-        """() => { const s = document.querySelector('#tb-scrub');
-             const mid = Math.round((Number(s.min) + Number(s.max)) / 2);
-             const cur = Number(s.value);
-             s.value = String(cur === mid ? Math.min(Number(s.max), cur + 90)
-                                          : mid);
-             s.dispatchEvent(new Event('input', { bubbles: true })); }""")
+    c.expect_eq(slider.get_attribute("aria-valuetext"), before,
+                "assistive technology must receive the displayed clock time")
+    key = slider.evaluate("el => Number(el.value) < Number(el.max) ? 'ArrowRight' : 'ArrowLeft'")
+    slider.focus()
+    slider.press(key)
     try:
         c.page.wait_for_function(
             """(prev) => (document.querySelector('#tb-scrub-time')?.textContent || '')
                           .trim() !== prev""", arg=before, timeout=8000)
     except Exception:
         raise AssertionError(f"scrubbing did not change the time from {before!r}")
+    c.expect_eq(slider.get_attribute("aria-valuetext"),
+                c.page.inner_text("#tb-scrub-time").strip(),
+                "keyboard scrubbing must update the accessible clock time")
     c.assert_clean()
 
 
@@ -539,7 +678,107 @@ def web_workbench_only_render(c):
         if view == "sky":
             c.expect(c.page.locator("#sky").bounding_box(), "Sky View canvas missing")
         else:
-            c.expect(c.page.locator("#tonightOverviewChart").bounding_box(), "Tonight chart missing")
+            c.expect(c.page.locator("#tonight-rank-table").bounding_box(), "Tonight ranking missing")
+            c.expect_eq(c.page.locator("#tonightOverviewChart").count(), 0, "Removed overview must stay absent")
+    c.assert_clean()
+
+
+@check("web-photos-online-only", "web")
+def web_photos_online_only(c):
+    state, _expected = photo_routes(c)
+    local_requests = []
+    c.page.on("request", lambda request: local_requests.append(request.url)
+              if "/img/" in request.url or "image-attributions.json" in request.url else None)
+    boot(c)
+    # This target previously had a bundled DSS image. It now takes the same
+    # direct Wikipedia path as every other target, with no failed local probe.
+    open_catalog_photo(c, "ngc281", "NGC 281")
+    image = decoded_photo(c, 24, 12)
+    c.expect(image["src"].startswith("blob:"), "online thumbnail must decode")
+    c.expect_eq(state["wiki"], 1)
+    c.expect_eq(state["image"], 1)
+    c.expect_eq(local_requests, [], "legacy image files and manifest must never be requested")
+    c.page.wait_for_function("() => document.querySelector('#d-imagecredit')?.textContent.includes('Fixture author · CC BY 4.0')")
+    c.assert_clean()
+
+
+@check("web-photos-fresh-and-cached", "web")
+def web_photos_fresh_and_cached(c):
+    state, _expected = photo_routes(c)
+    boot(c)
+    open_catalog_photo(c, "ngc5457", "M101")
+    image = decoded_photo(c, 24, 12)
+    c.expect(image["src"].startswith("blob:"), "fresh Wikimedia bytes must display through a blob URL")
+    c.expect_eq(state["wiki"], 1, "fresh thumbnail must fetch Wikipedia once")
+    c.expect_eq(state["image"], 1, "fresh thumbnail must fetch Wikimedia once")
+    cached = stored_photo(c, "ngc5457")
+    c.expect(cached and cached["blob"] and cached["size"] > 0 and not cached["missing"],
+             f"successful thumbnail must persist as a Blob: {cached}")
+    c.page.wait_for_function("() => document.querySelector('#d-imagecredit')?.textContent.includes('Fixture author · CC BY 4.0')")
+    c.expect_eq(c.page.locator("#d-imagecredit a").get_attribute("href"),
+                "https://commons.wikimedia.org/wiki/File:Nightseam-test.png",
+                "credit must identify the exact downloaded file, not a generic object search")
+    c.assert_clean()
+
+    # Reload discards in-memory URLs. The image must decode from IndexedDB even
+    # when every external photo request is denied, rather than refetching it.
+    state["deny_external"] = True
+    c.page.reload(wait_until="domcontentloaded")
+    c.page.wait_for_selector("#cat-q", timeout=60000)
+    open_catalog_photo(c, "ngc5457", "M101")
+    image = decoded_photo(c, 24, 12)
+    c.expect(image["src"].startswith("blob:"), "persisted thumbnail must decode through a new blob URL")
+    c.expect_eq(state["wiki"], 1, "cached thumbnail must not refetch Wikipedia")
+    c.expect_eq(state["image"], 1, "cached thumbnail must not refetch Wikimedia")
+    c.expect_eq(state["credit"], 1, "cached thumbnail must retain attribution without refetching metadata")
+    c.expect("Fixture author · CC BY 4.0" in photo_credit_text(c),
+             "author and license must survive offline cache reuse")
+    # Pre-attribution cache entries remain usable offline, but must never acquire
+    # a guessed author/license from a different or newly selected photograph.
+    c.page.evaluate("""() => new Promise((resolve, reject) => {
+      const rq = indexedDB.open('nightseam-images', 1);
+      rq.onerror = () => reject(rq.error);
+      rq.onsuccess = () => { const db = rq.result;
+        const tx = db.transaction('thumbs', 'readwrite'); const store = tx.objectStore('thumbs');
+        const get = store.get('w:ngc5457'); get.onsuccess = () => {
+          const record = get.result; delete record.credit; store.put(record, 'w:ngc5457'); };
+        tx.oncomplete = () => { db.close(); resolve(); }; tx.onerror = () => reject(tx.error);
+      };
+    })""")
+    c.page.click("#m-close")
+    open_catalog_photo(c, "ngc5457", "M101")
+    decoded_photo(c, 24, 12)
+    c.expect_eq(photo_credit_text(c), "Photo attribution unavailable",
+                "old cached bytes must report absent attribution explicitly")
+    c.expect_eq(state["wiki"], 1, "old cached bytes must not refetch an unrelated image")
+    c.expect_eq(state["credit"], 1, "unknown cached source cannot safely be assigned new metadata")
+    c.assert_clean()
+
+
+@check("web-photos-unavailable-retries", "web")
+def web_photos_unavailable_retries(c):
+    state, expected_errors = photo_routes(c, transient=True)
+    boot(c)
+    open_catalog_photo(c, "ngc5457", "M101")
+    c.page.wait_for_function(
+        """() => document.querySelector('#d-imgph')?.textContent
+             .includes('photo unavailable right now')""", timeout=15000)
+    c.expect(c.page.locator("#d-imgph").is_visible(), "network failure must leave a readable placeholder")
+    c.expect(not c.page.locator("#d-img").is_visible(), "network failure must not show a broken image")
+    c.expect_eq(stored_photo(c, "ngc5457"), None, "transient failures must not cache a missing-photo answer")
+    c.expect(state["wiki"] > 0 and state["image"] == 0,
+             "the controlled unavailable provider must fail before thumbnail download")
+    c.expect_eq(len(expected_errors), state["wiki"], "every induced provider 503 must be accounted for")
+    for message in expected_errors:
+        c.expect(message in c.console_errors, "expected 503 must have been captured by the gate")
+        c.console_errors.remove(message)
+    c.assert_clean()
+
+    state["transient"] = False
+    c.page.click("#m-close")
+    open_catalog_photo(c, "ngc5457", "M101")
+    decoded_photo(c, 24, 12)
+    c.expect_eq(state["image"], 1, "reopening after provider recovery must retry and show the thumbnail")
     c.assert_clean()
 
 
@@ -567,6 +806,19 @@ def web_accessibility_essentials(c):
     tab(c, "catalog")
     c.page.wait_for_selector(".cat tbody tr[data-id]")
     c.page.locator("#cat-more summary").click()
+    c.expect_eq(c.page.locator("#cat-sort").input_value(), "name")
+    options = c.page.locator("#cat-sort option").all_text_contents()
+    c.expect(not any("popularity" in text.lower() for text in options),
+             "the catalog must not expose Popularity sorting")
+    c.expect_eq(c.page.locator('#cat-sort option[value="tier"]').count(), 0)
+    c.page.locator("#cat-sort").select_option("mag")
+    c.page.click("#cat-clear-filters")
+    c.expect_eq(c.page.locator("#cat-sort").input_value(), "name",
+                "clearing filters must restore the visible Name default")
+    c.expect(c.page.locator(".cat .common-cell").evaluate_all("""cells => {
+      const names = cells.map(cell => cell.title);
+      return names.length > 1 && names.every((name, i) => !i || names[i-1].localeCompare(name) <= 0);
+    }"""), "the Name default must actually sort the displayed catalog rows")
     c.page.wait_for_selector("#cat-export-provenance")
     provenance = c.page.evaluate(
         """async () => { const r = await fetch('catalog-provenance.json?v=1');
@@ -577,17 +829,16 @@ def web_accessibility_essentials(c):
     c.expect(provenance["schema"] == 1 and provenance["source"] == "OpenNGC"
              and provenance["aliases"] > 0,
              f"the web provenance sidecar was not loaded: {provenance}")
-    # The catalog may legitimately have no bundled photo for the first row;
-    # the detail view then falls back to its optional Wikipedia thumbnail.
-    c.allow_console_errors("expected missing optional bundled catalog photo")
-    c.allow_failed_responses("expected missing optional bundled catalog photo")
-    row = c.page.locator(".cat tbody tr[data-id]").first
+    # The shared no-thumbnail stub keeps accessibility independent of photos.
+    # Fresh/cached/retry photo behavior has separate strict decoded-image checks.
+    row = search_catalog_row(c, "ngc281", "NGC 281")
     c.expect_eq(row.get_attribute("role"), "button",
                 "catalog rows must be keyboard-openable controls")
     row.focus()
     c.page.keyboard.press("Enter")
     c.page.wait_for_selector("#graph[role='img'][aria-describedby='graphSummary']")
     c.page.locator("#modal .catalog-details > summary").click()
+    c.page.wait_for_function("() => document.querySelector('#d-catalog-source')?.textContent.includes('Designation history')")
     c.expect("Catalog source" in c.page.inner_text("#modal")
              and "Designation history" in c.page.inner_text("#modal"),
              "the web detail must show catalog provenance")
@@ -597,12 +848,11 @@ def web_accessibility_essentials(c):
                 "the wide target inspector must be exposed as a non-modal complementary panel")
     c.expect(c.page.locator("#modal .modal").get_attribute("aria-modal") is None,
              "the wide target inspector must not claim to be modal")
-    c.page.evaluate("""() => {
-        const panel = document.querySelector('#modal .modal');
-        const stops = [...panel.querySelectorAll('a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])')]
-          .filter((el) => el.getClientRects().length > 0);
-        stops.at(-1)?.focus();
-      }""")
+    from phase4_checks import actual_stops
+    stops = actual_stops(c)
+    c.page.locator('#' + stops[-1]).focus()
+    c.expect_eq(c.page.evaluate('() => document.activeElement.id'), stops[-1],
+                'the Tab check must start at its last reachable stop')
     c.page.keyboard.press("Tab")
     c.expect(not c.page.evaluate("() => document.querySelector('#modal .modal')?.contains(document.activeElement)"),
              "Tab must continue out of the wide, docked inspector")
@@ -615,15 +865,14 @@ def web_accessibility_essentials(c):
     row.focus()
     c.page.keyboard.press("Enter")
     c.page.wait_for_selector("#modal:not([hidden]) .modal[role='dialog'][aria-modal='true']")
-    c.page.evaluate("""() => {
-        const panel = document.querySelector('#modal .modal');
-        const stops = [...panel.querySelectorAll('a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])')]
-          .filter((el) => el.getClientRects().length > 0);
-        stops.at(-1)?.focus();
-      }""")
+    from phase4_checks import actual_stops
+    stops = actual_stops(c)
+    c.page.locator('#' + stops[-1]).focus()
+    c.expect_eq(c.page.evaluate('() => document.activeElement.id'), stops[-1],
+                'the Tab check must start at its last reachable stop')
     c.page.keyboard.press("Tab")
-    c.expect(c.page.evaluate("() => document.querySelector('#modal .modal')?.contains(document.activeElement)"),
-             "Tab must wrap within the compact modal inspector")
+    c.expect_eq(c.page.evaluate('() => document.activeElement.id'), stops[0],
+                "Tab must wrap to the first reachable compact-modal control")
     c.page.keyboard.press("Escape")
     c.expect(c.page.evaluate("() => document.activeElement?.matches('.cat tbody tr[data-id]')"),
              "closing the compact inspector must restore focus to its source row")
@@ -642,7 +891,8 @@ def web_accessibility_essentials(c):
     c.page.wait_for_selector("#pano-blank")
     c.page.click("#pano-blank")
     c.page.wait_for_selector("#pano-canvas[aria-describedby='panoChartSummary']")
-    for selector in ("#ed-prov-source", "#ed-landmark-add",
+    c.expect_eq(c.page.locator("[id^=ed-prov-]").count(), 0, "Calibration provenance controls are removed")
+    for selector in ("#ed-landmark-add",
                      "#ed-profile-apply", "#ed-profile-compare"):
         # The metadata groups are deliberately collapsed by default; assert
         # that the controls exist without requiring the user to expand every
@@ -664,7 +914,8 @@ def web_saved_targets_persist_and_prune(c):
     row.wait_for(state="visible", timeout=30000)
     row.locator("[data-save-target]").click()
     c.page.wait_for_function(
-        "() => document.querySelector('.cat tbody [data-save-target]')?.classList.contains('on')")
+        """() => document.querySelector('.cat tbody [data-save-target="ngc224"]')
+             ?.classList.contains('on')""")
     stored = c.page.evaluate("""async () => {
       const Hor = await import('./horizon.js');
       return Hor.getPrefs().savedTargetIds;
@@ -699,8 +950,8 @@ def web_docked_inspector_fit_and_tonight_key(c):
     planner widths and all supported themes; Tonight exposes the chart states
     and guides as a wrapping, theme-token-backed key."""
     boot(c)
-    c.allow_console_errors("optional target images may be absent from the bundled catalog")
-    c.allow_failed_responses("optional target images may be absent from the bundled catalog")
+    c.allow_console_errors("optional online target photos may be unavailable")
+    c.allow_failed_responses("optional online target photos may be unavailable")
     # Use the same deterministic site and session as the visual matrix so M31
     # appears as a real Tonight pick rather than relying on the gate's August
     # clock and generic Berlin seed.
@@ -822,14 +1073,21 @@ def web_docked_inspector_fit_and_tonight_key(c):
           const table = document.querySelector('#tonight-rank-table');
           const rect = el => el?.getBoundingClientRect();
           const b = rect(brief), p = rect(plot), s = rect(scrub), t = rect(table);
+          const region = table?.closest('.tablewrap');
+          const clip = rect(region);
+          const containedScroll = !!clip && clip.left >= -1 && clip.right <= innerWidth + 1 &&
+            ['auto', 'scroll'].includes(getComputedStyle(region).overflowX) &&
+            region.getAttribute('role') === 'region' && region.tabIndex === 0;
           const rows = [...(table?.querySelectorAll('tbody tr[data-tonight-id]') || [])];
           const fullRows = rows.filter(row => {
             const r = row.getBoundingClientRect();
-            return r.width > 0 && r.height > 0 && r.right <= innerWidth + 1 && r.left >= -1;
+            return r.width > 0 && r.height > 0 &&
+              ((r.right <= innerWidth + 1 && r.left >= -1) ||
+                (containedScroll && r.left < clip.right && r.right > clip.left));
           }).length;
-          return { brief: !!b && b.width > 0, plot: !!p && p.width >= 250 && p.height > 0,
+          return { brief: !!b && b.width > 0, plotRemoved: !p,
             scrub: !!s && s.width > 0, table: !!t && t.width > 0,
-            tableScroll: table?.scrollWidth - table?.clientWidth,
+            tableScroll: region?.scrollWidth - region?.clientWidth,
             pageOverflow: document.documentElement.scrollWidth - innerWidth,
             overflows: [...document.querySelectorAll('body *')].map(el => {
               const r = el.getBoundingClientRect();
@@ -840,13 +1098,13 @@ def web_docked_inspector_fit_and_tonight_key(c):
               .sort((a,b) => (b.right-innerWidth) - (a.right-innerWidth)).slice(0,12),
             rows: rows.length, fullRows };
         }""")
-        c.expect(state["brief"] and state["plot"] and state["scrub"] and
+        c.expect(state["brief"] and state["plotRemoved"] and state["scrub"] and
                  state["table"] and state["rows"] >= 3 and state["fullRows"] >= 3,
-                 f"{theme} {width}px: Tonight brief, altitude plot, scrub, and three ranked rows must render: {state}")
+                 f"{theme} {width}px: Tonight brief, scrub, and three ranked rows without the removed overview must render: {state}")
         c.expect(state["tableScroll"] >= 0 and state["pageOverflow"] <= 1,
                  f"{theme} {width}px: Tonight ranking may scroll internally but must not widen the page: {state}")
 
-    def assert_fit(context, *, docked):
+    def assert_fit(context, *, docked, inline=False):
         state = c.page.evaluate("""() => {
         const outer = document.querySelector('#modal');
         const panel = outer.querySelector('.modal');
@@ -865,7 +1123,8 @@ def web_docked_inspector_fit_and_tonight_key(c):
         const action = panel.querySelector('#m-save-target');
         const favorite = panel.querySelector('#m-session-fav');
         const panelRect = panel.getBoundingClientRect();
-        const scrollOwner = outer.classList.contains('detail-docked') ? panel : outer;
+        const inline = outer.classList.contains('detail-inline');
+        const scrollOwner = inline ? document.scrollingElement : outer.classList.contains('detail-docked') ? panel : outer;
         const dpr = window.devicePixelRatio || 1;
         const rects = [title, close, favorite, hero, image, visibility, chart,
           disclosure, metaValue, legend, action].map(el => el?.getBoundingClientRect());
@@ -886,6 +1145,7 @@ def web_docked_inspector_fit_and_tonight_key(c):
           return !!hit && el.contains(hit);
         };
         const reach = el => {
+          if (inline) { el.scrollIntoView({block:'center'}); return inPanelViewport(el); }
           const r = el.getBoundingClientRect();
           const ownerRect = scrollOwner.getBoundingClientRect();
           if (r.top < ownerRect.top) scrollOwner.scrollTop += r.top - ownerRect.top;
@@ -893,6 +1153,7 @@ def web_docked_inspector_fit_and_tonight_key(c):
           return inPanelViewport(el);
         };
         scrollOwner.scrollTop = 0;
+        if (inline) title.scrollIntoView({block:'center'});
         const closeInitiallyVisible = inPanelViewport(close) && isTopmost(close);
         const dialogHeaderVisible = isTopmost(title);
         const reachability = Object.fromEntries([
@@ -904,7 +1165,7 @@ def web_docked_inspector_fit_and_tonight_key(c):
         const imageHeight = image.getBoundingClientRect().height;
         scrollOwner.scrollTop = 0;
         return {
-          docked: outer.classList.contains('detail-docked'),
+          docked: outer.classList.contains('detail-docked'), inline,
           role: panel.getAttribute('role'), modal: panel.getAttribute('aria-modal'),
           panelWidth: panel.clientWidth, panelOverflow: panel.scrollWidth - panel.clientWidth,
           contentWidth: panel.scrollWidth, contentOverflow: panel.scrollWidth - panel.clientWidth,
@@ -919,7 +1180,8 @@ def web_docked_inspector_fit_and_tonight_key(c):
           };
         }""")
         c.expect_eq(state["docked"], docked, f"{context}: inspector presentation changed unexpectedly")
-        if docked:
+        c.expect_eq(state["inline"], inline, f"{context}: inline presentation")
+        if docked or inline:
             c.expect_eq(state["role"], "complementary",
                         f"{context}: docked detail must remain a complementary region")
             c.expect(state["modal"] is None,
@@ -959,7 +1221,6 @@ def web_docked_inspector_fit_and_tonight_key(c):
             target = c.page.locator("#sky-visible-now [data-sky-target]").first
             target.wait_for(state="visible", timeout=15000)
             target.click()
-            c.page.locator("#sky-selected-detail").click()
         try:
             c.page.wait_for_selector("#modal:not([hidden]) .modal", state="visible", timeout=20000)
         except Exception as exc:
@@ -977,8 +1238,9 @@ def web_docked_inspector_fit_and_tonight_key(c):
                 if view == "tonight":
                     assert_night_structure(theme, width)
                 open_detail_in_view(view)
-                c.page.wait_for_selector("#modal.detail-docked > .modal", state="visible")
-                assert_fit(f"{theme} {width}px {view}", docked=True)
+                presentation = 'detail-inline' if view == 'sky' else 'detail-docked'
+                c.page.wait_for_selector(f"#modal.{presentation} > .modal", state="visible")
+                assert_fit(f"{theme} {width}px {view}", docked=view != 'sky', inline=view == 'sky')
                 if view == "catalog":
                     bounds = c.page.evaluate("""() => {
                       const rail = document.querySelector('.cat-filter-rail').getBoundingClientRect();
@@ -1007,47 +1269,11 @@ def web_docked_inspector_fit_and_tonight_key(c):
         c.page.locator("#m-close").click()
         c.page.wait_for_function("() => document.querySelector('#modal')?.hidden")
 
-    for theme in ("workbench",):
-      choose_theme(theme)
-      for width, height in ((640, 900), (360, 800)):
+    for width, height in ((640, 900), (360, 800)):
         c.page.set_viewport_size({"width": width, "height": height})
         tab(c, "tonight")
-        c.page.wait_for_selector("#tonightOverviewChart")
-        c.page.wait_for_function("() => document.querySelectorAll('.tonight-chart-key [role=listitem]').length === 6")
-        key = c.page.evaluate("""() => {
-      const root = document.documentElement;
-      const styles = (sel) => getComputedStyle(document.querySelector(sel));
-      const probe = (value) => {
-        const el = document.createElement('i'); el.style.backgroundColor = value;
-        document.body.append(el); const color = getComputedStyle(el).backgroundColor; el.remove();
-        return color;
-      };
-      const box = document.querySelector('.tonight-chart-key');
-      const items = [...box.querySelectorAll('[role=listitem]')];
-      const visible = items.every((el) => getComputedStyle(el).display !== 'none' && el.getClientRects().length);
-      return {
-        labels: items.map((el) => el.textContent.trim()), visible,
-        wraps: getComputedStyle(box).flexWrap === 'wrap',
-        width: box.clientWidth, overflow: box.scrollWidth - box.clientWidth,
-        blocked: styles('.key-blocked').backgroundColor === probe(getComputedStyle(root).getPropertyValue('--viz-bad').trim()),
-        low: styles('.key-below-min').backgroundColor === probe(getComputedStyle(root).getPropertyValue('--viz-warn').trim()),
-        below: styles('.key-below-horizon').backgroundColor === probe(getComputedStyle(root).getPropertyValue('--viz-below').trim()),
-        twilight: styles('.key-twilight').backgroundColor === probe(getComputedStyle(root).getPropertyValue('--viz-twilight-3').trim()),
-        minimum: styles('.key-minimum').borderTopColor === probe(getComputedStyle(root).getPropertyValue('--viz-min-stroke').trim()),
-        selected: styles('.key-selected-time').borderLeftColor === probe(getComputedStyle(root).getPropertyValue('--viz-target-selected').trim()),
-        pageOverflow: document.documentElement.scrollWidth - innerWidth
-      };
-        }""")
-        labels = " ".join(key["labels"])
-        for phrase in ("Horizon or ceiling blocked", "Below minimum altitude", "Below horizon",
-                       "Twilight", "Minimum-altitude guide", "Selected time"):
-            c.expect(phrase in labels,
-                     f"{theme} {width}px Tonight's visible chart key is missing {phrase!r}: {key}")
-        for token_backed in ("blocked", "low", "below", "twilight", "minimum", "selected"):
-            c.expect(key[token_backed],
-                     f"{theme} {width}px Tonight chart key must use {token_backed} theme semantics: {key}")
-        c.expect(key["visible"] and key["wraps"] and key["overflow"] <= 1 and key["pageOverflow"] <= 1,
-                 f"{theme} {width}px Tonight chart key must wrap without horizontal overflow: {key}")
+        c.wait_tonight_render()
+        assert_night_structure("workbench", width)
     c.assert_clean()
 
 
@@ -1526,3 +1752,9 @@ def web_catalog_direction_b_density(c):
     c.expect(state["pageWidth"] <= state["viewport"] + 1 and not state["advancedOpen"],
              f"the result page must stay in the viewport and advanced filters start collapsed: {state}")
     c.assert_clean()
+
+
+@check("web-interval-view-agreement", "web")
+def web_interval_view_agreement(c):
+    from interval_checks import interval_view_agreement
+    interval_view_agreement(c)

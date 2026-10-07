@@ -1,29 +1,51 @@
-# NightSeam Web roadmap
+# NightSeam Web roadmap and current backlog
 
-This repository owns the web planner and landing pages. Catalog development and
-versions belong to the independent catalog repository.
+Current authority, October 7, 2026. This repository owns only the public site and
+browser planner. The independent Windows catalog has its own repository/roadmap.
+Historical evidence remains in RELEASES/DECISIONS and superseded concept plans.
 
-## Current scope - October 5, 2026
+## Implemented locally
 
-1. Capture fresh full-suite results for the separated website and keep the
-   browser, cache, core and release checks truthful.
-2. Finish the website branch integration and prepare a clean local release.
-   Public deployment requires separate authorization after validation.
+- Phases 1–3: bounded planning intervals, reliable Wikipedia photos/individual
+  credits, truthful product/privacy copy, one independent 0.1.0 Changes entry,
+  approved sparse Workbench public design. Legacy bundled object photos removed.
+- Phase 4: persistent target selection, explicit inspector visibility, accessible
+  common controls, keyboard/focus/dialog behavior, onboarding and responsive views.
+- Open design: one page surface, transparent actions, underlined tabs and open
+  planner sections. Advanced Catalog switches live with batched/cancellable
+  visibility work and per-grid panorama fingerprints.
+- Phase 5: optional provenance loads only on disclosure/export, with single-flight
+  validation/retry and no empty export. Prepared gzip/token-aware cache policy and
+  real local compression/cache simulation; comparable startup evidence recorded.
+- Remaining fixes: encoding-safe browser diagnostics, explicit local import-burst
+  capacity/health evidence, recursive dependency-before-HTML deployment, credential
+  exclusion, metadata-only elevation wording and invariant acceptance.
+- Phase 6 local preparation: integrated review, complete website candidate/manifest,
+  release/pre-tag validation and explicit legacy cleanup/rollback steps.
 
-## Deferred by user - October 5, 2026
+Detailed implementation: WEB_OPEN_DESIGN_IMPLEMENTATION_PLAN.md and
+WEB_REMAINING_WORK_PLAN.md. Final website review: WEBSITE_FINAL_REVIEW.md.
+Actual validation results, not promises, are recorded in RELEASES.md.
 
-The following items remain open; deferral does not mark them resolved.
-Numbers refer to the shared status report's items 3-7.
+## External/manual gates still open
 
-- Item 4: manual accessibility acceptance, including keyboard focus after
-  dialogs, dynamic announcements and screen-reader use (A11Y-001).
-- Item 5: decide and document elevation semantics (DEC-003); current elevation
-  remains metadata until its effect on calculations is deliberately specified.
-- Item 7: consolidate current backlog authority and historical plans without
-  discarding unresolved findings. Catalog map references belong to its own repo.
-- Future work: decide planet/comet/asteroid ephemeris scope and a safe seeing
-  provider; keep source/payload/provenance regeneration self-contained here.
+1. A11Y-001: real screen-reader announcements and native browser zoom. Automated
+   checks are not human acceptance; ACCESSIBILITY_ACCEPTANCE.md is the concrete
+   procedure. Current automation cannot control/listen to Windows AT.
+2. Release/publication: review/commit/new clean tag, separately authorized deploy,
+   actual host compression/cache verification, production smoke and explicit
+   retired-file cleanup. RELEASE_WORKFLOW.md and HOSTING_CONFIGURATION.md govern.
+3. BROWSER-LOCAL-001 monitoring: old refused local module requests are documented;
+   a queue-capacity weakness was reproduced and mitigated, but the precise cause
+   of the historical browser failures was not independently established. Future
+   failures capture server liveness/backlog/request URLs without retries/skips.
 
-Items 3 (native Windows acceptance) and 6 (retained planner retirement) are
-catalog-only and are saved in that project's roadmap. Continue later feature
-work with astronomy authority, backup safety and browser checks intact.
+## Product scope decisions
+
+DEC-003 is resolved for the current product: elevation is recorded metadata, not
+a visibility/horizon correction. Future model changes need deliberate new scope.
+FUTURE_FEATURE_SCOPE.md defines proposed planet-first ephemerides, later selected
+comets/asteroids, provider/accuracy/privacy requirements for seeing, and offline
+reopening requirements. These proposals are not new shipped features or approved
+provider integrations. Current weather/deep-sky/offline claims remain truthful.
+Native Windows/catalog import/storage acceptance belongs in the sibling roadmap.

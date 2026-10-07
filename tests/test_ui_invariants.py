@@ -1,6 +1,6 @@
 """UI invariants: popularity is a scoring input, never a primary table column.
 
-The catalog may retain popularity as a secondary ordering option, but its
+The catalog retains popularity only as an internal scoring input, while its
 primary table follows the compact Direction B columns and never exposes tier
 letters or the underlying the popularity source number. These text assertions fail loudly
 if either shell reintroduces those fields into the visible UI.
@@ -37,14 +37,15 @@ def _read(*parts) -> str:
 
 
 def test_web_catalog_hides_popularity_from_the_primary_table():
-    """Popularity remains a secondary sort input, not a table field."""
+    """Popularity remains internal; the visible default is Name."""
     js = _read("web", "app.js")
     assert '<th>Designation</th><th>Common name</th>' in js
     assert "th('tier', 'Tier')" not in js
     assert "tier-badge" not in js
     assert "<th>Frame</th>" not in js
     assert "assignPopularityTiers" in js, "tiers must come from core, not a copy"
-    assert "sort: 'tier'" in js, "the tier sort is the default (owner decision)"
+    assert "sort: 'name'" in js, "the catalog's visible default is Name"
+    assert "['tier','Popularity']" not in js, "popularity must not be a visible sort option"
     for forbidden in ("th('popularity'", "<dt>Popularity</dt>",
                       "popularityOf(o).toLocaleString", "popularity-aware",
                       "popular: 'Popular'", "${o.popularity", "${a.popularity",
@@ -388,7 +389,9 @@ def test_web_tonight_pool_uses_source_core_and_keeps_unknown_magnitudes():
 def test_source_scoring_range_owns_its_denominator():
     scoring = _read("core", "scoring.js")
     assert "const win = Array.isArray(ctx.range) ? ctx.range : null;" in scoring
-    assert "const nightN = winHi - winLo + 1;" in scoring
+    assert "const windowDays = windowEnd - windowStart;" in scoring
+    assert "windowMinutes: windowDays * 1440" in scoring
+    assert "visibleDays) / windowDays" in scoring
 
 
 def test_web_content_width_follows_free_space_without_a_pixel_cap():
@@ -441,8 +444,13 @@ def test_web_catalog_palette_comes_from_core():
     assert "const TYPE_COLORS = {" not in app and "const TYPE_LABELS = {" not in app
 
 
-def test_web_detail_counts_full_chart_visibility_separately():
+def test_web_detail_delegates_usable_intervals_to_shared_scoring():
     app = _read("web", "app.js")
-    assert "s.alt, minAlt, s.ceil.ceil, s.ceil.ceilTop, true) === 'visible'" in app
-    assert "s.ceil.ceilTop, inNight[i])" in app
-    assert "if (visibleAcrossChart) detailVisibleFullN++;" in app
+    detail = app[app.index("  // ---- altitude chart ----"):app.index("function closeDetail")]
+    assert "const detailWin = nightWindow();" in detail
+    assert "const detailStats = nightStats(o, detailWin.jd0, detailWin.jd1," in detail
+    assert "detailWin.step, minAlt, pano, lat, lon);" in detail
+    assert "visibleMinutes: detailStats.visibleMinutes" in detail
+    assert "E.dateFromJD(detailStats.bestEnd)" in detail
+    assert "bestStart / steps" not in detail
+    assert "visCount *" not in detail
