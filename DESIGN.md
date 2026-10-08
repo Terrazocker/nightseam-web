@@ -17,7 +17,10 @@ perimeter; docked and inline inspectors belong visually to the page. Radii
 between 4px and 7px are for editing controls and temporary windows.
 Use the system sans stack for interface text and a monospace face for times,
 coordinates, magnitudes, percentages, and other measured values. Do not add
-blur, glow, starfields, decorative gradients, or translucent panels.
+blur, glow, starfields, decorative gradients, or translucent panels. The owner
+approved a data gradient specifically for time sliders: warm sunset/sunrise,
+civil/nautical/astronomical twilight and night, using the shared Sun altitude.
+This encodes the active site's actual times, with accompanying phase text.
 
 | Role | Color |
 | --- | --- |
@@ -47,25 +50,41 @@ hamburger menu. Respect stored edge-space preferences. Use a compact brand/actio
 row, then readable groups for observing setup and planned night/time. Groups wrap
 without shrinking text; the selected clock stays visible on phones. Use 14–16px
 gutters and a roughly 40px tab row. The phone header scrolls with the page.
+Site and Rig words are open settings buttons beside independent active-record
+selectors. They turn brass yellow on hover/keyboard focus. Site opens the active
+site editor; Rig opens the active rig editor, or Rigs setup when none is selected.
 
 The local exposure catalog has its own design document in Nightseam-catalog.
 
 ## Screen hierarchy
 
-- **Tonight:** one compact night brief, selected-time controls, then a dense
+- **Tonight:** one compact night brief, then a dense
   ranked table. Target altitude graphs belong in the full target inspector;
-  do not repeat them in a Tonight overview.
+  do not repeat them in a Tonight overview. Use the common top-bar time control;
+  do not duplicate it between the brief and ranking.
+  Keep five overview columns: rank, target, relative score, maximum altitude and
+  best usable interval. Visibility explanations remain in target details.
 - **Catalog:** a narrow filter rail, a dense results table, and one selected-target
   inspector shared with Tonight and Sky View. Keep live altitude, visibility,
   and best-window facts in the primary columns; put provenance and secondary
-  catalog fields behind disclosure. The object-type filter shows every option
-  at full height, without a nested scrolling list.
+  catalog fields behind disclosure. Show 50 rows per page, in a named scrollable
+  table that fills the available desktop height. Object types use a complete open
+  checkbox list: checked types are combined; none checked means all types.
+  Avoid duplicate type-category shortcuts and explain these selection rules.
+  Selected-time status names the actual condition, rather than calling the
+  beginning of a best usable interval an object's rise time.
   Fetch optional source details when that disclosure opens. Show a quiet loading
   message or a reachable Retry action inside it; keep planning usable. Elevation
   entry states its metadata-only role rather than implying a visibility correction.
-- **Sky View:** give the polar chart most of the width. Keep the time rail below
-  it. Start the right rail with a closed-by-default chart controls/legend tray,
-  followed by the shared full target inspector and a separate visible-now list.
+- **Sky View:** give the polar chart most of the width. Keep the time rail above
+  it; date editing stays in the common top bar. Stack the twilight legend on
+  the left of the wider slider, with Now/Reset on the right, avoiding a second
+  help/legend row. On phones the slider spans the full width above the compact
+  legend and actions. Both time sliders use the same site/time gradient. Give the large slider range endpoints,
+  phase text and a quiet color legend. Show actual polar/daylight conditions
+  instead of inventing a dark band for a fallback window. Start the right rail
+  with a closed-by-default chart controls/legend tray,
+  followed by the shared full target inspector. Do not repeat a visible-now list.
   Use one altitude chart and one set of target facts. The inspector is inline
   and complementary at every width; on phones the rail stacks below the map.
   Closing it preserves the selected target with a small reopen action.
@@ -83,8 +102,13 @@ application data.
 
 Preserve keyboard operation, visible focus, reduced-motion preferences, labels
 for controls, chart summaries for assistive technology, and non-color status
-labels. Scrubbing stays synchronized across views. Advanced catalog mode,
+labels. Both time sliders use one-minute steps and stay synchronized across views.
+Selected-time text responds immediately; Sky and target graphs paint the latest
+selection once per animation frame. Advanced catalog mode,
 moon-aware ranking, timezone controls, and equipment filters stay in the menu.
+Filter help explains the conditional effect on Moon-aware ranking and its global
+OIII-over-Hα-over-broadband assumption. NB/BB advice must identify the actual
+recommended filter, even when warning about missing equipment.
 Primary actions use brass text; secondary actions use neutral text on the shared
 surface. Underlines, focus rings and quiet state indicators provide feedback.
 
@@ -101,6 +125,15 @@ Web layouts must work at
 table regions where needed. Keep controls reachable when rails stack, and do
 not scale charts below a size that makes their labels unclear.
 
+On wide screens, the complete Horizon tools rail sticks and scrolls within the
+viewport. Never stick the photo/list section independently over the paint/history
+controls. Narrow layouts return to normal page flow. Long panoramas grow the body
+so the sticky common header remains visible throughout the editor.
+Precise horizon values remain a closed optional disclosure with direction/height
+labels and plain explanations of confidence, read-only comparison, and the
+replacement of painted strokes when applying numbers. History restores matching
+mode labels and values as well as the actual horizon data.
+
 
 ## Public website — approved October 6, 2026
 
@@ -111,8 +144,11 @@ geometry and a horizon contour, subdued beneath readable text. It is not a
 calculated sky, a product screenshot or a planner theme change. Keep the base
 opaque and flat; no photographic starfield, glow, blur or gradients.
 
-Use a compact plain wordmark, open typography, quiet separators and one primary
-Home action. Panorama setup and calculated target visibility lead. Detailed
+Use a compact plain wordmark, open typography and quiet separators. Every public
+page has a compact brass Open planner action aligned with the wordmark and desktop
+navigation. On phones it stays visible beside the native menu, including when the
+menu is closed. Home and Features retain their hero action. Panorama setup and
+calculated target visibility lead. Detailed
 features, first-night guidance, sources and privacy information remain accessible through native disclosures.
 Changes contains the independent public release ledger starting at 0.1.0. No-JavaScript phone
 navigation uses a labeled native disclosure. Do not reintroduce screenshot-heavy

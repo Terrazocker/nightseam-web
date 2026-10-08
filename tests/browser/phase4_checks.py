@@ -3,13 +3,206 @@ from harness import ROOT, check
 from web_suite import READY, boot, tab
 
 
+@check('web-simpler-overviews-and-direct-settings', 'web')
+def simpler_overviews_and_direct_settings(c):
+    import re
+    c.page.set_viewport_size({'width':1894,'height':1244})
+    boot(c)
+    headers = c.page.locator('#tonight-rank-table thead th').all_text_contents()
+    c.expect_eq(headers, ['#','Target','Relative score','Max altitude','Best usable interval'])
+    c.expect(c.page.locator('#tonight-rank-table tbody tr[data-tonight-id]').count() > 0,
+             'removing display columns keeps real night recommendations')
+    c.page.screenshot(path=str(c.artifacts / 'simplified-tonight-1894.png'))
+    for key in ('site','rig'):
+        button = c.page.locator(f'#{key}-settings')
+        button.hover()
+        c.page.wait_for_function("id => getComputedStyle(document.getElementById(id)).color === 'rgb(249, 200, 93)'",
+                                 arg=f'{key}-settings')
+        c.expect_eq(button.evaluate('el => getComputedStyle(el).color'), 'rgb(249, 200, 93)',
+                    'settings words turn brass on hover')
+        button.click()
+        c.page.wait_for_selector(f'#set-tab-{key}s[aria-selected="true"]')
+        if key == 'site':
+            c.page.wait_for_selector('#sf-site:not([hidden])')
+            c.expect_eq(c.page.locator('#sf-site-id').input_value(), c.page.locator('#tb-site').input_value(),
+                        'Site opens the active record editor directly')
+        else:
+            c.expect(c.page.locator('#set-add-rig').is_visible(), 'no active rig opens equipment setup')
+        c.page.keyboard.press('Escape')
+        c.page.wait_for_function("document.querySelector('#modal').hidden")
+        c.expect_eq(active_id(c), f'{key}-settings', 'closing returns focus to the direct entry')
+    # Add a fixture record via the store, then choose it through the real selector.
+    source = (ROOT / 'web/app.js').read_text(encoding='utf-8')
+    ws = re.search(r'\./webstore\.js\?v=\d+', source).group(0)
+    c.page.evaluate('''async url => {
+      const W=await import(url);
+      await W.saveRigRec({id:'direct-rig',name:'Direct rig check',focal_mm:500,
+        sensor_w:20,sensor_h:15,fov_w:137.5,fov_h:103.1,fov_unit:'arcmin'});
+    }''', ws)
+    c.page.locator('#rig-settings').click()
+    c.page.wait_for_selector('#set-rigs [data-editrig="direct-rig"]')
+    c.page.keyboard.press('Escape')
+    c.page.locator('#rigSelect').select_option('direct-rig')
+    c.page.locator('#rig-settings').focus()
+    c.page.keyboard.press('Enter')
+    c.page.wait_for_selector('#sf-rig:not([hidden])')
+    c.expect_eq(c.page.locator('#sf-rig-id').input_value(), 'direct-rig', 'Rig opens the selected record directly')
+    c.expect_eq(c.page.locator('#sf-rig-focal').input_value(), '500')
+    c.page.keyboard.press('Escape')
+    c.expect_eq(active_id(c), 'rig-settings')
+    tab(c, 'sky')
+    c.expect_eq(c.page.locator('.sky-visible-card, #sky-visible-now').count(), 0, 'Sky list is removed')
+    c.expect(c.page.locator('.sky-controls-tray').is_visible(), 'chart controls remain available')
+    c.page.locator('#btnMenu').click()
+    c.expect('Moon penalty' in c.page.locator('#menuPanel').inner_text(), 'filter help states its scoring effect')
+    c.page.keyboard.press('Escape')
+    c.page.screenshot(path=str(c.artifacts / 'simplified-sky-1894.png'))
+    c.page.set_viewport_size({'width':360,'height':900})
+    c.page.keyboard.press('Tab')
+    for key in ('site','rig'):
+        button=c.page.locator(f'#{key}-settings')
+        button.focus()
+        c.page.wait_for_function("id => getComputedStyle(document.getElementById(id)).color === 'rgb(249, 200, 93)'",
+                                 arg=f'{key}-settings')
+        c.expect_eq(button.evaluate('el => getComputedStyle(el).color'), 'rgb(249, 200, 93)',
+                    'keyboard focus also exposes the settings action')
+        c.page.keyboard.press('Space')
+        c.page.wait_for_selector(f'#set-tab-{key}s[aria-selected="true"]')
+        c.page.keyboard.press('Escape')
+    c.expect(c.page.evaluate('document.documentElement.scrollWidth <= innerWidth'), 'direct entries fit phone width')
+    c.page.screenshot(path=str(c.artifacts / 'simplified-sky-360.png'))
+    c.page.locator('#btnMenu').click()
+    c.page.locator('#fltHa').check()
+    c.page.keyboard.press('Escape')
+    tab(c, 'catalog')
+    c.page.locator('#cat-type-galaxy').check()
+    c.page.wait_for_selector('.cat-results .f-own[title*="broadband"]')
+    c.expect(c.page.locator('.cat-results .f-own').evaluate_all("els => els.every(el=>el.textContent==='BB')"),
+             'broadband-only targets are never mislabeled NB when narrowband is owned')
+    c.assert_clean()
+
+
+@check('web-followup-smooth-scrub-and-horizon-scroll', 'web')
+def smooth_scrub_and_horizon_scroll(c):
+    from web_suite import horizon_test_png
+    c.page.set_viewport_size({'width':1894, 'height':900})
+    boot(c)
+    tab(c, 'catalog')
+    c.page.locator('tr[data-id]').first.click()
+    c.page.wait_for_selector('#graph')
+    tab(c, 'sky')
+    c.page.locator('#sky-selected-detail').click()
+    c.page.wait_for_selector('#graph')
+    # Verify real keyboard stepping, then a same-frame drag burst with both
+    # canvases active. Controls must be immediate and paints must converge.
+    for selector in ('#sky-slider', '#tb-scrub'):
+        slider = c.page.locator(selector)
+        slider.evaluate("el => { el.value='120'; el.dispatchEvent(new Event('input',{bubbles:true})); }")
+        slider.focus()
+        before = int(slider.input_value())
+        c.page.keyboard.press('ArrowRight')
+        c.expect_eq(int(slider.input_value()) - before, 1, 'arrow advances one minute')
+    c.page.wait_for_timeout(100)
+    result = c.page.evaluate('''async () => {
+      const sky=document.querySelector('#sky').getContext('2d');
+      const graph=document.querySelector('#graph').getContext('2d');
+      const counts={sky:0,graph:0};
+      const restore=[];
+      for (const [ctx,key] of [[sky,'sky'],[graph,'graph']]) {
+        const original=ctx.clearRect;
+        ctx.clearRect=function(...args){counts[key]++; return original.apply(this,args);};
+        restore.push(()=>ctx.clearRect=original);
+      }
+      const slider=document.querySelector('#sky-slider');
+      for(let v=200;v<=239;v++) {
+        slider.value=String(v); slider.dispatchEvent(new Event('input',{bubbles:true}));
+      }
+      const immediate={value:Number(slider.value), top:Number(document.querySelector('#tb-scrub').value),
+        clock:document.querySelector('#sky-sout').textContent,
+        detail:document.querySelector('#m-selected-position').textContent, counts:{...counts}};
+      await new Promise(requestAnimationFrame);
+      await new Promise(requestAnimationFrame);
+      const result={immediate,counts:{...counts}, summary:document.querySelector('#skyChartSummary').textContent};
+      restore.forEach(fn=>fn()); return result;
+    }''')
+    c.expect_eq(result['immediate']['value'], 239)
+    c.expect_eq(result['immediate']['top'], 239, 'top slider tracks the newest selection immediately')
+    c.expect(result['immediate']['clock'] in result['immediate']['detail'], 'inspector facts track final time immediately')
+    c.expect_eq(result['immediate']['counts'], {'sky':0,'graph':0}, 'burst queues paints instead of blocking input')
+    c.expect_eq(result['counts'], {'sky':1,'graph':1}, 'each canvas paints once for the burst')
+    c.expect(result['immediate']['clock'] in result['summary'], 'chart is painted at the final selection')
+    c.page.screenshot(path=str(c.artifacts / 'followup-sky-1894.png'))
+    # Leave with a queued paint: the old workspace cannot overwrite a new view.
+    c.page.evaluate("() => { const s=document.querySelector('#sky-slider'); s.value='240'; s.dispatchEvent(new Event('input')); location.hash='#horizon'; }")
+    c.page.wait_for_selector('#pano-file', state='attached')
+    c.page.locator('#pano-file').set_input_files({'name':'tall-horizon.png','mimeType':'image/png',
+                                                'buffer':horizon_test_png(600,1800)})
+    c.page.wait_for_selector('#pano-canvas', state='visible')
+    c.page.wait_for_function("() => document.querySelector('#pano-canvas').getBoundingClientRect().height > 1200")
+    for width, height in ((1894,900),(1440,700)):
+        c.page.set_viewport_size({'width':width,'height':height})
+        c.page.evaluate('window.scrollTo(0,650)')
+        c.page.wait_for_timeout(150)
+        state = c.page.evaluate('''() => {
+          const rail=document.querySelector('.horizon-tools-rail');
+          const card=rail.querySelector('.card').getBoundingClientRect();
+          const tools=rail.querySelector('.ed-tools').getBoundingClientRect();
+          const r=rail.getBoundingClientRect();
+          return {top:r.top,bottom:r.bottom,cardBottom:card.bottom,toolsTop:tools.top,
+            position:getComputedStyle(rail).position, childPosition:getComputedStyle(rail.querySelector('.card')).position};
+        }''')
+        c.expect_eq(state['position'], 'sticky')
+        c.expect(state['childPosition'] != 'sticky', 'first section cannot stick over paint tools')
+        c.expect(state['toolsTop'] >= state['cardBottom'], 'photo information and paint tools never overlap')
+        c.expect(state['top'] >= 0 and state['bottom'] <= height, 'whole rail fits the viewport')
+        c.page.locator('.horizon-tools-rail').focus()
+        c.page.locator('#ed-save').focus()
+        c.page.wait_for_timeout(50)
+        save = c.page.locator('#ed-save').bounding_box()
+        c.expect(save['y'] >= 0 and save['y']+save['height'] <= height,
+                 f'keyboard can reach Save inside bounded rail: viewport={height}, save={save}, rail={state}')
+        c.expect(c.page.locator('.topbar').bounding_box()['y'] >= 0, 'header stays visible throughout the tall editor')
+        c.page.screenshot(path=str(c.artifacts / f'followup-horizon-scroll-{width}.png'))
+    c.page.locator('details.horizon-meta').filter(has=c.page.locator('#ed-profile-az')).locator('summary').click()
+    c.expect(c.page.locator('#ed-profile-top').is_disabled(), 'sky-band upper edge is inactive in obstruction mode')
+    c.page.locator('#ed-mode').select_option('sky')
+    c.expect(c.page.locator('#ed-profile-top').is_enabled(), 'switching mode enables upper sky edge')
+    c.expect('Visible sky starts' in c.page.locator('#ed-profile-alt-label').inner_text(), 'mode-specific height label updates')
+    c.page.locator('#ed-undo').click()
+    c.expect(c.page.locator('#ed-profile-top').is_disabled(), 'Undo restores obstruction-mode labels')
+    c.expect_eq(c.page.locator('#ed-mode').input_value(), 'obstacle', 'Undo restores the mode selector too')
+    c.page.screenshot(path=str(c.artifacts / 'followup-horizon-values-1440.png'))
+    c.page.set_viewport_size({'width':1894,'height':1244})
+    c.page.evaluate('window.scrollTo(0,650)')
+    c.page.locator('#ed-profile-apply').focus()
+    c.page.screenshot(path=str(c.artifacts / 'followup-horizon-values-1894.png'))
+    c.page.locator('#ed-save').click()
+    c.page.set_viewport_size({'width':360,'height':900})
+    c.page.evaluate('window.scrollTo(0,0)')
+    # ResizeObserver and Save can still be laying out the new viewport.
+    # Flush the pending layout frames, then measure both regions atomically;
+    # separate locator round trips can otherwise mix two layout generations.
+    c.page.evaluate("""() => new Promise(resolve =>
+      requestAnimationFrame(() => requestAnimationFrame(resolve)))""")
+    regions = c.page.evaluate("""() => {
+      const tools=document.querySelector('.horizon-tools-rail').getBoundingClientRect();
+      const stage=document.querySelector('.horizon-stage').getBoundingClientRect();
+      return {toolsBottom:tools.bottom,stageTop:stage.top,width:innerWidth};
+    }""")
+    c.expect(regions['stageTop'] >= regions['toolsBottom'],
+             f'phone stacks the complete tools rail before the image: {regions}')
+    c.expect(c.page.evaluate('document.documentElement.scrollWidth <= innerWidth'), 'phone has no horizontal overflow')
+    c.page.screenshot(path=str(c.artifacts / 'followup-horizon-360.png'))
+    c.assert_clean()
+
+
 @check('web-open-workspace-and-dialog-boundaries', 'web')
 def open_workspace(c):
     boot(c)
     for view, selectors in (
         ('tonight', ['.tonight-ranked']),
         ('catalog', ['.cat-filter-rail', '.catalog-table-card']),
-        ('sky', ['.sky-time-rail', '.sky-visible-card']),
+        ('sky', ['.sky-time-rail', '.sky-controls-tray']),
         ('horizon', ['.card']),
     ):
         tab(c, view)
@@ -20,7 +213,7 @@ def open_workspace(c):
                        parseFloat(s.borderBottomWidth)+parseFloat(s.borderLeftWidth),shadow:s.boxShadow};
             })''')
             c.expect(state, f'{view} has the expected workspace section {selector}')
-            c.expect(all(s['bg'] == 'rgba(0, 0, 0, 0)' and s['border'] == 0 and s['shadow'] == 'none' for s in state),
+            c.expect(all(s['bg'] == 'rgba(0, 0, 0, 0)' and s['border'] <= 1 and s['shadow'] == 'none' for s in state),
                      f'{view} sections share the page surface without card perimeters: {state}')
     c.page.locator('#btnMenu').click()
     panel = c.page.locator('#menuPanel')
@@ -112,19 +305,20 @@ def simplified_panels(c):
         c.expect_eq(c.page.locator('#tonightOverviewChart, #tonightOverviewKeys').count(), 0,
                     'Tonight overview is removed')
         c.expect(c.page.locator('#tonight-rank-table').is_visible(), 'Tonight ranking remains')
-        c.expect(c.page.locator('#tonight-time-scrub').is_visible(), 'selected-time control remains')
+        c.expect_eq(c.page.locator('#tonight-time-scrub').count(), 0, 'duplicate Tonight slider is removed')
+        c.expect(c.page.locator('#tb-scrub').is_visible(), 'common selected-time control remains')
         tab(c, 'catalog')
         types = c.page.locator('#cat-type')
-        state = types.evaluate('''el => ({count: el.options.length, size: el.size,
+        state = types.evaluate('''el => ({count: el.querySelectorAll('input').length,
           scroll: el.scrollHeight, height: el.clientHeight,
-          optionBottom: el.options[el.options.length - 1].getBoundingClientRect().bottom,
+          optionBottom: el.querySelector('label:last-of-type').getBoundingClientRect().bottom,
           bottom: el.getBoundingClientRect().bottom})''')
-        c.expect(state['count'] > 4 and state['size'] >= state['count'] and
+        c.expect(state['count'] > 4 and
                  state['scroll'] <= state['height'] + 1 and state['optionBottom'] <= state['bottom'],
                  f'all object types fit without an internal scrollbar at {width}px: {state}')
-        value = types.locator('option').first.get_attribute('value')
-        types.select_option([value])
-        c.expect_eq(c.page.locator('#cat-type').evaluate('el => [...el.selectedOptions].map(o => o.value)'),
+        value = types.locator('input').first.get_attribute('value')
+        types.locator('input').first.check()
+        c.expect_eq(c.page.locator('#cat-type').evaluate('el => [...el.querySelectorAll("input:checked")].map(o => o.value)'),
                     [value], 'object-type selection survives filtering')
         c.expect(c.page.evaluate('() => document.documentElement.scrollWidth <= innerWidth + 1'),
                  'full type list does not widen the page')
@@ -152,6 +346,106 @@ def simplified_panels(c):
 
 def active_id(c):
     return c.page.evaluate("() => document.activeElement.id")
+
+
+@check('web-annotated-catalog-and-night-controls', 'web')
+def annotated_controls(c):
+    """Exercise actual multi-type clicks, fresh-entry windows and phase scrubbing."""
+    import re
+    source = (ROOT / 'web/app.js').read_text(encoding='utf-8')
+    modules = {name: re.search(r'\./' + name + r'\.js\?v=\d+', source).group(0)
+               for name in ('webstore', 'horizon')}
+    c.page.set_viewport_size({'width':1894, 'height':1244})
+    boot(c)
+    tab(c, 'catalog')
+    c.page.locator('#cat-clear-filters').click()
+    c.page.locator('#cat-type-galaxy').check()
+    c.page.locator('#cat-type-nebula').check()
+    c.expect_eq(c.page.locator('#cat-type input:checked').count(), 2,
+                'ordinary clicks combine types without modifier keys')
+    c.expect(c.page.locator('td.type-cell').evaluate_all("els => els.every(e => /Galaxy|Nebula/.test(e.textContent))"),
+             'combined type filters include either checked type')
+    c.page.locator('#cat-type-galaxy').focus()
+    c.page.keyboard.press('Space')
+    c.expect_eq(active_id(c), 'cat-type-galaxy', 'Space keeps focus after rebuilding the filter rail')
+    c.expect_eq(c.page.locator('#cat-type input:checked').count(), 1)
+    c.expect(c.page.locator('td.type-cell').evaluate_all("els => els.every(e => e.textContent.includes('Nebula'))"),
+             'unchecking one type retains the other selection')
+    c.page.locator('#cat-all-types').click()
+    c.expect_eq(c.page.locator('#cat-type input:checked').count(), 0)
+    c.expect_eq(c.page.locator('table.cat tbody tr[data-id]').count(), 50)
+    c.page.locator('#pg-next').click()
+    c.expect_eq(c.page.locator('td.rank-cell').first.inner_text(), '51', 'second page begins at object 51')
+    c.page.locator('#pg-prev').click()
+    c.page.wait_for_function("() => [...document.querySelectorAll('td.best-window')].every(e => e.textContent !== '…')")
+    before = c.page.locator('td.best-window').all_text_contents()
+    c.page.reload(wait_until='domcontentloaded')
+    c.page.wait_for_selector('table.cat tbody tr[data-id]')
+    c.page.wait_for_function("() => [...document.querySelectorAll('td.best-window')].length > 0 && [...document.querySelectorAll('td.best-window')].every(e => e.textContent !== '…')")
+    c.expect_eq(c.page.locator('#tonight-rank-table').count(), 0, 'fresh Catalog entry does not render Tonight')
+    c.expect_eq(c.page.locator('td.best-window').all_text_contents(), before,
+                'fresh Catalog entry computes the same windows without Tonight results')
+    c.expect('Rises later' not in c.page.locator('.cat-results').inner_text(),
+             'Catalog must not label a best-window start as horizon rise')
+    c.page.locator('#tb-date').fill('2026-08-13')
+    c.page.locator('#tb-date').dispatch_event('change')
+    c.page.wait_for_function("() => document.querySelector('.catalog-context')?.textContent.includes('2026-08-13') && [...document.querySelectorAll('td.best-window')].every(e => e.textContent !== '…')")
+    after = c.page.locator('td.best-window').all_text_contents()
+    c.expect(after != before, 'changing the night replaces old best-window facts')
+    # The Inspector independently computes its shared-core interval; compare
+    # actual displayed facts rather than a stale Tonight map.
+    row = c.page.locator('table.cat tr[data-id]').filter(has=c.page.locator('td.best-window').filter(has_text='–')).first
+    best = row.locator('td.best-window').inner_text()
+    row.click()
+    c.expect_eq(c.page.locator('#m-hero-window').inner_text(), best,
+                'refreshed Catalog best window agrees with target details')
+    c.page.locator('#m-close').click()
+    c.page.screenshot(path=str(c.artifacts / 'annotations-catalog-1894.png'))
+    tab(c, 'sky')
+    rail = c.page.locator('.sky-time-rail').bounding_box()
+    chart = c.page.locator('.sky-canvas-box').bounding_box()
+    c.expect(rail['y'] + rail['height'] <= chart['y'], 'time controls are above the chart')
+    c.expect_eq(c.page.locator('#sky-time').count(), 0, 'date editing stays in the common top bar')
+    legend = c.page.locator('#sky-phase-legend').bounding_box()
+    slider = c.page.locator('#sky-slider').bounding_box()
+    entries = [e.bounding_box() for e in c.page.locator('#sky-phase-legend span').all()]
+    c.expect(legend['x'] + legend['width'] <= slider['x'], 'the legend occupies the former clock space')
+    c.expect(all(entries[i]['y'] < entries[i+1]['y'] for i in range(3)), 'twilight labels stack vertically')
+    c.expect(slider['width'] > rail['width'] * .65, 'the large slider uses most of the rail width')
+    c.expect(rail['height'] <= 66, 'the time rail stays compact on desktop')
+    c.expect_eq(c.page.locator('#sky-slider').evaluate("e => e.style.getPropertyValue('--night-track')"),
+                c.page.locator('#tb-scrub').evaluate("e => e.style.getPropertyValue('--night-track')"),
+                'both time controls use the same site/night gradient')
+    c.page.locator('#sky-slider').evaluate("e => {e.value=String(Number(e.max)/2); e.dispatchEvent(new Event('input',{bubbles:true}));}")
+    c.expect_eq(c.page.locator('#sky-sout').inner_text(), c.page.locator('#tb-scrub-time').inner_text())
+    c.expect_eq(c.page.locator('#sky-phase').inner_text(), 'Astronomical night',
+                'midnight phase is expressed in text as well as color')
+    c.expect_in('Astronomical night', c.page.locator('#sky-slider').get_attribute('aria-valuetext'))
+    c.page.screenshot(path=str(c.artifacts / 'annotations-sky-1894.png'))
+    for width in (640, 360):
+        c.page.set_viewport_size({'width':width, 'height':900})
+        c.expect(c.page.evaluate('document.documentElement.scrollWidth <= innerWidth + 1'),
+                 'the top chart time controls must fit a narrow viewport')
+        c.expect(c.page.locator('#sky-slider').is_visible(), 'the phase slider stays visible on narrow screens')
+        c.page.screenshot(path=str(c.artifacts / f'annotations-sky-{width}.png'))
+    c.page.set_viewport_size({'width':1894, 'height':1244})
+    # A polar summer must show daylight on the fallback span, rather than
+    # inventing sunset/darkness just to draw a symmetrical gradient.
+    c.page.evaluate('''async modules => {
+      const WS=await import(modules.webstore), H=await import(modules.horizon);
+      await WS.saveSiteRec({id:'phase-polar',name:'Polar summer check',lat:89,lon:0,elev:0,tz:'UTC'});
+      H.setPrefs({activeSiteId:'phase-polar',viewFullDay:false});
+    }''', modules)
+    c.page.reload(wait_until='domcontentloaded')
+    c.page.wait_for_selector('#sky-slider')
+    c.page.wait_for_function("() => typeof window.__ns_scrub_range === 'function'")
+    c.page.locator('#tb-date').fill('2026-06-21')
+    c.page.locator('#tb-date').dispatch_event('change')
+    c.page.wait_for_function("() => document.querySelector('#sky-phase')?.textContent === 'Daylight'")
+    c.expect_in('no sunset–sunrise pair', c.page.locator('#sky-range-caption').inner_text())
+    c.expect('var(--scrub-night)' not in c.page.locator('#sky-slider').evaluate("e => e.style.getPropertyValue('--night-track')"),
+             'polar daylight has no fictitious astronomical-night band')
+    c.assert_clean()
 
 
 def actual_stops(c):

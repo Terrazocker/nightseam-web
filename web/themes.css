@@ -16,6 +16,11 @@ html[data-theme="workbench"] {
   --gold: #F9C85D;
   --radius: 6px;
   --mono: "Cascadia Mono", Consolas, ui-monospace, monospace;
+  --scrub-sunset: #E8A948;
+  --scrub-civil: #AF8270;
+  --scrub-nautical: #54718E;
+  --scrub-astronomical: #35435E;
+  --scrub-night: #1C2538;
 }
 /* Open Workbench: workspace sections share the page; temporary windows have
    their own opaque surface. Geometry remains in style.css. */
@@ -89,6 +94,9 @@ html[data-theme="workbench"] .chip.on { color: var(--accent); background: transp
 html[data-theme="workbench"] :is(.btn, .ghost, .chip, .modal .close):hover {
   color: var(--accent); background: transparent; filter: none;
 }
+html[data-theme="workbench"] .context-settings:is(:hover, :focus-visible) {
+  color: var(--accent); text-decoration: underline; text-underline-offset: 3px;
+}
 html[data-theme="workbench"] :is(.btn, .ghost, .chip):disabled { color: var(--muted); opacity: .45; }
 html[data-theme="workbench"] input:not([type="range"]):not([type="checkbox"]):not([type="radio"]),
 html[data-theme="workbench"] select,
@@ -97,8 +105,7 @@ html[data-theme="workbench"] textarea {
   border-radius: 4px;
 }
 html[data-theme="workbench"] .planner-controls select,
-html[data-theme="workbench"] .planner-controls input[type="date"],
-html[data-theme="workbench"] #cat-type {
+html[data-theme="workbench"] .planner-controls input[type="date"] {
   background: transparent; border: 0; border-bottom: 1px solid var(--line-soft); border-radius: 0;
 }
 html[data-theme="workbench"] select option { color: var(--txt); background: var(--bg); }
@@ -113,8 +120,6 @@ html[data-theme="workbench"] canvas#sky,
 html[data-theme="workbench"] canvas#graph,
 html[data-theme="workbench"] #pano-profile { border: 0; border-radius: 0; }
 html[data-theme="workbench"] #pano-profile { background: var(--viz-graph-surface); }
-html[data-theme="workbench"] .sky-visible-target { border: 0; border-left: 2px solid transparent; }
-html[data-theme="workbench"] .sky-visible-target.selected { border-left-color: var(--accent); }
 html[data-theme="workbench"] .horizon-profile-panel,
 html[data-theme="workbench"] .horizon-selected-bin,
 html[data-theme="workbench"] .horizon-meta,

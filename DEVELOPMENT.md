@@ -1,5 +1,33 @@
 # NightSeam Web development
 
+## Planner annotation interactions — October 7, 2026
+
+Catalog types are checkbox inputs inside #cat-type, combined with OR. Empty
+selection means all types. Search, catalog shortcuts and other filters still
+intersect normally. Remove redundant galaxy/nebula/cluster shortcut chips; restore
+keyboard focus after rebuilding type/visibility/pager controls. Pages contain 50
+objects; a named keyboard-scrollable table uses its measured document position
+to limit desktop height, with a 65dvh cap on narrow layouts and no fixed minimum.
+
+Catalog best-window and clear-window filtering read compact night summaries
+stored with pct/blk in obsCache. The existing revision-sensitive observation key
+owns these facts; Catalog no longer reads a stale or absent Tonight result for
+them. Page fills update both percentages and window cells; full-pool warming
+handles the clear-window filter as well as percentage gating/sorting. Selected
+conditions still use shared visibilityReason at S.skyTime, including planning
+window, minimum altitude and horizon. Unknown windows show an ellipsis until
+computed. Catalog no longer presents a best-window start as Rises later.
+
+Sky time controls precede the chart. Both time ranges receive the same cached
+96-segment Sun-altitude gradient keyed by UTC range and site coordinates. Shared
+E.sunAlt supplies the astronomy; semantic scrub colors and CSS interpolation only
+map those values to presentation. Selection updates phase text/accessibility
+without rebuilding the gradient. Polar fallback/full-day ranges retain their
+existing core policy and actual Sun phase; the caption acknowledges a missing
+sunset/sunrise pair. Tonight retains the common top-bar scrub and render freshness
+markers; its removed local slider has no remaining listener or style. Its reason
+column now respects outside-window conditions even when geometric altitude clears.
+
 ## Open workspace and advanced Catalog — October 6, 2026
 
 Workbench component rules in themes.css now use one page surface, transparent
@@ -208,17 +236,23 @@ Sky View hosts the same #modal inside #sky-detail-host, rather than duplicating
 selected-target facts and a miniature chart beside a second dock. The full panel
 uses detail-inline and complementary semantics at every width, with no reserved
 body.detail-open margin or modal background isolation. Chart controls/legend
-come first and start collapsed; visible-now clicks open the full inspector.
+come first and start collapsed; map clicks open the full inspector. The former
+visible-now list was removed at the owner's request on October 7.
 parkDetailModal() moves the shared wrapper back to document.body before a Sky
 workspace rebuild, route replacement or Setup takeover. Reattachment preserves
 the existing photo node and redraws the full graph for the available width.
 Closed details remain closed, with identity/highlight and a small reopen action.
 The web-sky-single-inspector browser check covers these lifecycle transitions.
 
-Tonight has a compact brief, synchronized selected-time control and ranking.
+Sky date editing uses the common top bar only. Its compact rail contains a
+stacked phase legend, expanding slider and Now/Reset controls. The range policy
+caption remains accessible without a visible second help row. Browser fixtures
+set a site-local minute through the real slider and versioned webstore conversion.
+
+Tonight has a compact brief, common top-bar selected-time control and ranking.
 The overview chart and its track sampling/checkbox state/resize observer were
-removed; the full target inspector retains its altitude graph. Catalog's native
-multiple-select type filter sizes to every available type, with no inner scroll.
+removed; the full target inspector retains its altitude graph. Catalog's open
+checkbox type filter shows every available type, with no inner scroll.
 Horizon no longer exposes calibration provenance fields or writes provenance
 from UI controls. Saved/imported provenance remains in the model, normalization,
 history and backups; confidence editing and real calibration controls remain.
@@ -261,7 +295,47 @@ from the tracked scripts/publication_cleanup.json ledger, independent of whether
 the deletions have already been committed. RELEASE_WORKFLOW.md owns publication,
 clean tagging, backup and rollback. Keep the catalog repository independent.
 
-## Deployment credentials
+## Slider and Horizon annotation follow-up — October 7, 2026
+
+Range controls and the Tonight presentation marker share a one-minute UI step.
+The shared core owns scrub windows/clamping; no scoring step or astronomy formula
+changes. Sky time events synchronize controls immediately, then use one pending
+animation frame per chart/inspector to draw the latest S.skyTime. Sky frames are
+cancelled on rerender and route exit; inspector frames are cancelled on close.
+The inspector's selected-time facts reuse the existing date/site/timezone night
+window memo rather than rescanning Sun crossings during each input event.
+
+Horizon tools use one bounded sticky rail on wide screens, with normal flow at
+1240px and below. Its first card is no longer independently sticky. The document
+body grows with content so long source-aspect panoramas cannot end the header's
+sticky containing block early. Precise-value help describes the existing 720
+world-direction bins and authoritative-profile transition without changing it.
+History restoration synchronizes the mode selector, block-above checkbox and
+numeric fields with the restored model.
+
+## Simplified overviews and direct settings — October 7, 2026
+
+Tonight renders five columns without display-only visibility-reason/rise cells.
+Shared night statistics, core scores and inspector facts remain intact. Sky time
+draws synchronize the selected-target placeholder directly; the visible-now DOM,
+ranking/filter pass and styles were removed. Map hit testing still uses skyItems,
+and inspector closing falls back to its reopen action or the chart for focus.
+Selection checks now use actual map clicks computed from shared core altitude/
+azimuth in isolated test fixtures, retaining every continuity/deletion check.
+
+The Site/Rig context words are buttons separate from named native selectors.
+They select the Setup tab before rendering and open the active record's existing
+edit form. No active rig opens the Rigs list without creating a record. Setup's
+existing return-focus and background isolation apply to these entries too.
+
+The filter controls retain their existing semantics: ownership badges plus a
+global imaging-filter assumption (OIII, else Hα, else broadband) for Tonight's
+Moon-aware score. Without Moon-aware ranking, they do not affect score/order.
+They do not change geometric visibility or clear intervals. Broadband ownership
+alone changes advice rather than selecting a different scoring assumption. Menu
+help states this, and broadband warning badges render BB instead of erroneous NB.
+
+## Deployment credential file format
 
 The standard web/ftps_deploy.py helper accepts UTF-8 text with exact, case-sensitive
 KEY=value fields: FTP_HOST, FTP_USER, FTP_PASS and optional FTP_PORT (default 21).

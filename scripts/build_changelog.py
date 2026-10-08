@@ -23,9 +23,11 @@ PAGE = ROOT / "landing" / "download.html"
 START = "<!-- BEGIN GENERATED RELEASE HISTORY -->"
 END = "<!-- END GENERATED RELEASE HISTORY -->"
 # Explicit independent-product history, separate from inherited Git tags.
-PUBLIC_RELEASES = [{"version": "0.1.0", "date": "2026-10-07"}]
+PUBLIC_RELEASES = [{"version": "0.1.1", "date": "2026-10-08"},
+                   {"version": "0.1.0", "date": "2026-10-07"}]
 
 CURATED = {
+    "0.1.1": "A clearer planning workspace: open the planner from any public page, edit Site and Rig directly from the top bar, and filter object types with simple checkboxes. Catalog pages now show 50 objects with clearer visibility conditions. Sky View has a wider time slider, twilight colors and smoother one-minute scrubbing, without repeated date fields or target lists. Tonight is simpler, and Horizon tools remain readable when scrolling. Filter advice and precise horizon editing now explain their effects.",
     "0.1.0": "NightSeam starts anew as an independent browser planner. Bring your own panorama and calculate when deep-sky targets clear your skyline, with planning data saved in your browser. The website and Windows catalog now have separate versions and development.",
     # Curate before tagging; a tag does not establish public deployment.
     "0.6.36": "Website packaging fix: catalog metadata keeps identical bytes on Windows checkouts, so release integrity checks remain reproducible. Planner behavior is unchanged from 0.6.35.",

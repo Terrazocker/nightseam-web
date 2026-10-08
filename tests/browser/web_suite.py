@@ -48,6 +48,46 @@ def canvas_digest(c, selector: str) -> str:
     return hashlib.sha256((data or "").encode()).hexdigest()
 
 
+def scrub_sky_to_wall(c, wall_iso):
+    """Choose a site-local minute through the real range control."""
+    c.page.wait_for_selector('#sky-slider', state='visible')
+    source = (ROOT / 'web/app.js').read_text(encoding='utf-8')
+    ws = re.search(r'\./webstore\.js\?v=\d+', source).group(0)
+    c.page.evaluate("""async ({ws,wall}) => {
+      const W=await import(ws), r=window.__ns_scrub_range();
+      const minutes=Math.ceil((W.wallToUtc(new Date(wall)).getTime()-r.start)/60000);
+      const slider=document.querySelector('#sky-slider');
+      if (minutes<Number(slider.min)||minutes>Number(slider.max))
+        throw new Error('Requested test time is outside the planned night');
+      slider.value=String(minutes);
+      slider.dispatchEvent(new Event('input',{bubbles:true}));
+    }""", {'ws':ws,'wall':wall_iso})
+    c.page.wait_for_function("""clock =>
+      document.querySelector('#sky-sout')?.textContent===clock &&
+      document.querySelector('#skyChartSummary')?.textContent.includes(clock)
+    """, arg=wall_iso[11:16], timeout=15000)
+
+
+def click_sky_target(c, target):
+    """Click the target's actual map position, using shared astronomy for the
+    isolated test site/time. Test the canvas hit path rather than a removed list."""
+    c.page.locator('#sky').scroll_into_view_if_needed()
+    source = (ROOT / 'web/app.js').read_text(encoding='utf-8')
+    ws = re.search(r'\./webstore\.js\?v=\d+', source).group(0)
+    point = c.page.evaluate('''async ({target,ws}) => {
+      const E=await import('./core.js'); const W=await import(ws);
+      const sites=await W.getSites();
+      const site=sites.find(s=>s.id===document.querySelector('#tb-site').value);
+      const jd=E.julianDay(new Date(window.__ns_scrub_sel()));
+      const [alt,az]=E.altaz(target.ra_hours*15,target.dec_deg,jd,site.lat,site.lon);
+      const cv=document.querySelector('#sky'); const width=cv.clientWidth;
+      const r=(width/2-22)*(1-alt/90), a=az*Math.PI/180;
+      return {alt,x:width/2+r*Math.sin(a),y:width/2-r*Math.cos(a)};
+    }''', {'target':target,'ws':ws})
+    c.expect(point['alt'] > 0, 'test target is above the horizon for map picking')
+    c.page.locator('#sky').click(position={'x':point['x'],'y':point['y']})
+
+
 def horizon_test_png(width: int, height: int) -> bytes:
     """Tiny RGB panorama with edge colors to catch side-cropping in the editor."""
     rows = bytearray()
@@ -600,8 +640,8 @@ def web_scrub_changes_time(c):
     c.expect_eq(slider.count(), 1, "the top time slider needs an accessible name")
     before = c.page.inner_text("#tb-scrub-time").strip()
     c.expect(before, "the scrub must show a time")
-    c.expect_eq(slider.get_attribute("aria-valuetext"), before,
-                "assistive technology must receive the displayed clock time")
+    c.expect_in(before, slider.get_attribute("aria-valuetext"),
+                "assistive technology must receive the displayed clock time and Sun phase")
     key = slider.evaluate("el => Number(el.value) < Number(el.max) ? 'ArrowRight' : 'ArrowLeft'")
     slider.focus()
     slider.press(key)
@@ -611,8 +651,8 @@ def web_scrub_changes_time(c):
                           .trim() !== prev""", arg=before, timeout=8000)
     except Exception:
         raise AssertionError(f"scrubbing did not change the time from {before!r}")
-    c.expect_eq(slider.get_attribute("aria-valuetext"),
-                c.page.inner_text("#tb-scrub-time").strip(),
+    c.expect_in(c.page.inner_text("#tb-scrub-time").strip(),
+                slider.get_attribute("aria-valuetext"),
                 "keyboard scrubbing must update the accessible clock time")
     c.assert_clean()
 
@@ -968,12 +1008,7 @@ def web_docked_inspector_fit_and_tonight_key(c):
     c.page.locator("#tb-date").fill("2026-09-26")
     c.page.locator("#tb-date").dispatch_event("change")
     tab(c, "sky")
-    c.page.wait_for_selector("#sky-time", state="visible")
-    c.page.locator("#sky-time").fill("2026-09-26T22:36")
-    c.page.locator("#sky-time").dispatch_event("input")
-    c.page.wait_for_function(
-        "() => document.querySelector('#sky-time')?.value === '2026-09-26T22:36'",
-        timeout=15000)
+    scrub_sky_to_wall(c, "2026-09-26T22:36")
     tab(c, "tonight")
     c.wait_tonight_render()
 
@@ -1072,7 +1107,7 @@ def web_docked_inspector_fit_and_tonight_key(c):
           const scrub = document.querySelector('.tonight-local-scrub');
           const table = document.querySelector('#tonight-rank-table');
           const rect = el => el?.getBoundingClientRect();
-          const b = rect(brief), p = rect(plot), s = rect(scrub), t = rect(table);
+          const b = rect(brief), p = rect(plot), t = rect(table);
           const region = table?.closest('.tablewrap');
           const clip = rect(region);
           const containedScroll = !!clip && clip.left >= -1 && clip.right <= innerWidth + 1 &&
@@ -1086,7 +1121,7 @@ def web_docked_inspector_fit_and_tonight_key(c):
                 (containedScroll && r.left < clip.right && r.right > clip.left));
           }).length;
           return { brief: !!b && b.width > 0, plotRemoved: !p,
-            scrub: !!s && s.width > 0, table: !!t && t.width > 0,
+            scrubRemoved: !scrub, table: !!t && t.width > 0,
             tableScroll: region?.scrollWidth - region?.clientWidth,
             pageOverflow: document.documentElement.scrollWidth - innerWidth,
             overflows: [...document.querySelectorAll('body *')].map(el => {
@@ -1098,9 +1133,9 @@ def web_docked_inspector_fit_and_tonight_key(c):
               .sort((a,b) => (b.right-innerWidth) - (a.right-innerWidth)).slice(0,12),
             rows: rows.length, fullRows };
         }""")
-        c.expect(state["brief"] and state["plotRemoved"] and state["scrub"] and
+        c.expect(state["brief"] and state["plotRemoved"] and state["scrubRemoved"] and
                  state["table"] and state["rows"] >= 3 and state["fullRows"] >= 3,
-                 f"{theme} {width}px: Tonight brief, scrub, and three ranked rows without the removed overview must render: {state}")
+                 f"{theme} {width}px: Tonight brief and three ranked rows without the duplicate slider or overview must render: {state}")
         c.expect(state["tableScroll"] >= 0 and state["pageOverflow"] <= 1,
                  f"{theme} {width}px: Tonight ranking may scroll internally but must not widen the page: {state}")
 
@@ -1218,8 +1253,10 @@ def web_docked_inspector_fit_and_tonight_key(c):
             row.click()
         else:
             c.page.wait_for_selector("#sky[tabindex='0']", state="visible")
-            target = c.page.locator("#sky-visible-now [data-sky-target]").first
-            target.wait_for(state="visible", timeout=15000)
+            # The selected target from the preceding view remains available
+            # through the reopen action after the visible-now list is removed.
+            target = c.page.locator('#sky-selected-detail')
+            target.wait_for(state='visible', timeout=15000)
             target.click()
         try:
             c.page.wait_for_selector("#modal:not([hidden]) .modal", state="visible", timeout=20000)
@@ -1720,7 +1757,7 @@ def web_catalog_advanced_minvis(c):
 @check("web-catalog-direction-b-density", "web")
 def web_catalog_direction_b_density(c):
     """Keep the primary Catalog table aligned with the Direction B contract:
-    20 dense rows, separate designation/common-name columns, full status and
+    50 dense rows, separate designation/common-name columns, selected-time and
     best-window headers, and no popularity/frame columns in the results table."""
     c.page.set_viewport_size({"width": 1672, "height": 941})
     boot(c)
@@ -1740,11 +1777,11 @@ def web_catalog_direction_b_density(c):
         pageWidth: document.documentElement.scrollWidth, viewport: innerWidth,
         advancedOpen: document.querySelector('#cat-more')?.open};
     }""")
-    expected = ["#", "Designation", "Common name", "Type", "Mag", "Alt now", "Night %", "Best window", "Status"]
+    expected = ["#", "Designation", "Common name", "Type", "Mag", "Alt now", "Night %", "Best window", "At " + c.page.inner_text('#tb-scrub-time').strip()]
     c.expect_eq(state["headers"], expected,
                 f"Catalog must expose the compact Direction B column order: {state}")
-    c.expect(state["rows"] == 20,
-             f"Catalog must show a 20-row page when enough results exist: {state}")
+    c.expect(state["rows"] == 50,
+             f"Catalog must show a 50-row page when enough results exist: {state}")
     c.expect(state["pager"] and state["pager"]["height"] > 0 and state["pager"]["top"] < 941,
              f"the first-page pager must remain in the reference viewport: {state}")
     c.expect(state["tableWidth"] <= state["wrapWidth"] + 1 and state["tableScrollWidth"] <= state["wrapWidth"] + 1,

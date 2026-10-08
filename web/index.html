@@ -22,8 +22,8 @@
      browser gate reads whichever one the live document carries. -->
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://upload.wikimedia.org https://thumb.wikimedia.org; connect-src 'self' https://en.wikipedia.org https://upload.wikimedia.org https://thumb.wikimedia.org https://api.open-meteo.com https://air-quality-api.open-meteo.com; base-uri 'self'; form-action 'self'; object-src 'none'">
 <link rel="icon" type="image/png" href="app.png">
-<link rel="stylesheet" href="style.css?v=50">
-<link rel="stylesheet" href="themes.css?v=18">
+<link rel="stylesheet" href="style.css?v=55">
+<link rel="stylesheet" href="themes.css?v=21">
 </head>
 <body>
 
@@ -40,10 +40,14 @@
 
   <div class="planner-controls" id="plannerControls">
     <div class="context-controls" role="group" aria-label="Observing setup">
-    <label>Site <select id="tb-site"></select></label>
-    <label title="Imaging rig — drives the Frame % (coverage) estimates">Rig
-      <select id="rigSelect"></select>
-    </label>
+    <div class="context-picker">
+      <button class="ghost context-settings" id="site-settings" type="button" aria-label="Open site settings" aria-haspopup="dialog" title="Edit the active observing site">Site</button>
+      <select id="tb-site" aria-label="Active observing site"></select>
+    </div>
+    <div class="context-picker" title="Imaging rig — drives the Frame % (coverage) estimates">
+      <button class="ghost context-settings" id="rig-settings" type="button" aria-label="Open rig settings" aria-haspopup="dialog" title="Edit the active imaging rig">Rig</button>
+      <select id="rigSelect" aria-label="Active imaging rig"></select>
+    </div>
     <label class="minalt" title="Minimum useful altitude for planning">
       Min altitude
       <input type="range" id="tb-minalt" aria-label="Minimum altitude" min="5" max="70" step="1" value="25">
@@ -57,7 +61,7 @@
     </label>
     <div class="scrub" title="Scrub the sky through its night — syncs Sky View">
       <span class="control-label">Time</span>
-      <input type="range" id="tb-scrub" aria-label="Selected observing time" min="0" max="1440" step="15" value="0">
+      <input type="range" class="night-scrub" id="tb-scrub" aria-label="Selected observing time" min="0" max="1440" step="1" value="0">
       <strong id="tb-scrub-time" class="mono"></strong>
     </div>
     </div>
@@ -177,7 +181,7 @@
             <label class="inline"><input type="checkbox" id="fltHa"> H&#945;</label>
             <label class="inline"><input type="checkbox" id="fltOiii"> OIII/SII</label>
           </div>
-          <p class="hint">Objects you own filters for are marked in the lists.</p>
+          <p class="hint">These describe your filters and mark matching recommendations. With Moon-aware ranking on, Hα/OIII also change Tonight's Moon penalty; OIII takes priority over Hα, otherwise broadband is assumed. They do not change visibility or usable times.</p>
         </div>
         <div class="menu-section">
           <h4>Data</h4>
@@ -224,6 +228,6 @@
 <div class="modal-wrap" id="modal" hidden></div>
 <div class="tooltip" id="tooltip" hidden></div>
 
-  <script type="module" src="app.js?v=158"></script>
+  <script type="module" src="app.js?v=164"></script>
 </body>
 </html>

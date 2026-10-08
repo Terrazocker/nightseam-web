@@ -19,7 +19,7 @@ from __future__ import annotations
 import json
 
 from harness import WEB_DIR, check
-from web_suite import READY, boot, photo_routes, search_catalog_row, tab
+from web_suite import READY, boot, click_sky_target, photo_routes, scrub_sky_to_wall, search_catalog_row, tab
 
 # Deterministic synthetic catalog (served in place of web/catalog.json): two
 # bright near-zenith targets and one deliberately faint target that the default
@@ -73,14 +73,7 @@ def synth_boot(c, targets=()):
     c.page.locator("#tb-date").fill("2026-08-12")
     c.page.locator("#tb-date").dispatch_event("change")
     tab(c, "sky")
-    c.page.locator("#sky-time").fill("2026-08-12T22:00")
-    c.page.locator("#sky-time").dispatch_event("input")
-    c.page.wait_for_function(
-        "() => document.querySelector('#sky-time')?.value === '2026-08-12T22:00'",
-        timeout=15000)
-    c.page.wait_for_function(
-        "() => document.querySelectorAll('#sky-visible-now [data-sky-target]').length >= 2",
-        timeout=15000)
+    scrub_sky_to_wall(c, "2026-08-12T22:00")
 
 
 def selected_ids(c):
@@ -138,7 +131,7 @@ def web_sky_single_inspector(c):
     synth_boot(c)
     for width in (1672, 1240, 900, 360):
         c.page.set_viewport_size({"width": width, "height": 900})
-        c.page.locator("#sky-visible-now [data-sky-target='synalpha']").click()
+        click_sky_target(c, FIXTURE[0])
         wait_modal_open(c)
         c.expect_eq(c.page.locator("#modal").count(), 1, "one shared inspector exists")
         c.expect_eq(c.page.locator("#sky-detail-host #modal.detail-inline").count(), 1,
@@ -214,10 +207,8 @@ def web_selection_continuity(c):
     rail = c.page.inner_text("#sky-detail-empty")
     c.expect_in("Synth Alpha", rail,
                 "Sky View must show the target selected in Catalog")
-    c.expect(c.page.locator(
-        "#sky-visible-now [data-sky-target='synalpha']").evaluate(
-            "el => el.classList.contains('selected')"),
-        "the Sky View visible list must highlight the shared selection")
+    c.expect_in('Synth Alpha', c.page.locator('#sky-selected-detail').inner_text(),
+                'the Sky reopen action retains the shared selection')
     c.page.click("#sky-selected-detail")
     wait_modal_open(c)
     c.expect_eq(inspector_title(c), "Synth Alpha",
@@ -275,16 +266,14 @@ def web_selection_origins(c):
     c.page.click("#m-close")
     wait_modal_closed(c)
 
-    # --- origin: Sky View rail ---
+    # --- origin: Sky View map ---
     tab(c, "sky")
-    c.page.wait_for_selector("#sky-visible-now [data-sky-target='synalpha']")
-    c.page.click("#sky-visible-now [data-sky-target='synalpha']")
+    click_sky_target(c, FIXTURE[0])
     wait_modal_open(c)
-    c.expect(c.page.locator("#sky-visible-now [data-sky-target='synalpha']").evaluate(
-        "el => el.classList.contains('selected')"),
-        "the Sky rail selection must be highlighted where it was made")
+    c.expect_eq(inspector_title(c), 'Synth Alpha',
+                'map picking opens the selected object in the shared inspector')
     c.expect_eq(inspector_title(c), "Synth Alpha",
-                "the Sky rail's detail action must open the shared selection")
+                "the map detail action must open the shared selection")
     c.page.click("#m-close")
     wait_modal_closed(c)
     # the earlier search filter must not hide the carried selection
@@ -409,15 +398,15 @@ def web_selection_filter_restore(c):
                 "an unplotted target must keep its identity in the Sky rail")
     c.expect_in("Not plotted", rail,
                 "an unplotted selection must say so instead of disappearing")
-    c.expect_eq(c.page.locator("#sky-visible-now [data-sky-target='synfaint']").count(), 0,
-                "an unplotted target must not appear in the visible list")
+    c.expect_in('2 catalog objects', c.page.locator('#skyChartSummary').inner_text(),
+                'the faint target is excluded from the actual plot')
     c.expect(c.page.evaluate("() => document.querySelector('#modal')?.hidden"),
              "a filtered-out target must not reopen the inspector")
     # restore the filter (raise the magnitude limit): re-plotted, same selection
     c.page.evaluate("""() => { const s = document.querySelector('#sky-mag');
         s.value = s.max; s.dispatchEvent(new Event('input', { bubbles: true })); }""")
     c.page.wait_for_function(
-        "() => document.querySelector('#sky-visible-now [data-sky-target=\"synfaint\"]')",
+        "() => document.querySelector('#skyChartSummary')?.textContent.includes('3 catalog objects')",
         timeout=10000)
     rail2 = c.page.inner_text("#sky-detail-empty")
     c.expect_in("Synth Faint", rail2,
@@ -487,8 +476,7 @@ def web_selection_replace_and_delete(c):
 
     # delete from the inspector opened in Sky View: the view must stay Sky View
     tab(c, "sky")
-    c.page.wait_for_selector("#sky-visible-now [data-sky-target='u_synthdel2']")
-    c.page.click("#sky-visible-now [data-sky-target='u_synthdel2']")
+    click_sky_target(c, custom_target('u_synthdel2', 'Synth Custom Two', 20.8))
     wait_modal_open(c)
     expand_catalog_details(c)
     c.page.click("#m-del")

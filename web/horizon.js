@@ -543,7 +543,7 @@ export function renderHorizon(box, onChanged) {
   const layout = document.createElement('div');
   layout.className = 'horizon-layout';
   layout.innerHTML = `
-    <aside class="horizon-tools-rail" aria-label="Horizon tools"></aside>
+    <aside class="horizon-tools-rail" aria-label="Horizon tools" tabindex="0"></aside>
     <section class="horizon-stage" aria-label="Horizon editor"></section>
     <aside class="horizon-settings-rail" aria-label="Horizon calibration and profile settings"></aside>`;
   const tools = layout.querySelector('.horizon-tools-rail');
@@ -776,28 +776,30 @@ function haziEditorHTML(p) {
       <p class="sub">Landmarks document what the profile represents; they do not change visibility by themselves.</p>
     </details>
     <details class="horizon-meta">
-      <summary>Numeric profile and comparison</summary>
+      <summary>Precise horizon values (advanced)</summary>
+      <p class="sub">Enter exact angles if you know them. For normal setup, paint the obstructions on your photo instead.</p>
       <div class="cal-grid">
-        <label>Azimuth bin
+        <label>Direction (azimuth °)
           <input id="ed-profile-az" type="number" min="0" max="359.5" step="0.5" value="0">
         </label>
-        <label>Lower / ceiling altitude
+        <label><span id="ed-profile-alt-label">${p.paintMode === 'sky' ? 'Visible sky starts at (°)' : 'Obstruction height (°)'}</span>
           <input id="ed-profile-alt" type="number" min="-90" max="90.5" step="0.1" value="${Number(p.profile?.[0] ?? NO_BLOCK)}">
         </label>
-        <label>Band top (sky mode)
-          <input id="ed-profile-top" type="number" min="-90" max="90.5" step="0.1" value="${Number(p.profileTop?.[0] ?? NO_BLOCK)}">
+        <label>Visible sky ends at (°, sky mode)
+          <input id="ed-profile-top" type="number" min="-90" max="90.5" step="0.1" value="${Number(p.profileTop?.[0] ?? NO_BLOCK)}" ${p.paintMode === 'sky' ? '' : 'disabled'}>
         </label>
-        <label>Confidence (0–1)
-          <input id="ed-profile-confidence" type="number" min="0" max="1" step="0.05" placeholder="unknown">
+        <label>Measurement confidence (optional)
+          <input id="ed-profile-confidence" type="number" min="0" max="1" step="0.05" placeholder="Unknown; 0–1">
         </label>
       </div>
       <div class="btnrow">
-        <button class="btn" id="ed-profile-read" type="button">Read bin</button>
-        <button class="btn" id="ed-profile-apply" type="button">Apply numeric bin</button>
+        <button class="btn" id="ed-profile-read" type="button">Read direction</button>
+        <button class="btn" id="ed-profile-apply" type="button">Apply values</button>
         <select id="ed-profile-compare" aria-label="Compare this horizon with another"><option value="">Compare with…</option>${db.panos.filter((q) => q.id !== p.id).map((q) => `<option value="${esc(q.id)}">${esc(q.name)}</option>`).join('')}</select>
       </div>
-      <p id="ed-profile-compare-summary" class="sub" role="status" aria-live="polite">Choose another horizon to compare profile bins.</p>
-      <p class="sub">Numeric editing makes the stored profile authoritative and clears painted strokes, so the value cannot be overwritten by a later mask recompute.</p>
+      <p class="sub">0° = north, 90° = east, 180° = south, 270° = west. Directions are stored every 0.5°. Height is above the level horizon; −90 means no recorded obstruction or band edge. Confidence: 0 = uncertain, 1 = confident; it does not change visibility.</p>
+      <p id="ed-profile-compare-summary" class="sub" role="status" aria-live="polite">Choose another horizon to compare its obstruction heights or lower sky edge. Comparison does not change either horizon.</p>
+      <p class="sub">Apply values keeps the current horizon heights and changes this direction, but replaces all editable paint strokes with stored angles. Undo restores the previous state. Press Save to keep the change.</p>
     </details>
     <div class="pano-canvas-box" id="pano-box">
       <canvas id="pano-canvas" width="720" height="360" tabindex="0" role="img" aria-label="Panorama horizon editor" aria-describedby="panoChartSummary"></canvas>
@@ -1095,7 +1097,7 @@ function wireEditor(box, p, onChanged) {
     const sel = $('#ed-profile-compare', box);
     const out = $('#ed-profile-compare-summary', box);
     if (!sel || !out || !sel.value) {
-      if (out) out.textContent = 'Choose another horizon to compare profile bins.';
+      if (out) out.textContent = 'Choose another horizon to compare its obstruction heights or lower sky edge. Comparison does not change either horizon.';
       return;
     }
     const other = db.panos.find((q) => q.id === sel.value);
@@ -1407,6 +1409,14 @@ function wireEditor(box, p, onChanged) {
   }
 
   function renderStatus() {
+    const modeInput = $('#ed-mode', box);
+    if (modeInput) modeInput.value = p.paintMode;
+    const blockInput = $('#ed-block-above', box);
+    if (blockInput) blockInput.checked = !!p.blockAbove;
+    const topInput = $('#ed-profile-top', box);
+    if (topInput) topInput.disabled = p.paintMode !== 'sky';
+    const altLabel = $('#ed-profile-alt-label', box);
+    if (altLabel) altLabel.textContent = p.paintMode === 'sky' ? 'Visible sky starts at (°)' : 'Obstruction height (°)';
     const undoBtn = $('#ed-undo', box), redoBtn = $('#ed-redo', box);
     if (undoBtn) undoBtn.disabled = !historyCanUndo(hist);
     if (redoBtn) redoBtn.disabled = !historyCanRedo(hist);
@@ -1455,6 +1465,7 @@ function wireEditor(box, p, onChanged) {
     if (!historyUndo(hist, p)) return;
     rebuildMaskNow();
     syncCalInputs();
+    readProfileBin();
     overlay();
     announcePanoChanged(p, 'undo');
     renderStatus();
@@ -1463,6 +1474,7 @@ function wireEditor(box, p, onChanged) {
     if (!historyRedo(hist, p)) return;
     rebuildMaskNow();
     syncCalInputs();
+    readProfileBin();
     overlay();
     announcePanoChanged(p, 'redo');
     renderStatus();

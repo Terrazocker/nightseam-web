@@ -36,18 +36,18 @@ class Notes(HTMLParser):
             self.current = None
 
 
-def test_generated_history_starts_with_only_independent_website_release():
+def test_generated_history_contains_only_independent_website_releases():
     module = generator()
     entries = json.loads((ROOT / "landing" / "changelog.json").read_text(encoding="utf-8"))
     page = (ROOT / "landing" / "download.html").read_text(encoding="utf-8")
     assert module.generated_page(page, entries) == page
     assert entries == module.public_entries()
-    assert [entry["version"] for entry in entries] == ["0.1.0"]
+    assert [entry["version"] for entry in entries] == ["0.1.1", "0.1.0"]
     rendered = Notes()
     rendered.feed(page)
     for entry in entries:
         assert entry["summary"] in rendered.notes
-    assert len(rendered.notes) == 1
+    assert len(rendered.notes) == len(entries)
     assert '<h3 class="release-heading">v0.1.0 ' in page
     assert 'release-archive' not in page
     assert 'v0.6.' not in page

@@ -4,12 +4,12 @@ Proposal — October 5, 2026. Review evidence:
 logs/website-review-20261005/REVIEW.md. Defects remain recorded in BUGS.md.
 This plan covers the browser planner and public pages in this repository.
 The independent local catalog, its data and its versions remain outside scope.
-Phases 1–3 are implemented and validated locally. Phase 4 implementation is
-complete locally; real assistive-technology/native-zoom acceptance remains pending.
-Phase 5 is implemented locally; Phase 6 local review/release preparation is
-complete. Human acceptance, clean release actions and authorized publication
-remain explicit external gates; see WEB_REMAINING_WORK_PLAN.md and RELEASE_WORKFLOW.md.
-no public deployment has been performed for this overhaul.
+Phases 1–6 are implemented. The initial independent website release v0.1.0
+was committed, published on GitHub and deployed after owner authorization on
+October 7, 2026. Human screen-reader/native-zoom acceptance and full text/large-
+payload hosting compression remain open. Recent annotation improvements are
+validated locally and being prepared for v0.1.1; their release receipt belongs
+in RELEASES.md. IMPLEMENTATION_PLAN.md and RELEASE_WORKFLOW.md are current authority.
 
 ## Phase 1 — Correctness and photo reliability (completed locally October 5)
 
@@ -81,7 +81,7 @@ October 6. This approval superseded the original screenshot-heavy direction.
    Imprint. Preserve complete privacy/source facts through native disclosures.
 4. Put optional first-night guidance in the secondary Features disclosure. Avoid
    visible setup guides and screenshot showcases, as requested by the owner.
-5. Keep the existing Changes route with only the fresh website 0.1.0 entry,
+5. Keep the existing Changes route with the fresh website ledger starting at 0.1.0,
    following the owner's October 6 reset request. Keep empty/no-JavaScript states
    useful and prevent inherited Git tags from restoring old public records.
 6. Verify desktop/phone, enlarged content, keyboard menus/disclosures, contrast,

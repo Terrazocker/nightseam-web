@@ -26,13 +26,13 @@ def landing_server(c):
 def assert_history(c):
     page = c.page
     records = json.loads((ROOT / "landing/changelog.json").read_text(encoding="utf-8"))
-    c.expect_eq([entry["version"] for entry in records], ["0.1.0"],
-                "the public history starts fresh with the independent 0.1.0 entry")
+    c.expect_eq([entry["version"] for entry in records], ["0.1.1", "0.1.0"],
+                "the independent ledger keeps the new release and fresh 0.1.0 start")
     c.expect_eq(page.locator("#clList article.release-entry").count(), len(records))
     c.expect_eq(page.locator(".release-archive").count(), 0,
                 "the owner removed the old public archive")
-    c.expect_in("v0.1.0", page.locator(".release-heading").inner_text())
-    c.expect_eq(page.locator(".cl-sum").inner_text(), records[0]["summary"])
+    c.expect_in("v" + records[0]["version"], page.locator(".release-heading").first.inner_text())
+    c.expect_eq(page.locator(".cl-sum").all_text_contents(), [r["summary"] for r in records])
     text = page.locator("main").inner_text()
     c.expect("0.6." not in text and "Latest tagged" not in text,
              "old version history and invented tag status must not remain")
@@ -42,7 +42,7 @@ def assert_phone_width(c):
     c.page.set_viewport_size({"width": 360, "height": 800})
     c.expect(c.page.evaluate("document.documentElement.scrollWidth <= innerWidth + 1"),
              "the release page must not overflow horizontally at 360 pixels")
-    c.expect(c.page.locator(".release-heading").is_visible(),
+    c.expect(c.page.locator(".release-heading").first.is_visible(),
              "the fresh release entry must remain readable on a phone")
 
 
@@ -187,10 +187,20 @@ def public_design(c):
             c.expect(c.page.evaluate('document.documentElement.scrollWidth <= innerWidth + 1'),
                      path + ': enlarged content causes page overflow')
             c.page.locator('body').evaluate("e => e.style.zoom='1'")
-            for width in (640, 360):
+            for width in (640, 360, 320):
                 c.page.set_viewport_size({"width": width, "height": 800})
                 c.expect(c.page.evaluate('document.documentElement.scrollWidth <= innerWidth + 1'),
                          path + ': phone page overflows')
+                action=c.page.locator('.header-cta')
+                c.expect(action.is_visible(), 'planner action must be visible outside the phone menu')
+                c.expect_eq(action.get_attribute('href'), '/astro/')
+                c.expect(c.page.locator('.navrow').evaluate('''e => {
+                    const boxes=[...e.querySelectorAll('.brand, .header-cta, .mobile-menu > summary')]
+                      .map(a => a.getBoundingClientRect());
+                    return boxes.every((b,i) => b.left >= 0 && b.right <= innerWidth
+                      && Math.abs(b.top+b.height/2-boxes[0].top-boxes[0].height/2) < 1
+                      && (i === 0 || b.left >= boxes[i-1].right));
+                }'''), 'phone header actions must align without overlap')
                 menu=c.page.locator('.mobile-menu > summary')
                 menu.focus()
                 c.page.keyboard.press('Enter')
@@ -214,10 +224,10 @@ def public_design(c):
         try:
             page=context.new_page()
             page.goto(c.url('/features.html'), wait_until='load')
+            c.expect(page.locator('.header-cta').is_visible(),
+                     'planner must remain directly reachable without JavaScript or opening a menu')
             page.locator('.mobile-menu > summary').focus()
             page.keyboard.press('Enter')
-            c.expect(page.locator('.mobile-menu nav a[href="/astro/"]').is_visible(),
-                     'planner must remain reachable without JavaScript')
             page.locator('.disclosure > summary').click()
             c.expect(page.get_by_role('heading', name='Your first night').is_visible(),
                      'optional first-night guidance must work without JavaScript')

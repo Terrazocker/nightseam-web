@@ -1,5 +1,164 @@
 # Independent website release record
 
+## v0.1.1 — release preparation, October 8, 2026
+
+Owner authorized release/commit/GitHub publication and deployment of the validated
+annotation improvements, plus correction of stale overhaul-plan publication prose.
+Curated the independent 0.1.1 Changes entry and retained the original 0.1.0 entry.
+The inherited tags and independent catalog remain untouched. Human AT/native zoom
+and provider compression remain separate open gates.
+
+Final source pytest: 295 passed / 1 existing optional skip in 92.42s. JS/core/
+catalog/cache/encoding and development release guards passed. One full browser
+run found a Horizon phone assertion measuring two layout generations with
+separate locator calls after resize/Save. The captured layout was correct;
+wait for pending animation frames and read both rectangles atomically, preserving
+the same stacking assertion. Its focused check passed, then the complete browser
+gate passed 53/53. Both transcripts are retained in ignored deployment logs.
+Deployment evidence follows after actual publication.
+
+## Unreleased — compact Sky time rail, October 7, 2026
+
+Removed Sky's duplicated site datetime input and visible range-help row. Date
+editing remains in the common top bar. The four twilight labels stack to the
+left of the longer slider; Now/Reset remain on the right. The desktop rail is
+at most 66px high in acceptance coverage. Phones give the slider its own
+full-width row above the compact legend/actions. Selected clock, phase text,
+range endpoints, honest polar conditions and accessible range help remain.
+Shared site-zone astronomy and one-minute time synchronization are unchanged.
+
+Updated time-pinning fixtures to operate the actual slider with the versioned
+webstore site-zone conversion; retained selection and interval coverage.
+Desktop/640/360px annotations-sky screenshots inspected. Targeted layout and
+six selection checks passed. Full Python suite: 295 passed / 1 existing optional
+skip in 99.11s. JavaScript/encoding/cache/core/catalog guards and development
+release check passed (0 errors; expected dirty-version warning). Full Chrome
+browser gate: 53/53 passed, including interval agreement, one-event time
+synchronization, responsive layouts and all selected-target continuity cases. App 164 / style 55 / themes 21 register and public page
+references align. Local preview returns HTTP 200 on port 8081. No commit or
+deployment; previous uncommitted work preserved.
+
+## Unreleased — simpler overviews and direct settings, October 7, 2026
+
+Removed Tonight's Visibility reason and Rises later columns, leaving rank,
+target, relative score, maximum altitude and best usable interval. Header alignment
+and narrow-table widths follow those five columns. Removed Sky's visible-now list,
+its per-draw sort/filter/DOM rebuilding and obsolete styles; map picking, selected
+target reopening, unplotted notices and the full inspector remain synchronized.
+
+Site/Rig words are accessible settings buttons beside independent native selectors.
+Site opens the active site's edit form; Rig opens the selected rig's edit form,
+or equipment setup if none is active. They use brass hover and keyboard-focus
+feedback and preserve Setup return focus. The owner's additional hover request
+is included. Filter controls remain: Hα/OIII affect Tonight's score with Moon-aware
+ranking enabled while the Moon is up, using the existing global OIII-over-Hα-over-
+broadband assumption. Menu help now explains this conditional effect, and a
+broadband warning displays BB rather than erroneous NB. Core calculations unchanged.
+
+Final validation: full pytest 295 passed / 1 existing optional skip in 96.94s;
+full Chrome browser gate 53/53 passed; JS/encoding/cache/core/catalog guards and
+development release check --allow-dirty --no-stage passed with 0 errors and the
+expected dirty-version warning. The first full browser run found one interval
+test still clicking the removed list; converted it to map picking, verified the
+interval check separately, then reran the full gate successfully. No coverage
+was dropped. The new acceptance checks five columns, direct active-record forms,
+no-rig setup, native rig selection, hover, Enter/Space, returned focus, phone fit,
+removed list and correct broadband badges. Existing selection/interval checks use
+real map clicks through shared-core positions in isolated browser fixtures.
+
+Desktop/phone simplified-*.png screenshots inspected in logs/browser/artifacts/.
+Register/baseline align at app 163, style 54, themes 20, horizon 75; all public
+pages reference shared themes 20. Local preview remains on port 8081. Development
+version remains v0.1.0-1-g3b02147-dirty. Nothing staged, committed or deployed;
+previous uncommitted work preserved and production v0.1.0 unchanged.
+
+## Unreleased — smooth time and Horizon annotation follow-up, October 7, 2026
+
+Both time sliders and the selected-time presentation marker now use one-minute
+steps rather than 15 minutes. Model/controls/inspector facts synchronize immediately;
+Sky and inspector canvases coalesce time input to one latest-state redraw per frame.
+Obsolete Sky frames are cancelled on rerender/route exit and inspector frames on
+close. Inspector facts reuse the existing site/date/timezone window memo; core
+astronomy, scoring resolution and range/clamping rules remain unchanged.
+
+The whole wide-screen Horizon tools rail now sticks and scrolls within the
+viewport, instead of its first card overlapping paint/history controls. Layouts
+at 1240px and below return to normal flow. The body grows with content so tall
+panoramas do not scroll the common header out of its sticky containing block.
+The optional numeric panel has clearer direction/height labels, mode-dependent
+upper-edge availability, confidence/comparison help and an explicit explanation
+of its existing paint-to-stored-profile transition and Undo/Save. Undo/Redo now
+keep the paint-mode selector, block-above checkbox and numeric fields synchronized
+with the restored horizon model.
+
+Validation: full pytest 295 passed / 1 existing optional skip in 108.17s; full
+Chrome browser gate 52/52 passed; check_js.py and development release check
+--allow-dirty --no-stage passed (0 errors; expected dirty-version warning).
+The new acceptance exercises both real one-minute keyboard increments, 40 input
+events with an open inspector (one paint per canvas at the final time), route
+exit with a pending paint, a tall photo at 1894x900 and 1440x700, non-overlapping
+rails and keyboard-reachable Save, mode/Undo synchronization, and 360px stacking.
+Final desktop/phone screenshots inspected in logs/browser/artifacts/followup-*.png.
+Advanced-mode CPU-throttled checks also remain green. No new unresolved finding.
+
+Tokens/register/verified baseline align at app 162, horizon 75, style 53;
+themes remains 19. Local preview /astro/ serves the new entry points at port 8081.
+Version remains truthfully v0.1.0-1-g3b02147-dirty. Nothing staged, committed,
+tagged or deployed; production v0.1.0 is unchanged.
+
+## Unreleased — planner annotation changes, October 7, 2026
+
+Implemented the four owner annotations alongside the existing public header edit:
+open checkbox object-type filters with OR selection, modifier-free interaction,
+clear selection help and preserved focus; 50-object Catalog pages in an available-
+height keyboard-scrollable table; selected-time condition labels instead of the
+misleading Rises later status/filter; Sky time controls above the map with matching
+top-bar input styling and shared actual-Sun twilight tracks; and removal of
+Tonight's duplicate local slider/listener/styles.
+
+Catalog window/clear-window facts now use compact summaries inside the current
+revision-keyed observation cache, populated through the existing shared-core page
+batch/warm loop. Fresh Catalog entry and date changes therefore do not require
+Tonight to supply window facts. Conditions distinguish usability, horizon blocks,
+the altitude limit, below-horizon position and the planning window. Tonight's
+reason label also respects outside-window conditions when altitude alone clears.
+The core formulas, planning-window policy and whole-night ranking are unchanged.
+
+Final validation: full pytest 295 passed / 1 existing optional skip; full Chrome
+browser gate 51/51 passed; check_js.py passed; development check_release.py
+--allow-dirty --no-stage returned 0 errors, with the expected unreleased/dirty
+Git warning. The first pass caught a register entry not yet updated after the
+final token bump and two browser-test issues (an obsolete clock-only accessibility
+assertion and a missing assertion message); corrected before the clean full rerun.
+The new browser acceptance covers independent type clicks/Space/focus, pagination,
+fresh Catalog windows, date-change agreement with the full inspector, synchronized
+phase tracks and polar daylight without a fictitious night band. Existing checks
+cover full-day time ranges, selected-time notifications, storage, photos/credits,
+source retries, horizon editing, and public pages.
+
+Inspected actual Catalog/Sky screenshots at 1894x1244 and Sky at 640/360x900 in
+logs/browser/artifacts/annotations-*.png. Advanced mode still passes its populated-
+horizon/4x-CPU check: first table 0.29s, complete visibility 2.17s, three cached
+Catalog scrubs 0.20s. These are local test measurements, not hosting guarantees.
+Tokens/register/verified baseline align at app 161, style 52, themes 19; public
+pages reference shared themes 19 and retain their public stylesheet token 4.
+Version metadata truthfully reports v0.1.0-1-g3b02147-dirty. No changes staged,
+committed, tagged or deployed; published v0.1.0 remains unchanged.
+
+## Unreleased — public header planner action, October 7, 2026
+
+All six public pages now show a compact brass Open planner link in the top bar,
+aligned with the wordmark and desktop navigation. Phone layouts keep the action
+visible beside the native menu, including with JavaScript disabled and the menu
+closed. Home and Features retain their existing hero action. The public stylesheet
+token moves from 3 to 4 on every entry page and in the AGENTS register.
+
+Validation: pytest 295 passed / 1 existing skip; JavaScript/source guards passed;
+the three public-page browser checks passed, including 200% CSS zoom, keyboard
+navigation and all six pages at 640, 360 and 320 pixels. Desktop (1894px) and
+320px phone screenshots were inspected in logs/header-planner/. This local change
+is not committed or deployed; the published immutable v0.1.0 is unchanged.
+
 ## Published — NightSeam Web 0.1.0, October 7, 2026
 
 Deployed the immutable v0.1.0 release at commit

@@ -12,10 +12,11 @@ def interval_view_agreement(c):
     """Use three real catalog rows in an isolated context, never user storage.
 
     The small pool ensures all three reviewed targets are reachable in the
-    ranked table and Sky View rail. Astronomy, planning and rendering remain
+    ranked table and Sky View map. Astronomy, planning and rendering remain
     the application's real implementations. Photo loading has separate checks.
     """
     ids = ("ngc281", "ngc225", "ngc457")
+    from web_suite import click_sky_target, scrub_sky_to_wall
     catalog = json.loads((WEB_DIR / "catalog.json").read_text(encoding="utf-8"))
     rows = [row for row in catalog if row["id"] in ids]
     c.expect_eq(len(rows), 3, "the regression's actual catalog targets exist")
@@ -112,17 +113,14 @@ def interval_view_agreement(c):
         c.page.click("#m-close")
 
     tab("sky")
-    c.page.wait_for_selector("#sky-time", state="visible")
-    c.page.locator("#sky-time").fill("2026-10-05T23:00")
-    c.page.locator("#sky-time").dispatch_event("input")
+    scrub_sky_to_wall(c, "2026-10-05T23:00")
     c.page.eval_on_selector("#sky-mag", """el => {
       el.value = el.max;
       el.dispatchEvent(new Event('input', {bubbles:true}));
     }""")
     for row in expected["rows"]:
-        selector = f"[data-sky-target='{row['id']}']"
-        c.page.wait_for_selector(selector, state="visible", timeout=15000)
-        c.page.click(selector)
+        click_sky_target(c, next(target for target in rows if target['id'] == row['id']))
+        c.page.wait_for_selector('#m-hero-window', state='visible')
         c.expect_in(row["best"], c.page.inner_text("#m-hero-window"),
                     f"Sky View {row['id']} agrees with Tonight and Catalog")
         c.expect_in(row["visible"], c.page.inner_text("#d-obs"),

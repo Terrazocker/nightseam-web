@@ -1,5 +1,53 @@
 # Independent website decisions
 
+## 2026-10-07 — Keep one date editor and a compact Sky rail
+
+Date editing belongs in the common top bar. Remove Sky's duplicate datetime
+field and visible range note. Put a stacked twilight legend beside the wider
+slider, keeping selected-time/phase text and endpoints. Retain the honest range
+explanation as accessible help. Phones place the full-width slider above the
+compact legend/actions. Site-zone range and one-minute synchronization stay shared.
+
+## 2026-10-07 — Remove repeated overview facts and expose direct editors
+
+Remove Tonight's reason/rise columns and Sky's visible-now list at the owner's
+request, preserving detailed selected-target facts and map selection. Keep native
+site/rig switching separate from the adjacent settings words; those words open
+the active editor and signal pressability with the normal brass hover/focus state.
+Preserve filter controls for now: unlike a static NB recommendation, Hα/OIII
+change Moon-aware Tonight scoring. Explain the conditional effect and global
+priority instead of presenting them as badge-only controls. Correct BB warnings.
+
+## 2026-10-07 — Fine time selection and coherent Horizon rails
+
+Use one-minute slider steps and immediate selected-time synchronization. Batch
+canvas work to the latest selection per animation frame instead of drawing every
+pointer event; the shared planning window and ranking policy remain unchanged.
+Keep the entire Horizon tools rail together when sticky, allow internal scrolling
+on short desktop screens, and use normal flow on narrower layouts. A content-height
+body keeps the header available throughout tall panoramas. Explain numeric editing
+as an optional exact-angle tool, including its existing paint-to-profile transition,
+Undo/Save and confidence metadata. History controls must display the restored mode.
+
+## 2026-10-07 — Apply planner annotations and explain current visibility
+
+Replace the native multi-select object-type list with open checkboxes: ordinary
+clicks/Space toggle independent types, and no checks means all types. Retain
+every option without a nested scrollbar and remove duplicate type-category chips.
+Increase Catalog pages to 50 rows. Replace the misleading Rises later status and
+filter with the actual selected-time condition and All/Usable/Not usable choices.
+Best usable interval remains its own column; it is not an astronomical rise time.
+Read those intervals from the current revision-keyed calculation rather than
+requiring a prior visit to Tonight.
+
+Move Sky View's time controls above the chart and use common open input styling.
+The owner's requested warm-to-dark twilight gradient is a semantic time-track
+exception to the ban on decorative gradients. Use actual shared-core Sun altitude
+at the active site, with phase text/legend and honest polar/full-day behavior.
+Remove Tonight's duplicate local slider; its whole-night ranking and common
+selected-time control remain. These choices supersede the older native-select
+and below-chart-rail descriptions in the historical decisions below.
+
 ## 2026-10-06 — Open planner surface and live catalog modes
 
 Apply the independent catalog's transparent actions, underlined tabs and open

@@ -18,6 +18,9 @@ html[data-theme="workbench"] .public-site main {
 .public-site .skip-link:focus { top: 10px; }
 .public-site .navrow { display: flex; justify-content: space-between; align-items: center; gap: 20px; min-height: 88px; }
 .public-site .brand { display: inline-block; color: var(--txt); text-decoration: none; font-size: 27px; font-weight: 600; letter-spacing: -.025em; }
+.public-site .header-actions { display: flex; align-items: center; gap: 34px; }
+.public-site .header-cta { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; padding: 8px 20px; background: var(--accent); color: var(--accent-ink); font-weight: 600; text-decoration: none; border-radius: 5px; white-space: nowrap; }
+.public-site .header-cta:hover { color: var(--accent-ink); outline: 1px solid var(--accent); outline-offset: 3px; }
 .public-site .desktop-nav nav { display: flex; gap: 34px; align-items: center; }
 .public-site .desktop-nav a { display: inline-block; color: var(--muted); padding: 10px 0; text-decoration: none; border-bottom: 2px solid transparent; }
 .public-site .desktop-nav a:hover, .public-site .desktop-nav a[aria-current="page"] { color: var(--txt); }
@@ -77,8 +80,10 @@ html[data-theme="workbench"] .public-site main {
 .public-site .site-footer a:hover, .public-site .site-footer a[aria-current="page"] { color: var(--txt); text-decoration: underline; }
 @media (max-width: 760px) {
   .public-site .container { width: calc(100% - 48px); }
-  .public-site .navrow { min-height: 74px; }
+  .public-site .navrow { min-height: 74px; gap: 12px; }
   .public-site .brand { font-size: 25px; }
+  .public-site .header-actions { gap: 8px; }
+  .public-site .header-cta { font-size: 14px; padding: 8px 12px; }
   .public-site .desktop-nav { display: none; }
   .public-site .mobile-menu { display: block; position: relative; z-index: 10; }
   .public-site .mobile-menu > summary { list-style: none; width: 44px; height: 44px; display: grid; place-items: center; }
@@ -104,5 +109,10 @@ html[data-theme="workbench"] .public-site main {
   .public-site .release-heading { font-size: 23px; gap: 6px 12px; }
   .public-site .site-footer nav { gap: 8px 16px; }
 }
+@media (max-width: 360px) {
+  .public-site .site-header .container { width: calc(100% - 32px); }
+  .public-site .navrow { gap: 8px; }
+  .public-site .brand { font-size: 22px; }
+}
 @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
-@media print { .public-site .sky-map, .public-site .mobile-menu, .public-site .desktop-nav { display: none; } }
+@media print { .public-site .sky-map, .public-site .header-actions { display: none; } }
