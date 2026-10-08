@@ -39,7 +39,8 @@ Advanced Catalog, startup and local release preparation passes are complete.
 [WEB_REMAINING_WORK_PLAN.md](WEB_REMAINING_WORK_PLAN.md) records completed work
 and the remaining external/manual gates.
 Optional source details load on demand with retry; elevation is recorded metadata
-and does not adjust visibility. v0.1.0 is published and deployed, with verified
+and does not adjust visibility. v0.1.1 is published and deployed, including the
+[annotation improvements](WEB_ANNOTATION_IMPLEMENTATION_PLAN.md), with verified
 live bytes, cache policy and browser acceptance. Full text/large-payload host
 compression and human accessibility acceptance remain open; see RELEASES.md.
 

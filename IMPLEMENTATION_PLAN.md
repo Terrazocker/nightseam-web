@@ -1,6 +1,6 @@
 # NightSeam Web roadmap and current backlog
 
-Current authority, October 7, 2026. This repository owns only the public site and
+Current authority, October 8, 2026. This repository owns only the public site and
 browser planner. The independent Windows catalog has its own repository/roadmap.
 Historical evidence remains in RELEASES/DECISIONS and superseded concept plans.
 
@@ -30,6 +30,16 @@ Historical evidence remains in RELEASES/DECISIONS and superseded concept plans.
 Detailed implementation: WEB_OPEN_DESIGN_IMPLEMENTATION_PLAN.md and
 WEB_REMAINING_WORK_PLAN.md. Final website review: WEBSITE_FINAL_REVIEW.md.
 Actual validation results, not promises, are recorded in RELEASES.md.
+
+## Published follow-up — v0.1.1, October 8, 2026
+
+The annotation improvements are committed, on GitHub and deployed: Open planner
+on every public header, direct Site/Rig settings with brass hover/focus, explicit
+Catalog type checkboxes and 50 rows, clearer visibility conditions, compact Sky
+controls with smooth one-minute selection and twilight colors, simpler Tonight,
+and readable Horizon rails/precise-edit help. Final validation: 295 Python passed
+(one existing optional skip), 53/53 browser passed, full live hashes and browser
+acceptance. All twelve remote core directories retained. RELEASES.md has the receipt.
 
 ## External/manual gates still open
 

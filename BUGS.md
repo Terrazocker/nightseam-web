@@ -1,17 +1,19 @@
 # Current NightSeam Web findings
 
-## Current remaining gates — October 7, 2026
+## Current remaining gates — October 8, 2026
 
-Implementation, GitHub release and authorized deployment of v0.1.0 are complete
+Implementation, GitHub release and authorized deployment through v0.1.1 are complete
 for the established website backlog. WEBSITE_FINAL_REVIEW.md and IMPLEMENTATION_PLAN.md are the
 current status authority; dated findings below retain the history of earlier runs.
 
 - A11Y-001 remains open for a human screen-reader/native-browser-zoom pass.
   ACCESSIBILITY_ACCEPTANCE.md supplies exact steps. Browser keyboard, contrast,
   responsive and enlarged-content checks do not substitute for this acceptance.
-- Publication is complete: v0.1.0, validated upload/readback, live browser checks,
-  rollback backup and 81 retired photo deletions. The old attribution manifest
-  was already absent. All pre-existing remote core directories remain.
+- Publication is complete through v0.1.1: validated upload/readback, live browser
+  checks and verified 260-file rollback backup; all twelve remote core directories
+  remain. No deletions in this follow-up. The initial 0.1.0 release removed 81
+  retired photos; its old attribution manifest was already absent. RELEASES.md
+  records the separate receipts.
 - HOST-DELIVERY-001: live HTML/JS and the two large catalog JSON payloads do not
   negotiate gzip. Cache-Control is correct; version/manifests do compress with
   Vary:Accept-Encoding. Enable full text/large-payload compression via supported

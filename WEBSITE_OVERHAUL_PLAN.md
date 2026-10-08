@@ -7,9 +7,9 @@ The independent local catalog, its data and its versions remain outside scope.
 Phases 1–6 are implemented. The initial independent website release v0.1.0
 was committed, published on GitHub and deployed after owner authorization on
 October 7, 2026. Human screen-reader/native-zoom acceptance and full text/large-
-payload hosting compression remain open. Recent annotation improvements are
-validated locally and being prepared for v0.1.1; their release receipt belongs
-in RELEASES.md. IMPLEMENTATION_PLAN.md and RELEASE_WORKFLOW.md are current authority.
+payload hosting compression remain open. Recent annotation improvements were
+released on GitHub and deployed as v0.1.1 on October 8; their verified release
+receipt is in RELEASES.md. IMPLEMENTATION_PLAN.md and RELEASE_WORKFLOW.md are current authority.
 
 ## Phase 1 — Correctness and photo reliability (completed locally October 5)
 

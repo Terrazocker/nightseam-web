@@ -97,3 +97,12 @@ Status: completed locally. Full Python suite 295 passed / 1 existing optional
 skip; full Chrome browser gate 53/53 passed; JS/cache/core/catalog and development
 release guards passed. Inspected desktop/640/360px Sky screenshots. App 164 /
 style 55 / themes 21 and public references align. No commit or deployment.
+
+
+## Publication follow-up — October 8, 2026
+
+All completed annotation sections above are now committed and published on GitHub
+and deployed as v0.1.1, with verified rollback backup, all file hashes and live
+browser acceptance. The earlier "no deployment" statements describe their dated
+local completion receipts. Current release authority is RELEASES.md. Manual AT/
+native zoom and provider compression remain open; no catalog work was included.

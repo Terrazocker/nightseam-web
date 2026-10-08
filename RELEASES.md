@@ -1,6 +1,6 @@
 # Independent website release record
 
-## v0.1.1 — release preparation, October 8, 2026
+## v0.1.1 — released and deployed, October 8, 2026
 
 Owner authorized release/commit/GitHub publication and deployment of the validated
 annotation improvements, plus correction of stale overhaul-plan publication prose.
@@ -15,7 +15,28 @@ separate locator calls after resize/Save. The captured layout was correct;
 wait for pending animation frames and read both rectangles atomically, preserving
 the same stacking assertion. Its focused check passed, then the complete browser
 gate passed 53/53. Both transcripts are retained in ignored deployment logs.
-Deployment evidence follows after actual publication.
+Release commit 52038830584babcacc541670fe62f791750a665e and new annotated
+v0.1.1 tag were pushed to codex/website-phase-two on GitHub. The verified 54-file
+publication package and SHA256 assets are attached to the GitHub release.
+
+Authorized production deployment completed: a fresh 260-file backup was hash
+verified and re-inventoried before upload. All 54 files uploaded, dependencies
+before every HTML entry point; all 54 passed FTPS readback hashes. HTTPS decoded
+hashes match for all 52 public files and both entry routes. Live version is clean
+0.1.1. Live browser acceptance passed fresh/return planning, 50-row Catalog and
+checkbox filters, direct settings controls, simplified Tonight/Sky, one-minute
+slider, fresh/cached Wikipedia photos with individual credits, OpenNGC sources,
+and all six public pages at 1240/360px. Live Sky/phone Changes screenshots inspected.
+All twelve remote core directories remain; no remote files were deleted.
+
+Evidence: logs/deployment-0.1.1-20261007/ (backup, upload/readback, HTTPS/browser
+transcripts and deployment-receipt.json; the backup started October 7 and final
+publication was October 8). The release archive SHA256 is
+c3b96c3529e3c41e7847e4e8d67034528d28f7985a6cd4446ac572cbec0730d4.
+Actual cache headers remain correct. HTML/JS/large JSON still do not negotiate
+compression, while version/manifests do; HOST-DELIVERY-001 remains open as requested.
+Human AT/native zoom remains open. The independent catalog is unchanged.
+Current status documentation corrected; prior dated validation remains history.
 
 ## Unreleased — compact Sky time rail, October 7, 2026
 

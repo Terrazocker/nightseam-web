@@ -1,5 +1,13 @@
 # Website implementation and final review
 
+Publication follow-up, October 8: annotation improvements are released on GitHub
+and deployed as v0.1.1. 295 Python tests and 53 browser checks passed. All uploaded
+files/entry routes passed live hash verification; live desktop/phone pages,
+planner controls and fresh/cached photos/credits passed. RELEASES.md is the receipt
+and IMPLEMENTATION_PLAN.md the current backlog. Human AT/native zoom and provider
+compression remain open. The original review below is dated pre-publication
+evidence; its old screen descriptions/counts are not current status.
+
 Publication follow-up, October 7: v0.1.0 is now on GitHub and deployed after
 owner authorization. RELEASES.md records complete backup/hash/live-browser and
 legacy cleanup evidence. Live caching passed; full text/large-payload compression
