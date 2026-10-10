@@ -63,12 +63,13 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-import shutil
 import subprocess
 import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+from scripts.scratchspace import scratch_dir
 WEB = ROOT / "web"
 sys.path.insert(0, str(ROOT))
 CORE = ROOT / "core"
@@ -97,8 +98,8 @@ _VERIFIED_BASELINE_JSON = r"""
    "token": "4"
   },
   "app.js": {
-   "sha256": "9c01fde13206148f1340e700c4f16f2f7e80ac0fe1efe82e4b88010fb5126307",
-   "token": "171"
+   "sha256": "b45fe846d559bfd89fcd54a9d936b565d1da65c7e918c7b1a0ae4a17e636b5be",
+   "token": "174"
   },
   "astro.js": {
    "sha256": "bf25b29ee6532782e769cfbed42f8374ef1e9024da979cdb0bdb62c5a5cb0a64",
@@ -125,8 +126,8 @@ _VERIFIED_BASELINE_JSON = r"""
    "token": "32"
   },
   "style.css": {
-   "sha256": "8f6cd914a83880cf25362882e33224a35f4d7def9739841a976db143a42da33c",
-   "token": "55"
+   "sha256": "e4e3a67e762a3e9a6078a6eab0e9a98880123cee7b6c2f24fcd455c5fa869cb0",
+   "token": "56"
   },
   "themes.css": {
    "sha256": "0626178a98b9675ddd05621b6b9bd2a7cf7cb545ab52996b0c5df229c1b9164a",
@@ -483,8 +484,6 @@ def _self_test(quiet: bool = False) -> int:
          real token bump (review R2-02), and the stale-baseline hint is never
          emitted alongside a missed-bump finding.
     """
-    import tempfile
-
     fails: list[str] = []
 
     def check(label, cond):
@@ -493,18 +492,7 @@ def _self_test(quiet: bool = False) -> int:
         if not cond:
             fails.append(label)
 
-    # Prefer a throwaway dir under the system temp; fall back to a gitignored
-    # repo-local scratch for sandboxes that deny temp-dir creation.
-    td = tempfile.mkdtemp(prefix="ns-token-selftest-")
-    try:
-        root = Path(td)
-        (root / "probe").mkdir()
-    except OSError:
-        shutil.rmtree(td, ignore_errors=True)
-        root = ROOT / ".pt-token-selftest"
-        shutil.rmtree(root, ignore_errors=True)
-        root.mkdir(parents=True, exist_ok=True)
-    try:
+    with scratch_dir('js-token') as root:
         base, cur = root / "base", root / "cur"
 
         def put(d: Path, app: str, astro: str, crlf: bool = False) -> None:
@@ -601,9 +589,6 @@ def _self_test(quiet: bool = False) -> int:
               and not any("still ?v=" in p for p in bumped_problems))
         (cur / "web" / "app.js").write_bytes(
             b"import * as E from './astro.js?v=10';\n")
-    finally:
-        shutil.rmtree(root, ignore_errors=True)
-
     print("check_js_tokens self-test:",
           "FAIL (%d)" % len(fails) if fails else "OK")
     return 1 if fails else 0

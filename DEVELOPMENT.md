@@ -1,5 +1,55 @@
 # NightSeam Web development
 
+## Disposable test scratch lifecycle — October 10, 2026
+
+scripts/scratchspace.py owns marked run directories under ignored logs/.scratch.
+Pytest keeps one locked session with per-test children; JS syntax/token probes
+own separate locked runs. A small manager lock serializes creation, orphan
+recovery and final removal. OS locks release if a process crashes, allowing the
+next allocation to recover its abandoned payload. Concurrent live runs remain
+locked and are skipped; unmarked/unknown directories are never inferred disposable.
+Resolved paths must remain in repository logs, without redirected scratch bases.
+
+Deletion retries transient directory locks and read-only files. A persistent
+cleanup failure remains visible and prevents allocating another run, with its
+ownership marker retained for retry. No system-temp/profile fallback exists for
+these probes. Browser per-check artifacts overwrite stable filenames, publication
+builders replace fixed stages, and core retention stays current plus N-1.
+Historical transcripts, archives and rollback backups are intentionally retained;
+this lifecycle is not a blanket logs purge or a total disk quota.
+
+## Catalog context, weather ownership and table controls — October 10, 2026
+
+Planner invalidation precedes replacement Catalog scheduling. Every owned batch
+checks its epoch/view before publishing or repainting. The night-summary cache
+retains canonical maxAlt for maximum-altitude sorting; missing statistics sort
+last, and both directions use ascending name/ID ties. Custom-target in-place
+updates explicitly invalidate their cached search blob. Active-site saves refresh
+the displayed view and header night summary only after persistence succeeds.
+Chart state translation
+uses core visibilityReason, with no shell-specific astronomy predicate.
+
+Weather responses belong to an immutable site ID/coordinates/resolved-zone key
+and request generation. Active-context changes invalidate pending requests even
+before the first response; loaded or requested weather follows the new context,
+while untouched on-demand weather does not fetch. Requests use the planner's
+exact resolved timezone, including its browser fallback, rather than provider
+geographic auto. Same-context date/name changes can reuse multi-day data.
+
+Null, blank, non-numeric and non-finite readings remain unavailable; zero is a
+valid measurement. An hourly quality score requires cloud cover, precipitation
+probability/amount, temperature/dew-point spread and a clarity proxy (visibility
+or aerosol). All selected-night rows must have these inputs for a night score.
+Incomplete data stays explicit; known rain/storm warnings remain visible.
+Missing optional air data cannot erase valid forecast/visibility information.
+
+Tonight/Catalog use native table rows/cells and named target buttons within
+cells. Row pointer activation delegates to the same target action; Save remains
+independent. Sortable headings contain native buttons and expose aria-sort.
+Catalog restores focus by stable control ID and preserves search selection range
+and direction across rerenders, including asynchronous calculation completion.
+
+
 ## Horizon crop geometry and editor history — October 10, 2026
 
 core/horizon.js rasterizes legacy circular dabs (`r`) and cropped ellipses
@@ -154,7 +204,7 @@ generation guards. Search, planner changes and mode changes supersede work safel
 completion refreshes only Catalog. Astronomy formulas and baked core are unchanged
 by this task. The independent catalog repository is only a visual reference.
 
-Implementation/validation checklist: WEB_OPEN_DESIGN_IMPLEMENTATION_PLAN.md.
+Implementation/validation checklist: docs/history/WEB_OPEN_DESIGN_IMPLEMENTATION_PLAN.md.
 
 ## Phase 4 planner controls and focus — October 6, 2026
 
@@ -322,7 +372,7 @@ inspector. `S.detailId` is the authoritative identity and outlives the
 inspector; `S.detailOpen` is the only evidence that the inspector is showing.
 Ownership: `selectTarget()`/`clearSelection()` are the only writers of
 `S.detailId`, `openDetail()`/`closeDetail()` the only writers of `S.detailOpen`,
-and every highlight (ranked rows, catalog rows, Sky rail) is
+and every highlight (ranked rows, catalog rows, Sky chart) is
 derived from `S.detailId`. Sky View keeps no local
 selection ids and no fallback auto-selection: closing the inspector preserves
 identity and highlighting, view switches close the inspector without reopening,

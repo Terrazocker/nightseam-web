@@ -22,7 +22,7 @@
      browser gate reads whichever one the live document carries. -->
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://upload.wikimedia.org https://thumb.wikimedia.org; connect-src 'self' https://en.wikipedia.org https://upload.wikimedia.org https://thumb.wikimedia.org https://api.open-meteo.com https://air-quality-api.open-meteo.com; base-uri 'self'; form-action 'self'; object-src 'none'">
 <link rel="icon" type="image/png" href="app.png">
-<link rel="stylesheet" href="style.css?v=55">
+<link rel="stylesheet" href="style.css?v=56">
 <link rel="stylesheet" href="themes.css?v=21">
 </head>
 <body>
@@ -115,7 +115,7 @@
         <div class="menu-section">
           <h4>Advanced</h4>
           <label class="inline"><input type="checkbox" id="advMode"> Advanced mode</label>
-          <p class="hint">Standard mode shows the 200 most popular targets; advanced adds the full OpenNGC catalog — NGC/IC plus its addendum and a 16-object supplement OpenNGC cannot carry (12,176 objects to magnitude 20). Changing this reloads the app.</p>
+          <p class="hint">Standard mode shows the 200 most popular targets; advanced adds the full OpenNGC catalog — NGC/IC plus its addendum and a 16-object supplement OpenNGC cannot carry (12,176 objects to magnitude 20). Switching updates the catalog in place; calculating visibility for the full catalog can take a moment.</p>
           <div class="hidden" id="tzSection">
             <label class="inline">Timezone
               <select id="tzSelect" style="width:100%">
@@ -228,6 +228,6 @@
 <div class="modal-wrap" id="modal" hidden></div>
 <div class="tooltip" id="tooltip" hidden></div>
 
-  <script type="module" src="app.js?v=171"></script>
+  <script type="module" src="app.js?v=174"></script>
 </body>
 </html>

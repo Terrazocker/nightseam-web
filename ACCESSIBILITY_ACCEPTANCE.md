@@ -1,6 +1,6 @@
 # Human accessibility acceptance still required
 
-October 7, 2026. Automated browser checks cover keyboard control/focus, dialog
+Updated October 10, 2026. Automated browser checks cover keyboard control/focus, dialog
 isolation, accessible labels, non-color summaries, reduced motion and enlarged
 responsive content. They do not verify what an actual screen reader announces
 or the behavior of native browser zoom. Available automation does not control
@@ -26,6 +26,11 @@ Record browser, screen reader/version, date, zoom, page, action and actual resul
 5. Select/close/reopen targets across Catalog/Sky/Tonight. Read chart summaries
    and state labels. Expand source information; check loading/error/retry messages,
    image source/license links and no focus takeover when asynchronous data arrives.
+   Confirm native table, row, cell and column-header announcements. Use named
+   target buttons with Enter/Space; closing details returns focus to their trigger.
+   Operate sort headers, Type sorting and Reverse with keys; verify announced
+   sort direction. Change type/constellation/visibility filters and sorting, and
+   edit search text: focus and the search caret/selection must survive updates.
 6. Edit a Horizon, undo/redo/save, leave with dirty edits and exercise restore
    failure. Ensure warnings and validation errors are readable without color.
 7. Repeat at 200% and 400% native browser zoom (not CSS zoom or viewport scaling).

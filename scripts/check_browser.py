@@ -26,6 +26,7 @@ import phase2_publication_checks  # noqa: E402,F401  (immutable staged graph)
 import phase3_astronomy_checks  # noqa: E402,F401  (site calendar and lunar warning regressions)
 import review_phase4_horizon_checks  # noqa: E402,F401  (reviewed horizon crop and editor state)
 import phase1_app_checks  # noqa: E402,F401  (save/delete failures and complete restore recovery)
+import review_phase567_checks  # noqa: E402,F401  (remaining Catalog, weather and accessibility findings)
 
 
 def run_gate(**kwargs) -> int:

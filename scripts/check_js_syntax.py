@@ -8,17 +8,17 @@ hard failures, never a skip.
 
 from __future__ import annotations
 
-import os
 import re
 import shutil
 import subprocess
 import sys
-import tempfile
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO))
+from scripts.scratchspace import scratch_dir
 
-# the JS that actually ships: the desktop UI and the web twin (flat modules)
+# The planner's authored flat modules.
 ROOTS = [REPO / "web"]
 
 # ... plus the shared core and its baked copies, which are scanned RECURSIVELY:
@@ -29,9 +29,8 @@ CORE_ROOTS = [REPO / "core", REPO / "web" / "core"]
 # never shipped / never ours (a --path can point at one of these by accident)
 IGNORED_DIRS = {"node_modules", "whale", "dev"}
 
-# scratch life: a throw-away dir under logs/ (gitignored), removed in a
-# finally block - no permanent new directory, no developer-specific path
-SCRATCH_PREFIX = ".js-syntax-"
+# Disposable runs under ignored logs/.scratch; persistent lock metadata is tiny.
+SCRATCH_PREFIX = "js-syntax-"
 CAPTURE_NAME = "node.out"
 
 LINE_RE = re.compile(r"^(?P<file>.+?):(?P<line>\d+)$", re.M)
@@ -124,27 +123,6 @@ def node_usable(node: str) -> str:
     except subprocess.TimeoutExpired:
         return "node --version timed out"
     return "" if proc.returncode == 0 else f"node --version exited {proc.returncode}"
-
-
-def _scratch_dir() -> Path | None:
-    """A fresh throw-away directory, preferably inside the repo (logs/ is
-    gitignored; the platform temp dir is not writable for spawned processes
-    in the sandbox, so it is only the fallback)."""
-    for base in (REPO / "logs", Path(tempfile.gettempdir())):
-        try:
-            base.mkdir(parents=True, exist_ok=True)
-        except OSError:
-            continue
-        for i in range(100):
-            candidate = base / f"{SCRATCH_PREFIX}{os.getpid()}-{i}"
-            try:
-                candidate.mkdir()
-            except FileExistsError:
-                continue
-            except OSError:
-                break
-            return candidate
-    return None
 
 
 def _rewrite(text: str, tmp: Path, label: str) -> str:
@@ -246,28 +224,25 @@ def main(argv=None) -> int:
         print(f"check_js_syntax FATAL: cannot run node ({reason})")
         return 2
 
-    scratch = _scratch_dir()
-    if scratch is None:
-        print("check_js_syntax FATAL: no writable scratch directory")
-        return 2
-
-    capture = scratch / CAPTURE_NAME
     errors = 0
     checked = 0
     try:
-        for i, src in enumerate(files):
-            try:
-                ok, detail = check_one(node, src, scratch, i, capture)
-            except (OSError, subprocess.TimeoutExpired) as exc:
-                print(f"SYNTAX  {shown(src)}: cannot check: {exc}")
-                errors += 1
-                continue
-            checked += 1
-            if not ok:
-                print(f"SYNTAX  {detail}")
-                errors += 1
-    finally:
-        shutil.rmtree(scratch, ignore_errors=True)
+        with scratch_dir('js-syntax') as scratch:
+            capture = scratch / CAPTURE_NAME
+            for i, src in enumerate(files):
+                try:
+                    ok, detail = check_one(node, src, scratch, i, capture)
+                except (OSError, subprocess.TimeoutExpired) as exc:
+                    print(f"SYNTAX  {shown(src)}: cannot check: {exc}")
+                    errors += 1
+                    continue
+                checked += 1
+                if not ok:
+                    print(f"SYNTAX  {detail}")
+                    errors += 1
+    except OSError as exc:
+        print(f"check_js_syntax FATAL: scratch creation/cleanup failed ({exc})")
+        return 2
     print(f"checked {checked} js module(s), {errors} syntax error(s)")
     return 1 if errors else 0
 

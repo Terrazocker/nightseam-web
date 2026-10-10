@@ -93,6 +93,11 @@ The local exposure catalog has its own design document in Nightseam-catalog.
   viewport where practical. Profile bins use the shared world-azimuth geometry.
   Do not show calibration provenance entry fields; retain saved/imported metadata.
 Across Tonight, Catalog, and Sky View, keep one selected target and one inspector.
+Keep tables native: rows and cells expose table semantics, with named target
+buttons inside cells. Sort headers use real buttons and expose their direction
+through aria-sort; Catalog also provides Type sorting and a Reverse control.
+Preserve filter/constellation/sort focus and search selection ranges when results
+rerender. Pointer row selection remains convenient without giving rows button roles.
 Selection remains `S.skyTime`/`S.detailId`; inspector visibility is explicit
 (`S.detailOpen`) and never inferred from the selected target. Use the live catalog, planner tracks and
 stored panorama profiles; never substitute illustrative screenshot values for

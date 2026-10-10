@@ -1,5 +1,50 @@
 # Independent website decisions
 
+## 2026-10-10 — Recover abandoned scratch rather than silently accumulating it
+
+Moving pytest paths under logs did not address ignored deletion failures. Use
+one owned scratch manager for pytest and JS guards, with OS locks distinguishing
+live runs from crashed owners. Reap only marked inactive scratch before allocation;
+fail visibly if cleanup remains blocked. Preserve ownership evidence for retry
+and leave unknown data, historical reports, recovery and deployment backups alone.
+Normal build stages/artifacts already replace fixed destinations; retain that
+behavior and current plus N-1 core trees. Do not claim a global disk cap for
+manually saved evidence or arbitrary developer outputs.
+
+## 2026-10-10 — Keep current guidance separate from historical workspace material
+
+Keep the current roadmap, review remediation plan, release workflow and actual
+validation receipts at the repository root. Move completed design plans and the
+old integrated review to docs/history with an explicit historical banner and
+updated references; preserve their dated content.
+
+Retire the unused combined-project concept corpus and desktop FITS test helper
+from this web repository. Preserve every byte in a verified ignored local archive
+before removal; their tracked history remains in Git. Archive stale local release
+candidates too, and regenerate future candidates from validated current sources.
+Delete only disposable test scratch/caches; keep recovery snapshots, deployment
+rollback backups, reference fixtures, validation evidence and retained core trees.
+Route pytest's default basetemp/cache under logs to avoid recreating root scratch.
+
+## 2026-10-10 — Complete remaining Catalog, weather and accessibility review fixes
+
+Resolve REV-028–038 as remediation phases 5–7. Keep one canonical astronomy/
+visibility implementation: cache its maximum altitude and translate its reason
+codes for the chart. Invalidation must happen before scheduling replacement work.
+
+Weather must not infer good conditions from absent measurements. Require complete
+hourly scoring inputs throughout the selected night before presenting a numeric
+rating; expose individual available values and known warnings when incomplete.
+Use resolved planner timezone for provider wall-hour data. Generation plus active
+context ownership protects against stale responses even if requests cannot abort.
+Preserve on-demand loading; changing an untouched site never starts weather.
+
+Keep dense tables accessible through native rows/cells and actual buttons within
+cells, with native keyboard sort controls. Preserve the open Workbench surface,
+target selection, independent Save controls and filter focus during updates.
+Human screen-reader/native-zoom acceptance remains separate from browser checks.
+
+
 ## 2026-10-10 — Keep crop angles and editor metadata attached to their source
 
 A horizontal crop changes horizontal dab extent only. Preserve legacy `r` as

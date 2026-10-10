@@ -68,7 +68,7 @@ versions or recreate the combined desktop project here. The deprecated
 
 Keep this register aligned with entry-point references and the core manifest.
 Current:
-- `web/app.js?v=171`
+- `web/app.js?v=174`
 - `web/astro.js?v=33`
 - `web/horizon.js?v=81`
 - `web/webstore.js?v=47`
@@ -81,15 +81,17 @@ Current:
 - Public share preview: `landing/social-preview.png?v=1`
 - Public pages load canonical role tokens: `/astro/themes.css?v=21`
 - `web/core.js?v=47`
-- `web/style.css?v=55`
+- `web/style.css?v=56`
 - `web/themes.css?v=21`
 
 ## Working discipline
 
 Delegate bulk reading touching several files and request a digest, not files.
 Keep tool output concise and use explicit UTF-8 without BOM for text rewrites.
-Tests and scratch stay in ignored logs/, never in a user profile. Document
-confirmed unresolved findings in BUGS.md, architecture in DEVELOPMENT.md,
+Tests and scratch stay in ignored logs/, never in a user profile.
+Disposable probes use scripts/scratchspace.py's owned locked runs; do not ignore
+cleanup failures or prune recovery/deployment evidence as if it were scratch.
+Document confirmed unresolved findings in BUGS.md, architecture in DEVELOPMENT.md,
 decisions in DECISIONS.md and actual validation outcomes in RELEASES.md.
 Historical combined-project entries may mention removed desktop files; current
 commands and authority are this file. Recovery snapshots are ignored local

@@ -73,6 +73,7 @@ function applyActiveSite(site, options) {
     sel.innerHTML = SITES.map((s) => `<option value="${esc(s.id)}"${s.id === site.id ? ' selected' : ''}>${esc(s.name)}</option>`).join('');
     sel.value = site.id;
   }
+  if (_wxContext !== null) refreshWeatherForSite();
 }
 
 let CAT = null;                 // array of catalog objects
@@ -425,7 +426,7 @@ function catalogBestWindow(night) {
     ? `${fmtClock(E.dateFromJD(night.bestStart))}–${fmtClock(E.dateFromJD(night.bestEnd))}` : '—';
 }
 function cacheNightSummary(stats, pct = stats.pct, blk = stats.blockedPct) {
-  return { pct, blk, night: { bestRun: stats.bestRun, bestStart: stats.bestStart, bestEnd: stats.bestEnd } };
+  return { pct, blk, night: { maxAlt: stats.maxAlt, bestRun: stats.bestRun, bestStart: stats.bestStart, bestEnd: stats.bestEnd } };
 }
 /** An object's size in the user's chosen unit. The formatting itself lives in
  *  web/format.js - the web twin of static/js/util.js::fmtSize, pinned by the
@@ -481,6 +482,7 @@ function applyTheme(_legacyValue, strict = false) {
    without changing the presentation contract. ---- */
 const WX_STATE = { data: null, loading: false, error: false, airError: false };
 let _wxGen = 0;
+let _wxContext = null;
 const WMO_INFO = {
   0: ['☀️', 'Clear sky'], 1: ['🌤️', 'Mainly clear'], 2: ['⛅', 'Partly cloudy'], 3: ['☁️', 'Overcast'],
   45: ['🌫️', 'Fog'], 48: ['🌫️', 'Icy fog'],
@@ -493,9 +495,10 @@ const WMO_INFO = {
   85: ['🌨️', 'Snow showers'], 86: ['🌨️', 'Snow showers'],
   95: ['⛈️', 'Thunderstorm'], 96: ['⛈️', 'Thunderstorm, hail'], 99: ['⛈️', 'Thunderstorm, hail'],
 };
-function wxInfo(code) { return WMO_INFO[code] || ['🌡️', 'Condition ' + code]; }
+function wxInfo(code) { return code == null ? ['○', 'Condition unavailable'] : WMO_INFO[code] || ['🌡️', 'Condition ' + code]; }
 
 function wxNumber(value) {
+  if (value == null || !['number', 'string'].includes(typeof value) || (typeof value === 'string' && !value.trim())) return null;
   const n = Number(value);
   return Number.isFinite(n) ? n : null;
 }
@@ -520,7 +523,9 @@ function wxSelectedDateKey() {
   return dateKey(S.date instanceof Date && !isNaN(S.date) ? S.date : new Date());
 }
 function wxTimezone() {
-  return Hor.getPrefs().tz || S.site.tz || 'auto';
+  // Provider "auto" uses geographic timezone, while planning falls back to
+  // the browser zone. Request the exact resolved planning zone for wall hours.
+  return resolvedZone();
 }
 function wxNightBounds() {
   try {
@@ -610,6 +615,7 @@ function wxRainState(row) {
   if (row.rainProbability != null && row.rainProbability >= 35) {
     return { label: 'Possible', cls: 'warn' };
   }
+  if (row.precipitation == null || row.rainProbability == null) return { label: 'Unknown', cls: 'unknown' };
   return { label: 'Dry', cls: 'good' };
 }
 function wxSkyClarity(row) {
@@ -624,6 +630,8 @@ function wxSkyClarity(row) {
   };
 }
 function wxRowScore(row) {
+  if (row.cloudTotal == null || row.rainProbability == null || row.precipitation == null ||
+      row.dewSpread == null || wxSkyClarity(row).cls === 'unknown') return null;
   let score = 100;
   if (row.cloudTotal != null) score -= row.cloudTotal * 0.55;
   if (row.rainProbability != null) score -= row.rainProbability * 0.25;
@@ -650,24 +658,27 @@ function wxForecastSummary(rows) {
   const poorClarity = clarity.some((r) => r.cls === 'bad');
   const fairClarity = clarity.some((r) => r.cls === 'warn');
   const scores = rows.map(wxRowScore);
-  const score = scores.length ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : null;
+  const complete = rows.length > 0 && scores.every((value) => value != null);
+  const score = complete ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : null;
+  const clarityKnown = rows.length > 0 && clarity.every((r) => r.cls !== 'unknown');
+  const dewKnown = rows.length > 0 && rows.every((r) => r.dewSpread != null);
   const red = wet || (maxRain != null && maxRain >= 55) || (maxCloud != null && maxCloud >= 85);
   const warn = !red && ((maxRain != null && maxRain >= 20) || (maxCloud != null && maxCloud >= 20) ||
     !!dewHigh || !!dewWarn || poorClarity || fairClarity);
-  const status = red ? { label: 'Poor', cls: 'bad' } :
+  const status = !complete ? { label: 'Incomplete', cls: 'unknown' } : red ? { label: 'Poor', cls: 'bad' } :
     warn ? { label: 'Fair', cls: 'warn' } :
       rows.length ? { label: 'Good', cls: 'good' } : { label: 'Unknown', cls: 'unknown' };
   const firstTime = (row) => row ? row.time.slice(11, 16) : '';
   return {
     cloud: clouds.length ? `${Math.min(...clouds)}–${Math.max(...clouds)}%` : '—',
-    rain: maxRain == null ? '—' : wet ? `${Math.round(maxRain)}% · rain risk` :
+    rain: wet ? (maxRain == null ? 'Rain or storm risk' : `${Math.round(maxRain)}% · rain risk`) : maxRain == null ? '—' :
       maxRain >= 35 ? `${Math.round(maxRain)}% possible` : `${Math.round(maxRain)}% max`,
-    clarity: poorClarity ? 'Poor' : fairClarity ? 'Fair' : rows.length ? 'Good' : 'Unknown',
-    clarityCls: poorClarity ? 'bad' : fairClarity ? 'warn' : rows.length ? 'good' : 'unknown',
-    dew: dewHigh ? `High after ${firstTime(dewHigh)}` : dewWarn ? `Moderate after ${firstTime(dewWarn)}` : rows.length ? 'Low' : '—',
-    dewCls: dewHigh ? 'bad' : dewWarn ? 'warn' : rows.length ? 'good' : 'unknown',
+    clarity: poorClarity ? 'Poor' : fairClarity ? 'Fair' : clarityKnown ? 'Good' : 'Unknown',
+    clarityCls: poorClarity ? 'bad' : fairClarity ? 'warn' : clarityKnown ? 'good' : 'unknown',
+    dew: dewHigh ? `High after ${firstTime(dewHigh)}` : dewWarn ? `Moderate after ${firstTime(dewWarn)}` : dewKnown ? 'Low' : 'Unknown',
+    dewCls: dewHigh ? 'bad' : dewWarn ? 'warn' : dewKnown ? 'good' : 'unknown',
     status, score,
-    detail: red ? (wet ? 'Rain or storm risk' : 'Very cloudy outlook') :
+    detail: !complete ? (rows.length ? `Insufficient data for a night rating${wet ? ' · Rain or storm risk' : ''}` : 'No night forecast available') : red ? (wet ? 'Rain or storm risk' : 'Very cloudy outlook') :
       warn ? 'Some cloud, dew, or haze possible' : rows.length ? 'Clear and dry outlook' : 'No night forecast available',
   };
 }
@@ -695,6 +706,8 @@ async function loadWeather() {
   const chip = $('#wxChip');
   if (!chip) return;
   const gen = ++_wxGen;
+  const context = wxContextKey();
+  _wxContext = context;
   WX_STATE.loading = true; WX_STATE.error = false; WX_STATE.airError = false;
   wxRenderChip();
   const { lat, lon } = S.site;
@@ -706,18 +719,18 @@ async function loadWeather() {
     '&hourly=pm10,pm2_5,dust,aerosol_optical_depth&timezone=' + tz + '&forecast_days=4';
   try {
     const [weather, air] = await Promise.allSettled([wxFetchJSON(url), wxFetchJSON(airUrl)]);
-    if (gen !== _wxGen) return;
+    if (gen !== _wxGen || context !== wxContextKey()) return;
     if (weather.status !== 'fulfilled') throw weather.reason || new Error('weather unavailable');
     WX_STATE.data = weather.value;
     WX_STATE.data.air_quality = air.status === 'fulfilled' ? air.value : null;
     WX_STATE.airError = air.status !== 'fulfilled';
   } catch {
-    if (gen !== _wxGen) return;
+    if (gen !== _wxGen || context !== wxContextKey()) return;
     WX_STATE.error = true; WX_STATE.data = null;
   } finally {
     if (gen === _wxGen) WX_STATE.loading = false;
   }
-  if (gen !== _wxGen) return;
+  if (gen !== _wxGen || context !== wxContextKey()) return;
   wxRenderChip();
   if (!$('#weatherPanel').classList.contains('hidden')) wxRenderPanel();
 }
@@ -727,7 +740,7 @@ function wxChipText() {
   if (WX_STATE.error) return '⚠️ weather unavailable — click to retry';
   if (!WX_STATE.data) return '☁️ Weather';
   const summary = wxForecastSummary(wxRowsForNight(WX_STATE.data));
-  return summary.score == null ? 'Weather · no night forecast' : `${summary.status.label} tonight · ${summary.score}/100`;
+  return summary.score == null ? 'Weather · insufficient night data' : `${summary.status.label} tonight · ${summary.score}/100`;
 }
 
 function wxRenderChip() {
@@ -749,8 +762,23 @@ function wxRenderChip() {
 /** Re-fetch weather when the active site changed, but only if the user has
  *  already loaded it once (or auto-load is on) — never fetch unasked. */
 function refreshWeatherForSite() {
-  if (!$( '#wxChip')) return;
-  if (WX_STATE.data || WX_STATE.error || Hor.getPrefs().weatherAuto) loadWeather();
+  const context = wxContextKey();
+  if (_wxContext === context) {
+    wxRenderChip();
+    if (!$('#weatherPanel')?.classList.contains('hidden')) wxRenderPanel();
+    return;
+  }
+  const requested = WX_STATE.loading || WX_STATE.data || WX_STATE.error || Hor.getPrefs().weatherAuto;
+  _wxContext = context;
+  ++_wxGen;
+  WX_STATE.data = null; WX_STATE.loading = false; WX_STATE.error = false; WX_STATE.airError = false;
+  wxRenderChip();
+  if (requested) loadWeather();
+  if (!$('#weatherPanel')?.classList.contains('hidden')) wxRenderPanel();
+}
+
+function wxContextKey() {
+  return JSON.stringify([S.site.id, S.site.lat, S.site.lon, resolvedZone()]);
 }
 
 function wxRenderPanel() {
@@ -775,7 +803,7 @@ function wxRenderPanel() {
     </div>
     <div class="wx-grid">
       <div><span>Cloud cover</span><b>${summary.cloud}</b></div>
-      <div><span>Rain warning</span><b class="wx-${summary.status.cls === 'bad' ? 'bad' : summary.rain.includes('possible') ? 'warn' : 'good'}">${summary.rain}</b></div>
+      <div><span>Rain warning</span><b class="wx-${summary.rain === '—' ? 'unknown' : /risk/i.test(summary.rain) || summary.status.cls === 'bad' ? 'bad' : summary.rain.includes('possible') ? 'warn' : 'good'}">${summary.rain}</b></div>
       <div><span title="Haze proxy, not an astronomical transparency measurement">Sky clarity</span><b class="wx-${summary.clarityCls}">${summary.clarity}</b></div>
       <div><span>Dew risk</span><b class="wx-${summary.dewCls}">${summary.dew}</b></div>
     </div>
@@ -1209,9 +1237,9 @@ function renderTonight(silent, immediate = false) {
         ? `${fmtClock(E.dateFromJD(r.bestStart))}–${fmtClock(E.dateFromJD(bestEnd))} · ${duration}` : '—';
       const topMaxScore = Math.max(0, ...top.map((row) => row.score));
       const relative = topMaxScore > 0 && r.score > 0 ? Math.round(100 * r.score / topMaxScore) : null;
-      return `<tr data-tonight-id="${esc(r.o.id)}" tabindex="0" role="button" aria-label="Open details for ${esc(r.o.primary_name)}">
+      return `<tr data-tonight-id="${esc(r.o.id)}">
         <td class="mono rank">${String(i + 1).padStart(2, '0')}</td>
-        <td><strong>${esc(r.o.primary_name)}</strong><small>${esc(tags || r.o.ngcic || '')}</small></td>
+        <td><button type="button" class="target-open" aria-label="Open details for ${esc(r.o.primary_name)}"><strong>${esc(r.o.primary_name)}</strong></button><small>${esc(tags || r.o.ngcic || '')}</small></td>
         <td class="mono num">${relative == null ? '—' : relative}</td>
         <td class="mono num">${r.maxAlt.toFixed(0)}°</td>
         <td class="mono">${esc(best)}</td>
@@ -1242,12 +1270,8 @@ function renderTonight(silent, immediate = false) {
     box.innerHTML = html;
     applySelectionHighlight();   // WEB-REV-003: derived from S.detailId
     box.querySelectorAll('#tonight-rank-table tbody tr[data-tonight-id]').forEach((row) => {
-      const open = () => openDetail(row.dataset.tonightId, row);
+      const open = () => openDetail(row.dataset.tonightId, row.querySelector('.target-open'));
       row.addEventListener('click', open);
-      row.addEventListener('keydown', (ev) => {
-        if (ev.key !== 'Enter' && ev.key !== ' ') return;
-        ev.preventDefault(); open();
-      });
     });
     hideSplash();
     // BUG-005: publish the painted selection so a check (or a user script) can
@@ -1893,13 +1917,21 @@ function filteredCatalog(pctG) {
       const pb = (obsCache.get(obsKey(pctG, b.id)) || {}).pct ?? -1;
       v = pa - pb;
     }
+    else if (col === 'maxalt') {
+      const aa = obsCache.get(obsKey(pctG, a.id))?.night.maxAlt;
+      const ab = obsCache.get(obsKey(pctG, b.id))?.night.maxAlt;
+      if (aa == null || ab == null) {
+        if (aa != null) return -1;
+        if (ab != null) return 1;
+      } else v = aa - ab;
+    }
     else if (col === 'tier') {
       v = TIER_ORDER.indexOf(TIER.get(a.id) || 'F') - TIER_ORDER.indexOf(TIER.get(b.id) || 'F');
       // inside a tier, the more observed object first (still never the number)
       if (v === 0) v = (b.popularity || 0) - (a.popularity || 0);
     }
     else v = (a.vmag ?? 99) - (b.vmag ?? 99);
-    return f.up ? v : -v;
+    return (f.up ? v : -v) || a.primary_name.localeCompare(b.primary_name) || a.id.localeCompare(b.id);
   });
   // The Min-visibility threshold gates MEMBERSHIP: a row whose share of tonight's
   // dark window is KNOWN and below it is omitted instead of being parked at 0%.
@@ -1932,16 +1964,18 @@ function renderCatalog() {
   const objectTypes = [...new Set(activeCatalog().map((o) => o.otype).filter(Boolean))].sort();
 
   const th = (key, label, num = false) =>
-    `<th class="${num ? 'num' : ''}" data-k="${key}">${label}${S.cat.sort === key ? (S.cat.up ? ' ▲' : ' ▼') : ''}</th>`;
+    `<th class="${num ? 'num' : ''}" data-k="${key}" aria-sort="${S.cat.sort === key ? (S.cat.up ? 'ascending' : 'descending') : 'none'}"><button type="button" id="cat-sort-${key}" class="table-sort" aria-label="Sort by ${label}${S.cat.sort === key ? '; reverse order' : ''}">${label}${S.cat.sort === key ? (S.cat.up ? ' ▲' : ' ▼') : ''}</button></th>`;
 
   // focus/caret in the search box must survive the re-render below
   const qHadFocus = !!document.activeElement && document.activeElement.id === 'cat-q';
   const qCaret = qHadFocus ? document.activeElement.selectionStart : null;
+  const qEnd = qHadFocus ? document.activeElement.selectionEnd : null;
+  const qDirection = qHadFocus ? document.activeElement.selectionDirection : null;
   // same for the Min-visibility slider: it re-renders on 'change', and an
   // arrow-key press fires one - without this the slider would lose focus after
   // every step and keyboard stepping would stop at 1.
   const mvHadFocus = !!document.activeElement && document.activeElement.id === 'cat-minvis';
-  const filterFocus = document.activeElement?.matches('#cat-type input, #cat-type button, input[name="cat-visibility"], .chip, #pg-prev, #pg-next')
+  const filterFocus = document.activeElement?.matches('.cat-filter-rail input, .cat-filter-rail select, .cat-filter-rail button, .table-sort, #pg-prev, #pg-next')
     ? document.activeElement.id : null;
   const moreFiltersOpen = !!$('#cat-more')?.open;
   box.innerHTML = `
@@ -1973,8 +2007,9 @@ function renderCatalog() {
         <label><input id="cat-saved" type="checkbox"${S.cat.savedOnly ? ' checked' : ''}> Saved targets</label>
         <label><input id="cat-rig" type="checkbox"${S.cat.fitsRig ? ' checked' : ''}> Fits active rig</label>
         <select id="cat-sort" aria-label="Sort catalog">
-          ${[['name','Name'],['pct','Visible night %'],['mag','Magnitude'],['maxalt','Maximum altitude']].map(([key,label]) => `<option value="${key}"${S.cat.sort === key ? ' selected' : ''}>Sort: ${label}</option>`).join('')}
+          ${[['name','Name'],['type','Type'],['pct','Visible night %'],['mag','Magnitude'],['maxalt','Maximum altitude']].map(([key,label]) => `<option value="${key}"${S.cat.sort === key ? ' selected' : ''}>Sort: ${label}</option>`).join('')}
         </select>
+        <button class="btn small" id="cat-reverse" type="button">${S.cat.up ? 'Ascending' : 'Descending'} · Reverse order</button>
         <button class="btn small" id="cat-export-provenance" type="button" title="Download catalog source, aliases and designation history">Download provenance</button>
       </div></details>
       <button class="btn small" id="cat-clear-filters" type="button">Clear filters</button>
@@ -1999,10 +2034,10 @@ function renderCatalog() {
             const night = current.night;
             const best = catalogBestWindow(night);
             const status = catalogCondition(current.reason);
-            return `<tr data-id="${esc(o.id)}" tabindex="0" role="button" aria-label="Open details for ${esc(o.primary_name)}">
+            return `<tr data-id="${esc(o.id)}">
               <td class="rank-cell mono">${S.cat.page * perPage + index + 1}</td>
               <td class="designation-cell mono" title="${esc(designation)}"><button class="cat-save${saved.has(o.id) ? ' on' : ''}" type="button" data-save-target="${esc(o.id)}" aria-label="${saved.has(o.id) ? 'Remove' : 'Save'} ${esc(o.primary_name)}">${saved.has(o.id) ? '★' : '☆'}</button><span>${esc(designation)}</span></td>
-              <td class="common-cell" title="${esc(o.primary_name)}"><span class="tname">${esc(o.primary_name)}</span>${fOwn}</td>
+              <td class="common-cell" title="${esc(o.primary_name)}"><button type="button" class="target-open tname" aria-label="Open details for ${esc(o.primary_name)}">${esc(o.primary_name)}</button>${fOwn}</td>
               <td class="type-cell" title="${esc(TYPE_LABELS[o.otype] || o.otype || '')}"><span class="tag-dot" style="color:${typeColor(o)}">●</span> ${esc(TYPE_LABELS[o.otype] || o.otype || '')}</td>
               <td class="num">${o.vmag != null ? o.vmag.toFixed(1) : '—'}</td>
               <td class="num mono">${current.alt.toFixed(0)}°</td>
@@ -2031,22 +2066,16 @@ function renderCatalog() {
     _catQDeb = setTimeout(renderCatalog, 150);
   });
   document.querySelectorAll('.chip').forEach((c) => c.addEventListener('click', () => { S.cat.chip = c.dataset.c; S.cat.page = 0; renderCatalog(); }));
-  document.querySelectorAll('th[data-k]').forEach((thEl) => thEl.addEventListener('click', () => {
+  document.querySelectorAll('th[data-k]').forEach((thEl) => thEl.querySelector('button').addEventListener('click', () => {
     const k = thEl.dataset.k;
     if (S.cat.sort === k) S.cat.up = !S.cat.up;
     else { S.cat.sort = k; S.cat.up = k === 'pct' ? false : true; } // visibility: descending first
     renderCatalog();
   }));
   document.querySelectorAll('table.cat tbody tr[data-id]').forEach((tr) => {
-    const open = () => openDetail(tr.dataset.id, tr);
+    const open = () => openDetail(tr.dataset.id, tr.querySelector('.target-open'));
     tr.addEventListener('click', (ev) => {
       if (ev.target.closest('[data-save-target]')) return;
-      open();
-    });
-    tr.addEventListener('keydown', (ev) => {
-      if (ev.target.closest('[data-save-target]')) return;
-      if (ev.key !== 'Enter' && ev.key !== ' ') return;
-      ev.preventDefault();
       open();
     });
   });
@@ -2066,6 +2095,7 @@ function renderCatalog() {
   $('#cat-saved').addEventListener('change', (ev) => { S.cat.savedOnly = ev.target.checked; S.cat.page = 0; renderCatalog(); });
   $('#cat-rig').addEventListener('change', (ev) => { S.cat.fitsRig = ev.target.checked; S.cat.page = 0; renderCatalog(); });
   $('#cat-sort').addEventListener('change', (ev) => { S.cat.sort = ev.target.value; S.cat.up = ev.target.value === 'pct' ? false : true; S.cat.page = 0; renderCatalog(); });
+  $('#cat-reverse').addEventListener('click', () => { S.cat.up = !S.cat.up; S.cat.page = 0; renderCatalog(); });
   $('#cat-clear-filters').addEventListener('click', () => {
     S.cat = { ...S.cat, q: '', chip: 'all', con: '', types: [], visibility: 'all',
       savedOnly: false, clearOnly: false, fitsRig: false, sort: 'name', up: true, page: 0 };
@@ -2101,7 +2131,7 @@ function renderCatalog() {
   $('#cat-export-provenance').addEventListener('click', downloadCatalogProvenance);
   if (qHadFocus) {                       // typing must not be interrupted
     const inp = $('#cat-q');
-    if (inp) { inp.focus(); if (qCaret != null) inp.setSelectionRange(qCaret, qCaret); }
+    if (inp) { inp.focus(); if (qCaret != null) inp.setSelectionRange(qCaret, qEnd, qDirection); }
   }
   if (mvHadFocus) { const el = $('#cat-minvis'); if (el) el.focus(); }
   if (filterFocus) {
@@ -2112,9 +2142,9 @@ function renderCatalog() {
   }
   requestAnimationFrame(updateCatalogHeight);
   fillPctCells(slice, g);
-  // Warm whenever the list is gated or sorted by visibility - and never while
-  // searching, because the gate is off then anyway.
-  if (S.cat.clearOnly || (!S.cat.q.trim() && (S.cat.sort === 'pct' || minVis() > 0))) warmPct(list, g);
+  // Visibility gating is bypassed for search; maximum-altitude sorting still
+  // needs owned statistics for every matching row, including search results.
+  if (S.cat.clearOnly || S.cat.sort === 'maxalt' || (!S.cat.q.trim() && (S.cat.sort === 'pct' || minVis() > 0))) warmPct(list, g);
   else cancelCatalogWarm();
 }
 
@@ -2759,7 +2789,7 @@ function openDetail(id, opener = null, { refresh = false } = {}) {
     samples.push({
       t: jdt, alt, az, ceil,
       vis,
-      state: alt < 0 ? 'below' : (!vis ? 'blocked' : (alt < minAlt ? 'warn' : 'clear')),
+      state: ({ below_horizon: 'below', blocked_by_horizon: 'blocked', below_minimum_altitude: 'warn', visible: 'clear' })[visibilityReason(alt, minAlt, ceil.ceil, ceil.ceilTop)],
       mAlt,
     });
   }
@@ -3129,6 +3159,7 @@ function refreshView(immediate = false) {
   // time - pull it back in BEFORE rendering so the heading never shows a
   // daylight instant outside the window
   clampSkyTime();
+  renderNightInfo();
   // Tonight recomputes SILENTLY here: pref/filter changes keep the current
   // cards on screen and swap in fresh ones when done (no blank frame).
   if (S.view === 'tonight') return renderTonight(true, immediate);
@@ -3141,7 +3172,7 @@ function refreshView(immediate = false) {
 function upsertTarget(t) {
   t.custom = true;
   const existing = byId.get(t.id);
-  if (existing) Object.assign(existing, t);
+  if (existing) { Object.assign(existing, t); searchCache.delete(existing); }
   else { CAT.push(t); byId.set(t.id, t); }
 }
 
@@ -3421,6 +3452,7 @@ async function renderSettings() {
       S.site = { ...S.site, lat, lon };
     }
     announcePlannerChange('site', { cause: 'site-edit', siteId: rec ? rec.id : null });
+    refreshWeatherForSite();
     if (qnote) qnote.textContent = rec ? 'saved — ' + rec.name : 'saved';
     refreshView();
   };
@@ -3645,6 +3677,7 @@ async function saveSiteForm() {
   else if (S.site.id === id) applyActiveSite(rec);
   announcePlannerChange('site', { cause: 'site-save', siteId: rec.id });
   refreshWeatherForSite();
+  refreshView();
   renderSettings();
 }
 
@@ -4001,13 +4034,13 @@ async function boot() {
     const v = Hor.num(ev.target.value);
     if (!savePreferencePatch({ minAlt: Number.isFinite(v) && v >= 5 && v <= 89 ? v : null })) return;
     syncTopPrefs();
-    if (ev.type === 'change') refreshView();
+    if (ev.type === 'change') {
+      announcePlannerChange('preferences', { cause: 'min-useful-alt' });
+      refreshView();
+    }
   };
   $('#tb-minalt').addEventListener('input', applyMinAlt);
-  $('#tb-minalt').addEventListener('change', (ev) => {
-    applyMinAlt(ev);
-    announcePlannerChange('preferences', { cause: 'min-useful-alt' });
-  });
+  $('#tb-minalt').addEventListener('change', applyMinAlt);
 
   // — topbar: night of (date) —
   const dateEl = $('#tb-date');
@@ -4084,25 +4117,6 @@ async function boot() {
   }
 
   // — night info chip (dark window + moon) —
-  const renderNightInfo = () => {
-    const el = $('#nightInfo');
-    if (!el) return;
-    const info = E.nightInfo(nightAnchor(), S.site.lat, S.site.lon,
-                             siteNoon(nightAnchor()));
-    const dw = E.pickDarkWindow(info, nightAnchor(), siteNoon(nightAnchor()), siteFallback(nightAnchor()));
-    // the ANCHORED night's moon (desktop header parity: it reports the night's
-    // illumination, not the live one) - only "now" when there is no dark
-    // window at all (polar day)
-    const moJd = (dw.dusk && dw.dawn)
-      ? (E.julianDay(dw.dusk) + E.julianDay(dw.dawn)) / 2
-      : E.julianDay(new Date());
-    const mo = E.moonPhase(moJd);
-    let darkTxt = '—';
-    if (dw.dusk && dw.dawn) {
-      darkTxt = `${fmtClock(dw.dusk)}–${fmtClock(dw.dawn)}`;
-    }
-    el.textContent = `moon ${(mo.illumination * 100).toFixed(0)}% · ${mo.name} · dark ${darkTxt}`;
-  };
   renderNightInfo();
   setInterval(renderNightInfo, 60000);
 
@@ -4289,6 +4303,21 @@ async function boot() {
   // below performs the one initial visible render.
   clampSkyTime();
   route();
+}
+
+function renderNightInfo() {
+  const el = $('#nightInfo');
+  if (!el) return;
+  const info = E.nightInfo(nightAnchor(), S.site.lat, S.site.lon,
+                           siteNoon(nightAnchor()));
+  const dw = E.pickDarkWindow(info, nightAnchor(), siteNoon(nightAnchor()), siteFallback(nightAnchor()));
+  // Report the anchored night's Moon, falling back to now for polar day.
+  const moJd = (dw.dusk && dw.dawn)
+    ? (E.julianDay(dw.dusk) + E.julianDay(dw.dawn)) / 2
+    : E.julianDay(new Date());
+  const mo = E.moonPhase(moJd);
+  const darkTxt = dw.dusk && dw.dawn ? `${fmtClock(dw.dusk)}–${fmtClock(dw.dawn)}` : '—';
+  el.textContent = `moon ${(mo.illumination * 100).toFixed(0)}% · ${mo.name} · dark ${darkTxt}`;
 }
 
 if (typeof document !== 'undefined') boot();

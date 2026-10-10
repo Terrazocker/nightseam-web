@@ -1,5 +1,20 @@
 # Prepared static delivery configuration
 
+## Current status — October 10, 2026
+
+The live website remains v0.1.1, deployed October 8. RELEASES.md records that
+deployment's byte/cache/browser acceptance. Local review remediation now uses
+immutable content-addressed release graphs and atomic canonical-HTML switches;
+that new publication workflow has not been deployed. HOST-DELIVERY-001 remains
+open: no new live compression measurements were made during this documentation
+pass. The October 7 observations below are dated evidence, not a claim that
+v0.1.0 is still the current website.
+
+Future provider policy must also allow immutable caching for the prepared
+content-addressed release namespaces while canonical entry HTML revalidates.
+Verify the candidate's actual paths and GET response headers after authorized
+publication; numeric-query rules alone do not establish that new policy.
+
 ## Observed after authorized deployment — October 7, 2026
 
 NightSeam Web v0.1.0 is deployed. Both entry routes and all 52 HTTP-readable

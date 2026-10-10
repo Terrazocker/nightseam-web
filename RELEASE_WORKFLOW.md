@@ -14,7 +14,9 @@ AT acceptance remain open separately from publication.
 ## Reviewable local candidate
 
 1. Preserve the working branch and unrelated uncommitted work. Read
-   WEB_REMAINING_WORK_PLAN.md and the final receipt in RELEASES.md.
+   IMPLEMENTATION_PLAN.md, REVIEW_REMAINING_IMPLEMENTATION_PLAN.md and the latest
+   actual validation receipt in RELEASES.md. Completed design plans in
+   docs/history/ are historical evidence, not the current release checklist.
 2. Run full pytest once after final changes; run scripts/check_browser.py --web,
    scripts/check_js.py and scripts/check_release.py --allow-dirty --no-stage.
    Browser failures stay failures; infrastructure failures are never skips.

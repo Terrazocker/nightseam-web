@@ -872,9 +872,9 @@ def web_accessibility_essentials(c):
     # The shared no-thumbnail stub keeps accessibility independent of photos.
     # Fresh/cached/retry photo behavior has separate strict decoded-image checks.
     row = search_catalog_row(c, "ngc281", "NGC 281")
-    c.expect_eq(row.get_attribute("role"), "button",
-                "catalog rows must be keyboard-openable controls")
-    row.focus()
+    c.expect_eq(row.get_attribute("role"), None,
+                "catalog rows retain native table semantics")
+    row.locator('.target-open').focus()
     c.page.keyboard.press("Enter")
     c.page.wait_for_selector("#graph[role='img'][aria-describedby='graphSummary']")
     c.page.locator("#modal .catalog-details > summary").click()
@@ -897,12 +897,12 @@ def web_accessibility_essentials(c):
     c.expect(not c.page.evaluate("() => document.querySelector('#modal .modal')?.contains(document.activeElement)"),
              "Tab must continue out of the wide, docked inspector")
     c.page.keyboard.press("Escape")
-    c.expect(c.page.evaluate("() => document.activeElement?.matches('.cat tbody tr[data-id]')"),
-             "closing the web detail dialog must restore focus to its catalog row")
+    c.expect(c.page.evaluate("() => document.activeElement?.matches('.cat tbody tr[data-id] .target-open')"),
+             "closing the web detail dialog must restore focus to its catalog target button")
 
     c.page.set_viewport_size({"width": 900, "height": 900})
     c.page.wait_for_timeout(180)
-    row.focus()
+    row.locator('.target-open').focus()
     c.page.keyboard.press("Enter")
     c.page.wait_for_selector("#modal:not([hidden]) .modal[role='dialog'][aria-modal='true']")
     from phase4_checks import actual_stops
@@ -914,18 +914,18 @@ def web_accessibility_essentials(c):
     c.expect_eq(c.page.evaluate('() => document.activeElement.id'), stops[0],
                 "Tab must wrap to the first reachable compact-modal control")
     c.page.keyboard.press("Escape")
-    c.expect(c.page.evaluate("() => document.activeElement?.matches('.cat tbody tr[data-id]')"),
-             "closing the compact inspector must restore focus to its source row")
+    c.expect(c.page.evaluate("() => document.activeElement?.matches('.cat tbody tr[data-id] .target-open')"),
+             "closing the compact inspector must restore focus to its source button")
 
     tab(c, "tonight")
     target_row = c.page.locator(READY).first
-    target_row.focus()
+    target_row.locator('.target-open').focus()
     target_row_id = target_row.get_attribute("data-tonight-id")
     c.page.keyboard.press("Enter")
     c.page.wait_for_selector("#modal:not([hidden]) .modal")
     c.page.keyboard.press("Escape")
-    c.expect(c.page.evaluate("(id) => document.activeElement?.matches(`#tonight-rank-table tbody tr[data-tonight-id=\"${id}\"]`)", target_row_id),
-             "closing a Tonight detail must restore focus to its ranked target row")
+    c.expect(c.page.evaluate("(id) => document.activeElement?.matches(`#tonight-rank-table tbody tr[data-tonight-id=\"${id}\"] .target-open`)", target_row_id),
+             "closing a Tonight detail must restore focus to its ranked target button")
 
     tab(c, "horizon")
     c.page.wait_for_selector("#pano-blank")

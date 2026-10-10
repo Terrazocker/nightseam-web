@@ -4,7 +4,8 @@
 
 Broad source review of master at 471e64a found 38 confirmed defects: 4 P1,
 30 P2 and 4 P3. No application fixes were applied during that review.
-Phases 1–4 now resolve twenty-seven findings; 11 remain (10 P2, 1 P3). Reproduction inputs, exact
+Phases 1–7 now resolve all thirty-eight findings locally. The final eleven
+fixes and validation are recorded below. Reproduction inputs, exact
 lines, actual/expected results, proposed fixes and review limits are recorded in
 `logs/review/REVIEW.md` and its six linked subsystem reports. Reproductions and
 transcripts remain in ignored logs/review. The independent catalog repository
@@ -14,11 +15,12 @@ retain their original scope.
 
 P1 is high-priority credential/data integrity; P2 is reproducible functional or
 correctness failure; P3 is a smaller input, metadata or presentation defect.
-Transaction abort, read error and quota probes use deliberate fault injection;
-ordinary panorama photo restoration fails under the shipped CSP without such
-injection. Unusual timezone/import triggers are specified in the detailed report.
+The original review used deliberate fault injection for transaction abort,
+read error and quota probes; its panorama photo restoration failure occurred
+under the then-shipped CSP without such injection. Those defects are resolved
+below. Unusual timezone/import triggers were specified in the detailed report.
 
-| ID | Priority | Confirmed unresolved finding / primary source |
+| ID | Priority | Findings resolved locally in phases 5–7 / original primary source |
 | --- | --- | --- |
 | REV-028 | P2 | Minimum-altitude change invalidates/cancels freshly scheduled Catalog visibility work (`web/app.js:3894`). |
 | REV-029 | P2 | Active site edit leaves the main displayed plan on old site data (`web/app.js:3539`). |
@@ -36,6 +38,33 @@ Existing A11Y-001 human acceptance and HOST-DELIVERY-001 live compression remain
 separate open items. Current catalog manifests/core bake consistency passed;
 upstream source-byte regeneration was not reconstructed. No production
 deployment or native screen-reader/browser-zoom audit was performed.
+
+## Phases 5–7 remaining review fixes — October 10, 2026 (local)
+
+- REV-028/029: altitude changes invalidate before replacement Catalog work is
+  scheduled; active-site saves refresh the actual planning view after commit.
+  Owned batches cancel on context/view changes without leaving stale busy state.
+- REV-030/031: custom edits invalidate search blobs; maximum-altitude sorting
+  retains shared-core maximum altitude, warms all matching rows and uses stable
+  name/ID ties. Unknown statistics stay last in either direction.
+- REV-034: inspector chart colors consume the shared visibility reason, keeping
+  below-minimum warnings separate from actual horizon/ceiling obstruction.
+- REV-032/033: missing weather values remain unavailable; incomplete required
+  hourly data cannot earn a night rating. Real zeros remain valid. Forecast and
+  air responses belong to one site/coordinates/resolved-zone generation; stale
+  successes/errors cannot replace current data. First pending requests, quick
+  site edits and timezone changes follow the same ownership boundary. Provider
+  requests use the planner's exact resolved zone rather than geographic auto.
+- REV-035/036/037: Tonight/Catalog retain native table semantics and open targets
+  through named cell buttons. Catalog controls preserve focus and search ranges;
+  native header buttons, Type sort and Reverse order support keyboard sorting.
+- REV-038: Advanced help describes live switching and full-catalog calculation.
+
+The detailed original ignored logs/review report is absent from this checkout;
+new browser regressions reproduce current behavior. The Catalog regression fails
+against HEAD's original app module and passes with the fix. Original source line
+numbers above are historical, not current navigation anchors. Actual full-gate
+outcomes are in RELEASES.md. No release/tag/deployment accompanies these fixes.
 
 ## Phase 4 horizon fixes resolved locally — October 10, 2026
 
@@ -140,14 +169,17 @@ browser's own DST gap; critical planning uses explicit fields instead.
 Regression evidence is in tests/test_ftps_tls.py, tests/js/web_backup.mjs,
 tests/browser/storage_checks.py, tests/browser/phase1_app_checks.py and the
 panorama browser checks. RELEASES.md records the final validation outcomes.
-The remaining 29 findings above retain their implementation phase and scope.
+At phase 1 completion, 29 findings remained; later phase entries record their
+resolution. The current review status is at the top of this file.
 No deployment or release tag was made for these local changes.
 
-## Current remaining gates — October 8, 2026
+## Current remaining gates — October 10, 2026
 
 Implementation, GitHub release and authorized deployment through v0.1.1 are complete
-for the established website backlog. WEBSITE_FINAL_REVIEW.md and IMPLEMENTATION_PLAN.md are the
-current status authority; dated findings below retain the history of earlier runs.
+for the established website backlog. Later review fixes are local and unreleased.
+IMPLEMENTATION_PLAN.md and REVIEW_REMAINING_IMPLEMENTATION_PLAN.md are the current
+status authority; docs/history/WEBSITE_FINAL_REVIEW.md and dated findings below
+retain the history of earlier runs.
 
 - A11Y-001 remains open for a human screen-reader/native-browser-zoom pass.
   ACCESSIBILITY_ACCEPTANCE.md supplies exact steps. Browser keyboard, contrast,

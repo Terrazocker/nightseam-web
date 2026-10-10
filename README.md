@@ -30,20 +30,33 @@ only the website's content-hashed core tree.
 
 Read AGENTS.md, DESIGN.md, CATALOG.md and DEVELOPMENT.md. Cache-token, core-drift,
 published astronomy anchors and real-browser checks remain release gates.
-Web deployment remains web/ to /astro and landing/ to /. No deployment or
-remote repository change was performed as part of the split.
+Publication uses a verified immutable bundle: planner files map beneath /astro
+and public pages to /. Assets are installed and verified before atomic entry-HTML
+switches; raw mutable website uploads are refused. See
+[RELEASE_WORKFLOW.md](RELEASE_WORKFLOW.md) for candidate preparation and publication.
 
-Current backlog: [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md). The open design,
-Advanced Catalog, startup and local release preparation passes are complete.
-[WEBSITE_FINAL_REVIEW.md](WEBSITE_FINAL_REVIEW.md) records the integrated review;
-[WEB_REMAINING_WORK_PLAN.md](WEB_REMAINING_WORK_PLAN.md) records completed work
-and the remaining external/manual gates.
+Current backlog: [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md). Review remediation
+phases 1–7 resolve all 38 October 9 findings locally; the final eleven fixes and
+their checks are recorded in
+[REVIEW_REMAINING_IMPLEMENTATION_PLAN.md](REVIEW_REMAINING_IMPLEMENTATION_PLAN.md)
+and [RELEASES.md](RELEASES.md). These changes await a public release.
+Completed design plans and the earlier review are indexed in
+[docs/history/README.md](docs/history/README.md).
 Optional source details load on demand with retry; elevation is recorded metadata
 and does not adjust visibility. v0.1.1 is published and deployed, including the
-[annotation improvements](WEB_ANNOTATION_IMPLEMENTATION_PLAN.md), with verified
+[annotation improvements](docs/history/WEB_ANNOTATION_IMPLEMENTATION_PLAN.md), with verified
 live bytes, cache policy and browser acceptance. Full text/large-payload host
 compression and human accessibility acceptance remain open; see RELEASES.md.
 
 MIT; see LICENSE and NOTICE for OpenNGC, Wikimedia, Open-Meteo and popularity
 data credits. Recovery snapshots of the pre-split branch and working tree are
 kept locally in ignored logs/repository-split/.
+
+Disposable test scratch belongs in ignored logs/. Pytest and JS guards recover
+abandoned owned runs and report cleanup failures; normal build stages and browser
+artifacts replace fixed destinations. Historical evidence is retained deliberately;
+see [ENVIRONMENT.md](ENVIRONMENT.md) for the lifecycle and limits.
+Obsolete combined-project
+concept assets and stale local build candidates were archived during the
+October 10 cleanup; see the history index. Rebuild publication candidates from
+current sources rather than reusing archived candidates.

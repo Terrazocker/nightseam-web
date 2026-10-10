@@ -349,8 +349,8 @@ def web_selection_close_modes(c):
     c.page.keyboard.press("Escape")
     wait_modal_closed(c)
     c.expect(c.page.evaluate(
-        "() => document.activeElement?.matches('.cat tbody tr[data-id]')"),
-        "closing the compact inspector must restore focus to its row")
+        "() => document.activeElement?.matches('.cat tbody tr[data-id] .target-open')"),
+        "closing the compact inspector must restore focus to its target button")
     c.expect_eq(selected_ids(c), ["synalpha"],
                 "compact Escape must preserve the selection and its highlight")
 

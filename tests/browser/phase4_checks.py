@@ -564,7 +564,7 @@ def disclosure_focus(c):
     disclosure.locator('summary').click()
     check_wrap(c)
     c.page.keyboard.press('Escape')
-    c.expect(c.page.evaluate("() => document.activeElement.matches('.cat tbody tr[data-id]')"), 'detail close restores its row')
+    c.expect(c.page.evaluate("() => document.activeElement.matches('.cat tbody tr[data-id] .target-open')"), 'detail close restores its native target button')
 
 
 @check('web-phase4-first-visit', 'web')

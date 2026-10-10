@@ -1,8 +1,21 @@
 # NightSeam Web roadmap and current backlog
 
-Current authority, October 8, 2026. This repository owns only the public site and
+Current authority, October 10, 2026. This repository owns only the public site and
 browser planner. The independent Windows catalog has its own repository/roadmap.
 Historical evidence remains in RELEASES/DECISIONS and superseded concept plans.
+
+## Post-release review remediation — local development
+
+Master df76fc2 supplied review remediation phases 1–4: storage/TLS, immutable
+publication/cache graphs, astronomy/site-time and Horizon fixes (27 findings).
+The follow-up phases 5–7 now resolve REV-028–038: Catalog/context correctness,
+weather validity/ownership and table keyboard/focus/help. These numbers refer to
+the October 9 review, not the older design phases listed below.
+REVIEW_REMAINING_IMPLEMENTATION_PLAN.md records the scope and sequence;
+BUGS.md and RELEASES.md record resolutions and actual checks. These fixes are
+local/unreleased. Phase 8 integrated external acceptance and release/publication
+remain separate; the current public website is still v0.1.1.
+
 
 ## Implemented and published as v0.1.0
 
@@ -27,8 +40,8 @@ Historical evidence remains in RELEASES/DECISIONS and superseded concept plans.
   photos and credits, all six public layouts and explicit retired-file cleanup.
   Entry/version/manifest/tokened-asset cache policy is verified live.
 
-Detailed implementation: WEB_OPEN_DESIGN_IMPLEMENTATION_PLAN.md and
-WEB_REMAINING_WORK_PLAN.md. Final website review: WEBSITE_FINAL_REVIEW.md.
+Detailed implementation: docs/history/WEB_OPEN_DESIGN_IMPLEMENTATION_PLAN.md and
+docs/history/WEB_REMAINING_WORK_PLAN.md. Final website review: docs/history/WEBSITE_FINAL_REVIEW.md.
 Actual validation results, not promises, are recorded in RELEASES.md.
 
 ## Published follow-up — v0.1.1, October 8, 2026

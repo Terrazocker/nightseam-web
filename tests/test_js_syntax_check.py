@@ -6,20 +6,16 @@ the working tree, and check_js.py reported OK - its three checkers only match
 text (import paths, DOM ids, identifiers), nothing parsed JavaScript, so the
 broken module was found by a manual `node --check` instead of by the gate.
 
-No tmp_path anywhere: the sandbox's temp-dir ACL makes tmp_path tests error
-(see AGENTS.md / pytest.ini). Scratch lives in the gitignored logs/ and is
-always removed again - the checker's own scratch too, on the failure path.
+Scratch uses the repo's owned tmp_path session under ignored logs/. Checkers
+use independent locked scratch runs there and report cleanup failures.
 """
 
 import importlib.util
-import os
-import shutil
 import sys
-import tempfile
-import uuid
 from pathlib import Path
 
 import pytest
+from scripts.scratchspace import BASE
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -50,28 +46,13 @@ needs_node = pytest.mark.skipif(
 
 
 @pytest.fixture()
-def scratch():
-    """A repo-local scratch dir (logs/ is gitignored), always removed."""
-    base = ROOT / "logs"
-    base.mkdir(parents=True, exist_ok=True)
-    d = base / f"test-js-syntax-{os.getpid()}-{uuid.uuid4().hex[:8]}"
-    d.mkdir()
-    try:
-        yield d
-    finally:
-        shutil.rmtree(d, ignore_errors=True)
+def scratch(tmp_path):
+    return tmp_path
 
 
 def leftovers():
-    """Scratch the checker failed to clean up (repo scratch + temp fallback)."""
-    names = []
-    for base in (ROOT / "logs", Path(tempfile.gettempdir())):
-        try:
-            names += [n for n in os.listdir(base)
-                      if n.startswith(SYN.SCRATCH_PREFIX)]
-        except OSError:
-            pass
-    return sorted(names)
+    """Scratch the checker failed to clean up; no platform-temp fallback."""
+    return sorted(p.name for p in BASE.glob(SYN.SCRATCH_PREFIX + '*'))
 
 
 # --------------------------------------------------------------------------
