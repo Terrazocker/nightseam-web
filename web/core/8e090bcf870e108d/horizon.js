@@ -50,7 +50,11 @@ export function normalizeHorizonLandmarks(value) {
     const idRaw = horizonText(item.id, 64);
     let id = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(idRaw)
       ? idRaw : `landmark-${i + 1}`;
-    while (seen.has(id)) id = `${id}-${i + 1}`.slice(0, 64);
+    const base = id;
+    for (let suffix = 1; seen.has(id); suffix++) {
+      const tail = `-${suffix}`;
+      id = base.slice(0, 64 - tail.length) + tail;
+    }
     seen.add(id);
     const kind = HORIZON_LANDMARK_KINDS.includes(item.kind)
       ? item.kind : 'other';
@@ -167,13 +171,14 @@ export function rebuildMask(strokes, wrap = false) {
   const mask = new Uint8Array(MASK_W * MASK_H);
   for (const s of strokes) {
     const val = s.m === 'b' ? 255 : 0;
+    const rx = s.rx ?? s.r; // legacy dabs are circles; crops stretch only x
     const xs = wrap ? [s.x - MASK_W, s.x, s.x + MASK_W] : [s.x];
     for (const sx of xs) {
-      const x0 = Math.max(0, Math.floor(sx - s.r));
-      const x1 = Math.min(MASK_W - 1, Math.ceil(sx + s.r));
+      const x0 = Math.max(0, Math.floor(sx - rx));
+      const x1 = Math.min(MASK_W - 1, Math.ceil(sx + rx));
       for (let cx = x0; cx <= x1; cx++) {
         const dx = cx - sx;
-        const dy = Math.sqrt(Math.max(0, s.r * s.r - dx * dx));
+        const dy = Math.sqrt(Math.max(0, rx * rx - dx * dx)) * (rx > 0 ? s.r / rx : 1);
         const y0 = Math.max(0, Math.floor(s.y - dy));
         const y1 = Math.min(MASK_H - 1, Math.ceil(s.y + dy));
         for (let cy = y0; cy <= y1; cy++) mask[cy * MASK_W + cx] = val;
@@ -442,53 +447,42 @@ export function clearMask(p) {
  * calibrated FOV to it. `sel = { x, w }` is the KEPT band in the editor's
  * canvas pixels and `W` is that canvas width (the web passes its 720-wide
  * logical mask, the desktop its displayed canvas width - only the fraction
- * matters). fovNew = max(45, round(fovOld * w/W)); azNew is the azimuth of the
- * kept band's left edge, at the same 2 dp the desktop transport used.
- *
- * History note (0.6.2x): the retired desktop formula `fovOld * (1 - w/W)`
- * computed the REMOVED fraction while the image, dim overlay, azimuth and HUD
- * all used the kept band - they agreed only at exactly half width (and a
- * select-all crop stored 45 deg). The kept-band formula is the single shared
- * truth now; `CROP_MIN_FOV` is the ONE floor. */
+ * matters). The effective band is expanded to the minimum crop FOV (or the
+ * original FOV if already narrower), clamped inside the image, and adjusted to
+ * the integer FOV. Both calibration and strokes use that SAME band. */
 
 export const CROP_MIN_FOV = 45;
 
 export function cropKeptBand(fovOld, azOffOld, sel, W) {
   const fov0 = Number(fovOld) > 0 ? Number(fovOld) : 360;
   const az0 = Number(azOffOld) || 0;
-  const w = Number(sel && sel.w) || 0;
-  const frac = (W > 0) ? Math.min(1, Math.max(0, w / W)) : 1;
-  const fov = Math.max(CROP_MIN_FOV, Math.round(fov0 * frac));
-  let az = ((az0 + ((Number(sel && sel.x) || 0) / W) * fov0) % 360 + 360) % 360;
-  az = (Math.round(az * 100) / 100) % 360;
-  return { fov, azOffset: az };
+  const width = W > 0 ? W : MASK_W;
+  const requested = Math.min(width, Math.max(0, Number(sel?.w) || 0));
+  const fov = Math.min(fov0, Math.max(Math.min(CROP_MIN_FOV, fov0),
+    Math.round(fov0 * requested / width)));
+  const w = width * fov / fov0;
+  const x = Math.min(width - w, Math.max(0, Number(sel?.x) || 0));
+  const azOffset = ((az0 + x / width * fov0) % 360 + 360) % 360;
+  return { fov, azOffset, kept: { x, w }, expanded: w > requested + 1e-9 };
 }
 
-/** Transform + clip FOV-relative strokes into a kept-band crop. Horizontal
- *  only: y is unchanged. A dab whose circle overlaps the kept band is kept even
- *  when its centre lands just outside; rebuildMask clips it.
- *
- *  CO-08 (0.6.32 review): the radius MUST scale with the horizontal stretch. A
- *  crop narrows the FOV to the kept band, which is then stretched back over the
- *  whole 720-bin mask, so an x is scaled by 1/frac - and the same angular brush
- *  radius now covers 1/frac times as many bins. Leaving `r` alone made every dab
- *  angularly smaller than the user painted, so gaps opened between dabs that had
- *  overlapped: the probe lost 11 of 91 in-frame bins and a column that read
- *  "Blocked" (ceil 37.10) came back as "Observable" (ceil -90) - a blocked
- *  target planned as visible, which is the one thing this editor exists to
- *  prevent. */
-export function cropStrokes(strokes, sel, W) {
-  const w = Number(sel && sel.w) || 0;
-  const frac = (W > 0) ? w / W : 1;
+/** Transform and clip dabs to the effective kept band. Vertical geometry stays
+ * unchanged. Materialize old seam copies before removing full-panorama wrap;
+ * keep each paint/erase dab's copies together to preserve stroke order. */
+export function cropStrokes(strokes, sel, W, wrap = false) {
+  const frac = W > 0 ? (Number(sel?.w) || 0) / W : 1;
   if (!(frac > 0)) return [];
-  const x0 = ((Number(sel && sel.x) || 0) / W) * MASK_W;
+  const x0 = W > 0 ? (Number(sel?.x) || 0) / W * MASK_W : 0;
   const scale = 1 / frac;
   const out = [];
   for (const s of strokes || []) {
-    const nx = (s.x - x0) * scale;
-    const r = (Number(s.r) || 0) * scale;      // scale WITH the stretch (CO-08)
-    if (nx < -r || nx > MASK_W + r) continue;
-    out.push({ ...s, x: nx, r });
+    const rx = (s.rx ?? s.r) * scale;
+    const centers = wrap && frac < 1 ? [s.x - MASK_W, s.x, s.x + MASK_W] : [s.x];
+    for (const center of centers) {
+      const x = (center - x0) * scale;
+      if (x < -rx || x > MASK_W + rx) continue;
+      out.push({ ...s, x, rx });
+    }
   }
   return out;
 }
@@ -521,12 +515,14 @@ export function clipProfileToFov(p) {
  *  clips the authoritative stored profile. Never touches the photo, the alt
  *  bounds, paint mode or block-above. Persisting is the caller's job. */
 export function cropPano(p, sel, W) {
-  const { fov, azOffset } = cropKeptBand(p.fov, p.azOffset, sel, W);
+  const wrap = wrapsFor(p);
+  const { fov, azOffset, kept } = cropKeptBand(p.fov, p.azOffset, sel, W);
   p.fov = fov;
   p.azOffset = azOffset;
   if (Array.isArray(p.strokes) && p.strokes.length) {
-    p.strokes = cropStrokes(p.strokes, sel, W);
-    computeProfile(p);
+    p.strokes = cropStrokes(p.strokes, kept, W, wrap);
+    if (p.strokes.length) computeProfile(p);
+    else clearMask(p); // an empty crop must not retain the old derived profile
   } else {
     clipProfileToFov(p);
   }

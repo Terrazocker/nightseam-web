@@ -1,5 +1,244 @@
 # Independent website release record
 
+## Phase 4 horizon geometry and editor fixes — October 10, 2026 (local development)
+
+Resolved REV-013–019 locally. Landmark normalization reserves suffix space and
+terminates for duplicate maximum-length IDs. Crops preserve vertical brush radius,
+scale independent horizontal radius, retain original wrapped paint/erase copies in
+order, and clear stale derived profiles if every dab clips away. One effective
+kept band controls preview, minimum/integer FOV, calibration and transformed
+strokes; already narrower frames never expand. Exact world directions survive.
+
+Undo/Redo/Revert synchronize all calibration, landmark, selected-bin and comparison
+controls. Valid confidence input immediately belongs to the displayed bin;
+selection, rerender, Save and rollback retain its value and history. Checkpoints
+settle pending metadata. Space pans only with canvas focus, releases on keyup/blur,
+and editor teardown removes keyboard listeners and observers. Native text spaces,
+button Space activation and text undo remain available.
+
+Backup exports use format 3 for elliptical dabs; v1/v2 remain readable and earlier
+clients refuse v3 rather than silently misinterpret geometry. Imported strokes stay
+bounded at 60,000 to accommodate legacy seam copies. Original photographs,
+authoritative stroke-less world-bin profiles and frozen fixtures remain intact.
+
+Validation:
+- Full pytest: 341 passed / 1 existing optional-data skip in 83.58s,
+  logs/phase4/pytest-full-confirmation.txt. The earlier full run also passed
+  (pytest-full.txt). Focused geometry/history checks passed 23 tests;
+  mutations reject the old infinite loop, vertical scaling, lost seam wrap,
+  inconsistent crop band and stale empty-crop profile.
+- Original review probes reproduce corrected obstacle/sky-band altitude, seam
+  obstruction and 185° world direction: original-review-probes-after.txt.
+- Initial focused Chromium editor checks passed 4/4 (browser-focused.txt).
+  Coverage includes native Space, pan release/rerenders, stale controls,
+  confidence navigation/history, minimum crop band and ellipse backup/reload.
+  The first full run passed 73/75 (browser-full.txt): both new reload checks
+  incorrectly waited for Tonight while the app correctly restored Horizon.
+  Their readiness condition now waits for the actual editor; focused confirmation
+  passed 4/4 (browser-focused-confirmation.txt). Final editor controls also enable
+  Undo for a first pending metadata edit and disable invalidated Redo; an added
+  browser assertion covers that previously missing first-entry case. Final full
+  Chromium confirmation passed 75/75 (browser-full-confirmation.txt), including
+  the first pending edit, metadata checkpoint/rollback and restored-view reloads.
+- JavaScript guard passes (check-js-final.txt); development release guard reports
+  zero errors with the expected dirty-version warning (release-check-final.txt).
+  The pre-staging guard correctly refused eleven new untracked generated modules;
+  they were added to the Git index after that check (release-before-staging.txt).
+- Core rebuilt to 8e090bcf870e108d, token 47, retaining 282a2f0070874c8a as N-1.
+  App token 171 and importer tokens/AGENTS register align; recursive token update
+  is idempotent (cache-final.txt). Ellipse backup confirmation executes before its
+  harness exit and passes (ellipse-backup-confirmation.txt).
+
+- Rebuilt and verified the 63-file combined local publication candidate with
+  truthful describe v0.1.1-1-g471e64a-dirty (publication-final.txt). Web namespace:
+  57e941288c606435fd6b8a623a210831fe9a9a73c20f72d7ce1070a2f265322f;
+  landing: 3ad1dd875ec02c1b8d9771a3155f3ffbdc45dbdc4760c8ad5489354a6f6ba710.
+
+No release commit, tag or deployment was performed. BUGS.md retains eleven
+unresolved review findings (ten P2, one P3), alongside prior human accessibility
+and live host-delivery acceptance items.
+
+## Phase 3 astronomy and site-time fixes — October 10, 2026 (local development)
+
+Resolved REV-005–012 locally. Boot planning uses the active site's calendar date;
+wall-field resolution is independent of browser timezone, chooses the earlier
+DST overlap occurrence, and shifts forward through gaps. Site midnight/noon,
+consecutive noons and polar fallback endpoints resolve separately. Memoization
+includes the resolved zone/actual noon; timezone changes invalidate full-day
+anchors and date edits reposition selection. Full-day spans follow 23/24/25-hour
+site calendar days while dragging retains its anchor through the endpoint.
+
+Canonical lunar coefficients match Meeus tables. Moon altitude now subtracts
+sea-level WGS84 observer parallax in the equatorial-of-date frame and refracts
+once; phase/elongation remain geocentric J2000. Independent PyEphem/libastro
+anchors cover eight dates/sites, distance and observer position; mutations catch
+each corrected sign, distance errors and omitted parallax. The historical lunar
+fixtures remain byte-identical; both fixture/mutation harnesses now use explicit
+independent lunar references instead of accepting a permanently wrong oracle.
+Culmination scans the complete site calendar day separately from rise/set, and
+its Moon warning uses illumination at culmination with a 0.15 fraction threshold.
+The truncated lunar model remains approximate; elevation is still metadata only.
+
+Validation:
+- Full pytest: 335 passed / 1 existing optional-data skip in 79.02s:
+  logs/phase3/pytest-full-confirmation.txt. The first run's four integration
+  failures required registering the new canonical exports, updating adapter
+  contracts and the second obsolete lunar oracle comparison; two local HTTP
+  checks required socket access. Its receipt remains in pytest-full.txt.
+  The focused integration rerun passed 42 checks; final browser wiring passed
+  10 checks after the browser completion-state correction.
+- Full Chromium gate: 71/71 passed: logs/phase3/browser-full-confirmation.txt.
+  The first full run passed 70/71; Catalog's existing advanced-visibility check
+  mistook a partial exclusion count for completion while warming still ran.
+  It now also waits for progress/busy completion without weakening the visibility
+  assertion or adding retries/skips. Isolated confirmation passed in 3.7s;
+  both full receipts and browser-catalog-investigation.txt remain available.
+  Focused Phase 3 checks corrected test assumptions about selection-relative
+  anchors, restored Catalog views and closed details; the final gate asserts
+  remote-site boot dates, memo/anchor changes, 23/25h bounds, stable dragging,
+  explicit calendar changes, and actual full/new Moon warning colors and text.
+- Final JavaScript checks pass; development release gate reports zero errors
+  with the expected dirty-version warning. Receipts: check-js-final.txt and
+  release-check-final.txt. Recursive token update is idempotent (cache-final.txt).
+- Core rebuilt to 282a2f0070874c8a, token 46, retaining 204c232bf69db731 as N-1.
+  New generated modules were added to the Git index for the served-file tracking
+  gate. App token is 169; importer tokens and AGENTS register are aligned.
+- Rebuilt and verified the 63-file combined local publication candidate with
+  truthful describe v0.1.1-1-g471e64a-dirty (publication-final.txt). Web namespace:
+  83081f455059dc9a26f8c54c3d4353b5e7e2fec5956ed8f46657e935e17cd923;
+  landing: d35f37eeb6bdd241873fe7255821c321f4f7adbde9eb311bb486bb21d787a6de.
+
+No release commit, tag or deployment was performed. BUGS.md now retains eighteen
+unresolved findings from the original review (sixteen P2, two P3), plus the
+existing human accessibility/host-delivery acceptance items.
+
+## Phase 2 release and cache fixes — October 10, 2026 (local development)
+
+Resolved REV-025–027 locally. Both publication builders package complete web and
+landing asset/data graphs under content-addressed release paths. Canonical HTML
+pins assets while preserving ordinary navigation; catalog, provenance and version
+requests resolve beside their module. The FTPS publisher validates local content
+before credentials, verifies temporary uploads and the full remote graph, then
+atomically renames public entries. Existing immutable bytes must match and old
+releases remain available. Raw mutable website upload commands are refused;
+changed root server policy requires separate review. No production connection or
+host setting was exercised.
+
+The token guard/updater now traverses all HTML roots and recursive imports,
+re-exports and literal dynamic imports, including shared landing CSS. It refuses
+conflicts, missing/unversioned dependencies and invalid baseline refreshes,
+propagates importer changes once, preserves manual advances, uses manifest-owned
+core tokens, and is idempotent. Image credits now shares theme token 21. Release
+validation and staging enforce Git tracking for all served file types, allow only
+generated web/version.json, and refuse symlinks or incomplete bundles.
+
+Validation:
+- Full pytest: 323 passed / 1 existing optional-data skip in 77.31s:
+  logs/phase2/pytest-full.txt. The 25 new regressions cover upload interruption
+  at every transfer, retry, corruption, immutable conflicts, actual Node execution
+  of old/new graphs, full inventory tracking, symlinks, missing bundles, preflight
+  before credentials, recursive propagation, manual advances, cycles, core tokens
+  and historical discovery.
+- Focused staged Chromium acceptance: 1/1 passed in 2.0s:
+  logs/phase2/browser-staged-verified.txt. It boots Tonight, Catalog and Sky;
+  exports pinned provenance; checks pinned version/data/assets; and navigates
+  landing and secondary HTML. Initial harness assumptions about the pinned clock,
+  existing tab names and static Image credits were corrected; failed focused logs
+  remain available in logs/phase2.
+
+- Initial full browser run: 66/67 passed; the existing responsive-planner
+  keyboard photo-chooser check timed out without page/console errors:
+  logs/phase2/browser-full.txt. Its isolated investigation passed in 8.8s:
+  logs/phase2/browser-responsive-investigation.txt. No application changes or
+  automatic retries/skips were introduced; the timeout's cause is unconfirmed.
+- Final JavaScript gate passed: logs/phase2/check-js-final.txt. Development
+  release gate passed with zero errors and the expected dirty-tag warning:
+  logs/phase2/release-check-final.txt. A second cache-update run changed nothing:
+  logs/phase2/cache-idempotence.txt.
+
+- Repeated full Chromium gate: 67/67 passed, including the photo-chooser check
+  and the new staged publication check: logs/phase2/browser-full-confirmation.txt.
+- Final combined local candidate prepared and verified: 63 files, 54
+  source artifacts, truthful describe v0.1.1-1-g471e64a-dirty:
+  logs/phase2/publication-final.txt and dist/publication-preview/publication.manifest.json.
+  The FTPS bundle loader independently accepted the complete local payload.
+  This local verification performed no FTPS connection or upload.
+Cache register/baseline now agree at app 167, horizon 78 and webstore 45.
+Core math, generated core trees and reference fixtures remain unchanged.
+BUGS.md retains 26 review findings (23 P2, 3 P3) for subsequent phases.
+Changes remain local and uncommitted; no tag, publication or remote write occurred.
+
+## Phase 1 integrity fixes — October 10, 2026 (local development)
+
+Resolved REV-001–004 and REV-020–024 locally: verified FTPS peer identity,
+transaction-completion storage writes, atomic record/safety replacement, strict
+backup reads, durable CSP-compatible panorama photos, preference replacement
+and validation, honest save/delete failure handling, safe unique custom IDs,
+and full-input RA/Dec parsing. Full restore recovery includes reinitialization,
+Tonight rendering and the original dirty editor history. Setup controls serialize
+transfers. BUGS.md retains the other 29 review findings for later phases.
+
+Final-source validation:
+- 298 pytest tests passed / 1 existing optional local-data skip in 76.26s:
+  logs/phase1-pytest-final-source.txt.
+- Full real Chromium gate: 66/66 passed, including 13 new integrity checks:
+  logs/phase1-browser-final.txt. Isolated checks cover request success followed
+  by transaction abort, failed/missing reads, quota failures, current photo
+  bytes after reload, complete rollback and dirty undo/redo recovery.
+- JavaScript checks passed: logs/phase1-check-js.txt. Development release check
+  passed with zero errors; the dirty, untagged HEAD warning is expected:
+  logs/phase1-release-check.txt.
+- Three offline TLS regressions verify untrusted certificate and wrong-hostname
+  rejection before credentials, plus trusted login with encrypted data transfer.
+  These tests are included in the full pytest count, not additional tests.
+
+The first full validation exposed outdated test assumptions around durable
+preference writes, plain-text error interpolation and strict reload arguments;
+the adapters were corrected while retaining behavioral assertions. The browser
+gate also caught a 0%-versus-1% Catalog-default regression; the shared preference
+schema now preserves the established 1% default. That initial long-running gate
+was stopped after the confirmed failure and restarted against corrected source;
+logs/phase1-browser-full.txt retains the failed/interrupted attempt. The final
+66/66 run completed cleanly.
+
+Cache tokens and all affected served import references are aligned at app 166,
+horizon 77 and webstore 44; the verified baseline and AGENTS.md register match.
+Core math, generated core trees and reference fixtures were unchanged.
+web/version.json truthfully reports 0.1.1-1-g471e64a-dirty. Changes are uncommitted;
+no release tag, publication, production FTPS access or deployment was performed.
+
+## Repository review validation — October 9, 2026 (no release)
+
+Reviewed master application source at 471e64a across shared astronomy/time/
+scoring, planner orchestration, browser persistence/backup, panorama geometry/
+history, accessibility/public pages and catalog/build/release/deployment tools.
+38 confirmed findings (4 P1, 30 P2, 4 P3) are recorded in BUGS.md and the detailed
+local report logs/review/REVIEW.md. Only review documentation was changed;
+application fixes, deployment, remote writes, release commits and actual-repo
+tags were not performed. Generated version.json reports the truthful dirty
+development describe after documentation edits.
+
+Final review validation: 295 tests passed / 1 existing optional local-data skip
+in 77.93s; scripts/check_js.py passed. Transcripts:
+logs/review/validation/pytest.log and check-js.log. The unchanged-source setup
+baseline also passed the full 53/53 browser gate (logs/environment/browser-check.log);
+this was not reclassified as coverage of the newly failing scenarios.
+Delegated scoped runs: 88 pipeline tests, 66 astronomy/time/scoring tests and 17
+horizon-related tests passed; these overlap the full suite, so their counts are
+not additional unique tests. Root's six UI/state/weather probes completed with
+diagnostic assertions and saved logs/review/root/results.json. Subsystem reports
+link numerical comparisons, offline deployment/token fixtures, real Chromium
+accessibility/canvas probes, and real IndexedDB abort/read/quota fault injection.
+Normal photo restoration failed under shipped CSP without quota injection.
+
+Independent lunar references (PyMeeus 0.5.12 table coefficients and PyEphem
+4.2.1) are installed only in ignored logs/review scratch. Three, not four,
+coefficient signs are wrong; line 216's negative sign was independently ruled
+correct. Corrected numerical comparisons use an in-memory copy, with no core
+or frozen fixture changes. Manual screen-reader/native zoom, other browsers,
+live hosting/FTPS behavior and exact absent upstream source-byte reconstruction
+remain outside this review. Existing A11Y-001 and HOST-DELIVERY-001 remain open.
+
 ## v0.1.1 — released and deployed, October 8, 2026
 
 Owner authorized release/commit/GitHub publication and deployment of the validated

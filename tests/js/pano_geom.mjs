@@ -144,7 +144,7 @@ const np = H.newPano("geom");
 np.strokes = [{ m: "b", x: 10, y: 100, r: 12 }];
 H.computeProfile(np);
 const snap = H.exportPanos();
-if (!H.importPanos(snap)) fail("importPanos returned false");
+if (!await H.importPanos(snap)) fail("importPanos returned false");
 const back = H.activePano();
 if (!back || back.profile.length !== 720 || back.profileTop.length !== 720) fail("round-trip profile shape");
 if (!back || back.strokes.length !== 1) fail("round-trip strokes");
@@ -173,7 +173,7 @@ for (const [f0, a0, sel, wf, wa] of cbCases) {
 }
 if (CB(360, 0, { x: 400, w: 50 }, CW).fov !== H.CROP_MIN_FOV) fail("cropKeptBand floor != 45");
 if (CB(180, 0, { x: 0, w: 333 }, CW).fov !== 60) fail(`cropKeptBand rounding -> ${CB(180, 0, { x: 0, w: 333 }, CW).fov}`);
-if (!near(CB(360, 0, { x: 1, w: 999 }, CW).azOffset, 0.36)) fail("cropKeptBand azimuth must be 2 dp");
+if (!near(CB(360, 0, { x: 1, w: 999 }, CW).azOffset, 0)) fail("rounded full-width crop must clamp its effective left edge");
 if (CB(360, 0, { x: 100, w: 800 }, CW).fov === 72) fail("cropKeptBand regressed to the removed-fraction formula");
 
 /* 8b. stroke transform/clip - keep the middle half (W=720, sel x=180 w=360) */

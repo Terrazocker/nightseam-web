@@ -185,7 +185,7 @@ const sample = H.allPanos()[0];
 const injected = H.normalizePanos({ panos: [{ ...sample, id: 'px',
                                               name: 'injected' }] });
 globalThis.localStorage.setItem = () => { throw new Error('quota exceeded'); };
-const applied = H.applyPanosSnapshot(injected);
+const applied = await H.applyPanosSnapshot(injected);
 globalThis.localStorage.setItem = origSetItem;
 assert(applied === false, 'a failed apply must report false (got ' + applied + ')');
 assert(H.allPanos().map((p) => p.id).join(',') === beforeIds,
@@ -199,8 +199,8 @@ const wb1 = H.normalizePanos({ panos: [{ id: 'ok-1', strokes: [] },
 assert(wb1 && wb1.panos.length === 1 && wb1.panos[0].id === 'ok-1',
        'WB5: non-token/duplicate pano ids must be dropped');
 const wb2 = H.normalizePanos({ panos: [{ id: 'ok-2',
-  strokes: new Array(30000).fill({ m: 'b', x: 1, y: 1, r: 1 }) }] });
-assert(wb2 && wb2.panos[0].strokes.length === 20000,
+  strokes: new Array(60001).fill({ m: 'b', x: 1, y: 1, r: 1 }) }] });
+assert(wb2 && wb2.panos[0].strokes.length === 60000,
        'WB5: imported strokes must be capped');
 
 /* ---------------- crop: one history entry, undo/redo, dirty ---------------- */

@@ -1,5 +1,148 @@
 # Current NightSeam Web findings
 
+## Repository and logic review — October 9, 2026
+
+Broad source review of master at 471e64a found 38 confirmed defects: 4 P1,
+30 P2 and 4 P3. No application fixes were applied during that review.
+Phases 1–4 now resolve twenty-seven findings; 11 remain (10 P2, 1 P3). Reproduction inputs, exact
+lines, actual/expected results, proposed fixes and review limits are recorded in
+`logs/review/REVIEW.md` and its six linked subsystem reports. Reproductions and
+transcripts remain in ignored logs/review. The independent catalog repository
+was not included. These findings supersede any earlier general claim that the
+local implementation has no remaining defects; historical resolved entries below
+retain their original scope.
+
+P1 is high-priority credential/data integrity; P2 is reproducible functional or
+correctness failure; P3 is a smaller input, metadata or presentation defect.
+Transaction abort, read error and quota probes use deliberate fault injection;
+ordinary panorama photo restoration fails under the shipped CSP without such
+injection. Unusual timezone/import triggers are specified in the detailed report.
+
+| ID | Priority | Confirmed unresolved finding / primary source |
+| --- | --- | --- |
+| REV-028 | P2 | Minimum-altitude change invalidates/cancels freshly scheduled Catalog visibility work (`web/app.js:3894`). |
+| REV-029 | P2 | Active site edit leaves the main displayed plan on old site data (`web/app.js:3539`). |
+| REV-030 | P2 | In-place custom-target edits preserve stale cached search text (`web/app.js:3098`). |
+| REV-031 | P2 | Maximum-altitude sorting falls through to magnitude (`web/app.js:1878`). |
+| REV-032 | P2 | Null/absent weather values become zero readings and misleading ratings (`web/app.js:485`). |
+| REV-033 | P2 | First forecast response can attach old-site weather to a newly selected site (`web/app.js:738`). |
+| REV-034 | P2 | Altitude chart marks unobstructed below-minimum segments horizon-blocked (`web/app.js:2757`). |
+| REV-035 | P2 | Button roles on data rows remove native accessible table/cell semantics (`web/app.js:1998,1199`). |
+| REV-036 | P2 | Catalog filter changes lose focus for several controls (`web/app.js:1940`). |
+| REV-037 | P2 | Type/reverse sorting lacks equivalent keyboard controls (`web/app.js:1931`). |
+| REV-038 | P3 | Advanced mode help incorrectly says switching reloads the app (`web/index.html:118`). |
+
+Existing A11Y-001 human acceptance and HOST-DELIVERY-001 live compression remain
+separate open items. Current catalog manifests/core bake consistency passed;
+upstream source-byte regeneration was not reconstructed. No production
+deployment or native screen-reader/browser-zoom audit was performed.
+
+## Phase 4 horizon fixes resolved locally — October 10, 2026
+
+- REV-013: duplicate landmark IDs reserve suffix space before truncation;
+  normalization is deterministic and bounded by the 128 retained landmarks.
+- REV-014: cropped dabs retain vertical `r` and independently scale horizontal
+  `rx`; repeated crops, sky-band edges and undo/redo preserve their altitude.
+- REV-015: materialize old wrapped paint/erase copies in stroke order before
+  clipping. A crop losing every dab explicitly clears its old derived profile.
+- REV-016: preview, calibration and stroke coordinates share one effective kept
+  band, expanded/clamped for the minimum and integer FOV. Crops never enlarge an
+  already sub-45° frame; calibration retains exact azimuths internally.
+- REV-017: Space pans only with canvas focus, releases on keyup/blur, and removes
+  old listeners on editor teardown. Text spaces and native button activation work.
+- REV-018: Undo/Redo/Revert restore calibration, landmark rows, selected-bin fields
+  and comparison together; pending metadata is settled before history actions.
+- REV-019: confidence input writes immediately to the displayed bin, including
+  blank→unassessed. Selection, rerender, save and recovery retain edits/history.
+
+Backup exports are format 3 so older readers refuse elliptical geometry they
+cannot interpret; this build continues to read v1/v2. Imported stroke lists stay
+bounded at 60,000, allowing seam copies of the previous 20,000-dab limit. Original
+image bytes, authoritative stroke-less world profiles and frozen fixtures remain
+unchanged. Remaining catalog, weather and accessibility findings stay above.
+
+## Phase 3 resolved locally — October 10, 2026
+
+- REV-005: boot initializes the computed date from the active site's calendar,
+  using the same date for the top-bar input and planning.
+- REV-006: canonical lunar longitude/latitude use the three published positive
+  coefficients. Independent PyEphem/libastro anchors and individual sign
+  mutations validate the correction; frozen historical fixtures are unchanged.
+- REV-007: canonical culmination scans the complete selected site calendar day,
+  including a supplied next midnight across DST. Rise/set retain their intended
+  midnight ±12h search. The inspector now passes actual site midnight.
+- REV-008: calendar-field resolution solves the offset at the resulting instant,
+  independent of browser timezone. Folds choose the earlier occurrence; gaps
+  shift forward, including half-hour transitions and Samoa's skipped date.
+  Critical midnight/noon/fallback calculations pass fields directly.
+- REV-009: full-day anchors invalidate on resolved timezone changes; explicit
+  date edits move the selection to that site's noon. Stable dragging includes
+  the right endpoint; bounds use next calendar noon (23/24/25 elapsed hours).
+- REV-010: the night memo key includes the resolved zone and actual site noon.
+- REV-011: shared Moon altitude subtracts the sea-level WGS84 observer vector
+  in the equatorial-of-date frame and applies refraction once. All web Moon
+  position consumers use it; phase/elongation retain geocentric J2000 positions.
+  Lunar distance and observer position have independent numerical anchors.
+- REV-012: culmination separation color uses illumination at culmination and
+  compares the fraction against 0.15. Full/new Moon browser checks assert the
+  actual rendered color and non-color proximity text.
+
+The truncated lunar model remains approximate (sampled 2026 geocentric error
+below 0.10°; tests allow 0.12°), unsuitable for precise occultation predictions.
+The existing wall-Date display carrier cannot represent a wall hour inside the
+browser's own DST gap; critical planning uses explicit fields instead.
+
+## Phase 2 resolved locally — October 10, 2026
+
+- REV-025: staging builds content-addressed web/landing release directories.
+  Public HTML pins assets without changing page/fragment navigation; module
+  data requests resolve beside their module. FTPS verifies complete immutable
+  graphs before atomic public entry renames, retains old graphs, refuses
+  conflicting immutable bytes, and blocks raw mutable website upload commands.
+  Interrupted/partial uploads and retries are covered offline. Server-policy
+  changes require separate review; no production FTPS access was performed.
+- REV-026: one recursive graph discovers all web/landing HTML roots, secondary
+  imports/re-exports/literal dynamic imports and shared CSS. Token updates
+  propagate through every importer once, preserve manual advances, use the
+  core manifest token, and are idempotent. Conflicts, missing dependencies and
+  unversioned mutable references refuse both updates and baseline refreshes.
+  Image credits' preexisting theme token 16 is corrected to the shared 21.
+- REV-027: the release gate and both staging builders require Git tracking for
+  every served artifact type in web/ and landing/. Only the exact generated
+  web/version.json is exempt. Source/staged symlinks and incomplete or changed
+  bundles fail; invalid sources leave an existing local candidate intact.
+
+## Phase 1 resolved locally — October 10, 2026
+
+- REV-001: FTPS verifies the server certificate and hostname before credentials,
+  retains system/inherited CA trust, and closes authentication failures.
+- REV-002: panorama photos decode locally under the existing CSP, persist through
+  transaction completion, survive reload, and export current image bytes. Missing
+  or unreadable photos reject backup collection. Photo/record failures preserve
+  the original snapshot and editor history.
+- REV-003: record writes await transaction completion. Sites, rigs, targets and
+  safety metadata replace atomically; request-success-then-abort preserves all
+  previous records instead of reporting success.
+- REV-004: strict record/photo reads refuse incomplete exports and recovery
+  snapshots. Reinitialization errors trigger complete post-commit recovery.
+- REV-020: snapshot preferences replace current settings, resetting absent values
+  to defaults. Failed preference writes preserve both stored and live state.
+- REV-021: all consumed preference shapes/ranges/enums validate before writes.
+  Records, photos, preferences, theme, reinitialization and immediate Tonight
+  rendering share the rollback boundary. Transfers serialize Setup edits.
+- REV-022: save/delete failures retain forms and authoritative displayed data;
+  settings controls reset to the committed value and report failed persistence.
+- REV-023: imported custom targets require safe, unique `u_` IDs and bounded
+  coordinates. Canonical catalog objects cannot be replaced by custom imports.
+- REV-024: RA/Dec parsing consumes complete inputs, rejects negative RA and extra
+  components, and preserves documented carries such as `+22 0 60`.
+
+Regression evidence is in tests/test_ftps_tls.py, tests/js/web_backup.mjs,
+tests/browser/storage_checks.py, tests/browser/phase1_app_checks.py and the
+panorama browser checks. RELEASES.md records the final validation outcomes.
+The remaining 29 findings above retain their implementation phase and scope.
+No deployment or release tag was made for these local changes.
+
 ## Current remaining gates — October 8, 2026
 
 Implementation, GitHub release and authorized deployment through v0.1.1 are complete

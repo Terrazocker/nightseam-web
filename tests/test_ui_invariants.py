@@ -318,7 +318,7 @@ def test_web_night_info_anchors_the_polar_fallback():
     """FIX-6 (review CR1): the night-info chip's fallback window must come from
     the selected night's SITE-noon anchor, never the wall clock."""
     app = _read("web", "app.js")
-    assert "E.pickDarkWindow(info, nightAnchor(), siteNoon(nightAnchor()))" in app, \
+    assert "E.pickDarkWindow(info, nightAnchor(), siteNoon(nightAnchor()), siteFallback(nightAnchor()))" in app, \
         "renderNightInfo must pass the night anchor + site noon"
 
 
@@ -329,7 +329,7 @@ def test_batch3_web_hardening_wiring():
     pano section cannot wipe horizons. Behavioural guards for WB5 are in
     tests/js/pano_ui.mjs."""
     app = _read("web", "app.js")
-    assert app.count("await reloadRigs();") >= 3, \
+    assert len(re.findall(r"await reloadRigs\((?:options)?\);", app)) >= 3, \
         "boot, renderSettings and reinitUserData must share reloadRigs()"
     assert "missing panorama section" in app
     hz = _read("web", "horizon.js")

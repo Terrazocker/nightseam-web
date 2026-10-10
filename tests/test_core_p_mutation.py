@@ -2,8 +2,10 @@
 
 Each case copies core/ to a temp dir, perturbs one load-bearing constant or
 branch, runs the committed oracle harness against the copy and compares the
-output with the oracle HERE: the perturbation must produce a mismatch. The
-real core matches. Mirrors the D1 mutation pattern.
+output with the oracle HERE: the perturbation must produce a mismatch.
+Non-lunar fixture groups remain frozen regression checks. The lunar group uses
+independent references because the retired oracle shared the REV-006 sign bug.
+Mirrors the D1 mutation pattern.
 """
 
 import json
@@ -46,7 +48,7 @@ def _epoch(iso):
 
 
 def _mismatch(core_dir) -> bool:
-    """True when the core copy deviates from the committed oracle fixtures."""
+    """True on a non-lunar fixture mismatch or independent lunar reference failure."""
     proc = _run([_node(), str(ROOT / "tests" / "js" / "core_fixtures.mjs"),
                  str(FIXTURES), str(core_dir)])
     assert proc.returncode == 0, proc.stderr[-1500:]
@@ -63,10 +65,12 @@ def _mismatch(core_dir) -> bool:
         for c, res in zip(FX[key], got.get(key, [])):
             if not all(_near(c[f], res[i], TOL[key]) for i, f in enumerate(fields)):
                 return True
-    for c, res in zip(FX["moon"], got.get("moon", [])):
-        if not all(_near(c[f], res[i], TOL["moon"])
-                   for i, f in enumerate(("ra", "dec", "illum", "age"))):
-            return True
+    # REV-006: lunar goldens contain three wrong signs. Preserve their bytes,
+    # but do not let a permanent known mismatch make EVERY mutation pass.
+    lunar = _run([_node(), str(ROOT / 'tests/js/reference_anchors.mjs'), str(core_dir)])
+    checks = json.loads(lunar.stdout)['checks']
+    if any(c['id'].startswith('moon_') and not c['ok'] for c in checks):
+        return True
     for c, res in zip(FX["twilight"], got.get("twilight", [])):
         if res["level"] != c["level"]:
             return True
@@ -89,8 +93,8 @@ def _mutated_core(tmp_path, rel, old, new):
     return dest
 
 
-def test_real_core_matches_the_oracle():
-    assert not _mismatch(ROOT / "core"), "the real core deviates from the oracle"
+def test_real_core_passes_current_reference_contracts():
+    assert not _mismatch(ROOT / "core"), "the real core fails a fixture or independent lunar reference"
 
 
 def test_precession_axis_mutation_is_detected(tmp_path):

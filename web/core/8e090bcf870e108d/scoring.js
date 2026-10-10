@@ -105,7 +105,10 @@ export function computeNightTracks(objects, jd0, jd1, step, lat, lon) {
       az[base + i] = z;
     }
   }
-  return { n, count, alt, az };
+  // Keep the original sampling anchor and midpoint. The grid may include a
+  // terminal node at/after dawn; it is useful for tracks, but owns no observing
+  // time beyond the requested half-open interval [jd0, jd1).
+  return { n, count, alt, az, jd0, jd1 };
 }
 
 /** Score precomputed tracks. This is the PREFERENCE-CHANGE path: a min-alt or
@@ -119,7 +122,10 @@ export function computeNightTracks(objects, jd0, jd1, step, lat, lon) {
  *  the ONE scoring-window policy: the desktop's payload grid deliberately
  *  carries twilight margins for its charts (241 samples, local noon -> local
  *  noon) and clips the numbers to dusk..dawn, while the web's grid already IS
- *  dusk..dawn and therefore passes no range. Both shells now run THIS loop;
+ *  dusk..dawn and therefore passes no range. `tracks.jd1` bounds the last
+ *  cell; `ctx.window = [startJd, endJd]` can further clip exact time boundaries.
+ *  A node contributes its positive-duration [jd, jd + step) cell, clipped to
+ *  that span; terminal nodes contribute no time. Both shells run THIS loop;
  *  only the grid anchor and the optional range differ, instead of each shell
  *  owning a separate aggregation. */
 export function scoreNightTracks(tracks, objects, jd0, step, minAlt, pano, ctx = {}) {
@@ -127,6 +133,14 @@ export function scoreNightTracks(tracks, objects, jd0, step, minAlt, pano, ctx =
   const win = Array.isArray(ctx.range) ? ctx.range : null;
   const winLo = win ? Math.max(0, Math.min(count - 1, win[0] | 0)) : 0;
   const winHi = win ? Math.max(winLo, Math.min(count - 1, win[1] | 0)) : count - 1;
+  const exact = Array.isArray(ctx.window) ? ctx.window : null;
+  const windowStart = Math.max(jd0, jd0 + winLo * step,
+    exact && Number.isFinite(exact[0]) ? exact[0] : jd0);
+  const gridEnd = Number.isFinite(tracks.jd1) ? tracks.jd1 : jd0 + count * step;
+  const windowEnd = Math.max(windowStart, Math.min(gridEnd,
+    jd0 + (winHi + 1) * step,
+    exact && Number.isFinite(exact[1]) ? exact[1] : gridEnd));
+  const windowDays = windowEnd - windowStart;
   const wantAlts = !!ctx.maxAlt;
 
   // horizon profile as flat typed arrays; the ceiling is inlined bit-for-bit
@@ -153,18 +167,12 @@ export function scoreNightTracks(tracks, objects, jd0, step, minAlt, pano, ctx =
     ? (k) => ctx.typeF[k] : () => ctx.typeF;
 
   const out = new Array(objects.length);
-  /* The clear window IS the longest run of visible samples inside the scoring
-   * window - one counter, because a run that crosses a twilight edge must not
-   * be reported (the desktop used to advertise windows that included daylight).
-   * With no window the scoring span is the whole grid, so the old behaviour is
-   * bit-for-bit the same. `bestStart` is captured INCREMENTALLY (`jd` of the
-   * first sample of the run) and never recomputed as `jd - run * step`, which
-   * is the same instant only up to floating-point error - the characterization
-   * goldens in tests/js/scoring_parity.mjs compare it bit-identically. */
-  const isWin = win ? (i) => i >= winLo && i <= winHi : null;
+  // Compare actual run duration: a run with a short final cell must not win
+  // over a longer run solely because it contains more sampling nodes.
   for (let k = 0; k < objects.length; k++) {
     const base = k * count;
     let maxAlt = -90, transitJd = jd0, bestRun = 0, bestStart = jd0;
+    let bestEnd = null, bestDays = 0, visibleDays = 0;
     let riseJd = null, setJd = null, prevAlt = null;
     let run = 0, runStart = jd0, visN = 0, visibleFullN = 0;
     let aboveN = 0, blocked = 0, sClassic = 0, sMoon = 0;
@@ -206,7 +214,10 @@ export function scoreNightTracks(tracks, objects, jd0, step, minAlt, pano, ctx =
 
       const up = alt > 0;
       const vis = alt >= minAlt && alt > ceil && alt < (top == null ? 90.5 : top);
-      const inRange = !isWin || isWin(i);
+      const cellStart = Math.max(jd, windowStart);
+      const cellEnd = Math.min(jd + step, windowEnd);
+      const cellDays = Math.max(0, cellEnd - cellStart);
+      const inRange = i >= winLo && i <= winHi && cellDays > 0;
       const reason = visibilityReason(alt, minAlt, ceil, top, inRange);
       if (inRange) reasonCounts[reason] = (reasonCounts[reason] || 0) + 1;
       if (vis) visibleFullN++;
@@ -218,35 +229,46 @@ export function scoreNightTracks(tracks, objects, jd0, step, minAlt, pano, ctx =
       if (!vis || !inRange) { run = 0; continue; }
 
       visN++;
+      // Full cells retain unit weight; only a clipped first/final cell is
+      // fractional. This avoids numerical drift from subtracting large JDs.
+      const cellWeight = cellStart === jd && cellEnd === jd + step
+        ? 1 : cellDays / step;
+      visibleDays += cellWeight * step;
       let w = Math.sin(Math.max(0, Math.min(90, alt)) * Math.PI / 180);
-      sClassic += w;
+      sClassic += w * cellWeight;
       if (moonAware && moonAlt[i] > 0) {
         const sep = sepDeg(alt, az, moonAlt[i], moonAz[i]);
         const glow = illum * Math.max(0, 1 - Math.max(0, sep - minD) / 180);
         w *= Math.max(0.05, 1 - 0.95 * glow * typeFOf(k) * ctx.bortleF);
       }
-      sMoon += w;
-      if (run === 0) runStart = jd;
+      sMoon += w * cellWeight;
+      if (run === 0) runStart = cellStart;
       run++;
-      if (run > bestRun) { bestRun = run; bestStart = runStart; }
+      const runDays = cellEnd - runStart;
+      // 1e-9 day is below 0.1 ms, allowing stable ties despite JD rounding.
+      if (runDays > bestDays + 1e-9) {
+        bestRun = run; bestStart = runStart; bestEnd = cellEnd; bestDays = runDays;
+      }
     }
-    const nightN = winHi - winLo + 1;
     const summary = summarizeVisibility({
       visibleSamples: visN, visibleFullSamples: visibleFullN,
       stepMin: step * 1440, maxAlt, reasonCounts,
     });
-    const bestEnd = bestRun > 0 ? bestStart + bestRun * step : null;
     out[k] = {
       n, maxAlt, transitJd, culminationJd: transitJd,
       culminationAlt: maxAlt, riseJd, setJd,
       visN, visibleFullN, aboveN, blocked, bestRun, bestStart, bestEnd,
       usableStartJd: bestRun > 0 ? bestStart : null,
       usableEndJd: bestEnd,
-      visibleMinutes: summary.visibleMinutes,
+      bestMinutes: bestDays * 1440,
+      visibleMinutes: Math.min(windowDays, visibleDays) * 1440,
+      windowMinutes: windowDays * 1440,
       visibilityReason: summary.reason,
       reasonCounts: summary.reasonCounts,
       sClassic, sMoon,
-      pct: Math.round(100 * visN / nightN),
+      // JD subtraction can put an exact x.5% tie a few billionths below its
+      // mathematical value. Keep the ordinary round-half-up result stable.
+      pct: windowDays > 0 ? Math.round(100 * Math.min(windowDays, visibleDays) / windowDays + 1e-7) : 0,
       blockedPct: Math.round(100 * blocked / (n + 1)),
       alt: alts, vis: visBits, above: aboveBits,
     };

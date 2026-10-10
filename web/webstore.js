@@ -10,7 +10,7 @@
  * the app moved to nightseam.de, so every visitor starts on a fresh origin.
  */
 
-import { offsetEastMin, wallFromUtcMs, utcFromWallMs } from './core.js?v=45';
+import { offsetEastMin, zonedWallToUtcMs } from './core.js?v=47';
 
 const DB_NAME = 'nightseam-db-v1';
 const DB_VER = 1;
@@ -49,33 +49,42 @@ export async function get(store, key) {
   try {
     const db = await open();
     return await new Promise((resolve, reject) => {
-      const t = db.transaction(store, 'readonly').objectStore(store).get(key);
-      t.onsuccess = () => resolve(t.result ?? null);
-      t.onerror = () => reject(t.error);
+      const transaction = db.transaction(store, 'readonly');
+      const request = transaction.objectStore(store).get(key);
+      transaction.oncomplete = () => resolve(request.result ?? null);
+      transaction.onabort = () => reject(transaction.error || new Error('storage read aborted'));
     });
   } catch { return null; }
 }
 
+// Request success precedes commit. Only transaction completion proves that a
+// write survived; an abort after a successful request must still reject.
+async function commitWrite(stores, enqueue) {
+  const db = await open();
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(stores, 'readwrite');
+    let failure = null;
+    transaction.oncomplete = () => resolve();
+    transaction.onerror = (event) => { failure = event.target?.error || transaction.error; };
+    transaction.onabort = () => reject(failure || transaction.error || new Error('storage transaction aborted'));
+    try { enqueue(transaction); }
+    catch (error) {
+      failure = error;
+      try { transaction.abort(); } catch { reject(error); }
+    }
+  });
+}
+
 export async function set(store, key, val) {
   try {
-    const db = await open();
-    await new Promise((resolve, reject) => {
-      const t = db.transaction(store, 'readwrite').objectStore(store).put(val, key);
-      t.onsuccess = () => resolve();
-      t.onerror = () => reject(t.error);
-    });
+    await commitWrite(store, (transaction) => transaction.objectStore(store).put(val, key));
     return true;
   } catch { return false; }
 }
 
 export async function del(store, key) {
   try {
-    const db = await open();
-    await new Promise((resolve, reject) => {
-      const t = db.transaction(store, 'readwrite').objectStore(store).delete(key);
-      t.onsuccess = () => resolve();
-      t.onerror = () => reject(t.error);
-    });
+    await commitWrite(store, (transaction) => transaction.objectStore(store).delete(key));
     return true;
   } catch { return false; }
 }
@@ -87,20 +96,26 @@ export async function del(store, key) {
  *  splash (WE-06, 0.6.32 review). Storage that is genuinely unavailable is
  *  detected up front by `storageOk()`, which shows an actionable message; here a
  *  failure degrades to "no records" so the UI still comes up. */
+export async function allStrict(store) {
+  const db = await open();
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(store, 'readonly');
+    const out = [];
+    let failure = null;
+    transaction.oncomplete = () => resolve(out);
+    transaction.onerror = (event) => { failure = event.target?.error || transaction.error; };
+    transaction.onabort = () => reject(failure || transaction.error || new Error('could not read stored records'));
+    const request = transaction.objectStore(store).openCursor();
+    request.onsuccess = () => {
+      const cursor = request.result;
+      if (cursor) { out.push({ key: cursor.key, val: cursor.value }); cursor.continue(); }
+    };
+  });
+}
+
 export async function all(store) {
-  try {
-    const db = await open();
-    return await new Promise((resolve, reject) => {
-      const t = db.transaction(store, 'readonly').objectStore(store).openCursor();
-      const out = [];
-      t.onsuccess = () => {
-        const c = t.result;
-        if (c) { out.push({ key: c.key, val: c.value }); c.continue(); }
-        else resolve(out);
-      };
-      t.onerror = () => reject(t.error);
-    });
-  } catch (err) {
+  try { return await allStrict(store); }
+  catch (err) {
     warnStorageOnce(err);
     return [];
   }
@@ -113,9 +128,10 @@ export async function storageOk() {
     const db = await open();
     if (!db) return false;
     await new Promise((resolve, reject) => {
-      const t = db.transaction('sites', 'readonly').objectStore('sites').count();
-      t.onsuccess = () => resolve();
-      t.onerror = () => reject(t.error);
+      const transaction = db.transaction('sites', 'readonly');
+      transaction.objectStore('sites').count();
+      transaction.oncomplete = () => resolve();
+      transaction.onabort = () => reject(transaction.error || new Error('storage probe aborted'));
     });
     return true;
   } catch (err) {
@@ -133,12 +149,7 @@ function warnStorageOnce(err) {
 
 export async function clearStore(store) {
   try {
-    const db = await open();
-    await new Promise((resolve, reject) => {
-      const t = db.transaction(store, 'readwrite').objectStore(store).clear();
-      t.onsuccess = () => resolve();
-      t.onerror = () => reject(t.error);
-    });
+    await commitWrite(store, (transaction) => transaction.objectStore(store).clear());
     return true;
   } catch { return false; }
 }
@@ -147,8 +158,8 @@ export async function clearStore(store) {
 
 export const NEW_SITE_ID = () => 's' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 
-export async function getSites() {
-  const rows = await all('sites');
+export async function getSites({ strict = false } = {}) {
+  const rows = await (strict ? allStrict('sites') : all('sites'));
   return rows.map((r) => r.val).sort((a, b) => String(a.name).localeCompare(String(b.name)));
 }
 
@@ -162,8 +173,8 @@ export function deleteSiteRec(id) {
 
 /* ------------------------------- rigs ------------------------------- */
 
-export async function getRigs() {
-  const rows = await all('rigs');
+export async function getRigs({ strict = false } = {}) {
+  const rows = await (strict ? allStrict('rigs') : all('rigs'));
   const rigs = rows.map((r) => r.val);
   for (const r of rigs) {
     // D2 adapter: rigs stored before the unit normalization held DEGREES;
@@ -204,13 +215,13 @@ export const DEFAULT_RIGS = [
 export async function removeSeededRigs() {
   const near = (a, b) => Math.abs((Number(a) || 0) - b) < 1e-9;
   const gone = [];
-  for (const r of await getRigs()) {
+  for (const r of await getRigs({ strict: true })) {
     const name = String(r.name || '').trim().toLowerCase();
     const p = DEFAULT_RIGS.find((x) => x.name.toLowerCase() === name);
     if (!p) continue;
     if (!near(r.focal_mm, p.focal_mm) || !near(r.sensor_w, p.sensor_w) ||
         !near(r.sensor_h, p.sensor_h)) continue;
-    await deleteRigRec(r.id);
+    if (!await deleteRigRec(r.id)) throw new Error('could not remove an old preset rig');
     gone.push(r.id);
   }
   return gone;
@@ -231,8 +242,8 @@ export function fovDeg(focalMm, sensorMm) {
 
 /* --------------------------- custom targets --------------------------- */
 
-export async function getTargets() {
-  const rows = await all('targets');
+export async function getTargets({ strict = false } = {}) {
+  const rows = await (strict ? allStrict('targets') : all('targets'));
   return rows.map((r) => r.val);
 }
 
@@ -246,26 +257,24 @@ export const newTargetId = () => 'u_' + Date.now().toString(36) + Math.random().
  * Dec: "+22 0 60" / "-26d31m" / "22.017" (decimal degrees)            */
 export function parseRA(s) {
   const v = sexa(s);
-  if (Number.isFinite(v)) return v < 24 ? v : NaN; // hours
-  const n = parseFloat(String(s).replace(',', '.'));
-  return Number.isFinite(n) && n >= 0 && n < 24 ? n : NaN;
+  return Number.isFinite(v) && v >= 0 && v < 24 ? v : NaN;
 }
 export function parseDec(s) {
-  const sign = /^\s*-/.test(s) ? -1 : 1;
-  const v = sexa(String(s).replace(/^\s*[+-]/, ''));
-  if (Number.isFinite(v)) { const d = sign * v; return d >= -90 && d <= 90 ? d : NaN; }
-  const n = parseFloat(String(s).replace(',', '.'));
-  return Number.isFinite(n) && n >= -90 && n <= 90 ? n : NaN;
+  const v = sexa(s);
+  return Number.isFinite(v) && v >= -90 && v <= 90 ? v : NaN;
 }
 function sexa(s) {
   if (s == null) return NaN;
-  const parts = String(s).trim().split(/[^\d.,-]+/).filter(Boolean);
-  if (parts.length < 2) return NaN;
-  const nums = parts.map((p) => parseFloat(p.replace(',', '.')));
-  if (nums.some((n) => !Number.isFinite(n))) return NaN;
-  if (nums.length === 2) return nums[0] + nums[1] / 60;
-  if (nums.length === 3) return nums[0] + nums[1] / 60 + nums[2] / 3600;
-  return NaN;
+  const text = String(s).trim().replace(/,/g, '.');
+  if (/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[hHdD°])?$/.test(text)) {
+    return Number(text.replace(/[hHdD°]$/, ''));
+  }
+  const match = text.match(/^([+-]?\d+(?:\.\d+)?)\s*(?:[hHdD°:]|\s)\s*(\d+(?:\.\d+)?)(?:\s*(?:[mM'′:]|\s)\s*(\d+(?:\.\d+)?))?\s*(?:[sS"″]|[mM'′])?$/);
+  if (!match) return NaN;
+  const sign = match[1].startsWith('-') ? -1 : 1;
+  // Preserve documented carries such as +22 0 60 while rejecting extra parts
+  // and arbitrary text instead of silently using the first decimal prefix.
+  return sign * (Math.abs(Number(match[1])) + Number(match[2]) / 60 + Number(match[3] || 0) / 3600);
 }
 
 /* ---------------------------- timezone (DST-aware) ---------------------------- */
@@ -285,14 +294,22 @@ export function tzOffMinAt(tzName, date) {
 export function utcToWall(date) {
   const off = tzOffMinAt(activeTz, date);
   if (off == null) return date;
-  return new Date(wallFromUtcMs(date.getTime(), off, date.getTimezoneOffset()));
+  const w = new Date(date.getTime() + off * 60000);
+  return new Date(w.getUTCFullYear(), w.getUTCMonth(), w.getUTCDate(),
+    w.getUTCHours(), w.getUTCMinutes(), w.getUTCSeconds(), w.getUTCMilliseconds());
 }
 
 /** Inverse of utcToWall: interpret a wall-clock Date (site tz) as a UTC instant. */
 export function wallToUtc(date) {
-  const off = tzOffMinAt(activeTz, date);
-  if (off == null) return date;
-  return new Date(utcFromWallMs(date.getTime(), off, date.getTimezoneOffset()));
+  return wallFieldsToUtc(date.getFullYear(), date.getMonth(), date.getDate(),
+    date.getHours(), date.getMinutes(), date.getSeconds(), date.getMilliseconds());
+}
+
+/** Critical planning callers pass calendar fields directly, avoiding host DST gaps. */
+export function wallFieldsToUtc(y, month, day, hour = 0, minute = 0, second = 0, millis = 0) {
+  const zone = activeTz || Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const instant = zonedWallToUtcMs(zone, Date.UTC(y, month, day, hour, minute, second, millis));
+  return instant == null ? new Date(y, month, day, hour, minute, second, millis) : new Date(instant);
 }
 
 /** A Date whose calendar fields are the active site's date at noon —
@@ -306,7 +323,7 @@ export function effToday() {
 
 export async function loadVersion() {
   try {
-    const r = await fetch('version.json', { cache: 'no-store' });
+    const r = await fetch(new URL('version.json', import.meta.url), { cache: 'no-store' });
     if (!r.ok) throw new Error('HTTP ' + r.status);
     const j = await r.json();
     if (j && j.version) return j;
@@ -328,7 +345,7 @@ export function currentTheme() {
 
 export async function collectBackup(prefs, panos, theme) {
   const [sites, rigs, targets] = await Promise.all([
-    all('sites'), all('rigs'), all('targets'),
+    allStrict('sites'), allStrict('rigs'), allStrict('targets'),
   ]);
   return {
     app: 'nightseam-web',
@@ -370,20 +387,61 @@ function cleanRecord(r, { numbers = [], strings = [] } = {}) {
   return out;
 }
 
-/** The bundle format this build can restore. `version: 2` is the current shape
- *  (v1 bundles differ only in not stamping a version at all, so they are still
- *  accepted). Bump this together with any INCOMPATIBLE bundle change. */
-export const BUNDLE_VERSION = 2;
+/** v3 adds independent horizontal dab radii. v1 (unstamped) and v2 remain
+ * readable; earlier clients refuse v3 instead of silently losing crop geometry.
+ * Bump this together with any incompatible bundle change. */
+export const BUNDLE_VERSION = 3;
 
-function cleanWebPrefs(value) {
-  const out = value && typeof value === 'object' && !Array.isArray(value) ? { ...value } : {};
+export const WEB_PREF_DEFAULTS = Object.freeze({
+  bortle: 4, minAlt: null, moonAware: false, viewFullDay: false, edge: 16,
+  minVis: 1, advMode: false, weatherAuto: false, fltBb: false, fltHa: false,
+  fltOiii: false, sizeUnit: 'arcmin', activeSiteId: null, activeRigId: '',
+  tz: '', savedTargetIds: Object.freeze([]), rigsSeeded: false, rigsPresetCleaned: false,
+});
+
+/** Missing v1/v2 settings acquire current defaults. Strict import validation
+ * rejects malformed known values before storage changes; loading older local
+ * settings can instead recover those defaults. */
+export function normalizeWebPrefs(value, { strict = false } = {}) {
+  const record = value && typeof value === 'object' && !Array.isArray(value);
+  if (strict && value != null && !record) throw new Error('backup settings must be an object');
+  const source = record ? value : {};
+  const out = { ...WEB_PREF_DEFAULTS, ...source, savedTargetIds: [] };
   for (const key of ['skyBrightnessProvider', 'theme', 'themeId', 'themeMode', 'themeVariant']) delete out[key];
-  if (Array.isArray(out.savedTargetIds)) {
-    out.savedTargetIds = [...new Set(out.savedTargetIds.filter((id) =>
+  const check = (key, valid) => {
+    if (!Object.prototype.hasOwnProperty.call(source, key) || valid(source[key])) return;
+    if (strict) throw new Error(`backup setting ${key} is invalid`);
+    out[key] = WEB_PREF_DEFAULTS[key];
+  };
+  for (const key of ['moonAware', 'viewFullDay', 'advMode', 'weatherAuto',
+    'fltBb', 'fltHa', 'fltOiii', 'rigsSeeded', 'rigsPresetCleaned']) {
+    check(key, (v) => typeof v === 'boolean');
+  }
+  const inRange = (v, lo, hi) => typeof v === 'number' && Number.isFinite(v) && v >= lo && v <= hi;
+  check('bortle', (v) => Number.isInteger(v) && inRange(v, 1, 9));
+  check('minAlt', (v) => v === null || inRange(v, 0, 90));
+  check('edge', (v) => inRange(v, 0, 300));
+  check('minVis', (v) => inRange(v, 0, 100));
+  check('sizeUnit', (v) => ['arcmin', 'arcsec', 'deg'].includes(v));
+  const id = (v) => typeof v === 'string' && /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(v);
+  check('activeSiteId', (v) => v === null || v === '' || id(v));
+  check('activeRigId', (v) => v === null || v === '' || id(v));
+  if (out.activeRigId === null) out.activeRigId = ''; // older no-rig convention
+  check('tz', (v) => {
+    if (v === null || v === '' || v === 'auto') return true;
+    if (typeof v !== 'string' || v.length > 100) return false;
+    try { new Intl.DateTimeFormat('en', { timeZone: v }); return true; } catch { return false; }
+  });
+  if (out.tz === null || out.tz === 'auto') out.tz = '';
+  check('savedTargetIds', Array.isArray);
+  if (Array.isArray(source.savedTargetIds)) {
+    out.savedTargetIds = [...new Set(source.savedTargetIds.filter((id) =>
       typeof id === 'string' && /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(id)))].slice(0, 2000);
-  } else delete out.savedTargetIds;
+  }
   return out;
 }
+
+function cleanWebPrefs(value) { return normalizeWebPrefs(value, { strict: true }); }
 
 /** Validate a backup into staged records WITHOUT touching storage.
  *  Throws on a malformed / foreign / too-new backup, so nothing is destroyed
@@ -400,7 +458,7 @@ export function stageBackup(data) {
     throw new Error('not a NightSeam Web backup');
   }
   const v = data.version == null ? 1 : Number(data.version);
-  if (!Number.isFinite(v) || v < 1) {
+  if (!Number.isInteger(v) || v < 1) {
     throw new Error('backup has an unusable version stamp');
   }
   if (v > BUNDLE_VERSION) {
@@ -433,11 +491,31 @@ export function stageBackup(data) {
     throw new Error('backup panorama section is not a list of panoramas');
   }
   const panos = data.panos;
+  const records = (key, clean) => {
+    // Legacy exports could omit empty sections; a present section of the
+    // wrong type must never be converted into a destructive empty array.
+    if (data[key] == null) return [];
+    if (!Array.isArray(data[key])) throw new Error(`backup ${key} must be a list`);
+    return data[key].map(clean).filter(Boolean);
+  };
+  const targets = records('targets', (target) => {
+    if (!target || typeof target.id !== 'string' || !/^u_[A-Za-z0-9_-]{1,62}$/.test(target.id)) {
+      throw new Error('backup custom target has an invalid id (expected u_...)');
+    }
+    const clean = targetOf(target);
+    if (!clean || clean.ra_hours < 0 || clean.ra_hours >= 24 || clean.dec_deg < -90 || clean.dec_deg > 90) {
+      throw new Error('backup custom target has invalid coordinates');
+    }
+    return clean;
+  });
+  if (new Set(targets.map((target) => target.id)).size !== targets.length) {
+    throw new Error('backup contains duplicate custom target ids');
+  }
   return {
-    sites: (Array.isArray(data.sites) ? data.sites : []).map(siteOf).filter(Boolean),
-    rigs: (Array.isArray(data.rigs) ? data.rigs : []).map(rigOf).filter(Boolean),
-    targets: (Array.isArray(data.targets) ? data.targets : []).map(targetOf).filter(Boolean),
-    prefs: (data.prefs && typeof data.prefs === 'object') ? cleanWebPrefs(data.prefs) : null,
+    sites: records('sites', siteOf),
+    rigs: records('rigs', rigOf),
+    targets,
+    prefs: cleanWebPrefs(data.prefs),
     panos,
     // Keep unknown values out of localStorage. The old flat names are safe
     // aliases and are staged under the new canonical default name.
@@ -445,27 +523,18 @@ export function stageBackup(data) {
   };
 }
 
-/** Write the staged site/rig/target records, clearing the other records first.
- *  Throws if ANY individual write fails (storage full / unavailable), so a
- *  caller can roll back instead of silently losing records. */
-export async function writeStaged(staged) {
-  // WE-03 (0.6.32 review): the clear results used to be discarded, so a failed
-  // clear() with successful puts reported SUCCESS and silently merged the old
-  // records into the restored ones (probe: sites=["evil","keep"]). Treat a
-  // failed clear as a failed restore so the caller's rollback engages.
-  const clears = await Promise.all(
-    STORES.filter((s) => s !== 'meta').map((s) => clearStore(s)));
-  if (clears.some((ok) => ok === false)) {
-    throw new Error('could not clear the previous records (storage full or unavailable)');
-  }
-  const jobs = [];
-  for (const rec of staged.sites) jobs.push(set('sites', rec.id, rec));
-  for (const rec of staged.rigs) jobs.push(set('rigs', rec.id, rec));
-  for (const rec of staged.targets) jobs.push(set('targets', rec.id, rec));
-  const results = await Promise.all(jobs);
-  if (results.some((ok) => ok === false)) {
-    throw new Error('could not write all records (storage full or unavailable)');
-  }
+/** Replace records and their optional safety snapshot atomically. A request
+ *  or commit failure aborts every clear/put and preserves previous data. */
+export async function writeStaged(staged, safety = null) {
+  const records = STORES.filter((store) => store !== 'meta');
+  await commitWrite(safety ? STORES : records, (transaction) => {
+    if (safety) transaction.objectStore('meta').put(safety, 'safety');
+    for (const name of records) {
+      const store = transaction.objectStore(name);
+      store.clear();
+      for (const record of staged[name]) store.put(record, record.id);
+    }
+  });
 }
 
 /** The last pre-restore safety snapshot, or null. */
@@ -473,27 +542,15 @@ export function lastSafetySnapshot() { return get('meta', 'safety'); }
 
 /** Replace the browser's site/rig/target records from a validated backup.
  *
- *  `current` is a full snapshot of the CURRENT state. It is persisted to the
- *  `meta`/`safety` slot BEFORE any destructive write and re-applied if a write
- *  fails, so a failed restore never leaves a half-destroyed installation.
+ *  `current` is a full snapshot of the CURRENT state. Its safety record and
+ *  the replacement commit together; a failed transaction preserves all old
+ *  records and metadata without a second destructive rollback transaction.
  *  Returns the staged records (including prefs/panos/theme) for the caller to
  *  apply to localStorage / IndexedDB. */
 export async function restoreBackup(data, current) {
   const staged = stageBackup(data);          // validate FIRST - no writes yet
-  if (current) {
-    const safetyOk = await set('meta', 'safety', current);
-    if (!safetyOk) {
-      throw new Error('could not store the safety snapshot; restore was not started');
-    }
-  }
-  try {
-    await writeStaged(staged);
-  } catch (err) {
-    if (current) {
-      try { await writeStaged(stageBackup(current)); } catch { /* keep original error */ }
-    }
-    throw err;
-  }
+  if (current) stageBackup(current);         // safety must be usable too
+  await writeStaged(staged, current);
   return staged;
 }
 

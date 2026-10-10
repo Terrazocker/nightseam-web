@@ -51,9 +51,9 @@ which rewrites the generated block below; commit the script with that change.
 `python scripts/check_js_tokens.py --self-test` pins the two behaviours the
 repair review demanded (the 0.6.25 shape and CRLF normalization).
 
-Only web/ modules (and the generated `web/core.js` stub, whose token lives in
-`web/app.js`) carry cache tokens. The historic desktop was loaded by the
-pywebview shell.
+All web/ and landing/ HTML roots share one recursively discovered JS/CSS graph.
+Every incoming reference must agree on a token; missing and unversioned mutable
+dependencies fail. Generated hashed core modules remain immutable and untokened.
 
 Usage: python scripts/check_js_tokens.py [--update] [--self-test]
 """
@@ -70,6 +70,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 WEB = ROOT / "web"
+sys.path.insert(0, str(ROOT))
 CORE = ROOT / "core"
 SELF = Path(__file__).resolve()
 
@@ -91,33 +92,37 @@ _BASELINE_END = "# --- END GENERATED VERIFIED BASELINE ---"
 _VERIFIED_BASELINE_JSON = r"""
 {
  "modules": {
+  "../landing/style.css": {
+   "sha256": "39f6feba49cce2224238953b462ef35a139f5d35f193f85f7f86c464ce1205da",
+   "token": "4"
+  },
   "app.js": {
-   "sha256": "ae7767f641095c1c3e2dde0c577c18b91f8d7f36cf8eba8d61ce6497275551ec",
-   "token": "164"
+   "sha256": "9c01fde13206148f1340e700c4f16f2f7e80ac0fe1efe82e4b88010fb5126307",
+   "token": "171"
   },
   "astro.js": {
-   "sha256": "60240d9dc9cea3a72b0a68e2927321ffc77d53700d36078b5ae46615048a1882",
-   "token": "31"
+   "sha256": "bf25b29ee6532782e769cfbed42f8374ef1e9024da979cdb0bdb62c5a5cb0a64",
+   "token": "33"
   },
   "core.js": {
-   "sha256": "4b22686bc8c51ed425701cc5b997892b82c3603bb9429e20732851a7f95dad7b",
-   "token": "45"
+   "sha256": "79090e2a82406ea1925844352a247d5839552d75653737872f1684369a064c88",
+   "token": "47"
   },
   "format.js": {
-   "sha256": "a4b95b0d672e52669858d6b01092056cbc5a2525a8554922587db4e68a86336f",
-   "token": "38"
+   "sha256": "19d10a66787ec4a4e526f45df4b7cdc368bf8f131750a5a1232da13aff24196b",
+   "token": "40"
   },
   "horizon.js": {
-   "sha256": "3e40b3e263eedc4a6fdb0efe8215eab5d3d0f1a3861761633c64a189558aa5de",
-   "token": "75"
+   "sha256": "9e873578d7d5a58c8e65b4667c9bee8f89c567438bd09e66fa91d5f041863f6b",
+   "token": "81"
   },
   "imagecredits.js": {
    "sha256": "8c8b650a0ad6ef6462eea251b67642103cb0eb9010c1f9dde09fce2ba7fa8952",
    "token": "2"
   },
   "nightrank.js": {
-   "sha256": "b7d07b9d0cfd0ace51e6998d5f6ddde759d41cac204bd2f207a22912a0cf1008",
-   "token": "30"
+   "sha256": "0849c8d470dea767bc3670c3de670d55b19f2ab9fbc336499c5245b66dacf29f",
+   "token": "32"
   },
   "style.css": {
    "sha256": "8f6cd914a83880cf25362882e33224a35f4d7def9739841a976db143a42da33c",
@@ -132,8 +137,8 @@ _VERIFIED_BASELINE_JSON = r"""
    "token": "6"
   },
   "webstore.js": {
-   "sha256": "6074951b6c59b7a6495ae51bccb9f1b9d0767d644ca4a2ffa708a09237c64e38",
-   "token": "42"
+   "sha256": "8c9cfde461331df4bebcdc519741321cb803b99ea84943690aa39f555b03cbb6",
+   "token": "47"
   }
  }
 }
@@ -172,60 +177,24 @@ class WebTree:
         return {name: _sha(data) for name, data in self.contents.items()}
 
 
-def _collect_tokens(index: str | None, app: str | None,
-                    read) -> dict[str, str]:
-    """{relative module path -> declared cache token}.
-
-    `read` resolves a module name to its bytes (None when it does not exist) so
-    the same parser works for the working tree and for a git ref."""
-    tokens: dict[str, str] = {}
-    if index:
-        for ref, tok in _HTML_TOKEN_RE.findall(index):
-            tokens[ref.lstrip("./")] = tok
-        m = _APP_TOKEN_RE.search(index)
-        if m:
-            tokens["app.js"] = m.group(1)
-    if app:
-        for ref, tok in _IMPORT_TOKEN_RE.findall(app):
-            name = ref[2:].lstrip("./")         # './astro.js' -> 'astro.js'
-            if name in tokens and tokens[name] != tok:
-                # one module, two tokens - the loader would serve two versions
-                tokens[name] = f"{tokens[name]}/{tok}"
-            else:
-                tokens.setdefault(name, tok)
-    return tokens
-
-
 def load_web_modules(web: Path) -> WebTree:
-    """The live web tree at `web`."""
-    tokens = _collect_tokens(_read_web_file(web, "index.html"),
-                             _read_web_file(web, "app.js"),
-                             lambda n: (web / n).read_bytes()
-                             if (web / n).is_file() else None)
-    contents: dict[str, bytes] = {}
-    problems: list[str] = []
-    for name in sorted(tokens):
-        p = web / name
-        if not p.is_file():
-            problems.append(f"web/{name} is referenced with a cache token but "
-                            f"does not exist")
-            continue
-        contents[name] = p.read_bytes()
-    return WebTree(tokens, contents, problems)
+    try:
+        from .web_asset_graph import live_graph
+    except ImportError:
+        from scripts.web_asset_graph import live_graph
+    graph = live_graph(web.parent)
+    return WebTree(graph.tokens, graph.contents, graph.problems)
 
 
 def describe_modules_from_git(ref: str) -> WebTree:
-    """The same view of the web tree as it exists at git ref `ref`."""
-    tokens = _collect_tokens(
-        _decode(_git_show(ref, "web/index.html")),
-        _decode(_git_show(ref, "web/app.js")),
-        lambda n: _git_show(ref, f"web/{n}"))
-    contents: dict[str, bytes] = {}
-    for name in sorted(tokens):
-        data = _git_show(ref, f"web/{name}")
-        if data is not None:
-            contents[name] = data
-    return WebTree(tokens, contents)
+    try:
+        from .web_asset_graph import Graph
+    except ImportError:
+        from scripts.web_asset_graph import Graph
+    names = _git_bytes(["ls-tree", "-r", "--name-only", ref, "--", "web", "landing"])
+    roots = [name for name in (names or b"").decode().splitlines() if name.endswith('.html')]
+    graph = Graph(roots, lambda name: _git_show(ref, name))
+    return WebTree(graph.tokens, graph.contents, graph.problems)
 
 
 def find_missed_bumps(baseline_tokens: dict, baseline_hashes: dict,
@@ -340,7 +309,7 @@ def update_refusals(cur: WebTree,
     reproduced. Refresh only the rows whose token actually moved."""
     base = load_baseline() if baseline is None else baseline
     tokens, hashes = _baseline_maps(base)
-    return find_missed_bumps(tokens, hashes, cur, "the verified baseline")
+    return list(cur.problems) + find_missed_bumps(tokens, hashes, cur, "the verified baseline")
 
 
 def refreshed_rows(cur: WebTree, baseline: dict[str, dict]) -> dict[str, dict]:

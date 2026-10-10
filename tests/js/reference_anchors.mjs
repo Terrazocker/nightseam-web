@@ -470,6 +470,113 @@ check("moon_erfa_position", () => {
   near(dec, -27.958, 0.6, "moon Dec");
 });
 
+// Independent PyEphem 4.2.1 / libastro evaluation; J2000 a_ra/a_dec,
+// geocentric earth_distance (AU * IAU 149597870.7 km), observer elevation=0,
+// pressure=0. These numbers were evaluated separately, never from this core.
+const lunarReferences = [
+  {
+    "iso": "2026-05-21T12:00:00Z",
+    "lat": 52.52,
+    "lon": 13.4,
+    "ra": 128.06573463543458,
+    "dec": 21.386044805463484,
+    "distance": 370232.4013254121,
+    "alt": 36.510933302654074,
+    "az": 104.07278083639987
+  },
+  {
+    "iso": "2026-10-05T14:53:00Z",
+    "lat": 52.52,
+    "lon": 13.4,
+    "ra": 131.8364220517653,
+    "dec": 19.7177135991534,
+    "distance": 372977.464785783,
+    "alt": -1.4946877553926197,
+    "az": 304.3078496389226
+  },
+  {
+    "iso": "2026-01-03T12:00:00Z",
+    "lat": -33.9,
+    "lon": 151.2,
+    "ra": 105.56071436575154,
+    "dec": 26.914075002244548,
+    "distance": 362527.6865949249,
+    "alt": 21.282797736773446,
+    "az": 30.363339577914054
+  },
+  {
+    "iso": "2026-03-15T00:00:00Z",
+    "lat": 0,
+    "lon": 0,
+    "ra": 307.30128840143675,
+    "dec": -22.094534998345626,
+    "distance": 392596.21679292264,
+    "alt": -41.720926469458924,
+    "az": 119.78268038029276
+  },
+  {
+    "iso": "2026-07-01T12:00:00Z",
+    "lat": 78.22,
+    "lon": 15.65,
+    "ra": 298.4199055692424,
+    "dec": -23.828335162627685,
+    "distance": 402821.3004058304,
+    "alt": -36.24158479273462,
+    "az": 355.9386429336397
+  },
+  {
+    "iso": "2026-08-22T23:00:00Z",
+    "lat": 34.05,
+    "lon": -118.24,
+    "ra": 270.7035966542347,
+    "dec": -27.957625950662962,
+    "distance": 404423.76877472916,
+    "alt": -3.75436801032748,
+    "az": 122.19560862913984
+  },
+  {
+    "iso": "2026-11-30T06:00:00Z",
+    "lat": -60,
+    "lon": -70,
+    "ra": 147.13698484460818,
+    "dec": 13.103811982950646,
+    "distance": 372725.70654528914,
+    "alt": 2.5205690419587237,
+    "az": 56.232903040485375
+  },
+  {
+    "iso": "2026-11-26T12:00:00Z",
+    "lat": 52.52,
+    "lon": 13.4,
+    "ra": 90.38603106928066,
+    "dec": 27.464507098322102,
+    "distance": 359689.624448594,
+    "alt": -10.328837459135892,
+    "az": 349.2458225282142
+  }
+];
+check('moon_independent_series', () => {
+  for (const r of lunarReferences) {
+    const jd = C.julianDay(new Date(r.iso));
+    const [ra, dec] = C.moonRaDec(jd);
+    near(sepDeg(ra, dec, r.ra, r.dec), 0, 0.12, r.iso + ' lunar separation');
+  }
+});
+check('moon_independent_distance', () => {
+  for (const r of lunarReferences) {
+    near(C.moonDistanceKm(C.julianDay(new Date(r.iso))), r.distance, 350, r.iso + ' distance km');
+  }
+});
+check('moon_independent_topocentric', () => {
+  for (const r of lunarReferences) {
+    const jd = C.julianDay(new Date(r.iso));
+    const [alt, az] = C.moonAltAz(jd, r.lat, r.lon, false);
+    near(sepDeg(az, alt, r.az, r.alt), 0, 0.12, r.iso + ' topocentric separation');
+    const apparent = C.moonAltAz(jd, r.lat, r.lon)[0];
+    near(apparent, alt + C.refractionDeg(alt), 1e-9, 'single refraction');
+  }
+});
+
 const failed = checks.filter((c) => !c.ok).length;
 process.stdout.write(JSON.stringify({ checks, failed }));
 process.exit(failed ? 1 : 0);

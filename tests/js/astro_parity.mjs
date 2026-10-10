@@ -283,10 +283,19 @@ if (engine === "size") {
     return {web: w ? {ok: w.ok, text: w.text} : null};
   })));
 } else if (engine === "minalt") {
+  // Preference changes now require committed browser storage. Model that
+  // dependency so this parity check exercises the live threshold after saves.
+  const stored = new Map();
+  globalThis.localStorage = {
+    getItem: (key) => stored.get(key) ?? null,
+    setItem: (key, value) => stored.set(key, String(value)),
+  };
   const C = await import(new URL("../../core/visibility.js", import.meta.url).href);
   const H = await import(new URL("../../web/horizon.js", import.meta.url).href);
   process.stdout.write(JSON.stringify(cases.map(c => {
-    H.setPrefs({minAlt: c.explicit ? c.value : null, bortle: c.bortle});
+    if (!H.setPrefs({minAlt: c.explicit ? c.value : null, bortle: c.bortle})) {
+      throw new Error('parity fixture could not persist preferences');
+    }
     return {core: C.effectiveMinAlt(c.bortle, c.explicit ? c.value : null), web: H.effectiveMinAlt()};
   })));
 } else if (engine === "shortcut") {

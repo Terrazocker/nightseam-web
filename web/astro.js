@@ -27,15 +27,15 @@ const JD_UNIX_EPOCH = 2440587.5;
 import {
   julianDay, dateFromJD, gmstDeg, precessJ2000ToDate, precessDateToJ2000,
   refractionDeg, altaz,
-  sunRaDec, moonRaDec, moonIllumination, moonAge, sunAlt,
+  sunRaDec, moonRaDec, moonAltAz, objectDayInfo, moonIllumination, moonAge, sunAlt,
   sunCrossings, nightInfo, pickDarkWindow, scrubWindowMs,
   scrubBounds, scrubClamp, sepDeg,
-} from './core.js?v=45';
+} from './core.js?v=47';
 
 export {
   julianDay, dateFromJD, gmstDeg, precessJ2000ToDate, precessDateToJ2000,
   refractionDeg, altaz,
-  sunRaDec, moonRaDec, moonIllumination, moonAge, sunAlt,
+  sunRaDec, moonRaDec, moonAltAz, objectDayInfo, moonIllumination, moonAge, sunAlt,
   sunCrossings, nightInfo, pickDarkWindow, scrubWindowMs,
   scrubBounds, scrubClamp, sepDeg,
 };
@@ -50,7 +50,7 @@ export {
  * target) is a different question and does NOT belong here.
  */
 /** Apparent-altitude visibility predicate - shared in core/ (Phase 2). */
-export { aboveHorizon } from './core.js?v=45';
+export { aboveHorizon } from './core.js?v=47';
 
 /** Sun/moon elongation angle in degrees and phase label. */
 export function moonPhase(jd) {
@@ -82,11 +82,6 @@ export function sunAltAz(jd, lat, lon) {
   return altaz(ra, dec, jd, lat, lon);
 }
 
-export function moonAltAz(jd, lat, lon) {
-  const [ra, dec] = moonRaDec(jd);
-  return altaz(ra, dec, jd, lat, lon);
-}
-
 /* ---------------- moon-aware scoring model (desktop parity) ----------------
    The same constants and curves as static/js/derive.js. Both files export them
    so tests/test_js_parity.py can feed one input grid to both implementations
@@ -99,7 +94,7 @@ export function moonAltAz(jd, lat, lon) {
 export {
   MOON_TYPE_FACTOR, moonSensitivity, moonMinDist,
   effectiveMoonGlow, moonPenalty, bortleMoonFactor,
-} from './core.js?v=45';
+} from './core.js?v=47';
 
 /** Sample an object's altitude over [jd0, jd1] at stepMin minutes. */
 export function objectTrack(raDeg, decDeg, jd0, jd1, lat, lon, stepMin = 4) {
@@ -112,35 +107,6 @@ export function objectTrack(raDeg, decDeg, jd0, jd1, lat, lon, stepMin = 4) {
     out.push({ jd, alt, az });
   }
   return { track: out, stepMin, start: jd0, end: jd1 };
-}
-
-/** Rise / transit / set + max altitude for an object over the local night.
- *  dayStartUTC should be the local-midnight instant (as Date, UTC-rendered) of the date of interest.
- *  Rise/set are searched over 24 h (midnight-12h .. midnight+12h) at 2-minute steps,
- *  transit/max-alt are restricted to the target calendar day (midnight .. midnight+24h)
- *  to avoid picking the next night. */
-export function objectDayInfo(raDeg, decDeg, dayStartUTC, lat, lon) {
-  const jdMidnight = julianDay(dayStartUTC);
-  const jd0 = jdMidnight - 0.5;
-  const N = 720; // 2-min steps over 24 h
-  let prev = null, maxAlt = -90, maxJd = jdMidnight;
-  let rise = null, set = null;
-  for (let i = 0; i <= N; i++) {
-    const jd = jd0 + i / N;
-    const alt = altaz(raDeg, decDeg, jd, lat, lon)[0];
-    if (jd >= jdMidnight && jd < jdMidnight + 1 && alt > maxAlt) { maxAlt = alt; maxJd = jd; }
-    if (prev !== null) {
-      const s1 = Math.sign(prev), s2 = Math.sign(alt);
-      if (s1 !== s2 && s1 !== 0) {
-        const f = prev / (prev - alt);
-        const jdX = jd0 + (i - 1 + f) / N;
-        const dt = dateFromJD(jdX);
-        if (s2 > 0) { if (!rise) rise = dt; } else { if (!set) set = dt; }
-      }
-    }
-    prev = alt;
-  }
-  return { rise, set, transit: dateFromJD(maxJd), maxAlt };
 }
 
 /* ---------------------------- formatting ---------------------------- */

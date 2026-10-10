@@ -39,60 +39,97 @@ const ensure = (n) => { if (!_stores.has(n)) _stores.set(n, new Map()); };
 const req = () => ({ onsuccess: null, onerror: null, result: null, error: null });
 const micro = (fn) => queueMicrotask(fn);
 
+// A request's success must precede transaction completion. Drafts become
+// visible only at commit; injected failures and aborts discard every write.
+const takeFailure = (name, store) => {
+  const counters = globalThis[name];
+  if (!(counters && counters[store] > 0)) return false;
+  counters[store]--;
+  return true;
+};
+function transaction(names, mode = 'readonly') {
+  const stores = Array.isArray(names) ? names : [names];
+  const drafts = new Map(stores.map((name) => [name,
+    new Map([...(_stores.get(name) || [])].map(([key, value]) => [key, structuredClone(value)]))]));
+  let pending = 0, active = true;
+  const tx = {
+    error: null, oncomplete: null, onabort: null, onerror: null,
+    abort() {
+      if (!active) return;
+      active = false;
+      micro(() => tx.onabort && tx.onabort());
+    },
+    objectStore(name = stores[0]) {
+      if (!drafts.has(name)) throw new Error('store not in transaction');
+      const draft = drafts.get(name);
+      const fail = (r, message) => {
+        tx.error = r.error = new Error(message);
+        r.onerror && r.onerror();
+        tx.onerror && tx.onerror({ target: r });
+        tx.abort();
+      };
+      const complete = () => micro(() => {
+        if (!active || pending) return;
+        if (mode === 'readwrite') {
+          for (const [key, values] of drafts) _stores.set(key, values);
+        }
+        active = false;
+        tx.oncomplete && tx.oncomplete();
+      });
+      const request = (fn, failureName) => {
+        const r = req(); pending++;
+        micro(() => {
+          if (!active) return;
+          if (failureName && takeFailure(failureName, name)) { fail(r, 'injected request failure'); return; }
+          r.result = fn();
+          r.onsuccess && r.onsuccess();
+          pending--;
+          if (takeFailure('__idbAbortAfterSuccess', name)) { tx.abort(); return; }
+          complete();
+        });
+        return r;
+      };
+      return {
+        get: (key) => request(() => draft.get(key) ?? null, '__idbFailReadCount'),
+        count: () => request(() => draft.size, '__idbFailReadCount'),
+        put: (value, key) => request(() => { draft.set(key, structuredClone(value)); return key; }, '__idbFailPutCount'),
+        delete: (key) => request(() => { draft.delete(key); return undefined; }, '__idbFailDeleteCount'),
+        clear: () => request(() => { draft.clear(); return undefined; }),
+        openCursor() {
+          const r = req(); pending++;
+          const entries = [...draft.entries()].sort(([a], [b]) => String(a).localeCompare(String(b)));
+          let i = 0, started = false;
+          const step = () => {
+            if (!active) return;
+            if (!started && takeFailure('__idbFailReadCount', name)) { fail(r, 'injected cursor failure'); return; }
+            started = true;
+            if (i < entries.length) {
+              const [key, value] = entries[i++];
+              r.result = { key, value, continue: () => micro(step) };
+              r.onsuccess && r.onsuccess();
+              if (takeFailure('__idbAbortAfterSuccess', name)) tx.abort();
+            } else {
+              r.result = null; r.onsuccess && r.onsuccess();
+              pending--; complete();
+            }
+          };
+          micro(step);
+          return r;
+        },
+      };
+    },
+  };
+  return tx;
+}
 globalThis.indexedDB = {
   open() {
     const rq = req();
     micro(() => {
-      const db = {
+      rq.result = {
         objectStoreNames: { contains: (n) => _stores.has(n) },
         createObjectStore: (n) => { ensure(n); return {}; },
-        transaction: (name) => ({
-          objectStore: () => ({
-            get(key) {
-              const r = req();
-              micro(() => { const s = _stores.get(name); r.result = s && s.has(key) ? s.get(key) : null; r.onsuccess && r.onsuccess(); });
-              return r;
-            },
-            put(val, key) {
-              const r = req();
-              micro(() => {
-                const fc = globalThis.__idbFailPutCount && globalThis.__idbFailPutCount[name];
-                if (fc > 0) { globalThis.__idbFailPutCount[name] = fc - 1; r.onerror && r.onerror(); return; }
-                ensure(name); _stores.get(name).set(key, val);
-                r.result = key; r.onsuccess && r.onsuccess();
-              });
-              return r;
-            },
-            delete(key) {
-              const r = req();
-              micro(() => { const s = _stores.get(name); if (s) s.delete(key); r.onsuccess && r.onsuccess(); });
-              return r;
-            },
-            clear() {
-              const r = req();
-              micro(() => { ensure(name); _stores.get(name).clear(); r.onsuccess && r.onsuccess(); });
-              return r;
-            },
-            openCursor() {
-              const r = req();
-              micro(() => {
-                const entries = [...(_stores.get(name) || new Map()).entries()];
-                let i = 0;
-                const step = () => {
-                  if (i < entries.length) {
-                    const [key, value] = entries[i++];
-                    r.result = { key, value, continue: step };
-                    r.onsuccess && r.onsuccess();
-                  } else { r.result = null; r.onsuccess && r.onsuccess(); }
-                };
-                step();
-              });
-              return r;
-            },
-          }),
-        }),
+        transaction, close() {},
       };
-      rq.result = db;
       if (rq.onupgradeneeded) rq.onupgradeneeded();
       rq.onsuccess && rq.onsuccess();
     });
@@ -154,14 +191,14 @@ assert(WS.stageBackup({ app: 'nightseam-web', theme: 'weird', panos: emptyPanos 
   'unknown theme value must normalize to workbench');
 
 /* 4. exportPanosWithImages -> normalize round trip (image survives) ------ */
-H.applyPanosSnapshot({
+await H.applyPanosSnapshot({
   panos: [panoRec({ hasImage: true, image: DATAURL })],
   activeId: 'p1',
 });
 const exported = await H.exportPanosWithImages();
 assert(exported.panos[0].hasImage === true, 'export keeps hasImage when the photo exists');
 assert(typeof exported.panos[0].image === 'string', 'export embeds the photo as a data URL');
-H.applyPanosSnapshot(H.normalizePanos(exported));
+await H.applyPanosSnapshot(H.normalizePanos(exported));
 assert(H.activePano().hasImage === true, 'round-tripped pano still has its image');
 
 /* 5. collectBackup + restore round trip --------------------------------- */
@@ -172,7 +209,7 @@ await WS.writeStaged(WS.stageBackup({
   targets: [], panos: emptyPanos,
 }));
 const backup = await WS.collectBackup({ bortle: 6 }, { panos: [], activeId: null }, 'classic');
-assert(backup.app === 'nightseam-web' && backup.version === 2, 'backup carries schema version 2');
+assert(backup.app === 'nightseam-web' && backup.version === 3, 'backup carries schema version 3 for elliptical crops');
 assert(backup.theme === 'workbench', 'collectBackup carries the canonical theme');
 assert(backup.sites.length === 1 && backup.rigs.length === 1, 'collectBackup reads the stores');
 
@@ -291,7 +328,7 @@ const legacyCrop = H.normalizePanos({ panos: [panoRec({
 assert(legacyCrop.profileBins === 'world', 'legacy crop record migrated to world bins');
 H.cropPano(legacyCrop, { x: 180, w: 360 }, 720);   // keep az 135..225 -> fov 90, az 135
 assert(legacyCrop.fov === 90 && legacyCrop.azOffset === 135, 'legacy crop calibration');
-H.applyPanosSnapshot({ panos: [JSON.parse(JSON.stringify(legacyCrop))],
+await H.applyPanosSnapshot({ panos: [JSON.parse(JSON.stringify(legacyCrop))],
                        activeId: legacyCrop.id });
 const exportedCrop = H.exportPanos();
 const reimported = H.normalizePanos(exportedCrop).panos.find((x) => x.id === 'legacy-crop');
@@ -310,7 +347,7 @@ assert(JSON.stringify(reimported.profileTop) === JSON.stringify(legacyCrop.profi
  * still restore, and the stamp must never be a crash of its own. */
 const good = { app: 'nightseam-web', version: 2, sites: [], rigs: [], targets: [],
                prefs: {}, panos: { panos: [], activeId: null } };
-assert(WS.stageBackup(good), 'a current-format bundle must still stage');
+assert(WS.stageBackup(good), 'a v2 bundle must remain readable');
 const savedPrefs = WS.stageBackup({ ...good, theme: 'dome', prefs: {
   savedTargetIds: ['ngc224', 'u_capture', 'ngc224', 'bad/id', ' <img> '],
   skyBrightnessProvider: 'nasa', theme: 'dome', themeVariant: 'glass',
@@ -341,6 +378,135 @@ for (const bad of ['abc', -1, 0, {}]) {
 let foreignErr = null;
 try { WS.stageBackup({ ...good, app: 'something-else' }); } catch (e) { foreignErr = e; }
 assert(foreignErr, 'a foreign bundle must still be refused');
+
+/* Phase-1 review: commit/abort, strict snapshots and input validation. */
+const beforeInvalidPhoto = JSON.stringify(H.exportPanos());
+for (const image of ['data:text/html;base64,eA==', 'data:image/png;base64,!!!', 'data:image/png;base64,']) {
+  const malformed = { panos: [panoRec({ image })], activeId: 'p1' };
+  assert(H.normalizePanos(malformed) === null, 'malformed embedded image must fail normalization');
+  assert(await H.importPanos(malformed) === false, 'malformed image import must fail');
+  assert(JSON.stringify(H.exportPanos()) === beforeInvalidPhoto,
+    'malformed image import must not alter the current panorama state');
+}
+const mustReject = async (operation, message) => {
+  let rejected = false;
+  try { await operation(); } catch { rejected = true; }
+  assert(rejected, message);
+};
+const original = { ...good,
+  sites: [{ id: 's_original', name: 'Original site', lat: 52, lon: 13 }],
+  rigs: [{ id: 'r_original', name: 'Original rig', focal_mm: 250 }],
+  targets: [{ id: 'u_original', primary_name: 'Original target', ra_hours: 5, dec_deg: 22 }],
+};
+await WS.writeStaged(WS.stageBackup(original));
+const current = await WS.collectBackup({}, emptyPanos);
+const unchanged = async (message) => {
+  const state = await WS.collectBackup({}, emptyPanos);
+  assert(JSON.stringify([state.sites, state.rigs, state.targets]) ===
+    JSON.stringify([current.sites, current.rigs, current.targets]), message);
+};
+
+globalThis.__idbAbortAfterSuccess = { targets: 1 };
+assert(await WS.saveTargetRec({ id: 'u_uncommitted', ra_hours: 1, dec_deg: 2 }) === false,
+  'a successful put request followed by transaction abort must return false');
+assert(await WS.get('targets', 'u_uncommitted') === null, 'aborted put must not persist');
+globalThis.__idbAbortAfterSuccess = { targets: 1 };
+assert(await WS.deleteTargetRec('u_original') === false, 'aborted delete must return false');
+globalThis.__idbAbortAfterSuccess = { targets: 1 };
+assert(await WS.clearStore('targets') === false, 'aborted clear must return false');
+await unchanged('aborted put/delete/clear preserve stored records');
+
+await WS.set('meta', 'safety', { marker: 'prior-safety' });
+const replacement = { ...good,
+  sites: [{ id: 's_replacement', name: 'New site', lat: 1, lon: 2 }],
+  rigs: [{ id: 'r_replacement', name: 'New rig', focal_mm: 100 }],
+  targets: [{ id: 'u_replacement', primary_name: 'New target', ra_hours: 1, dec_deg: 2 }],
+};
+for (const fault of ['__idbFailPutCount', '__idbAbortAfterSuccess']) {
+  globalThis[fault] = { rigs: 1 };
+  await mustReject(() => WS.restoreBackup(replacement, current), `${fault} must reject restoration`);
+  await unchanged(`${fault} must preserve all three record stores atomically`);
+  assert((await WS.lastSafetySnapshot()).marker === 'prior-safety',
+    `${fault} must preserve prior safety metadata too`);
+}
+
+globalThis.__idbFailReadCount = { sites: 1 };
+await mustReject(() => WS.collectBackup({}, emptyPanos), 'a failed snapshot read must abort backup collection');
+await unchanged('failed snapshot collection must not mutate records');
+for (const [store, read] of [['sites', WS.getSites], ['rigs', WS.getRigs], ['targets', WS.getTargets]]) {
+  globalThis.__idbFailReadCount = { [store]: 1 };
+  await mustReject(() => read({ strict: true }), `strict ${store} reread must surface failure`);
+}
+globalThis.__idbFailReadCount = { sites: 1 };
+assert((await WS.getSites()).length === 0, 'ordinary boot reads retain graceful degradation');
+
+const preset = WS.DEFAULT_RIGS[0];
+await WS.saveRigRec({ ...preset });
+globalThis.__idbFailDeleteCount = { rigs: 1 };
+await mustReject(() => WS.removeSeededRigs(), 'failed preset cleanup must not report removed ids');
+assert((await WS.getRigs()).some((rig) => rig.id === preset.id), 'failed cleanup preserves the preset');
+await WS.deleteRigRec(preset.id);
+
+for (const malformed of [
+  { minAlt: '30' }, { minAlt: {} }, { bortle: 20 }, { edge: -1 }, { minVis: Infinity },
+  { moonAware: 'false' }, { weatherAuto: 1 }, { sizeUnit: 'pixels' },
+  { savedTargetIds: 'u_original' }, { activeRigId: {} }, { tz: 'Invalid/Zone' },
+]) {
+  await mustReject(() => WS.restoreBackup({ ...replacement, prefs: malformed }, current),
+    `malformed settings must be rejected: ${JSON.stringify(malformed)}`);
+  await unchanged('malformed settings must be rejected before mutation');
+}
+for (const shape of [[], 'settings']) {
+  await mustReject(() => WS.stageBackup({ ...good, prefs: shape }), 'settings outer shape must be an object');
+}
+const legacyDefaults = WS.stageBackup({ app: 'nightseam-web', panos: emptyPanos }).prefs;
+assert(legacyDefaults.minAlt === null && legacyDefaults.minVis === 1 && legacyDefaults.weatherAuto === false &&
+  legacyDefaults.savedTargetIds.length === 0, 'omitted legacy preferences acquire complete defaults');
+assert(WS.normalizeWebPrefs({ minAlt: '30', moonAware: 'false' }).minAlt === null &&
+  WS.normalizeWebPrefs({ minAlt: '30', moonAware: 'false' }).moonAware === false,
+  'forgiving local settings recovery defaults invalid known values');
+assert(WS.stageBackup({ ...good, prefs: { tz: null, activeRigId: null } }).prefs.tz === '',
+  'legacy null timezone/no-rig values normalize deliberately');
+for (const unit of ['arcmin', 'arcsec', 'deg']) {
+  assert(WS.stageBackup({ ...good, prefs: { sizeUnit: unit } }).prefs.sizeUnit === unit,
+    `supported size unit ${unit} round-trips`);
+}
+
+for (const targets of [
+  [{ id: 'ic342', ra_hours: 1, dec_deg: 2 }],
+  [{ id: 'u_bad/id', ra_hours: 1, dec_deg: 2 }],
+  [{ id: 'u_same', ra_hours: 1, dec_deg: 2 }, { id: 'u_same', ra_hours: 2, dec_deg: 3 }],
+  [{ id: 'u_badra', ra_hours: -0.5, dec_deg: 2 }],
+]) {
+  await mustReject(() => WS.restoreBackup({ ...replacement, targets }, current),
+    'unsafe/duplicate/canonical target ids or invalid coordinates must reject before writes');
+  await unchanged('invalid target restore preserves canonical and custom data');
+}
+for (const text of ['-1 30', '-0 30', '5 34 32 1', '12garbage', '5hgarbage', '5 -30']) {
+  assert(Number.isNaN(WS.parseRA(text)), `invalid RA ${text} must not be silently saved`);
+}
+assert(Math.abs(WS.parseRA('5h34m32s') - (5 + 34 / 60 + 32 / 3600)) < 1e-10,
+  'documented RA letter sexagesimal form remains valid');
+assert(WS.parseRA('5,575') === 5.575 && WS.parseRA('23:59:59') < 24,
+  'decimal comma and colon sexagesimal RA remain valid');
+assert(Math.abs(WS.parseDec('+22 0 60') - (22 + 1 / 60)) < 1e-10 &&
+  Math.abs(WS.parseDec('-26d31m') + (26 + 31 / 60)) < 1e-10,
+  'documented declination carry and negative sexagesimal forms remain valid');
+await WS.restoreBackup(replacement, current);
+assert((await WS.getSites({ strict: true }))[0].id === 's_replacement' &&
+  (await WS.lastSafetySnapshot()).targets[0].id === 'u_original',
+  'successful replacement commits records and the usable safety snapshot together');
+
+// v3 elliptical crop geometry survives staging, storage, export and restore.
+const ellipse = panoRec({ strokes: [{m:'b',x:360,y:180,r:20,rx:80}] });
+const elliptical = H.normalizePanos({panos:[ellipse],activeId:ellipse.id});
+const expectedEllipse = elliptical.panos[0].profile.slice();
+await H.applyPanosSnapshot(elliptical);
+const ellipseBackup = await H.exportPanosWithImages();
+await H.applyPanosSnapshot(H.normalizePanos(ellipseBackup));
+assert(H.activePano().strokes[0].rx === 80, 'backup preserves horizontal radius');
+assert(H.activePano().strokes[0].r === 20, 'backup preserves vertical radius');
+assert(H.activePano().profile.every((v,i)=>v===expectedEllipse[i]), 'backup preserves elliptical profile');
 
 console.log(ok ? 'web backup integrity held' : 'web backup integrity FAILED');
 process.exit(ok ? 0 : 1);

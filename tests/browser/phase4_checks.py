@@ -231,7 +231,7 @@ def advanced_live_mode(c):
     token = re.search(r"from './horizon.js\?v=(\d+)'", (ROOT / 'web/app.js').read_text(encoding='utf-8')).group(1)
     c.page.evaluate('''async url => {
       const H=await import(url);
-      H.importPanos({activeId:'load-check',panos:[{id:'load-check',name:'Loading check',
+      await H.importPanos({activeId:'load-check',panos:[{id:'load-check',name:'Loading check',
         azOffset:0,altBottom:0,altTop:60,fov:360,profileBins:720,
         profile:Array(720).fill(18),profileTop:Array(720).fill(null),strokes:[]}]});
     }''', './horizon.js?v=' + token)

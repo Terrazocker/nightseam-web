@@ -12,9 +12,9 @@ import shutil
 import subprocess
 from datetime import datetime, timezone
 try:
-    from .check_release import shipped_files, SHIPPING_EXCLUDED
+    from .publication_assets import require_tracked, immutable_payload, hashes
 except ImportError:
-    from check_release import shipped_files, SHIPPING_EXCLUDED
+    from publication_assets import require_tracked, immutable_payload, hashes
 
 ROOT=Path(__file__).resolve().parents[1]
 
@@ -30,34 +30,26 @@ def retired_paths(root):
 
 
 def source_files(root):
-    files=shipped_files(root)
-    files.extend(p for p in (root/'landing').rglob('*') if p.is_file()
-                 and not any(part in SHIPPING_EXCLUDED for part in p.relative_to(root/'landing').parts)
-                 and p.suffix not in ('.pyc','.env'))
-    return files
-
-
-def digest(path):
-    return hashlib.sha256(path.read_bytes()).hexdigest()
+    return require_tracked(root)
 
 
 def prepare(root,describe,cleanup=()):
     root=Path(root).resolve()
+    payload, metadata = immutable_payload(root)
     destination=root/'dist/publication-preview'
     if destination.resolve().parent != (root/'dist').resolve() or destination.is_symlink():
         raise ValueError('Unexpected publication candidate directory')
     if destination.exists(): shutil.rmtree(destination)
     destination.mkdir(parents=True)
     manifest={'describe':describe,'status':'local-review-candidate',
-              'created_utc':datetime.now(timezone.utc).isoformat(), 'files':{},
+              'created_utc':datetime.now(timezone.utc).isoformat(), 'files':hashes(payload),
+              'publication': metadata,
               'cleanup_after_authorized_acceptance':list(cleanup),
               'preserve_remote_core_hash_directories':True}
-    for source in source_files(root):
-        rel=source.relative_to(root).as_posix()
+    for rel, data in payload.items():
         target=destination/rel
         target.parent.mkdir(parents=True,exist_ok=True)
-        shutil.copy2(source,target)
-        manifest['files'][rel]=digest(target)
+        target.write_bytes(data)
     (destination/'publication.manifest.json').write_text(json.dumps(manifest,indent=2)+'\n',encoding='utf-8')
     verify(root)
     return destination
@@ -66,11 +58,16 @@ def prepare(root,describe,cleanup=()):
 def verify(root):
     root=Path(root)
     destination=root/'dist/publication-preview'
+    if destination.is_symlink():
+        raise ValueError('Publication candidate differs: symlink directory')
     manifest=json.loads((destination/'publication.manifest.json').read_text(encoding='utf-8'))
-    expected={p.relative_to(root).as_posix():digest(p) for p in source_files(root)}
-    actual={p.relative_to(destination).as_posix():digest(p) for p in destination.rglob('*')
-            if p.is_file() and p.name!='publication.manifest.json'}
-    if manifest.get('status')!='local-review-candidate' or manifest.get('files')!=expected or actual!=expected:
+    payload, metadata = immutable_payload(root)
+    expected = hashes(payload)
+    actual={p.relative_to(destination).as_posix():hashlib.sha256(p.read_bytes()).hexdigest() for p in destination.rglob('*')
+            if p.is_file() and p != destination/'publication.manifest.json'}
+    if (any(p.is_symlink() for p in destination.rglob('*')) or
+        manifest.get('status')!='local-review-candidate' or manifest.get('files')!=expected or actual!=expected
+        or manifest.get('publication') != metadata):
         raise ValueError('Publication candidate differs from reviewed source or manifest')
     return len(actual)
 

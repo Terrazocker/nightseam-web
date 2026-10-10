@@ -50,6 +50,7 @@ export function panoramaRevision(pano) {
       add(stroke && stroke.x);
       add(stroke && stroke.y);
       add(stroke && stroke.r);
+      add(stroke && (stroke.rx ?? stroke.r));
     }
   };
   add(pano.id);

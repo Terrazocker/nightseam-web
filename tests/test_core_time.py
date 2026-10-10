@@ -127,5 +127,6 @@ def test_shells_delegate_timezone_math_to_core():
     ws = (ROOT / "web" / "webstore.js").read_text(encoding="utf-8")
     assert "offsetEastMin(tzName, date.getTime())" in ws, \
         "web tzOffMinAt must delegate to core/time.js"
-    assert "wallFromUtcMs" in ws and "utcFromWallMs" in ws
+    assert "zonedWallToUtcMs(zone, Date.UTC(" in ws
+    assert "return wallFieldsToUtc(date.getFullYear()" in ws
     assert "timeZoneName" not in ws, "web kept a private Intl parser"

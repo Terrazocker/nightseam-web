@@ -15,6 +15,7 @@
    ./core/<hash>/ and imported through the stable ./core.js stub. The shell
    re-exports it so app.js/nightrank.js keep their public surface. */
 import { vizTheme } from './viztheme.js?v=6';
+import { normalizeWebPrefs, WEB_PREF_DEFAULTS } from './webstore.js?v=47';
 import {
   NO_BLOCK, BINS, MASK_W, MASK_H,
   rebuildMask, wrapsFor, altOf, rowOfAlt, xOfAz, azOfX, profileFromMask,
@@ -31,7 +32,7 @@ import {
   historyRedo as coreHistoryRedo, historyMarkSaved as coreHistoryMarkSaved,
   historyDirty as coreHistoryDirty, PANO_HISTORY_LIMIT as coreHISTORY_LIMIT,
   PLANNER_CHANGE_EVENT, nextPlannerRevision, plannerChange, panoramaRevision,
-} from './core.js?v=45';
+} from './core.js?v=47';
 
 export {
   NO_BLOCK, BINS, MASK_W, MASK_H,
@@ -80,39 +81,32 @@ function panoImgOpen() {
       rq.onupgradeneeded = () => { rq.result.createObjectStore('imgs'); };
       rq.onsuccess = () => resolve(rq.result);
       rq.onerror = () => reject(rq.error);
+      rq.onblocked = () => reject(new Error('Panorama image storage is blocked by another tab'));
     } catch (e) { reject(e); }
   });
 }
-async function panoImgGet(id) {
+async function panoImgRequest(mode, operation) {
+  const dbh = await panoImgOpen();
   try {
-    const dbh = await panoImgOpen();
     return await new Promise((resolve, reject) => {
-      const t = dbh.transaction('imgs', 'readonly').objectStore('imgs').get(id);
-      t.onsuccess = () => resolve(t.result || null);
-      t.onerror = () => reject(t.error);
+      const tx = dbh.transaction('imgs', mode);
+      let result = null;
+      tx.oncomplete = () => resolve(result);
+      tx.onabort = () => reject(tx.error || new Error('Panorama image transaction aborted'));
+      tx.onerror = () => {}; // onabort owns transaction failure, including commit failure
+      try {
+        const rq = operation(tx.objectStore('imgs'));
+        rq.onsuccess = () => { result = rq.result ?? null; };
+      } catch (error) {
+        tx.abort();
+        reject(error);
+      }
     });
-  } catch { return null; }
+  } finally { dbh.close(); }
 }
-async function panoImgSet(id, blob) {
-  try {
-    const dbh = await panoImgOpen();
-    await new Promise((resolve, reject) => {
-      const t = dbh.transaction('imgs', 'readwrite').objectStore('imgs').put(blob, id);
-      t.onsuccess = () => resolve();
-      t.onerror = () => reject(t.error);
-    });
-  } catch { /* storage unavailable — photo stays memory-only for the session */ }
-}
-async function panoImgDel(id) {
-  try {
-    const dbh = await panoImgOpen();
-    await new Promise((resolve, reject) => {
-      const t = dbh.transaction('imgs', 'readwrite').objectStore('imgs').delete(id);
-      t.onsuccess = () => resolve();
-      t.onerror = () => reject(t.error);
-    });
-  } catch { /* ignore */ }
-}
+const panoImgGet = (id) => panoImgRequest('readonly', (store) => store.get(id));
+const panoImgSet = (id, blob) => panoImgRequest('readwrite', (store) => store.put(blob, id));
+const panoImgDel = (id) => panoImgRequest('readwrite', (store) => store.delete(id));
 
 /** Downscale a data-URL image to a compressed JPEG blob (in-browser). */
 function compressImage(dataUrl, maxW, quality) {
@@ -164,14 +158,14 @@ function load() {
   return { panos: [], activeId: null };
 }
 
-function save() {
+function save(state = db) {
   // strip in-memory image data URLs before persisting — they can exceed the
   // localStorage quota; profiles/strokes/calibration are what planning needs.
   // Returns false on storage failure (quota/security): the caller MUST surface
   // it (FIX-5, review WB1) - swallowing it made the editor report "Saved"
   // while the previous state stayed in storage.
   try {
-    const slim = { ...db, panos: db.panos.map((p) => {
+    const slim = { ...state, panos: state.panos.map((p) => {
       const { _img, ...rest } = p;
       return rest;
     }) };
@@ -197,46 +191,49 @@ export function exportPanos() {
 }
 
 function blobToDataUrl(blob) {
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     try {
       const rd = new FileReader();
-      rd.onload = () => resolve(typeof rd.result === 'string' ? rd.result : null);
-      rd.onerror = () => resolve(null);
+      rd.onload = () => typeof rd.result === 'string'
+        ? resolve(rd.result) : reject(new Error('Could not encode panorama photograph'));
+      rd.onerror = () => reject(rd.error || new Error('Could not read panorama photograph'));
       rd.readAsDataURL(blob);
-    } catch { resolve(null); }
+    } catch (error) { reject(error); }
   });
 }
 
 function dataUrlToBlob(dataUrl) {
-  return new Promise((resolve) => {
-    try {
-      if (typeof fetch === 'function') {
-        fetch(dataUrl).then((r) => r.blob()).then(resolve).catch(() => resolve(null));
-        return;
-      }
-      const m = /^data:([^;,]*)(;base64)?,(.*)$/.exec(dataUrl);
-      if (!m || typeof Blob !== 'function') { resolve(null); return; }
-      const bin = m[2] ? atob(m[3]) : decodeURIComponent(m[3]);
-      const arr = new Uint8Array(bin.length);
-      for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
-      resolve(new Blob([arr], { type: m[1] || 'image/jpeg' }));
-    } catch { resolve(null); }
-  });
+  // Decode locally: fetch(data:) is subject to connect-src, even though the
+  // same data URL can be displayed under the document's img-src policy.
+  const m = typeof dataUrl === 'string'
+    ? /^data:(image\/[^;,]+)(;base64)?,([\s\S]*)$/i.exec(dataUrl) : null;
+  if (!m || typeof Blob !== 'function') throw new Error('Invalid panorama photograph data URL');
+  const bin = m[2] ? atob(m[3]) : decodeURIComponent(m[3]);
+  if (!bin.length) throw new Error('Panorama photograph is empty');
+  const arr = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+  return new Blob([arr], { type: m[1] });
 }
 
 /** TRUE backup of panoramas: embed the compressed photo for every record whose
- *  image actually exists (IndexedDB, or the in-memory data URL), and force
- *  `hasImage` to match the data that is really included. This is what makes a
- *  restored record never claim an image that was not backed up. */
+ *  image actually exists. A missing/unreadable photograph fails the backup:
+ *  safety snapshots must not silently omit data needed for rollback. */
 export async function exportPanosWithImages() {
   const panos = [];
   for (const p of db.panos) {
     const { _img, ...rest } = p;
     let image = null;
     if (p.hasImage) {
-      const blob = await panoImgGet(p.id).catch(() => null);
-      if (blob) image = await blobToDataUrl(blob);
-      if (!image && typeof p._img === 'string' && p._img.startsWith('data:')) image = p._img;
+      // Uploaded/restored bytes are authoritative for this session; an older
+      // cached photo with the same id must never replace them in a backup.
+      if (typeof p._img === 'string' && p._img.startsWith('data:')) image = p._img;
+      else {
+        const blob = await panoImgGet(p.id);
+        if (!(blob instanceof Blob) || !blob.size) {
+          throw new Error(`Photograph for horizon ${p.name || p.id} is missing or unreadable; backup cancelled`);
+        }
+        image = await blobToDataUrl(blob);
+      }
     }
     const rec = { ...rest, hasImage: !!image };
     if (image) rec.image = image;
@@ -254,6 +251,13 @@ export async function exportPanosWithImages() {
  *    the stored profile is authoritative (never silently un-block a horizon). */
 export function normalizePanos(data) {
   if (!data || !Array.isArray(data.panos)) return null;
+  // Validate every supplied photograph before callers write any other store.
+  // Even an entry later discarded for its id must not hide malformed bytes.
+  try {
+    for (const p of data.panos) {
+      if (p && p.image !== undefined && p.image !== null) dataUrlToBlob(p.image);
+    }
+  } catch { return null; }
   const blank = () => new Array(BINS).fill(NO_BLOCK);
   const num = (v, dflt) => (Number.isFinite(Number(v)) ? Number(v) : dflt);
   // WB5 (review): ids reach DOM data-attributes and IndexedDB keys, so an
@@ -270,7 +274,7 @@ export function normalizePanos(data) {
     return true;
   }).map((p) => {
     const image = (typeof p.image === 'string' && p.image.startsWith('data:')) ? p.image : null;
-    const strokes = (Array.isArray(p.strokes) ? p.strokes : []).slice(0, 20000);
+    const strokes = (Array.isArray(p.strokes) ? p.strokes : []).slice(0, 60000); // up to three seam copies of a legacy 20,000-dab record
     const rec = {
       id: token(p.id),
       name: p.name || 'Panorama',
@@ -310,42 +314,81 @@ export function normalizePanos(data) {
   return { panos, activeId };
 }
 
-/** Apply a snapshot produced by normalizePanos(): replace the live set, persist,
- *  and re-cache the embedded photos into IndexedDB (best-effort). Returns false
- *  and ROLLS BACK the live set when persistence fails (FIX-5 follow-up: the
- *  previous version applied the records in memory and returned true even when
- *  save() had failed). */
-export function applyPanosSnapshot(snapshot) {
+/** Replace panorama records and photos together. Resolves true only after the
+ *  image transaction commits; ordinary persistence failures resolve false.
+ *  A failed rollback throws, so callers cannot claim the old data is safe. */
+export async function applyPanosSnapshot(snapshot) {
   if (!snapshot || !Array.isArray(snapshot.panos)) return false;
-  const prev = db;
   const pending = [];
-  db = {
-    panos: snapshot.panos.map((p) => {
-      const { image, ...rest } = p;
-      if (image) pending.push([p.id, image]);
-      // keep the data URL in memory too, so the editor shows the restored
-      // photo before the IndexedDB re-cache finishes
-      return { ...rest, _img: image || null };
-    }),
-    activeId: snapshot.activeId || null,
-  };
-  if (!db.activeId && db.panos.length) db.activeId = db.panos[0].id;
-  if (db.activeId && !db.panos.some((p) => p.id === db.activeId)) db.activeId = db.panos.length ? db.panos[0].id : null;
-  if (!save()) {
-    db = prev;                       // storage refused: keep live == stored
-    return false;
+  let candidate;
+  try {
+    candidate = {
+      panos: snapshot.panos.map((p) => {
+        const { image, _img, ...rest } = p;
+        if (image) pending.push([p.id, dataUrlToBlob(image)]);
+        else if (p.hasImage) throw new Error('Panorama snapshot is missing photograph bytes');
+        return { ...rest, hasImage: !!image, _img: image || null };
+      }),
+      activeId: snapshot.activeId || null,
+    };
+  } catch { return false; }
+  if (!candidate.activeId && candidate.panos.length) candidate.activeId = candidate.panos[0].id;
+  if (candidate.activeId && !candidate.panos.some((p) => p.id === candidate.activeId)) {
+    candidate.activeId = candidate.panos.length ? candidate.panos[0].id : null;
   }
-  for (const [id, image] of pending) {
-    dataUrlToBlob(image).then((b) => { if (b) panoImgSet(id, b); }).catch(() => {});
+  if (!pending.length && !db.panos.some((p) => p.hasImage)) {
+    if (!save(candidate)) return false;
+  } else {
+    let dbh, previousRaw, wroteRecords = false, rollbackError = null;
+    try {
+      previousRaw = localStorage.getItem(LS_KEY);
+      dbh = await panoImgOpen();
+      await new Promise((resolve, reject) => {
+        const tx = dbh.transaction('imgs', 'readwrite');
+        tx.oncomplete = resolve;
+        tx.onerror = () => {};
+        tx.onabort = () => {
+          // IDB rolls photo changes back atomically. If it aborts after the
+          // record write, restore the localStorage half before reporting it.
+          if (wroteRecords) {
+            try {
+              if (previousRaw === null) localStorage.removeItem(LS_KEY);
+              else localStorage.setItem(LS_KEY, previousRaw);
+            } catch (error) { rollbackError = error; }
+          }
+          reject(tx.error || new Error('Panorama restore transaction aborted'));
+        };
+        try {
+          const store = tx.objectStore('imgs');
+          let last = store.clear();
+          for (const [id, blob] of pending) last = store.put(blob, id);
+          // This callback runs while the transaction can still be aborted.
+          last.onsuccess = () => {
+            if (!save(candidate)) { tx.abort(); return; }
+            wroteRecords = true;
+          };
+        } catch (error) { tx.abort(); reject(error); }
+      });
+    } catch (error) {
+      if (rollbackError) throw new AggregateError([error, rollbackError], 'Panorama restore failed and its records could not be rolled back');
+      return false;
+    } finally { if (dbh) dbh.close(); }
   }
+  db = candidate;
+  // The editor still references the pre-restore object. A later view flush
+  // must not save that obsolete session over the restored records.
+  if (activeSession && activeSession.disconnect) activeSession.disconnect();
+  activeSession = null;
   announcePanoChanged(activePano(), 'restore');
   return true;
 }
 
-/** Replace all panoramas from a backup snapshot. Returns true on success. */
-export function importPanos(data) {
+/** Replace all panoramas from a backup snapshot. Await the committed result. */
+export async function importPanos(data) {
   const snapshot = normalizePanos(data);
-  if (!snapshot) return false;
+  if (!snapshot) {
+    return false;
+  }
   return applyPanosSnapshot(snapshot);
 }
 
@@ -382,7 +425,7 @@ export function deletePano(id) {
   db.panos = db.panos.filter((p) => p.id !== id);
   if (db.activeId === id) db.activeId = db.panos.length ? db.panos[0].id : null;
   save();
-  panoImgDel(id); // drop the cached compressed photo too
+  panoImgDel(id).catch(() => {}); // orphaned photo cleanup does not affect the deleted profile
   announcePanoChanged(activePano(), 'delete');
 }
 
@@ -609,7 +652,13 @@ export function renderHorizon(box, onChanged) {
         p.hasImage = true; p._img = imgDataUrl;
         // keep a compressed JPEG copy so the photo survives reloads
         compressImage(imgDataUrl, PANOIMG_MAX_W, PANOIMG_QUALITY)
-          .then((blob) => { if (blob) panoImgSet(p.id, blob); });
+          .then((blob) => {
+            if (!blob) throw new Error('Could not compress panorama photograph');
+            return panoImgSet(p.id, blob);
+          }).catch(() => {
+            const note = $('#pano-note', box);
+            if (note) note.textContent = 'The photograph could not be saved in browser storage. Export a backup before closing this tab to keep it.';
+          });
       }
       setActive(p.id); // show the new horizon in the editor immediately
       updatePano(p);
@@ -747,19 +796,19 @@ function haziEditorHTML(p) {
     </p>
     <div class="cal-grid" style="margin-top:10px">
       <label>Az @ left
-        <input id="ed-az" type="range" min="0" max="360" step="5" value="${p.azOffset}">
+        <input id="ed-az" type="range" min="0" max="360" step="any" value="${p.azOffset}">
         <output id="ed-az-v">${p.azOffset}\u00B0</output>
       </label>
       <label>Alt bottom
-        <input id="ed-ab" type="range" min="-30" max="90" step="5" value="${p.altBottom}">
+        <input id="ed-ab" type="range" min="-30" max="90" step="any" value="${p.altBottom}">
         <output id="ed-ab-v">${p.altBottom}\u00B0</output>
       </label>
       <label>Alt top
-        <input id="ed-at" type="range" min="0" max="90" step="5" value="${p.altTop}">
+        <input id="ed-at" type="range" min="0" max="90" step="any" value="${p.altTop}">
         <output id="ed-at-v">${p.altTop}\u00B0</output>
       </label>
       <label>FOV
-        <input id="ed-fov" type="range" min="5" max="360" step="5" value="${p.fov}">
+        <input id="ed-fov" type="range" min="5" max="360" step="any" value="${p.fov}">
         <output id="ed-fov-v">${p.fov}\u00B0</output>
       </label>
     </div>
@@ -869,6 +918,38 @@ export function horizonUnsaved() {
   return !!(activeSession && activeSession.dirty());
 }
 
+/** Keep the editor's saved baseline and undo branch across a failed whole-app
+ *  restore. Panorama backup bytes alone cannot describe that session history. */
+export function captureEditorHistory() {
+  if (!activeSession || !activeSession.hist) return null;
+  activeSession.settle?.();
+  return {
+    panoId: activeSession.panoId,
+    hist: JSON.parse(JSON.stringify(activeSession.hist)),
+  };
+}
+
+/** Reattach a history checkpoint after the original panorama snapshot has been
+ *  rolled back. The next render wires fresh controls around this same history. */
+export function restoreEditorHistory(checkpoint) {
+  if (!checkpoint || !checkpoint.hist) return false;
+  const p = db.panos.find((item) => item.id === checkpoint.panoId);
+  if (!p) return false;
+  if (activeSession && activeSession.disconnect) activeSession.disconnect();
+  const hist = JSON.parse(JSON.stringify(checkpoint.hist));
+  activeSession = {
+    panoId: p.id, hist,
+    dirty: () => historyDirty(hist, p),
+    save: () => {
+      computeProfile(p);
+      if (!updatePano(p)) return false;
+      historyMarkSaved(hist, p);
+      return true;
+    },
+  };
+  return true;
+}
+
 /** Persist any pending editor edits (no-op when clean). Callers flush before
  *  leaving the editor (switch panorama, create, navigate away) so an edit can
  *  never be silently lost; the in-tab "unsaved" chip + the beforeunload guard
@@ -881,31 +962,40 @@ export function flushHorizonEdits() {
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 /* prefs — shared with app.js via module state */
-const RETIRED_PREF_KEYS = new Set([
-  'skyBrightnessProvider', 'theme', 'themeId', 'themeMode', 'themeVariant',
-]);
 let prefs = loadPrefs();
 export function getPrefs() { return prefs; }
 export const effectiveMinAlt = () => coreMinAlt(prefs.bortle, prefs.minAlt);
 function cleanPrefs(value) {
-  const out = value && typeof value === 'object' && !Array.isArray(value) ? { ...value } : {};
-  for (const key of RETIRED_PREF_KEYS) delete out[key];
-  if (Array.isArray(out.savedTargetIds)) {
-    out.savedTargetIds = [...new Set(out.savedTargetIds.filter((id) =>
-      typeof id === 'string' && /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(id)))].slice(0, 2000);
-  } else delete out.savedTargetIds;
-  return out;
+  return normalizeWebPrefs(value);
 }
-export function setPrefs(patch) { prefs = cleanPrefs({ ...prefs, ...patch }); savePrefs(); }
+/** Patch preferences for ordinary UI edits. Failed writes leave live state intact. */
+export function setPrefs(patch) {
+  const candidate = cleanPrefs({ ...prefs, ...patch });
+  if (!savePrefs(candidate)) return false;
+  prefs = candidate;
+  return true;
+}
+/** Restore is replacement: absent preferences regain defaults instead of inheriting
+ *  settings from the current browser. */
+export function replacePrefs(value) {
+  const candidate = cleanPrefs({ ...WEB_PREF_DEFAULTS, ...value });
+  if (!savePrefs(candidate)) return false;
+  prefs = candidate;
+  return true;
+}
 function loadPrefs() {
   try {
     const raw = localStorage.getItem('nightseam_prefs_v1');
-    if (raw) return cleanPrefs({ bortle: 4, minAlt: null, moonAware: false, viewFullDay: false, edge: 16,
-      ...JSON.parse(raw) });
+    if (raw) return cleanPrefs({ ...WEB_PREF_DEFAULTS, ...JSON.parse(raw) });
   } catch { /* ignore */ }
-  return cleanPrefs({ bortle: 4, minAlt: null, moonAware: false, viewFullDay: false, edge: 16 });
+  return cleanPrefs(WEB_PREF_DEFAULTS);
 }
-function savePrefs() { try { localStorage.setItem('nightseam_prefs_v1', JSON.stringify(cleanPrefs(prefs))); } catch { /* ignore */ } }
+function savePrefs(value) {
+  try {
+    localStorage.setItem('nightseam_prefs_v1', JSON.stringify(value));
+    return true;
+  } catch { return false; }
+}
 
 /** parse decimal accepting comma (German locale), like num() in the original. */
 export function num(s) {
@@ -974,6 +1064,7 @@ function wireEditor(box, p, onChanged) {
   const samePano = !!(activeSession && activeSession.panoId
                       && activeSession.panoId === p.id && activeSession.hist);
   const hist = samePano ? activeSession.hist : newHistory(p);
+  if (activeSession?.disconnect) activeSession.disconnect();
   let status = 'saved';                    // 'saved' | 'saving' | 'failed'
   let metadataPending = false;
   const paintMode = () => p.paintMode;
@@ -985,17 +1076,16 @@ function wireEditor(box, p, onChanged) {
     renderStatus();
   }
 
+  let displayedBin = profileIndex();
   function syncMetadataFromUI() {
-    const get = (id) => $(id, box);
-    // Provenance is retained from storage/import; it is no longer an editor field.
-    const confidence = get('#ed-profile-confidence');
-    if (confidence && confidence.value !== '') {
-      const n = num(confidence.value);
-      if (Number.isFinite(n)) {
-        p.confidence = normalizeHorizonConfidence(p.confidence);
-        p.confidence[profileIndex()] = Math.max(0, Math.min(1, n));
-      }
-    }
+    const field = $('#ed-profile-confidence', box);
+    if (!field || (field.value !== '' && !field.validity.valid)) return;
+    const value = field.value === '' ? null : num(field.value);
+    if (value !== null && !Number.isFinite(value)) return;
+    p.confidence = normalizeHorizonConfidence(p.confidence);
+    if (p.confidence[displayedBin] === value) return;
+    p.confidence[displayedBin] = value;
+    markMetadataPending();
   }
 
   function profileIndex() {
@@ -1037,7 +1127,9 @@ function wireEditor(box, p, onChanged) {
   }
 
   function readProfileBin() {
+    commitMetadata();
     const idx = profileIndex();
+    displayedBin = idx;
     const alt = $('#ed-profile-alt', box);
     const top = $('#ed-profile-top', box);
     const conf = $('#ed-profile-confidence', box);
@@ -1384,8 +1476,11 @@ function wireEditor(box, p, onChanged) {
       if (hint) hint.textContent = cropTool ? 'drag to mark the band to KEEP' : '';
       return;
     }
-    const x0 = Math.min(cropSel.x0, cropSel.x1);
-    const x1 = Math.max(cropSel.x0, cropSel.x1);
+    const requestedX = Math.min(cropSel.x0, cropSel.x1);
+    const requestedWidth = Math.abs(cropSel.x1 - cropSel.x0);
+    const { fov, azOffset, kept, expanded } =
+      cropKeptBand(p.fov, p.azOffset, { x: requestedX, w: requestedWidth }, MASK_W);
+    const x0 = kept.x, x1 = kept.x + kept.w;
     ctx.save();
     ctx.fillStyle = 'rgba(5,7,12,.55)';
     ctx.fillRect(0, 0, x0, MASK_H);
@@ -1397,14 +1492,12 @@ function wireEditor(box, p, onChanged) {
       ctx.beginPath(); ctx.moveTo(lx, 0); ctx.lineTo(lx, MASK_H); ctx.stroke();
     }
     ctx.setLineDash([]);
-    const { fov, azOffset } =
-        cropKeptBand(p.fov, p.azOffset, { x: x0, w: x1 - x0 }, MASK_W);
     ctx.fillStyle = '#9cc4ff';
     ctx.font = '11px system-ui';
     ctx.fillText(`keep ${Math.round(x1 - x0)}px`, x0 + 6, 16);
     ctx.restore();
     if (hint) {
-      hint.textContent = `FOV \u2192 ${fov}\u00B0 \u00B7 az left ${azOffset}\u00B0`;
+      hint.textContent = `FOV \u2192 ${fov}\u00B0 \u00B7 az left ${+azOffset.toFixed(2)}\u00B0${expanded ? ' · kept band expanded to minimum FOV' : ''}`;
     }
   }
 
@@ -1418,8 +1511,8 @@ function wireEditor(box, p, onChanged) {
     const altLabel = $('#ed-profile-alt-label', box);
     if (altLabel) altLabel.textContent = p.paintMode === 'sky' ? 'Visible sky starts at (°)' : 'Obstruction height (°)';
     const undoBtn = $('#ed-undo', box), redoBtn = $('#ed-redo', box);
-    if (undoBtn) undoBtn.disabled = !historyCanUndo(hist);
-    if (redoBtn) redoBtn.disabled = !historyCanRedo(hist);
+    if (undoBtn) undoBtn.disabled = !metadataPending && !historyCanUndo(hist);
+    if (redoBtn) redoBtn.disabled = metadataPending || !historyCanRedo(hist);
     const zl = $('#ed-zoom-label', box);
     if (zl) zl.textContent = view.zoom.toFixed(1) + '\u00D7';
     const el = $('#ed-status', box);
@@ -1450,6 +1543,7 @@ function wireEditor(box, p, onChanged) {
   const rebuildMaskNow = () => { mask = rebuildMask(p.strokes, wrapsFor(p)); };
 
   function commit() {
+    metadataPending = false;
     historyCommit(hist, p);
     announcePanoChanged(p, 'edit');
     renderStatus();
@@ -1461,29 +1555,33 @@ function wireEditor(box, p, onChanged) {
     commit();
   }
 
-  function doUndo() {
-    if (!historyUndo(hist, p)) return;
+  function syncRestoredControls() {
+    metadataPending = false;
     rebuildMaskNow();
     syncCalInputs();
+    renderLandmarkRows();
     readProfileBin();
+    compareProfile();
     overlay();
-    announcePanoChanged(p, 'undo');
     renderStatus();
   }
+  function doUndo() {
+    commitMetadata();
+    if (!historyUndo(hist, p)) return;
+    syncRestoredControls();
+    announcePanoChanged(p, 'undo');
+  }
   function doRedo() {
+    commitMetadata();
     if (!historyRedo(hist, p)) return;
-    rebuildMaskNow();
-    syncCalInputs();
-    readProfileBin();
-    overlay();
+    syncRestoredControls();
     announcePanoChanged(p, 'redo');
-    renderStatus();
   }
   function revertSession() {
     if (!dirty()) return;
+    commitMetadata();
     applySnapshot(p, hist.baseline);
-    rebuildMaskNow();
-    overlay();
+    syncRestoredControls();
     commit();               // the revert itself is undoable
   }
   function saveSession() {
@@ -1763,9 +1861,10 @@ function wireEditor(box, p, onChanged) {
     commit();
   });
 
-  // Confidence edits become dirty immediately and are committed on Apply/Save.
+  // Write to the displayed bin immediately; navigation settles one history entry.
   const confEl = $('#ed-profile-confidence', box);
-  if (confEl) confEl.addEventListener('input', markMetadataPending);
+  if (confEl) confEl.addEventListener('input', syncMetadataFromUI);
+  if (confEl) confEl.addEventListener('change', commitMetadata);
   const readBin = $('#ed-profile-read', box);
   if (readBin) readBin.addEventListener('click', readProfileBin);
   const azBin = $('#ed-profile-az', box);
@@ -1844,6 +1943,7 @@ function wireEditor(box, p, onChanged) {
       return;
     }
     if (!(ev.ctrlKey || ev.metaKey)) return;
+    if (ev.target.closest?.('input, textarea, [contenteditable="true"]')) return;
     const k = ev.key.toLowerCase();
     const isUndo = k === 'z' && !ev.shiftKey;
     const isRedo = (k === 'z' && ev.shiftKey) || k === 'y';
@@ -1854,20 +1954,33 @@ function wireEditor(box, p, onChanged) {
   };
   document.addEventListener('keydown', undoHandler);
 
-  // Space = temporary pan tool (only while the editor has focus)
+  const currentUndoHandler = undoHandler;
+  const releaseSpace = () => { spaceDown = false; setPanCursor(false); };
+  // Native text and button Space behavior is preserved outside the canvas.
   const spaceKeys = (ev) => {
     if (ev.code !== 'Space') return;
-    if (!box.contains(document.activeElement)) return;
-    spaceDown = ev.type === 'keydown';
-    setPanCursor(spaceDown);
-    if (spaceDown) ev.preventDefault();   // do not scroll the page
+    if (ev.type === 'keyup') { releaseSpace(); return; }
+    if (document.activeElement !== cvs) return;
+    spaceDown = true;
+    setPanCursor(true);
+    ev.preventDefault();
   };
   document.addEventListener('keydown', spaceKeys);
   document.addEventListener('keyup', spaceKeys);
+  cvs.addEventListener('blur', releaseSpace);
+  window.addEventListener('blur', releaseSpace);
 
-  // swap out any ResizeObserver from the previous editor, then observe this one
-  if (activeSession && activeSession.disconnect) activeSession.disconnect();
-  activeSession = { panoId: p.id, hist, dirty, revert: revertSession, save: saveSession };
+  const cleanup = [() => {
+    commitMetadata();
+    releaseSpace();
+    document.removeEventListener('keydown', currentUndoHandler);
+    document.removeEventListener('keydown', spaceKeys);
+    document.removeEventListener('keyup', spaceKeys);
+    cvs.removeEventListener('blur', releaseSpace);
+    window.removeEventListener('blur', releaseSpace);
+  }];
+  activeSession = { panoId: p.id, hist, dirty, revert: revertSession, save: saveSession,
+    settle: commitMetadata, disconnect: () => cleanup.forEach((fn) => fn()) };
   if (typeof ResizeObserver !== 'undefined') {
     let resizeFrame = null;
     const ro = new ResizeObserver(() => {
@@ -1878,12 +1991,10 @@ function wireEditor(box, p, onChanged) {
       });
     });
     ro.observe(boxEl);
-    activeSession.disconnect = () => {
+    cleanup.push(() => {
       ro.disconnect();
       if (resizeFrame !== null) cancelAnimationFrame(resizeFrame);
-    };
-  } else {
-    activeSession.disconnect = null;
+    });
   }
 
   fitCanvas();

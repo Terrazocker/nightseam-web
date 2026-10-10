@@ -8,17 +8,17 @@
  *   • Settings — sites, rigs, custom targets, backup/restore (webstore.js)
  * All sky math runs client-side (astro.js, Meeus algorithms).
  */
-import * as E from './astro.js?v=31';
-import * as Hor from './horizon.js?v=75';
-import * as WS from './webstore.js?v=42';
+import * as E from './astro.js?v=33';
+import * as Hor from './horizon.js?v=81';
+import * as WS from './webstore.js?v=47';
 import { fmtSize, sizeArcmin, framePct, magVisible, skyClampZoom,
-         skyViewMatrix, skyScreenToBase, skyClampFocus } from './format.js?v=38';
-import { nightStats, nightStatsBatch, sampleVisible } from './nightrank.js?v=30';
+         skyViewMatrix, skyScreenToBase, skyClampFocus } from './format.js?v=40';
+import { nightStats, nightStatsBatch, sampleVisible } from './nightrank.js?v=32';
 import { TYPE_LABELS, TYPE_COLORS, searchBlob as coreSearchBlob,
          TIER_ORDER, assignPopularityTiers, wikiTitles,
          inTonightPool, PLANNER_CHANGE_EVENT, panoramaRevision,
-         visibilityReason } from './core.js?v=45';
-import { popularityFactor as corePopularityFactor } from './core.js?v=45';
+         visibilityReason } from './core.js?v=47';
+import { popularityFactor as corePopularityFactor } from './core.js?v=47';
 import { vizTheme, drawMoonPhaseMarker } from './viztheme.js?v=6';
 import { wikimediaCredit, wikiImageCredit, renderImageCredit } from './imagecredits.js?v=2';
 
@@ -60,12 +60,14 @@ const CONSTELLATIONS = []; // all constellation names from the catalog
 function activeSite() { return SITES.find((s) => s.id === S.site.id) || SITES[0] || null; }
 
 /** Apply a site record as the active one (state, timezone, top bar). */
-function applyActiveSite(site) {
+function applyActiveSite(site, options) {
+  if (!Hor.setPrefs({ activeSiteId: site.id }) && options?.strict) {
+    throw new Error('could not save the active site preference');
+  }
   S.site = { lat: site.lat, lon: site.lon, label: site.name, id: site.id, tz: site.tz || null };
   // global timezone override (hamburger menu, advanced mode) wins over the site's
   const tzPref = Hor.getPrefs().tz;
   WS.setActiveTz(tzPref || site.tz || null);
-  Hor.setPrefs({ activeSiteId: site.id });
   const sel = $('#tb-site');
   if (sel) {
     sel.innerHTML = SITES.map((s) => `<option value="${esc(s.id)}"${s.id === site.id ? ' selected' : ''}>${esc(s.name)}</option>`).join('');
@@ -186,8 +188,15 @@ const NIGHT_STEP_MIN = 6;
  *  planned for ITS night instead of the browser's. */
 function siteNoon(d) {
   const day = (d && d instanceof Date && !isNaN(d)) ? d : WS.effToday();
-  return WS.wallToUtc(new Date(day.getFullYear(), day.getMonth(), day.getDate(), 12, 0, 0));
+  return siteClock(day, 12);
 }
+
+function siteClock(day, hour, dayOffset = 0) {
+  return WS.wallFieldsToUtc(day.getFullYear(), day.getMonth(), day.getDate() + dayOffset, hour);
+}
+function siteFallback(day) { return { dusk: siteClock(day, 20), dawn: siteClock(day, 4, 1) }; }
+function resolvedZone() { return WS.tz() || Intl.DateTimeFormat().resolvedOptions().timeZone; }
+function nextSiteNoon(noon) { return siteClock(WS.utcToWall(noon), 12, 1); }
 
 function nightWindow() {
   const { lat, lon } = S.site;
@@ -197,7 +206,7 @@ function nightWindow() {
   // fallback (fixed 20:00 -> 04:00 in the SITE's zone) itself - anchored at the
   // site's local noon so a site in another timezone
   // gets ITS fallback hours, never the browser's
-  const w = E.pickDarkWindow(info, d, siteNoon(nightAnchor()));
+  const w = E.pickDarkWindow(info, d, siteNoon(nightAnchor()), siteFallback(d));
   return {
     jd0: E.julianDay(w.dusk), jd1: E.julianDay(w.dawn),
     step: NIGHT_STEP_MIN / 1440,
@@ -218,7 +227,7 @@ function obsNightGrid() {
    uses nightWindow() directly - this is presentation-only caching. */
 let _winMemo = { key: null, val: null };
 function cachedNightWindow() {
-  const key = `${dateKey(nightAnchor())}|${S.site.lat}|${S.site.lon}|${Hor.getPrefs().tz || ''}`;
+  const key = `${dateKey(nightAnchor())}|${S.site.lat}|${S.site.lon}|${resolvedZone()}|${siteNoon(nightAnchor()).getTime()}`;
   if (_winMemo.key !== key) _winMemo = { key, val: nightWindow() };
   return _winMemo.val;
 }
@@ -226,12 +235,12 @@ function cachedNightWindow() {
 /** The active scrub span [start, end) in UTC. Off = the WHOLE night from the
  *  planner's own sun-crossings when the sunset/sunrise pair is coherent, else
  *  the dark window (dusk..dawn), else the site-zoned 20:00-04:00 fallback; On
- *  = the 24 h noon->noon day. SCORING is unaffected - it stays on
+ *  = noon to next noon in the site calendar. SCORING is unaffected - it stays on
  *  nightWindow() (dusk..dawn). scrubWindowMs/scrubBounds are SHARED with the
  *  desktop so both apps follow ONE policy. */
 function scrubRange() {
   const fullStart = skyAnchor(S.skyTime);
-  const fullEnd = new Date(fullStart.getTime() + 24 * 3600000);
+  const fullEnd = nextSiteNoon(fullStart);
   const w = cachedNightWindow();
   const info = w.info || {};
   const pick = (a, b, c) => a || b || c || null;
@@ -241,6 +250,8 @@ function scrubRange() {
     duskMs: ms(pick(info.astroDusk, info.nauticalDusk, info.civilDusk)),
     dawnMs: ms(pick(info.astroDawn, info.nauticalDawn, info.civilDawn)),
     noonMs: siteNoon(nightAnchor()).getTime(),
+    fallbackStartMs: siteClock(nightAnchor(), 20).getTime(),
+    fallbackEndMs: siteClock(nightAnchor(), 4, 1).getTime(),
   });
   const b = E.scrubBounds(!!Hor.getPrefs().viewFullDay,
     s.startMs, s.endMs,
@@ -325,7 +336,7 @@ function clampSkyTime({ repaint = false } = {}) {
 
 /** Caption under the Sky View scrub, matching the active range. */
 function rangeLabel() {
-  if (Hor.getPrefs().viewFullDay) return 'slider spans the full 24 h day, site time';
+  if (Hor.getPrefs().viewFullDay) return 'slider spans noon to next noon, site time';
   const info = cachedNightWindow().info;
   return info.sunset && info.sunrise && info.sunrise > info.sunset
     ? 'slider spans the night (sunset\u2013sunrise), site time'
@@ -374,8 +385,8 @@ function savedTargetIds() {
 }
 function saveTargetIds(ids) {
   const known = [...new Set(ids.filter((id) => typeof id === 'string' && SAFE_TARGET_ID.test(id) && byId.has(id)))].slice(0, 2000);
-  Hor.setPrefs({ savedTargetIds: known });
-  return new Set(known);
+  savePreferencePatch({ savedTargetIds: known });
+  return new Set(savedTargetIds());
 }
 function updateSavedTargetButton(button, saved) {
   if (!button) return;
@@ -457,9 +468,11 @@ function busy(on, text) {
 }
 
 /* Workbench is the only shipped visual language. */
-function applyTheme(_legacyValue) {
+function applyTheme(_legacyValue, strict = false) {
+  try { localStorage.setItem('nightseam_theme', 'workbench'); } catch (err) {
+    if (strict) throw err;
+  }
   document.documentElement.setAttribute('data-theme', 'workbench');
-  try { localStorage.setItem('nightseam_theme', 'workbench'); } catch { /* ignore */ }
 }
 
 /* ---- weather: Open-Meteo, load-on-demand — nothing is fetched until the
@@ -1050,7 +1063,7 @@ function fmtDur(min) {
 }
 
 
-function renderTonight(silent) {
+function renderTonight(silent, immediate = false) {
   // `silent` (pref changes, auto-refresh): keep the current cards on screen
   // and swap in the new ones when the compute finishes — no blank-splash
   // frame that makes the recommended targets vanish and reappear.
@@ -1063,7 +1076,7 @@ function renderTonight(silent) {
     // toggling the topbar chip shifts the layout for nothing.
   }
   // defer heavy math so the UI paints first
-  setTimeout(() => {
+  const render = () => {
     if (token !== tonightToken || S.view !== 'tonight') return; // superseded / view switched
     const { lat, lon } = S.site;
     const win = nightWindow();
@@ -1241,7 +1254,10 @@ function renderTonight(silent) {
     // wait for THIS render instead of guessing a delay.
     stampTonightRender(box, selTime);
     applyTonightMarker();
-  }, 30);
+  };
+  // Backup acceptance must observe rendering errors inside its rollback boundary.
+  if (immediate) render();
+  else setTimeout(render, 30);
 }
 
 /* ----------------------------- sky map ----------------------------- */
@@ -1271,35 +1287,23 @@ function skyClamp(W) {
   [SKYV.fx, SKYV.fy] = skyClampFocus(W, W, SKYV.fx, SKYV.fy);
 }
 
-/** Start of the 24 h scrub window that CONTAINS the given time: the most
+/** Start of the calendar scrub window that CONTAINS the given time: the most
  *  recent noon at-or-before it (yesterday's noon when the clock reads
  *  before 12:00). Without this, any time before noon lands outside the
  *  noon->next-noon range and the slider clamps to its left edge. */
 function skyRangeStart(t) {
   const w = WS.utcToWall(t);
   const dayOffset = w.getHours() < 12 ? -1 : 0;
-  return WS.wallToUtc(new Date(w.getFullYear(), w.getMonth(), w.getDate() + dayOffset, 12, 0, 0));
+  return siteClock(w, 12, dayOffset);
 }
 
-/* Stable scrub anchor: SKY_ANCHOR is fixed at the first noon, and stays
- * fixed while the time moves WITHIN its 24 h window — this is what stops
- * the slider from jumping back when the time crosses noon mid-drag (a
- * naive "re-anchor to the most recent noon" flips the window under the
- * drag). Only when the time leaves the window (wall-clock picker, "Now",
- * arrows, date change) does it re-anchor, in whole-day steps so a jump is
- * always to an adjacent day, never mid-window. */
-let SKY_ANCHOR = null;
+/* Keep the noon anchor stable during dragging, including its right endpoint.
+ * Re-anchor on zone changes or when selection leaves the actual calendar span. */
+let SKY_ANCHOR = null, SKY_ANCHOR_ZONE = null;
 function skyAnchor(t) {
-  if (SKY_ANCHOR && t >= SKY_ANCHOR && t.getTime() <= SKY_ANCHOR.getTime() + 24 * 3600000) {
-    return SKY_ANCHOR;
-  }
-  if (SKY_ANCHOR) {
-    let a = SKY_ANCHOR.getTime();
-    while (t.getTime() > a + 24 * 3600000) a += 24 * 3600000;
-    while (t.getTime() < a) a -= 24 * 3600000;
-    SKY_ANCHOR = new Date(a);
-    return SKY_ANCHOR;
-  }
+  const zone = resolvedZone();
+  if (zone !== SKY_ANCHOR_ZONE) { SKY_ANCHOR = null; SKY_ANCHOR_ZONE = zone; }
+  if (SKY_ANCHOR && t >= SKY_ANCHOR && t <= nextSiteNoon(SKY_ANCHOR)) return SKY_ANCHOR;
   SKY_ANCHOR = skyRangeStart(t);
   return SKY_ANCHOR;
 }
@@ -1754,7 +1758,7 @@ function renderSky() {
   const resetBtn = $('#sky-reset');
   if (resetBtn) resetBtn.addEventListener('click', () => { skyResetView(); });
 
-  // time scrub slider: 24 h window containing the current sky time
+  // time scrub slider: noon-to-noon window containing the current sky time
   const slider = $('#sky-slider');
   const sout = $('#sky-sout');
   const pad2 = (x) => String(x).padStart(2, '0');
@@ -2065,7 +2069,7 @@ function renderCatalog() {
   $('#cat-clear-filters').addEventListener('click', () => {
     S.cat = { ...S.cat, q: '', chip: 'all', con: '', types: [], visibility: 'all',
       savedOnly: false, clearOnly: false, fitsRig: false, sort: 'name', up: true, page: 0 };
-    Hor.setPrefs({ minVis: 0 });
+    if (!savePreferencePatch({ minVis: 0 })) return;
     renderCatalog();
   });
   box.querySelector('.cat tbody')?.addEventListener('click', (ev) => {
@@ -2091,7 +2095,7 @@ function renderCatalog() {
   $('#cat-minvis').addEventListener('input', (ev) => {
     const v = Math.round(Number(ev.target.value));
     $('#cat-minvis-v').textContent = v > 0 ? `${v}%` : 'off';
-    Hor.setPrefs({ minVis: v });
+    if (!savePreferencePatch({ minVis: v })) return;
   });
   $('#cat-minvis').addEventListener('change', () => { S.cat.page = 0; renderCatalog(); });
   $('#cat-export-provenance').addEventListener('click', downloadCatalogProvenance);
@@ -2127,7 +2131,7 @@ async function loadCatalogProvenance() {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 30000);
     try {
-      const response = await fetch('catalog-provenance.json?v=' + CATALOG_PROVENANCE_TOKEN, { signal: controller.signal });
+      const response = await fetch(new URL('catalog-provenance.json?v=' + CATALOG_PROVENANCE_TOKEN, import.meta.url), { signal: controller.signal });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const candidate = await response.json();
       const objects = candidate?.objects;
@@ -2586,10 +2590,9 @@ function openDetail(id, opener = null, { refresh = false } = {}) {
   const info = E.nightInfo(nightAnchor(), lat, lon, siteNoon(nightAnchor()));
   const jd = E.julianDay(S.skyTime);
   const [altNow, azNow] = E.altaz(o.ra_hours * 15, o.dec_deg, jd, lat, lon);
-  // the SITE's 00:30, not the browser's (same anchoring rule as nightInfo)
-  const localMidnight = WS.wallToUtc(new Date(
-    S.date.getFullYear(), S.date.getMonth(), S.date.getDate(), 0, 30));
-  const dayInfo = E.objectDayInfo(o.ra_hours * 15, o.dec_deg, localMidnight, lat, lon);
+  // Culmination belongs to the complete site's selected calendar day.
+  const localMidnight = siteClock(S.date, 0);
+  const dayInfo = E.objectDayInfo(o.ra_hours * 15, o.dec_deg, localMidnight, lat, lon, siteClock(S.date, 0, 1));
 
   // Moon distance at the selected planner time + tonight's peak.
   const [moonAltNow, moonAzNow] = E.moonAltAz(jd, lat, lon);
@@ -2602,10 +2605,10 @@ function openDetail(id, opener = null, { refresh = false } = {}) {
     const [pa, paz] = E.altaz(o.ra_hours * 15, o.dec_deg, peakJd, lat, lon);
     sepPeak = E.sepDeg(pa, paz, ma2, maz2);
   } catch { /* e.g. transit not a Date — keep null */ }
-  const moonRow = (label, sep) => {
+  const moonRow = (label, sep, illumination = illumNow) => {
     if (sep == null) return '';
     const a = Math.round(sep);
-    const col = illumNow < 15 ? 'var(--green)' : a >= 90 ? 'var(--green)' : a >= 45 ? 'var(--amber)' : 'var(--bad)';
+    const col = illumination < 0.15 ? 'var(--green)' : a >= 90 ? 'var(--green)' : a >= 45 ? 'var(--amber)' : 'var(--bad)';
     const note = a < 30 ? ' — very close to the Moon' : a < 60 ? ' — close to the Moon' : '';
     return `<dt>${label}</dt><dd><span style="color:${col}">${a}°</span><span class="tags">from Moon${note}</span></dd>`;
   };
@@ -2676,7 +2679,7 @@ function openDetail(id, opener = null, { refresh = false } = {}) {
           <dt>Rise / set</dt><dd>${fmtClock(dayInfo.rise)} · ${fmtClock(dayInfo.set)}</dd>
           <dt>Visibility at selected time</dt><dd id="m-selected-visibility">—</dd>
           <dt>Moon separation at selected time</dt><dd id="m-selected-separation">—</dd>
-          ${sepPeak != null ? moonRow('Moon dist @ culmination', sepPeak) : ''}
+          ${sepPeak != null ? moonRow('Moon dist @ culmination', sepPeak, E.moonIllumination(peakJd)) : ''}
         </dl>
         <dl class="meta" id="d-catalog-source">${catalogSourceHTML(o)}</dl>
         ${o.blurb ? `<p class="blurb">${esc(o.blurb)}</p>` : ''}
@@ -2736,6 +2739,8 @@ function openDetail(id, opener = null, { refresh = false } = {}) {
     duskMs: ms(pickW(info.astroDusk, info.nauticalDusk, info.civilDusk)),
     dawnMs: ms(pickW(info.astroDawn, info.nauticalDawn, info.civilDawn)),
     noonMs: siteNoon(nightAnchor()).getTime(),
+    fallbackStartMs: siteClock(nightAnchor(), 20).getTime(),
+    fallbackEndMs: siteClock(nightAnchor(), 4, 1).getTime(),
   });
   const startT = new Date(chartWin.startMs);
   const endT = new Date(chartWin.endMs);
@@ -3035,7 +3040,7 @@ function wireDetailExtras(modal, o) {
   if (!o.custom) return;
   const del = modal.querySelector('#m-del');
   if (del) del.onclick = async () => {
-    await WS.deleteTargetRec(o.id);
+    if (!(await WS.deleteTargetRec(o.id))) { alert('Could not delete the target. Your data is unchanged.'); return; }
     CAT = CAT.filter((x) => x.id !== o.id);
     byId.delete(o.id);
     searchCache.delete(o);
@@ -3073,22 +3078,63 @@ const TZ_LIST = [
 
 const TZ_DATALIST = `<datalist id="tz-list">${TZ_LIST.map((t) => `<option value="${t}">`).join('')}</datalist>`;
 
+function syncTopPrefs() {
+  const p = Hor.getPrefs();
+  const eff = Hor.effectiveMinAlt();
+  const mua = $('#tb-minalt'), muaV = $('#tb-minalt-val'), note = $('#tb-note');
+  if (mua) mua.value = String(eff);
+  if (mua) mua.setAttribute('aria-valuetext', `${eff} degrees`);
+  if (muaV) muaV.textContent = eff + '°';
+  if (note) note.textContent = p.minAlt == null ? 'auto (bortle)' : 'explicit';
+}
+
+function refreshMenuUI() {
+  const prefs = Hor.getPrefs();
+  const edge = $('#edgeSpace'), edgeV = $('#edgeSpaceVal');
+  if (edge) edge.value = String(Number.isFinite(prefs.edge) ? prefs.edge : 16);
+  if (edgeV) edgeV.innerHTML = `${Number.isFinite(prefs.edge) ? prefs.edge : 16}&nbsp;px`;
+  const adv = $('#advMode'); if (adv) adv.checked = !!prefs.advMode;
+  const vfd = $('#viewFullDay'); if (vfd) vfd.checked = !!prefs.viewFullDay;
+  const tzSec = $('#tzSection'); if (tzSec) tzSec.classList.toggle('hidden', !prefs.advMode);
+  const tz = $('#tzSelect'); if (tz) tz.value = prefs.tz || '';
+  const moon = $('#moonAware'); if (moon) moon.checked = !!prefs.moonAware;
+  const bortle = $('#bortle'), bortleV = $('#bortleVal');
+  if (bortle) bortle.value = String(prefs.bortle || 4);
+  if (bortleV) bortleV.textContent = String(prefs.bortle || 4);
+  const bb = $('#fltBb'); if (bb) bb.checked = !!prefs.fltBb;
+  const ha = $('#fltHa'); if (ha) ha.checked = !!prefs.fltHa;
+  const o3 = $('#fltOiii'); if (o3) o3.checked = !!prefs.fltOiii;
+  const su = $('#sizeUnit'); if (su) su.value = prefs.sizeUnit || 'arcmin';
+  const rs = $('#rigSelect'); if (rs) rs.value = prefs.activeRigId || '';
+  const wx = $('#wxAuto'); if (wx) wx.checked = !!prefs.weatherAuto;
+}
+
+function savePreferencePatch(patch) {
+  if (Hor.setPrefs(patch)) return true;
+  syncTopPrefs(); refreshMenuUI();
+  const minvis = $('#cat-minvis'), minvisV = $('#cat-minvis-v');
+  if (minvis) minvis.value = String(minVis());
+  if (minvisV) minvisV.textContent = minVis() ? minVis() + '%' : 'off';
+  alert('Could not save this setting. Your previous setting is unchanged.');
+  return false;
+}
+
 function applyEdge() {
   const e = Hor.getPrefs().edge;
   document.documentElement.style.setProperty('--edge', (Number.isFinite(e) ? e : 16) + 'px');
 }
 
-function refreshView() {
+function refreshView(immediate = false) {
   // a site/date change can move the scrub window out from under the selected
   // time - pull it back in BEFORE rendering so the heading never shows a
   // daylight instant outside the window
   clampSkyTime();
   // Tonight recomputes SILENTLY here: pref/filter changes keep the current
   // cards on screen and swap in fresh ones when done (no blank frame).
-  if (S.view === 'tonight') renderTonight(true);
-  else if (S.view === 'sky') renderSky();
-  else if (S.view === 'catalog') renderCatalog();
-  else renderHorizonView();
+  if (S.view === 'tonight') return renderTonight(true, immediate);
+  else if (S.view === 'sky') return renderSky();
+  else if (S.view === 'catalog') return renderCatalog();
+  else return renderHorizonView();
 }
 
 /** Merge or update a custom target in the catalog (and detail/byId maps). */
@@ -3106,7 +3152,7 @@ function upsertTarget(t) {
  *  bundle dropped stayed in CAT/byId - still listed, searchable, drawn on the sky
  *  chart and openable from the detail view until a page reload, while Setup
  *  showed the truth. Remove what is no longer stored, then add/update. */
-function syncCustomTargets(stored) {
+function syncCustomTargets(stored, options) {
   const keep = new Set((stored || []).map((t) => t.id));
   for (let i = CAT.length - 1; i >= 0; i--) {
     const o = CAT[i];
@@ -3121,8 +3167,11 @@ function syncCustomTargets(stored) {
   // whose object did not survive the replacement is invalid.
   dropSelectionIfGone();
   const cleanedSaved = savedTargetIds();
-  if (JSON.stringify(cleanedSaved) !== JSON.stringify(Hor.getPrefs().savedTargetIds || []))
-    Hor.setPrefs({ savedTargetIds: cleanedSaved });
+  if (JSON.stringify(cleanedSaved) !== JSON.stringify(Hor.getPrefs().savedTargetIds || [])) {
+    if (!Hor.setPrefs({ savedTargetIds: cleanedSaved }) && options?.strict) {
+      throw new Error('could not save restored target selections');
+    }
+  }
 }
 
 const objName = (o) => o.primary_name || o.id;
@@ -3131,6 +3180,18 @@ const objName = (o) => o.primary_name || o.id;
  *  The open tab survives a re-render (save/delete re-renders the whole dialog). */
 let SETTINGS_TAB = 'sites';
 let settingsReturnFocus = null;
+let userDataBusy = false;
+
+function lockUserDataTransfer() {
+  userDataBusy = true;
+  const controls = [...$('#modal').querySelectorAll('button, input, select, textarea')]
+    .map((control) => [control, control.disabled]);
+  for (const [control] of controls) control.disabled = true;
+  return () => {
+    for (const [control, disabled] of controls) control.disabled = disabled;
+    userDataBusy = false;
+  };
+}
 
 function showMTab(name) {
   SETTINGS_TAB = name;
@@ -3154,8 +3215,8 @@ function showMTab(name) {
 /** Re-read rigs and rebuild the topbar picker. WB3 (review): this used to run
  *  only at boot, so a rig added/edited in Setup (or restored from a backup)
  *  was invisible to the picker and to frame coverage until a reload. */
-async function reloadRigs() {
-  const rigs = await WS.getRigs();
+async function reloadRigs(options) {
+  const rigs = await WS.getRigs(options);
   RIGS.length = 0;
   RIGS.push(...rigs);
   const rsSel = $('#rigSelect');
@@ -3166,7 +3227,9 @@ async function reloadRigs() {
     // back to "none". (refreshMenuUI is local to boot(), so this must not call it.)
     const want = Hor.getPrefs().activeRigId || '';
     rsSel.value = rigs.some((r) => r.id === want) ? want : '';
-    if (!rsSel.value && want) Hor.setPrefs({ activeRigId: '' });
+    if (!rsSel.value && want && !Hor.setPrefs({ activeRigId: '' }) && options?.strict) {
+      throw new Error('could not save the restored rig preference');
+    }
   }
 }
 
@@ -3347,9 +3410,13 @@ async function renderSettings() {
     }
     const rec = activeSite();
     if (rec) {
-      rec.lat = lat; rec.lon = lon;
-      await WS.saveSiteRec(rec);
-      applyActiveSite(rec);
+      const next = { ...rec, lat, lon };
+      if (!(await WS.saveSiteRec(next))) {
+        if (qnote) qnote.textContent = 'Could not save coordinates. Your site is unchanged.';
+        return;
+      }
+      Object.assign(rec, next);
+      applyActiveSite(next);
     } else {
       S.site = { ...S.site, lat, lon };
     }
@@ -3382,7 +3449,7 @@ async function renderSettings() {
   modal.querySelectorAll('[data-delsite]').forEach((b) => b.addEventListener('click', async () => {
     const s = sites.find((x) => x.id === b.dataset.delsite);
     if (!s || !confirm(`Delete site "${s.name}"?`)) return;
-    await WS.deleteSiteRec(s.id);
+    if (!(await WS.deleteSiteRec(s.id))) { alert('Could not delete the site. Your data is unchanged.'); return; }
     SITES = SITES.filter((x) => x.id !== s.id);
     if (!SITES.length) { closeModal(); return; }
     const still = SITES.find((x) => x.id === S.site.id);
@@ -3397,7 +3464,7 @@ async function renderSettings() {
   modal.querySelectorAll('[data-delrig]').forEach((b) => b.addEventListener('click', async () => {
     if (!confirm('Delete this rig?')) return;
     const rigId = b.dataset.delrig;
-    await WS.deleteRigRec(rigId);
+    if (!(await WS.deleteRigRec(rigId))) { alert('Could not delete the rig. Your data is unchanged.'); return; }
     announcePlannerChange('rig', { cause: 'rig-delete', rigId });
     closeModal(); renderSettings();
   }));
@@ -3419,7 +3486,7 @@ async function renderSettings() {
   modal.querySelectorAll('[data-deltarget]').forEach((b) => b.addEventListener('click', async () => {
     const t = targets.find((x) => x.id === b.dataset.deltarget);
     if (!t || !confirm(`Delete custom target "${objName(t)}"?`)) return;
-    await WS.deleteTargetRec(t.id);
+    if (!(await WS.deleteTargetRec(t.id))) { alert('Could not delete the target. Your data is unchanged.'); return; }
     const rec = byId.get(t.id) || t;
     CAT = CAT.filter((x) => x.id !== t.id);
     byId.delete(t.id);
@@ -3431,29 +3498,48 @@ async function renderSettings() {
 
   // — backup / transfer —
   $('#set-export').addEventListener('click', async () => {
+    if (userDataBusy) return;
+    const finish = lockUserDataTransfer();
     // truthful backup: panorama photos are embedded, hasImage matches the data
-    const backup = await WS.collectBackup(Hor.getPrefs(),
-      await Hor.exportPanosWithImages(), WS.currentTheme());
-    WS.downloadText(`nightseam-web-backup-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify(backup, null, 1));
+    try {
+      const backup = await WS.collectBackup(Hor.getPrefs(),
+        await Hor.exportPanosWithImages(), WS.currentTheme());
+      if (!WS.downloadText(`nightseam-web-backup-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify(backup, null, 1))) {
+        throw new Error('could not start the download');
+      }
+    } catch (err) { alert('Export failed: ' + err.message); }
+    finally { finish(); }
   });
 
   // Apply a full web snapshot: records + panoramas + prefs + theme. Used for
   // BOTH the incoming backup and the safety rollback, so the two paths cannot
-  // diverge. `current` is the pre-restore snapshot: restoreBackup persists it
-  // to meta/safety and rolls the records back if a write fails. A malformed
-  // bundle throws before anything is destroyed.
-  async function applyWebSnapshot(data, current) {
+  // diverge. `current` is committed to meta/safety atomically with the record
+  // replacement; failures in the remaining stores or rendering restore it.
+  // A malformed bundle throws before anything is destroyed.
+  async function applyWebSnapshot(data, current, rollback = false, onRecordsCommitted = () => {}, editorHistory = null) {
     // Normalize the horizon payload BEFORE restoreBackup clears IndexedDB.
     // `stageBackup` validates the outer shape; this validates the actual editor
     // record contract and turns the staged bundle into one complete model.
     const norm = Hor.normalizePanos(data && data.panos);
     if (!norm) throw new Error('missing panorama section or malformed panorama data');
-    const staged = await WS.restoreBackup({ ...data, panos: norm }, current);
-    if (!Hor.applyPanosSnapshot(staged.panos)) {
+    const staged = WS.stageBackup({ ...data, panos: norm });
+    if (rollback) await WS.writeStaged(staged);
+    else await WS.restoreBackup({ ...data, panos: norm }, current);
+    onRecordsCommitted();
+    if (!(await Hor.applyPanosSnapshot(staged.panos))) {
       throw new Error('saving panoramas failed (storage full or unavailable)');
     }
-    if (staged.prefs) Hor.setPrefs(staged.prefs);
-    if (staged.theme) applyTheme(staged.theme);
+    if (rollback && editorHistory && !Hor.restoreEditorHistory(editorHistory)) {
+      throw new Error('could not recover the original horizon editor history');
+    }
+    if (!Hor.replacePrefs(staged.prefs || {})) throw new Error('saving preferences failed (storage full or unavailable)');
+    if (staged.theme) applyTheme(staged.theme, true);
+    applyEdge();
+    await reinitUserData({ strict: true });
+    syncTopPrefs(); refreshMenuUI();
+    TIER = assignPopularityTiers(activeCatalog());
+    S.cat.page = 0;
+    await refreshView(true);
     return staged;
   }
 
@@ -3461,14 +3547,19 @@ async function renderSettings() {
   $('#set-import').addEventListener('change', (ev) => {
     const f = ev.target.files && ev.target.files[0];
     ev.target.value = '';
-    if (!f) return;
+    if (!f || userDataBusy) return;
     // the backup can embed panorama photos, so cap the file before reading it
     // all into memory (a hand-crafted multi-GB file must not wedge the tab)
     if (f.size > 200 * 1024 * 1024) { alert('Backup file is too large (200 MB max)'); return; }
+    const finish = lockUserDataTransfer();
     const rd = new FileReader();
     rd.onload = async () => {
+      let imported = false;
       try {
         const data = JSON.parse(rd.result);
+        const norm = Hor.normalizePanos(data && data.panos);
+        if (!norm) throw new Error('missing panorama section or malformed panorama data');
+        WS.stageBackup({ ...data, panos: norm });
         const counts = {
           sites: (data.sites || []).length,
           rigs: (data.rigs || []).length,
@@ -3481,21 +3572,33 @@ async function renderSettings() {
         // copy and rolls back if any write fails
         const current = await WS.collectBackup(Hor.getPrefs(),
           await Hor.exportPanosWithImages(), WS.currentTheme());
+        const previousSite = { ...S.site };
+        const previousSelection = S.detailId;
+        const previousEditorHistory = Hor.captureEditorHistory();
+        let recordsCommitted = false;
         try {
-          await applyWebSnapshot(data, current);
+          await applyWebSnapshot(data, current, false, () => { recordsCommitted = true; });
         } catch (err) {
-          try { await applyWebSnapshot(current, current); } catch { /* keep the original error */ }
+          if (!recordsCommitted) throw err;
+          try {
+            S.site = previousSite;
+            S.detailId = previousSelection;
+            await applyWebSnapshot(current, null, true, () => {}, previousEditorHistory);
+          } catch (rollbackErr) {
+            throw new Error(`${err.message}; recovery also failed: ${rollbackErr.message}. The pre-import backup is retained in local safety storage.`);
+          }
           throw err;
         }
-        applyEdge();
-        await reinitUserData();
-        closeModal(); refreshView();
+        imported = true;
       } catch (err) {
         alert('Import failed: ' + err.message);
-      }
+      } finally { finish(); }
+      if (imported) closeModal();
     };
-    rd.onerror = () => alert('could not read the file');
-    rd.readAsText(f);
+    rd.onerror = () => { finish(); alert('could not read the file'); };
+    rd.onabort = finish;
+    try { rd.readAsText(f); }
+    catch (err) { finish(); alert('could not read the file: ' + err.message); }
   });
 
   // form save/cancel wiring
@@ -3536,7 +3639,7 @@ async function saveSiteForm() {
   }
   const id = $('#sf-site-id').value || WS.NEW_SITE_ID();
   const rec = { id, name, lat, lon, elev: Number.isFinite(elev) ? elev : 0, tz };
-  await WS.saveSiteRec(rec);
+  if (!(await WS.saveSiteRec(rec))) { alert('Could not save the site. Keep this form open and try again.'); return; }
   SITES = await WS.getSites();
   if (!SITES.some((s) => s.id === S.site.id)) applyActiveSite(rec);
   else if (S.site.id === id) applyActiveSite(rec);
@@ -3566,12 +3669,13 @@ function showRigPicker() {
     const p = WS.DEFAULT_RIGS[+b.dataset.addpreset];
     if (!p) return;
     const rigId = 'r' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
-    await WS.saveRigRec({
+    const saved = await WS.saveRigRec({
       id: rigId,
       name: p.name, focal_mm: p.focal_mm, sensor_w: p.sensor_w, sensor_h: p.sensor_h,
       fov_w: WS.fovArcmin(p.focal_mm, p.sensor_w), fov_h: WS.fovArcmin(p.focal_mm, p.sensor_h),
       fov_unit: 'arcmin',
     });
+    if (!saved) { alert('Could not save the rig. Try again.'); return; }
     announcePlannerChange('rig', { cause: 'rig-add', rigId });
     await renderSettings();                        // keeps the Rigs tab open
   }));
@@ -3616,7 +3720,7 @@ async function saveRigForm() {
   };
   rec.fov_w = WS.fovArcmin(rec.focal_mm, rec.sensor_w);
   rec.fov_h = WS.fovArcmin(rec.focal_mm, rec.sensor_h);
-  await WS.saveRigRec(rec);
+  if (!(await WS.saveRigRec(rec))) { alert('Could not save the rig. Keep this form open and try again.'); return; }
   announcePlannerChange('rig', { cause: 'rig-save', rigId: rec.id });
   renderSettings();
 }
@@ -3658,13 +3762,14 @@ async function saveTargetForm() {
     wiki: null, messier: null, ngcic: null, other: '',
     _adv: false,
   };
-  await WS.saveTargetRec(rec);
+  if (!(await WS.saveTargetRec(rec))) { err.textContent = 'Could not save the target. Keep this form open and try again.'; return; }
   announcePlannerChange('preferences', { cause: 'catalog-target', targetId: rec.id });
   upsertTarget(rec);
   renderSettings();
 }
 
 function closeModal() {
+  if (userDataBusy) return;
   const modal = $('#modal');
   if (modal) { modal.hidden = true; modal.innerHTML = ''; modal.onclick = null; }
   syncDialogBackground();
@@ -3673,13 +3778,23 @@ function closeModal() {
 }
 
 /** Re-read user data after a backup import (sites, targets, rigs). */
-async function reinitUserData() {
-  SITES = await WS.getSites();
-  syncCustomTargets(await WS.getTargets());
-  await reloadRigs();
+async function reinitUserData(options) {
+  SITES = await WS.getSites(options);
+  syncCustomTargets(await WS.getTargets(options), options);
+  await reloadRigs(options);
   let sid = Hor.getPrefs().activeSiteId;
   if (!SITES.some((s) => s.id === sid)) sid = SITES.length ? SITES[0].id : null;
-  if (sid && SITES.some((s) => s.id === sid)) applyActiveSite(SITES.find((s) => s.id === sid));
+  if (sid && SITES.some((s) => s.id === sid)) applyActiveSite(SITES.find((s) => s.id === sid), options);
+  else {
+    // An empty snapshot must not retain the replaced browser's active site.
+    S.site = { lat: 52.52, lon: 13.4, label: 'Berlin (default)', tz: null };
+    WS.setActiveTz(Hor.getPrefs().tz || null);
+    if (!Hor.setPrefs({ activeSiteId: null }) && options?.strict) {
+      throw new Error('could not clear the restored site preference');
+    }
+    const selector = $('#tb-site');
+    if (selector) selector.innerHTML = '<option value="">Berlin (default)</option>';
+  }
 }
 
 /* ---- first-run welcome (browser equivalent of the desktop wizard) ---- */
@@ -3786,7 +3901,7 @@ async function boot() {
       return;
     }
     splashText('loading catalog…');
-    const res = await fetch('catalog.json?v=' + CATALOG_TOKEN);
+    const res = await fetch(new URL('catalog.json?v=' + CATALOG_TOKEN, import.meta.url));
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     CAT = await res.json();
     // ALIGNMENT (0.6.31): rank the set the CURRENT MODE shows - the desktop
@@ -3813,25 +3928,32 @@ async function boot() {
   // (the popularity source snapshot is shipped; see popularityOf above)
 
   // ---- user data: sites (with first-run welcome), custom targets ----
+  const saveInitialSite = async (site) => {
+    if (await WS.saveSiteRec(site)) return true;
+    bootFailure('Your site could not be saved',
+      'Browser storage rejected the site. Allow site data or free storage space, then reload.');
+    return false;
+  };
   SITES = await WS.getSites();
   if (!SITES.length) {
     const legacy = legacySite();
     if (legacy) {
-      await WS.saveSiteRec({ id: WS.NEW_SITE_ID(), name: 'My site', lat: legacy.lat, lon: legacy.lon, elev: 0, tz: null });
+      if (!(await saveInitialSite({ id: WS.NEW_SITE_ID(), name: 'My site', lat: legacy.lat, lon: legacy.lon, elev: 0, tz: null }))) return;
       SITES = await WS.getSites();
     } else {
       const w = await welcomeFlow();
-      if (w) await WS.saveSiteRec(w);
+      if (w && !(await saveInitialSite(w))) return;
       SITES = await WS.getSites();
     }
   }
   if (!SITES.length) {
-    await WS.saveSiteRec({ id: WS.NEW_SITE_ID(), name: 'Berlin (default)', lat: 52.52, lon: 13.4, elev: 0, tz: null });
+    if (!(await saveInitialSite({ id: WS.NEW_SITE_ID(), name: 'Berlin (default)', lat: 52.52, lon: 13.4, elev: 0, tz: null }))) return;
     SITES = await WS.getSites();
   }
   let sid = Hor.getPrefs().activeSiteId;
   if (!SITES.some((s) => s.id === sid)) sid = SITES[0].id;
   applyActiveSite(SITES.find((s) => s.id === sid) || SITES[0]);
+  S.date = WS.effToday();
 
   // custom targets join the catalog
   syncCustomTargets(await WS.getTargets());
@@ -3871,22 +3993,13 @@ async function boot() {
   });
 
   // — topbar: min-alt slider (desktop parity) —
-  const syncTopPrefs = () => {
-    const p = Hor.getPrefs();
-    const eff = Hor.effectiveMinAlt();
-    const mua = $('#tb-minalt'), muaV = $('#tb-minalt-val'), note = $('#tb-note');
-    if (mua) mua.value = String(eff);
-    if (mua) mua.setAttribute('aria-valuetext', `${eff} degrees`);
-    if (muaV) muaV.textContent = eff + '°';
-    if (note) note.textContent = p.minAlt == null ? 'auto (bortle)' : 'explicit';
-  };
   syncTopPrefs();
   // live label + pref on every tick, but only recompute the views when the
   // drag ENDS — a per-tick refreshView() re-ranks the whole night and
   // rebuilds the view under the pointer, making the slider feel broken.
   const applyMinAlt = (ev) => {
     const v = Hor.num(ev.target.value);
-    Hor.setPrefs({ minAlt: Number.isFinite(v) && v >= 5 && v <= 89 ? v : null });
+    if (!savePreferencePatch({ minAlt: Number.isFinite(v) && v >= 5 && v <= 89 ? v : null })) return;
     syncTopPrefs();
     if (ev.type === 'change') refreshView();
   };
@@ -3899,7 +4012,7 @@ async function boot() {
   // — topbar: night of (date) —
   const dateEl = $('#tb-date');
   if (dateEl) {
-    const today = WS.effToday();
+    const today = S.date;
     dateEl.value = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
     dateEl.addEventListener('change', (ev) => {
       const v = ev.target.value;
@@ -3911,6 +4024,8 @@ async function boot() {
         // null, because object detail and the grid fallbacks dereference it
         S.date = WS.effToday();
       }
+      S.skyTime = siteNoon(S.date);
+      SKY_ANCHOR = null;
       announcePlannerChange('date', {
         cause: 'calendar', dateKey: dateKey(S.date),
       });
@@ -3974,7 +4089,7 @@ async function boot() {
     if (!el) return;
     const info = E.nightInfo(nightAnchor(), S.site.lat, S.site.lon,
                              siteNoon(nightAnchor()));
-    const dw = E.pickDarkWindow(info, nightAnchor(), siteNoon(nightAnchor()));
+    const dw = E.pickDarkWindow(info, nightAnchor(), siteNoon(nightAnchor()), siteFallback(nightAnchor()));
     // the ANCHORED night's moon (desktop header parity: it reports the night's
     // illumination, not the live one) - only "now" when there is no dark
     // window at all (polar day)
@@ -4003,7 +4118,7 @@ async function boot() {
   if (wxAuto) {
     wxAuto.checked = !!Hor.getPrefs().weatherAuto;
     wxAuto.addEventListener('change', (ev) => {
-      Hor.setPrefs({ weatherAuto: ev.target.checked });
+      if (!savePreferencePatch({ weatherAuto: ev.target.checked })) return;
       if (ev.target.checked && !WX_STATE.data) loadWeather(); // first flip loads immediately too
     });
   }
@@ -4014,33 +4129,14 @@ async function boot() {
   wirePopover(menuBtn, menuPanel);
 
   const p = Hor.getPrefs();
-  const refreshMenuUI = () => {
-    const prefs = Hor.getPrefs();
-    const edge = $('#edgeSpace'), edgeV = $('#edgeSpaceVal');
-    if (edge) edge.value = String(Number.isFinite(prefs.edge) ? prefs.edge : 16);
-    if (edgeV) edgeV.innerHTML = `${Number.isFinite(prefs.edge) ? prefs.edge : 16}&nbsp;px`;
-    const adv = $('#advMode'); if (adv) adv.checked = !!prefs.advMode;
-    const vfd = $('#viewFullDay'); if (vfd) vfd.checked = !!prefs.viewFullDay;
-    const tzSec = $('#tzSection'); if (tzSec) tzSec.classList.toggle('hidden', !prefs.advMode);
-    const tz = $('#tzSelect'); if (tz) tz.value = prefs.tz || '';
-    const moon = $('#moonAware'); if (moon) moon.checked = !!prefs.moonAware;
-    const bortle = $('#bortle'), bortleV = $('#bortleVal');
-    if (bortle) bortle.value = String(prefs.bortle || 4);
-    if (bortleV) bortleV.textContent = String(prefs.bortle || 4);
-    const bb = $('#fltBb'); if (bb) bb.checked = !!prefs.fltBb;
-    const ha = $('#fltHa'); if (ha) ha.checked = !!prefs.fltHa;
-    const o3 = $('#fltOiii'); if (o3) o3.checked = !!prefs.fltOiii;
-    const su = $('#sizeUnit'); if (su) su.value = prefs.sizeUnit || 'arcmin';
-    const rs = $('#rigSelect'); if (rs) rs.value = prefs.activeRigId || '';
-  };
   $('#edgeSpace').addEventListener('input', (ev) => {
     const v = Hor.num(ev.target.value);
-    Hor.setPrefs({ edge: Number.isFinite(v) ? v : 16 });
+    if (!savePreferencePatch({ edge: Number.isFinite(v) ? v : 16 })) return;
     applyEdge();
     refreshMenuUI();
   });
   $('#advMode').addEventListener('change', (ev) => {
-    Hor.setPrefs({ advMode: ev.target.checked });
+    if (!savePreferencePatch({ advMode: ev.target.checked })) return;
     cancelCatalogWarm();
     TIER = assignPopularityTiers(activeCatalog());
     S.cat.page = 0;
@@ -4049,51 +4145,51 @@ async function boot() {
     announceStatus(ev.target.checked ? 'Advanced catalog enabled.' : 'Standard catalog enabled.');
   });
   $('#tzSelect').addEventListener('change', (ev) => {
-    Hor.setPrefs({ tz: ev.target.value || '' });
+    if (!savePreferencePatch({ tz: ev.target.value || '' })) return;
     announcePlannerChange('preferences', { cause: 'timezone' });
     const s = activeSite();
     if (s) applyActiveSite(s);
     refreshView();
   });
   $('#moonAware').addEventListener('change', (ev) => {
-    Hor.setPrefs({ moonAware: ev.target.checked });
+    if (!savePreferencePatch({ moonAware: ev.target.checked })) return;
     announcePlannerChange('preferences', { cause: 'moon-aware' });
     refreshView();
   });
   // View full day: re-derive the scrub range live and pull the selected time
   // into it (e.g. 1 pm clamps back to dusk when switching the night window on).
   $('#viewFullDay').addEventListener('change', (ev) => {
-    Hor.setPrefs({ viewFullDay: ev.target.checked });
+    if (!savePreferencePatch({ viewFullDay: ev.target.checked })) return;
     announcePlannerChange('preferences', { cause: 'view-full-day' });
     clampSkyTime({ repaint: true });
   });
   $('#bortle').addEventListener('input', (ev) => {
-    Hor.setPrefs({ bortle: Hor.num(ev.target.value) || 4 });
+    if (!savePreferencePatch({ bortle: Hor.num(ev.target.value) || 4 })) return;
     refreshMenuUI(); syncTopPrefs();
   });
   $('#bortle').addEventListener('change', (ev) => {
-    Hor.setPrefs({ bortle: Hor.num(ev.target.value) || 4 });
+    if (!savePreferencePatch({ bortle: Hor.num(ev.target.value) || 4 })) return;
     announcePlannerChange('preferences', { cause: 'bortle' });
     refreshMenuUI(); syncTopPrefs(); refreshView();
   });
   $('#fltBb').addEventListener('change', (ev) => {
-    Hor.setPrefs({ fltBb: ev.target.checked });
+    if (!savePreferencePatch({ fltBb: ev.target.checked })) return;
     announcePlannerChange('preferences', { cause: 'filters' }); refreshView();
   });
   $('#fltHa').addEventListener('change', (ev) => {
-    Hor.setPrefs({ fltHa: ev.target.checked });
+    if (!savePreferencePatch({ fltHa: ev.target.checked })) return;
     announcePlannerChange('preferences', { cause: 'filters' }); refreshView();
   });
   $('#fltOiii').addEventListener('change', (ev) => {
-    Hor.setPrefs({ fltOiii: ev.target.checked });
+    if (!savePreferencePatch({ fltOiii: ev.target.checked })) return;
     announcePlannerChange('preferences', { cause: 'filters' }); refreshView();
   });
   $('#sizeUnit').addEventListener('change', (ev) => {
-    Hor.setPrefs({ sizeUnit: ev.target.value });
+    if (!savePreferencePatch({ sizeUnit: ev.target.value })) return;
     announcePlannerChange('preferences', { cause: 'size-unit' }); refreshView();
   });
   $('#rigSelect').addEventListener('change', (ev) => {
-    Hor.setPrefs({ activeRigId: ev.target.value || '' });
+    if (!savePreferencePatch({ activeRigId: ev.target.value || '' })) return;
     announcePlannerChange('rig', { cause: 'active-rig', rigId: ev.target.value || '' });
     refreshView();
   });
@@ -4104,10 +4200,12 @@ async function boot() {
   // edited or renamed rig is user data and stays).
   const rigPrefs = Hor.getPrefs();
   if (rigPrefs.rigsSeeded && !rigPrefs.rigsPresetCleaned) {
-    const gone = await WS.removeSeededRigs();
-    const patch = { rigsPresetCleaned: true };
-    if (gone.includes(rigPrefs.activeRigId)) patch.activeRigId = '';
-    Hor.setPrefs(patch);
+    try {
+      const gone = await WS.removeSeededRigs();
+      const patch = { rigsPresetCleaned: true };
+      if (gone.includes(rigPrefs.activeRigId)) patch.activeRigId = '';
+      savePreferencePatch(patch);
+    } catch (err) { console.warn('NightSeam: preset cleanup will be retried', err); }
   }
   await reloadRigs();
 

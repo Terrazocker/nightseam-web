@@ -41,7 +41,7 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 HARNESS = ROOT / "tests" / "js" / "reference_anchors.mjs"
-ANCHOR_COUNT = 21
+ANCHOR_COUNT = 24
 
 
 def _run(core_dir=None):
@@ -267,3 +267,22 @@ def test_precession_zeta_z_swap_mutation_fails_the_order_anchor(tmp_path):
     failed = _failed(core)
     assert "precession_rotation_order" in failed, sorted(failed)
 
+
+@pytest.mark.parametrize('coefficient', [
+    '0.046 * Math.sin(2 * dd - m)',
+    '0.278 * Math.sin(mp - f)',
+    '0.046 * Math.sin(2 * dd - mp - f)',
+])
+def test_each_lunar_sign_regression_fails_independent_series(tmp_path, coefficient):
+    _assert_mutation_fails(tmp_path, '+ ' + coefficient, '- ' + coefficient,
+                           'moon_independent_series')
+
+
+def test_missing_lunar_parallax_fails_independent_observer_anchors(tmp_path):
+    _assert_mutation_fails(tmp_path, 'const radius = 6378.137 /',
+                           'const radius = 0 /', 'moon_independent_topocentric')
+
+
+def test_lunar_distance_regression_fails_independent_reference(tmp_path):
+    _assert_mutation_fails(tmp_path, '385000.56 - 20905.355',
+                           '385000.56 - 10905.355', 'moon_independent_distance')

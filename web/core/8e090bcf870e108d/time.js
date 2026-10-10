@@ -29,6 +29,28 @@ export function offsetEastMin(tzName, ms) {
   } catch { return null; }
 }
 
+/** Resolve calendar fields encoded as UTC milliseconds into a zoned instant.
+ * Temporal-compatible disambiguation: earlier in a fold; forward through a gap.
+ * Returns null for an unknown zone. Independent of the browser's Date zone. */
+export function zonedWallToUtcMs(tzName, wallMs) {
+  if (!Number.isFinite(wallMs)) return null;
+  const offsets = new Set();
+  // ±48h also covers date-line moves (Samoa's skipped calendar day).
+  for (let hours = -48; hours <= 48; hours += 6) {
+    const off = offsetEastMin(tzName, wallMs + hours * 3600000);
+    if (off != null) offsets.add(off);
+  }
+  const candidates = [...offsets].map(off => {
+    const instant = wallMs - off * 60000;
+    const actual = offsetEastMin(tzName, instant);
+    return { instant, delta: instant + actual * 60000 - wallMs };
+  });
+  const exact = candidates.filter(c => c.delta === 0).sort((a,b) => a.instant - b.instant);
+  if (exact.length) return exact[0].instant;
+  const forward = candidates.filter(c => c.delta > 0).sort((a,b) => a.delta - b.delta);
+  return forward.length ? forward[0].instant : null;
+}
+
 /** Minutes EAST of UTC in effect at local noon of `dateStr` (YYYY-MM-DD) in
  *  `tzName`, via the installed tz database. Falls back to the machine offset
  *  when the zone is absent or the date is malformed (the desktop rule).

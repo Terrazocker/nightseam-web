@@ -102,7 +102,7 @@ export function nightInfo(localDate, lat, lon, localNoon) {
  *  `dayDate` is the local-noon anchor of the night (also accepted in place of
  *  `localNoon`); there is NO wall-clock default - a missing anchor throws, so
  *  a polar-day chip can never show `now+8h..now+16h` (FIX-6, review CR1). */
-export function pickDarkWindow(info, dayDate, localNoon) {
+export function pickDarkWindow(info, dayDate, localNoon, fallback) {
   const level = (info.astroDusk && info.astroDawn) ? "astronomical"
     : (info.nauticalDusk && info.nauticalDawn) ? "nautical"
       : (info.civilDusk && info.civilDawn) ? "civil"
@@ -121,8 +121,8 @@ export function pickDarkWindow(info, dayDate, localNoon) {
       "wall clock");
   }
   return {
-    dusk: new Date(anchor.getTime() + 8 * 3600000),     // 20:00 local
-    dawn: new Date(anchor.getTime() + 16 * 3600000),    // 04:00 local, next day
+    dusk: fallback?.dusk || new Date(anchor.getTime() + 8 * 3600000),     // 20:00 local
+    dawn: fallback?.dawn || new Date(anchor.getTime() + 16 * 3600000),    // 04:00 local, next day
     level: level || "fallback",
   };
 }
@@ -139,7 +139,7 @@ export function pickDarkWindow(info, dayDate, localNoon) {
  *  SITE's local-noon instant so the fallback lands on the site's wall clock.
  *  Returns { startMs, endMs, source } with startMs < endMs always. */
 export function scrubWindowMs(win) {
-  const { sunsetMs, sunriseMs, duskMs, dawnMs, noonMs } = win || {};
+  const { sunsetMs, sunriseMs, duskMs, dawnMs, noonMs, fallbackStartMs, fallbackEndMs } = win || {};
   if (sunsetMs != null && sunriseMs != null && sunsetMs < sunriseMs
       && (dawnMs == null || sunsetMs < dawnMs)) {
     return { startMs: sunsetMs, endMs: sunriseMs, source: "sun" };
@@ -148,7 +148,8 @@ export function scrubWindowMs(win) {
     return { startMs: duskMs, endMs: dawnMs, source: "twilight" };
   }
   const anchor = noonMs != null ? noonMs : 0;
-  return { startMs: anchor + 8 * 3600000, endMs: anchor + 16 * 3600000,
+  return { startMs: fallbackStartMs ?? anchor + 8 * 3600000,
+           endMs: fallbackEndMs ?? anchor + 16 * 3600000,
            source: "fallback" };
 }
 

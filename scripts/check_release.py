@@ -18,14 +18,12 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 ERROR = 'ERROR'
 WARNING = 'WARNING'
-SHIPPING_EXCLUDED = {'.gitignore', 'build_web.py', 'ftps_deploy.py', 'whale',
-                     'dev', 'node_modules', '__pycache__', '.git', '.env'}
+sys.path.insert(0, str(ROOT))
+from scripts.publication_assets import EXCLUDED as SHIPPING_EXCLUDED, inventory, require_tracked, immutable_payload, hashes
+
 
 def shipped_files(root=ROOT):
-    base = Path(root) / 'web'
-    return [p for p in base.rglob('*') if p.is_file()
-            and not any(part in SHIPPING_EXCLUDED for part in p.relative_to(base).parts)
-            and p.suffix not in ('.pyc', '.env')]
+    return inventory(root, ('web',))
 
 @dataclass
 class Finding:
@@ -73,6 +71,8 @@ def evaluate(state, allow_dirty=False, include_stage=True):
     if include_stage:
         stage = state.root/'dist'/'web-release'
         try:
+            if stage.is_symlink() or any(p.is_symlink() for p in stage.rglob('*')):
+                raise ValueError('staged publication symlinks are forbidden')
             manifest = json.loads((stage/'release.manifest.json').read_text(encoding='utf-8'))
             if manifest.get('describe') != state.describe:
                 raise ValueError('staged version does not match source')
@@ -80,13 +80,14 @@ def evaluate(state, allow_dirty=False, include_stage=True):
             if not isinstance(files, dict) or not files:
                 raise ValueError('staged file manifest is missing or empty')
             actual = {p.relative_to(stage).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest()
-                      for p in stage.rglob('*') if p.is_file() and p.name != 'release.manifest.json'}
+                      for p in stage.rglob('*') if p.is_file() and p != stage/'release.manifest.json'}
             if files != actual:
                 raise ValueError('staged bytes differ from release manifest')
-            expected = {p.relative_to(state.root/'web').as_posix(): hashlib.sha256(p.read_bytes()).hexdigest()
-                        for p in shipped_files(state.root)}
-            if files != expected:
-                raise ValueError('staged files or bytes differ from complete web source')
+            payload, metadata = immutable_payload(state.root, ('web',))
+            if files != hashes({n.removeprefix('web/'): data for n, data in payload.items()}):
+                raise ValueError('staged files or bytes differ from complete immutable web source')
+            if manifest.get('publication') != metadata:
+                raise ValueError('staged publication metadata differs from source')
         except (OSError, ValueError) as exc:
             findings.append(Finding(ERROR, 'web-stage', str(exc)))
     return findings
@@ -106,6 +107,10 @@ def source_findings(root=ROOT):
         except Exception as exc:
             problems = [f'guard failed to run: {exc}']
         findings.extend(Finding(ERROR, name, str(p)) for p in problems)
+    try:
+        require_tracked(root)
+    except Exception as exc:
+        findings.append(Finding(ERROR, 'publication-artifacts', str(exc)))
     try:
         rc, tracked = git(['ls-files', '--', 'web', 'core', 'catalog_data'], root)
         if rc:

@@ -192,8 +192,8 @@ export function sunRaDec(jd) {
   return precessDateToJ2000(ra, dec, jd);
 }
 
-/** Lunar RA/Dec (J2000-ish), truncated ELP/Meeus ch.47 (~0.3 deg). */
-export function moonRaDec(jd) {
+/** Truncated Meeus ch.47 state in the equatorial-of-date frame. */
+function lunarState(jd) {
   const t = (jd - J2000) / 36525.0;
 
   const lp = D2R * ((218.316 + 481267.8813 * t) % 360);
@@ -212,7 +212,7 @@ export function moonRaDec(jd) {
     + 0.059 * Math.sin(2 * dd - 2 * mp)
     + 0.057 * Math.sin(2 * dd - m - mp)
     + 0.053 * Math.sin(2 * dd + mp)
-    - 0.046 * Math.sin(2 * dd - m)
+    + 0.046 * Math.sin(2 * dd - m)
     - 0.041 * Math.sin(m - mp)
     - 0.035 * Math.sin(dd)
     - 0.031 * Math.sin(m + mp)
@@ -220,10 +220,10 @@ export function moonRaDec(jd) {
   const lat = D2R * (
     + 5.128 * Math.sin(f)
     + 0.281 * Math.sin(mp + f)
-    - 0.278 * Math.sin(mp - f)
+    + 0.278 * Math.sin(mp - f)
     + 0.173 * Math.sin(2 * dd - f)
     + 0.055 * Math.sin(2 * dd - mp + f)
-    - 0.046 * Math.sin(2 * dd - mp - f)
+    + 0.046 * Math.sin(2 * dd - mp - f)
     + 0.033 * Math.sin(2 * dd + f)
   );
 
@@ -238,7 +238,42 @@ export function moonRaDec(jd) {
   if (ra < 0) ra += 360;
   const dec = Math.asin(Math.max(-1, Math.min(1, z))) * R2D;
 
+  // Radius coefficients from Meeus table 47A, km; same 13 arguments as longitude.
+  const distance = 385000.56 - 20905.355 * Math.cos(mp)
+    - 3699.111 * Math.cos(2 * dd - mp) - 2955.968 * Math.cos(2 * dd)
+    - 569.925 * Math.cos(2 * mp) + 48.888 * Math.cos(m)
+    - 3.149 * Math.cos(2 * f) + 246.158 * Math.cos(2 * dd - 2 * mp)
+    - 152.138 * Math.cos(2 * dd - m - mp) - 170.733 * Math.cos(2 * dd + mp)
+    - 204.586 * Math.cos(2 * dd - m) - 129.620 * Math.cos(m - mp)
+    + 108.743 * Math.cos(dd) + 104.755 * Math.cos(m + mp);
+  return { ra, dec, distance };
+}
+
+/** Geocentric J2000 lunar position; phase/elongation use this frame.
+ * Truncated model: sampled 2026 angular error <0.10 degrees, not an occultation ephemeris. */
+export function moonRaDec(jd) {
+  const { ra, dec } = lunarState(jd);
   return precessDateToJ2000(ra, dec, jd);
+}
+
+/** Geocentric lunar distance, kilometres (Meeus table 47A, truncated). */
+export function moonDistanceKm(jd) { return lunarState(jd).distance; }
+
+/** Observer-relative Moon at sea level, WGS84. Elevation remains metadata only.
+ * Subtract vectors in the SAME equatorial-of-date frame, then refract once. */
+export function moonAltAz(jd, latDeg, lonDeg, refract = true) {
+  const { ra, dec, distance } = lunarState(jd);
+  const a = ra * D2R, d = dec * D2R, p = latDeg * D2R;
+  const lst = (gmstDeg(jd) + lonDeg) * D2R;
+  const flattening = 1 / 298.257223563;
+  const e2 = flattening * (2 - flattening);
+  const radius = 6378.137 / Math.sqrt(1 - e2 * Math.sin(p) ** 2);
+  const x = distance * Math.cos(d) * Math.cos(a) - radius * Math.cos(p) * Math.cos(lst);
+  const y = distance * Math.cos(d) * Math.sin(a) - radius * Math.cos(p) * Math.sin(lst);
+  const z = distance * Math.sin(d) - radius * (1 - e2) * Math.sin(p);
+  const topRa = Math.atan2(y, x) * R2D;
+  const topDec = Math.atan2(z, Math.hypot(x, y)) * R2D;
+  return altaz(topRa, topDec, jd, latDeg, lonDeg, refract, false);
 }
 
 /** Fractional illuminated disc (0..1). */
@@ -286,4 +321,32 @@ export function sepDeg(alt1Deg, az1Deg, alt2Deg, az2Deg) {
   const dra = D2R * (az1Deg - az2Deg);
   return Math.acos(Math.max(-1, Math.min(1,
     Math.sin(p1) * Math.sin(p2) + Math.cos(p1) * Math.cos(p2) * Math.cos(dra)))) * R2D;
+}
+
+/** Rise/set keep the midnight ±12h search; culmination spans the complete
+ * site's calendar day, including a supplied next midnight on 23/25h DST days. */
+export function objectDayInfo(raDeg, decDeg, dayStartUTC, lat, lon, dayEndUTC) {
+  const midnight = julianDay(dayStartUTC);
+  const end = dayEndUTC ? julianDay(dayEndUTC) : midnight + 1;
+  const start = midnight - 0.5, N = 720;
+  let previous = null, rise = null, set = null;
+  for (let i = 0; i <= N; i++) {
+    const jd = start + i / N;
+    const altitude = altaz(raDeg, decDeg, jd, lat, lon)[0];
+    if (previous !== null && Math.sign(previous) !== Math.sign(altitude) && previous !== 0) {
+      const fraction = previous / (previous - altitude);
+      const crossing = dateFromJD(start + (i - 1 + fraction) / N);
+      if (altitude > 0) { if (!rise) rise = crossing; }
+      else if (!set) set = crossing;
+    }
+    previous = altitude;
+  }
+  let maxAlt = -90, maxJd = midnight;
+  const steps = Math.ceil((end - midnight) * 720);
+  for (let i = 0; i < steps; i++) {
+    const jd = midnight + (end - midnight) * i / steps;
+    const altitude = altaz(raDeg, decDeg, jd, lat, lon)[0];
+    if (altitude > maxAlt) { maxAlt = altitude; maxJd = jd; }
+  }
+  return { rise, set, transit: dateFromJD(maxJd), maxAlt };
 }

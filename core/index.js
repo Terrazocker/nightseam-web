@@ -32,7 +32,7 @@ export {
 } from './catalog.js';
 
 export {
-  offsetEastMin, zoneOffsetAtLocalNoon, wallFromUtcMs, utcFromWallMs,
+  offsetEastMin, zonedWallToUtcMs, zoneOffsetAtLocalNoon, wallFromUtcMs, utcFromWallMs,
 } from './time.js';
 
 export {
@@ -50,7 +50,7 @@ export {
 export {
   julianDay, dateFromJD, gmstDeg, precessJ2000ToDate, precessDateToJ2000,
   refractionDeg, altaz, altazFrame, altazFrameApply,
-  sunRaDec, moonRaDec, moonIllumination, moonAge, sunAlt, sepDeg,
+  objectDayInfo, sunRaDec, moonRaDec, moonDistanceKm, moonAltAz, moonIllumination, moonAge, sunAlt, sepDeg,
 } from './astro.js';
 
 export {

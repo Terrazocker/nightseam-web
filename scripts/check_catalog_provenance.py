@@ -24,7 +24,9 @@ SELF = Path(__file__).resolve()
 
 _TOKEN_RE = re.compile(r"const CATALOG_PROVENANCE_TOKEN = '(\d+)'")
 _FETCH_RE = re.compile(
-    r"fetch\(\s*'catalog-provenance\.json\?v='\s*\+\s*CATALOG_PROVENANCE_TOKEN\s*(?:,\s*\{[^{}]*\}\s*)?\)")
+    r"fetch\(\s*(?:new URL\(\s*)?'catalog-provenance\.json\?v='\s*\+\s*CATALOG_PROVENANCE_TOKEN"
+    r"(?:\s*,\s*import\.meta\.url\s*\))?\s*(?:,\s*\{[^{}]*\}\s*)?\)")
+
 _BASELINE_START = "# --- BEGIN GENERATED VERIFIED PROVENANCE BASELINE ---"
 _BASELINE_END = "# --- END GENERATED VERIFIED PROVENANCE BASELINE ---"
 # --- BEGIN GENERATED VERIFIED PROVENANCE BASELINE ---

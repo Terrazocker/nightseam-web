@@ -21,6 +21,11 @@ import landing_checks  # noqa: E402,F401
 import selection_checks  # noqa: E402,F401  (WEB-REV-003 selection continuity)
 import phase4_checks  # noqa: E402,F401  (planner controls, focus and responsive layout)
 import remaining_checks  # noqa: E402,F401  (lazy source failure/retry and startup acceptance)
+import storage_checks  # noqa: E402,F401  (atomic records and strict backup reads)
+import phase2_publication_checks  # noqa: E402,F401  (immutable staged graph)
+import phase3_astronomy_checks  # noqa: E402,F401  (site calendar and lunar warning regressions)
+import review_phase4_horizon_checks  # noqa: E402,F401  (reviewed horizon crop and editor state)
+import phase1_app_checks  # noqa: E402,F401  (save/delete failures and complete restore recovery)
 
 
 def run_gate(**kwargs) -> int:

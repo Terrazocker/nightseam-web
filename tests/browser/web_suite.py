@@ -1660,8 +1660,12 @@ def web_catalog_advanced_minvis(c):
     c.expect(re.search(r"of 12,\d{3} objects", head),
              f"advanced mode must list the full catalogue: {head!r}")
 
+    # Some Tonight summaries are already cached, so the exclusion count can
+    # appear while Catalog is still warming. Require the completion state too.
     c.page.wait_for_function(
-        """() => /below 1%/.test(document.querySelector('.cat-count')?.textContent || '')""",
+        """() => /below 1%/.test(document.querySelector('.cat-count')?.textContent || '') &&
+          !document.querySelector('#pct-status')?.textContent &&
+          document.querySelector('#busy')?.classList.contains('hidden')""",
         timeout=300000)
     warm = time.time() - t0
     print(f"        advanced-mode visibility warm: {warm:.1f}s")
@@ -1795,3 +1799,197 @@ def web_catalog_direction_b_density(c):
 def web_interval_view_agreement(c):
     from interval_checks import interval_view_agreement
     interval_view_agreement(c)
+
+
+# Photo restore must use the shipped CSP and real IndexedDB commit semantics.
+def panorama_module_url():
+    return re.search(r"from '(\./horizon\.js\?v=\d+)'",
+                     (ROOT / 'web/app.js').read_text(encoding='utf-8')).group(1)
+
+
+PANORAMA_IMAGE_FIXTURE = """async ({url, color}) => {
+  const H = await import(url);
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = 4;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = color; ctx.fillRect(0, 0, 4, 4);
+  const image = canvas.toDataURL('image/png');
+  const snapshot = {activeId:'restore-photo',panos:[{
+    id:'restore-photo',name:'Photo restore',azOffset:0,altBottom:0,altTop:60,
+    fov:360,paintMode:'obstacle',profileBins:'world',strokes:[],
+    profile:Array(720).fill(-90),profileTop:Array(720).fill(-90),
+    hasImage:true,image
+  }]};
+  return {image,snapshot};
+}"""
+
+
+def restored_image(c, url):
+    return c.page.evaluate("""async url => {
+      const H=await import(url);const backup=await H.exportPanosWithImages();
+      return {image:backup.panos[0]?.image,hasImage:backup.panos[0]?.hasImage};
+    }""", url)
+
+
+@check('web-panorama-image-restore-durable', 'web')
+def panorama_image_restore_durable(c):
+    boot(c)
+    url = panorama_module_url()
+    for color in ['#ff0000', '#0000ff']:
+        fixture = c.page.evaluate(PANORAMA_IMAGE_FIXTURE, {'url': url, 'color': color})
+        committed = c.page.evaluate("""async ({url,snapshot}) =>
+          (await import(url)).applyPanosSnapshot(snapshot)""",
+          {'url': url, 'snapshot': fixture['snapshot']})
+        c.expect(committed, 'photo restore must wait for successful persistence')
+        c.expect_eq(restored_image(c, url)['image'], fixture['image'],
+                    'incoming photo bytes must win over an older photo with the same ID')
+        c.page.reload()
+        c.page.wait_for_selector(READY)
+        c.expect_eq(restored_image(c, url)['image'], fixture['image'],
+                    'the restored photo must survive reload under the shipped CSP')
+    c.assert_clean()
+
+
+@check('web-panorama-image-restore-transaction-abort', 'web')
+def panorama_image_restore_abort(c):
+    boot(c)
+    url = panorama_module_url()
+    fixture = c.page.evaluate(PANORAMA_IMAGE_FIXTURE, {'url': url, 'color': '#ff0000'})
+    c.expect(c.page.evaluate("""async ({url,snapshot}) =>
+      (await import(url)).applyPanosSnapshot(snapshot)""",
+      {'url': url, 'snapshot': fixture['snapshot']}), 'initial photo must persist')
+    incoming = c.page.evaluate(PANORAMA_IMAGE_FIXTURE, {'url': url, 'color': '#0000ff'})
+    result = c.page.evaluate("""async ({url,snapshot}) => {
+      const H=await import(url),before=localStorage.getItem('nightseam_panos_v1');
+      const original=IDBObjectStore.prototype.put;
+      IDBObjectStore.prototype.put=function(...args){
+        const request=original.apply(this,args);
+        if(this.name==='imgs')request.addEventListener('success',()=>this.transaction.abort(),{once:true});
+        return request;
+      };
+      let committed;
+      try {committed=await H.applyPanosSnapshot(snapshot);}
+      finally {IDBObjectStore.prototype.put=original;}
+      return {committed,unchanged:before===localStorage.getItem('nightseam_panos_v1'),
+        memoryImage:H.activePano()._img};
+    }""", {'url': url, 'snapshot': incoming['snapshot']})
+    c.expect_eq(result['committed'], False, 'request success followed by abort must fail restore')
+    c.expect(result['unchanged'], 'an image transaction abort must restore panorama localStorage')
+    c.expect_eq(result['memoryImage'], fixture['image'], 'an aborted restore must preserve live photos')
+    failed_records = c.page.evaluate("""async ({url,snapshot}) => {
+      const H=await import(url),before=localStorage.getItem('nightseam_panos_v1');
+      const original=Storage.prototype.setItem;
+      Storage.prototype.setItem=function(key,value){
+        if(key==='nightseam_panos_v1')throw new DOMException('Injected quota failure','QuotaExceededError');
+        return original.call(this,key,value);
+      };
+      let committed;
+      try {committed=await H.applyPanosSnapshot(snapshot);}
+      finally {Storage.prototype.setItem=original;}
+      return {committed,unchanged:before===localStorage.getItem('nightseam_panos_v1')};
+    }""", {'url': url, 'snapshot': incoming['snapshot']})
+    c.expect_eq(failed_records['committed'], False, 'a panorama record quota failure must abort restore')
+    c.expect(failed_records['unchanged'], 'a failed record write must leave panorama records intact')
+    c.page.reload()
+    c.page.wait_for_selector(READY)
+    c.expect_eq(restored_image(c, url)['image'], fixture['image'],
+                'an aborted restore must preserve the original cached photograph')
+    c.assert_clean()
+
+
+@check('web-panorama-backup-unreadable-photo', 'web')
+def panorama_backup_unreadable_photo(c):
+    boot(c)
+    url = panorama_module_url()
+    fixture = c.page.evaluate(PANORAMA_IMAGE_FIXTURE, {'url': url, 'color': '#ff0000'})
+    c.expect(c.page.evaluate("""async ({url,snapshot}) =>
+      (await import(url)).applyPanosSnapshot(snapshot)""",
+      {'url': url, 'snapshot': fixture['snapshot']}), 'initial photo must persist')
+    c.page.reload()
+    c.page.wait_for_selector(READY)
+    result = c.page.evaluate("""async url => {
+      const H=await import(url),original=IDBObjectStore.prototype.get;
+      IDBObjectStore.prototype.get=function(...args){
+        const request=original.apply(this,args);
+        if(this.name==='imgs')request.addEventListener('success',()=>this.transaction.abort(),{once:true});
+        return request;
+      };
+      let readRejected=false;
+      try {await H.exportPanosWithImages();}catch {readRejected=true;}
+      finally {IDBObjectStore.prototype.get=original;}
+      await new Promise((resolve,reject)=>{
+        const request=indexedDB.open('nightseam-panoimg',1);
+        request.onerror=()=>reject(request.error);
+        request.onsuccess=()=>{const db=request.result,tx=db.transaction('imgs','readwrite');
+          tx.objectStore('imgs').clear();tx.oncomplete=()=>{db.close();resolve();};
+          tx.onabort=()=>{db.close();reject(tx.error);};};
+      });
+      let missingRejected=false;
+      try {await H.exportPanosWithImages();}catch {missingRejected=true;}
+      return {readRejected,missingRejected};
+    }""", url)
+    c.expect(result['readRejected'], 'backup must reject an aborted photo read after request success')
+    c.expect(result['missingRejected'], 'backup must reject missing photo bytes instead of omitting them')
+    c.assert_clean()
+
+
+@check('web-preferences-replacement-persistence', 'web')
+def preferences_replacement_persistence(c):
+    boot(c)
+    url = panorama_module_url()
+    result = c.page.evaluate("""async url => {
+      const H=await import(url);
+      H.setPrefs({moonAware:true,fltOiii:true,savedTargetIds:['ngc224'],reviewOldKey:'old'});
+      const replaced=H.replacePrefs({bortle:5});
+      const replacement={...H.getPrefs()};
+      H.setPrefs({moonAware:true});
+      const before=JSON.stringify(H.getPrefs()),stored=localStorage.getItem('nightseam_prefs_v1');
+      const original=Storage.prototype.setItem;
+      Storage.prototype.setItem=function(key,value){
+        if(key==='nightseam_prefs_v1')throw new DOMException('Injected quota failure','QuotaExceededError');
+        return original.call(this,key,value);
+      };
+      let patchFailed,replaceFailed;
+      try {patchFailed=H.setPrefs({bortle:8})===false;replaceFailed=H.replacePrefs({bortle:7})===false;}
+      finally {Storage.prototype.setItem=original;}
+      return {replaced,replacement,patchFailed,replaceFailed,
+        unchanged:JSON.stringify(H.getPrefs())===before&&localStorage.getItem('nightseam_prefs_v1')===stored,
+        patchPreservedBortle:H.getPrefs().bortle===5};
+    }""", url)
+    c.expect(result['replaced'], 'preference replacement must report persistence success')
+    c.expect_eq(result['replacement']['moonAware'], False, 'absent flags must restore defaults')
+    c.expect_eq(result['replacement']['fltOiii'], False, 'absent equipment flags must restore defaults')
+    c.expect_eq(result['replacement']['savedTargetIds'], [], 'absent saved targets must not be inherited')
+    c.expect('reviewOldKey' not in result['replacement'], 'replacement must remove absent old preference keys')
+    c.expect(result['patchPreservedBortle'], 'ordinary UI patches must retain other preferences')
+    c.expect(result['patchFailed'] and result['replaceFailed'] and result['unchanged'],
+             'failed preference writes must report failure and preserve live/stored settings')
+    c.assert_clean()
+
+
+@check('web-panorama-editor-history-rollback', 'web')
+def panorama_editor_history_rollback(c):
+    boot(c)
+    open_editor(c)
+    paint(c)
+    url = panorama_module_url()
+    result = c.page.evaluate("""async url => {
+      const H=await import(url),checkpoint=H.captureEditorHistory();
+      const safety=await H.exportPanosWithImages();
+      const originallyDirty=H.horizonUnsaved();
+      if(!await H.applyPanosSnapshot({panos:[],activeId:null}))throw new Error('forward snapshot failed');
+      if(!await H.applyPanosSnapshot(safety))throw new Error('rollback snapshot failed');
+      const restored=H.restoreEditorHistory(checkpoint);
+      H.renderHorizon(document.querySelector('#view'),()=>{});
+      return {originallyDirty,restored,dirty:H.horizonUnsaved(),
+        canUndo:!document.querySelector('#ed-undo').disabled};
+    }""", url)
+    c.expect(result['originallyDirty'] and result['restored'] and result['dirty'] and result['canUndo'],
+             'failed restore rollback must preserve the dirty editor baseline and undo branch')
+    c.page.click('#ed-undo')
+    c.expect_eq(c.page.evaluate("async url=>(await import(url)).horizonUnsaved()", url), False,
+                'Undo after rollback must still return to the original saved baseline')
+    c.page.click('#ed-redo')
+    c.expect_eq(c.page.evaluate("async url=>(await import(url)).horizonUnsaved()", url), True,
+                'Redo after rollback must preserve the original unsaved edit')
+    c.assert_clean()

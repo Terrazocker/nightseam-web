@@ -1,5 +1,11 @@
 from scripts.prepare_publication import prepare, verify, retired_paths, ROOT
 import json
+import subprocess
+
+def track(root):
+    subprocess.run(["git", "init", "-q"], cwd=root, check=True)
+    subprocess.run(["git", "add", "web", "landing"], cwd=root, check=True)
+
 import pytest
 
 
@@ -9,8 +15,9 @@ def test_candidate_covers_both_trees_omits_credentials_and_detects_drift(tmp_pat
         p=tmp_path/name
         p.parent.mkdir(parents=True,exist_ok=True)
         p.write_text('content',encoding='utf-8')
+    track(tmp_path)
     candidate=prepare(tmp_path,'v0.6.36-dirty',('/astro/img/old.jpg',))
-    assert verify(tmp_path)==4
+    assert verify(tmp_path)==6
     assert not (candidate/'web/ftp.env').exists()
     assert not (candidate/'landing/.env').exists()
     (tmp_path/'landing/index.html').write_text('changed',encoding='utf-8')
@@ -27,13 +34,14 @@ def test_retired_inventory_survives_clean_candidate_regeneration(tmp_path):
     (tmp_path/'scripts/publication_cleanup.json').write_text(json.dumps(expected),encoding='utf-8')
     (tmp_path/'web/index.html').write_text('planner',encoding='utf-8')
     (tmp_path/'landing/index.html').write_text('home',encoding='utf-8')
-    # No .git or pending deletions exist. Both dirty and clean preparation must
+    track(tmp_path)
+    # Both dirty and clean preparation must
     # retain the exact reviewed inventory, including all obsolete object photos.
     for describe in ('v0.6.36-dirty','v0.1.0'):
         candidate=prepare(tmp_path,describe,retired_paths(tmp_path))
         manifest=json.loads((candidate/'publication.manifest.json').read_text(encoding='utf-8'))
         assert manifest['cleanup_after_authorized_acceptance']==expected
-        assert verify(tmp_path)==2
+        assert verify(tmp_path)==4
 
 
 @pytest.mark.parametrize('paths',[

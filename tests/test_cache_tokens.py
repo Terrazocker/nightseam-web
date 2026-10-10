@@ -32,7 +32,7 @@ def test_catalog_token_matches_bytes_and_single_fetch_site():
     assert guard.scan() == [], "catalog cache-bust pairing is broken"
     app = (WEB / "app.js").read_text(encoding="utf-8")
     assert len(re.findall(r"const CATALOG_TOKEN = '(\d+)'", app)) == 1
-    assert len(re.findall(r"fetch\('catalog\.json", app)) == 1, "exactly one catalog fetch site"
+    assert len(re.findall(r"fetch\(\s*(?:new URL\(\s*)?'catalog\.json", app)) == 1, "exactly one catalog fetch site"
     man = json.loads((WEB / "catalog.manifest.json").read_text(encoding="utf-8"))
     assert hashlib.sha256((WEB / "catalog.json").read_bytes()).hexdigest() == man["sha256"]
 

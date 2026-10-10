@@ -1,5 +1,104 @@
 # NightSeam Web development
 
+## Horizon crop geometry and editor history — October 10, 2026
+
+core/horizon.js rasterizes legacy circular dabs (`r`) and cropped ellipses
+(`rx` horizontal, `r` vertical). cropKeptBand returns an effective `{x,w}` band:
+expand to min(45°, old FOV), round the target FOV without exceeding the source,
+then derive the pixel width and clamp the left edge. The preview and cropPano use
+that same band. Calibration keeps full-precision azimuths so every transformed
+stroke retains its world direction. Before leaving 360° wrap, materialize each
+old dab's relevant ±720 copies in chronological paint/erase order. Repeated
+crops scale only rx; all-clipped stroke geometry deliberately becomes blank.
+Existing stroke-less profiles remain authoritative and clip in world-bin space.
+The panorama planning fingerprint includes rx. History snapshots preserve it.
+
+web/horizon.js keeps the displayed confidence bin separate from the next selected
+azimuth. Valid input updates that bin immediately; selection/blur/history/save
+settle a single metadata entry. History restoration synchronizes calibration,
+landmarks, bin fields, comparison and mask together. Same-panorama rerenders
+retain the saved baseline and history; checkpoints settle pending metadata before
+recovery captures them. Editor teardown removes keyboard listeners and observers.
+Space is a canvas-only pan modifier and releases on keyup or focus loss.
+
+webstore exports backup format 3; v1/v2 imports remain supported. Older clients
+reject v3, preventing them from dropping rx and silently changing a horizon.
+Normalization retains rx and bounds imported lists at 60,000 dabs, enough for
+three seam copies of the former 20,000-dab bound. Photo bytes are unchanged.
+Node regressions and mutations cover geometry/normalization; Chromium checks
+cover native keyboard behavior, history controls, confidence recovery and crop
+backup/reload through the actual editor.
+
+## Site calendar and lunar observer coordinates — October 10, 2026
+
+core/time.js resolves wall calendar fields encoded with Date.UTC by verifying
+candidate offsets around the intended wall time. Overlaps choose the earlier
+instant; nonexistent times move forward through the gap. webstore's
+wallFieldsToUtc is the shell adapter for critical planning: constructing a
+browser-local Date first can normalize a requested hour in the host's DST gap.
+The wall-Date API remains a display adapter with that native Date limitation.
+Site midnight, noon, next noon and 20:00→04:00 polar fallback endpoints are
+resolved independently. Core fallback functions accept explicit endpoints;
+legacy callers supplying only noon retain their fixed-offset behavior.
+
+The app initializes S.date after applying its boot site, keys night memoization
+by resolved zone/actual noon, and keeps the scrub anchor stable within its
+calendar noon-to-next-noon range, including the drag endpoint. Zone changes
+invalidate the anchor; date edits reposition selection to the chosen site noon.
+Full spans contain 23 or 25 elapsed hours across DST without changing scoring.
+objectDayInfo now belongs to core/astro.js: culmination scans the complete
+site calendar day separately from rise/set's midnight ±12h search.
+
+The shared lunar state holds equatorial-of-date coordinates and a truncated
+Meeus table 47A distance. moonRaDec exposes geocentric J2000 coordinates for
+phase/elongation. moonAltAz subtracts the sea-level WGS84 observer vector in
+the of-date frame before horizontal conversion and one refraction correction.
+All browser Moon altitude/separation/scoring samples use that shared function.
+Site elevation remains metadata only. This is an approximate planning model,
+not a precision ephemeris. Independent PyEphem 4.2.1/libastro reference numbers
+in reference_anchors.mjs cover multiple dates/sites, distance and true altitude;
+mutations prove each corrected sign and observer parallax have test coverage.
+The erroneous frozen lunar fixture section stays intact as historical evidence;
+its test explicitly delegates correctness to independent lunar references.
+
+## Immutable publication and recursive cache graph — October 10, 2026
+
+scripts/publication_assets.py owns the served inventory for web/ and landing/,
+with the existing tooling/credential exclusions. Every served file must be
+tracked by Git except generated web/version.json; symlinks are forbidden.
+The release gate, make_release.py and prepare_publication.py share this rule.
+
+Each source tree is packaged into releases/<SHA-256>/ with the complete code,
+data, core hash directories, CSS and images. The hash covers format, canonical
+source paths and bytes; landing also incorporates the web namespace so its
+shared theme stays pinned. Canonical HTML and snapshot HTML use absolute asset
+URLs under /astro/releases/ or /releases/. Navigation links/fragments retain
+canonical page locations. Same-origin share images also use immutable URLs.
+Catalog, provenance and version fetches use new URL(..., import.meta.url), so
+already loaded modules continue reading their own snapshot after publication.
+The canonical version endpoint remains available for status checks.
+
+prepare_publication.py records source and payload hashes, namespace metadata,
+truthful development describe and the existing reviewed cleanup ledger. verify
+rebuilds the expected payload deterministically and rejects drift, omissions,
+extras and symlinks. make_release.py uses the same format for tagged planners.
+FTPS publish validates the entire local bundle before credentials, uploads via
+verified temporary files plus atomic rename, verifies the complete remote graph,
+then switches canonical HTML atomically per page. Existing immutable files must
+match; old namespaces are retained. Root .htaccess changes require separate
+review instead of silently altering old clients' delivery policy. Atomic FTP
+rename support is required; live host behavior has not been exercised.
+
+scripts/web_asset_graph.py discovers JS/CSS from every web/landing HTML root and
+recursively follows static imports, re-exports and literal dynamic imports. Live
+and historical guards share this traversal. Each target has one numeric token;
+missing targets, conflicting references and unversioned mutable dependencies
+fail. Hashed core modules are intentionally untokened. bump_web_tokens.py edits
+all incoming references in memory to a fixed point, advancing each changed
+importer once relative to the verified baseline and preserving manual advances.
+core.js always uses core/core.manifest.json's token. A second run changes nothing;
+check_js_tokens.py --update still refuses to certify an invalid graph.
+
 ## Planner annotation interactions — October 7, 2026
 
 Catalog types are checkbox inputs inside #cat-type, combined with OR. Empty
@@ -286,8 +385,8 @@ thread liveness, queue and failed URLs. Encoding-safe diagnostics preserve check
 failure versus infrastructure failure exit categories. No retries/skips conceal
 launch or module failures. Historical refusal causation remains unconfirmed.
 
-ftps_deploy.py flattens the recursive tree before dependency-before-HTML ordering.
-Private .env/.git and tool files are excluded from both deploy and release helpers.
+The original dependency-before-HTML recursive upload is superseded by the
+immutable publication workflow above. Private .env/.git and tool files are excluded from both deploy and release helpers.
 scripts/prepare_publication.py creates/verifies a SHA-256 manifest for both public
 trees in ignored dist/publication-preview; it never connects, commits or tags.
 The manifest identifies the actual source describe and lists retired server paths
@@ -348,3 +447,42 @@ Credentials stay outside Git and are never included in publication archives.
 The October 7 deployment used an ignored in-memory adapter for the owner's existing
 short Name/Pwd format and the established Plesk endpoint. The provided credential
 file was not rewritten or copied into this repository. Never print its contents.
+
+## Durable browser storage and complete restore — October 10, 2026
+
+`webstore.js` settles writes on IndexedDB transaction completion, not request
+success. `writeStaged` replaces sites, rigs and custom targets in one transaction;
+`restoreBackup` includes the pre-import safety snapshot in that transaction.
+An abort preserves every original record and the previous safety metadata.
+`allStrict` and the `{strict: true}` record readers reject incomplete reads.
+Backup collection and import reinitialization use these strict readers; ordinary
+startup readers retain their tolerant behavior.
+
+`normalizeWebPrefs` defines the shared preference defaults and validates every
+setting consumed by the planner. Import staging rejects malformed known values,
+unsafe or duplicate custom target IDs, and invalid target coordinates before
+writes. Legacy omitted settings acquire current defaults. Ordinary preference
+edits merge; `replacePrefs` restores a complete snapshot and resets omitted
+settings. Both preference operations preserve live state on persistence failure.
+
+Panorama restoration is asynchronous. Embedded image data is decoded locally,
+without a CSP-controlled fetch. Image replacement uses one IndexedDB transaction;
+the panorama localStorage write occurs while that transaction can still abort.
+A later transaction abort restores the previous localStorage records. Callers
+await the committed result. Photo export prefers the current in-memory image and
+rejects missing or unreadable photographs instead of dropping them from safety
+snapshots. Successful replacement invalidates old editor references; a whole-app
+rollback reattaches the captured dirty baseline and undo branch.
+
+The app validates the incoming bundle, collects a complete safety snapshot, and
+locks Setup controls during transfer. Records, photos, preferences, theme,
+reinitialization and immediate Tonight rendering share the recovery boundary.
+Post-commit failures restore the complete snapshot; rollback failures are reported
+explicitly and retain safety storage. Record forms and ordinary preference controls
+report failed persistence before changing the displayed model. Restoring no sites
+uses an explicit transient Berlin default and clears the former site's selector.
+
+FTPS uses `ssl.create_default_context()` for certificate and hostname verification
+before credentials, and retains inherited/system CA trust. The configured FTP host
+must match the certificate. TLS regressions use real offline MemoryBIO handshakes;
+they do not contact a deployment endpoint.

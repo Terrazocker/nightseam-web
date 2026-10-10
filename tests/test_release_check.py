@@ -3,6 +3,8 @@ import hashlib
 import importlib.util
 import json
 import sys
+import subprocess
+from scripts.publication_assets import immutable_payload, hashes
 from pathlib import Path
 
 import pytest
@@ -60,8 +62,14 @@ def stage(root):
     destination.mkdir(parents=True)
     content = b"standalone web release"
     (source / "index.html").write_bytes(content)
-    (destination / "index.html").write_bytes(content)
-    manifest = {"describe": "v0.6.34", "files": {"index.html": hashlib.sha256(content).hexdigest()}}
+    subprocess.run(['git','init','-q'],cwd=root,check=True)
+    subprocess.run(['git','add','web'],cwd=root,check=True)
+    payload, metadata=immutable_payload(root, ('web',))
+    for name,data in payload.items():
+        target=destination/name.removeprefix('web/')
+        target.parent.mkdir(parents=True,exist_ok=True)
+        target.write_bytes(data)
+    manifest = {"describe": "v0.6.34", "files": hashes({n.removeprefix('web/'):b for n,b in payload.items()}), "publication": metadata}
     (destination / "release.manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
     return source, destination, manifest
 

@@ -54,28 +54,33 @@ versions or recreate the combined desktop project here. The deprecated
 - Curate changelog before a release commit/tag; pre_tag_check.py must pass before
   tagging. Bake web/version.json from truthful git describe including --dirty.
   Do not stamp guessed clean releases or retag old versions.
-- Deployment: python web/ftps_deploy.py uploadtree web /astro; landing to /.
-  Credentials remain outside Git. Never publish index.html before its modules;
-  upload_order puts HTML last. Public deployment requires user authorization.
-  No desktop EXE/ZIP/version equality is part of web release validation.
+- Publication: python scripts/prepare_publication.py builds/verifies a local
+  combined immutable candidate; make_release.py stages a clean tagged planner.
+  Deploy only a reviewed bundle using python web/ftps_deploy.py publish
+  dist/publication-preview / (or dist/web-release / for the planner alone).
+  Credentials remain outside Git. Assets upload to content-addressed release
+  directories and verify before atomic public HTML renames; retain old releases
+  for already open clients. Raw mutable website uploads are refused. Changed
+  server policy requires a separate review. Public deployment requires user
+  authorization. No desktop EXE/ZIP/version equality is part of web validation.
 
 ## Current web cache-token register
 
 Keep this register aligned with entry-point references and the core manifest.
 Current:
-- `web/app.js?v=164`
-- `web/astro.js?v=31`
-- `web/horizon.js?v=75`
-- `web/webstore.js?v=42`
-- `web/format.js?v=38`
-- `web/nightrank.js?v=30`
+- `web/app.js?v=171`
+- `web/astro.js?v=33`
+- `web/horizon.js?v=81`
+- `web/webstore.js?v=47`
+- `web/format.js?v=40`
+- `web/nightrank.js?v=32`
 - `web/viztheme.js?v=6`
 - `web/imagecredits.js?v=2`
 - Public stylesheet: `landing/style.css?v=4`
 - Public decorative map: `landing/sky-map.svg?v=1`
 - Public share preview: `landing/social-preview.png?v=1`
 - Public pages load canonical role tokens: `/astro/themes.css?v=21`
-- `web/core.js?v=45`
+- `web/core.js?v=47`
 - `web/style.css?v=55`
 - `web/themes.css?v=21`
 

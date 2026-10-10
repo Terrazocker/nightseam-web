@@ -1,5 +1,59 @@
 # Independent website decisions
 
+## 2026-10-10 — Keep crop angles and editor metadata attached to their source
+
+A horizontal crop changes horizontal dab extent only. Preserve legacy `r` as
+vertical radius and add optional `rx`, defaulting to r for existing records.
+Keep wrapped seam paint and erasers in order. The minimum crop FOV expands the
+kept band visibly inside the source image; one effective band controls preview,
+calibration and strokes. Retain integer target FOVs and exact azimuth offsets;
+never enlarge a frame already below the minimum. Raster edges remain quantized
+to the existing 720×360 mask. Stored world profiles without strokes stay authoritative.
+
+Confidence belongs to the displayed bin at input time. Write valid edits to the
+model immediately, treat blank as unassessed, and settle pending metadata before
+changing bins or history. Restore every model-dependent control after a snapshot.
+Only canvas focus authorizes Space-to-pan; preserve native text/button keys and
+remove editor listeners on teardown. Backup format 3 declares elliptical geometry
+so earlier builds refuse it instead of misinterpreting it. Continue reading v1/v2.
+
+## 2026-10-10 — Resolve site calendars and distinguish lunar frames
+
+Use Temporal-compatible DST disambiguation: the earlier instant in an overlap,
+forward by the gap for nonexistent wall times. Resolve critical calendar fields
+without encoding them in the browser's timezone first. Full-day scrubbing spans
+consecutive site noons; its elapsed duration follows DST. Calendar edits move
+selection to that site's noon; a drag retains its anchor through the endpoint.
+Preserve exact site-clock polar fallback endpoints across offset changes.
+
+Retain geocentric J2000 Moon coordinates for phase and elongation. Horizontal
+Moon position is observer-relative: subtract the sea-level WGS84 observer in
+the equatorial-of-date frame, then apply refraction once. Elevation remains
+metadata only. Correct the three Meeus series signs and validate against an
+independent model; do not rewrite frozen fixtures containing the shared bug.
+The truncated model is sufficient for approximate planning, not occultations.
+Culmination belongs to the complete chosen calendar day and its Moon warning
+uses the illumination at culmination, with fractions consistently in 0..1.
+
+## 2026-10-10 — Publish complete immutable graphs and retain older clients
+
+HTML-last ordering cannot protect a client whose old HTML loads newly overwritten
+JavaScript against older dependencies. Package the full asset/data graph under a
+content-addressed directory, verify it before switching public HTML, and retain
+previous directories for open tabs and cached pages. Use module-relative data
+URLs and explicit HTML asset URLs; a document base element would change ordinary
+page and fragment navigation. Verify temporary FTPS uploads before atomic rename,
+refuse differing existing immutable bytes, and review root policy changes
+separately. Keep real publication behind the owner's existing authorization rule.
+
+Cache tokens remain useful for local/source previews and individual modules.
+Discover and update the complete recursive graph rather than assigning versions
+from only index.html/app.js. Propagate changes once per importer, preserve an
+already advanced token, and keep generated core versions manifest-owned. Treat
+ambiguous graphs as errors before edits or baseline refreshes. Release traceability
+covers every served file format in both trees, with one explicit generated-version
+exception; a clean tag cannot authorize extra untracked publication content.
+
 ## 2026-10-07 — Keep one date editor and a compact Sky rail
 
 Date editing belongs in the common top bar. Remove Sky's duplicate datetime
@@ -1328,3 +1382,27 @@ HOST-DELIVERY-001 for provider controls/support instead of modifying the release
 assets, inventing a performance result or assuming nginx honors every filter.
 Deployment receipt documentation is a follow-up to the immutable release tag;
 it does not create or retag a new software release.
+
+## October 10, 2026 — Phase 1 integrity fixes
+
+Keep backup format 2 and its legacy format-1 compatibility. Missing settings
+restore defaults; malformed consumed settings and canonical/duplicate custom
+IDs reject the bundle before mutation. User-created target IDs retain their
+`u_` namespace. RA/Dec parsing consumes the full input and preserves documented
+sexagesimal carries such as `+22 0 60`.
+
+Treat transaction completion as the persistence authority. Replace browser
+records and safety metadata atomically, and refuse incomplete record/photo reads
+as backup sources. Keep photo restoration asynchronous and decode embedded data
+locally under the existing CSP. Preserve the original editor history on a failed
+whole-app restore, while successful restores start a fresh editor history.
+
+Disable Setup controls throughout backup transfer to serialize user edits with
+snapshot collection and restore. Report write failures and preserve form input;
+do not present unsaved records or requested preferences as committed state.
+Include reinitialization and synchronous Tonight acceptance in the recovery path.
+
+Authenticate FTPS server certificates and hostnames with inherited/system trust.
+Phase 1 validation uses offline TLS and isolated browser storage; it does not
+publish, create a release tag, or change the astronomy core. The remaining review
+phases retain their recorded scope.

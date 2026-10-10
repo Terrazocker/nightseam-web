@@ -56,7 +56,7 @@ MANIFEST = ROOT / "web" / "catalog.manifest.json"
 SELF = Path(__file__).resolve()
 
 _TOKEN_RE = re.compile(r"const CATALOG_TOKEN = '(\d+)'")
-_FETCH_RE = re.compile(r"fetch\('catalog\.json")
+_FETCH_RE = re.compile(r"fetch\(\s*(?:new URL\(\s*)?'catalog\.json")
 
 # The verified bytes/token pairing for web/catalog.json. GENERATED DATA:
 # `--update` rewrites the assignment between the two marker LINES below - never
