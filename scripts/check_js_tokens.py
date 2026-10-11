@@ -94,8 +94,8 @@ _VERIFIED_BASELINE_JSON = r"""
 {
  "modules": {
   "../landing/style.css": {
-   "sha256": "39f6feba49cce2224238953b462ef35a139f5d35f193f85f7f86c464ce1205da",
-   "token": "4"
+   "sha256": "08321185b2b35606cdfc10abca71e1e3e31d7d3dd6c163e1d45650ad2c71916b",
+   "token": "5"
   },
   "app.js": {
    "sha256": "09172b36036d24f14234cd0ad04515026cd608cc61ea56f09082fa46feaac13d",
@@ -146,8 +146,8 @@ _VERIFIED_BASELINE_JSON = r"""
    "token": "49"
   },
   "style.css": {
-   "sha256": "5ac822a19207d6ce1a83c2aa51aef570d65e886954a02f2bf3a5e33c466114e3",
-   "token": "63"
+   "sha256": "16226a0fed4847630196af8f723a37bccd544fcd82e3b4f4831010b49cd29ab3",
+   "token": "64"
   },
   "themes.css": {
    "sha256": "557c43137a5e7fe8ea69ca313a9fa79bf4659cdcc340d5005fd52cfc0dcc4bee",

@@ -53,7 +53,12 @@ development PC being on, and serving from the Windows drive is not faster).
 **Consequences.** A branch without a pull request gets no automatic CI run;
 start one by hand (workflow_dispatch) if needed. If the Linux job shows a
 Linux-only difference (fonts, case-sensitive paths), fix it or revert the
-runner. One Windows run also missed the advanced-catalog speed budget under
+runner. The first Linux run had no network failures but four layout failures
+from Linux's wider default fonts; they were real narrow-screen fragilities
+(the catalog count line widened phone pages and hid the progress text; the
+landing header overflowed at 320 px) and were fixed in the layout, plus one
+check that measured a label against a narrow rail. ENVIRONMENT.md describes
+how to reproduce Linux font widths locally. One Windows run also missed the advanced-catalog speed budget under
 4x CPU throttling; watch whether that recurs on Linux.
 
 ## 2026-10-11 — Short AGENTS.md; no hand-kept token register

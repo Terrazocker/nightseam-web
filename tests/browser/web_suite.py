@@ -349,15 +349,22 @@ def web_horizon_actions(c):
         c.page.wait_for_timeout(250)
         info = c.page.evaluate(
             """() => {
+              // Measured in a temporarily widened row: a narrow rail plus a
+              // wide system font (Linux) made a content-width label look
+              // "full row" (177/190 px). Stretching still fills 1000 px.
               const row = document.querySelector('.btnrow.action-row');
               if (!row) return null;
+              const saved = row.style.cssText;
+              row.style.width = '1000px'; row.style.maxWidth = 'none';
               const rw = row.getBoundingClientRect().width;
               const items = Array.from(
                 row.querySelectorAll(':scope > .btn, :scope > label.btn'));
-              return { rw, items: items.map(e => {
+              const out = { rw, items: items.map(e => {
                 const b = e.getBoundingClientRect();
                 return { t: (e.textContent || '').trim().slice(0, 24), w: b.width };
               }) };
+              row.style.cssText = saved;
+              return out;
             }""")
         c.expect(info and info["items"], "the horizons action row must have controls")
         for it in info["items"]:

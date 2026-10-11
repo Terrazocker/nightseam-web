@@ -43,5 +43,12 @@ CI runs the same gates on GitHub with Python 3.14, Node 22 and the runner's
 installed Chrome (`.github/workflows/checks.yml`): the guards and pytest on
 windows-latest, the browser suite on ubuntu-latest. The sandbox limits above
 apply only to this development machine. Windows-specific browser behaviour is
-covered by local runs here. The repository is private, so CI time counts
+covered by local runs here.
+
+Linux Chrome renders the planner in DejaVu Sans / DejaVu Sans Mono, which are
+wider than Segoe UI / Cascadia Mono. To reproduce a Linux-only layout failure
+here, temporarily put `Verdana` first in the body font stacks
+(`web/style.css`, `landing/style.css`) and `"Courier New"` first in `--mono`
+(`web/themes.css`); their widths are close to DejaVu's. Run the failing check
+with `--only`, then restore the files. Never commit the substitution. The repository is private, so CI time counts
 against the account's monthly Actions minutes (Windows minutes count double).

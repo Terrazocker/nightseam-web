@@ -5,6 +5,25 @@ Actual validation outcomes, newest first. Published releases: v0.1.1 (October 8,
 development awaiting the next release, 0.7.0. Upload success alone is never
 recorded as acceptance.
 
+## First GitHub CI runs, focus and narrow-layout fixes — October 11, 2026 (pull request #1)
+
+GitHub CI on Windows (pull request #1 and branch pushes): the guards job passed
+once the local-only tags v0.6.35/v0.6.36 were pushed and pre_tag_check gained
+its 0.7.0 floor (6ac1155). The browser job failed one check per run in four
+of five runs: net::ERR_NO_BUFFER_SPACE on a single local request (app.js,
+plannerstate.js, app.png; keep-alive in 0db089d did not stop it), the
+Tonight focus-restore check twice, and the advanced-catalog speed budget
+once. The focus failure was a real defect, fixed in 254a859 (focus check
+forced to fail first: got 'tab-tonight', want 'synbeta').
+
+The browser job moved to ubuntu-latest (a93f708). Its first run: 115/119, no
+network failures; four layout checks failed under Linux's wider default fonts.
+Reproduced locally with Verdana/Courier New substituted, fixed in the layout
+(catalog count line on phones, landing header at 320 px) and in one
+font-dependent measurement, then passed with the substitution and without
+it. Local validation after the fix: pytest 378 passed / 1 skipped; real-Chrome
+suite 119/119. The next Linux CI result is still to be recorded.
+
 ## Documentation reorganization and website copy — October 11, 2026 (local development)
 
 Root documentation reduced to maintained documents: README and DEVELOPMENT

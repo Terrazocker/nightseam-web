@@ -1024,7 +1024,12 @@ body.detail-open main { max-width: none; margin-left: var(--edge, 16px); margin-
 }
 @media (max-width: 640px) {
   .cat-results-head { align-items: flex-start; flex-direction: column; }
-  .cat-stats { justify-content: flex-start; }
+  /* Phones: the count may wrap with wider system fonts (Linux, large text)
+     instead of widening the page, and the status gets its own reserved line,
+     so progress text still never moves the table. */
+  .cat-stats { justify-content: flex-start; flex-direction: column; align-items: flex-start;
+    gap: 2px; width: 100%; height: auto; white-space: normal; line-height: 18px; }
+  #pct-status { min-width: 0; min-height: 18px; text-align: left; }
   .sky-canvas-box { padding: 5px; }
   .sky-canvas-box canvas#sky { width: 100%; }
   .sky-time-rail { grid-template-columns: minmax(0, 1fr) auto; }
