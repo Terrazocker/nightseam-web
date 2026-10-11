@@ -28,10 +28,25 @@ Library, SQLite, desktop CSP) are history only.
 - **Documentation:** see "Documentation layout" (2026-10-11), which updates the
   older "Docs policy".
 
+## 2026-10-11 — Short AGENTS.md; no hand-kept token register
+
+AGENTS.md is rewritten as short, plain-language rules: what lives where, what
+never happens without the owner, the change workflow, commands, behaviour that
+must not regress, releases, where things are recorded and which subagent does
+what. History, script internals and details the guards already enforce are
+left to DECISIONS.md, DEVELOPMENT.md and the scripts.
+
+The hand-maintained cache-token register is removed with its test
+(`test_web_token_register_matches_the_sources`). It duplicated the generated
+verified baseline in `scripts/check_js_tokens.py`, which already checks every
+module's bytes against its token and that all references agree, while
+`scripts/check_core.py` checks the core stub token against the manifest. The
+register only added a manual step to every change.
+
 ## 2026-10-11 — Documentation layout
 
 Keep the root to current, maintained documents: README (entry point and map),
-AGENTS (rules, commands, token register), DEVELOPMENT (how the planner works,
+AGENTS (rules and commands), DEVELOPMENT (how the planner works,
 rewritten as a current guide), DESIGN, CATALOG, ROADMAP (status and open work;
 replaces IMPLEMENTATION_PLAN and FUTURE_FEATURE_SCOPE), BUGS (open findings
 only), DECISIONS, RELEASES, RELEASE_WORKFLOW, HOSTING_CONFIGURATION and
@@ -1450,8 +1465,8 @@ header. BUG-003 requires the live HTML response itself to carry the policy.
 
 ### Cache-token register history (moved out of AGENTS.md)
 
-AGENTS.md carries only the CURRENT register; the cascade record lives here so the
-instructions stay inside their byte budget. Every core re-bake moves the stub
+AGENTS.md no longer carries a register (2026-10-11); this is the historical
+cascade record. Every core re-bake moves the stub
 token and changes the bytes of every module importing it, so those tokens move in
 the same commit:
 

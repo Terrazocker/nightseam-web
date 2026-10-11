@@ -1,111 +1,142 @@
 # NightSeam Web agent instructions
 
-This canonical repository now contains only the website and landing pages:
-`<workspace>/Nightseam-programm`.
-The local Windows catalog is an independent sibling repository at
-`<workspace>/Nightseam-catalog`, starting at 0.1.0.
-Do not read sibling files as build dependencies, share databases, synchronize
-versions or recreate the combined desktop project here. The deprecated
-`<archive>/Object-Astro` archive remains read-only.
+This repository is the NightSeam website: a static browser planner and the
+public landing pages. These are the rules and commands for changing it. How the
+planner works is in DEVELOPMENT.md; why things are the way they are is in
+DECISIONS.md.
 
-## Architecture and design
+## What lives where
 
-- Read DESIGN.md before UI changes. Workbench is the only theme, with semantic
-  role tokens in web/themes.css and canvas adapters. Legacy theme values
-  normalize to workbench. No npm or JavaScript bundler is used.
-- web/ is the browser planner; landing/ is the public site. core/ is the only
-  astronomy/planning implementation. catalog_data/ owns the website's catalog
-  source data, parsers and popularity policy, without desktop/storage imports.
-- Edit core/ and run python scripts/build_core.py; never manually edit baked
-  trees or generated web/core.js. Maintain content hashes, exports, stub token
-  pairing and current plus N-1 retention. Never reimplement moved core math.
-- Published reference_anchors checks are the correctness authority; frozen
-  fixtures are regression evidence. Never update fixtures to hide a formula bug.
-- Preserve site-zoned noon/night/scrub rules, selected-time truth, apparent
-  altitude Sun/Moon visibility, half-open clear windows, world-bin panorama
-  profiles, non-destructive web crops and one shared scoring loop.
-- Keep standard catalog IDs global and safe, standard 200 selection deterministic,
-  and source/provenance/display counts consistent. Popularity is not visible UI.
-- Web backup validates/stages the entire bundle before writing and rolls back
-  failures. Stored strokes win over profiles; absent strokes leave authoritative
-  profiles intact. Dirty editor history, undo/redo and beforeunload remain safe.
-- Advanced options use the hamburger menu with quiet defaults. Site, Rig and
-  minimum altitude remain common top-bar controls. Preserve keyboard/focus,
-  accessible names, reduced motion and non-color summaries.
+| Path | What it is |
+|---|---|
+| `web/` | The planner, served at `/astro/`. Plain ES modules, no npm or bundler. |
+| `landing/` | The public pages, served at `/`. |
+| `core/` | The only astronomy, planning, scoring and horizon implementation. |
+| `catalog_data/` | Catalog source data, parsers and popularity policy. |
+| `scripts/` | Build, guard, release and publication tools (Python). |
+| `tests/` | pytest guards, Node tests (`tests/js/`) and browser checks (`tests/browser/`). |
 
-## Commands and releases
+The Windows catalog is an independent sibling repository
+(`../Nightseam-catalog`). Do not read its files as build inputs, share
+databases or synchronize versions with it. The old `<archive>/Object-Astro`
+archive is read-only.
 
-- Preview: python -m http.server 8080 --directory web.
-- Tests: python -m pytest tests/ -q --tb=no; relevant modules while editing,
-  full suite once at the end. JS: python scripts/check_js.py.
-- Browser: python scripts/check_browser.py --web. Launch failures are hard
-  infrastructure failures, never skips. Read ENVIRONMENT.md for named-pipe limits.
-- CI: .github/workflows/checks.yml runs the guards, pytest and the browser suite
-  on every push and pull request. Keep it aligned with these commands.
-- Catalog/version helpers: python web/build_web.py catalog; python
-  web/build_web.py version. Both use only this repository.
-- Before staging run python scripts/check_release.py with development flags
-  when appropriate. The owner reset the independent website's public version
-  series to 0.1.0 on October 6, 2026. Inherited tags occupy 0.1.5-0.6.36, so
-  releases after 0.1.1 continue above them at 0.7.0 (owner decision, October
-  11, 2026); pre_tag_check.py refuses reused or lower names. Catalog versions
-  remain independent.
-  Preserve inherited Git tags and truthful development version stamping;
-  the public history reset does not create a release tag or authorize deployment.
-- Every behavior change bumps the relevant ?v= cache token and entry-point
-  references. catalog.json has CATALOG_TOKEN and its manifest; provenance has
-  its own token/manifest. Run bump_web_tokens.py and check_js_tokens.py --update
-  only after all missed bumps are corrected. Never use no-store to hide drift.
-- Curate changelog before a release commit/tag; pre_tag_check.py must pass before
-  tagging. Bake web/version.json from truthful git describe including --dirty.
-  Do not stamp guessed clean releases or retag old versions.
-- Publication: python scripts/prepare_publication.py builds/verifies a local
-  combined immutable candidate; make_release.py stages a clean tagged planner.
-  Deploy only a reviewed bundle using python web/ftps_deploy.py publish
-  dist/publication-preview / (or dist/web-release / for the planner alone).
-  Credentials remain outside Git. Assets upload to content-addressed release
-  directories and verify before atomic public HTML renames; retain old releases
-  for already open clients. Raw mutable website uploads are refused. Changed
-  server policy requires a separate review. Public deployment requires user
-  authorization. No desktop EXE/ZIP/version equality is part of web validation.
+## Never, without the owner saying so in this conversation
 
-## Current web cache-token register
+- Push, merge, tag, publish or deploy. Credentials never go into Git.
+- Change server policy (`.htaccess`, headers); it needs a separate review.
+- Update fixtures, baselines or expected values to make a failing test pass.
+  The published reference anchors (`tests/js/reference_anchors.mjs`) are the
+  correctness authority; frozen fixtures only catch regressions.
+- Weaken a check. Browser launch failures are hard
+  infrastructure failures, never skips. Never use `no-store` to hide
+  cache-token drift.
 
-Keep this register aligned with entry-point references and the core manifest.
-Current:
-- `web/app.js?v=208`
-- `web/astro.js?v=51`
-- `web/horizon.js?v=115`
-- `web/horizonsetup.js?v=21`
-- `web/horizonsimple.js?v=15`
-- `web/horizontrace.js?v=17`
-- `web/horizonphoto.js?v=11`
-- `web/horizongeographic.js?v=7`
-- `web/webstore.js?v=66`
-- `web/format.js?v=57`
-- `web/nightrank.js?v=49`
-- `web/viztheme.js?v=6`
-- `web/imagecredits.js?v=2`
-- Public stylesheet: `landing/style.css?v=4`
-- Public decorative map: `landing/sky-map.svg?v=1`
-- Public share preview: `landing/social-preview.png?v=1`
-- Public pages load canonical role tokens: `/astro/themes.css?v=22`
-- `web/core.js?v=65`
-- `web/style.css?v=63`
-- `web/themes.css?v=22`
+## Making a change
 
-## Working discipline
+1. Read the relevant guide first: DESIGN.md for any UI change, CATALOG.md for
+   catalog data, DEVELOPMENT.md for planner internals.
+2. Edit sources only. `core/` is baked into `web/core/<hash>/` and `web/core.js`
+   by `python scripts/build_core.py`; never edit those generated files, and
+   never reimplement core math in `web/`.
+3. Bump cache tokens for everything whose bytes changed:
+   `python scripts/bump_web_tokens.py`, then record the new verified state with
+   `python scripts/check_js_tokens.py --update`. Catalog payload changes bump
+   `CATALOG_TOKEN` / `CATALOG_PROVENANCE_TOKEN` and their manifests (CATALOG.md).
+4. Run the tests for what you touched while editing; run the full suite once at
+   the end.
+5. Update the documents your change affects (see "Where things are recorded").
 
-Delegate bulk reading touching several files and request a digest, not files.
-Keep tool output concise and use explicit UTF-8 without BOM for text rewrites.
-Tests and scratch stay in ignored logs/, never in a user profile.
-Disposable probes use scripts/scratchspace.py's owned locked runs; do not ignore
-cleanup failures or prune recovery/deployment evidence as if it were scratch.
-Document confirmed unresolved findings in BUGS.md (open items only; remove an
-entry when fixed), how the planner works in DEVELOPMENT.md, status and next work
-in ROADMAP.md, decisions in DECISIONS.md and actual validation outcomes in
-RELEASES.md. Owner acceptance checklists live in docs/acceptance/, active
-horizon plans in docs/horizon/, and finished plans, reviews and archived logs
-in docs/history/; history may mention removed desktop files, but current
-commands and authority are this file. Recovery snapshots are ignored local
-logs/repository-split/, not release content.
+Text files are UTF-8 without BOM. Scratch output goes under ignored `logs/`
+(disposable probes through `scripts/scratchspace.py`), never into a user
+profile or the repository root. Commits go on a branch, not on `master`.
+
+## Commands
+
+```
+python -m http.server 8080 --directory web     # preview the planner
+python -m pytest tests/ -q --tb=no             # full Python + Node suite
+python scripts/check_js.py                     # JS syntax, imports, tokens
+python scripts/check_browser.py --web          # real-Chrome checks
+python scripts/check_release.py --allow-dirty --no-stage   # release guards during development
+python web/build_web.py catalog                # rebuild the catalog payload
+python web/build_web.py version                # bake web/version.json
+```
+
+CI (`.github/workflows/checks.yml`) runs the guards, pytest and the browser
+suite on every push and pull request; keep it aligned with these commands.
+Run pytest and the browser suite one after the other, not in parallel: some
+guard tests temporarily replace shipped files. ENVIRONMENT.md covers this
+machine's sandbox limits (Chrome named pipes, elevated runs).
+
+## Behaviour that must not regress
+
+**Time and the night**
+- Dates are the observing site's calendar date. A night runs from the site's
+  local noon to the next site noon; dark windows, the scrubber and the detail
+  card all use that night.
+- One selected instant drives every view.
+- Sun and Moon visibility uses apparent altitude.
+
+**Scoring**
+- Every view uses the one shared scoring loop. Windows are half-open and
+  clipped to the dark window.
+- Popularity only breaks ties and is never shown in the UI.
+
+**Horizons**
+- Profiles are stored in world-azimuth bins.
+- Stored strokes win over a stored profile; a record without strokes keeps its
+  profile. Crops never modify the original photo.
+- Editor history stays safe: dirty state, undo/redo and the leave-page warning.
+
+**Catalog**
+- Standard catalog IDs are globally unique and stable. The standard 200-object
+  selection is deterministic. Source, provenance and displayed counts agree.
+
+**Backups**
+- Import validates and stages the whole bundle before writing anything, and
+  rolls everything back on failure.
+
+**UI**
+- Workbench is the only theme; colors come from the role tokens in
+  `web/themes.css`.
+- Site, Rig and minimum altitude stay in the top bar; advanced options live in
+  the hamburger menu with quiet defaults.
+- Keep keyboard access, focus order, accessible names, reduced motion and
+  summaries that do not rely on color alone.
+
+## Releases
+
+- Public versions restarted at 0.1.0 (published: 0.1.0, 0.1.1). Inherited tags
+  occupy 0.1.5-0.6.36, so the next release is 0.7.0 or higher;
+  `scripts/pre_tag_check.py` refuses reused or lower names and must pass before
+  tagging. Never retag or delete inherited tags.
+- Curate the changelog (`scripts/build_changelog.py`) before the release
+  commit. `web/version.json` comes from `git describe --dirty`; never stamp a
+  guessed clean version.
+- Publication: `python scripts/prepare_publication.py` builds an immutable
+  candidate; deploy only a reviewed bundle with
+  `python web/ftps_deploy.py publish dist/publication-preview /`.
+  RELEASE_WORKFLOW.md has the details.
+
+## Where things are recorded
+
+| Document | Holds |
+|---|---|
+| BUGS.md | Open findings only; remove an entry when it is fixed |
+| ROADMAP.md | Status and next work |
+| DEVELOPMENT.md | How the planner currently works |
+| DECISIONS.md | Decisions and their reasons |
+| RELEASES.md | Actual validation outcomes, never expected ones |
+| docs/acceptance/ | Owner acceptance checklists |
+| docs/horizon/ | Active horizon plans |
+| docs/history/ | Finished plans, reviews and old logs (may mention removed desktop files; this file is the current authority) |
+
+## Subagents
+
+- Bulk reading across several files: use `digest-reader` and ask for a digest
+  with file:line references, not file contents.
+- Reviews: use `reviewer`. Verify each finding yourself before reporting it.
+- Full-suite runs with long output: use `validator`.
+- Keep all edits in the main session. Do not run parallel writers: the core
+  build and the cache-token baseline are shared by almost every change.

@@ -55,7 +55,7 @@ with `python scripts/bump_web_tokens.py` (see [AGENTS.md](AGENTS.md)).
 
 | Document | Use it for |
 |---|---|
-| [AGENTS.md](AGENTS.md) | Rules for changing this repository, commands and the cache-token register |
+| [AGENTS.md](AGENTS.md) | Rules for changing this repository and the commands to use |
 | [DEVELOPMENT.md](DEVELOPMENT.md) | How the planner works: architecture, data flow, storage, horizon model |
 | [DESIGN.md](DESIGN.md) | Workbench design system and UI conventions |
 | [CATALOG.md](CATALOG.md) | Catalog sources, supplement and rebuild |
