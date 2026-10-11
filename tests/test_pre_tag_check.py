@@ -12,14 +12,17 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def _mod(tags=()):
-    """The gate with a stubbed tag list: other tests exercise curation and token
-    guards with historical versions; the version-name rule is tested below."""
+def _mod(tags=(), floor=(0, 0, 0)):
+    """The gate with a stubbed tag list and, by default, no release floor: other
+    tests exercise curation and token guards with historical versions; the
+    version-name rules are tested below (floor=None keeps the real floor)."""
     spec = importlib.util.spec_from_file_location(
         "pre_tag_check", ROOT / "scripts" / "pre_tag_check.py")
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     mod.existing_tags = lambda: list(tags)
+    if floor is not None:
+        mod.RELEASE_FLOOR = floor
     return mod
 
 
@@ -113,9 +116,18 @@ def test_the_real_tags_require_0_7_0_or_above():
     mod = importlib.util.module_from_spec(real)
     real.loader.exec_module(mod)
     tags = mod.existing_tags()
-    assert "v0.6.36" in tags
     assert mod.version_problems("0.1.2", tags)
     assert mod.version_problems("0.7.0", tags) == []
+
+
+def test_the_floor_holds_without_the_inherited_tags():
+    """A clone that lacks v0.6.35/v0.6.36 (the first CI checkout) must still
+    refuse names below 0.7.0."""
+    m = _mod(floor=None)
+    for name in ("0.1.2", "0.6.35", "0.6.37"):
+        assert any("below 0.7.0" in p for p in m.version_problems(name, ["v0.1.1"])), name
+    assert m.version_problems("0.7.0", ["v0.1.1"]) == []
+    assert m.version_problems("0.7.0", ["v0.7.0"]), "reuse is still refused"
 
 
 def test_main_refuses_a_reused_release_name(monkeypatch, capsys):

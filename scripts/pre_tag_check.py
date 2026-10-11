@@ -76,6 +76,11 @@ def _parts(version: str):
     return tuple(int(x) for x in m.groups()) if m else None
 
 
+# The floor holds even in a clone that lacks some inherited tags (the CI
+# checkout once had no v0.6.35/v0.6.36 and would have accepted 0.6.35).
+RELEASE_FLOOR = (0, 7, 0)
+
+
 def version_problems(version, tags) -> list[str]:
     """Release names continue ABOVE every existing tag (owner decision, October
     11, 2026). The website restarted at 0.1.0 below inherited tags that occupy
@@ -87,6 +92,10 @@ def version_problems(version, tags) -> list[str]:
     known = {p for p in (_parts(t) for t in tags) if p}
     if parts in known:
         return [f"tag v{'.'.join(map(str, parts))} already exists - never reuse or move a tag"]
+    if parts < RELEASE_FLOOR:
+        floor = ".".join(map(str, RELEASE_FLOOR))
+        return [f"'{version}' is below {floor} - inherited tags occupy 0.1.5-0.6.36, "
+                f"so release names continue at {floor} or above"]
     highest = max(known, default=None)
     if highest and parts < highest:
         top = ".".join(map(str, highest))
