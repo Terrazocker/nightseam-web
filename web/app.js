@@ -1,6 +1,6 @@
 /*
  * NightSeam Web — static in-browser night-planning app.
- * Port of NightSeam (<archive>\Object-Astro) core features:
+ * Planner views:
  *   • Tonight  — dark time, moon phase, ranked best targets
  *   • Sky map  — live polar all-dome chart with sun/moon/all catalog objects
  *   • Catalog  — search/sort across 12,176 objects (OpenNGC + supplement)
@@ -8,9 +8,9 @@
  *   • Settings — sites, rigs, custom targets, backup/restore (webstore.js)
  * All sky math runs client-side (astro.js, Meeus algorithms).
  */
-import * as E from './astro.js?v=50';
-import * as Hor from './horizon.js?v=114';
-import * as WS from './webstore.js?v=65';
+import * as E from './astro.js?v=51';
+import * as Hor from './horizon.js?v=115';
+import * as WS from './webstore.js?v=66';
 import { fmtSize, sizeArcmin, framePct, magVisible, skyClampZoom,
          skyViewMatrix, skyScreenToBase, skyClampFocus } from './format.js?v=57';
 import { nightStats, nightStatsBatch, sampleVisible } from './nightrank.js?v=49';

@@ -39,6 +39,6 @@ dialogs/process failures under restricted tokens. Do not run git gc casually.
 Text writes must use explicit UTF-8 without BOM; do not use a legacy PowerShell
 Get-Content/Set-Content roundtrip for non-ASCII shipped text.
 
-The former desktop environment and executable were moved to the independent
-Nightseam-catalog repository. The website has no desktop build or SQLite
-dependency. Historical measurements survive in Git/recovery snapshots.
+CI runs the same gates on GitHub's windows-latest runners with Python 3.14,
+Node 22 and the runner's installed Chrome (`.github/workflows/checks.yml`); the
+sandbox limits above apply only to this development machine.

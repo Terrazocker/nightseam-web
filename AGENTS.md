@@ -40,6 +40,8 @@ versions or recreate the combined desktop project here. The deprecated
   full suite once at the end. JS: python scripts/check_js.py.
 - Browser: python scripts/check_browser.py --web. Launch failures are hard
   infrastructure failures, never skips. Read ENVIRONMENT.md for named-pipe limits.
+- CI: .github/workflows/checks.yml runs the guards, pytest and the browser suite
+  on every push and pull request. Keep it aligned with these commands.
 - Catalog/version helpers: python web/build_web.py catalog; python
   web/build_web.py version. Both use only this repository.
 - Before staging run python scripts/check_release.py with development flags
@@ -71,15 +73,15 @@ versions or recreate the combined desktop project here. The deprecated
 
 Keep this register aligned with entry-point references and the core manifest.
 Current:
-- `web/app.js?v=207`
-- `web/astro.js?v=50`
-- `web/horizon.js?v=114`
+- `web/app.js?v=208`
+- `web/astro.js?v=51`
+- `web/horizon.js?v=115`
 - `web/horizonsetup.js?v=21`
 - `web/horizonsimple.js?v=15`
 - `web/horizontrace.js?v=17`
 - `web/horizonphoto.js?v=11`
 - `web/horizongeographic.js?v=7`
-- `web/webstore.js?v=65`
+- `web/webstore.js?v=66`
 - `web/format.js?v=57`
 - `web/nightrank.js?v=49`
 - `web/viztheme.js?v=6`
@@ -99,8 +101,11 @@ Keep tool output concise and use explicit UTF-8 without BOM for text rewrites.
 Tests and scratch stay in ignored logs/, never in a user profile.
 Disposable probes use scripts/scratchspace.py's owned locked runs; do not ignore
 cleanup failures or prune recovery/deployment evidence as if it were scratch.
-Document confirmed unresolved findings in BUGS.md, architecture in DEVELOPMENT.md,
-decisions in DECISIONS.md and actual validation outcomes in RELEASES.md.
-Historical combined-project entries may mention removed desktop files; current
+Document confirmed unresolved findings in BUGS.md (open items only; remove an
+entry when fixed), how the planner works in DEVELOPMENT.md, status and next work
+in ROADMAP.md, decisions in DECISIONS.md and actual validation outcomes in
+RELEASES.md. Owner acceptance checklists live in docs/acceptance/, active
+horizon plans in docs/horizon/, and finished plans, reviews and archived logs
+in docs/history/; history may mention removed desktop files, but current
 commands and authority are this file. Recovery snapshots are ignored local
 logs/repository-split/, not release content.

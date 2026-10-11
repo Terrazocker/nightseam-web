@@ -103,7 +103,8 @@ The local exposure catalog has its own design document in Nightseam-catalog.
   Confirmed known geometry can be checked without mandatory fitting points.
   Preview before applying a complete fit; offer a separate optional check and a
   clearly approximate route. Existing records open directly with a review action;
-  separate legacy references remain under Advanced setup.
+  separate legacy references remain under Advanced setup, which can review but
+  never re-apply linear geometry to a converted photo.
   Optional Photo geometry / leveling shows detected metadata or requests known
   source parameters, previews corrected pixels and requires explicit Apply before
   drawing. Original bytes and original-pixel references remain authoritative;
@@ -126,7 +127,10 @@ The local exposure catalog has its own design document in Nightseam-catalog.
   Reserve cursor-readout space so pointer movement cannot shift the image.
   Optional measurement source, angular error, time, group and exclusion reason
   belong in a closed Advanced evidence disclosure. Optional observing position,
-  optical height, capture date and coverage policy also stay behind disclosure.
+  optical height and capture date also stay behind disclosure. The coverage
+  assumption is the exception: "Sky outside the photo" stays visible in photo
+  setup, defaults to open sky above the skyline for converted photos and
+  explains the current choice in one line.
   Retain saved/imported metadata; ordinary setup must not require these fields.
   Offer Brush / eraser and Trace skyline as named authoring tools with a plain
   active-tool explanation. Put exact point controls in the settings rail, keep
@@ -138,6 +142,7 @@ The local exposure catalog has its own design document in Nightseam-catalog.
   horizon intact. Give plain feedback for discarded drafts and rejected additions.
   On phones, cap the sticky toolbar at 40% of viewport height (at most 240px),
   with internal scrolling so actions remain reachable without covering zoom.
+
 Across Tonight, Catalog, and Sky View, keep one selected target and one inspector.
 Keep tables native: rows and cells expose table semantics, with named target
 buttons inside cells. Sort headers use real buttons and expose their direction

@@ -1,18 +1,35 @@
-# Historical website plans and retired assets
+# Historical website plans, reviews and logs
 
-Current implementation/backlog authority is [IMPLEMENTATION_PLAN.md](../../IMPLEMENTATION_PLAN.md)
-and [REVIEW_REMAINING_IMPLEMENTATION_PLAN.md](../../REVIEW_REMAINING_IMPLEMENTATION_PLAN.md).
-[RELEASES.md](../../RELEASES.md) records actual validation and deployment;
-[RELEASE_WORKFLOW.md](../../RELEASE_WORKFLOW.md) defines current publication.
+Nothing here is current guidance. Current status and next steps are in
+[ROADMAP.md](../../ROADMAP.md), open defects in [BUGS.md](../../BUGS.md),
+validation receipts in [RELEASES.md](../../RELEASES.md) and the publication
+procedure in [RELEASE_WORKFLOW.md](../../RELEASE_WORKFLOW.md). These files keep
+their dated descriptions, original instructions and acceptance evidence.
 
-These completed plans retain their dated descriptions, original instructions and
-acceptance evidence. They are not current implementation or deployment guidance:
+Website plans (October 2026):
 
 - [Website overhaul](WEBSITE_OVERHAUL_PLAN.md)
 - [Open workspace design](WEB_OPEN_DESIGN_IMPLEMENTATION_PLAN.md)
 - [Remaining overhaul work](WEB_REMAINING_WORK_PLAN.md)
 - [Annotation improvements](WEB_ANNOTATION_IMPLEMENTATION_PLAN.md)
 - [Original integrated review](WEBSITE_FINAL_REVIEW.md)
+- [Previous roadmap/backlog](IMPLEMENTATION_PLAN.md) and
+  [future feature scope](FUTURE_FEATURE_SCOPE.md), condensed into ROADMAP.md
+- [Review remediation plan](REVIEW_REMAINING_IMPLEMENTATION_PLAN.md)
+
+Horizon/panorama (completed phases; the open P3-P7 plan is in ../horizon/):
+
+- [Improvement phases 1-5](HORIZON_PANORAMA_IMPROVEMENT_PLAN.md)
+- [Simplification A-F](HORIZON_PANORAMA_SIMPLIFICATION_PLAN.md)
+
+Reviews and logs:
+
+- [Workspace audit, October 10](WORKSPACE_AUDIT_REPORT.md)
+- [Documentation review, October 11](WORKSPACE_DOCUMENTATION_REVIEW.md)
+- [Findings log](BUGS_LOG.md) — dated findings formerly in BUGS.md
+- [Development log](DEVELOPMENT_LOG.md) — dated notes formerly in DEVELOPMENT.md
+- [Combined-project releases](RELEASES_COMBINED_PROJECT.md) — receipts from
+  before the October 1, 2026 repository split
 
 ## October 10, 2026 workspace cleanup
 

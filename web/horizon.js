@@ -19,7 +19,7 @@ import { photoSetupHTML, wirePhotoSetup } from './horizonsetup.js?v=21';
 import { traceToolsHTML, tracePointsHTML, wireTraceTools } from './horizontrace.js?v=17';
 import { inspectPhoto, angularPhotoCanvas, wirePhotoConversion } from './horizonphoto.js?v=11';
 import { wireGeographicEvidence } from './horizongeographic.js?v=7';
-import { normalizeWebPrefs, WEB_PREF_DEFAULTS } from './webstore.js?v=65';
+import { normalizeWebPrefs, WEB_PREF_DEFAULTS } from './webstore.js?v=66';
 import {
   NO_BLOCK, BINS, MASK_W, MASK_H,
   rebuildMask, wrapsFor, altOf, rowOfAlt, xOfAz, azOfX, profileFromMask,

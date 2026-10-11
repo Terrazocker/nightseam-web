@@ -1,6 +1,6 @@
 # Independent website release workflow
 
-Current authority, October 10, 2026. The owner reset the public website series to
+Current authority, October 11, 2026. The owner reset the public website series to
 0.1.0. scripts/build_changelog.py PUBLIC_RELEASES owns that public ledger; inherited
 Git tags and historical CURATED summaries remain evidence and do not restore old
 public entries. The catalog's source, tags and packages are independent.
@@ -10,15 +10,15 @@ initial v0.1.0 release on October 7. RELEASES.md
 records exact acceptance and cleanup. Inherited tags occupy 0.1.5 through
 0.6.36, so the next release is 0.7.0 and later ones continue above every
 existing tag (owner decision, October 11, 2026); pre_tag_check.py refuses a
-reused or lower name. Do not rerun the initial tag creation or move v0.1.0. Host compression and human
-AT acceptance remain open separately from publication.
+reused or lower name. Do not rerun the initial tag creation or move v0.1.0.
+Host compression and human AT acceptance remain open separately from
+publication (BUGS.md). CI runs the same checks for every push.
 
 ## Reviewable local candidate
 
-1. Preserve the working branch and unrelated uncommitted work. Read
-   IMPLEMENTATION_PLAN.md, REVIEW_REMAINING_IMPLEMENTATION_PLAN.md and the latest
-   actual validation receipt in RELEASES.md. Completed design plans in
-   docs/history/ are historical evidence, not the current release checklist.
+1. Preserve the working branch and unrelated uncommitted work. Read ROADMAP.md,
+   BUGS.md and the latest actual validation receipt in RELEASES.md. Completed
+   plans in docs/history/ are historical evidence, not a release checklist.
 2. Run full pytest once after final changes; run scripts/check_browser.py --web,
    scripts/check_js.py and scripts/check_release.py --allow-dirty --no-stage.
    Browser failures stay failures; infrastructure failures are never skips.
@@ -36,7 +36,8 @@ AT acceptance remain open separately from publication.
    staging refuses symlinks and untracked content of every file type.
 5. This dirty candidate is a local review snapshot, not a clean public release.
    web/version.json must remain truthful to git describe including --dirty.
-   Human screen-reader/native-zoom acceptance follows ACCESSIBILITY_ACCEPTANCE.md.
+   Human screen-reader/native-zoom acceptance follows
+   docs/acceptance/ACCESSIBILITY_ACCEPTANCE.md.
 
 ## Clean independent release
 
@@ -83,9 +84,11 @@ separately through the supported provider controls.
 Run read-only production smoke and compare decoded version/module/catalog/core
 hashes, live gzip/cache headers, current plus cached/return visits, photos and
 representative planning. Only then review publication.manifest.json's explicit
-cleanup paths: the 81 retired object JPEGs and /astro/image-attributions.json.
-Remove only verified retired paths after authorization; never delete all /astro/img,
-remote core directories or unknown files. Keep backups for rollback.
+cleanup paths. The 81 retired object JPEGs were removed on October 7, 2026 and
+/astro/image-attributions.json was already absent; the ledger remains so that no
+later cleanup touches anything else. Remove only verified retired paths after
+authorization; never delete all /astro/img, remote core directories or unknown
+files. Keep backups for rollback.
 
 If acceptance fails, stop cleanup. Re-publish the previous verified immutable
 bundle to restore its public HTML/version entries; retained release directories

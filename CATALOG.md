@@ -23,7 +23,9 @@ provenance; never borrow sibling inputs as build dependencies.
 
 The catalog remains OpenNGC plus the documented 16-object supplement, with
 12,176 objects and deterministic standard selection of the 200 most popular
-scored objects. Dropped non-objects/duplicates, global IDs, display mappings and
+scored objects (`STANDARD_TOP_N` in `catalog_data/__init__.py`). Sources live in
+`catalog_data/data/` (`openned.csv`, `supplement.csv`, `catalog_provenance.json`);
+popularity is the static, offline table `catalog_data/popularity_data.py`. Dropped non-objects/duplicates, global IDs, display mappings and
 provenance rules remain enforced. Changes to a served payload require its token
 and manifest to change in the same commit. Never patch collisions through a
 runtime map or use no-store to conceal a missed token bump.

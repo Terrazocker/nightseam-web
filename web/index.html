@@ -80,7 +80,7 @@
         <div class="menu-section">
           <h4>Weather · <span id="wxSite">active site</span></h4>
           <div id="wxBody">
-            <p class="hint">Weather is loaded only when you click the chip above — nothing is fetched until then (except when auto-load is on).</p>
+            <p class="hint">Weather loads when you click the chip above, or at startup when auto-load is on. Once loaded, changing the site fetches a new forecast.</p>
           </div>
         </div>
         <div class="menu-section">
@@ -115,7 +115,7 @@
         <div class="menu-section">
           <h4>Advanced</h4>
           <label class="inline"><input type="checkbox" id="advMode"> Advanced mode</label>
-          <p class="hint">Standard mode shows the 200 most popular targets; advanced adds the full OpenNGC catalog — NGC/IC plus its addendum and a 16-object supplement OpenNGC cannot carry (12,176 objects to magnitude 20). Switching updates the catalog in place; calculating visibility for the full catalog can take a moment.</p>
+          <p class="hint">Standard mode shows 200 well-known targets; advanced adds the full OpenNGC catalog — NGC/IC plus its addendum and a 16-object supplement OpenNGC cannot carry (12,176 objects to magnitude 20). Switching updates the catalog in place; calculating visibility for the full catalog can take a moment.</p>
           <div class="hidden" id="tzSection">
             <label class="inline">Timezone
               <select id="tzSelect" style="width:100%">
@@ -228,6 +228,6 @@
 <div class="modal-wrap" id="modal" hidden></div>
 <div class="tooltip" id="tooltip" hidden></div>
 
-  <script type="module" src="app.js?v=207"></script>
+  <script type="module" src="app.js?v=208"></script>
 </body>
 </html>

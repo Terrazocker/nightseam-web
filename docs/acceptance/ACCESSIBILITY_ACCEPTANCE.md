@@ -33,6 +33,10 @@ Record browser, screen reader/version, date, zoom, page, action and actual resul
    edit search text: focus and the search caret/selection must survive updates.
 6. Edit a Horizon, undo/redo/save, leave with dirty edits and exercise restore
    failure. Ensure warnings and validation errors are readable without color.
+   Upload a photo and complete photo setup by keyboard: geometry, reference
+   points through the percentage fields instead of clicking the image, the
+   "Sky outside the photo" choice (its explanation must be announced), skyline
+   tracing and the evidence disclosures.
 7. Repeat at 200% and 400% native browser zoom (not CSS zoom or viewport scaling).
    Verify text reflows, controls/focus remain reachable, dialogs fit, and dense
    tables scroll within their named region without hiding their headings.

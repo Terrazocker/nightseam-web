@@ -10,8 +10,7 @@
 export const D2R = Math.PI / 180;
 export const R2D = 180 / Math.PI;
 
-/* keyboard scrub steps in minutes - shared with the desktop
-   (static/js/derive.js) and pinned by tests/test_js_parity.py: a plain arrow
+/* keyboard scrub steps in minutes, pinned by tests/test_js_parity.py: a plain arrow
    key is the fine step (one 6-min night-grid sample), Shift is the coarse one. */
 export const SCRUB_STEP_MIN = 6;
 export const SCRUB_SHIFT_STEP_MIN = 60;

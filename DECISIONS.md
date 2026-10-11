@@ -1,5 +1,47 @@
 # Independent website decisions
 
+Decisions are recorded newest first and are not rewritten; a later entry that
+supersedes an earlier one says so. Entries about the former desktop app (FITS,
+Library, SQLite, desktop CSP) are history only.
+
+## Rules still in force (index)
+
+- **Scope and authority:** one JS core for astronomy and planning (0.6.20);
+  published reference anchors over fixtures; Workbench is the only theme;
+  global catalog IDs (0.6.12); the website and the Windows catalog are
+  independent projects (2026-10-01 split).
+- **Time and planning:** site-zoned noon anchoring and calendar dates
+  (2026-10-10); bounded, half-open planning intervals (2026-10-05); the detail
+  card describes the coming night (2026-10-11, supersedes the calendar-day
+  culmination rule); unknown timezones are refused at entry (2026-10-11).
+- **Horizon:** strokes win over stored profiles; non-destructive crops kept
+  with their source (2026-10-10); guided and physical-orientation calibration
+  with retained evidence (2026-10-10/11); converted photos infer open sky above
+  the skyline, with a visible switch (2026-10-11, supersedes the strict default).
+- **Data and privacy:** transactional, staged backups with rollback; Wikipedia
+  is the only object-photo source (2026-10-06); popularity is never visible
+  (2026-10-06); the CSP is delivered in the document (0.6.33).
+- **Delivery:** cache tokens checked against a verified baseline (0.6.24/25);
+  immutable release graphs with older releases retained (2026-10-10).
+- **Releases:** the public history restarted at 0.1.0 (2026-10-06); later
+  releases continue at 0.7.0 above inherited tags (2026-10-11).
+- **Documentation:** see "Documentation layout" (2026-10-11), which updates the
+  older "Docs policy".
+
+## 2026-10-11 — Documentation layout
+
+Keep the root to current, maintained documents: README (entry point and map),
+AGENTS (rules, commands, token register), DEVELOPMENT (how the planner works,
+rewritten as a current guide), DESIGN, CATALOG, ROADMAP (status and open work;
+replaces IMPLEMENTATION_PLAN and FUTURE_FEATURE_SCOPE), BUGS (open findings
+only), DECISIONS, RELEASES, RELEASE_WORKFLOW, HOSTING_CONFIGURATION and
+ENVIRONMENT. Owner checklists go to docs/acceptance/, active horizon plans to
+docs/horizon/, and finished plans, reviews and dated logs to docs/history/
+unchanged. RELEASES keeps website receipts; pre-split combined-project receipts
+are archived. The older "Docs policy" still holds against separate ARCHITECTURE,
+WORKFLOWS, CONTRIBUTING and CHANGELOG files; DEVELOPMENT describes behaviour,
+AGENTS stays the authority for rules and commands.
+
 ## 2026-10-11 — Converted photos infer open sky above the skyline
 
 Owner decision: confirming a converted photo defaults to inferred-open coverage.

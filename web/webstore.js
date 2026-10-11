@@ -1,9 +1,9 @@
 /*
  * NightSeam Web — storage & settings module.
- * Browser-side mirror of the local NightSeam SQLite user tables:
- *   sites   — {id, name, lat, lon, elev, tz}            (local: sites table)
- *   rigs    — {id, name, focal_mm, sensor_w, sensor_h, fov_w, fov_h}  (rigs)
- *   targets — custom objects, id "u_*"                   (custom_objects)
+ * User records in IndexedDB (nightseam-db-v1):
+ *   sites   — {id, name, lat, lon, elev, tz}
+ *   rigs    — {id, name, focal_mm, sensor_w, sensor_h, fov_w, fov_h}
+ *   targets — custom objects, id "u_*"
  * Plus: per-site timezone helpers (DST-aware, Intl), backup/restore of all
  * user data as JSON, and the version stamp (version.json, git describe).
  * IndexedDB database: "nightseam-db-v1". Renaming the storage keys was free:
