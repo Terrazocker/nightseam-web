@@ -1,5 +1,15 @@
 # Independent website decisions
 
+## 2026-10-11 — Continue release names above inherited tags (0.7.0)
+
+The public series restarted at 0.1.0, but inherited tags occupy 0.1.5-0.1.7,
+0.2.x, 0.3.x, 0.4.x, 0.5.x and 0.6.0-0.6.36. The owner chose to skip ahead:
+the next public release is 0.7.0, and every later release is above the highest
+existing tag. Names never collide with or sort inside the inherited history,
+so version order and creation order agree again. PUBLIC_RELEASES keeps 0.1.0
+and 0.1.1; the ledger jumps from 0.1.1 to 0.7.0. pre_tag_check.py refuses an
+existing or lower version before tagging.
+
 ## 2026-10-11 — Validate zones at entry; name unknown horizons in core
 
 An unknown IANA zone is refused at every entry point rather than planned in

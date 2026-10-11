@@ -7,8 +7,10 @@ public entries. The catalog's source, tags and packages are independent.
 
 v0.1.1 is released on GitHub and deployed (October 8, 2026), following the
 initial v0.1.0 release on October 7. RELEASES.md
-records exact acceptance and cleanup. Future releases use a new unused version;
-do not rerun the initial tag creation or move v0.1.0. Host compression and human
+records exact acceptance and cleanup. Inherited tags occupy 0.1.5 through
+0.6.36, so the next release is 0.7.0 and later ones continue above every
+existing tag (owner decision, October 11, 2026); pre_tag_check.py refuses a
+reused or lower name. Do not rerun the initial tag creation or move v0.1.0. Host compression and human
 AT acceptance remain open separately from publication.
 
 ## Reviewable local candidate
@@ -40,8 +42,8 @@ AT acceptance remain open separately from publication.
 
 Review the final diff, commit the accepted preparation and choose a fresh
 independent release tag only after pre_tag_check passes. Never move inherited tags.
-The initial v0.1.0 was created October 7; check local and remote tags before
-choosing the next unused version.
+The initial v0.1.0 was created October 7. Fetch remote tags before choosing the
+next version above the highest existing tag; pre_tag_check.py enforces it locally.
 Do not fast-forward or push other branches without reviewing their current state.
 Generate and commit curated history before tagging. At the clean new tag run
 python scripts/make_release.py to bake version and stage; check history consistency

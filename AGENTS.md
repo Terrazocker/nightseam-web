@@ -44,7 +44,10 @@ versions or recreate the combined desktop project here. The deprecated
   web/build_web.py version. Both use only this repository.
 - Before staging run python scripts/check_release.py with development flags
   when appropriate. The owner reset the independent website's public version
-  series to 0.1.0 on October 6, 2026. Catalog versions remain independent.
+  series to 0.1.0 on October 6, 2026. Inherited tags occupy 0.1.5-0.6.36, so
+  releases after 0.1.1 continue above them at 0.7.0 (owner decision, October
+  11, 2026); pre_tag_check.py refuses reused or lower names. Catalog versions
+  remain independent.
   Preserve inherited Git tags and truthful development version stamping;
   the public history reset does not create a release tag or authorize deployment.
 - Every behavior change bumps the relevant ?v= cache token and entry-point

@@ -10,7 +10,8 @@ independent `<workspace>/Nightseam-catalog`
 repository, beginning at version 0.1.0. Its source, executable, tests, source
 library and packaged library live there. This repository keeps its existing
 branch/history and inherited tags. The independent public website series starts
-anew at 0.1.0; development version stamps still report truthful git describe.
+anew at 0.1.0 and, above the inherited tags, continues at 0.7.0 after 0.1.1;
+development version stamps still report truthful git describe.
 
 ## Run and check
 

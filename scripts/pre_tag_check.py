@@ -19,13 +19,15 @@ Run it BEFORE `git tag`:
     python scripts/pre_tag_check.py 0.6.12
 
 Exits 0 only when `scripts/build_changelog.py::CURATED` has a non-empty entry for
-the version AND every shipped web module's bytes plus `web/catalog.json` match
-their cache token; non-zero otherwise (and when no version is given).
+the version, the version is above every existing tag, AND every shipped web
+module's bytes plus `web/catalog.json` match their cache token; non-zero
+otherwise (and when no version is given).
 """
 
 from __future__ import annotations
 
 import importlib.util
+import re
 import sys
 from pathlib import Path
 
@@ -64,6 +66,35 @@ def catalog_problems() -> list[str]:
         return [f"catalog-token guard failed to run: {exc}"]
 
 
+def existing_tags() -> list[str]:
+    """All repository tags, through build_changelog's sandbox-safe git helper."""
+    return [t for t in _load("build_changelog").git("tag").splitlines() if t]
+
+
+def _parts(version: str):
+    m = re.fullmatch(r"(\d+)\.(\d+)\.(\d+)", str(version).lstrip("v").strip())
+    return tuple(int(x) for x in m.groups()) if m else None
+
+
+def version_problems(version, tags) -> list[str]:
+    """Release names continue ABOVE every existing tag (owner decision, October
+    11, 2026). The website restarted at 0.1.0 below inherited tags that occupy
+    0.1.5 through 0.6.36, so the next release after 0.1.1 is 0.7.0. A reused
+    or lower name would collide with, or sort among, the inherited history."""
+    parts = _parts(version)
+    if parts is None:
+        return [f"'{version}' is not an X.Y.Z version"]
+    known = {p for p in (_parts(t) for t in tags) if p}
+    if parts in known:
+        return [f"tag v{'.'.join(map(str, parts))} already exists - never reuse or move a tag"]
+    highest = max(known, default=None)
+    if highest and parts < highest:
+        top = ".".join(map(str, highest))
+        return [f"'{version}' is below the highest existing tag v{top} - release "
+                f"names continue above it (next minor: {highest[0]}.{highest[1] + 1}.0)"]
+    return []
+
+
 def check(version) -> bool:
     """A CURATED entry must be present AND carry real text (TR-05, 0.6.32
     review): `CURATED["0.6.33"] = ""` (the "add the key now, write the text
@@ -83,14 +114,16 @@ def main() -> int:
         failures.append(
             f"no CURATED entry for '{v}' in scripts/build_changelog.py (or it is "
             f"EMPTY) - add the real text and COMMIT it BEFORE creating the tag")
+    failures += version_problems(v, existing_tags())
     failures += token_problems()
     failures += catalog_problems()
     if failures:
         for f in failures:
             print("pre_tag_check: FAIL - " + f)
         return 1
-    print(f"pre_tag_check: OK - '{v}' has a curated changelog entry and every "
-          f"shipped web module and the catalog match their cache token")
+    print(f"pre_tag_check: OK - '{v}' is a new version above every tag, has a "
+          f"curated changelog entry, and every shipped web module and the "
+          f"catalog match their cache token")
     return 0
 
 

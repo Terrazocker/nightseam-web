@@ -12,11 +12,14 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def _mod():
+def _mod(tags=()):
+    """The gate with a stubbed tag list: other tests exercise curation and token
+    guards with historical versions; the version-name rule is tested below."""
     spec = importlib.util.spec_from_file_location(
         "pre_tag_check", ROOT / "scripts" / "pre_tag_check.py")
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
+    mod.existing_tags = lambda: list(tags)
     return mod
 
 
@@ -88,6 +91,38 @@ def test_release_tags_are_read_in_creation_order(monkeypatch):
     monkeypatch.setattr(mod, "git", lambda *args: calls.append(args) or "v0.1.1\nv0.6.36\n\n")
     assert mod.release_tags() == ["v0.1.1", "v0.6.36"]
     assert calls == [("tag", "--sort=-creatordate")]
+
+
+def test_release_names_continue_above_every_existing_tag():
+    """Owner decision (October 11, 2026): after the reset to 0.1.x, inherited
+    tags occupy 0.1.5 through 0.6.36, so releases continue at 0.7.0."""
+    m = _mod()
+    tags = ["v0.1", "v0.1.0", "v0.1.1", "v0.1.5", "v0.5.12", "v0.6.36"]
+    assert m.version_problems("0.7.0", tags) == []
+    assert m.version_problems("v1.0.0", tags) == []
+    assert "already exists" in m.version_problems("0.6.36", tags)[0]
+    assert "already exists" in m.version_problems("0.1.5", tags)[0]
+    problem = m.version_problems("0.1.2", tags)[0]
+    assert "below the highest existing tag v0.6.36" in problem and "0.7.0" in problem
+    assert "not an X.Y.Z" in m.version_problems("0.7", tags)[0]
+    assert m.version_problems("0.1.0", []) == [], "a repository without tags may start anywhere"
+
+
+def test_the_real_tags_require_0_7_0_or_above():
+    real = importlib.util.spec_from_file_location("pre_tag_real", ROOT / "scripts" / "pre_tag_check.py")
+    mod = importlib.util.module_from_spec(real)
+    real.loader.exec_module(mod)
+    tags = mod.existing_tags()
+    assert "v0.6.36" in tags
+    assert mod.version_problems("0.1.2", tags)
+    assert mod.version_problems("0.7.0", tags) == []
+
+
+def test_main_refuses_a_reused_release_name(monkeypatch, capsys):
+    m = _mod(["v0.6.11", "v0.6.36"])
+    monkeypatch.setattr(sys, "argv", ["pre_tag_check.py", "0.6.11"])
+    assert m.main() == 1
+    assert "already exists" in capsys.readouterr().out
 
 
 def test_the_catalog_guard_is_wired_into_the_pre_tag_gate(monkeypatch, capsys):

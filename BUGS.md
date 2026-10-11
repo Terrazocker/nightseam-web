@@ -27,11 +27,11 @@ Resolved locally on branch horizon-calibration (receipt in RELEASES.md):
   to itself and failed. It now pins cacdacf, the last full-replay commit.
 - Release guard: build_changelog.py --check ordered tags by version, so the
   inherited v0.6.x tags hid an uncurated v0.1.x tag. It now uses creation order.
+- Release names: inherited tags occupy 0.1.5 through 0.6.36. Releases continue
+  at 0.7.0 (DECISIONS.md); pre_tag_check.py refuses reused or lower names.
 
 Confirmed and still open (review severity in brackets):
 
-- [workflow] Inherited tags occupy v0.1.5-0.1.7, v0.2.0-0.2.1, v0.3.x and v0.4.x,
-  so the reset series has only v0.1.2-0.1.4 free before an existing tag name.
 - [assumption] Reference anchors contain no published sunrise/sunset or
   twilight times; mutating the GMST rate, solar L0 (0.16°) or the equation of
   centre survives every anchor. planning.js cites them as its authority.
