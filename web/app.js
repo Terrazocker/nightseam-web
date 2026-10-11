@@ -8,18 +8,18 @@
  *   • Settings — sites, rigs, custom targets, backup/restore (webstore.js)
  * All sky math runs client-side (astro.js, Meeus algorithms).
  */
-import * as E from './astro.js?v=51';
-import * as Hor from './horizon.js?v=115';
-import * as WS from './webstore.js?v=66';
+import * as E from './astro.js?v=54';
+import * as Hor from './horizon.js?v=124';
+import * as WS from './webstore.js?v=69';
 import { fmtSize, sizeArcmin, framePct, magVisible, skyClampZoom,
-         skyViewMatrix, skyScreenToBase, skyClampFocus } from './format.js?v=57';
-import { nightStats, nightStatsBatch, sampleVisible } from './nightrank.js?v=49';
+         skyViewMatrix, skyScreenToBase, skyClampFocus } from './format.js?v=60';
+import { nightStats, nightStatsBatch, sampleVisible } from './nightrank.js?v=52';
 import { TYPE_LABELS, TYPE_COLORS, searchBlob as coreSearchBlob,
          TIER_ORDER, assignPopularityTiers, wikiTitles,
          inTonightPool, PLANNER_CHANGE_EVENT, panoramaRevision,
-         panoramaVisibilityReason } from './core.js?v=65';
-import { popularityFactor as corePopularityFactor } from './core.js?v=65';
-import { vizTheme, drawMoonPhaseMarker } from './viztheme.js?v=6';
+         panoramaVisibilityReason } from './core.js?v=66';
+import { popularityFactor as corePopularityFactor } from './core.js?v=66';
+import { vizTheme, drawMoonPhaseMarker } from './viztheme.js?v=7';
 import { wikimediaCredit, wikiImageCredit, renderImageCredit } from './imagecredits.js?v=2';
 
 const announcePlannerChange = Hor.announcePlannerChange;
@@ -150,7 +150,7 @@ function invalidateObservationCache() {
 if (typeof window !== 'undefined') {
   window.addEventListener(PLANNER_CHANGE_EVENT, (event) => {
     const kind = event.detail && event.detail.kind;
-    if (!kind || !['panorama', 'site', 'rig', 'date', 'selection', 'preferences'].includes(kind)) return;
+    if (!kind || !['horizon', 'site', 'rig', 'date', 'selection', 'preferences'].includes(kind)) return;
     // The same event contract covers every planner input. Site/date/rig/pref
     // handlers still own their immediate render/load policy; this listener
     // owns the cache boundary so a future consumer cannot reuse an observation
@@ -165,8 +165,8 @@ if (typeof window !== 'undefined') {
     // a closed one STAYS closed (a populated detailId no longer means "open").
     dropSelectionIfGone();
     if (S.detailOpen && kind !== 'selection') refreshOpenDetail();
-    if (kind !== 'panorama') return;
-    // All dependent views read the active panorama at render time. Repainting
+    if (kind !== 'horizon') return;
+    // All dependent views read the active horizon at render time. Repainting
     // here closes the gap between the editor's live in-memory edit and the
     // catalog/tonight values that consume it.
     if (S.view === 'catalog') renderCatalog();
@@ -218,7 +218,7 @@ function obsNightGrid() {
   const w = nightWindow();
   return {
     jd0: w.jd0, jd1: w.jd1, step: w.step,
-    minAlt: Hor.effectiveMinAlt(), pano: Hor.activePano(), lat, lon,
+    minAlt: Hor.effectiveMinAlt(), pano: Hor.activeHorizon(), lat, lon,
   };
 }
 /* Memoized night window for the scrub (called on every slider tick): the
@@ -408,13 +408,12 @@ function selectedVisibility(o, grid) {
   const [alt, az] = E.altaz(o.ra_hours * 15, o.dec_deg, jd, lat, lon);
   const win = cachedNightWindow();
   const inWindow = S.skyTime >= win.startT && S.skyTime < win.endT;
-  const reason = panoramaVisibilityReason(Hor.activePano(), alt, az, Hor.effectiveMinAlt(), inWindow);
+  const reason = panoramaVisibilityReason(Hor.activeHorizon(), alt, az, Hor.effectiveMinAlt(), inWindow);
   const night = grid ? obsCache.get(obsKey(grid, o.id))?.night : null;
   return { alt, reason, visible: reason === 'visible', night };
 }
 function catalogCondition(reason) {
   return ({ visible: 'Usable now', blocked_by_horizon: 'Horizon blocked',
-    unknown_horizon:'Horizon coverage unknown',
     below_minimum_altitude: 'Below altitude limit', outside_selected_window: 'Outside planning window',
     below_horizon: 'Below horizon', never_rises: 'Below horizon' })[reason] || 'Not usable now';
 }
@@ -1145,7 +1144,7 @@ function renderTonight(silent, immediate = false) {
     const jdMid = (jd0 + jd1) / 2;
     const mo = E.moonPhase(jdMid);
 
-    const pano = Hor.activePano();
+    const pano = Hor.activeHorizon();
     const prefs = Hor.getPrefs();
     const minAlt = Hor.effectiveMinAlt();
     const moonAware = prefs.moonAware;
@@ -1382,9 +1381,7 @@ function renderSky() {
             <li><span class="dot" style="background:${V.sun};border-radius:50%"></span>Sun</li>
             <li><span class="dot" style="background:${V.moon};border-radius:50%"></span>Moon</li>
             <li><span class="dot" style="background:transparent;border:2px dashed ${V.minStroke};border-radius:50%"></span>min altitude</li>
-            ${Hor.activePano() ? `<li><span class="dot" style="background:${V.obstacleStroke}"></span>blocked by horizon</li>` : ''}
-            ${(Hor.activePano() && Hor.activePano().paintMode === 'sky' && !Hor.activePano().blockAbove)
-              ? '<li><span class="dot hatch"></span>above band: open (assumed)</li>' : ''}
+            ${Hor.activeHorizon() ? `<li><span class="dot" style="background:${V.obstacleStroke}"></span>blocked by horizon</li>` : ''}
             ${Object.entries(TYPE_COLORS).map(([t, c]) => `<li><span class="dot" style="background:${V.types[t] || c}"></span>${TYPE_LABELS[t]}</li>`).join('')}
           </ul>
           <p class="sub sky-chart-hint">All-sky polar chart: center is zenith, rim is horizon, north is at top. Scroll to zoom, drag to pan, and double-click to reset.</p>
@@ -1484,10 +1481,10 @@ function renderSky() {
       ctx.fillText(t, cx + (R + 14) * Math.sin(a), cy - (R + 14) * Math.cos(a) + 4);
     }
 
-    // horizon obstruction silhouette (active panorama).
+    // horizon obstruction silhouette (active horizon).
     // Blocked = alt BELOW the ceiling => the OUTER ring between the ceiling
     // curve and the horizon rim (the inner disc is the free sky).
-    const pano = Hor.activePano();
+    const pano = Hor.activeHorizon();
     if (pano) {
       const radiusFor = (az, altDeg) => {
         const a = E.D2R * az;
@@ -1495,7 +1492,7 @@ function renderSky() {
         return [cx + r * Math.sin(a), cy - r * Math.cos(a)];
       };
       const ceilPts = [];
-      for (let az = 0; az <= 360; az += 2) {
+      for (let az = 0; az <= 360; az += 1) {
         const { ceil } = Hor.ceilFor(pano, az);
         ceilPts.push(radiusFor(az, ceil > Hor.NO_BLOCK + 0.5 ? Math.min(ceil, 90) : 0));
       }
@@ -1504,7 +1501,7 @@ function renderSky() {
       ctx.lineWidth = 1.4;
       ctx.beginPath();
       ceilPts.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
-      for (let az = 360; az >= 0; az -= 2) {
+      for (let az = 360; az >= 0; az -= 1) {
         const a = E.D2R * az;
         ctx.lineTo(cx + R * Math.sin(a), cy - R * Math.cos(a));
       }
@@ -1512,75 +1509,9 @@ function renderSky() {
       ctx.fill();
       // stroke ONLY the ceiling curve: stroking the closed polygon drew a
       // radial chord at the az 0 seam (the reported "line to the north").
-      // WE-01: OBSTACLE MODE ONLY. In sky mode a fully blocked column has
-      // ceil 90, which radiusFor() maps to the zenith CENTRE, so the curve
-      // alternated between the painted band edge and the centre - the spurious
-      // inner ring with radial connectors. The desktop suppresses exactly this
-      // (static/js/skyview.js: `activePaintMode() !== "sky"`), and AGENTS.md
-      // requires the outline to be obstacle-mode only in BOTH apps.
-      if (pano.paintMode !== 'sky') {
-        ctx.beginPath();
-        ceilPts.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
-        ctx.stroke();
-      }
-
-      // sky mode. DEFAULT: everything above the painted band is FREE (open
-      // above) - hinted with a hatch + legend, never shaded as blocked. Only
-      // with "block above band" is the overhang above the band painted as
-      // obstruction. Both are drawn per CONTIGUOUS azimuth run so a gap is
-      // never bridged by a straight chord.
-      const hatchSector = (pts) => {
-        ctx.save();
-        ctx.beginPath();
-        pts.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
-        ctx.closePath();
-        ctx.clip();
-        let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-        for (const [x, y] of pts) {
-          minX = Math.min(minX, x); maxX = Math.max(maxX, x);
-          minY = Math.min(minY, y); maxY = Math.max(maxY, y);
-        }
-        const diag = (maxX - minX) + (maxY - minY);
-        ctx.strokeStyle = C.assumedHatch;
-        ctx.lineWidth = 1;
-        for (let o = -diag; o < diag; o += 9) {
-          ctx.beginPath();
-          ctx.moveTo(minX + o, minY);
-          ctx.lineTo(minX + o + diag, minY + diag);
-          ctx.stroke();
-        }
-        ctx.restore();
-      };
-      if (pano.paintMode === 'sky') {
-        if (pano.blockAbove) {
-          ctx.fillStyle = C.obstacleFill;
-          ctx.strokeStyle = C.obstacleStroke;
-          ctx.lineWidth = 1.4;
-          for (const run of Hor.overhangRuns(pano, 2)) {
-            const pts = [];
-            for (let az = run.a0; az <= run.a1; az += 2) {
-              const { ceilTop } = Hor.ceilFor(pano, az);
-              pts.push(radiusFor(az, Math.min(ceilTop, 90)));
-            }
-            pts.push([cx, cy]);   // close through the zenith
-            ctx.beginPath();
-            pts.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
-            ctx.closePath();
-            ctx.fill();
-            ctx.stroke();
-          }
-        } else {
-          for (const run of Hor.assumedOpenRuns(pano, 2)) {
-            const pts = [];
-            for (let az = run.a0; az <= run.a1; az += 2) {
-              const t = Hor.bandTopFor(pano, az);
-              pts.push(radiusFor(az, Math.min(t == null ? 90 : t, 90)));
-            }
-            pts.push([cx, cy]);   // close through the zenith
-            hatchSector(pts);
-          }
-        }
-      }
+      ctx.beginPath();
+      ceilPts.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
+      ctx.stroke();
     }
 
     const jd = E.julianDay(S.skyTime);
@@ -2526,10 +2457,9 @@ function updateDetailSelectedTime() {
   const separation = E.sepDeg(alt, az, moonAlt, moonAz);
   const win = cachedNightWindow();
   const inNight = S.skyTime >= win.startT && S.skyTime < win.endT;
-  const reason = panoramaVisibilityReason(Hor.activePano(), alt, az, Hor.effectiveMinAlt(), inNight);
+  const reason = panoramaVisibilityReason(Hor.activeHorizon(), alt, az, Hor.effectiveMinAlt(), inNight);
   const reasonText = reason === 'visible' ? 'visible above minimum altitude' :
-    reason === 'unknown_horizon' ? 'unknown horizon coverage; excluded from planning' :
-    reason === 'blocked_by_horizon' ? 'blocked by horizon or ceiling' :
+    reason === 'blocked_by_horizon' ? 'blocked by horizon' :
       reason === 'below_minimum_altitude' ? 'below minimum altitude' :
         reason === 'below_horizon' ? 'below horizon' : 'outside dusk-to-dawn window';
   position.textContent = `${fmtClock(S.skyTime)} · alt ${alt.toFixed(1)}°, az ${az.toFixed(0)}°`;
@@ -2632,7 +2562,7 @@ function openDetail(id, opener = null, { refresh = false } = {}) {
   // WEB-REV-003: opening the inspector selects the target through the ONE
   // identity writer (replacing any previous selection everywhere).
   selectTarget(id);
-  const pano = Hor.activePano();
+  const pano = Hor.activeHorizon();
   const { lat, lon } = S.site;
   const info = E.nightInfo(nightAnchor(), lat, lon, siteNoon(nightAnchor()));
   const jd = E.julianDay(S.skyTime);
@@ -2713,7 +2643,7 @@ function openDetail(id, opener = null, { refresh = false } = {}) {
             <span class="chart-legend-item"><i class="legend-swatch guide-moon"></i><span><b>Moon altitude</b><small>dash-dot line · white phase discs</small></span></span>
             <span class="chart-legend-item"><i class="legend-swatch guide-twilight"></i><span><b>Twilight</b><small>shaded time outside the dark window</small></span></span>
             <span class="chart-legend-item"><i class="legend-swatch guide-window"></i><span><b>Best window</b><small>longest clear run tonight</small></span></span>
-            ${pano ? `<span class="chart-legend-item"><i class="legend-swatch guide-obstruction"></i><span><b>Obstruction ceiling</b><small>lower: short dash · upper: dash-dot</small></span></span>` : ''}
+            ${pano ? `<span class="chart-legend-item"><i class="legend-swatch guide-obstruction"></i><span><b>Horizon</b><small>short dash</small></span></span>` : ''}
           </div>
         </div>
         <p class="win-note" id="win-note"></p>
@@ -2808,7 +2738,7 @@ function openDetail(id, opener = null, { refresh = false } = {}) {
     samples.push({
       t: jdt, alt, az, ceil,
       vis, reason,
-      state: ({ below_horizon: 'below', blocked_by_horizon: 'blocked', unknown_horizon: 'blocked', below_minimum_altitude: 'warn', visible: 'clear' })[reason],
+      state: ({ below_horizon: 'below', blocked_by_horizon: 'blocked', below_minimum_altitude: 'warn', visible: 'clear' })[reason],
       mAlt,
     });
   }
@@ -2834,17 +2764,9 @@ function openDetail(id, opener = null, { refresh = false } = {}) {
     ? `Best window (clear, ≥${minAlt.toFixed(0)}°): ${bestWindowText}`
     : 'No clear window tonight';
   $('#win-note').textContent = winNote;
-  // The night summary counts horizon blocks; name them "unknown coverage" only
-  // when every horizon-limited sample in the window lacks recorded evidence.
-  const horizonLimited = samples.filter((sample) => sample.t >= detailWin.jd0 && sample.t < detailWin.jd1
-    && (sample.reason === 'blocked_by_horizon' || sample.reason === 'unknown_horizon'));
-  const coverageUnknown = horizonLimited.length > 0
-    && horizonLimited.every((sample) => sample.reason === 'unknown_horizon');
   const detailReasonText = (reason) => {
     if (reason === 'visible') return `visible for ${fmtDur(detailSummary.visibleMinutes)}`;
-    if (reason === 'blocked_by_horizon') {
-      return coverageUnknown ? 'excluded: horizon coverage unknown' : 'blocked because of horizon';
-    }
+    if (reason === 'blocked_by_horizon') return 'blocked because of horizon';
     if (reason === 'below_minimum_altitude') return 'below minimum altitude';
     if (reason === 'outside_selected_window') return 'outside the selected window';
     if (reason === 'never_rises') return 'never rises in this window';
@@ -3560,10 +3482,10 @@ async function renderSettings() {
   $('#set-export').addEventListener('click', async () => {
     if (userDataBusy) return;
     const finish = lockUserDataTransfer();
-    // truthful backup: panorama photos are embedded, hasImage matches the data
+    // truthful backup: horizon photos are embedded, hasPhoto matches the data
     try {
       const backup = await WS.collectBackup(Hor.getPrefs(),
-        await Hor.exportPanosWithImages(), WS.currentTheme());
+        await Hor.exportHorizonsWithPhotos(), WS.currentTheme());
       if (!WS.downloadText(`nightseam-web-backup-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify(backup, null, 1))) {
         throw new Error('could not start the download');
       }
@@ -3571,7 +3493,7 @@ async function renderSettings() {
     finally { finish(); }
   });
 
-  // Apply a full web snapshot: records + panoramas + prefs + theme. Used for
+  // Apply a full web snapshot: records + horizons + prefs + theme. Used for
   // BOTH the incoming backup and the safety rollback, so the two paths cannot
   // diverge. `current` is committed to meta/safety atomically with the record
   // replacement; failures in the remaining stores or rendering restore it.
@@ -3580,19 +3502,19 @@ async function renderSettings() {
     // Normalize the horizon payload BEFORE restoreBackup clears IndexedDB.
     // `stageBackup` validates the outer shape; this validates the actual editor
     // record contract and turns the staged bundle into one complete model.
-    const norm = Hor.normalizePanos(data && data.panos);
-    if (!norm) throw new Error('missing panorama section or malformed panorama data');
+    const norm = Hor.normalizeHorizons(WS.backupHorizonSection(data));
+    if (!norm) throw new Error('missing horizon section or malformed horizon data');
     // A rollback re-normalizes `current` the same way; prove it can before any
     // record is replaced, or a failed import could not be undone.
-    if (!rollback && current && !Hor.normalizePanos(current.panos)) {
+    if (!rollback && current && !Hor.normalizeHorizons(WS.backupHorizonSection(current))) {
       throw new Error('your current horizons cannot be captured as a recovery copy, so nothing was changed');
     }
-    const staged = WS.stageBackup({ ...data, panos: norm });
+    const staged = WS.stageBackup({ ...data, horizons: norm });
     if (rollback) await WS.writeStaged(staged);
-    else await WS.restoreBackup({ ...data, panos: norm }, current);
+    else await WS.restoreBackup({ ...data, horizons: norm }, current);
     onRecordsCommitted();
-    if (!(await Hor.applyPanosSnapshot(staged.panos))) {
-      throw new Error('saving panoramas failed (storage full or unavailable)');
+    if (!(await Hor.applyHorizonsSnapshot(staged.horizons))) {
+      throw new Error('saving horizons failed (storage full or unavailable)');
     }
     if (rollback && editorHistory && !Hor.restoreEditorHistory(editorHistory)) {
       throw new Error('could not recover the original horizon editor history');
@@ -3613,7 +3535,7 @@ async function renderSettings() {
     const f = ev.target.files && ev.target.files[0];
     ev.target.value = '';
     if (!f || userDataBusy) return;
-    // the backup can embed panorama photos, so cap the file before reading it
+    // the backup can embed horizon photos, so cap the file before reading it
     // all into memory (a hand-crafted multi-GB file must not wedge the tab)
     if (f.size > 200 * 1024 * 1024) { alert('Backup file is too large (200 MB max)'); return; }
     const finish = lockUserDataTransfer();
@@ -3622,21 +3544,23 @@ async function renderSettings() {
       let imported = false;
       try {
         const data = JSON.parse(rd.result);
-        const norm = Hor.normalizePanos(data && data.panos);
-        if (!norm) throw new Error('missing panorama section or malformed panorama data');
-        WS.stageBackup({ ...data, panos: norm });
+        const norm = Hor.normalizeHorizons(WS.backupHorizonSection(data));
+        if (!norm) throw new Error('missing horizon section or malformed horizon data');
+        WS.stageBackup({ ...data, horizons: norm });
         const counts = {
           sites: (data.sites || []).length,
           rigs: (data.rigs || []).length,
           targets: (data.targets || []).length,
-          panos: (data.panos && data.panos.panos ? data.panos.panos : []).length,
+          horizons: norm.horizons.length,
         };
-        if (!confirm(`Import backup?\nSites: ${counts.sites} · Rigs: ${counts.rigs} · Custom targets: ${counts.targets}\nHorizons: ${counts.panos}\n\nYour current browser data will be replaced.`)) return;
-        // snapshot the CURRENT state (records + pano photos + prefs + theme)
+        const oldHorizons = WS.backupHasRetiredHorizons(data)
+          ? '\nHorizons from this older backup are not imported; the current horizon editor starts fresh.' : '';
+        if (!confirm(`Import backup?\nSites: ${counts.sites} · Rigs: ${counts.rigs} · Custom targets: ${counts.targets}\nHorizons: ${counts.horizons}${oldHorizons}\n\nYour current browser data will be replaced.`)) return;
+        // snapshot the CURRENT state (records + horizon photos + prefs + theme)
         // before replacing anything; restoreBackup persists it as the safety
         // copy and rolls back if any write fails
         const current = await WS.collectBackup(Hor.getPrefs(),
-          await Hor.exportPanosWithImages(), WS.currentTheme());
+          await Hor.exportHorizonsWithPhotos(), WS.currentTheme());
         const previousSite = { ...S.site };
         const previousSelection = S.detailId;
         const previousEditorHistory = Hor.captureEditorHistory();
@@ -3879,7 +3803,7 @@ function welcomeFlow() {
         </div>
         <p class="sub">Choose where you will observe. The coordinates below are an example in Berlin; replace them with your own or use the example to explore.</p>
         <p class="sub">Later, open <b>Options → Setup</b> to manage sites, rigs, targets and backups. A rig is optional: it adds Frame % estimates of how much of a target fits your camera. Visibility planning works without one.</p>
-        <p class="sub">Choose a night and time in the header. Add your panorama in Horizon to include local obstructions. Your planning data stays in this browser.</p>
+        <p class="sub">Choose a night and time in the header. Add your skyline under Horizon to include trees and roofs. Your planning data stays in this browser.</p>
         <div class="set-form">
           <label>Site name <input type="text" id="w-name" value="My observing site"></label>
           <label>Latitude <input type="text" inputmode="decimal" id="w-lat" value="52.52"></label>

@@ -20,7 +20,7 @@ def storage_atomic_restore_and_strict_snapshot(c):
       const H = await import(modules.horizon);
       const target = {id:'u_original',primary_name:'Original target',ra_hours:5,dec_deg:22};
       await W.saveTargetRec(target);
-      const current = await W.collectBackup(H.getPrefs(), await H.exportPanosWithImages());
+      const current = await W.collectBackup(H.getPrefs(), await H.exportHorizonsWithPhotos());
       await W.set('meta','safety',{marker:'previous-safety'});
       const put = IDBObjectStore.prototype.put;
       const abortPut = key => {
@@ -41,7 +41,7 @@ def storage_atomic_restore_and_strict_snapshot(c):
             targets:[{...target,id:'u_replacement'}]},current);
         } catch(error) { restoreError = error.message; }
       } finally { IDBObjectStore.prototype.put = put; }
-      const after = await W.collectBackup(H.getPrefs(),await H.exportPanosWithImages());
+      const after = await W.collectBackup(H.getPrefs(),await H.exportHorizonsWithPhotos());
       const cursor = IDBObjectStore.prototype.openCursor;
       let snapshotError;
       try {
@@ -49,7 +49,7 @@ def storage_atomic_restore_and_strict_snapshot(c):
           if (this.name === 'sites') throw new DOMException('temporary read failure','UnknownError');
           return cursor.apply(this,args);
         };
-        try { await W.collectBackup(H.getPrefs(),await H.exportPanosWithImages()); }
+        try { await W.collectBackup(H.getPrefs(),await H.exportHorizonsWithPhotos()); }
         catch(error) { snapshotError = error.message; }
       } finally { IDBObjectStore.prototype.openCursor = cursor; }
       return {reported, restoreError, snapshotError,

@@ -12,9 +12,9 @@ entry here when it is fixed and record the fix in RELEASES.md.
   browser-zoom pass is still outstanding; automated keyboard, contrast and
   responsive checks do not replace it. Steps:
   [docs/acceptance/ACCESSIBILITY_ACCEPTANCE.md](docs/acceptance/ACCESSIBILITY_ACCEPTANCE.md).
-- **Horizon real-photo acceptance.** Measured photos with independent angular
-  references, touch/pen input and physical devices:
-  [docs/acceptance/HORIZON_PANORAMA_ACCEPTANCE.md](docs/acceptance/HORIZON_PANORAMA_ACCEPTANCE.md).
+- **Horizon real-photo acceptance.** Real panoramas and phone photos with
+  known directions, touch/pen input and physical devices for the rebuilt
+  editor: [docs/acceptance/HORIZON_ACCEPTANCE.md](docs/acceptance/HORIZON_ACCEPTANCE.md).
 - **HOST-DELIVERY-001 — compression.** Live HTML/JS and the two large catalog
   JSON payloads are served without gzip. Enable it through the provider's
   controls and measure real responses ([HOSTING_CONFIGURATION.md](HOSTING_CONFIGURATION.md)).
@@ -32,16 +32,16 @@ entry here when it is fixed and record the fix in RELEASES.md.
 
 ## Known limitations
 
-- **Horizon model.** One sky interval per source column cannot represent
-  disconnected vertical openings; the 4 deg photo-top open heuristic and 0.5 deg
-  conservative aggregation remain. Under the selectable strict policy an
-  unpainted column inside the photo stays excluded (obstacle mode cannot record
-  "photographed and clear").
-- **Photo geometry.** No fisheye, arbitrary lens distortion or stitching
-  repair, and no tilted partial panorama wider than 180 deg. Painted horizons
-  cannot be remapped after conversion or reorientation; upload the photo as a
-  new horizon instead. Converting photos above about 16.7 MP may exceed iOS
-  Safari's canvas limit.
+- **Horizon model.** One skyline per direction: sky visible under a balcony
+  or between branches (an opening above an obstruction) cannot be recorded
+  yet; overhangs are planned work.
+- **Photo mapping.** Pixels are treated as square degrees. That is exact for
+  equirectangular panoramas and approximate for ordinary photos, increasingly
+  towards their edges (about 1 deg at the edge of a 60 deg photo). No fisheye
+  or lens correction; full panoramas cannot be rolled, so a tilted 360 deg
+  panorama must be levelled in the panorama app.
+- **Skyline detection** needs a daylight photo with clear sky. Bright walls,
+  clouds, wires and thin branches can pull the line; it is a draft to correct.
 - **Twilight scan.** The 10-minute scan skips a night with under ten minutes of
   darkness at a level (two such nights in the 2026 reference tables), and above
   about 84.5 deg latitude pickDarkWindow can pair an astronomical dusk with a

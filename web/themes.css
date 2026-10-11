@@ -54,11 +54,7 @@ html[data-theme="workbench"] main {
 }
 html[data-theme="workbench"] .card,
 html[data-theme="workbench"] .cat-filter-rail,
-html[data-theme="workbench"] .tonight-ranked,
-html[data-theme="workbench"] .horizon-profile-panel,
-html[data-theme="workbench"] .horizon-selected-bin,
-html[data-theme="workbench"] .horizon-meta,
-html[data-theme="workbench"] .horizon-settings-rail .cal-grid {
+html[data-theme="workbench"] .tonight-ranked {
   border: 0; border-radius: 0; background: transparent; box-shadow: none;
   backdrop-filter: none;
 }
@@ -117,31 +113,15 @@ html[data-theme="workbench"] .sky-side { gap: 20px; }
 html[data-theme="workbench"] .sky-canvas-box { padding: 0; }
 html[data-theme="workbench"] .sky-controls-tray { padding-top: 0; border-bottom: 1px solid var(--line-soft); }
 html[data-theme="workbench"] canvas#sky,
-html[data-theme="workbench"] canvas#graph,
-html[data-theme="workbench"] #pano-profile { border: 0; border-radius: 0; }
-html[data-theme="workbench"] #pano-profile { background: var(--viz-graph-surface); }
-html[data-theme="workbench"] .horizon-profile-panel,
-html[data-theme="workbench"] .horizon-selected-bin,
-html[data-theme="workbench"] .horizon-meta,
-html[data-theme="workbench"] .horizon-settings-rail .cal-grid { padding: 10px 0; }
-html[data-theme="workbench"] .horizon-meta,
-html[data-theme="workbench"] .horizon-selected-bin { border-top: 1px solid var(--line-soft); }
+html[data-theme="workbench"] canvas#graph { border: 0; border-radius: 0; }
 html[data-theme="workbench"] .pick li {
   border: 0; border-bottom: 1px solid var(--line-soft); border-radius: 0;
   background: transparent; box-shadow: none;
 }
 html[data-theme="workbench"] .pick li:hover { background: transparent; }
-html[data-theme="workbench"] .ed-tools,
 html[data-theme="workbench"] .ed-hint { background: transparent; border: 0; }
-html[data-theme="workbench"] .ed-row {
-  background: transparent; border: 0; border-top: 1px solid var(--line-soft);
-  border-radius: 0; padding: 12px 0;
-}
 html[data-theme="workbench"] .ed-view-overlay {
   background: transparent; border: 0; border-radius: 0;
-}
-html[data-theme="workbench"] #pano-canvas {
-  background: var(--viz-canvas-bg); border: 0; border-radius: 0;
 }
 html[data-theme="workbench"] .ed-confirm-box { box-shadow: none; }
 html[data-theme="workbench"] .tooltip,
@@ -193,7 +173,6 @@ html[data-theme="workbench"] {
   --viz-blocked-dot: rgba(196,91,82,.55);
   --viz-ceiling: #9CAEB1;
   --viz-ceiling-top: #F9C85D;
-  --viz-assumed-hatch: rgba(249,200,93,.36);
   --viz-min-fill: rgba(249,200,93,.10);
   --viz-min-stroke: rgba(249,200,93,.78);
   --viz-min-label: #F9C85D;

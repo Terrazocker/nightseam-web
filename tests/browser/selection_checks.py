@@ -230,7 +230,7 @@ def web_selection_continuity(c):
     # requirement 9: a round trip through Horizon keeps the selection and does
     # not disturb the Horizon view's own state handling
     tab(c, "horizon")
-    c.page.wait_for_selector("#pano-blank", timeout=20000)
+    c.page.wait_for_selector("#hz-new-draw", timeout=20000)
     tab(c, "tonight")
     c.wait_tonight_render()
     c.expect_eq(selected_ids(c), ["synalpha"],

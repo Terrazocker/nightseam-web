@@ -14,10 +14,10 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 
-# Two core functions have deliberate shell-level variants, documented in
-# scripts/check_core.py: clearMask (desktop editor UI variant) and
-# popularityFactor (the shells resolve m.popularity before delegating).
-_MOVED_EXCEPTIONS = {"clearMask", "popularityFactor"}
+# One core function has a deliberate shell-level variant, documented in
+# scripts/check_core.py: popularityFactor (the shells resolve m.popularity
+# before delegating).
+_MOVED_EXCEPTIONS = {"popularityFactor"}
 
 
 def _core_exported_functions() -> set[str]:
@@ -148,7 +148,7 @@ def test_mutations_fail_the_guard(tmp_path):
     # restore, moved concept re-implemented in a shell (e)
     shutil.copy(ROOT / "web" / "horizon.js", shell)
     shell.write_text(shell.read_text(encoding="utf-8")
-                     + "\nexport function profileSegments() { return []; }\n",
+                     + "\nexport function skylineProfile() { return []; }\n",
                      encoding="utf-8")
     assert guard.scan(), "a moved concept outside core/ must FAIL the guard"
 
@@ -166,15 +166,15 @@ def test_mutations_fail_the_guard(tmp_path):
     # method and getter positions used to slip past).
     (guard.SCRIPTS_DIR / "bake.py").unlink()
     shell = guard.WEB_DIR / "horizon.js"
-    for evasion in ("\nconst profileSegments = () => [];\n",
-                    "\nconst profileSegments = /* c */ (a) => [];\n",
-                    "\nprofileSegments = (a) => [];\n",
-                    "\nfunction profileSegments(a) { return []; }\n",
-                    "\nconst H = { profileSegments: (a) => [] };\n",
-                    "\nconst H = { ra: 0, profileSegments(a) { return []; } };\n",
-                    "\nconst H = { profileSegments: function (a) { return []; } };\n",
-                    "\nconst H = { get profileSegments() { return []; } };\n",
-                    "\nconst H = { async profileSegments(a) { return []; } };\n"):
+    for evasion in ("\nconst skylineProfile = () => [];\n",
+                    "\nconst skylineProfile = /* c */ (a) => [];\n",
+                    "\nskylineProfile = (a) => [];\n",
+                    "\nfunction skylineProfile(a) { return []; }\n",
+                    "\nconst H = { skylineProfile: (a) => [] };\n",
+                    "\nconst H = { ra: 0, skylineProfile(a) { return []; } };\n",
+                    "\nconst H = { skylineProfile: function (a) { return []; } };\n",
+                    "\nconst H = { get skylineProfile() { return []; } };\n",
+                    "\nconst H = { async skylineProfile(a) { return []; } };\n"):
         shell.write_text(shell.read_text(encoding="utf-8") + evasion,
                          encoding="utf-8")
         assert guard.scan(), f"evasion not detected: {evasion!r}"

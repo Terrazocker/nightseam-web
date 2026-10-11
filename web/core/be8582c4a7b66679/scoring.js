@@ -10,7 +10,7 @@
 
 import { gmstDeg, precessJ2000ToDate, refractionDeg, sepDeg } from './astro.js';
 import { visibilityReason, summarizeVisibility } from './visibility.js';
-import { ceilFor, normalizeCoverageEvidence } from './horizon.js';
+import { BINS, BIN_DEG, NO_BLOCK } from './horizon.js';
 
 /* how badly an object type suffers under moonlight (nebulae worst, clusters
    least). CO-09 (0.6.32 review): null prototype, because `otype` and the filter
@@ -59,8 +59,9 @@ export function bortleMoonFactor(bortle) {
    -> 0..1: log-scale normalization, M42 (165k) ~ 1.0, dim object (100) ~ 0.3.
    The shells resolve the live map/catalog field and pass the number. */
 export function popularityFactor(pop) {
-  if (!pop) return 0;
-  return Math.min(1, 0.3 + 0.7 * Math.log10(pop) / 5.2);
+  if (!(pop > 0)) return 0;
+  // Counts below 1 would give a negative tiebreaker; the factor stays in [0, 1].
+  return Math.min(1, Math.max(0, 0.3 + 0.7 * Math.log10(pop) / 5.2));
 }
 
 /** Per-object apparent alt/az tracks for ONE (site, night): the sidereal frame
@@ -144,30 +145,28 @@ export function scoreNightTracks(tracks, objects, jd0, step, minAlt, pano, ctx =
   const windowDays = windowEnd - windowStart;
   const wantAlts = !!ctx.maxAlt;
 
-  // horizon profile as flat typed arrays; the ceiling is inlined bit-for-bit
-  // with core/horizon.js::ceilFor (world-azimuth bins, FOV gate, blockAbove)
-  const prof = (pano && Array.isArray(pano.profile) && pano.profile.length === 720)
-    ? Float64Array.from(pano.profile) : null;
-  const topsArr = (pano && Array.isArray(pano.profileTop) && pano.profileTop.length === 720)
-    ? Float64Array.from(pano.profileTop) : null;
-  const sky = !!(pano && pano.paintMode === 'sky');
-  const converted = !!(pano && pano.photoModel);
-  const fov = pano && Number(pano.fov) > 0 ? Number(pano.fov) : 360;
-  const azOff = pano ? (Number(pano.azOffset) || 0) : 0;
-  const blockAbove = !!(pano && pano.blockAbove);
-  const measuredPolicy=pano?normalizeCoverageEvidence(pano.coverageEvidence).policy!=='legacy':false;
+  // The horizon profile as a flat typed array; the lookup is inlined
+  // bit-for-bit with core/horizon.js::ceilFor (world-azimuth bins). A
+  // non-finite element (NaN, "10", null) is "nothing recorded", as in ceilFor.
+  const prof = (pano && Array.isArray(pano.profile) && pano.profile.length === BINS)
+    ? Float64Array.from(pano.profile, (v) => (typeof v === 'number' && Number.isFinite(v) ? v : NO_BLOCK))
+    : null;
 
   // moon path: the minimum distance only depends on the night's age + filter,
   // so the Math.pow curve is evaluated once per batch
   const moonAware = !!ctx.moonAware && Array.isArray(ctx.moonAlt);
   const moonAlt = moonAware ? ctx.moonAlt : null;
   const moonAz = moonAware ? ctx.moonAz : null;
-  const minD = moonAware ? moonMinDist(ctx.filterType, ctx.moonAgeDays) : 0;
-  const illum = ctx.illum;
+  // A missing moon input must not turn every moon-aware score into NaN (which
+  // also breaks sorting): fall back to the neutral factor for that input.
+  const finite = (v, fallback) => (Number.isFinite(v) ? v : fallback);
+  const minD = moonAware ? finite(moonMinDist(ctx.filterType, ctx.moonAgeDays), 0) : 0;
+  const illum = finite(ctx.illum, 0);
+  const bortleF = finite(ctx.bortleF, 1);
   // moon sensitivity is per OBJECT (it depends on the type); a shell may still
   // pass one number for a uniform batch
   const typeFOf = Array.isArray(ctx.typeF)
-    ? (k) => ctx.typeF[k] : () => ctx.typeF;
+    ? (k) => finite(ctx.typeF[k], 1) : () => finite(ctx.typeF, 1);
 
   const out = new Array(objects.length);
   // Compare actual run duration: a run with a short final cell must not win
@@ -202,21 +201,13 @@ export function scoreNightTracks(tracks, objects, jd0, step, minAlt, pano, ctx =
       prevAlt = alt;
       if (wantAlts) alts[i] = alt;
 
-      let ceil = -90, top = null;
+      let ceil = NO_BLOCK;
+      const top = null;
       if (prof) {
-        const d = (((az - azOff) % 360) + 360) % 360;
-        if (d > fov) {
-          ceil = sky || converted ? 90 : -90;
-        } else {
-          let b = Math.floor((((az % 360) + 360) % 360) / 0.5);
-          if (b > 719) b = 719;
-          ceil = prof[b];
-          if (sky && blockAbove && topsArr && topsArr[b] > -89.5) top = topsArr[b];
-        }
+        let b = Math.floor((((az % 360) + 360) % 360) / BIN_DEG);
+        if (b > BINS - 1) b = BINS - 1;
+        ceil = prof[b];
       }
-      // New evidence policies use the shared coverage query. Keep the historical
-      // typed-array path unchanged for old records, without duplicating new rules.
-      if(measuredPolicy){const bounds=ceilFor(pano,az);ceil=bounds.ceil;top=bounds.ceilTop;}
 
       const up = alt > 0;
       const vis = alt >= minAlt && alt > ceil && alt < (top == null ? 90.5 : top);
@@ -245,7 +236,7 @@ export function scoreNightTracks(tracks, objects, jd0, step, minAlt, pano, ctx =
       if (moonAware && moonAlt[i] > 0) {
         const sep = sepDeg(alt, az, moonAlt[i], moonAz[i]);
         const glow = illum * Math.max(0, 1 - Math.max(0, sep - minD) / 180);
-        w *= Math.max(0.05, 1 - 0.95 * glow * typeFOf(k) * ctx.bortleF);
+        w *= Math.max(0.05, 1 - 0.95 * glow * typeFOf(k) * bortleF);
       }
       sMoon += w * cellWeight;
       if (run === 0) runStart = cellStart;

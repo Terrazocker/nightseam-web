@@ -3,10 +3,12 @@
  *
  * Drives the REAL web/webstore.js + web/horizon.js through a minimal fake
  * IndexedDB and a localStorage stub (no browser here). Pins:
- *   - normalized panorama records are TRUTHFUL: hasImage === true only when the
- *     backup actually carried image bytes
- *   - the profile/strokes invariant: strokes win when present, the stored
- *     profile is authoritative when there are no strokes
+ *   - normalized horizon records are TRUTHFUL: hasPhoto === true only when the
+ *     backup actually carried photo bytes, and the profile is derived from
+ *     the skyline points
+ *   - any malformed horizon data refuses the whole section before a write
+ *   - older bundles (format 1-10) restore everything except their retired
+ *     panoramas
  *   - stageBackup validation (a malformed bundle throws BEFORE any write)
  *   - collectBackup carries the theme (its own localStorage key) and a schema
  *     version
@@ -22,7 +24,7 @@ globalThis.localStorage = {
 };
 
 // FileReader is not in Node; enough to turn a Blob into a data URL for the
-// exportPanosWithImages path.
+// exportHorizonsWithPhotos path.
 globalThis.FileReader = class {
   readAsDataURL(blob) {
     blob.arrayBuffer().then((buf) => {
@@ -144,39 +146,83 @@ let ok = true;
 const fail = (m) => { ok = false; console.log('  FAIL:', m); };
 const assert = (cond, m) => { if (!cond) fail(m); };
 
-const DATAURL = 'data:image/jpeg;base64,' + Buffer.from('JPEGBYTES').toString('base64');
-const blank720 = () => new Array(720).fill(-90);
+// The smallest valid JPEG header: SOF0 with 600 x 300 pixels.
+const JPEG = Buffer.from([255, 216, 255, 192, 0, 11, 8, 1, 44, 2, 88, 3, 1, 34, 0, 255, 217]);
+const DATAURL = 'data:image/jpeg;base64,' + JPEG.toString('base64');
+const PLACED = { width: 120, heading: 180, tilt: 0, roll: 0 };
 const emptyPanos = { panos: [], activeId: null };
-const panoRec = (over = {}) => ({
-  id: 'p1', name: 'p', azOffset: 0, altBottom: 0, altTop: 60, fov: 360,
-  paintMode: 'obstacle', strokes: [], profile: blank720(), profileTop: blank720(),
-  hasImage: false, ...over,
+const emptyHorizons = { horizons: [], activeId: null };
+const hzRec = (over = {}) => ({
+  id: 'h1', name: 'Garden', points: [{ az: 90, alt: 20 }, { az: 270, alt: 5 }],
+  photo: null, ...over,
 });
 
-/* 1. normalizePanos truthfulness ---------------------------------------- */
-const withImg = H.normalizePanos({ panos: [panoRec({ hasImage: true, image: DATAURL })] });
-assert(withImg.panos[0].hasImage === true, 'image present should set hasImage true');
-assert(typeof withImg.panos[0].image === 'string', 'image should be preserved');
-const noImg = H.normalizePanos({ panos: [panoRec({ hasImage: true })] });
-assert(noImg.panos[0].hasImage === false, 'legacy hasImage without bytes must become false');
-assert(noImg.panos[0].image === undefined, 'no image field when absent');
-assert(H.normalizePanos({ panos: [panoRec({ blockAbove: true })] })
-  .panos[0].blockAbove === true, 'blockAbove must round-trip through normalizePanos');
-assert(H.normalizePanos({ panos: [panoRec()] }).panos[0].blockAbove === false,
-  'blockAbove defaults to false (open above)');
+/* 1. normalizeHorizons truthfulness ------------------------------------- */
+const withImg = H.normalizeHorizons({ horizons: [hzRec({ photo: PLACED, hasPhoto: true, image: DATAURL })] });
+assert(withImg.horizons[0].hasPhoto === true, 'embedded photo bytes set hasPhoto');
+assert(withImg.horizons[0].image === DATAURL, 'the photo is kept for the restore');
+const noImg = H.normalizeHorizons({ horizons: [hzRec({ photo: PLACED, hasPhoto: true })] });
+assert(noImg.horizons[0].hasPhoto === false, 'hasPhoto without bytes becomes false');
+assert(noImg.horizons[0].image === undefined, 'no image field when absent');
+assert(JSON.stringify(noImg.horizons[0].photo) === JSON.stringify(PLACED), 'a placement without bytes is kept');
+const derived = H.normalizeHorizons({ horizons: [hzRec({ profile: new Array(720).fill(80) })] }).horizons[0];
+assert(derived.profile[180] === 20 && H.ceilFor(derived, 90).ceil === 20,
+  'the profile is derived from the points, never taken from the backup');
+assert(H.normalizeHorizons({ horizons: [] }).activeId === null, 'an empty section is valid');
+assert(H.normalizeHorizons({ horizons: [hzRec(), hzRec({ id: 'h2' })], activeId: 'h2' }).activeId === 'h2',
+  'the active horizon survives');
+assert(H.normalizeHorizons({ horizons: [hzRec()], activeId: 'gone' }).activeId === 'h1',
+  'a dangling active id falls back to the first horizon');
+for (const [bad, why] of [
+  [{ horizons: [hzRec({ id: 'bad id' })] }, 'an unsafe id'],
+  [{ horizons: [hzRec(), hzRec()] }, 'duplicate ids'],
+  [{ horizons: [hzRec({ points: [{ az: 1, alt: '2' }] })] }, 'a malformed point'],
+  [{ horizons: [hzRec({ points: 'none' })] }, 'points that are not a list'],
+  [{ horizons: [hzRec({ photo: { width: 0, heading: 0, tilt: 0, roll: 0 } })] }, 'a malformed placement'],
+  [{ horizons: [hzRec({ image: DATAURL })] }, 'photo bytes without a placement'],
+  [{ horizons: [hzRec({ photo: PLACED, image: 'data:text/html;base64,eA==' })] }, 'a non-image data URL'],
+  [{ horizons: [hzRec({ photo: PLACED, image: 'data:image/png;base64,!!!' })] }, 'undecodable photo bytes'],
+  [{ horizons: [hzRec({ photo: PLACED, image: 'data:image/jpeg;base64,' + Buffer.from('JPEGBYTES').toString('base64') })] }, 'bytes that are not a JPEG'],
+  [{ horizons: Array.from({ length: H.MAX_HORIZONS + 1 }, (_, i) => hzRec({ id: `h${i}` })) }, 'too many horizons'],
+  [{ panos: [] }, 'a missing horizon list'],
+  [null, 'a missing section'],
+]) assert(H.normalizeHorizons(bad) === null, `${why} refuses the whole section`);
 
-/* 2. profile/strokes invariant ------------------------------------------ */
-const bogus = blank720();
-bogus[100] = 42;
-const strokesWin = H.normalizePanos({ panos: [panoRec({
-  profile: bogus,
-  strokes: [{ m: 'b', x: 100, y: 50, r: 10 }],
-})] });
-assert(strokesWin.panos[0].profile[100] !== 42, 'strokes present must re-derive the profile');
-const profileWins = H.normalizePanos({ panos: [panoRec({ profile: bogus })] });
-assert(profileWins.panos[0].profile[100] === 42, 'no strokes must keep the stored profile');
+/* 2. export -> normalize -> apply round trip ----------------------------- */
+assert(await H.applyHorizonsSnapshot(withImg) === true, 'a normalized snapshot applies');
+assert(H.activeHorizon().hasPhoto === true, 'the applied horizon has its photo');
+const exported = await H.exportHorizonsWithPhotos();
+assert(exported.horizons[0].image && exported.horizons[0].image.startsWith('data:image/jpeg'),
+  'export embeds the stored photo');
+assert(!('profile' in exported.horizons[0]), 'export never stores the derived profile');
+const again = H.normalizeHorizons(exported);
+assert(JSON.stringify(again.horizons[0].points) === JSON.stringify(withImg.horizons[0].points)
+  && JSON.stringify(again.horizons[0].photo) === JSON.stringify(PLACED), 'points and placement round-trip');
+await H.applyHorizonsSnapshot(again);
+assert(H.activeHorizon().hasPhoto === true && H.ceilFor(H.activeHorizon(), 90).ceil === 20,
+  'the round-tripped horizon still has its photo and skyline');
+const beforeBad = JSON.stringify(await H.exportHorizonsWithPhotos());
+assert(await H.applyHorizonsSnapshot({ horizons: [{ ...hzRec(), image: 'data:image/png;base64,' }], activeId: 'h1' }) === false,
+  'an unusable photo fails the restore');
+assert(JSON.stringify(await H.exportHorizonsWithPhotos()) === beforeBad, 'a failed restore leaves the horizons unchanged');
 
-/* 3. stageBackup validation --------------------------------------------- */
+/* 3. older bundles: everything but their panoramas ----------------------- */
+const oldBundle = { app: 'nightseam-web', version: 10, sites: [{ id: 's1', name: 'Home', lat: 1, lon: 2 }],
+  panos: { panos: [{ id: 'p1', strokes: [] }], activeId: 'p1' } };
+assert(JSON.stringify(WS.backupHorizonSection(oldBundle)) === JSON.stringify(emptyHorizons),
+  'a format 10 bundle restores an empty horizon section');
+assert(WS.backupHasRetiredHorizons(oldBundle) === true, 'the import can say its panoramas are not imported');
+assert(WS.backupHasRetiredHorizons({ ...oldBundle, panos: emptyPanos }) === false, 'no notice without panoramas');
+const stagedOld = WS.stageBackup(oldBundle);
+assert(stagedOld.sites.length === 1 && stagedOld.horizons.horizons.length === 0,
+  'an older bundle still stages its sites');
+assert(WS.backupHorizonSection({ app: 'nightseam-web', version: 11, horizons: emptyHorizons }) !== undefined,
+  'a format 11 bundle restores its own horizon section');
+let missing = false;
+try { WS.stageBackup({ app: 'nightseam-web', version: 11 }); } catch { missing = true; }
+assert(missing, 'a format 11 bundle without its horizon section is refused');
+
+/* 4. stageBackup validation --------------------------------------------- */
 let threw = false;
 try { WS.stageBackup({ app: 'other' }); } catch { threw = true; }
 assert(threw, 'stageBackup must reject a foreign bundle');
@@ -190,17 +236,6 @@ assert(staged.sites.length === 1, 'one valid site staged');
 assert(WS.stageBackup({ app: 'nightseam-web', theme: 'weird', panos: emptyPanos }).theme === 'workbench',
   'unknown theme value must normalize to workbench');
 
-/* 4. exportPanosWithImages -> normalize round trip (image survives) ------ */
-await H.applyPanosSnapshot({
-  panos: [panoRec({ hasImage: true, image: DATAURL })],
-  activeId: 'p1',
-});
-const exported = await H.exportPanosWithImages();
-assert(exported.panos[0].hasImage === true, 'export keeps hasImage when the photo exists');
-assert(typeof exported.panos[0].image === 'string', 'export embeds the photo as a data URL');
-await H.applyPanosSnapshot(H.normalizePanos(exported));
-assert(H.activePano().hasImage === true, 'round-tripped pano still has its image');
-
 /* 5. collectBackup + restore round trip --------------------------------- */
 await WS.writeStaged(WS.stageBackup({
   app: 'nightseam-web',
@@ -208,14 +243,16 @@ await WS.writeStaged(WS.stageBackup({
   rigs: [{ id: 'r1', name: 'Rig', focal_mm: 100 }],
   targets: [], panos: emptyPanos,
 }));
-const backup = await WS.collectBackup({ bortle: 6 }, { panos: [], activeId: null }, 'classic');
-assert(backup.app === 'nightseam-web' && backup.version === 10, 'backup carries schema version 10 for coverage and physical calibration evidence');
+const backup = await WS.collectBackup({ bortle: 6 }, emptyHorizons, 'classic');
+assert(backup.app === 'nightseam-web' && backup.version === 11, 'backup carries schema version 11 (skyline horizons)');
+assert(JSON.stringify(backup.horizons) === JSON.stringify(emptyHorizons) && !('panos' in backup),
+  'backup carries the horizon section, not the retired panorama section');
 assert(backup.theme === 'workbench', 'collectBackup carries the canonical theme');
 assert(backup.sites.length === 1 && backup.rigs.length === 1, 'collectBackup reads the stores');
 
 /* 5b. View full day preference round-trips (ITEM 1) ---------------------- */
 const vfd = await WS.collectBackup(
-  { bortle: 6, viewFullDay: true }, { panos: [], activeId: null }, 'classic');
+  { bortle: 6, viewFullDay: true }, emptyHorizons, 'classic');
 assert(vfd.prefs.viewFullDay === true, 'collectBackup carries viewFullDay');
 assert(WS.stageBackup(vfd).prefs.viewFullDay === true, 'stageBackup preserves viewFullDay');
 assert(WS.stageBackup({ app: 'nightseam-web', prefs: { viewFullDay: false }, panos: emptyPanos }).prefs.viewFullDay === false,
@@ -224,9 +261,9 @@ assert(WS.stageBackup({ app: 'nightseam-web', prefs: { viewFullDay: false }, pan
 /* 6. malformed restore does NOT destroy current data -------------------- */
 const beforeSites = (await WS.all('sites')).length;
 let bad = false;
-try { await WS.restoreBackup({ app: 'nightseam-web', sites: [], panos: null }, null); } catch { bad = true; }
+try { await WS.restoreBackup({ app: 'nightseam-web', version: 11, sites: [], horizons: null }, null); } catch { bad = true; }
 assert(bad && (await WS.all('sites')).length === beforeSites,
-  'a bundle missing its panorama section is rejected before any write');
+  'a bundle missing its horizon section is rejected before any write');
 await WS.writeStaged(WS.stageBackup({
   app: 'nightseam-web', sites: [{ id: 's1', name: 'Home', lat: 1, lon: 2 }], panos: emptyPanos,
 }));
@@ -237,7 +274,7 @@ assert(rejected && (await WS.all('sites')).length === countBefore,
   'invalid bundle throws and leaves storage intact');
 
 /* 7. write failure rolls back to the pre-restore snapshot --------------- */
-const safety = await WS.collectBackup({ bortle: 6 }, { panos: [], activeId: null }, 'classic');
+const safety = await WS.collectBackup({ bortle: 6 }, emptyHorizons, 'classic');
 const incoming = {
   app: 'nightseam-web',
   sites: [{ id: 's-new', name: 'New', lat: 9, lon: 9 }],
@@ -261,36 +298,7 @@ assert(afterFail.length === safety.sites.length,
 assert(afterFail.some((r) => r.val.id === 's1') && !afterFail.some((r) => r.val.id === 's-new'),
   'rollback must restore the pre-restore records');
 
-/* 8. Phase-1 migrations: legacy FOV-relative panos and degree rigs ------- */
-// A pre-0.6.16 web panorama stored 720 FOV-relative mask columns. With
-// fov=180, azOffset=90 a wall across the WHOLE mask must migrate to the world
-// bins of az 90..270 and block exactly those directions.
-const legacyProf = new Array(720).fill(-90);
-const legacyTop = new Array(720).fill(-90);
-for (let i = 0; i < 720; i++) legacyProf[i] = 20;      // wall over the whole FOV
-const legacyPano = panoRec({ fov: 180, azOffset: 90, profile: legacyProf,
-                             profileTop: legacyTop, profileBins: undefined });
-const migrated = H.normalizePanos({ panos: [legacyPano] }).panos[0];
-assert(migrated.profileBins === 'world', 'legacy profile must migrate to world bins');
-// independent expectation: desktop representative column per world bin
-const wantWorld = (i) => {
-  const rel = ((i * 0.5 - 90) % 360 + 360) % 360;
-  return rel <= 180 ? legacyProf[Math.min(719, Math.floor(rel * 720 / 180))] : -90;
-};
-for (const i of [0, 179, 180, 359, 360, 539, 540, 719]) {
-  assert(migrated.profile[i] === wantWorld(i),
-    `migrated bin ${i} = ${migrated.profile[i]}, want ${wantWorld(i)}`);
-}
-assert(H.ceilFor(migrated, 100).ceil === 20, 'blocked direction inside the FOV');
-assert(H.ceilFor(migrated, 269).ceil === 20, 'blocked direction at the FOV edge');
-assert(H.ceilFor(migrated, 45).ceil === H.NO_BLOCK, 'outside the FOV stays unblocked');
-const remigrated = H.normalizePanos({ panos: [migrated] }).panos[0];
-assert(remigrated.profileBins === 'world', 'a current record keeps its bin marker');
-for (const i of [0, 180, 360, 540, 719]) {
-  assert(remigrated.profile[i] === migrated.profile[i],
-    `normalizing a CURRENT record must not re-convert (bin ${i})`);
-}
-
+/* 8. Legacy rigs stored their field of view in degrees ----------------- */
 // A pre-0.6.16 rig stored fov_w/fov_h in DEGREES; getRigs converts once.
 await WS.saveRigRec({ id: 'r-legacy', name: 'Legacy', focal_mm: 250,
                       sensor_w: 5.57, sensor_h: 3.13,
@@ -309,49 +317,6 @@ const newRig = (await WS.getRigs()).find((r) => r.id === 'r-new');
 assert(newRig && Math.abs(newRig.fov_w - WS.fovArcmin(500, 5.57)) < 1e-6,
   'an arcmin rig must not be converted again');
 
-/* 9. crop round-trip + legacy restore -> crop -> export -> re-import -------- */
-// (a) a stroke record: crop, then normalize, and confirm fov/az/strokes survive
-const cst = H.normalizePanos({ panos: [panoRec({ id: 'crop-strokes',
-  strokes: [{ m: 'b', x: 360, y: 100, r: 30 }] })] }).panos[0];
-H.cropPano(cst, { x: 180, w: 360 }, 720);          // keep az 90..270 -> fov 180, az 90
-const cstAgain = H.normalizePanos({ panos: [JSON.parse(JSON.stringify(cst))] }).panos[0];
-assert(cstAgain.fov === 180 && cstAgain.azOffset === 90, 'crop fov/az survive normalize');
-assert(cstAgain.strokes.length === cst.strokes.length, 'cropped strokes survive normalize');
-
-const traced = panoRec({ id:'trace-backup', strokes:[
-  {m:'trace',points:[[0,240],[300,120],[720,240]]}, {m:'e',x:300,y:160,r:25}], profile:blank720() });
-const traceNorm=H.normalizePanos({panos:[traced]}).panos[0];
-assert(traceNorm.profile.some(alt=>alt>0),'trace operations win over a supplied stale profile');
-assert(JSON.stringify(H.normalizePanos({panos:[traceNorm]}).panos[0].strokes)===JSON.stringify(traceNorm.strokes),'trace and corrections round-trip');
-for(const points of [[],[[1,2],[1,3]],[[1,'4']],[[1,NaN]],[[721,5]],Array(257).fill([0,1])]) {
-  assert(H.normalizePanos({panos:[panoRec({id:'trace-malformed',strokes:[{m:'trace',points}]})]})===null,'malformed trace refuses normalization');
-  assert(H.normalizePanos({panos:[panoRec({id:'discarded id',strokes:[{m:'trace',points}]})]})===null,'discarded ID cannot hide malformed trace');
-}
-assert(H.normalizePanos({panos:[panoRec({id:'trace-in-sky',paintMode:'sky',strokes:[{m:'trace',points:[[0,1],[720,1]]}]})]})===null,'obstacle trace cannot masquerade as a sky band');
-assert(H.normalizePanos({panos:[panoRec({id:'trace-limit',strokes:Array(33).fill({m:'trace',points:[[0,1],[720,1]]})})]})===null,'trace count is bounded before replay');
-
-// (b) legacy profile-only record: migrate (world bins), crop, then export and
-// re-import; the cropped record must come back byte-identical.
-const legacyCrop = H.normalizePanos({ panos: [panoRec({
-  id: 'legacy-crop', fov: 180, azOffset: 90,
-  profile: new Array(720).fill(20), profileTop: blank720(),
-  profileBins: undefined,
-})] }).panos[0];
-assert(legacyCrop.profileBins === 'world', 'legacy crop record migrated to world bins');
-H.cropPano(legacyCrop, { x: 180, w: 360 }, 720);   // keep az 135..225 -> fov 90, az 135
-assert(legacyCrop.fov === 90 && legacyCrop.azOffset === 135, 'legacy crop calibration');
-await H.applyPanosSnapshot({ panos: [JSON.parse(JSON.stringify(legacyCrop))],
-                       activeId: legacyCrop.id });
-const exportedCrop = H.exportPanos();
-const reimported = H.normalizePanos(exportedCrop).panos.find((x) => x.id === 'legacy-crop');
-assert(reimported, 'the cropped record must survive export + re-import');
-assert(reimported.fov === legacyCrop.fov && reimported.azOffset === legacyCrop.azOffset,
-  'crop fov/az must survive export + re-import');
-assert(JSON.stringify(reimported.profile) === JSON.stringify(legacyCrop.profile),
-  'crop profile must be byte-identical after export + re-import');
-assert(JSON.stringify(reimported.profileTop) === JSON.stringify(legacyCrop.profileTop),
-  'crop profileTop must be byte-identical after export + re-import');
-
 /* WB7 forward compatibility: `version` is written at export and was IGNORED on
  * import, so a bundle from a LATER build was accepted and its fields read under
  * this build's rules - a silent misreading reported as a successful restore. A
@@ -360,7 +325,8 @@ assert(JSON.stringify(reimported.profileTop) === JSON.stringify(legacyCrop.profi
 const good = { app: 'nightseam-web', version: 2, sites: [], rigs: [], targets: [],
                prefs: {}, panos: { panos: [], activeId: null } };
 assert(WS.stageBackup(good), 'a v2 bundle must remain readable');
-for (const version of [1, 2, 3, 4, 5, 6, 7, 8]) assert(WS.stageBackup({ ...good, version }), `format ${version} remains readable`);
+for (const version of [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]) assert(WS.stageBackup({ ...good, version }), `format ${version} remains readable`);
+assert(WS.stageBackup({ ...good, version: 11, horizons: emptyHorizons }), 'format 11 is readable');
 const savedPrefs = WS.stageBackup({ ...good, theme: 'dome', prefs: {
   savedTargetIds: ['ngc224', 'u_capture', 'ngc224', 'bad/id', ' <img> '],
   skyBrightnessProvider: 'nasa', theme: 'dome', themeVariant: 'glass',
@@ -393,14 +359,6 @@ try { WS.stageBackup({ ...good, app: 'something-else' }); } catch (e) { foreignE
 assert(foreignErr, 'a foreign bundle must still be refused');
 
 /* Phase-1 review: commit/abort, strict snapshots and input validation. */
-const beforeInvalidPhoto = JSON.stringify(H.exportPanos());
-for (const image of ['data:text/html;base64,eA==', 'data:image/png;base64,!!!', 'data:image/png;base64,']) {
-  const malformed = { panos: [panoRec({ image })], activeId: 'p1' };
-  assert(H.normalizePanos(malformed) === null, 'malformed embedded image must fail normalization');
-  assert(await H.importPanos(malformed) === false, 'malformed image import must fail');
-  assert(JSON.stringify(H.exportPanos()) === beforeInvalidPhoto,
-    'malformed image import must not alter the current panorama state');
-}
 const mustReject = async (operation, message) => {
   let rejected = false;
   try { await operation(); } catch { rejected = true; }
@@ -412,9 +370,9 @@ const original = { ...good,
   targets: [{ id: 'u_original', primary_name: 'Original target', ra_hours: 5, dec_deg: 22 }],
 };
 await WS.writeStaged(WS.stageBackup(original));
-const current = await WS.collectBackup({}, emptyPanos);
+const current = await WS.collectBackup({}, emptyHorizons);
 const unchanged = async (message) => {
-  const state = await WS.collectBackup({}, emptyPanos);
+  const state = await WS.collectBackup({}, emptyHorizons);
   assert(JSON.stringify([state.sites, state.rigs, state.targets]) ===
     JSON.stringify([current.sites, current.rigs, current.targets]), message);
 };
@@ -444,7 +402,7 @@ for (const fault of ['__idbFailPutCount', '__idbAbortAfterSuccess']) {
 }
 
 globalThis.__idbFailReadCount = { sites: 1 };
-await mustReject(() => WS.collectBackup({}, emptyPanos), 'a failed snapshot read must abort backup collection');
+await mustReject(() => WS.collectBackup({}, emptyHorizons), 'a failed snapshot read must abort backup collection');
 await unchanged('failed snapshot collection must not mutate records');
 for (const [store, read] of [['sites', WS.getSites], ['rigs', WS.getRigs], ['targets', WS.getTargets]]) {
   globalThis.__idbFailReadCount = { [store]: 1 };
@@ -509,46 +467,6 @@ await WS.restoreBackup(replacement, current);
 assert((await WS.getSites({ strict: true }))[0].id === 's_replacement' &&
   (await WS.lastSafetySnapshot()).targets[0].id === 'u_original',
   'successful replacement commits records and the usable safety snapshot together');
-
-// Old v3 elliptical crop geometry remains readable in v5.
-const ellipse = panoRec({ sourceRect: {x:.125,y:0,w:.75,h:1}, strokes: [{m:'b',x:360,y:180,r:20,rx:80}] });
-const elliptical = H.normalizePanos({panos:[ellipse],activeId:ellipse.id});
-const expectedEllipse = elliptical.panos[0].profile.slice();
-await H.applyPanosSnapshot(elliptical);
-const ellipseBackup = await H.exportPanosWithImages();
-await H.applyPanosSnapshot(H.normalizePanos(ellipseBackup));
-assert(H.activePano().strokes[0].rx === 80, 'backup preserves horizontal radius');
-assert(H.activePano().strokes[0].r === 20, 'backup preserves vertical radius');
-assert(H.activePano().profile.every((v,i)=>v===expectedEllipse[i]), 'backup preserves elliptical profile');
-assert(JSON.stringify(H.activePano().sourceRect) === JSON.stringify(ellipse.sourceRect),
-  'backup preserves original-photo crop coordinates');
-assert(H.normalizePanos({panos:[panoRec({sourceRect:{x:1,y:0,w:.1,h:1}})]}) === null,
-  'malformed photo coordinates reject the entire staged panorama bundle');
-const legacyPhoto = H.normalizePanos({panos:[panoRec()]});
-assert(JSON.stringify(legacyPhoto.panos[0].sourceRect) === JSON.stringify({x:0,y:0,w:1,h:1}),
-  'legacy panorama without photo coordinates retains the whole original');
-const oldInvalid = H.normalizePanos({panos:[panoRec({altBottom:90,altTop:95})]});
-assert(oldInvalid.panos[0].altBottom===85 && oldInvalid.panos[0].altTop===90,
-  'old invalid calibration is repaired before it reaches the editor');
-assert(oldInvalid.panos[0].profile[0]===panoRec().profile[0],
-  'calibration repair preserves authoritative stroke-less profiles');
-
-const calibration = {version:1,projection:'equirectangular',coverage:360,
-  bearing:{x:.25,y:.4,azimuth:80},vertical:[{x:.2,y:.75,altitude:0},{x:.8,y:.25,altitude:30}],
-  check:{x:.6,y:.5,azimuth:206,altitude:15}};
-const measured = H.normalizePanos({panos:[panoRec({calibration})]});
-await H.applyPanosSnapshot(measured);
-const measuredExport = await H.exportPanosWithImages();
-assert(JSON.stringify(H.normalizePanos(measuredExport).panos[0].calibration) === JSON.stringify(calibration),
-  'reference evidence survives panorama export and staging');
-assert(legacyPhoto.panos[0].calibration.projection === 'unknown', 'legacy angles never infer a checked projection');
-const beforeBadCalibration = JSON.stringify(H.exportPanos());
-for (const bad of [{...calibration,version:2},{...calibration,check:{...calibration.check,x:2}},
-  {...calibration,vertical:[{...calibration.vertical[0],altitude:'0'}]}]) {
-  assert(H.normalizePanos({panos:[panoRec({calibration:bad})]}) === null, 'malformed evidence rejects staged panorama data');
-  assert(H.normalizePanos({panos:[{id:'invalid/id',calibration:bad}]}) === null, 'discarded records cannot hide bad evidence');
-  assert(JSON.stringify(H.exportPanos()) === beforeBadCalibration, 'invalid evidence staging has no storage mutations');
-}
 
 console.log(ok ? 'web backup integrity held' : 'web backup integrity FAILED');
 process.exit(ok ? 0 : 1);

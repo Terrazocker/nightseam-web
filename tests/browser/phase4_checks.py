@@ -134,14 +134,14 @@ def smooth_scrub_and_horizon_scroll(c):
     c.page.screenshot(path=str(c.artifacts / 'followup-sky-1894.png'))
     # Leave with a queued paint: the old workspace cannot overwrite a new view.
     c.page.evaluate("() => { const s=document.querySelector('#sky-slider'); s.value='240'; s.dispatchEvent(new Event('input')); location.hash='#horizon'; }")
-    c.page.wait_for_selector('#pano-file', state='attached')
-    c.page.locator('#pano-file').set_input_files({'name':'tall-horizon.png','mimeType':'image/png',
-                                                'buffer':horizon_test_png(600,1800)})
-    c.page.wait_for_selector('#pano-canvas', state='visible')
-    c.page.wait_for_function("() => document.querySelector('#pano-canvas').getBoundingClientRect().height > 1200")
+    c.page.wait_for_selector('#hz-photo-file', state='attached')
+    c.page.locator('#hz-photo-file').set_input_files({'name':'garden.png','mimeType':'image/png',
+                                                    'buffer':horizon_test_png(600,300)})
+    c.page.wait_for_selector('#hz-canvas', state='visible')
+    c.page.wait_for_selector('#hz-ph-width', state='visible')
     for width, height in ((1894,900),(1440,700)):
         c.page.set_viewport_size({'width':width,'height':height})
-        c.page.evaluate('window.scrollTo(0,650)')
+        c.page.evaluate('window.scrollTo(0,400)')
         c.page.wait_for_timeout(150)
         state = c.page.evaluate('''() => {
           const rail=document.querySelector('.horizon-tools-rail');
@@ -149,39 +149,23 @@ def smooth_scrub_and_horizon_scroll(c):
           const toolbar=document.querySelector('.horizon-stage > .ed-tools');
           const tools=toolbar.getBoundingClientRect();
           const r=rail.getBoundingClientRect();
-          return {top:r.top,bottom:r.bottom,cardBottom:card.bottom,toolsTop:tools.top,toolsBottom:tools.bottom,
+          return {top:r.top,bottom:r.bottom,toolsTop:tools.top,toolsBottom:tools.bottom,
             toolPosition:getComputedStyle(toolbar).position,toolBackground:getComputedStyle(toolbar).backgroundColor,
             position:getComputedStyle(rail).position, childPosition:getComputedStyle(rail.querySelector('.card')).position};
         }''')
         c.expect_eq(state['position'], 'sticky')
-        c.expect(state['childPosition'] != 'sticky', 'first section cannot stick over paint tools')
-        c.expect_eq(state['toolPosition'], 'sticky', 'stage tools remain available beside the tall photo')
+        c.expect(state['childPosition'] != 'sticky', 'first section cannot stick over the editing tools')
+        c.expect_eq(state['toolPosition'], 'sticky', 'stage tools remain available beside the photo')
         c.expect_eq(state['toolBackground'], 'rgb(11, 17, 21)', 'sticky tools stay opaque over the scrolling photo')
         c.expect(state['toolsTop'] >= 0 and state['toolsBottom'] <= height, 'whole toolbar fits the viewport')
         c.expect(state['top'] >= 0 and state['bottom'] <= height, 'whole rail fits the viewport')
-        c.page.locator('.horizon-tools-rail').focus()
-        c.page.locator('#ed-save').focus()
+        c.page.locator('#hz-mode-align').focus()
         c.page.wait_for_timeout(50)
-        save = c.page.locator('#ed-save').bounding_box()
-        c.expect(save['y'] >= 0 and save['y']+save['height'] <= height,
-                 f'keyboard can reach Save inside bounded toolbar: viewport={height}, save={save}, rail={state}')
-        c.expect(c.page.locator('.topbar').bounding_box()['y'] >= 0, 'header stays visible throughout the tall editor')
+        align = c.page.locator('#hz-mode-align').bounding_box()
+        c.expect(align['y'] >= 0 and align['y']+align['height'] <= height,
+                 f'keyboard reaches the mode buttons inside the toolbar: viewport={height}, button={align}')
+        c.expect(c.page.locator('.topbar').bounding_box()['y'] >= 0, 'header stays visible throughout the editor')
         c.page.screenshot(path=str(c.artifacts / f'followup-horizon-scroll-{width}.png'))
-    c.page.locator('.horizon-advanced').evaluate('e=>e.open=true')
-    c.page.locator('details.horizon-meta').filter(has=c.page.locator('#ed-profile-az')).locator('summary').click()
-    c.expect(c.page.locator('#ed-profile-top').is_disabled(), 'sky-band upper edge is inactive in obstruction mode')
-    c.page.locator('#ed-mode').select_option('sky')
-    c.expect(c.page.locator('#ed-profile-top').is_enabled(), 'switching mode enables upper sky edge')
-    c.expect('Visible sky starts' in c.page.locator('#ed-profile-alt-label').inner_text(), 'mode-specific height label updates')
-    c.page.locator('#ed-undo').click()
-    c.expect(c.page.locator('#ed-profile-top').is_disabled(), 'Undo restores obstruction-mode labels')
-    c.expect_eq(c.page.locator('#ed-mode').input_value(), 'obstacle', 'Undo restores the mode selector too')
-    c.page.screenshot(path=str(c.artifacts / 'followup-horizon-values-1440.png'))
-    c.page.set_viewport_size({'width':1894,'height':1244})
-    c.page.evaluate('window.scrollTo(0,650)')
-    c.page.locator('#ed-profile-apply').focus()
-    c.page.screenshot(path=str(c.artifacts / 'followup-horizon-values-1894.png'))
-    c.page.locator('#ed-save').click()
     c.page.set_viewport_size({'width':360,'height':900})
     c.page.evaluate('window.scrollTo(0,0)')
     # ResizeObserver and Save can still be laying out the new viewport.
@@ -236,9 +220,8 @@ def advanced_live_mode(c):
     token = re.search(r"from './horizon.js\?v=(\d+)'", (ROOT / 'web/app.js').read_text(encoding='utf-8')).group(1)
     c.page.evaluate('''async url => {
       const H=await import(url);
-      await H.importPanos({activeId:'load-check',panos:[{id:'load-check',name:'Loading check',
-        azOffset:0,altBottom:0,altTop:60,fov:360,profileBins:720,
-        profile:Array(720).fill(18),profileTop:Array(720).fill(null),strokes:[]}]});
+      await H.applyHorizonsSnapshot(H.normalizeHorizons({activeId:'load-check',horizons:[
+        {id:'load-check',name:'Loading check',points:[{az:0,alt:18}]}]}));
     }''', './horizon.js?v=' + token)
     c.page.locator('#tb-date').fill('2026-08-12')
     c.page.locator('#tb-date').dispatch_event('change')
@@ -314,10 +297,7 @@ def advanced_live_mode(c):
 
 @check('web-planner-simplified-panels', 'web')
 def simplified_panels(c):
-    import re
     from web_suite import open_editor
-    token = re.search(r"from './horizon.js\?v=(\d+)'", (ROOT / 'web/app.js').read_text(encoding='utf-8')).group(1)
-    horizon_url = './horizon.js?v=' + token
     boot(c)
     for width in (1240, 360):
         c.page.set_viewport_size({'width': width, 'height': 900})
@@ -344,24 +324,12 @@ def simplified_panels(c):
         c.expect(c.page.evaluate('() => document.documentElement.scrollWidth <= innerWidth + 1'),
                  'full type list does not widen the page')
     open_editor(c)
-    c.expect_eq(c.page.locator('[id^="ed-prov-"]').count(), 0, 'provenance controls are removed')
-    provenance = {'source': 'compass', 'capturedAt': '2026-08-12',
-                  'operator': 'Test observer', 'orientation': 'True north', 'notes': 'Retain this metadata'}
-    c.page.evaluate('''async ([url, provenance]) => {
-      const H = await import(url);
-      H.activePano().provenance = provenance;
-      H.updatePano(H.activePano());
-    }''', [horizon_url, provenance])
-    c.page.locator('#ed-save').click()
-    c.page.wait_for_function("() => document.querySelector('#ed-status').textContent.includes('Saved')")
-    c.page.reload(wait_until='domcontentloaded')
-    c.page.wait_for_selector('#pano-list li[data-id]')
-    c.page.locator('#pano-list li[data-id]').first.click()
-    c.page.wait_for_selector('#pano-canvas')
-    saved = c.page.evaluate('''async url => {
-      return (await import(url)).activePano().provenance;
-    }''', horizon_url)
-    c.expect_eq(saved, provenance, 'Save/reload preserve existing provenance without editor controls')
+    for retired in ('[id^="ed-prov-"]', '#ed-profile-apply', '#ed-landmark-add', '#ed-crop', '#simple-flow'):
+        c.expect_eq(c.page.locator(retired).count(), 0, f'retired editor control {retired} stays removed')
+    visible = c.page.evaluate('''() => [...document.querySelectorAll(
+        '.horizon-layout input, .horizon-layout select, .horizon-layout button, .horizon-layout label.btn')]
+      .filter(e => e.getClientRects().length && getComputedStyle(e).visibility !== 'hidden').length''')
+    c.expect(visible <= 30, f'the horizon editor stays simple: {visible} visible controls')
     c.assert_clean()
 
 
@@ -642,7 +610,7 @@ def responsive_planner(c):
                 tools = c.page.locator('.horizon-tools-rail').bounding_box()
                 stage = c.page.locator('.horizon-stage').bounding_box()
                 c.expect(stage['y'] >= tools['y'] + tools['height'], 'phone Horizon editor stacks below its tools')
-                upload = c.page.get_by_role('button', name='Add horizon photo')
+                upload = c.page.get_by_role('button', name='New from photo')
                 upload.focus()
                 with c.page.expect_file_chooser():
                     c.page.keyboard.press('Enter')

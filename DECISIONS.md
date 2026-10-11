@@ -14,10 +14,10 @@ Library, SQLite, desktop CSP) are history only.
   (2026-10-10); bounded, half-open planning intervals (2026-10-05); the detail
   card describes the coming night (2026-10-11, supersedes the calendar-day
   culmination rule); unknown timezones are refused at entry (2026-10-11).
-- **Horizon:** strokes win over stored profiles; non-destructive crops kept
-  with their source (2026-10-10); guided and physical-orientation calibration
-  with retained evidence (2026-10-10/11); converted photos infer open sky above
-  the skyline, with a visible switch (2026-10-11, supersedes the strict default).
+- **Horizon:** a horizon is skyline points on a compass grid, with a photo
+  only as a tracing aid; the profile is derived, edits save automatically, and
+  0.1.x horizons are not converted (2026-10-11, "Rebuild the horizon editor",
+  supersedes every earlier horizon entry).
 - **Data and privacy:** transactional, staged backups with rollback; Wikipedia
   is the only object-photo source (2026-10-06); popularity is never visible
   (2026-10-06); the CSP is delivered in the document (0.6.33).
@@ -28,6 +28,48 @@ Library, SQLite, desktop CSP) are history only.
   releases continue at 0.7.0 above inherited tags (2026-10-11).
 - **Documentation:** see "Documentation layout" (2026-10-11), which updates the
   older "Docs policy".
+
+## 2026-10-11 — Rebuild the horizon editor around a skyline
+
+Owner decision: the panorama editor was far too complicated (about 176
+controls, three calibration systems, two coverage settings and seven drawing
+tools) for what it does, which is to say where the sky is blocked. With the
+project treated as fully in development, it was rebuilt without backwards
+compatibility. Plan: [HORIZON_REBUILD_PLAN.md](docs/horizon/HORIZON_REBUILD_PLAN.md).
+
+- **Model.** A horizon is a name, skyline points (world azimuth/altitude, joined
+  by straight lines around the circle) and an optional photo placement (width,
+  heading, tilt, roll; pixels treated as square degrees). The planner's 720-bin
+  world-azimuth profile is derived from the points and never stored. Each bin
+  holds the highest skyline altitude inside it, so a narrow peak is not lost.
+- **Photos are a tracing aid.** Changing the placement moves the skyline points
+  with the photo. A 2:1 photo starts as a full 360 deg panorama; anything else
+  as a 60 deg ordinary photo with an approximate linear mapping (owner choice:
+  ordinary photos are supported). A full panorama is never rolled, because its
+  tilt on a sphere is a wave rather than a rotation; only partial photos get
+  level handles.
+- **Editing.** Draw and Align photo modes, a points form for keyboard entry,
+  set north from a landmark, daylight skyline detection (a two-class threshold
+  per column, median-smoothed, then simplified) and plain azimuth/altitude file
+  import/export (Stellarium, N.I.N.A., plain lists).
+- **Saving.** Every finished edit saves at once. Undo/redo stay; the dirty state
+  now means a save failed, and the leave-page warning follows it.
+- **Removed:** brush/eraser masks, sky-band mode and block-above, crops,
+  projection conversion, calibration evidence versions 1-5, fitting and check
+  points, measurement evidence, coverage policies and the "unknown horizon"
+  visibility reason, landmarks, provenance, confidence, the precise-bin table,
+  and the P3-P7 plan.
+- **Old data.** Horizons stored by the published 0.1.x builds are dropped, not
+  converted (owner choice). Backup format 11 replaces the `panos` section with
+  `horizons`; formats 1-10 still restore their sites, rigs, targets and
+  settings, and the import says their panoramas are not imported.
+- **Later:** overhangs and balcony openings (owner choice), a phone-compass
+  capture mode, and placing a photo from the Sun's position at capture time.
+
+This supersedes every earlier horizon entry below (strokes and profiles,
+crops, guided and physical-orientation calibration, conversion, coverage
+evidence and the inferred-open default, the two-point setup, conservative cell
+coverage and the evidence semantics). They remain as history.
 
 ## 2026-10-11 — CI: browser suite on Linux, one run per change
 

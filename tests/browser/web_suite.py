@@ -88,15 +88,13 @@ def click_sky_target(c, target):
     c.page.locator('#sky').click(position={'x':point['x'],'y':point['y']})
 
 
-def horizon_test_png(width: int, height: int) -> bytes:
-    """Tiny RGB panorama with edge colors to catch side-cropping in the editor."""
+def rgb_png(width: int, height: int, pixel) -> bytes:
+    """An RGB PNG whose pixel colour is `pixel(x, y)`."""
     rows = bytearray()
-    for _y in range(height):
+    for y in range(height):
         rows.append(0)
         for x in range(width):
-            color = (220, 70, 75) if x < width * 0.12 else (
-                (80, 125, 230) if x >= width * 0.88 else (65, 145, 110))
-            rows.extend(color)
+            rows.extend(pixel(x, y))
 
     def chunk(tag: bytes, payload: bytes) -> bytes:
         body = tag + payload
@@ -107,6 +105,17 @@ def horizon_test_png(width: int, height: int) -> bytes:
             + chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0))
             + chunk(b"IDAT", zlib.compress(rows, 6))
             + chunk(b"IEND", b""))
+
+
+def horizon_test_png(width: int, height: int) -> bytes:
+    """Tiny RGB panorama with edge colors to catch side-cropping in the editor."""
+    return rgb_png(width, height, lambda x, _y: (220, 70, 75) if x < width * 0.12 else (
+        (80, 125, 230) if x >= width * 0.88 else (65, 145, 110)))
+
+
+def skyline_test_png(width: int, height: int, ground: float) -> bytes:
+    """Daylight sky over dark ground; the ground starts `ground` (0-1) down."""
+    return rgb_png(width, height, lambda _x, y: (120, 170, 235) if y < height * ground else (40, 60, 30))
 
 
 def search_catalog_row(c, object_id: str, search: str):
@@ -246,55 +255,76 @@ def stored_photo(c, object_id: str):
 
 
 def open_editor(c):
+    """A new hand-drawn horizon in a viewport tall enough for the whole grid."""
     tab(c, "horizon")
-    c.page.wait_for_selector("#pano-blank", timeout=20000)
-    c.page.click("#pano-blank")
-    c.page.wait_for_selector("#pano-canvas", state="visible", timeout=20000)
-    # Legacy brush/advanced checks explicitly choose their tools; the simpler
-    # defaults have separate acceptance checks.
-    if c.page.locator('#ed-tool').count():
-        c.page.locator('#ed-tool').select_option('brush')
-    c.page.locator('#pano-box').evaluate("e=>e.closest('.horizon-layout')?.querySelectorAll('details').forEach(d=>d.open=true)")
-    # The editor is tall (canvas ~608 px below the topbar): give the viewport
-    # room for the whole canvas so pointer paint/crop gestures land on it.
-    c.page.set_viewport_size({"width": 1366, "height": 1500})
+    c.page.wait_for_selector("#hz-new-draw", timeout=20000)
+    c.page.click("#hz-new-draw")
+    c.page.wait_for_selector("#hz-canvas", state="visible", timeout=20000)
+    c.page.set_viewport_size({"width": 1366, "height": 1100})
     c.page.evaluate("() => window.scrollTo(0, 0)")
-    c.page.locator("#pano-canvas").scroll_into_view_if_needed()
+    c.page.locator("#hz-canvas").scroll_into_view_if_needed()
     c.page.wait_for_timeout(250)
 
 
-def paint(c, x0=0.30, x1=0.62, y=0.35, button="left"):
-    if c.page.locator('#simple-flow').count() and c.page.locator('#simple-flow').is_visible():
-        c.page.locator('#simple-cancel').click()
-    if c.page.locator('#ed-tool').count():
-        c.page.locator('#ed-tool').select_option('brush')
-    c.page.locator('#pano-canvas').scroll_into_view_if_needed()
-    box = c.page.locator("#pano-canvas").bounding_box()
-    c.expect(box and box["width"] > 20, "pano canvas must have a size")
-    y0 = box["y"] + min(box["height"] * y, box["height"] - 4)
-    sx = box["x"] + box["width"] * x0
-    ex = box["x"] + box["width"] * x1
-    c.page.mouse.move(sx, y0)
-    c.page.mouse.down(button=button)
+def canvas_point(c, fx: float, fy: float):
+    box = c.page.locator("#hz-canvas").bounding_box()
+    c.expect(box and box["width"] > 20, "the horizon canvas must have a size")
+    return box["x"] + box["width"] * fx, box["y"] + box["height"] * fy
+
+
+def sketch(c, x0=0.30, x1=0.62, y0=0.45, y1=0.35):
+    """Drag across empty grid: a sketched skyline stretch."""
+    c.page.locator("#hz-canvas").scroll_into_view_if_needed()
+    sx, sy = canvas_point(c, x0, y0)
+    ex, ey = canvas_point(c, x1, y1)
+    c.page.mouse.move(sx, sy)
+    c.page.mouse.down()
     for i in range(1, 13):
-        c.page.mouse.move(sx + (ex - sx) * i / 12, y0)
-    c.page.mouse.up(button=button)
+        c.page.mouse.move(sx + (ex - sx) * i / 12, sy + (ey - sy) * i / 12)
+    c.page.mouse.up()
     c.page.wait_for_timeout(180)
 
 
-def pano_state(c):
+def click_grid(c, fx: float, fy: float):
+    x, y = canvas_point(c, fx, fy)
+    c.page.mouse.click(x, y)
+    c.page.wait_for_timeout(150)
+
+
+def horizon_state(c):
     return c.page.evaluate(
-        """() => { try { return JSON.parse(localStorage.getItem('nightseam_panos_v1') || 'null'); }
+        """() => { try { return JSON.parse(localStorage.getItem('nightseam_horizons_v2') || 'null'); }
                   catch (e) { return null; } }""")
 
 
-def active_strokes(c):
-    st = pano_state(c)
-    if not st or not st.get("panos"):
-        return -1
-    p = next((p for p in st["panos"] if p.get("id") == st.get("activeId")),
-             st["panos"][0])
-    return len(p.get("strokes") or [])
+def active_horizon(c):
+    st = horizon_state(c)
+    if not st or not st.get("horizons"):
+        return None
+    return next((h for h in st["horizons"] if h.get("id") == st.get("activeId")), st["horizons"][0])
+
+
+def active_points(c):
+    h = active_horizon(c)
+    return -1 if h is None else len(h.get("points") or [])
+
+
+def wait_status(c, text_value: str, timeout: int = 8000):
+    try:
+        c.page.wait_for_function(
+            """(want) => (document.querySelector('#ed-status')?.textContent || '').includes(want)""",
+            arg=text_value, timeout=timeout)
+    except Exception as exc:
+        raise AssertionError(
+            f"editor status did not reach {text_value!r}: {c.page.inner_text('#ed-status')!r}; "
+            f"undo-disabled={c.page.is_disabled('#ed-undo')}, "
+            f"redo-disabled={c.page.is_disabled('#ed-redo')}") from exc
+
+
+def upload_photo(c, name: str, data: bytes, selector: str = "#hz-photo-file"):
+    c.page.locator(selector).set_input_files({"name": name, "mimeType": "image/png", "buffer": data})
+    c.page.wait_for_selector("#hz-ph-width", state="visible", timeout=15000)
+    c.page.wait_for_function("() => !document.querySelector('#hz-mode-align').disabled", timeout=15000)
 
 
 # ---------------------------------------------------------------- checks
@@ -337,125 +367,81 @@ def web_cache_tokens(c):
     c.assert_clean()
 
 
-@check("web-horizon-actions-not-full-width", "web")
-def web_horizon_actions(c):
-    """ITEM B regression: an action button used as a label must stay
-    content-width at 1024 and 1366 px.  Rendered layout, not source."""
+@check("web-horizon-create-buttons-consistent", "web")
+def web_horizon_create_buttons(c):
+    """ITEM B regression, current form: the three ways to start a horizon (two
+    label-buttons and a button) render at one shared width, so a label used as
+    a button can never stretch while its siblings do not. Rendered layout."""
     boot(c)
     tab(c, "horizon")
-    c.page.wait_for_selector(".btnrow.action-row", timeout=20000)
-    for width in (1024, 1366):
+    c.page.wait_for_selector(".hz-new", timeout=20000)
+    for width in (1024, 1366, 390):
         c.page.set_viewport_size({"width": width, "height": 900})
         c.page.wait_for_timeout(250)
-        info = c.page.evaluate(
-            """() => {
-              // Measured in a temporarily widened row: a narrow rail plus a
-              // wide system font (Linux) made a content-width label look
-              // "full row" (177/190 px). Stretching still fills 1000 px.
-              const row = document.querySelector('.btnrow.action-row');
-              if (!row) return null;
-              const saved = row.style.cssText;
-              row.style.width = '1000px'; row.style.maxWidth = 'none';
-              const rw = row.getBoundingClientRect().width;
-              const items = Array.from(
-                row.querySelectorAll(':scope > .btn, :scope > label.btn'));
-              const out = { rw, items: items.map(e => {
-                const b = e.getBoundingClientRect();
-                return { t: (e.textContent || '').trim().slice(0, 24), w: b.width };
-              }) };
-              row.style.cssText = saved;
-              return out;
-            }""")
-        c.expect(info and info["items"], "the horizons action row must have controls")
-        for it in info["items"]:
-            c.expect(it["w"] < info["rw"] * 0.9,
-                     f"'{it['t']}' spans the full row at {width}px "
-                     f"({it['w']:.0f}/{info['rw']:.0f})")
+        widths = c.page.evaluate(
+            """() => [...document.querySelectorAll('.hz-new > .btn')]
+                 .map(e => Math.round(e.getBoundingClientRect().width))""")
+        c.expect(len(widths) == 3, f"three create controls expected, got {widths}")
+        c.expect(max(widths) - min(widths) <= 2, f"create controls differ in width at {width}px: {widths}")
     c.page.set_viewport_size({"width": 1366, "height": 900})
     c.assert_clean()
 
 
-@check("web-pano-paint-save-persist", "web")
-def web_pano_paint_save_persist(c):
+@check("web-horizon-draw-save-persist", "web")
+def web_horizon_draw_save_persist(c):
+    """A sketch and a click become skyline points, save automatically and
+    survive a reload."""
     boot(c)
     open_editor(c)
-    paint(c)
-    c.expect_in("Unsaved", c.page.inner_text("#ed-status"),
-                "painting must mark the editor dirty")
-
-    # a held right-button drag erases (one gesture)
-    painted = canvas_digest(c, "#pano-canvas")
-    paint(c, 0.30, 0.62, 0.35, button="right")
-    c.expect(canvas_digest(c, "#pano-canvas") != painted,
-             "a right-button drag must erase the painted band")
-
-    paint(c)
-    c.page.click("#ed-save")
-    c.page.wait_for_function(
-        """() => (document.querySelector('#ed-status')?.textContent || '')
-                   .includes('Saved')""", timeout=10000)
-    c.expect(active_strokes(c) > 0, "saving must persist the stroke")
-
-    # reload: the saved horizon survives
+    sketch(c)
+    c.expect(active_points(c) >= 2, "a sketched stretch must store skyline points")
+    wait_status(c, "Saved")
+    before = active_points(c)
+    click_grid(c, 0.85, 0.40)
+    c.expect_eq(active_points(c), before + 1, "a click on empty grid adds one point")
+    c.expect("skyline point" in c.page.inner_text("#hz-summary"),
+             "the text summary describes the skyline")
+    saved = active_horizon(c)["points"]
     c.goto("/")
     tab(c, "horizon")
-    c.page.wait_for_selector("#pano-list li[data-id]", timeout=30000)
-    c.page.click("#pano-list li[data-id]")
-    c.page.wait_for_selector("#pano-canvas", timeout=30000)
-    c.expect(active_strokes(c) > 0, "the horizon must persist across a reload")
+    c.page.wait_for_selector("#hz-canvas", timeout=30000)
+    c.expect_eq(active_horizon(c)["points"], saved, "the skyline must persist across a reload")
     c.assert_clean()
 
 
-@check("web-pano-undo-redo-clear", "web")
-def web_pano_undo_redo_clear(c):
+@check("web-horizon-undo-redo-clear", "web")
+def web_horizon_undo_redo_clear(c):
     boot(c)
     open_editor(c)
-    paint(c)
-    c.page.click("#ed-save")
-    def wait_status(text_value: str, timeout: int = 8000):
-        try:
-            c.page.wait_for_function(
-                """(want) => (document.querySelector('#ed-status')?.textContent || '')
-                           .includes(want)""", arg=text_value, timeout=timeout)
-        except Exception as exc:
-            raise AssertionError(
-                f"editor status did not reach {text_value!r}: "
-                f"{c.page.inner_text('#ed-status').replace('●', '*')!r}; "
-                f"undo-disabled={c.page.is_disabled('#ed-undo')}, "
-                f"redo-disabled={c.page.is_disabled('#ed-redo')}") from exc
-
-    wait_status("Saved", timeout=10000)
-
-    # a second gesture: undo returns to the saved baseline, redo re-applies it
-    paint(c, 0.55, 0.78, 0.5)
-    c.expect_in("Unsaved", c.page.inner_text("#ed-status"),
-                "the second stroke must dirty the editor")
+    sketch(c)
+    first = active_points(c)
+    click_grid(c, 0.85, 0.40)
+    c.expect_eq(active_points(c), first + 1, "the click adds a point")
     c.page.click("#ed-undo")
-    wait_status("Saved")
+    c.page.wait_for_timeout(200)
+    c.expect_eq(active_points(c), first, "undo removes the added point and saves")
     c.page.click("#ed-redo")
-    wait_status("Unsaved")
-
+    c.page.wait_for_timeout(200)
+    c.expect_eq(active_points(c), first + 1, "redo brings it back")
+    wait_status(c, "Saved")
     # Clear is confirmed in-page (never alert()) and is undoable
-    before = canvas_digest(c, "#pano-profile")
-    c.page.click("#ed-clear")
+    c.page.click("#hz-clear")
     c.page.wait_for_selector(".ed-confirm [data-ok]", timeout=5000)
     c.page.click(".ed-confirm [data-ok]")
     c.page.wait_for_timeout(300)
-    c.expect(canvas_digest(c, "#pano-profile") != before,
-             "Clear must change the obstruction profile")
+    c.expect_eq(active_points(c), 0, "Clear removes every point")
     c.page.click("#ed-undo")
     c.page.wait_for_timeout(300)
-    c.expect(canvas_digest(c, "#pano-profile") == before,
-             "Clear must be undoable")
+    c.expect_eq(active_points(c), first + 1, "Clear must be undoable")
     c.assert_clean()
 
 
-@check("web-pano-storage-quota", "web")
-def web_pano_storage_quota(c):
-    """A full localStorage must surface 'Save failed' AND keep the edit."""
+@check("web-horizon-storage-quota", "web")
+def web_horizon_storage_quota(c):
+    """A full localStorage must surface 'Save failed', keep the edit on screen
+    and arm the leave-page warning; the next successful save catches up."""
     boot(c)
     open_editor(c)
-    paint(c)
     c.page.evaluate(
         """() => {
           window.__origSet = Storage.prototype.setItem;
@@ -464,164 +450,148 @@ def web_pano_storage_quota(c):
           };
         }""")
     try:
-        c.page.click("#ed-save")
-        c.page.wait_for_function(
-            """() => (document.querySelector('#ed-status')?.textContent || '')
-                       .includes('Save failed')""", timeout=10000)
-        c.expect(active_strokes(c) <= 0,
-                 "a failed save must not have persisted strokes")
-        c.expect("Unsaved" in c.page.inner_text("#ed-status")
-                 or "Save failed" in c.page.inner_text("#ed-status"),
-                 "the edit must remain (dirty) after a failed save")
+        sketch(c)
+        wait_status(c, "Save failed", timeout=10000)
+        c.expect(active_points(c) <= 0, "a failed save must not have stored points")
+        c.expect("skyline point" in c.page.inner_text("#hz-summary"), "the edit stays on screen")
+        source = (ROOT / 'web/app.js').read_text(encoding='utf-8')
+        horizon = re.search(r'\./horizon\.js\?v=\d+', source).group(0)
+        c.expect(c.page.evaluate("async m => (await import(m)).horizonUnsaved()", horizon),
+                 "the leave-page warning must be armed after a failed save")
     finally:
         c.page.evaluate("() => { Storage.prototype.setItem = window.__origSet; }")
+    click_grid(c, 0.85, 0.40)
+    wait_status(c, "Saved")
+    c.expect(active_points(c) >= 3, "the next save stores everything, including the earlier sketch")
     c.allow_console_errors("intentional QuotaExceededError")
     c.assert_clean()
 
 
-@check("web-pano-canvas-dpr-resize", "web")
-def web_pano_canvas_dpr_resize(c):
+@check("web-horizon-canvas-dpr-resize", "web")
+def web_horizon_canvas_dpr_resize(c):
     """The editor canvas is DPR-aware and follows a resize (ResizeObserver)."""
     boot(c)
     open_editor(c)
 
     def dims():
         return c.page.evaluate(
-            """() => { const cv = document.querySelector('#pano-canvas');
-                 const boxEl = document.querySelector('#pano-box');
+            """() => { const cv = document.querySelector('#hz-canvas');
                  return { w: cv.width, h: cv.height,
-                          bw: cv.getBoundingClientRect().width, bh: cv.getBoundingClientRect().height,
-                          dpr: window.devicePixelRatio || 1 }; }""")
+                          bw: cv.getBoundingClientRect().width,
+                          dpr: Math.min(3, window.devicePixelRatio || 1) }; }""")
 
-    for width in (1024, 1500):
+    for width in (1024, 1500, 390):
         c.page.set_viewport_size({"width": width, "height": 900})
         c.page.wait_for_timeout(400)
         d = dims()
         c.expect(abs(d["w"] - d["bw"] * d["dpr"]) <= 2,
-                 f"canvas backing store {d['w']} != box width {d['bw']} * dpr "
-                 f"{d['dpr']} at {width}px")
+                 f"canvas backing store {d['w']} != box width {d['bw']} * dpr {d['dpr']} at {width}px")
         c.expect(d["w"] > 0 and d["h"] > 0, "canvas must keep a backing store")
     c.page.set_viewport_size({"width": 1366, "height": 900})
     c.assert_clean()
 
 
-@check("web-horizon-stage-preserves-photo-aspect", "web")
-def web_horizon_stage_preserves_photo_aspect(c):
-    """The panorama stage follows each source aspect and retains its edge pixels."""
+@check("web-horizon-photo-placement", "web")
+def web_horizon_photo_placement(c):
+    """A 2:1 photo is a full panorama laid around the whole grid; any other
+    shape is a 60 deg partial photo; the photo is drawn where it belongs."""
     boot(c)
     tab(c, "horizon")
-    for label, width, height in (("wide", 144, 48), ("portraitish", 96, 72)):
-        expected = width / height
-        c.page.locator("#pano-file").set_input_files({
-            "name": f"aspect-{label}.png", "mimeType": "image/png",
-            "buffer": horizon_test_png(width, height),
-        })
-        c.page.wait_for_function(
-            """(expected) => {
-              const cv = document.querySelector('#pano-canvas');
-              if (!cv || cv.width < 80 || cv.height < 20) return false;
-              const ratio = cv.width / cv.height;
-              if (Math.abs(ratio - expected) > 0.03) return false;
-              const ctx = cv.getContext('2d');
-              const y = Math.floor(cv.height / 2);
-              // The persistent altitude ruler occupies the first 43 CSS pixels.
-              const left = ctx.getImageData(Math.floor(Math.max(cv.width * .02,
-                48 * (window.devicePixelRatio || 1))), y, 1, 1).data;
-              const right = ctx.getImageData(Math.floor(cv.width * .98), y, 1, 1).data;
-              return left[0] > left[2] && right[2] > right[0];
-            }""",
-            arg=expected, timeout=15000)
-        measured = c.page.evaluate("""() => {
-          const cv = document.querySelector('#pano-canvas');
-          const r = cv.getBoundingClientRect();
-          return { backing: cv.width / cv.height, display: r.width / r.height,
-            width: r.width, height: r.height };
-        }""")
-        c.expect(abs(measured["backing"] - expected) <= 0.03
-                 and abs(measured["display"] - expected) <= 0.05,
-                 f"{label} panorama source aspect was not preserved: {measured}")
+    upload_photo(c, "full.png", horizon_test_png(144, 72))
+    c.expect_eq(c.page.locator("#hz-ph-width").input_value(), "360", "a 2:1 photo is a full panorama")
+    c.expect(c.page.locator("#hz-ph-roll").is_disabled(), "a full panorama is not rolled")
+    c.page.locator('#hz-guide [data-guide="close"]').click()
+    colours = c.page.evaluate("""() => {
+      const cv = document.querySelector('#hz-canvas'), ctx = cv.getContext('2d');
+      const r = cv.getBoundingClientRect(), dpr = cv.width / r.width;
+      // grid margins 40/8 px, altitude -10..80 at zoom 1; sample 5 deg altitude
+      const x = (az) => (40 + az / 360 * (r.width - 48)) * dpr;
+      const y = (24 + (80 - 5) / 90 * (r.height - 32)) * dpr;
+      const at = (az) => [...ctx.getImageData(Math.round(x(az)), Math.round(y), 1, 1).data];
+      return { west: at(20), mid: at(180), east: at(340) };
+    }""")
+    c.expect(colours["west"][0] > colours["west"][2], f"the photo's left edge sits just east of north: {colours}")
+    c.expect(colours["east"][2] > colours["east"][0], f"the photo's right edge sits just west of north: {colours}")
+    c.expect(colours["mid"][1] > colours["mid"][0], f"the photo centre faces south: {colours}")
+    upload_photo(c, "partial.png", horizon_test_png(96, 72))
+    c.expect_eq(c.page.locator("#hz-ph-width").input_value(), "60", "an ordinary photo starts 60 deg wide")
+    c.expect(c.page.locator("#hz-ph-roll").is_enabled(), "a partial photo can be levelled")
+    c.expect("photo" in c.page.inner_text("#hz-list"), "the list marks horizons with a photo")
     c.assert_clean()
 
 
-@check("web-horizon-profile-region", "web")
-def web_horizon_profile_region(c):
-    """The Horizon view has a readable graph, honest summaries, and bin details in its rail."""
+@check("web-horizon-detect-skyline", "web")
+def web_horizon_detect_skyline(c):
+    """Detect skyline turns a daylight photo into points at the right height:
+    ground from 40% down a 2:1 panorama is 18 deg above the level horizon."""
     boot(c)
     tab(c, "horizon")
-    c.page.click("#pano-blank")
-    panel = c.page.locator(".horizon-profile-panel")
-    panel.wait_for(state="visible", timeout=10000)
-    c.expect(not panel.evaluate('e=>e.open'), 'profile starts collapsed to keep drawing simple')
-    panel.locator('summary').first.click()
-    c.expect(panel.bounding_box()["height"] >= 190,
-             "the expanded profile panel must remain readable")
-    c.page.locator('.horizon-advanced').evaluate('e=>e.open=true')
-    c.expect_eq(c.page.locator(".horizon-profile-metrics > span").count(), 4,
-                "profile summary must show coverage, profile value, landmarks, and confidence counts")
-    c.expect(c.page.locator(".horizon-selected-bin").is_visible(),
-             "selected-bin values belong in the settings rail")
-    c.page.locator("#pano-profile").click(position={"x": 220, "y": 70})
-    c.expect("Azimuth" in c.page.inner_text("#panoProfileBinSummary"),
-             "clicking the graph must update the right-rail selected-bin values")
-    metrics = c.page.inner_text(".horizon-profile-metrics")
-    c.expect("highest obstruction" in metrics.lower(),
-             f"obstacle mode must label the measured peak honestly: {metrics}")
+    upload_photo(c, "garden.png", skyline_test_png(360, 180, 0.40))
+    c.page.locator("#hz-detect").click()
+    c.page.wait_for_function("() => /Detected \\d+ skyline points/.test(document.querySelector('#hz-note').textContent)",
+                             timeout=10000)
+    pts = active_horizon(c)["points"]
+    c.expect(len(pts) >= 2, f"detection must store points: {pts}")
+    c.expect(all(abs(p["alt"] - 18) <= 1.5 for p in pts), f"detected skyline must sit at 18 deg: {pts[:6]}")
+    c.expect(min(p["az"] for p in pts) <= 5 and max(p["az"] for p in pts) >= 355,
+             "a full panorama is detected all the way round")
+    c.page.click("#ed-undo")
+    c.page.wait_for_timeout(200)
+    c.expect_eq(active_points(c), 0, "detection is one undoable step")
     c.assert_clean()
 
 
-@check("web-sky-band-no-diagonal-chord", "web")
-def web_sky_band_no_chord(c):
-    """Regression pin (0.6.13 follow-up): the sky-mode blocked region is drawn
-    per contiguous azimuth run, so a gap is never bridged by a straight chord.
-    Runs the SHARED geometry as served in the browser."""
+@check("web-horizon-align-moves-skyline", "web")
+def web_horizon_align_moves_skyline(c):
+    """Turning the photo moves the traced skyline with it, as one undo step;
+    Align mode drags the photo."""
     boot(c)
-    res = c.page.evaluate(
-        """async () => {
-          const H = await import('/horizon.js');
-          const BINS = 720;
-          const fill = (from, to, v) => {
-            const a = new Array(BINS).fill(90);
-            for (let i = from; i < to; i++) a[i] = v;
-            return a;
-          };
-          const mixed = {
-            azOffset: 0, altBottom: 0, altTop: 90, fov: 360, paintMode: 'sky',
-            blockAbove: false,
-            profile: fill(0, 200, 10).map((v, i) => (i >= 300 && i < 500 ? 5 : v)),
-            profileTop: fill(0, 200, 40).map((v, i) => (i >= 300 && i < 500 ? 90.5 : v)),
-          };
-          const polys = H.skyBandPolygons(mixed, 720, 56, 0, 40, 0, 360);
-          // complement contract at three columns (band / gap / outside)
-          const bands = H.visibleSkyBands(mixed, mixed.altBottom, 90);
-          const selfIntersects = (pts) => {
-            const n = pts.length;
-            const cross = (o, a, b) => (a[0]-o[0])*(b[1]-o[1]) - (a[1]-o[1])*(b[0]-o[0]);
-            const proper = (p1,p2,p3,p4) => {
-              const d1=cross(p3,p4,p1), d2=cross(p3,p4,p2), d3=cross(p1,p2,p3), d4=cross(p1,p2,p4);
-              return ((d1>0)!==(d2>0)) && ((d3>0)!==(d4>0));
-            };
-            for (let i=0;i<n;i++) for (let j=i+1;j<n;j++) {
-              if ((i+1)%n===j || (j+1)%n===i) continue;
-              if (proper(pts[i],pts[(i+1)%n],pts[j],pts[(j+1)%n])) return true;
-            }
-            return false;
-          };
-          return {
-            polys: polys.length,
-            intersects: polys.map(selfIntersects),
-            gapVis: bands[250].vis,
-            bandVis: bands[100].vis,
-            openVis: bands[400].vis,
-          };
-        }""")
-    c.expect(res["polys"] == 2, f"a blocked gap must split the band into 2 runs, got {res['polys']}")
-    c.expect(not any(res["intersects"]), "a sky-band polygon self-intersects")
-    c.expect(res["gapVis"] is None,
-             f"the fully-blocked columns must have no visible band: {res['gapVis']}")
-    c.expect(res["bandVis"] and abs(res["bandVis"][0] - 10) < 1e-6,
-             f"the band column must start at the painted ceiling: {res['bandVis']}")
-    c.expect(res["openVis"] and abs(res["openVis"][0] - 5) < 1e-6,
-             f"the open-above run must start at its painted floor: {res['openVis']}")
+    tab(c, "horizon")
+    upload_photo(c, "partial.png", horizon_test_png(96, 72))
+    c.page.locator('#hz-guide [data-guide="close"]').click()
+    sketch(c, 0.35, 0.65, 0.5, 0.45)
+    before = active_horizon(c)
+    heading = c.page.locator("#hz-ph-heading")
+    heading.fill(str(before["photo"]["heading"] + 10))
+    heading.dispatch_event("change")
+    c.page.wait_for_timeout(200)
+    after = active_horizon(c)
+    c.expect_eq(after["photo"]["heading"], before["photo"]["heading"] + 10, "the typed north direction applies")
+    c.expect_eq([round(p["az"] - 10, 2) for p in after["points"]], [p["az"] for p in before["points"]],
+                "every skyline point turns with the photo")
+    c.page.click("#ed-undo")
+    c.page.wait_for_timeout(200)
+    c.expect_eq(active_horizon(c)["points"], before["points"], "the turn is one undo step")
+    c.page.click("#hz-mode-align")
+    c.expect_eq(c.page.get_attribute("#hz-mode-align", "aria-pressed"), "true", "Align mode is announced")
+    sx, sy = canvas_point(c, 0.5, 0.5)
+    c.page.mouse.move(sx, sy)
+    c.page.mouse.down()
+    c.page.mouse.move(sx + 40, sy, steps=6)
+    c.page.mouse.up()
+    c.page.wait_for_timeout(200)
+    c.expect(active_horizon(c)["photo"]["heading"] > before["photo"]["heading"],
+             "dragging the photo to the right turns it east")
+    c.assert_clean()
+
+
+@check("web-horizon-blocks-planning", "web")
+def web_horizon_blocks_planning(c):
+    """An imported horizon file becomes the active horizon and planning uses
+    it: a wall up to the zenith all round leaves Tonight with no usable target."""
+    boot(c)
+    c.expect(c.page.locator(READY).count() > 0, "without a horizon Tonight has targets")
+    tab(c, "horizon")
+    c.page.locator("#hz-import-file").set_input_files({
+        "name": "wall.hrz", "mimeType": "text/plain",
+        "buffer": b"# N.I.N.A. horizon\n0 90\n120 90\n240 90\n"})
+    c.page.wait_for_function("() => /Imported 3 points/.test(document.querySelector('#hz-note').textContent)",
+                             timeout=10000)
+    c.expect_eq(active_horizon(c)["name"], "wall", "the file name names the horizon")
+    tab(c, "tonight")
+    c.page.wait_for_timeout(600)
+    c.expect_eq(c.page.locator(READY).count(), 0, "a horizon up to the zenith must leave nothing usable")
+    c.expect("Horizon: wall" in c.page.inner_text("main"), "Tonight names the active horizon")
     c.assert_clean()
 
 
@@ -951,18 +921,22 @@ def web_accessibility_essentials(c):
              "closing a Tonight detail must restore focus to its ranked target button")
 
     tab(c, "horizon")
-    c.page.wait_for_selector("#pano-blank")
-    c.page.click("#pano-blank")
-    c.page.wait_for_selector("#pano-canvas[aria-describedby='panoChartSummary']")
-    c.expect_eq(c.page.locator("[id^=ed-prov-]").count(), 0, "Calibration provenance controls are removed")
-    for selector in ("#ed-landmark-add",
-                     "#ed-profile-apply", "#ed-profile-compare"):
-        # The metadata groups are deliberately collapsed by default; assert
-        # that the controls exist without requiring the user to expand every
-        # progressive-disclosure section in this accessibility smoke.
-        c.page.wait_for_selector(selector, state="attached")
-    c.expect(c.page.inner_text("#panoChartSummary"),
-             "the web horizon editor needs a text alternative")
+    c.page.wait_for_selector("#hz-new-draw")
+    c.page.click("#hz-new-draw")
+    c.page.wait_for_selector("#hz-canvas[aria-describedby='hz-summary hz-keys']")
+    c.expect(c.page.inner_text("#hz-summary"), "the web horizon editor needs a text alternative")
+    # keyboard-only editing: add a point by numbers, then select and move it
+    c.page.locator("#hz-points-panel summary").click()
+    c.page.fill("#hz-add-az", "180")
+    c.page.fill("#hz-add-alt", "12")
+    c.page.click("#hz-add")
+    c.page.locator("#hz-canvas").focus()
+    c.page.keyboard.press("ArrowRight")
+    c.expect("point 1 of 1" in c.page.inner_text("#ed-pos"), "arrow keys select points and say which")
+    c.page.keyboard.press("ArrowUp")
+    c.expect_eq(c.page.locator("#hz-sel-alt").input_value(), "12.5", "Up raises the selected point")
+    c.page.keyboard.press("Delete")
+    c.expect("nothing is blocked" in c.page.inner_text("#hz-summary"), "Delete removes the selected point")
     c.assert_clean()
 
 
@@ -1442,123 +1416,21 @@ def web_mag_slider_changes_sky(c):
     c.assert_clean()
 
 
-def crop_drag(c, x0: float, x1: float):
-    """Drag the crop band (fractions of the editor canvas width) at mid height."""
-    box = c.page.locator("#pano-canvas").bounding_box()
-    c.expect(box and box["width"] > 20, "pano canvas must have a size")
-    y = box["y"] + box["height"] * 0.5
-    sx = box["x"] + box["width"] * x0
-    ex = box["x"] + box["width"] * x1
-    c.page.mouse.move(sx, y)
-    c.page.mouse.down()
-    for i in range(1, 9):
-        c.page.mouse.move(sx + (ex - sx) * i / 8, y)
-    c.page.mouse.up()
-    c.page.wait_for_timeout(150)
-
-
-def active_profile(c):
-    st = pano_state(c)
-    if not st or not st.get("panos"):
-        return None
-    p = next((p for p in st["panos"] if p.get("id") == st.get("activeId")),
-             st["panos"][0])
-    return p.get("profile")
-
-
-@check("web-pano-crop-recalibrate", "web")
-def web_pano_crop_recalibrate(c):
-    """Non-destructive kept-band crop: it shrinks the FOV, moves the left-edge
-    azimuth and transforms the strokes (the photo and paint survive - unlike the
-    desktop, which re-encodes and wipes). Crop both sides of a partial-FOV frame,
-    save, reload, and confirm the blocked profile is byte-identical."""
+@check("web-pref-change-keeps-horizon-history", "web")
+def web_pref_change_keeps_horizon_history(c):
+    """WE-05 (0.6.32 review), current form: a preference change while the
+    editor is open re-renders it, and must keep the SAME undo history - a fresh
+    history would silently drop the user's undo steps."""
     boot(c)
     open_editor(c)
-    paint(c)
-    c.page.locator('.ed-calibration summary').click()
-    # a partial 180 deg frame so the crop is a real recalibration
-    c.page.evaluate(
-        """() => { const s = document.querySelector('#ed-fov');
-             s.value = '180'; s.dispatchEvent(new Event('input', { bubbles: true }));
-             s.dispatchEvent(new Event('change', { bubbles: true })); }""")
-    c.page.wait_for_timeout(200)
-
-    c.page.click("#ed-crop")
-    crop_drag(c, 0.25, 0.75)                 # keep the middle half
-    c.page.click("#ed-crop-apply")
-    c.page.wait_for_timeout(250)
-    # kept half of a 180 deg frame -> 90 deg; az = 0 + 0.25*180 = 45
-    c.expect_in("90\u00B0", c.page.locator("#ed-fov-v").text_content(),
-                "the crop must keep half the FOV")
-    c.expect_in("45\u00B0", c.page.locator("#ed-az-v").text_content(),
-                "the crop must move the left-edge azimuth")
-    c.expect_in("Unsaved", c.page.inner_text("#ed-status"),
-                "a crop must dirty the editor")
-    c.expect(not c.page.get_attribute("#ed-undo", "disabled"),
-             "a crop must be one undoable history entry")
-
-    # undo restores the pre-crop calibration; redo reapplies the crop
-    c.page.click("#ed-undo")
-    c.page.wait_for_function(
-        """() => (document.querySelector('#ed-fov-v')?.textContent || '').includes('180')""",
-        timeout=8000)
-    c.page.click("#ed-redo")
-    c.page.wait_for_function(
-        """() => (document.querySelector('#ed-fov-v')?.textContent || '').includes('90')""",
-        timeout=8000)
-
-    c.page.click("#ed-save")
-    c.page.wait_for_function(
-        """() => (document.querySelector('#ed-status')?.textContent || '').includes('Saved')""",
-        timeout=10000)
-    c.expect(active_strokes(c) > 0,
-             "the cropped strokes must survive (non-destructive crop)")
-    saved = active_profile(c)
-    c.expect(saved and len(saved) == 720, "the cropped profile must be saved")
-
-    # reload: the cropped frame and its blocked profile survive untouched
-    c.goto("/")
-    tab(c, "horizon")
-    c.page.wait_for_selector("#pano-list li[data-id]", timeout=30000)
-    c.page.click("#pano-list li[data-id]")
-    c.page.wait_for_selector("#pano-canvas", timeout=30000)
-    c.page.locator('.horizon-advanced').evaluate('e=>e.open=true')
-    c.page.locator('.ed-calibration summary').click()
-    c.expect_in("90\u00B0", c.page.locator("#ed-fov-v").text_content(),
-                "reload must keep the cropped FOV")
-    c.expect(active_profile(c) == saved,
-             "the blocked profile must match the pre-save geometry")
-    c.assert_clean()
-
-
-@check("web-pref-change-keeps-unsaved-paint", "web")
-def web_pref_change_keeps_unsaved_paint(c):
-    """WE-05 (0.6.32 review): a preference change while the editor is open must
-    not clear the unsaved state.
-
-    `renderHorizon()` used to call `newHistory(p)` on EVERY render, which makes
-    the current - including unsaved - state the "saved" baseline. So any
-    `refreshView()` with the editor open (a min-alt, site, date, rig, Bortle,
-    filter, size-unit, moon-aware or timezone change) flipped the chip to
-    "Saved", made `horizonUnsaved()` false, and silently disarmed BOTH the
-    `flushHorizonEdits()` call on navigating away and the `beforeunload` guard:
-    the paint was lost on reload. The baseline must survive a re-render."""
-    boot(c)
-    open_editor(c)
-    paint(c)
-    c.expect_in("Unsaved", c.page.inner_text("#ed-status"),
-                "painting must mark the editor dirty")
-
-    # trigger 1: the min-alt slider - it only re-renders on 'change' (an 'input'
-    # tick just moves the label; the app deliberately avoids rebuilding the view
-    # under a dragging pointer), so the event MATTERS here.
+    sketch(c)
+    points = active_points(c)
+    c.expect(points >= 2, "the sketch stored points")
+    # trigger 1: the min-alt slider re-renders on 'change'
     c.page.evaluate("""() => { const s = document.querySelector('#tb-minalt');
         s.value = String(Number(s.value) + 3);
         s.dispatchEvent(new Event('change', { bubbles: true })); }""")
     c.page.wait_for_timeout(700)
-    c.expect_in("Unsaved", c.page.inner_text("#ed-status"),
-                "a min-alt change must not clear the unsaved state (WE-05)")
-
     # trigger 2: a DATE change - a different refreshView path
     c.page.evaluate("""() => { const d = document.querySelector('#tb-date');
         const dt = new Date(d.value + 'T12:00:00Z');
@@ -1566,17 +1438,10 @@ def web_pref_change_keeps_unsaved_paint(c):
         d.value = dt.toISOString().slice(0, 10);
         d.dispatchEvent(new Event('change', { bubbles: true })); }""")
     c.page.wait_for_timeout(800)
-    c.expect_in("Unsaved", c.page.inner_text("#ed-status"),
-                "a date change must not clear the unsaved state (WE-05)")
-
-    # and the flush path is armed again: leaving the tab persists the paint
-    paint(c, 0.66, 0.80, 0.35)
-    before = active_strokes(c)
-    tab(c, "tonight")
-    c.page.wait_for_timeout(400)
-    c.expect(active_strokes(c) > before,
-             "leaving the editor must FLUSH the unsaved paint (the guard was "
-             "disarmed by the bug)")
+    c.expect(not c.page.is_disabled("#ed-undo"), "undo must survive a re-render (WE-05)")
+    c.page.click("#ed-undo")
+    c.page.wait_for_timeout(200)
+    c.expect_eq(active_points(c), 0, "undo after a re-render still reaches the sketch")
     c.assert_clean()
 
 
@@ -1828,23 +1693,21 @@ def web_interval_view_agreement(c):
 
 
 # Photo restore must use the shipped CSP and real IndexedDB commit semantics.
-def panorama_module_url():
+def horizon_module_url():
     return re.search(r"from '(\./horizon\.js\?v=\d+)'",
                      (ROOT / 'web/app.js').read_text(encoding='utf-8')).group(1)
 
 
-PANORAMA_IMAGE_FIXTURE = """async ({url, color}) => {
+HORIZON_PHOTO_FIXTURE = """async ({url, color}) => {
   const H = await import(url);
   const canvas = document.createElement('canvas');
   canvas.width = canvas.height = 4;
   const ctx = canvas.getContext('2d');
   ctx.fillStyle = color; ctx.fillRect(0, 0, 4, 4);
   const image = canvas.toDataURL('image/png');
-  const snapshot = {activeId:'restore-photo',panos:[{
-    id:'restore-photo',name:'Photo restore',azOffset:0,altBottom:0,altTop:60,
-    fov:360,paintMode:'obstacle',profileBins:'world',strokes:[],
-    profile:Array(720).fill(-90),profileTop:Array(720).fill(-90),
-    hasImage:true,image
+  const snapshot = {activeId:'restore-photo',horizons:[{
+    id:'restore-photo',name:'Photo restore',points:[{az:90,alt:10}],
+    photo:{width:360,heading:180,tilt:0,roll:0},hasPhoto:true,image
   }]};
   return {image,snapshot};
 }"""
@@ -1852,19 +1715,19 @@ PANORAMA_IMAGE_FIXTURE = """async ({url, color}) => {
 
 def restored_image(c, url):
     return c.page.evaluate("""async url => {
-      const H=await import(url);const backup=await H.exportPanosWithImages();
-      return {image:backup.panos[0]?.image,hasImage:backup.panos[0]?.hasImage};
+      const H=await import(url);const backup=await H.exportHorizonsWithPhotos();
+      return {image:backup.horizons[0]?.image,hasPhoto:backup.horizons[0]?.hasPhoto};
     }""", url)
 
 
-@check('web-panorama-image-restore-durable', 'web')
-def panorama_image_restore_durable(c):
+@check('web-horizon-photo-restore-durable', 'web')
+def horizon_photo_restore_durable(c):
     boot(c)
-    url = panorama_module_url()
+    url = horizon_module_url()
     for color in ['#ff0000', '#0000ff']:
-        fixture = c.page.evaluate(PANORAMA_IMAGE_FIXTURE, {'url': url, 'color': color})
+        fixture = c.page.evaluate(HORIZON_PHOTO_FIXTURE, {'url': url, 'color': color})
         committed = c.page.evaluate("""async ({url,snapshot}) =>
-          (await import(url)).applyPanosSnapshot(snapshot)""",
+          (await import(url)).applyHorizonsSnapshot(snapshot)""",
           {'url': url, 'snapshot': fixture['snapshot']})
         c.expect(committed, 'photo restore must wait for successful persistence')
         c.expect_eq(restored_image(c, url)['image'], fixture['image'],
@@ -1876,46 +1739,46 @@ def panorama_image_restore_durable(c):
     c.assert_clean()
 
 
-@check('web-panorama-image-restore-transaction-abort', 'web')
-def panorama_image_restore_abort(c):
+@check('web-horizon-photo-restore-transaction-abort', 'web')
+def horizon_photo_restore_abort(c):
     boot(c)
-    url = panorama_module_url()
-    fixture = c.page.evaluate(PANORAMA_IMAGE_FIXTURE, {'url': url, 'color': '#ff0000'})
+    url = horizon_module_url()
+    fixture = c.page.evaluate(HORIZON_PHOTO_FIXTURE, {'url': url, 'color': '#ff0000'})
     c.expect(c.page.evaluate("""async ({url,snapshot}) =>
-      (await import(url)).applyPanosSnapshot(snapshot)""",
+      (await import(url)).applyHorizonsSnapshot(snapshot)""",
       {'url': url, 'snapshot': fixture['snapshot']}), 'initial photo must persist')
-    incoming = c.page.evaluate(PANORAMA_IMAGE_FIXTURE, {'url': url, 'color': '#0000ff'})
+    incoming = c.page.evaluate(HORIZON_PHOTO_FIXTURE, {'url': url, 'color': '#0000ff'})
     result = c.page.evaluate("""async ({url,snapshot}) => {
-      const H=await import(url),before=localStorage.getItem('nightseam_panos_v1');
+      const H=await import(url),before=localStorage.getItem('nightseam_horizons_v2');
       const original=IDBObjectStore.prototype.put;
       IDBObjectStore.prototype.put=function(...args){
         const request=original.apply(this,args);
-        if(this.name==='imgs')request.addEventListener('success',()=>this.transaction.abort(),{once:true});
+        if(this.name==='photos')request.addEventListener('success',()=>this.transaction.abort(),{once:true});
         return request;
       };
       let committed;
-      try {committed=await H.applyPanosSnapshot(snapshot);}
+      try {committed=await H.applyHorizonsSnapshot(snapshot);}
       finally {IDBObjectStore.prototype.put=original;}
-      return {committed,unchanged:before===localStorage.getItem('nightseam_panos_v1'),
-        memoryImage:H.activePano()._img};
+      return {committed,unchanged:before===localStorage.getItem('nightseam_horizons_v2'),
+        memoryImage:(await H.exportHorizonsWithPhotos()).horizons[0]?.image};
     }""", {'url': url, 'snapshot': incoming['snapshot']})
     c.expect_eq(result['committed'], False, 'request success followed by abort must fail restore')
-    c.expect(result['unchanged'], 'an image transaction abort must restore panorama localStorage')
+    c.expect(result['unchanged'], 'a photo transaction abort must restore the horizon records')
     c.expect_eq(result['memoryImage'], fixture['image'], 'an aborted restore must preserve live photos')
     failed_records = c.page.evaluate("""async ({url,snapshot}) => {
-      const H=await import(url),before=localStorage.getItem('nightseam_panos_v1');
+      const H=await import(url),before=localStorage.getItem('nightseam_horizons_v2');
       const original=Storage.prototype.setItem;
       Storage.prototype.setItem=function(key,value){
-        if(key==='nightseam_panos_v1')throw new DOMException('Injected quota failure','QuotaExceededError');
+        if(key==='nightseam_horizons_v2')throw new DOMException('Injected quota failure','QuotaExceededError');
         return original.call(this,key,value);
       };
       let committed;
-      try {committed=await H.applyPanosSnapshot(snapshot);}
+      try {committed=await H.applyHorizonsSnapshot(snapshot);}
       finally {Storage.prototype.setItem=original;}
-      return {committed,unchanged:before===localStorage.getItem('nightseam_panos_v1')};
+      return {committed,unchanged:before===localStorage.getItem('nightseam_horizons_v2')};
     }""", {'url': url, 'snapshot': incoming['snapshot']})
-    c.expect_eq(failed_records['committed'], False, 'a panorama record quota failure must abort restore')
-    c.expect(failed_records['unchanged'], 'a failed record write must leave panorama records intact')
+    c.expect_eq(failed_records['committed'], False, 'a horizon record quota failure must abort restore')
+    c.expect(failed_records['unchanged'], 'a failed record write must leave horizon records intact')
     c.page.reload()
     c.page.wait_for_selector(READY)
     c.expect_eq(restored_image(c, url)['image'], fixture['image'],
@@ -1923,13 +1786,13 @@ def panorama_image_restore_abort(c):
     c.assert_clean()
 
 
-@check('web-panorama-backup-unreadable-photo', 'web')
-def panorama_backup_unreadable_photo(c):
+@check('web-horizon-backup-unreadable-photo', 'web')
+def horizon_backup_unreadable_photo(c):
     boot(c)
-    url = panorama_module_url()
-    fixture = c.page.evaluate(PANORAMA_IMAGE_FIXTURE, {'url': url, 'color': '#ff0000'})
+    url = horizon_module_url()
+    fixture = c.page.evaluate(HORIZON_PHOTO_FIXTURE, {'url': url, 'color': '#ff0000'})
     c.expect(c.page.evaluate("""async ({url,snapshot}) =>
-      (await import(url)).applyPanosSnapshot(snapshot)""",
+      (await import(url)).applyHorizonsSnapshot(snapshot)""",
       {'url': url, 'snapshot': fixture['snapshot']}), 'initial photo must persist')
     c.page.reload()
     c.page.wait_for_selector(READY)
@@ -1937,21 +1800,21 @@ def panorama_backup_unreadable_photo(c):
       const H=await import(url),original=IDBObjectStore.prototype.get;
       IDBObjectStore.prototype.get=function(...args){
         const request=original.apply(this,args);
-        if(this.name==='imgs')request.addEventListener('success',()=>this.transaction.abort(),{once:true});
+        if(this.name==='photos')request.addEventListener('success',()=>this.transaction.abort(),{once:true});
         return request;
       };
       let readRejected=false;
-      try {await H.exportPanosWithImages();}catch {readRejected=true;}
+      try {await H.exportHorizonsWithPhotos();}catch {readRejected=true;}
       finally {IDBObjectStore.prototype.get=original;}
       await new Promise((resolve,reject)=>{
-        const request=indexedDB.open('nightseam-panoimg',1);
+        const request=indexedDB.open('nightseam-horizon-photos',1);
         request.onerror=()=>reject(request.error);
-        request.onsuccess=()=>{const db=request.result,tx=db.transaction('imgs','readwrite');
-          tx.objectStore('imgs').clear();tx.oncomplete=()=>{db.close();resolve();};
+        request.onsuccess=()=>{const db=request.result,tx=db.transaction('photos','readwrite');
+          tx.objectStore('photos').clear();tx.oncomplete=()=>{db.close();resolve();};
           tx.onabort=()=>{db.close();reject(tx.error);};};
       });
       let missingRejected=false;
-      try {await H.exportPanosWithImages();}catch {missingRejected=true;}
+      try {await H.exportHorizonsWithPhotos();}catch {missingRejected=true;}
       return {readRejected,missingRejected};
     }""", url)
     c.expect(result['readRejected'], 'backup must reject an aborted photo read after request success')
@@ -1962,7 +1825,7 @@ def panorama_backup_unreadable_photo(c):
 @check('web-preferences-replacement-persistence', 'web')
 def preferences_replacement_persistence(c):
     boot(c)
-    url = panorama_module_url()
+    url = horizon_module_url()
     result = c.page.evaluate("""async url => {
       const H=await import(url);
       H.setPrefs({moonAware:true,fltOiii:true,savedTargetIds:['ngc224'],reviewOldKey:'old'});
@@ -1993,34 +1856,31 @@ def preferences_replacement_persistence(c):
     c.assert_clean()
 
 
-@check('web-panorama-editor-history-rollback', 'web')
-def panorama_editor_history_rollback(c):
+@check("web-horizon-editor-history-rollback", "web")
+def horizon_editor_history_rollback(c):
+    """A failed whole-app restore rolls the horizons back AND reattaches the
+    editor's undo history, so the user's undo steps survive the failure."""
     boot(c)
     open_editor(c)
-    paint(c)
-    url = panorama_module_url()
+    sketch(c)
+    sketched = active_points(c)
+    url = horizon_module_url()
     result = c.page.evaluate("""async url => {
       const H=await import(url),checkpoint=H.captureEditorHistory();
-      const safety=await H.exportPanosWithImages();
-      const originallyDirty=H.horizonUnsaved();
-      if(!await H.applyPanosSnapshot({panos:[],activeId:null}))throw new Error('forward snapshot failed');
-      if(!await H.applyPanosSnapshot(safety))throw new Error('rollback snapshot failed');
+      const safety=await H.exportHorizonsWithPhotos();
+      if(!await H.applyHorizonsSnapshot({horizons:[],activeId:null}))throw new Error('forward snapshot failed');
+      if(!await H.applyHorizonsSnapshot(H.normalizeHorizons(safety)))throw new Error('rollback snapshot failed');
       const restored=H.restoreEditorHistory(checkpoint);
       H.renderHorizon(document.querySelector('#view'),()=>{});
-      return {originallyDirty,restored,dirty:H.horizonUnsaved(),
-        canUndo:!document.querySelector('#ed-undo').disabled};
+      return {restored,canUndo:!document.querySelector('#ed-undo').disabled};
     }""", url)
-    c.expect(result['originallyDirty'] and result['restored'] and result['dirty'] and result['canUndo'],
-             'failed restore rollback must preserve the dirty editor baseline and undo branch')
+    c.expect(result['restored'] and result['canUndo'],
+             'failed restore rollback must preserve the undo history')
+    c.expect_eq(active_points(c), sketched, 'the rollback restores the sketched skyline')
     c.page.click('#ed-undo')
-    c.expect_eq(c.page.evaluate("async url=>(await import(url)).horizonUnsaved()", url), False,
-                'Undo after rollback must still return to the original saved baseline')
+    c.page.wait_for_timeout(200)
+    c.expect_eq(active_points(c), 0, 'Undo after rollback reaches the state before the sketch')
     c.page.click('#ed-redo')
-    c.expect_eq(c.page.evaluate("async url=>(await import(url)).horizonUnsaved()", url), True,
-                'Redo after rollback must preserve the original unsaved edit')
+    c.page.wait_for_timeout(200)
+    c.expect_eq(active_points(c), sketched, 'Redo after rollback restores the sketch')
     c.assert_clean()
-
-
-# Import after helper definitions: these checks reuse the canonical browser paths.
-import horizon_geographic_checks  # noqa: E402,F401
-import horizon_geographic_fit_checks  # noqa: E402,F401

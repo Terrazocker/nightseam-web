@@ -64,7 +64,6 @@ export function vizTheme() {
     blockedDot: read("--viz-blocked-dot", "rgba(255,93,93,.40)"),
     ceiling: read("--viz-ceiling", "#98a2b8"),
     ceilingTop: read("--viz-ceiling-top", "#ffd166"),
-    assumedHatch: read("--viz-assumed-hatch", "rgba(210,225,255,.28)"),
     minFill: read("--viz-min-fill", "rgba(120,140,180,.10)"),
     minStroke: read("--viz-min-stroke", "rgba(150,165,200,.55)"),
     minLabel: read("--viz-min-label", "rgba(150,165,200,.85)"),

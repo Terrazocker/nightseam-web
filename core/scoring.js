@@ -10,7 +10,7 @@
 
 import { gmstDeg, precessJ2000ToDate, refractionDeg, sepDeg } from './astro.js';
 import { visibilityReason, summarizeVisibility } from './visibility.js';
-import { ceilFor, normalizeCoverageEvidence } from './horizon.js';
+import { BINS, BIN_DEG, NO_BLOCK } from './horizon.js';
 
 /* how badly an object type suffers under moonlight (nebulae worst, clusters
    least). CO-09 (0.6.32 review): null prototype, because `otype` and the filter
@@ -145,21 +145,12 @@ export function scoreNightTracks(tracks, objects, jd0, step, minAlt, pano, ctx =
   const windowDays = windowEnd - windowStart;
   const wantAlts = !!ctx.maxAlt;
 
-  // horizon profile as flat typed arrays; the ceiling is inlined bit-for-bit
-  // with core/horizon.js::ceilFor (world-azimuth bins, FOV gate, blockAbove)
-  // Elements follow ceilFor too: a non-finite or non-number value (NaN, "10",
-  // null) is "nothing recorded", never a coerced number or a NaN ceiling.
-  const sky = !!(pano && pano.paintMode === 'sky');
-  const finiteOr = (fallback) => (v) => (Number.isFinite(v) ? v : fallback);
-  const prof = (pano && Array.isArray(pano.profile) && pano.profile.length === 720)
-    ? Float64Array.from(pano.profile, finiteOr(sky ? 90 : -90)) : null;
-  const topsArr = (pano && Array.isArray(pano.profileTop) && pano.profileTop.length === 720)
-    ? Float64Array.from(pano.profileTop, finiteOr(-90)) : null;
-  const converted = !!(pano && pano.photoModel);
-  const fov = pano && Number(pano.fov) > 0 ? Number(pano.fov) : 360;
-  const azOff = pano ? (Number(pano.azOffset) || 0) : 0;
-  const blockAbove = !!(pano && pano.blockAbove);
-  const measuredPolicy=pano?normalizeCoverageEvidence(pano.coverageEvidence).policy!=='legacy':false;
+  // The horizon profile as a flat typed array; the lookup is inlined
+  // bit-for-bit with core/horizon.js::ceilFor (world-azimuth bins). A
+  // non-finite element (NaN, "10", null) is "nothing recorded", as in ceilFor.
+  const prof = (pano && Array.isArray(pano.profile) && pano.profile.length === BINS)
+    ? Float64Array.from(pano.profile, (v) => (typeof v === 'number' && Number.isFinite(v) ? v : NO_BLOCK))
+    : null;
 
   // moon path: the minimum distance only depends on the night's age + filter,
   // so the Math.pow curve is evaluated once per batch
@@ -210,21 +201,13 @@ export function scoreNightTracks(tracks, objects, jd0, step, minAlt, pano, ctx =
       prevAlt = alt;
       if (wantAlts) alts[i] = alt;
 
-      let ceil = -90, top = null;
+      let ceil = NO_BLOCK;
+      const top = null;
       if (prof) {
-        const d = (((az - azOff) % 360) + 360) % 360;
-        if (d > fov) {
-          ceil = sky || converted ? 90 : -90;
-        } else {
-          let b = Math.floor((((az % 360) + 360) % 360) / 0.5);
-          if (b > 719) b = 719;
-          ceil = prof[b];
-          if (sky && blockAbove && topsArr && topsArr[b] > -89.5) top = topsArr[b];
-        }
+        let b = Math.floor((((az % 360) + 360) % 360) / BIN_DEG);
+        if (b > BINS - 1) b = BINS - 1;
+        ceil = prof[b];
       }
-      // New evidence policies use the shared coverage query. Keep the historical
-      // typed-array path unchanged for old records, without duplicating new rules.
-      if(measuredPolicy){const bounds=ceilFor(pano,az);ceil=bounds.ceil;top=bounds.ceilTop;}
 
       const up = alt > 0;
       const vis = alt >= minAlt && alt > ceil && alt < (top == null ? 90.5 : top);

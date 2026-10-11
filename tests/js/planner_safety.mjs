@@ -1,12 +1,12 @@
 /*
- * Timezone entry points and the shared unknown-horizon reason (review, October 11).
+ * Timezone entry points and the shared horizon reason (review, October 11).
  *
  * - every timezone entry point accepts only zones Intl can resolve; an unknown
  *   stored zone never reaches core/time.js, whose null offset would silently
  *   plan in the browser's zone
  * - backup sites with an unknown zone are rejected while the bundle is staged
- * - panoramaVisibilityReason is the one place that names an evidence-less
- *   horizon block, and otherwise agrees with visibilityReason + ceilFor
+ * - panoramaVisibilityReason agrees with visibilityReason + ceilFor, so every
+ *   view names a horizon block identically
  */
 import assert from 'node:assert/strict';
 
@@ -18,7 +18,7 @@ globalThis.localStorage = {
 };
 
 const WS = await import('../../web/webstore.js');
-const { ceilFor, normalizeCoverageEvidence } = await import('../../core/horizon.js');
+const { ceilFor, withProfile } = await import('../../core/horizon.js');
 const { VISIBILITY_REASON, visibilityReason, panoramaVisibilityReason } =
   await import('../../core/visibility.js');
 
@@ -46,24 +46,18 @@ assert.throws(() => WS.stageBackup(bundle('Mars/Olympus')), /unknown timezone/);
 assert.throws(() => WS.normalizeWebPrefs({ tz: 'Mars/Olympus' }, { strict: true }), /tz is invalid/);
 
 /* 4. shared reason ---------------------------------------------------------- */
-const strict = {
-  id: 'p1', fov: 80, azOffset: 350, altBottom: 0, altTop: 60, paintMode: 'obstacle', strokes: [],
-  profile: Array(720).fill(10), profileTop: Array(720).fill(-90), profileBins: 'world',
-  coverageEvidence: normalizeCoverageEvidence({ version: 1, policy: 'strict-measured' }, true),
-};
-const legacy = { ...strict, coverageEvidence: undefined };
+const skyline = withProfile({ id: 'h1', points: [{ az: 0, alt: 10 }, { az: 180, alt: 30 }] });
 const R = VISIBILITY_REASON;
-assert.equal(R.UNKNOWN_HORIZON, 'unknown_horizon');
-assert.equal(panoramaVisibilityReason(strict, 40, 180, 15), R.UNKNOWN_HORIZON, 'outside photographed azimuths');
-assert.equal(panoramaVisibilityReason(strict, 80, 20, 15), R.UNKNOWN_HORIZON, 'above photographed altitudes');
-assert.equal(panoramaVisibilityReason(strict, 5, 20, 0), R.BLOCKED_BY_HORIZON, 'recorded obstruction');
-assert.equal(panoramaVisibilityReason(strict, 40, 20, 15), R.VISIBLE);
-assert.equal(panoramaVisibilityReason(strict, 40, 20, 15, false), R.OUTSIDE_SELECTED_WINDOW);
-assert.equal(panoramaVisibilityReason(null, 40, 180, 15), R.VISIBLE, 'no panorama: no ceiling');
+assert.equal(Object.values(R).includes('unknown_horizon'), false, 'there is no unknown-coverage reason any more');
+assert.equal(panoramaVisibilityReason(skyline, 25, 180, 15), R.BLOCKED_BY_HORIZON, 'recorded obstruction');
+assert.equal(panoramaVisibilityReason(skyline, 35, 180, 15), R.VISIBLE);
+assert.equal(panoramaVisibilityReason(skyline, 12, 0, 15), R.BELOW_MINIMUM_ALTITUDE);
+assert.equal(panoramaVisibilityReason(skyline, 35, 180, 15, false), R.OUTSIDE_SELECTED_WINDOW);
+assert.equal(panoramaVisibilityReason(null, 40, 180, 15), R.VISIBLE, 'no horizon: no ceiling');
 for (const [alt, az] of [[40, 180], [5, 20], [12, 30], [-3, 90]]) {
-  const c = ceilFor(legacy, az);
-  assert.equal(panoramaVisibilityReason(legacy, alt, az, 0), visibilityReason(alt, 0, c.ceil, c.ceilTop),
-    `legacy panoramas keep the historical reason at ${alt}/${az}`);
+  const c = ceilFor(skyline, az);
+  assert.equal(panoramaVisibilityReason(skyline, alt, az, 0), visibilityReason(alt, 0, c.ceil, c.ceilTop),
+    `the horizon reason is visibilityReason + ceilFor at ${alt}/${az}`);
 }
 
 /* 5. backlog: backup ranges and the slider-representable minimum altitude --- */
@@ -80,37 +74,20 @@ for (const [given, kept] of [[2, 5], [33.4, 33], [80, 70], [null, null]]) {
 
 /* 6. backlog: scorer elements, popularity and moon inputs ------------------- */
 const S = await import('../../core/scoring.js');
-const H2 = await import('../../core/horizon.js');
-const Hist = await import('../../core/panohistory.js');
 assert.equal(S.popularityFactor(1e-4), 0, 'tiny counts never give a negative tiebreaker');
 assert.equal(S.popularityFactor(-3), 0);
 assert.ok(S.popularityFactor(1e9) <= 1 && S.popularityFactor(1000) > 0.3);
 const obj = { id: 'm31', ra_hours: 0.7123, dec_deg: 41.269, otype: 'galaxy' };
 const night = [2461325.3, 2461325.75, 6 / 1440];
-const base = { id: 'p', fov: 360, azOffset: 0, altBottom: -10, altTop: 60, paintMode: 'obstacle', strokes: [] };
-const stats = (profile) => S.nightStats(obj, ...night, 15, { ...base, profile }, 52.52, 13.405);
+const stats = (profile) => S.nightStats(obj, ...night, 15, { id: 'h', profile }, 52.52, 13.405);
 const open = stats(Array(720).fill(-90));
+const blocked = stats(Array(720).fill(89));
+assert.ok(blocked.visibleMinutes === 0 && open.visibleMinutes > 0, 'the scorer reads the horizon profile');
 for (const bad of [NaN, '10', null]) {
   assert.deepEqual(stats(Array(720).fill(bad)), open, `a ${String(bad)} element reads as unrecorded, like ceilFor`);
 }
 const moon = S.nightStats(obj, ...night, 15, null, 52.52, 13.405, { moonAware: true,
   moonAlt: Array(76).fill(30), moonAz: Array(76).fill(180) });
 assert.ok(Number.isFinite(moon.sMoon), 'missing moon inputs keep a finite score');
-
-/* 7. backlog: blank horizons and history keys ------------------------------- */
-const sky = { paintMode: 'sky', strokes: [] }; H2.clearMask(sky);
-const ground = { paintMode: 'obstacle', strokes: [] }; H2.clearMask(ground);
-assert.equal(H2.hasHorizonDrawing(sky), false, 'a blank sky-mode horizon can be converted');
-assert.equal(H2.hasHorizonDrawing(ground), false);
-assert.equal(H2.hasHorizonDrawing({ ...ground, strokes: [{ m: 'e', x: 1, y: 1, r: 4 }] }), false, 'eraser only');
-assert.equal(H2.hasHorizonDrawing({ ...ground, strokes: [{ m: 'b', x: 1, y: 1, r: 4 }] }), true);
-assert.equal(H2.hasHorizonDrawing({ ...sky, profile: Array(720).fill(-90) }), true, 'sky painted everywhere');
-const record = { ...ground, azOffset: 0, altBottom: -10, altTop: 60, fov: 360, blockAbove: false };
-const before = Hist.snapshot(record);
-record.landmarks = [{ id: 'l1' }]; record.provenance = { source: 'x' }; record.confidence = [1];
-Hist.applySnapshot(record, before);
-for (const key of ['landmarks', 'provenance', 'confidence']) {
-  assert.equal(Object.hasOwn(record, key), false, `undo removes ${key} added later`);
-}
 
 console.log('planner safety contracts: OK');

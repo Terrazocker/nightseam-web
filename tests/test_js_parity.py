@@ -482,14 +482,23 @@ def _assert_web_sinks_escaped(app_js: str, hz: str) -> None:
     # Plain-text Error messages are presented with native alert(), not emitted
     # into HTML; continue checking every ID interpolation in the render paths.
     render_hz = re.sub(r"\bthrow new Error\(`[^`]*`\);", "", hz)
-    pano_ids = _template_interpolations(render_hz, r"p\.id")
-    # `${p.id === active ? ...}` only decides `checked`; it emits no id
-    emitted = [e for e in pano_ids if not e.startswith("p.id ===")]
-    assert emitted, "the panorama-id render path vanished - update this pin"
-    assert all(e == "esc(p.id)" for e in emitted), emitted
-    # ... and both id-bearing attributes are still the escaped form
-    assert 'data-id="${esc(p.id)}"' in hz
-    assert 'data-del="${esc(p.id)}"' in hz
+    horizon_ids = _template_interpolations(render_hz, r"item\.id")
+    # `${h && item.id === h.id ? ...}` only decides `checked`; it emits no id
+    emitted = [e for e in horizon_ids if " === " not in e]
+    assert emitted, "the horizon-id render path vanished - update this pin"
+    assert all(e == "esc(item.id)" for e in emitted), emitted
+    # ... and every id-bearing attribute is still the escaped form
+    for attr in ('data-id="${esc(item.id)}"', 'data-del="${esc(item.id)}"',
+                 'id="hz-r-${esc(item.id)}"', 'for="hz-r-${esc(item.id)}"'):
+        assert attr in hz, attr
+    # names come from users and backups too: every name rendered into the
+    # list or the editor markup is escaped (dialog text escapes at its sink)
+    markup = hz[hz.index("const row = (item) =>"):hz.index("function wireList(")]
+    for name in ("item.name", "h.name"):
+        rendered = [e for e in _template_interpolations(markup, re.escape(name))
+                    if e.startswith(("esc(", name))]
+        assert rendered, f"the {name} render path vanished - update this pin"
+        assert all(e.startswith("esc(") for e in rendered), rendered
 
 _SIZE_CASES = [
     [size, unit]
