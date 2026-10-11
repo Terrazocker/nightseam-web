@@ -28,9 +28,8 @@ archive is read-only.
 - Update fixtures, baselines or expected values to make a failing test pass.
   The published reference anchors (`tests/js/reference_anchors.mjs`) are the
   correctness authority; frozen fixtures only catch regressions.
-- Weaken a check. Browser launch failures are hard
-  infrastructure failures, never skips. Never use `no-store` to hide
-  cache-token drift.
+- Weaken a check. Browser launch failures are hard infrastructure failures,
+  never skips. Never use `no-store` to hide cache-token drift.
 
 ## Making a change
 

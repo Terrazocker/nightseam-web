@@ -65,7 +65,9 @@ def test_browser_gate_is_browser_required_not_a_skip():
     # a launch failure must be a hard failure (exit 2), never a skip
     assert "check_browser FATAL: browser" in harness
     assert "return 2" in harness
-    agents = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
+    # Prose rule: compare with whitespace collapsed so rewrapping the
+    # paragraph cannot break the check.
+    agents = " ".join((ROOT / "AGENTS.md").read_text(encoding="utf-8").split())
     assert "scripts/check_browser.py --web" in agents
     assert "hard" in agents and "infrastructure failures, never skips" in agents
 
