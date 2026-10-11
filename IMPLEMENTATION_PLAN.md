@@ -1,8 +1,39 @@
 # NightSeam Web roadmap and current backlog
 
-Current authority, October 10, 2026. This repository owns only the public site and
+Current authority, October 11, 2026. This repository owns only the public site and
 browser planner. The independent Windows catalog has its own repository/roadmap.
 Historical evidence remains in RELEASES/DECISIONS and superseded concept plans.
+
+## Horizon / Panorama — local development
+
+The original improvement phases 1–5 and simplification A–C are implemented
+locally. Follow-up accuracy work adds balanced known-360 fitting with visible
+residuals, scale-sensitivity diagnostics and true full-panorama seam handling.
+See [the simplification plan](HORIZON_PANORAMA_SIMPLIFICATION_PLAN.md) and
+[accuracy research](HORIZON_ACCURACY_RESEARCH.md).
+
+Implemented D/E: validated metadata; supported angular/cylindrical/corrected
+ordinary-photo conversion and leveling; retained original bytes/source points;
+extra fitting references, explicit exclusions and multiple held-out checks.
+F software validation and the immutable local candidate are recorded in RELEASES.md.
+Remaining: owner physical acceptance and separately authorized publication.
+Arbitrary lens/stitching correction, painted-record remapping and tilted partial
+panoramas wider than 180° remain unsupported. Conservative narrow obstacle
+sampling and skyline row handling are implemented locally; residual raster/sky-band
+limits are documented in BUGS.md. The
+[owner checklist](HORIZON_PANORAMA_ACCEPTANCE.md) covers real photos and physical
+devices. These changes are local; publication remains separately authorized.
+
+Owner-authorized P1/P2 of the white-paper follow-up
+[geographic calibration and sky-mask plan](HORIZON_GEOGRAPHIC_CALIBRATION_PLAN.md)
+are implemented locally, with integrated software gates pending. They add
+versioned measurement/coverage evidence, physical heading/pitch/roll fitting,
+known-geometry checking and a constrained rectilinear unknown-FOV option.
+P3–P7 remain open: original-photo painting, multiband visibility, uncertainty,
+camera-field/event planning and final integrated software/physical acceptance.
+Actual software outcomes belong in RELEASES.md. Their numbering is separate
+from earlier improvement 1–5 and simplification A–F; owner real-world acceptance
+and publication remain separate.
 
 ## Post-release review remediation — local development
 

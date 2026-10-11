@@ -1,5 +1,494 @@
 # Independent website release record
 
+## Horizon simplification D/E/F — October 11, 2026 (local development)
+
+Owner-authorized D/E adds bounded/validated GPano metadata, supported angular,
+cylindrical and corrected centred ordinary-photo conversion/leveling, exact
+original-byte retention and original-pixel references. A fully photographed angular
+working rectangle shares image/mask/ruler/pointer/crop geometry. Excluded azimuth
+directions block batch and detail planning. Vertical photo bounds retain the
+existing horizon/open-above assumption; they do not independently verify sky
+outside the photograph. Conversion of painted records or authoritative non-empty
+profiles is refused with a new-horizon/redraw path. Unknown distortion, fisheye,
+arbitrary stitching repair and tilted partial panoramas wider than 180° remain
+unsupported. Source/working allocation limits and the known camera assumptions
+are documented in DEVELOPMENT.md and HORIZON_ACCURACY_RESEARCH.md.
+
+Evidence v4 provides 2–16 fitting references, retained explicit exclusions and
+0–16 held-out checks. Equal-weight fitting rejects conflicting measurements,
+poor spread and ambiguous wrap. Review shows signed per-point residuals,
+angle-only extrapolation sensitivity, worst independent-check errors and local
+spread warnings. Promotion removes the separate-check role after validation.
+Legacy v1/v2/v3 keep their original semantics; backup 9 reads formats 1–8 and
+validates models/source dimensions/image headers before storage writes.
+
+Independent pure-core anchors cover nonlinear cylindrical angles, pinhole rays,
+orientation, continuous rectangular coverage, bounded sampling, upright full 360°
+and minimum 5° cylinders, EXIF dimensions, stale/conflicting metadata, noisy
+circular-fit seed slack, seam confirmation, exclusions, checks, crop/history and
+batch/detail agreement. Five new Chrome cases exercise actual corrected pixels,
+original-byte reload/backup, cylindrical leveling/authoring, metadata/tall/large
+sources, crop/history, keyboard exclusions, check retention and rejected role
+changes. Final full Chrome gate passed **105/105**. Long-session evidence retained
+200 trace points and 20,000 corrections: handler median/p95 8/10 ms, next-frame
+median/p95 16/27 ms; hardware timing is evidence, not a universal performance promise.
+
+Review corrected upright cylindrical coverage loss, unsafe promotion/replacement
+draft changes, same-session check loss, cropped-reference reuse, keyboard focus,
+contradictory optional metadata, EXIF header orientation and batch coverage gating.
+The first full Chrome run passed 104/105: complete rollback restored all data but
+added a null projection field absent from newly created records. Canonical initial
+fields fixed that shape discrepancy; the targeted rollback and final full gate pass.
+
+JavaScript gate passed: 52 modules, zero syntax errors/broken imports; core,
+encoding, catalog/provenance and token guards pass. Its 42 heuristic name candidates
+are advisory. The first full Python run reported 351 passed, 1 failed, 1 existing
+optional skip in 138.98 s: the architecture guard's function register omitted the 13
+new shared functions. The register was corrected without changing math or fixtures.
+The architecture module passed 9/9 in 92.14 s. Final Python suite ran separately
+from browser/package checks: **352 passed, 1 existing optional popularity-snapshot
+skip**, 151.11 s. Published astronomy anchors and frozen regression fixtures were
+not changed to conceal formula differences.
+
+Final development release guard passed with zero errors and the expected dirty
+warning. The official version helper stamped v0.1.1-3-gcacdacf-dirty. Prepared
+and separately verified the **71-file immutable local candidate** at
+dist/publication-preview. No public upload occurred. The local port8083 preview
+serves app token196; owner acceptance remains separate as requested.
+
+Pre-stage development guard identified untracked new shipping modules; they were
+registered, then the guard passed with zero errors and the expected dirty/untagged
+warning. Core token 57 retains current 7ef94c520cf50732 and previous 72241495a84f099d.
+The AGENTS token register is aligned. Root relative-link validation covered 21
+documents with zero missing targets, excluding the pre-existing historical audit.
+No commit, push, tag or public deployment was made. Physical-photo/device/native
+zoom/screen-reader acceptance remains with the owner.
+
+## Conservative horizon sampling — October 11, 2026 (local development)
+
+The owner continued the accuracy follow-up. HOR-ACC-001 and HOR-ACC-002 are
+resolved locally: each derived 0.5° world bin takes the highest overlapping
+obstacle; sky bins intersect lower edges and explicit upper ceilings, while
+unpainted overlapping columns block. Default open-above remains unchanged,
+including when raw painted bands are disjoint. Skyline cells use the highest
+connected segment edge and upward altitude rounding; sub-column traces survive.
+Source strokes, ordered erasures, no-stroke profiles and legacy migration remain
+intact. Conservative widening, raster crop differences, disconnected sky openings
+and the existing 4° photo-top assumption are documented limitations.
+
+Focused validation: 13 tests passed in 3.64 s, including the independent
+overlapping-cell oracle, legacy migration mutation contract, narrow-feature,
+half-open boundaries, north/full seam, inclusive endpoint, sky/overhang,
+sub-column trace, crop and history checks. The focused Chrome case passed,
+proving planner lookup, save/reload and backup retain the narrow obstruction.
+An earlier targeted run caught the new test's incorrect null-ceiling expectation
+and the former exact crop-sample assertion; final checks use the actual
+open-above contract and a one-calibrated-row bound for that seam brush case.
+Review also caught disjoint-band handling under open-above; it was corrected
+before the successful targeted run. Published astronomy anchors are unchanged.
+
+JavaScript gate passed: 48 modules, zero syntax or broken imports; core,
+encoding, catalog/provenance and recursive-token guards passed. The existing
+39 heuristic undefined-name candidates remain advisory. Pre-stage release guard
+refused the 12 untracked generated modules; after registering them, the development
+guard passed with zero errors and the expected dirty/untagged warning.
+Core token 54 retains current b61383a1eebef985 and previous 15fc8df02902f352.
+Current documentation/backlog and AGENTS cache-token register are updated.
+
+Full Chrome gate passed 100/100, including existing calibration, crop/history,
+backup rollback, responsive and planner checks. The final long session retained
+200 trace points and 20,000 correction dabs: handler median/p95 8/9 ms,
+next-frame median/p95 16/20 ms. Warm advanced visibility was 0.3 s.
+Root documentation relative-path check: 21 documents, zero missing targets,
+excluding the unknown prior audit. Full Python suite ran separately after the
+browser gate: 351 passed, 1 existing optional popularity-snapshot skip, 122.01 s.
+Final development guard passed with zero errors and the expected dirty warning.
+Prepared and separately verified the 68-file immutable local candidate in
+dist/publication-preview, truthfully stamped v0.1.1-3-gcacdacf-dirty.
+The preview at port8083 serves current app token193. Final encoding guard passed.
+No commit, push, tag or public deployment was made.
+
+## Horizon accuracy research and workspace documentation — October 11, 2026
+
+The owner authorized further mathematical research, discretionary improvements,
+and a general workspace/documentation review. HORIZON_ACCURACY_RESEARCH.md links
+primary Hugin, OpenCV, Google GPano and NOAA references and separates source facts
+from repository derivations. No arbitrary confidence percentage was added.
+
+Implemented: evidence v3 fixes confirmed original coverage to 360° and balances
+the two measured bearing offsets on their nearby circular branch, with a maximum
+1° residual per point. Review shows signed fit residuals and warns above 3×
+edge sensitivity to entered angle errors. V2 retains its original exact solver;
+V1 remains the separate-reference model. Backup format 8 protects the semantics,
+while formats 1–7 remain readable. Independent checks stay out of fitting and
+manual drift cannot retain checked status. Seam paint wraps only numerically
+full-360 views, fixing near-full partial coverage. The vertical-mask comment now
+states the actual calibrated span/359 row spacing.
+
+Confirmed open limits: a pure-core probe of a 45° photo with only row100/column3
+painted yielded zero blocked world bins. Representative-column sampling can miss
+narrow obstacles; skyline ceil(row) can understate obstruction height by one row.
+Conservative obstacle/sky/overhang policy is deferred and documented in BUGS.md.
+Projection conversion, leveling, additional fit/check references and physical
+acceptance remain open. No astronomy or sampling fixture was changed to conceal
+these findings.
+
+Documentation review repaired current Horizon status/navigation, dependency
+bootstrap, serial test guidance and provenance-input requirements. README now
+maps authority, backlog, architecture, decisions, findings and receipts.
+WORKSPACE_DOCUMENTATION_REVIEW.md records the scoped review; the existing unknown
+WORKSPACE_AUDIT_REPORT.md was left untouched. Historical desktop/release receipts,
+credentials and sibling repositories were not rewritten or used as dependencies.
+
+Confirmed validation:
+- Full Python suite: 350 passed, 1 existing optional popularity-snapshot skip,
+  123.36 s. Ran separately after JS/browser completion; final boundary and strict
+  normalization tests are included.
+- Four focused Horizon core modules passed. Added known-width residual, reverse
+  order, north-wrap, crop/drift, v2 compatibility, strict v3 normalization,
+  near-full seam and sensitivity cases; final full suite includes boundary cases.
+- Focused measured-fit browser case passed; full Chrome gate passed 99/99,
+  including backup8, save/reload, old Advanced workflow and responsive layouts.
+  Test-server connection-reset diagnostics occurred when a client closed a socket;
+  they did not produce a failed gate or suppressed launch failure.
+- JavaScript gate passed: 48 modules, zero syntax/broken imports; core, encoding,
+  catalog/provenance and recursive-token checks passed. There are 39 advisory
+  heuristic undefined-name candidates, as before.
+- Final browser long session (200 trace points + 20,000 dabs): handler median/p95
+  8/11 ms, next-frame median/p95 16/30 ms. Warm advanced visibility was 0.3 s.
+- Root documentation relative-path check: 21 documents, zero missing targets,
+  excluding the unknown prior audit report. Earlier scoped review scanned 25
+  existing documentation files without broken relative links.
+- Development release precheck initially refused the 12 newly baked untracked
+  core files. They were registered after that pre-stage check; the subsequent
+  development guard reported zero errors with the expected dirty/untagged warning.
+- Final development guard again reported zero errors. Prepared and separately
+  verified a 68-file local immutable candidate in dist/publication-preview, using
+  truthful v0.1.1-3-gcacdacf-dirty. Core token 53: current 15fc8df02902f352,
+  previous 02ddc8b5c055c4ee. The preview at port8083 serves app token192.
+
+No commit, push, tag or public deployment was made. Changes remain local on
+master cacdacf; remaining owner checks and public-host/manual gates stay open.
+
+## Horizon/Panorama simplification A–C — October 11, 2026 (local development)
+
+Implemented the owner's authorized A–C scope: separate sharp ruler margins,
+collapsed profile/Advanced controls, and Add horizon photo → two complete known
+points → preview → explicit application → optional separate check → drawing →
+Save horizon. Drawing defaults to skyline tracing and selected points have a
+nearby undoable Remove button. Approximate setup remains available; existing
+records and the separate-reference editor remain usable through Advanced.
+
+Core owns the two-axis fitting, bearing unwrapping, original-photo coordinates,
+crop composition and report status. Two fitted points establish alignment only;
+an independent check reports signed discrepancies without changing the fit.
+Unknown/unsupported projections remain approximate. Calibration evidence v2 and
+backup format 7 retain complete references; older backups remain readable.
+Preview is session-only and applying a valid fit creates one history entry.
+
+Review corrected a missing core helper import, an Advanced mode control attached
+from the wrong parent, applied-review wording, repeated application, and missing
+immediate markers for draft Advanced picks. Older browser checks were adapted
+to deliberate collapsed controls and ruler gutters; no correctness fixture or
+timing threshold was relaxed. Cache tokens remained fixed throughout the final
+browser run to avoid importing a second editor instance during a test.
+
+Software validation:
+- Full Python suite: 350 passed, 1 existing optional popularity-snapshot skip,
+  123.67 s. This ran after browser/JavaScript checks to avoid the suite's temporary
+  module-removal probes affecting other processes.
+- Full Chrome run: 97/98 passed. The remaining reference-marker check failed
+  while restoring its test-only canvas instrumentation (a returned native
+  function was invoked by the evaluator). Corrected cleanup passed the targeted
+  final rerun, 1/1, with no subsequent application changes. All 98 selected cases
+  are therefore covered by passing final receipts. An earlier run reported
+  92/98 before adapting six old layout/label assertions.
+- All five new simple-setup browser cases pass: atomic fit/check/save/reload,
+  full panorama/crop/history, preview cancellation/invalid input/uncovered edges,
+  picked-point dragging/zoom/phone layouts, and backup v7/approximate projections.
+- Final JavaScript check: 48 modules, zero syntax errors or broken imports;
+  encoding, catalog/provenance, core and token guards passed. The 39 heuristic
+  undefined-name candidates remain advisory.
+- A 200-point trace with 20,000 correction dabs measured handler median/p95
+  7/9 ms and next-frame median/p95 16/20 ms in the final full browser run.
+- Development release guard: zero errors, with the expected dirty/untagged
+  development warning. Recursive tokens and current/N−1 core retention pass:
+  core token 52, current hash 02ddc8b5c055c4ee, previous 120a347ba746d75c.
+- Prepared and independently verified `dist/publication-preview`: 68 immutable
+  candidate files stamped from actual `v0.1.1-3-gcacdacf-dirty`, not a new release.
+
+Physical photographs, true-bearing measurements, native zoom, touch/pen and
+screen-reader acceptance remain with the owner. D/E projection conversion and
+multi-reference fitting are not implemented; final combined F acceptance remains
+open. The explicit full-360 consistency policy can reject rounded measurements;
+future tolerance must expose residuals rather than imply accuracy.
+Changes remain local development on master cacdacf. No commit, push, tag or
+public deployment was made for A–C.
+
+## Horizon/Panorama phases 4 and 5 — October 10, 2026 (local development)
+
+Implemented skyline authoring as ordered core mask operations. Click or enter
+points, move them by dragging/keyboard/exact percentages, and fill below their
+connected straight segments. Later brush/eraser corrections retain precedence
+when earlier points move. Dense traces use adaptive markers and only label the
+selected point. Full/partial/seam geometry, segment-intersection crops, deep
+history, planner fingerprints and backup format 6 preserve authorability.
+Formats 1–5 remain readable; malformed/over-limit traces reject before writes.
+
+Sky openings and overhangs retain separate brush/band semantics. Switching from
+an obstacle trace asks before removing it and is undoable. Precise-bin Apply
+states that it replaces authored paint/traces with the current world profile
+and an edited bin, preserving other bins and undo recovery. An unconnected first
+point is a session draft, leaving an authoritative stored profile unchanged.
+Crop/clear/profile replacement/history restoration discard obsolete drafts.
+
+Review caught and corrected rejected additions moving an old node, selection
+being overwritten during control rebuild, ordering of tightly spaced imported
+points, numeric tool conflicts and draft coordinates surviving crop. The five
+new Chrome cases cover these edges, ordinary tracing/corrections/crop/backup/
+reload, keyboard editing, mode confirmation, overhangs, pointer cancellation,
+secondary simulated touch/pen, save failure/retry and long-session history.
+
+CAT-PERF-001 was profiled before implementation. An instrumented warm-scrub run
+took 2.48 s; Intl formatter construction dominated samples. Bounded per-zone
+formatter reuse still calculates offsets at each instant, and memo hits no
+longer resolve site noon merely to build their key. Focused unchanged 4× CPU
+timing checks passed at 0.30–0.31 s for three scrubs, with final selected-time
+row altitudes now verified as well. Scoring and reference fixtures are unchanged.
+
+Final software validation:
+- Final Python rerun: 349 passed, 1 existing optional popularity-snapshot skip,
+  121.50 s after the phone correction. An earlier run overlapped final source
+  review and reported two cache
+  guard failures while token updates were pending; corrected tokens passed the
+  focused guards and the complete final rerun.
+- Final JS: 47 modules, zero broken imports or syntax errors; encoding,
+  catalog/provenance, cache-token and core guards passed. The 35 heuristic
+  undefined-name candidates are advisory; actual browser imports are checked.
+- Focused new browser acceptance: 5/5 passed; final draft/crop/reference-pick
+  conflict check also passed after review. A 200-point trace plus 20,000 correction
+  dabs measured handler median/p95 8/10 ms and next-frame median/p95 17/31 ms
+  on this workstation. No hardware-independent latency guarantee is inferred.
+- Initial complete browser run: 92/93 passed. The additional tool explanation
+  enlarged the phone toolbar enough to cover a zoom hit target at 360×640.
+  Capped its sticky height to 40% of viewport/240px and bumped stylesheet token
+  to 61. The exact failed state/calibration/band check passed after correction.
+- Development release check (`--allow-dirty --no-stage`): zero errors, with the
+  expected dirty/untagged warning. New source/generated assets are registered in
+  Git only for tracked-source guards. Superseded staged generated additions were
+  removed from the index; the current/N−1 source trees remain available.
+- Generated core: 284234714ab8678b, token 50, retaining 4ab75c9cc136a98e.
+  Cache register and entry points match; development stamp remains truthful
+  0.1.1-3-gcacdacf-dirty. No frozen astronomy fixture was updated.
+
+- Final complete Chrome rerun: 93/93 passed, including the corrected phone hit
+  targets, all five new tracing cases, all guided/crop/gesture/DPR cases,
+  transactional recovery, planner integration and immutable publication.
+  Catalog cached scrubs took 0.30 s at 4× CPU; initial table 0.20 s, complete
+  warming 1.44 s. Final long trace/correction metrics: handler median/p95 7/9 ms,
+  next-frame median/p95 16/29 ms, maximum 33 ms. Receipts:
+  logs/horizon-phases45-browser-{initial,final}.txt; workstation metrics:
+  logs/browser/artifacts/horizon-phase45-latency.json. Old failure JSON remains
+  historical evidence; the final stdout receipt identifies the successful run.
+- Prepared and independently reverified the fresh 67-file combined immutable
+  local candidate at dist/publication-preview, described as
+  v0.1.1-3-gcacdacf-dirty. Its publication.manifest.json hashes match the reviewed
+  working source. No production connection/upload was performed.
+- Final staged/unstaged whitespace checks passed. HEAD remains cacdacf.
+
+Phase 4 and the phase 5 software work are complete locally. Real measured
+full/partial photographs, physical touch/pen, native browser zoom and intended
+assistive technology remain owner acceptance, as requested. The checklist is
+HORIZON_PANORAMA_ACCEPTANCE.md. Public release/deployment is separate; no commit,
+push, tag or deployment is part of this work.
+
+## Horizon/Panorama phase 3 — October 10, 2026 (local development)
+
+Implemented the authorized guided import/calibration phase. New photographs
+start at coverage, then offer true-bearing alignment, two measured altitude
+references, independent verification and painting. Existing records open directly
+for editing and can review setup. Both full and partial views use exact inputs
+with optional fine sliders; North does not need to appear in the image. True
+versus magnetic bearing, measured level versus obstruction skyline, and supported
+equirectangular versus approximate camera projections are explained in the flow.
+
+Reference evidence is retained against the original photo, deep-copied through
+history and preserved by backup format 5. Formats 1–4 remain readable; malformed
+evidence rejects staging before writes. Checked status is computed from current
+geometry, exact fit references, supported projection/coverage and an independent
+check within 1° on both axes. Manual changes and cropped-out alignment references
+cannot retain a stale checked claim. Checks show signed bearing/altitude residuals
+and never auto-adjust the fitted geometry.
+
+Browser work also fixed cursor-readout wrapping that shifted the image during
+the first pointer movement. Entering Paint focuses the canvas, manual width
+changes refresh setup, and a reference pick owns its pointer until up/cancel so
+another pointer cannot begin painting. Same-record setup drafts/step survive
+unrelated rerenders; unapplied drafts are not saved measurement evidence.
+
+Validation:
+- Focused source/history/core regression set: 27 passed. Final Python suite:
+  348 passed, 1 existing optional local popularity-snapshot skip (145.74 s).
+- JS: 45 modules, zero broken imports/syntax errors; encoding, catalog/provenance,
+  core and cache-token guards passed. The 29 heuristic undefined-name candidates
+  remain advisory rather than semantic failures.
+- An initial full browser run passed 86/88. The two failures were old expectations
+  for visible fine-angle outputs and backup format 4; the fine controls now require
+  opening their disclosure and calibration evidence requires format 5. Updated
+  crop checks passed 4/4 without weakening geometry/history/profile assertions.
+- In that full run, all three guided-setup cases, all five phase 1/2 cases,
+  storage/save-failure recovery and immutable publication passed. The existing
+  Catalog timing check passed at 1.99 s, close to its 2 s limit; its prior repeated
+  failures on committed HEAD remain unresolved CAT-PERF-001 evidence.
+- Final complete browser rerun: 88/88 passed, including off-center zoomed picks,
+  exclusive held-pick ownership, keyboard step progression, stable cursor layout,
+  stale-calibration rejection, and full/partial setup/history/crop/backup/reload.
+  Catalog timing again passed at 1.99 s. No browser launch or request failure
+  was skipped. Screenshots: logs/browser/artifacts/horizon-phase3-{vertical-setup,
+  checked,mobile}.png.
+- Subsequent screenshot review caught missing marker-backdrop palette values
+  making L/V/C labels white on white. Replaced them with the canvas surface role;
+  final focused guided checks passed 3/3 with all four label/backdrop contrasts
+  asserted. The correction changes drawing only; fitted geometry is unchanged.
+  Also synchronized the selected horizon's list caption with live mode/coverage,
+  so a calibrated partial view cannot retain its import-time 360° caption.
+  The final focused guided rerun passed 3/3, including caption consistency;
+  UI/cache/calibration Python checks passed 31/31 after the visual corrections.
+- Final long-history/large-photo regression retained 20,041 dabs: handler
+  median/p95 improved 16/20 ms to 0/1 ms versus committed HEAD; next-frame
+  median/p95 was 32/47 ms before and 28/47 ms after. Workstation-specific p95
+  remains below 50 ms. Metrics: logs/browser/artifacts/horizon-phases12-latency.json.
+- Final development release check (`--allow-dirty --no-stage`): zero errors,
+  with the expected dirty/untagged development warning. Diff whitespace check
+  passed; source/token/core and immutable-publication validation remain green.
+- Generated core is 4ab75c9cc136a98e, token 49, retaining 54493a51996bdd15 as N−1.
+  Truthful development stamp: 0.1.1-3-gcacdacf-dirty. No frozen astronomy fixture
+  was changed. New source/baked assets are staged only to satisfy tracked-source
+  publication guards; the workspace remains uncommitted.
+
+Real full/partial-photo calibration with known references, physical touch/pen
+and assistive-technology acceptance remain phase 5. Editable skyline tracing
+remains phase 4. No commit, push, tag or deployment is part of this phase.
+
+## Horizon/Panorama phases 1 and 2 — October 10, 2026 (local development)
+
+Implemented the owner's authorized correctness/gesture and readable-editor
+phases. Crops now compose normalized source bounds against the retained original
+photo, using the same effective band as paint/calibration. Undo/redo and backup
+format 4 retain those bounds; v1–v3 remain readable. Calibration stays within
+physical bounds and repairs old invalid local/restored spans without replacing
+authoritative stroke-less profiles. Minimum-FOV enforcement and rounding have
+distinct preview messages.
+
+Painting joins sparse/coalesced pointer samples and applies the shared rasterizer
+incrementally. A single owning pointer settles visible partial paint as one
+history entry on up/cancel/lost capture/blur; tool/view/history/metadata changes
+and teardown settle safely. A late image decode cannot repaint a detached editor
+or overwrite a replacement editor's live profile.
+
+Degree rulers/text/grid strokes draw in CSS pixels with DPR scaling and adaptive
+ticks. The brush footprint (including seam copies) matches angular paint size;
+zoom magnifies it without changing its angles. Same-panorama rerenders retain
+view/tool/display settings. Paint/crop/history controls use a bounded opaque sticky
+stage toolbar; Display contains grid/opacity controls.
+
+Focused evidence: 23 core/JS/backup/D1/horizon checks and 44 history/UI/cache/core
+guard checks passed. Five new browser checks cover repeat-crop original-photo
+sampling, real snapshot replacement/restore/reload, sparse/two-pointer/interrupted
+gestures, physical calibration bounds, rerendered view state, unobscured controls
+at 1366/900/640/360 widths and short heights, and DPR 1/1.5/2 with wide/partial/
+portrait images through 8× zoom. Screenshots and the 20,000-dab/4096×1024-upload
+HEAD comparison are retained in logs/browser/artifacts/horizon-phases12-*.
+
+Initial full runs exposed outdated source-shape assertions and missing new helper
+registration; these were corrected without changing frozen geometry fixtures.
+The first browser gate passed 83/85: immutable publication ran before new generated
+assets were staged, and the existing 4×-CPU Catalog scrub timing exceeded 2 seconds
+while other validation was running. The generated current tree is now staged and
+the final gates run sequentially. No threshold/retry/skip suppression was added.
+
+Final validation on the completed local implementation:
+
+- `python -m pytest tests/ -q --tb=no`: 347 passed, 1 existing optional local
+  popularity-snapshot skip (139.21 s).
+- `python scripts/check_js.py`: passed, including syntax, recursive cache tokens,
+  core/catalog guards; 27 advisory heuristic candidates remain non-fatal.
+- `python scripts/check_core.py`: passed. Current hash 54493a51996bdd15/token 48
+  retains committed previous 8e090bcf870e108d, rather than an intermediate bake.
+- Final full `python scripts/check_browser.py --web`: 84/85. All Horizon checks,
+  immutable publication and ordinary planner/storage/accessibility checks passed;
+  the Catalog timing check alone remains open as CAT-PERF-001 in BUGS.md.
+- Final focused Horizon gate: 5/5, including the late-photo redraw regression
+  and a latency probe waiting for photo decode before timing. A 20,000-dab
+  history/4096×1024 upload measured median synchronous pointer handling 17 ms
+  before vs 0–1 ms after (millisecond-resolution browser clock); next-frame
+  median 31 vs 28 ms, p95 47 vs 48 ms. The p95 <50 ms workstation target held;
+  this does not establish a universal hardware latency ceiling.
+- The Catalog timing comparison uses an owned full `git archive HEAD` snapshot
+  with generated truthful HEAD version metadata: 2.31 s before vs 2.24 s current,
+  against the unchanged 2-second threshold at 4× CPU. Both isolated runs failed
+  on timing with no runtime/network errors. No new Horizon regression is inferred
+  from this pre-existing issue; full-browser release readiness remains blocked.
+- `python scripts/check_release.py --allow-dirty --no-stage`: 0 errors; expected
+  dirty development-tag warning. `web/version.json` truthfully describes
+  v0.1.1-3-gcacdacf-dirty. No frozen astronomy fixtures were changed.
+
+Transcripts: logs/horizon-phases12-python-final.txt, horizon-phases12-js.txt,
+horizon-phases12-browser-final.txt, horizon-phases12-browser-focused-final.txt,
+horizon-phases12-catalog-{head,current}.txt and horizon-phases12-release.txt.
+
+Open work: phases 3 (guided import/known-bearing and vertical calibration), 4
+(editable skyline tracing and fill) and 5 (physical photo references, touch/pen,
+assistive technology, integrated release review). Legacy crops without stored
+source bounds cannot be reliably reconstructed and may need reimport/calibration.
+This is a local dirty development build, without a release tag or deployment.
+
+## Horizon/Panorama read-only UX review — October 10, 2026
+
+Inspected committed master cacdacf in an isolated local browser using the Berlin
+example and an owned synthetic 1600x500 landmarks image. Reviewed import controls,
+painting, crop and calibration; no application/core/styles/storage/test code was
+changed. No automated suite or real-world photographic calibration was performed.
+
+Confirmed photo/paint misalignment after a roughly 214-degree horizontal crop,
+flattened degree labels on a wide image, a 90-to-95-degree altitude range beyond
+the top slider limit, and inaccurate minimum-FOV wording for rounded crops.
+BUGS.md records HOR-UX-001–004; HORIZON_PANORAMA_IMPROVEMENT_PLAN.md separates
+confirmed findings from gesture/performance reproduction still needed and proposes
+five ordered phases. logs/horizon-review-crop.jpg preserves the alignment evidence.
+
+Temporary photo/paint existed only on the separate local preview origin. The
+owned fixture was removed successfully, the review tab closed and preview server
+stopped. No commit, push, tag or deployment is part of this exploratory review.
+
+## Browser monitoring validation — October 10, 2026
+
+Tested BROWSER-LOCAL-001 monitoring against committed master cacdacf without
+changing application or harness code. This verifies diagnostics and current
+behavior; it does not establish the cause of historical refused module requests.
+
+Actual results (ignored logs/browser-monitoring-*-20261010.*):
+- Full Chromium web gate: 80/80 passed, exit 0. No ERR_CONNECTION_REFUSED,
+  browser infrastructure failures or handler connection-reset diagnostics in
+  this run's transcript.
+- Historical Sun/Moon check repeated in ten isolated browser contexts: 10/10
+  passed, exit 0. Each recorded a live server with backlog 64 and no natural
+  same-origin connection refusal. These are independent trials, not retries of
+  failed checks.
+- Browser monitoring/gate regressions: 10 passed in 0.15s, including queued
+  connection capacity and hard diagnostic/driver exit-code handling.
+- Deliberately refused app.js?v=174 in a temporary check. The gate correctly
+  failed with exit 1 and preserved the exact module URL, ERR_CONNECTION_REFUSED,
+  server thread_alive=true, port and backlog 64 in its JSON diagnostic. The
+  probe verified that expected failure and exited 0. This is induced evidence,
+  not a natural recurrence.
+- Owned probe scratch cleaned successfully; logs/.scratch retains only its
+  manager lock. Replay scripts, transcripts and JSON receipts remain under logs/.
+
+BROWSER-LOCAL-001 remains monitoring-only because no natural refusal recurred.
+No application fix, release tag, commit, push or deployment was performed in
+this validation pass.
+
 ## Commit validation — October 10, 2026
 
 Validated the combined remaining-review fixes, scratch lifecycle and documentation

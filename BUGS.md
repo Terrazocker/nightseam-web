@@ -1,5 +1,176 @@
 # Current NightSeam Web findings
 
+## Geographic calibration follow-up — October 11, 2026 (P1/P2)
+
+P1/P2 are implemented locally with integrated software gates pending. Evidence
+v5/backup10 add optional measurement and observer/capture metadata, physical
+orientation fitting, known-geometry checking and constrained corrected
+rectilinear unknown-FOV estimation. Strict measured coverage is the default for
+newly confirmed converted photos; older records keep legacy behavior. Actual
+checks belong in RELEASES.md. The dated D/E notes below retain the prior boundary.
+
+- P3 remains open: painting still belongs to the angular working view. Existing
+  strokes/non-empty profiles prevent conversion/reorientation; original-photo
+  masks and safe recalibration remapping are not implemented.
+- P4 remains open: clear/blocked/unknown queries use profile-derived coverage and
+  shared conservative policy. A source-pixel evidence mask and disconnected
+  vertical sky openings are not implemented. The existing sky-band/photo-top
+  heuristic and raster/bin limits still apply.
+- P5 remains open: measurement weighting and robust influence are available, but
+  spatial uncertainty, safe boundary margins and capture-validity assessment
+  are not. Observer metadata does not correct nearby-obstacle parallax; common
+  bearing or instrument bias can survive additional points.
+- P6 remains open: planning checks target centres; complete camera-field
+  obstruction/unknown coverage and refined obstruction crossing times are not
+  implemented.
+- P7 remains open: integrated P1–P6 software acceptance and independent real-photo
+  accuracy checks cannot be claimed from P1/P2 alone. Owner measured photos,
+  touch/pen, native zoom and human accessibility acceptance remain outstanding.
+- Supported geometry remains bounded: no fisheye/arbitrary lens or stitching
+  repair, no tilted partial panorama wider than 180°. Unknown FOV is rectilinear
+  only, requires four active fit points/two held-out checks and may be refused by
+  bound, curvature or held-out improvement gates. Old compressed photos cannot
+  recover discarded original detail.
+
+## Accuracy research follow-up — October 11, 2026
+
+- HOR-ACC-001 (P2), resolved locally: representative-column world-bin sampling could miss a
+  narrow obstruction. Reproduced in pure core with fov=45°, offset=0, an otherwise
+  empty 720×360 mask and only row 100 / column 3 painted: profileFromMask returned
+  zero blocked bins. About eight mask columns occupy each 0.5° world bin here.
+  Derived bins now take the highest overlapping obstacle. Sky bins intersect
+  lower edges and, when blockAbove is enabled, upper edges; any unpainted
+  overlapping column blocks. Default open-above remains open. Stored profiles
+  without strokes and legacy migration are unchanged.
+- HOR-ACC-002 (P3), resolved locally: fractional skyline heights used ceil(row), which could
+  understate obstruction altitude by up to one calibrated row. Vertical row
+  spacing is span/359, not a fixed 0.25°. Traces now use the highest connected
+  edge within each column footprint and floor(row); sub-column segments survive.
+  Published astronomy anchors were unchanged. Software receipts: RELEASES.md.
+- Remaining sampling limits: a single sky interval per source column cannot
+  represent disconnected vertical openings. The existing 4° photo-top open
+  heuristic remains. Conservative 0.5° aggregation may widen tiny obstacles;
+  crop rerasterization can shift brush edges within raster resolution.
+- Resolved locally: near-full partial coverage (359.5°–360°) incorrectly enabled
+  opposite-edge paint wrapping. Wrapping now requires numerical full-360 coverage.
+- Resolved for newly applied evidence v3: unrealistic exact bearing agreement in
+  known-360 fitting. Both measured bearings now contribute to the offset; each
+  residual must be at most 1° and is shown. Legacy evidence v2 retains its original
+  exact consistency policy. Sensitivity diagnostics do not claim statistical
+  confidence; supported projection/leveling is now implemented under D/E below.
+  Real-photo acceptance remains open.
+
+## Supported projection and multi-reference follow-up — October 11, 2026
+
+D/E now support validated GPano metadata, angular/cylindrical/corrected centred
+ordinary-photo conversion/leveling, original-byte retention and version4 source
+references. Extra fitting points and multiple held-out checks are available;
+exclusions remain recorded and opposing errors cannot average into a pass.
+Batch and detailed planning both block directions outside converted coverage.
+Review fixed unnecessary upright cylindrical coverage loss, lost check points
+on same-session upgrades, rejected check/promotion draft mutation and cropped
+reference reuse. Software outcomes and candidate details are in RELEASES.md.
+
+Remaining limits: unknown lens distortion, fisheye lenses, arbitrary stitching
+repair and tilted partial angular/cylindrical sources wider than 180° are
+unsupported. Ordinary-photo conversion requires known field of view, orientation,
+centred square-pixel optics and prior lens correction. Conversion requires a new
+unpainted horizon; remapping existing strokes/profiles is not implemented.
+The working surface may exclude tilted edges, and those directions block planning.
+This gate is azimuth coverage. Vertical photo bounds do not become automatic
+ceilings; the existing sky-above-horizon assumption remains and is not measured
+photographic evidence outside the photo.
+Header/metadata parsing is bounded to the first 1 MB; source limit32 MP, JPEG/PNG,
+working surface2 MP/2400px per dimension. Old compressed photos cannot recover
+discarded data. Measured photos and physical device/accessibility checks remain
+with the owner; more points do not remove shared measurement bias.
+
+## Horizon simplification follow-up — October 11, 2026
+
+The owner reported that opaque rulers hide photo features and setup exposes too
+many unrelated controls. Authorized phases A–C move rulers into margins, add
+atomic two-complete-point setup with an optional separate check, and simplify
+drawing/deletion/advanced disclosures. Software validation is in RELEASES.md.
+Real-photo/device acceptance remains with the owner. Unknown source models remain
+approximate; D/E now provide explicitly supported conversion and extra references
+as described above.
+
+The original A–C full-360 exact-consistency limitation was subsequently addressed
+for new fits by the accuracy follow-up above. Older saved v2 evidence keeps the
+original 0.000001° consistency policy until the owner explicitly applies a new fit.
+No physical accuracy claim is inferred from a two-point fit.
+Keyboard and simulated pointer checks are covered in software. Native zoom,
+touch/pen and screen-reader acceptance still belong to the owner's checklist.
+
+## Horizon/Panorama exploratory review — October 10, 2026
+
+New findings after master cacdacf; the earlier 38-item review remains resolved
+within its original scope. HOR-UX-001–004 are now resolved locally by the owner's
+authorized Horizon/Panorama phases 1/2. The following descriptions preserve the
+initial evidence; they do not describe the current implementation.
+
+- HOR-UX-001 (P2): horizontal crop moves painted geometry but redraws the entire
+  original photo, separating paint from recognizable landmarks. Reproduced with
+  a synthetic tower and a roughly 214-degree crop. Original-image retention must
+  stay non-destructive; display-source crop bounds need to track the paint.
+- HOR-UX-002 (P2): Alt bottom=90 produces Alt top=95 in the model/summary while
+  its range control remains capped at 90. Reproduced using the slider's End key.
+- HOR-UX-003 (P3): degree-guide text scales nonuniformly with photo aspect and
+  zoom despite DPR support. Wide panoramas visibly flatten the glyphs.
+- HOR-UX-004 (P3): crop preview labels integer-FOV rounding as expansion to the
+  minimum FOV, including selections far above that minimum. Reproduced at 214°.
+
+Continuous sparse strokes, exclusive pointer ownership and up/cancel/lost-capture/
+blur settlement now have browser regressions; incremental rendering has a measured
+20,000-dab/large-upload comparison. CSS-pixel rulers have DPR 1/1.5/2 and aspect/
+zoom coverage; short-screen controls have visibility and hit-target checks.
+
+Guided import/calibration software is implemented locally in phase 3, with core
+and real-browser regressions. A long cursor readout wrapping and moving the
+canvas during the first pointer movement was reproduced and fixed by reserving
+readout space. Physical photo validation is still required; synthetic checks do
+not establish camera projection or measured-reference accuracy.
+
+Editable skyline tracing is now implemented locally in phase 4, including ordered
+brush corrections, keyboard/numeric editing, segment crops, deep history and
+backup format 6. Phase 5 software acceptance passed the full 93-case browser
+gate, 349 Python tests and JS/core/cache/development release guards. A verified
+67-file local immutable candidate is available in dist/publication-preview.
+Still open: real full/partial photographs with independent angular references,
+physical touch/pen, native browser zoom and assistive-technology acceptance,
+which the owner elected to perform, plus separate public release review.
+The owner checklist is HORIZON_PANORAMA_ACCEPTANCE.md.
+Legacy records cropped before source bounds existed cannot be automatically
+realigned reliably; reopening defaults to the full retained image and may require
+reimport/calibration. Do not guess missing original coverage/bearing.
+The plan and validation receipts are in HORIZON_PANORAMA_IMPROVEMENT_PLAN.md and
+RELEASES.md; original screenshot evidence remains logs/horizon-review-crop.jpg.
+
+## Catalog timing acceptance — resolved locally October 10, 2026
+
+- CAT-PERF-001 (P3): the existing `web-advanced-live-mode-and-responsive-warming`
+  check exceeds its 2-second limit for three cached Catalog scrubs at 4× CPU
+  throttling. Two full browser runs reproduced it. Isolated current code took
+  2.24 s; an owned, complete committed-HEAD snapshot took 2.31 s, with no console,
+  page, request or response errors. This is reproducible on the pre-Horizon code;
+  the root performance cause remains unprofiled. No threshold/skip was weakened
+  and no Catalog implementation was changed under the Horizon phase 1/2 scope.
+  Phase 1/2 final full browser gate: 84/85; focused Horizon acceptance: 5/5.
+  Two phase 3 full runs passed the same timing check at 1.99 s without Catalog
+  implementation changes. Its margin/variance and root cause remain open;
+  one near-threshold pass does not resolve the earlier repeated HEAD failures.
+  Evidence: logs/horizon-phases12-catalog-{head,current}.txt and the corresponding
+  logs/browser/horizon-head-baseline/ and logs/browser/artifacts/ failure JSON.
+
+Phase 5 CPU profiling reproduced a 2.48 s instrumented failure and showed Intl
+formatter construction dominating warm scrubs (logs/catalog-before.cpuprofile).
+Each cached night-window lookup first resolved noon, repeatedly constructing
+offset formatters during timezone probes. A bounded core formatter cache now
+preserves per-instant DST offsets; the memo key uses date/site/resolved-zone
+identity before resolving the window. Focused checks passed at 0.30–0.31 s,
+retaining the original 2 s limit and adding final-selected-minute row-altitude
+verification. No scoring formula or reference fixture was changed.
+
 ## Repository and logic review — October 9, 2026
 
 Broad source review of master at 471e64a found 38 confirmed defects: 4 P1,

@@ -1,5 +1,306 @@
 # NightSeam Web development
 
+## Geographic evidence and physical orientation — October 11, 2026 (P1/P2)
+
+This section describes the current local P1/P2 implementation. Its integrated
+software gates are pending; RELEASES.md records actual outcomes. The D/E section
+below describes the earlier v4/backup9 boundary retained for compatibility.
+
+Calibration evidence v5 retains the original source model, fitted/current model,
+original-source fitting/check coordinates and optional measurement source,
+angular error, capture time, measurement group and exclusion reason. Known
+geometry has no fabricated fitting references: confirming supported geometry can
+proceed directly to review and held-out checking. Older evidence v1–v4 retains
+its solver/report semantics; unconverted linear calibration remains available.
+Backup 10 validates and preserves v5 and coverage evidence before any writes,
+while retaining older supported bundle formats. Model, calibration and coverage
+evidence participate in editor history and transactional restore.
+
+Core owns source rays, heading/pitch/roll fitting and reports. Fixed-geometry
+orientation uses weighted Wahba alignment of unit rays: the optimized loss is
+chordal, with optional angular Huber IRLS. Reports use stable spherical angular
+errors, show retained points' influence and keep held-out checks outside fitting.
+New orientation evidence uses a separate 1° directional acceptance policy;
+the historical 1° per-axis policy is unchanged for legacy evidence. Missing
+measurement error is not invented, and shared measurement groups do not establish
+independent accuracy. These diagnostics are not confidence percentages.
+
+Unknown FOV is a constrained option for corrected centred square-pixel
+rectilinear sources only. It requires at least four active fitting references
+and two held-out checks, searches 5–150°, and requires at least 0.1° held-out
+improvement plus bounded curvature. Other projection geometry stays fixed.
+The FOV search minimizes fitting-point error; its held-out acceptance gate uses
+the check set. Additional untouched measurements are needed for final physical
+validation of the accepted geometry.
+It does not infer lens distortion, arbitrary stitching or viewpoint parallax.
+
+Coverage evidence version1 stores legacy/inferred-open/strict-measured policy,
+optional observing latitude/longitude/optical height and capture date. Older
+records default to legacy behavior. Newly confirmed converted photos use strict
+measured coverage. The core evidence query distinguishes clear/blocked/unknown
+from the policy permitting or excluding that direction; unknown is not measured
+obstruction. Both detailed and batch planning use the same policy-aware horizon
+limits and shared scoring loop. Strict mode excludes missing azimuth/profile
+coverage and altitudes outside photographed bounds. These profile-derived states
+are conservative summaries, not a source-pixel evidence mask or multiple sky
+openings. Observer metadata does not apply a parallax correction.
+
+The guided route confirms geometry before alignment or checking. Browser code
+collects evidence and prepares corrected pixels; previews leave the live model,
+history and planner unchanged until one atomic Apply. Original photo bytes and
+source positions remain retained. Existing strokes/non-empty profiles still
+prevent physical conversion/reorientation: painting is not remapped. P3–P7 and
+owner real-photo/device acceptance remain open in the geographic plan.
+
+## Supported source projection and multiple references — October 11, 2026
+
+`core/horizonprojection.js` owns source-ray geometry, continuous angular-rectangle
+coverage, bounded header/GPano parsing and forward/inverse source mappings.
+`web/horizonphoto.js` only decodes, bilinearly resamples and presents preview/apply.
+`photoModel` version1 retains source type/dimensions/coverage, heading/pitch/roll,
+source longitude centre/top/bottom and the derived angular `working` rectangle.
+`photoSource` retains original dimensions and detected/missing/invalid metadata.
+New JPEG/PNG imports store exact original bytes in IndexedDB and embed those bytes
+in backups. Earlier compressed previews cannot recover discarded detail.
+
+The source world frame is east/north/up, using GPano rotation
+Rz(−heading) Rx(pitch) Ry(roll). Angular sources use linear longitude/latitude;
+cylindrical height interpolates tan(altitude); ordinary corrected photos use a
+centred square-pixel pinhole with known horizontal FOV. Focal length alone is not
+treated as adequate calibration. GPano full/cropped dimensions must match actual
+decoded dimensions and the full 2:1 sphere; conflicting/stale data is a prompt.
+Initial viewer FOV is ignored. EXIF orientation affects JPEG header dimensions.
+Metadata and headers are limited to the first 1 MB, source 32 MP, working 2 MP and
+2400px per dimension; image bytes retain the existing 25 MB import limit.
+
+Conversion preserves a fully photographed angular rectangle, proved using
+continuous extrema rather than a sparse grid. Upright angular/cylindrical sources
+retain their actual horizontal coverage and planner-supported vertical bounds.
+Tilted views may lose edge coverage. Tilted partial angular/cylindrical sources
+wider than 180° are refused; full 360° sources remain supported. Corrected ordinary
+FOV is limited to 150°. Unknown distortion, fisheye and stitching repair remain
+unsupported. Outside converted azimuth coverage, detailed and batch planning block.
+Vertical photo bounds remain drawing/calibration bounds: the existing horizon
+model assumes sky above traced obstacles open, or above a sky band when blockAbove
+is off. That extrapolation is not photographic verification; image top must not
+silently become an overhang ceiling.
+Existing strokes or a non-empty authoritative profile prevent conversion: create
+a new horizon/redraw. Preview and pixel preparation precede one undoable Apply.
+
+The working canvas is memory-only and is regenerated from original bytes. Photo,
+paint, ruler and pointer geometry share this angular surface. `sourceRect` crops
+that surface non-destructively; v4 references remain original-source pixels and
+can stay outside a retained crop. History includes `photoModel`; source metadata
+and original bytes are immutable for the record. Planner revisions include the
+model. Backup normalization validates all models/source headers/dimension matches
+before any storage writes, preserving the complete bundle recovery boundary.
+
+Calibration evidence v4 adds 2–16 fitting references, explicit exclusions and
+0–16 separate checks. Fitting is equal-weight least squares per angular axis;
+confirmed full 360° fixes horizontal scale and fits circular offset. The solver
+rejects ambiguous bearing branches, upright/range violations, poor spread and
+any active fit residual above 1° per axis. Endpoint seeds include residual slack
+scaled by reference separation. Original-source points map to working angles
+before fitting. Legacy v1/v2/v3 retain their previous solver/report semantics;
+normal two-point unconverted fits still write v3.
+
+Reports show all signed fitting residuals, worst held-out errors, spatial spread
+and angle-only edge sensitivity from absolute least-squares prediction weights.
+No statistical confidence is inferred. Checks never participate in fitting;
+each must be visible, at least 2% away from every active fit feature, and agree
+within 1° per axis. Clustered checks describe local evidence. Promotions and
+replacements validate before changing live roles or drafts. Manual drift
+downgrades the report. Backup 9 declares these schemas and still reads 1–8.
+Software receipts are in RELEASES.md; physical acceptance remains with the owner.
+
+## Accuracy follow-up — October 11, 2026
+
+The earlier calibration evidence v3 retains the v2 complete-reference shape but
+changes known-360 fitting to equal-weight circular offset estimation. The width
+stays fixed, each bearing residual is bounded to 1° and signed residuals are
+reported. Read/report dispatches by evidence version: v2 retains its old exact
+solver and v1 its separate-reference model. Explicitly applying a fresh fit
+writes v3; simply opening an old record does not migrate its geometry.
+Backup format 8 declares this semantic change and reads formats 1–7.
+
+photoCalibrationReport also exposes per-reference angle residuals and edge
+sensitivity from absolute interpolation coefficients. The bound is for entered
+angle errors only; it is not a confidence interval and excludes click/projection
+error. The review shows it when either factor exceeds 3×. The independent check
+is still held out of fitting, and manual geometry drift downgrades status.
+
+wrapsFor now requires |fov−360|≤1e−8 rather than ≥359.5. Nearly full partial
+photos therefore retain real seam gaps. Original source rectangles, crop/history
+and authoritative stroke-less profiles are unchanged. Derived-mask sampling and
+skyline row rounding are now corrected as described below.
+
+### Conservative derived horizon profiles
+
+Each world bin covers [i×0.5°, (i+1)×0.5°). Every positively overlapping mask
+column participates, including both photo edges at a nonaligned full-360 seam.
+The scorer's inclusive right photo endpoint retains the final source column.
+Obstacle bins take the highest painted altitude. Sky bins take the highest lower
+edge and lowest upper edge, preserving the per-column 4° near-top open sentinel.
+Any unpainted overlapping column blocks sky. Empty band intersections block only
+with blockAbove; default open-above ignores the upper ceiling as before.
+Column extrema are summarized in one sequential mask scan before aggregation.
+
+Skyline rasterization uses the highest continuous segment edge within a column
+footprint and floors its row, rounding obstruction altitude upward by less than
+one calibrated row. Segments narrower than a column remain visible; inclusive
+integer endpoints and ordered later erasers remain intact. Crop regridding can
+shift brush edges within raster resolution. This is a conservative 0.5° planning
+policy, not proof of photographic accuracy or support for disconnected vertical
+openings. No-stroke authoritative profiles and representative-column legacy
+migration remain unchanged. Independent cell-overlap tests and browser
+save/reload/backup acceptance are recorded in RELEASES.md.
+
+Current navigation starts in README.md. Dated entries below remain evidence of
+earlier implementations, not current format/token authority. See AGENTS.md for
+current tokens, IMPLEMENTATION_PLAN.md for backlog, and RELEASES.md for checks.
+
+## Horizon simplification A–C — October 11, 2026
+
+Separate top/left ruler canvases occupy 23px/43px CSS grid gutters around the
+photo canvas. That canvas remains the shared image/mask/pointer rectangle;
+aspect, inverse zoom/pan, traces and reference markers retain one transform.
+Rulers are DPR-aware and do not cover photo pixels. Profile/advanced disclosures
+start closed and preserve their state on same-record rerenders. Opening the
+profile resizes/redraws it.
+
+Core returns atomic two-point previews from complete original-photo
+`{x,y,azimuth,altitude}` references. Positive increasing-x bearing branches are
+enumerated within 5–360° original coverage, including spans above 180° and north
+crossing. Equal-bearing seam endpoints require confirmed full coverage; known
+360° is a constraint, not a width to silently refit. Existing core helpers enforce
+vertical/physical bounds. Failed fits never mutate the panorama; source bounds
+compose the current cropped mapping.
+
+Evidence version 2 retains two complete references, coverage, projection, a
+full-360 constraint and an optional held-out check. Legacy version 1 remains
+readable without fabricated measurements. Backup format 7 protects complete
+references from older readers; staging/rollback and deep history stay intact.
+A supported fit reports `aligned`; only a separate in-crop check away from both
+fitted x/y coordinates can report `checked` within the existing 1° threshold.
+Unknown/other projections remain approximate; manual drift invalidates claims.
+
+`web/horizonsimple.js` handles picking/dragging, angle entry, non-mutating preview,
+explicit apply, optional checking and drawing. Owned reference gestures never
+paint. Numeric photo positions remain a keyboard alternative. Separate legacy
+coverage/bearing/height setup remains an Advanced adapter. Skyline tracing is the
+normal obstacle tool, with brush corrections and sky-band modes still available.
+A selected visible node has nearby Remove point using the same undoable removal
+as keyboard/advanced controls. Projection conversion/multiple references remain D/E.
+
+## Horizon/Panorama phases 4 and 5 — October 10, 2026
+
+An ordered stroke operation `{m:'trace', points:[[x,y], ...]}` represents a
+piecewise-linear skyline in the existing 720×360 mask space. Core validates
+finite, strictly increasing x positions, at most 256 points per trace; backup
+normalization bounds records to 32 traces. Fill covers connected columns only,
+from the interpolated skyline down. Edges and full-panorama seam endpoint heights
+are explicit. A new trace follows existing paint; editing it preserves its
+timeline position, so later brush/eraser corrections win. Legacy circles and
+ellipses keep their original rasterization and order.
+
+`web/horizontrace.js` owns pointer/keyboard/numeric interaction and CSS-pixel
+markers, while rasterization and crop intersection live in `core/horizon.js`.
+Crop intersects trace segments with the effective kept band and transforms
+their points alongside dabs. Deep history copies nested point arrays; planner
+revisions fingerprint them. No-geometry records keep authoritative world-bin
+profiles. Clear removes every operation; precise-bin Apply replaces authored
+geometry with the current world profile plus the edited bin, undoably.
+The first new point stays in session UI as an unsaved draft until connected to
+a second point; it cannot erase a legacy authoritative profile. Drafts do not
+enter backups or dirty history. Removing a filled trace down to one point
+removes that operation undoably and keeps the remaining point as a draft.
+Rejected duplicate/limit additions never capture a point drag. Imported closely
+spaced nodes retain strict ordering on movement; tool changes cancel crop/picks.
+Crop, Clear, exact-profile replacement and history restoration discard obsolete
+drafts; structural changes reconcile trace selection before another edit.
+
+Traces are obstacle-only. Switching to visible sky explicitly removes traces
+after confirmation, retains/reinterprets brush dabs, and is one undo step.
+Sky-band painting and block-above semantics remain unchanged. Backup format 6
+protects trace authorability from older clients; formats 1–5 remain readable.
+Malformed trace data, including discarded-ID records, rejects before writes.
+
+CAT-PERF-001 CPU profiling showed repeated Intl formatter construction dominating
+warm scrubs. `core/time.js` retains at most 32 per-zone offset formatters, while
+each instant still resolves its own offset. The presentation night-window memo
+tests cheap date/site/resolved-zone identity before computing site noon. Scoring,
+twilight policy, selected-time altitude and DST disambiguation are unchanged.
+
+## Horizon/Panorama phase 3 — October 10, 2026
+
+`web/horizonsetup.js` owns the editable import/setup sequence; `web/horizon.js`
+adapts it to the shared canvas transform, gesture settlement, live planner and
+history. New photos start at coverage; blank/existing records open for painting.
+Setup step/drafts are session presentation state, preserved on same-record
+rerenders. Entering Paint focuses the canvas; percent-position inputs provide
+a keyboard alternative to point picking. Exact numeric inputs and fine sliders
+share one geometry mutation path. Coverage controls refresh after manual width
+changes, and readout space is reserved to prevent pointer-induced canvas movement.
+
+`core/horizoncalibration.js` is the only measurement/fit/check implementation.
+The version-1 `calibration` object carries projection, original-image angular
+coverage, one bearing reference, two altitude references and an independent
+check with both known angles. Points use normalized original-photo coordinates;
+the source rectangle projects them into the current view. Altitude uses the
+existing `MASK_H - 1` convention. The two vertical points must be at least 2%
+of the visible image height apart. Fits reject reversed/degenerate scales or
+physical overflow before mutation. Bearing alignment wraps true north; magnetic
+readings require the user's correction, without an implicit declination model.
+
+Calibration status is derived, never stored as a trusted flag. Checked references
+require a declared equirectangular projection, unchanged confirmed coverage,
+exact retained fit references and a separate in-frame check within 1° in both
+axes. The check is at least 2% across from the bearing point and 2% vertically
+from each altitude point. Unknown/other projections stay approximate. Manual
+geometry changes invalidate a stale fit. Crops preserve original reference
+identity, but references outside the retained frame require another check.
+
+History deep-copies the evidence, alongside geometry and source bounds. Backup
+format 5 carries it; v1–v4 remain readable with missing evidence defaulting to
+unassessed. Malformed/future evidence rejects the complete panorama section
+before store writes, including records otherwise dropped for invalid IDs.
+The existing transactional restore/rollback and authoritative stroke-less
+profiles are preserved. Synthetic tests establish software geometry only;
+physical full/partial-photo, device and assistive-technology acceptance is open.
+
+## Horizon/Panorama phases 1 and 2 — October 10, 2026
+
+The photo's `sourceRect` stores normalized `{x,y,w,h}` against the retained
+original image. `cropPano` composes it from the effective kept band used for
+paint/calibration. Drawing and aspect fitting sample that region; image bytes
+remain unchanged. History snapshots include the rectangle and old snapshots
+default to the complete image. Backup format 4 carries it, rejects malformed
+rectangles before writes, and keeps v1–v3 imports readable. Existing cropped
+records without source bounds cannot be reconstructed reliably; they default
+to the full original rather than guessing a physical calibration.
+
+Shared `normalizePanoCalibration` keeps bottom within −30…85°, top within
+bottom+5…90°. Local and backup loading repair old out-of-bounds calibration,
+recomputing only records with strokes; stroke-less profiles remain authoritative.
+`applyDabToMask` is the original rasterizer factored for both replay and incremental
+edits. `strokeSegment` interpolates overlapping dabs, retaining paint/erase order
+and legacy ellipse compatibility. Rendering batches at most once per frame;
+mask image/profile derivation runs only when dirty. History still commits once
+per gesture, with visible partial paint retained on cancellation/lost capture/blur.
+Only the owning pointer edits a gesture; teardown/view/history/tool changes settle it.
+
+Rulers/text/grid widths are in CSS pixels under DPR scaling, projected from the
+same angular view as photo/mask. Tick density adapts to zoom, with a fallback
+direction label. Brush preview shows the actual angular ellipse and seam copies;
+brush angular size remains constant under zoom. Same-panorama editor rerenders
+retain zoom/focus/brush/eraser/grid/opacity outside persistent edit history.
+Paint/crop/history controls are in a bounded sticky toolbar above the image;
+grid/opacity controls use the closed Display disclosure. The long-history browser
+probe records handler and next-frame latency separately against committed HEAD,
+with a 20,000-dab history and a 4096×1024 upload. Initial visible-frame target is
+p95 below 50 ms on this workstation, with at least a twofold handler improvement;
+hardware-specific milliseconds are reported rather than asserted as a CI guarantee.
+
 ## Disposable test scratch lifecycle — October 10, 2026
 
 scripts/scratchspace.py owns marked run directories under ignored logs/.scratch.
@@ -71,8 +372,9 @@ retain the saved baseline and history; checkpoints settle pending metadata befor
 recovery captures them. Editor teardown removes keyboard listeners and observers.
 Space is a canvas-only pan modifier and releases on keyup or focus loss.
 
-webstore exports backup format 3; v1/v2 imports remain supported. Older clients
-reject v3, preventing them from dropping rx and silently changing a horizon.
+webstore exported backup format 3 for this earlier crop fix; the subsequent
+Horizon/Panorama phases 1/2 use format 4 as described above. Older clients reject
+unsupported newer versions, preventing silent loss of rx or photo source bounds.
 Normalization retains rx and bounds imported lists at 60,000 dabs, enough for
 three seam copies of the former 20,000-dab bound. Photo bytes are unchanged.
 Node regressions and mutations cover geometry/normalization; Chromium checks

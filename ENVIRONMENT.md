@@ -2,6 +2,15 @@
 
 The current workspace is the website repository. Browser tests use Playwright
 with system Chrome, Node parses JavaScript, and Python runs build/test guards.
+Install development packages with `python -m pip install -r requirements-dev.txt`;
+the website's build/catalog tools use the standard library (requirements.txt).
+Use an installed Node.js and Chrome for the JavaScript and real-browser gates.
+See README.md for the normal check sequence.
+
+Run the full Python suite separately from JavaScript, browser, release and
+publication checks. Core-drift regression tests temporarily replace or remove
+shipped modules to prove the guards reject them; overlapping processes can see
+those deliberately invalid files and report misleading failures.
 
 This machine's restricted sandbox has allowed plain process pipes but denied
 Chromium named pipes and Playwright overlapped-pipe startup. Use one elevated
