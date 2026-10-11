@@ -53,8 +53,11 @@ entry here when it is fixed and record the fix in RELEASES.md.
 - **BROWSER-LOCAL-001.** The local test server's connection queue was raised
   from 5 to 64 after refused module loads; failures are recorded with server
   thread health and failed URLs, never retried or skipped.
-- **BROWSER-CI-001.** One GitHub Windows run (October 11, 2026) failed
-  `web-safety-import-refuses-unrecoverable-current-horizons` with Chrome's
-  `net::ERR_NO_BUFFER_SPACE` after a reload; the next run of the same code
-  passed. The test server now keeps connections alive instead of opening one
-  socket per module import. Remove this entry if it does not recur.
+- **BROWSER-CI-001.** On GitHub's Windows runners, roughly every other
+  browser run fails one check because Chrome reports `net::ERR_NO_BUFFER_SPACE`
+  for a single local request. The file differs each time (`app.js`,
+  `core/.../plannerstate.js`, `app.png`, all a few KB), and the same code
+  passes on the next run and locally (119/119). Keep-alive on the test server
+  (October 11) did not stop it. One run also missed the advanced-catalog
+  speed budget under 4x CPU throttling. Open: decide how CI should handle
+  runner-level network failures.

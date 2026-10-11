@@ -98,8 +98,8 @@ _VERIFIED_BASELINE_JSON = r"""
    "token": "4"
   },
   "app.js": {
-   "sha256": "ddd575dd3e827b1061029d45002adeb2eac832066189f2be9ac5ad23380174f3",
-   "token": "208"
+   "sha256": "09172b36036d24f14234cd0ad04515026cd608cc61ea56f09082fa46feaac13d",
+   "token": "209"
   },
   "astro.js": {
    "sha256": "e3bb53f230a712fe0dc33ffafb56359396b6bde7c44aa75e12d6530a7ec21b45",

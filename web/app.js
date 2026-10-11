@@ -2358,6 +2358,20 @@ function dialogStops(dialog) {
     .filter((el) => el.tabIndex >= 0 && reachableControl(el));
 }
 
+// Tonight and Catalog refreshes (scrub, the 60 s timer, a late boot pass)
+// replace their rows while a card is open. A detached opener is mapped to the
+// same control in the same target's live row, so focus returns to it instead
+// of falling back to the tab bar.
+function liveEquivalent(el) {
+  if (!el || el.isConnected) return el;
+  const row = el.closest('tr[data-tonight-id], tr[data-id]');
+  if (!row) return el;
+  const attr = row.hasAttribute('data-tonight-id') ? 'data-tonight-id' : 'data-id';
+  const classes = [...el.classList].map((c) => '.' + CSS.escape(c)).join('');
+  return document.querySelector(`tr[${attr}="${CSS.escape(row.getAttribute(attr))}"] `
+    + el.localName + classes) || el;
+}
+
 function restoreControlFocus(opener) {
   const target = reachableControl(opener) ? opener : $(`#tab-${S.view}`);
   target?.focus({ preventScroll: true });
@@ -3071,8 +3085,9 @@ function closeDetail({ restoreFocus = true } = {}) {
   detailTimeFrame = null;
   syncSkyDetailPlaceholder();
   if (!restoreFocus) return;
-  const target = reachableControl(detailReturnFocus) ? detailReturnFocus
-    : S.view === 'sky' ? $('#sky-selected-detail') || $('#sky') : detailReturnFocus;
+  const opener = liveEquivalent(detailReturnFocus);
+  const target = reachableControl(opener) ? opener
+    : S.view === 'sky' ? $('#sky-selected-detail') || $('#sky') : opener;
   detailReturnFocus = null;
   restoreControlFocus(target);
 }
