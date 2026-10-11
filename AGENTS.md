@@ -71,13 +71,13 @@ versions or recreate the combined desktop project here. The deprecated
 
 Keep this register aligned with entry-point references and the core manifest.
 Current:
-- `web/app.js?v=202`
+- `web/app.js?v=205`
 - `web/astro.js?v=49`
-- `web/horizon.js?v=109`
-- `web/horizonsetup.js?v=17`
+- `web/horizon.js?v=112`
+- `web/horizonsetup.js?v=20`
 - `web/horizonsimple.js?v=14`
 - `web/horizontrace.js?v=16`
-- `web/horizonphoto.js?v=8`
+- `web/horizonphoto.js?v=10`
 - `web/horizongeographic.js?v=6`
 - `web/webstore.js?v=63`
 - `web/format.js?v=56`

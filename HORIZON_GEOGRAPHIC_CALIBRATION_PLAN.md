@@ -45,8 +45,9 @@ size and reference counts are not accuracy guarantees.
 
 Current P1/P2 scope: evidence v5 and backup 10 retain source/model orientation,
 fitting/check roles, optional measurement source/error/time/group/exclusion and
-observing-position/capture evidence. Confirmed converted photos default to strict
-measured coverage; older records retain legacy behavior. Physical fits use
+observing-position/capture evidence. Confirmed converted photos default to
+inferred-open coverage since October 11, 2026 (strict until then; strict stays
+selectable); older records retain legacy behavior. Physical fits use
 weighted unit-ray alignment with optional robust weighting, while known geometry
 can proceed directly to review/checking without invented fitting points.
 Unknown-FOV estimation is limited to corrected rectilinear photos, at least four

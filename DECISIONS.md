@@ -1,5 +1,19 @@
 # Independent website decisions
 
+## 2026-10-11 — Converted photos infer open sky above the skyline
+
+Owner decision: confirming a converted photo defaults to inferred-open coverage.
+Sky above the recorded skyline counts as clear, including above the photo's top
+edge, while directions outside the photographed azimuths stay excluded. This
+supersedes the P1/P2 rule that newly confirmed converted photos use strict
+measured coverage, which excluded nearly all sky above an ordinary photo's
+narrow vertical field. A record whose policy is already inferred-open or
+strict-measured keeps it on reconversion; legacy, the default every record
+carries, is treated as unchosen. The photo setup shows a "Sky outside the
+photo" select (open above the skyline / only what the photo shows / open
+everywhere) that applies immediately as one undoable edit; the advanced
+coverage evidence select stays in step.
+
 ## 2026-10-11 — Detail card describes the coming night; USNO time anchors
 
 Owner decision: the detail card's rise, set and culmination, and the Moon

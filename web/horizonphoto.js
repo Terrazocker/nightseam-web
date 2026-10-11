@@ -71,7 +71,10 @@ export function wirePhotoConversion(root,p,hooks){
     hooks.settle();try{if(!preview)throw new Error('Preview conversion first.');const model=calculate();
       const w=model.working;
       const calibration=normalizePhotoCalibration({version:5,mode:'known-geometry',sourceModel:model,model,references:[],checks:[],options:{robust:false,estimateFov:false,fovBounds:null}},true);
-      const evidence=normalizeCoverageEvidence({...normalizeCoverageEvidence(p.coverageEvidence),policy:'strict-measured'},true);
+      // Every record carries legacy evidence by default, so legacy means "no choice
+      // yet": assume open sky above the skyline. A chosen evidence policy is kept.
+      const current=normalizeCoverageEvidence(p.coverageEvidence);
+      const evidence=normalizeCoverageEvidence({...current,policy:current.policy==='legacy'?'inferred-open':current.policy},true);
       hooks.prepare(model);
       Object.assign(p,{photoModel:model,sourceRect:{x:0,y:0,w:1,h:1},fov:w.fov,azOffset:w.offset,altBottom:w.bottom,altTop:w.top,calibration,coverageEvidence:evidence});
       hooks.changed();preview=null;$('photo-apply').disabled=true;$('photo-result').textContent='Confirmed geometry applied. Review it without fitting, check another feature, or mark known points to fit orientation. Then draw and save.';

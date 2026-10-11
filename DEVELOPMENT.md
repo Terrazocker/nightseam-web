@@ -36,8 +36,9 @@ It does not infer lens distortion, arbitrary stitching or viewpoint parallax.
 
 Coverage evidence version1 stores legacy/inferred-open/strict-measured policy,
 optional observing latitude/longitude/optical height and capture date. Older
-records default to legacy behavior. Newly confirmed converted photos use strict
-measured coverage. The core evidence query distinguishes clear/blocked/unknown
+records default to legacy behavior. Newly confirmed converted photos infer open
+sky above the skyline (inferred-open) unless the record already has a chosen
+non-legacy policy; the photo setup's "Sky outside the photo" select switches it. The core evidence query distinguishes clear/blocked/unknown
 from the policy permitting or excluding that direction; unknown is not measured
 obstruction. Both detailed and batch planning use the same policy-aware horizon
 limits and shared scoring loop. Strict mode excludes missing azimuth/profile

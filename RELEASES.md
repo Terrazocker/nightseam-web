@@ -1,5 +1,18 @@
 # Independent website release record
 
+## Converted-photo coverage default and switch — October 11, 2026 (local development)
+
+Confirming a converted photo now defaults to inferred-open coverage instead of
+strict measured coverage, keeps an already chosen inferred-open/strict policy,
+and the photo setup shows a "Sky outside the photo" select that applies
+immediately with undo; the advanced evidence select follows it. A new Chrome
+check confirms the default, that a target 40 deg up above an ordinary photo's
+top edge is allowed when open and excluded when strict, undo of the switch,
+both selects in step, and that reconversion keeps an explicit strict choice.
+
+Actual checks: pytest 364 passed with the optional-data skip; Chrome 118/118;
+check_release --allow-dirty --no-stage 0 errors. No tag or deployment.
+
 ## Published time anchors and coming-night detail card — October 11, 2026 (local development)
 
 Reference anchors add verbatim USNO 2026 yearly rise/set and civil, nautical

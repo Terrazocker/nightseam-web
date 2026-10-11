@@ -1,8 +1,8 @@
 /* Guided photo setup; geometry and evidence decisions live in core. */
 import { normalizePhotoCalibration, photoPoint, photoPointAngles, alignPhotoBearing,
-  fitPhotoVertical, photoCalibrationReport } from './core.js?v=64';
+  fitPhotoVertical, photoCalibrationReport, normalizeCoverageEvidence } from './core.js?v=64';
 import { simpleSetupHTML, wireSimpleSetup } from './horizonsimple.js?v=14';
-import { photoConversionHTML } from './horizonphoto.js?v=8';
+import { photoConversionHTML } from './horizonphoto.js?v=10';
 import { geographicEvidenceHTML } from './horizongeographic.js?v=6';
 
 const CONVERTED_NOTE = 'This view was converted from the original photo, so its geometry comes from that conversion. Refine it with the photo setup above; these steps can only review it.';
@@ -19,6 +19,11 @@ export function photoSetupHTML() {
   return `<section class="horizon-setup" aria-label="Guided photograph calibration">
     <h4>Photo setup</h4><p id="setup-status" class="setup-status" role="status"></p>
     <p id="setup-reason" class="sub"></p>
+    <label class="setup-coverage">Sky outside the photo <select id="setup-coverage-policy">
+      <option value="inferred-open">Open above the skyline (recommended)</option>
+      <option value="strict-measured">Only what the photo shows</option>
+      <option value="legacy">Open everywhere (older horizons)</option></select></label>
+    <p id="setup-coverage-note" class="sub" role="status"></p>
     <button id="setup-open" class="btn small" type="button">Set up / review calibration</button>
     ${simpleSetupHTML()}
     ${photoConversionHTML()}
@@ -67,6 +72,16 @@ export function wirePhotoSetup(root, p, ui, hooks) {
   const inputIds = ['coverage-kind', 'width', 'projection', ...POINTS.flatMap(([key]) =>
     ['x', 'y', ...(key === 'bearing' ? ['azimuth'] : key === 'check' ? ['azimuth', 'altitude'] : ['altitude'])].map((v) => `${key}-${v}`))];
   const message = (text = '') => { $('#setup-message').textContent = text; };
+  const COVERAGE_NOTES = {
+    'inferred-open': 'Sky above your skyline counts as clear; directions left or right of the photo are excluded.',
+    'strict-measured': 'Targets above the photo’s top edge or outside its sides are excluded as unknown coverage.',
+    legacy: 'All sky outside the photo counts as clear, as for horizons made before coverage evidence.',
+  };
+  function syncSkyPolicy() {
+    const policy = normalizeCoverageEvidence(p.coverageEvidence).policy;
+    $('#setup-coverage-policy').value = policy;
+    $('#setup-coverage-note').textContent = COVERAGE_NOTES[policy];
+  }
   const cancelPick = () => {
     picking = null;
     root.querySelectorAll('[data-pick]').forEach((b) => b.setAttribute('aria-pressed', 'false'));
@@ -142,6 +157,12 @@ export function wirePhotoSetup(root, p, ui, hooks) {
     if ($('#setup-coverage-kind').value === 'full') { $('#setup-width').value = '360'; drafts.width = '360'; }
     render();
   });
+  $('#setup-coverage-policy').addEventListener('change', (ev) => {
+    hooks.settle();
+    p.coverageEvidence = normalizeCoverageEvidence({ ...normalizeCoverageEvidence(p.coverageEvidence),
+      policy: ev.target.value }, true);
+    syncSkyPolicy(); hooks.changed();
+  });
   $('#setup-open').addEventListener('click', () => { syncCoverage(); simple.open(); });
   $('#setup-legacy-open').addEventListener('click', () => { syncCoverage(); step(0); });
   root.querySelectorAll('[data-step]').forEach((b) => b.addEventListener('click', () => step(+b.dataset.step)));
@@ -181,7 +202,8 @@ export function wirePhotoSetup(root, p, ui, hooks) {
   else inputIds.forEach((id) => { $(`#setup-${id}`).value = String(drafts[id] ?? ''); });
   simple = wireSimpleSetup(root, p, ui, { ...hooks, render, cancelLegacyPick: cancelPick });
   render();
-  return { render, sync: () => { sync(); simple.sync(); }, syncCoverage,
+  syncSkyPolicy();
+  return { render, sync: () => { sync(); simple.sync(); syncSkyPolicy(); }, syncCoverage,
     markers: () => {
       if (!ui.legacySetup || ui.setupStep === 4) return simple.markers();
       return POINTS.flatMap(([key], i) => {

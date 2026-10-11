@@ -54,8 +54,9 @@ validation set for the selected geometry. Obtain additional
 independent measurements before claiming physical accuracy. No lens-distortion,
 stitching or nearby-obstacle parallax correction is inferred.
 
-Newly confirmed converted photos default to strict measured coverage; old
-records retain legacy assumptions. A shared core query separates evidence
+Newly confirmed converted photos default to inferred-open coverage (owner
+decision, October 11, 2026; strict remains selectable); old records retain
+legacy assumptions. A shared core query separates evidence
 clear/blocked/unknown from policy permission. Strict planning excludes unknown
 azimuth/profile coverage and directions outside photographed vertical bounds.
 This is a conservative profile summary, not a source-pixel evidence mask or a

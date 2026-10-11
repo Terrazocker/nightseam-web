@@ -37,11 +37,15 @@ Resolved locally on branch horizon-calibration (receipt in RELEASES.md):
   scan; the 0.020*sin(2g) term is below the tables' resolution.
 - Detail card: rise, set and culmination now describe the coming night (site
   noon to next site noon) instead of the calendar day (DECISIONS.md).
+- Converted photos: conversion no longer forces strict coverage, which excluded
+  all sky above the photo's top edge. It defaults to inferred-open, keeps an
+  explicitly chosen policy, and the photo setup shows a "Sky outside the photo"
+  select that switches the assumption immediately (undoable).
 
 Confirmed and still open (review severity in brackets):
 
-- [assumption] Strict measured coverage excludes all sky above a converted
-  photo's top edge, and obstacle mode cannot express photographed clear sky.
+- [assumption] Obstacle mode cannot express photographed clear sky: under the
+  selectable strict policy an unpainted column inside the photo stays excluded.
 - [low] The planner's sunset/sunrise labels and "sun" scrub range use the
   apparent centre on the horizon (with a 10-minute linear step across the
   refraction cutoff), 2–10 min earlier than the published upper-limb
@@ -61,8 +65,8 @@ Confirmed and still open (review severity in brackets):
 P1/P2 are implemented locally with integrated software gates pending. Evidence
 v5/backup10 add optional measurement and observer/capture metadata, physical
 orientation fitting, known-geometry checking and constrained corrected
-rectilinear unknown-FOV estimation. Strict measured coverage is the default for
-newly confirmed converted photos; older records keep legacy behavior. Actual
+rectilinear unknown-FOV estimation. Newly confirmed converted photos infer open
+sky above the skyline (strict until October 11); older records keep legacy behavior. Actual
 checks belong in RELEASES.md. The dated D/E notes below retain the prior boundary.
 
 - P3 remains open: painting still belongs to the angular working view. Existing

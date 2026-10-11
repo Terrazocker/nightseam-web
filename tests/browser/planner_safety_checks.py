@@ -45,14 +45,13 @@ def unknown_timezone(c):
     c.assert_clean()
 
 
-@check('web-safety-converted-photo-refuses-legacy-setup', 'web')
-def converted_legacy_setup(c):
-    boot(c)
-    c.page.set_viewport_size({'width': 1400, 'height': 1100})
-    tab(c, 'horizon')
-    c.page.locator('#pano-file').set_input_files({'name': 'converted.png', 'mimeType': 'image/png',
-                                                  'buffer': gradient_png()})
-    c.page.wait_for_selector('#simple-flow:visible')
+def convert(c, upload=True):
+    if upload:
+        c.page.set_viewport_size({'width': 1400, 'height': 1100})
+        tab(c, 'horizon')
+        c.page.locator('#pano-file').set_input_files({'name': 'converted.png', 'mimeType': 'image/png',
+                                                      'buffer': gradient_png()})
+        c.page.wait_for_selector('#simple-flow:visible')
     expand(c.page.locator('#photo-type'))
     c.page.locator('#photo-type').select_option('rectilinear')
     c.page.locator('#photo-hfov').fill('90')
@@ -60,7 +59,13 @@ def converted_legacy_setup(c):
     c.page.locator('#photo-corrected').check()
     c.page.locator('#photo-preview').click()
     c.page.locator('#photo-apply').click()
-    converted = model(c)
+    return model(c)
+
+
+@check('web-safety-converted-photo-refuses-legacy-setup', 'web')
+def converted_legacy_setup(c):
+    boot(c)
+    converted = convert(c)
     c.expect(converted.get('photoModel') is not None, 'precondition: the view is converted')
     expand(c.page.locator('#setup-legacy-open'))
     c.page.locator('#setup-legacy-open').click()
@@ -118,3 +123,34 @@ def unrecoverable_current(c):
     upload(c, fixture_bundle())
     wait_alert(c, messages, n, 'cannot be captured as a recovery copy')
     c.expect_eq(snapshot(c), before, 'nothing is replaced when rollback would be impossible')
+
+
+@check('web-coverage-converted-default-and-visible-switch', 'web')
+def converted_coverage(c):
+    """Owner decision: converting assumes open sky above the skyline, and one
+    visible control switches the assumption, with undo and both selects in step."""
+    boot(c)
+    p = convert(c)
+    policy = c.page.locator('#setup-coverage-policy')
+    c.expect_eq(p['coverageEvidence']['policy'], 'inferred-open', 'conversion default')
+    c.expect_eq(policy.input_value(), 'inferred-open')
+    c.expect_in('Sky above your skyline counts as clear', c.page.locator('#setup-coverage-note').text_content())
+    # A target 40 deg up, inside the photographed directions but above the photo's top edge.
+    allowed = """async ({m, az}) => { const H = await import(m.horizon);
+      return H.queryHorizonEvidence(H.activePano(), az, 40).allowed; }"""
+    inside = (p['azOffset'] + p['fov'] / 2) % 360
+    c.expect(p['altTop'] < 40, f'precondition: photo top {p["altTop"]} is below the target')
+    c.expect_eq(c.page.evaluate(allowed, {'m': modules(), 'az': inside}), True, 'open sky above the skyline')
+    policy.select_option('strict-measured')
+    c.expect_eq(model(c)['coverageEvidence']['policy'], 'strict-measured')
+    c.expect_eq(c.page.evaluate(allowed, {'m': modules(), 'az': inside}), False, 'strict excludes unphotographed sky')
+    expand(c.page.locator('#geographic-policy'))
+    c.expect_eq(c.page.locator('#geographic-policy').input_value(), 'strict-measured', 'advanced select follows')
+    c.page.locator('#ed-undo').click()
+    c.expect_eq(model(c)['coverageEvidence']['policy'], 'inferred-open', 'one undo restores the assumption')
+    c.expect_eq(policy.input_value(), 'inferred-open', 'visible select follows undo')
+    c.expect_eq(c.page.locator('#geographic-policy').input_value(), 'inferred-open', 'advanced select follows undo')
+    policy.select_option('strict-measured')
+    again = convert(c, upload=False)
+    c.expect_eq(again['coverageEvidence']['policy'], 'strict-measured', 'reconversion keeps an explicit choice')
+    c.assert_clean()

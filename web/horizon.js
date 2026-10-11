@@ -15,9 +15,9 @@
    ./core/<hash>/ and imported through the stable ./core.js stub. The shell
    re-exports it so app.js/nightrank.js keep their public surface. */
 import { vizTheme } from './viztheme.js?v=6';
-import { photoSetupHTML, wirePhotoSetup } from './horizonsetup.js?v=17';
+import { photoSetupHTML, wirePhotoSetup } from './horizonsetup.js?v=20';
 import { traceToolsHTML, tracePointsHTML, wireTraceTools } from './horizontrace.js?v=16';
-import { inspectPhoto, angularPhotoCanvas, wirePhotoConversion } from './horizonphoto.js?v=8';
+import { inspectPhoto, angularPhotoCanvas, wirePhotoConversion } from './horizonphoto.js?v=10';
 import { wireGeographicEvidence } from './horizongeographic.js?v=6';
 import { normalizeWebPrefs, WEB_PREF_DEFAULTS } from './webstore.js?v=63';
 import {
@@ -1100,7 +1100,7 @@ function wireEditor(box, p, onChanged) {
     setupStep: pendingPhotoSetup.has(p.id) ? 0 : 4,
   };
   pendingPhotoSetup.delete(p.id);
-  let setup = null;
+  let setup = null, geographicEvidence = null;
   let traceTools = null, tracing = false;
   let eraser = ui.eraser;
   let gestureErase = false;   // right-button drag erases for the whole gesture
@@ -1711,6 +1711,7 @@ function wireEditor(box, p, onChanged) {
     rebuildMaskNow();
     syncCalInputs();
     setup?.sync();
+    geographicEvidence?.sync();
     traceTools?.restore();
     renderLandmarkRows();
     readProfileBin();
@@ -2209,16 +2210,16 @@ function wireEditor(box, p, onChanged) {
     settle: () => { finishGesture(); commitMetadata(); setCropTool(false); },
     redraw: schedulePaint,
     focusCanvas: () => { cvs.focus(); cvs.scrollIntoView({ block: 'center', behavior: 'instant' }); },
-    changed: () => { syncCalInputs(); rebuildMaskNow(); overlay(); fitCanvas();commit(); },
+    changed: () => { syncCalInputs(); rebuildMaskNow(); overlay(); fitCanvas(); geographicEvidence?.sync(); commit(); },
     drawing: () => traceTools?.choose(p.paintMode === 'obstacle' ? 'trace' : 'brush'),
     prepareGeometry:model=>{if(!imgEl)throw new Error('Wait for the photograph to load.');const surface=angularPhotoCanvas(imgEl,model);angularEl=surface;angularKey=JSON.stringify(model);},
     previewGeometry:model=>{const target=$('#photo-preview-canvas',box);if(!model){target.hidden=true;conversionPreview=null;return;}
       if(!imgEl)throw new Error('Wait for the photograph to load.');const surface=angularPhotoCanvas(imgEl,model);conversionPreview={key:JSON.stringify(model),surface};
       target.width=surface.width;target.height=surface.height;target.getContext('2d').drawImage(surface,0,0);target.hidden=false;},
   });
-  const geographicEvidence=wireGeographicEvidence(box,p,{
+  geographicEvidence=wireGeographicEvidence(box,p,{
     settle:()=>{finishGesture();commitMetadata();setCropTool(false);},
-    changed:()=>{rebuildMaskNow();overlay();commit();},
+    changed:()=>{rebuildMaskNow();overlay();setup?.sync();commit();},
   });
   wirePhotoConversion(box,p,{
     settle:()=>{finishGesture();commitMetadata();setCropTool(false);setup?.cancelPick();},

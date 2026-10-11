@@ -98,8 +98,8 @@ _VERIFIED_BASELINE_JSON = r"""
    "token": "4"
   },
   "app.js": {
-   "sha256": "646cd7fcf4656e3386cd73c1fa699bc4057175361b93fc0a2fd2d79b1b81aab5",
-   "token": "202"
+   "sha256": "57e118d18ec2a7c1a8e37bc2cc100398b206ee33d378d7f1a51e82c5e07ba470",
+   "token": "205"
   },
   "astro.js": {
    "sha256": "9d657c55b6e155ac8069d5219b3fa64b2f48fcb02c558468fd5a9d111ea61988",
@@ -114,20 +114,20 @@ _VERIFIED_BASELINE_JSON = r"""
    "token": "56"
   },
   "horizon.js": {
-   "sha256": "8679414d7cdda338f35b552f8fb451c6f3877138399b2762222ca37238ad8eea",
-   "token": "109"
+   "sha256": "30fe03b2a83e955885172628cefaa5d0a87883d160bec9b7237132b49ab5e60e",
+   "token": "112"
   },
   "horizongeographic.js": {
    "sha256": "bb42029a46e8b1394a1417527caa9126576f1a5d44854d34ad5a603faa920162",
    "token": "6"
   },
   "horizonphoto.js": {
-   "sha256": "f613bced062d2e90c6954f8d295ced9bdd564ce260dbbf8b8407436db6d1df81",
-   "token": "8"
+   "sha256": "e1063c28cea2ac250f0691b885b7325247724091988147ec5f3123b89443823d",
+   "token": "10"
   },
   "horizonsetup.js": {
-   "sha256": "d031bc5ab499e0d8789ec38698dcc08f6b7cc15f727cac6626112a1148c1724d",
-   "token": "17"
+   "sha256": "b91ed4e46aa8d499de77481c3c0a0f4e137eceb43009d9ac308c57a4e23e78a3",
+   "token": "20"
   },
   "horizonsimple.js": {
    "sha256": "9ad270a4e6580c0dc3154f6415277fc7cfb92c55b936fc4b4515e9df34172ba9",
