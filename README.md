@@ -46,7 +46,7 @@ python -m pytest tests/ -q                      # run alone: drift tests swap sh
 python scripts/check_browser.py --web           # real Chrome; launch failure is exit 2, never a skip
 ```
 
-The same gates run on GitHub for every push and pull request
+The same gates run on GitHub for every pull request and every push to `master`
 (`.github/workflows/checks.yml`). After editing `core/`, run
 `python scripts/build_core.py`; after any behaviour change, bump cache tokens
 with `python scripts/bump_web_tokens.py` (see [AGENTS.md](AGENTS.md)).

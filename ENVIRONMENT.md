@@ -39,6 +39,9 @@ dialogs/process failures under restricted tokens. Do not run git gc casually.
 Text writes must use explicit UTF-8 without BOM; do not use a legacy PowerShell
 Get-Content/Set-Content roundtrip for non-ASCII shipped text.
 
-CI runs the same gates on GitHub's windows-latest runners with Python 3.14,
-Node 22 and the runner's installed Chrome (`.github/workflows/checks.yml`); the
-sandbox limits above apply only to this development machine.
+CI runs the same gates on GitHub with Python 3.14, Node 22 and the runner's
+installed Chrome (`.github/workflows/checks.yml`): the guards and pytest on
+windows-latest, the browser suite on ubuntu-latest. The sandbox limits above
+apply only to this development machine. Windows-specific browser behaviour is
+covered by local runs here. The repository is private, so CI time counts
+against the account's monthly Actions minutes (Windows minutes count double).

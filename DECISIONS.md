@@ -22,11 +22,39 @@ Library, SQLite, desktop CSP) are history only.
   is the only object-photo source (2026-10-06); popularity is never visible
   (2026-10-06); the CSP is delivered in the document (0.6.33).
 - **Delivery:** cache tokens checked against a verified baseline (0.6.24/25);
-  immutable release graphs with older releases retained (2026-10-10).
+  immutable release graphs with older releases retained (2026-10-10); CI runs
+  the browser suite on Linux and the rest on Windows (2026-10-11).
 - **Releases:** the public history restarted at 0.1.0 (2026-10-06); later
   releases continue at 0.7.0 above inherited tags (2026-10-11).
 - **Documentation:** see "Documentation layout" (2026-10-11), which updates the
   older "Docs policy".
+
+## 2026-10-11 — CI: browser suite on Linux, one run per change
+
+**Decision.** The browser job runs on `ubuntu-latest`; the source guards and
+pytest stay on `windows-latest`. CI runs for every pull request and every push
+to `master`, no longer for every push to every branch.
+
+**Why.** On GitHub's Windows runners about every other browser run failed one
+check because Chrome reported `net::ERR_NO_BUFFER_SPACE` for a single local
+request, each time a different small file (`app.js`, `plannerstate.js`,
+`app.png`); the same code passed on rerun and locally. HTTP keep-alive on the
+test server did not stop it. The planner runs only in the browser, so the
+runner's operating system does not change what the checks test, and the
+Windows-specific parts (CRLF checkout, Python tooling) keep their Windows job.
+Running pushes and pull requests separately doubled every run; in a private
+repository that also doubled the Actions minutes used.
+
+**Rejected.** Retrying a check after a network error (bends the no-retry rule
+and would hide real network faults); leaving it and rerunning by hand (trains
+people to ignore red CI); a self-hosted runner in WSL (CI would depend on the
+development PC being on, and serving from the Windows drive is not faster).
+
+**Consequences.** A branch without a pull request gets no automatic CI run;
+start one by hand (workflow_dispatch) if needed. If the Linux job shows a
+Linux-only difference (fonts, case-sensitive paths), fix it or revert the
+runner. One Windows run also missed the advanced-catalog speed budget under
+4x CPU throttling; watch whether that recurs on Linux.
 
 ## 2026-10-11 — Short AGENTS.md; no hand-kept token register
 

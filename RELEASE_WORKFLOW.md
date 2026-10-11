@@ -12,7 +12,7 @@ records exact acceptance and cleanup. Inherited tags occupy 0.1.5 through
 existing tag (owner decision, October 11, 2026); pre_tag_check.py refuses a
 reused or lower name. Do not rerun the initial tag creation or move v0.1.0.
 Host compression and human AT acceptance remain open separately from
-publication (BUGS.md). CI runs the same checks for every push.
+publication (BUGS.md). CI runs the same checks for every pull request and every push to master.
 
 ## Reviewable local candidate
 

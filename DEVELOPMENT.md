@@ -136,5 +136,6 @@ separate review. See [RELEASE_WORKFLOW.md](RELEASE_WORKFLOW.md) and
   (`tests/fixtures/usno_2026/`). Frozen fixtures catch regressions only.
 - **Browser checks** (`tests/browser/*_checks.py`) run in real Chrome through
   `scripts/check_browser.py --web`.
-- **CI** (`.github/workflows/checks.yml`) runs the guards, pytest and the
-  browser suite on Windows for every push and pull request.
+- **CI** (`.github/workflows/checks.yml`) runs the guards and pytest on
+  Windows and the browser suite on Linux, for every pull request and every
+  push to `master`.

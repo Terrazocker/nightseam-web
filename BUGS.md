@@ -59,5 +59,5 @@ entry here when it is fixed and record the fix in RELEASES.md.
   `core/.../plannerstate.js`, `app.png`, all a few KB), and the same code
   passes on the next run and locally (119/119). Keep-alive on the test server
   (October 11) did not stop it. One run also missed the advanced-catalog
-  speed budget under 4x CPU throttling. Open: decide how CI should handle
-  runner-level network failures.
+  speed budget under 4x CPU throttling. The browser job now runs on Linux
+  (DECISIONS.md, 2026-10-11); remove this entry once Linux runs stay clean.

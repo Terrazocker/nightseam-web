@@ -1,11 +1,16 @@
-# Release gates from README.md/AGENTS.md on every push and pull request.
-# Runs on Windows like the development environment (CRLF checkout, system
-# Chrome). Full history: check_release needs tags, the latency gate a baseline.
-# It never builds a publication candidate, tags or deploys.
+# Release gates from README.md/AGENTS.md for every pull request and every push
+# to master (a branch with an open pull request runs once, as the pull
+# request). Source guards and pytest run on Windows like the development
+# environment (CRLF checkout); the browser suite runs on Linux, because
+# GitHub's Windows runners intermittently failed single local requests with
+# net::ERR_NO_BUFFER_SPACE (DECISIONS.md, 2026-10-11). Full history:
+# check_release needs tags, the latency gate a baseline. It never builds a
+# publication candidate, tags or deploys.
 name: checks
 
 on:
   push:
+    branches: [master]
   pull_request:
   workflow_dispatch:
 
@@ -45,7 +50,7 @@ jobs:
 
   browser:
     name: Real-browser web suite
-    runs-on: windows-latest
+    runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
