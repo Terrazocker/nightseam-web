@@ -1,5 +1,24 @@
 # Independent website release record
 
+## Published time anchors and coming-night detail card — October 11, 2026 (local development)
+
+Reference anchors add verbatim USNO 2026 yearly rise/set and civil, nautical
+and astronomical twilight tables for Berlin, Sydney, Denver, Tromso and Quito.
+Core twilight times matched about 10,000 published events at 17.7 s RMS (the
+tables' minute rounding) with per-table bias at most 4 s; two grazing nights
+with under ten minutes of astronomical darkness are skipped by the 10-minute
+scan. Sidereal-rate, solar-longitude and equation-of-centre mutations fail the
+new anchors; the 0.020*sin(2g) term is below their resolution.
+
+The detail card's rise, set, culmination and Moon-at-culmination use core
+objectNightInfo over the planned night's site noon-to-next-noon span. For M31
+from Berlin on 2026-10-11 the card shows 00:27 (12 October) instead of the
+previous night's 00:31. Core rebuilt as b5029923cf7ae513 (token 64).
+
+Actual checks: pytest 364 passed with the optional-data skip; Chrome 117/117;
+check_release --allow-dirty --no-stage 0 errors; check_encoding OK. No tag,
+publication candidate or deployment.
+
 ## CI workflow and release-gate fixes — October 11, 2026 (local development)
 
 Commit c4b8606 adds .github/workflows/checks.yml (Windows; guards, changelog

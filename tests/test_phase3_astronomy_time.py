@@ -1,4 +1,4 @@
-"""Independent calendar/DST contracts and complete-day culmination regressions."""
+"""Independent calendar/DST contracts, culmination and coming-night regressions."""
 import json
 import os
 import subprocess
@@ -53,6 +53,53 @@ def test_complete_calendar_day_culminations():
     transit = datetime.fromisoformat(result[0]['transit'].replace('Z','+00:00')).timestamp()
     assert transit == pytest.approx(1791211920, abs=1)
     assert '2026-10-05T02:' in result[1]['transit'] # morning is retained too
+
+
+def _meridian_ms(ra_hours, dec_deg, lon, near_ms):
+    """Independent upper-transit instant: local sidereal time equals the
+    precessed RA (Meeus 12.4 GMST; annual precession 3.075 + 1.336 sin RA tan Dec
+    seconds of time), solved by fixed-point iteration from `near_ms`."""
+    import math
+    years = (near_ms / 86400000 + 2440587.5 - 2451545.0) / 365.25
+    ra = ra_hours * 15 + years * (3.075 + 1.336 * math.sin(math.radians(ra_hours * 15))
+                                  * math.tan(math.radians(dec_deg))) * 15 / 3600
+    t = near_ms
+    for _ in range(4):
+        d = t / 86400000 + 2440587.5 - 2451545.0
+        lst = (280.46061837 + 360.98564736629 * d + lon) % 360
+        ha = (lst - ra + 180) % 360 - 180
+        t -= ha / 360.98564736629 * 86400000
+    return t
+
+
+def test_detail_card_events_describe_the_coming_night():
+    """Owner decision (October 11, 2026): the detail card's rise, set and
+    culmination belong to the planned night, from the site's noon on the
+    selected date to the next site noon, not to the calendar day."""
+    result = node('''import * as C from './core/index.js';
+      const noon=new Date('2026-10-11T10:00:00Z'),next=new Date('2026-10-12T10:00:00Z');
+      const m31=[0.7123*15,41.269],altair=[19.8464*15,8.8683];
+      const night=C.nightInfo(noon,52.52,13.405,noon);
+      const dst=[new Date('2026-10-24T10:00:00Z'),new Date('2026-10-25T11:00:00Z')];
+      console.log(JSON.stringify({m31:C.objectNightInfo(...m31,noon,next,52.52,13.405),
+        old:C.objectDayInfo(...m31,new Date('2026-10-10T22:00:00Z'),52.52,13.405,new Date('2026-10-11T22:00:00Z')),
+        altair:C.objectNightInfo(...altair,noon,next,52.52,13.405),
+        dst:C.objectNightInfo(...m31,...dst,52.52,13.405),
+        dusk:night.astroDusk,dawn:night.astroDawn}));''')
+    from datetime import datetime
+    ms = lambda iso: datetime.fromisoformat(iso.replace('Z', '+00:00')).timestamp() * 1000
+    transit = ms(result['m31']['transit'])
+    assert ms(result['dusk']) < transit < ms(result['dawn']), 'culmination is inside tonight'
+    assert abs(transit - _meridian_ms(0.7123, 41.269, 13.405, transit)) < 3 * 60000
+    assert result['m31']['maxAlt'] == pytest.approx(90 - 52.52 + 41.269 + 0.4, abs=0.6)
+    assert transit - ms(result['old']['transit']) == pytest.approx(86164090.5, abs=4 * 60000),         'the calendar-day value was the previous night, one sidereal day earlier'
+    assert result['m31']['rise'] is None and result['m31']['set'] is None, 'circumpolar at Berlin'
+    altair = result['altair']
+    assert ms('2026-10-11T10:00:00Z') < ms(altair['rise']) < ms(altair['set']) < ms('2026-10-12T10:00:00Z')
+    assert ms(result['dusk']) < ms(altair['set']), 'Altair sets during this night'
+    dst = ms(result['dst']['transit'])
+    assert ms('2026-10-24T10:00:00Z') < dst < ms('2026-10-25T11:00:00Z'), '25 h DST span'
+    assert abs(dst - _meridian_ms(0.7123, 41.269, 13.405, dst)) < 3 * 60000
 
 
 def test_explicit_polar_fallback_endpoints_cross_dst():

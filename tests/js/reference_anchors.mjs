@@ -22,6 +22,7 @@
  * check failed (the JSON is printed either way).
  */
 import { pathToFileURL, fileURLToPath } from "node:url";
+import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 const [, , coreDirArg] = process.argv;
@@ -574,6 +575,102 @@ check('moon_independent_topocentric', () => {
     near(sepDeg(az, alt, r.az, r.alt), 0, 0.12, r.iso + ' topocentric separation');
     const apparent = C.moonAltAz(jd, r.lat, r.lon)[0];
     near(apparent, alt + C.refractionDeg(alt), 1e-9, 'single refraction');
+  }
+});
+
+/* Published USNO 2026 rise/set and twilight tables -------------------------
+ * U.S. Naval Observatory, Astronomical Applications Department, "Rise/Set/
+ * Transit/Twilight Data", one year, Universal Time (aa.usno.navy.mil/data/
+ * RS_OneYear), retrieved 2026-10-11 verbatim into tests/fixtures/usno_2026/.
+ * Five sites span the equator, both hemispheres, both sides of Greenwich and
+ * the Arctic. Times are rounded to the minute, so one event cannot detect a
+ * sub-minute model error; over a year the rounding noise is ~17 s RMS and
+ * averages out, so the per-table bias and RMS do. A 0.07 deg sidereal-time rate,
+ * a 0.16 deg solar longitude or a 0.1 deg equation-of-centre error each fail here.
+ * The 0.020*sin(2g) term (~5 s) is below the tables' resolution. */
+const USNO_DIR = fileURLToPath(new URL("../fixtures/usno_2026/", import.meta.url));
+const USNO_SITES = { berlin: [52.52, 13.405], sydney: [-33.87, 151.21],
+  denver: [39.74, -104.99], tromso: [69.65, 18.96], quito: [-0.18, -78.47] };
+const MONTH_DAYS = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+const MIN = 60e3;
+function usnoEvents(name) {
+  // Fixed columns: day, then per month "hhmm hhmm  " (begin/rise, end/set).
+  // //// ==== **** ---- mark days without that event; blank = no event that UT day.
+  const out = [];
+  for (const line of readFileSync(USNO_DIR + name + ".txt", "utf8").split("\n")) {
+    if (!/^\d\d  /.test(line)) continue;
+    const day = Number(line.slice(0, 2));
+    for (let m = 0; m < 12; m++) {
+      if (day > MONTH_DAYS[m]) continue;
+      for (const [kind, off] of [["begin", 0], ["end", 5]]) {
+        const s = line.slice(4 + 11 * m + off, 8 + 11 * m + off);
+        if (/^\d{4}$/.test(s)) out.push({ kind, t: Date.UTC(2026, m, day, +s.slice(0, 2), +s.slice(2)) });
+      }
+    }
+  }
+  return out;
+}
+function errorStats(errs) {
+  const n = errs.length, mean = errs.reduce((a, b) => a + b, 0) / n;
+  return { n, mean, rms: Math.sqrt(errs.reduce((a, b) => a + b * b, 0) / n),
+    max: Math.max(...errs.map(Math.abs)) };
+}
+function assertTable(label, errs) {
+  const s = errorStats(errs);
+  assert(s.n >= 300, `${label}: only ${s.n} matched events`);
+  assert(Math.abs(s.mean) <= 8, `${label}: bias ${s.mean.toFixed(1)} s`);
+  assert(s.rms <= 21, `${label}: rms ${s.rms.toFixed(1)} s`);
+  assert(s.max <= 100, `${label}: worst ${s.max.toFixed(1)} s`);
+}
+check("usno_twilight_2026", () => {
+  // The dark window's dusk/dawn at -6/-12/-18 deg come from nightInfo().
+  for (const [site, [lat, lon]] of Object.entries(USNO_SITES)) {
+    for (const [table, key] of [["civil", "civil"], ["nautical", "nautical"], ["astronomical", "astro"]]) {
+      const dusk = [], dawn = [], nights = [];
+      for (let d = -2; d < 368; d++) {
+        const noon = new Date(Date.UTC(2026, 0, 1 + d, 12) - (lon / 15) * 3600e3);
+        const info = C.nightInfo(noon, lat, lon, noon);
+        if (info[key + "Dusk"]) dusk.push(+info[key + "Dusk"]);
+        if (info[key + "Dawn"]) dawn.push(+info[key + "Dawn"]);
+        if (info[key + "Dusk"] && info[key + "Dawn"]) nights.push([+info[key + "Dusk"], +info[key + "Dawn"]]);
+      }
+      const usno = usnoEvents(`${site}_${table}`);
+      const errs = [];
+      for (const u of usno) {
+        const pool = u.kind === "end" ? dusk : dawn;
+        const nearest = pool.reduce((b, t) => (Math.abs(t - u.t) < Math.abs(b) ? t - u.t : b), Infinity);
+        if (Math.abs(nearest) <= 30 * MIN) { errs.push(nearest / 1000); continue; }
+        // Only a grazing night shorter than the 10-minute scan may be missed.
+        const grazing = usno.some((o) => o.kind !== u.kind && Math.abs(o.t - u.t) < 10 * MIN);
+        assert(grazing, `${site} ${table} ${u.kind} ${new Date(u.t).toISOString()} has no core event`);
+      }
+      const usnoTimes = usno.map((u) => u.t);
+      for (const [a, b] of nights) {
+        if (a < Date.UTC(2026, 0, 1, 1) || b > Date.UTC(2026, 11, 31, 23)) continue;
+        for (const t of [a, b]) {
+          assert(usnoTimes.some((u) => Math.abs(u - t) <= 30 * MIN),
+            `${site} ${table}: core event ${new Date(t).toISOString()} is not in the USNO table`);
+        }
+      }
+      assertTable(`${site} ${table}`, errs);
+    }
+  }
+});
+check("usno_sunrise_sunset_2026", () => {
+  // Published convention: upper limb on the horizon with standard refraction,
+  // i.e. true centre altitude -0.8333 deg. This pins the Sun model and time
+  // scale at published instants; the planner's own sunset label uses the
+  // apparent centre (DECISIONS.md) and is not what is compared here.
+  const trueAlt = (jd, lat, lon) => { const [ra, dec] = C.sunRaDec(jd); return C.altaz(ra, dec, jd, lat, lon, false)[0]; };
+  for (const [site, [lat, lon]] of Object.entries(USNO_SITES)) {
+    const errs = [];
+    for (const u of usnoEvents(`${site}_riseset`)) {
+      const jd = C.julianDay(new Date(u.t));
+      const rate = (trueAlt(jd + 1 / 1440, lat, lon) - trueAlt(jd - 1 / 1440, lat, lon)) / 2;
+      if (Math.abs(rate) < 0.02) continue; // grazing polar rise/set: time is ill-conditioned
+      errs.push((-(trueAlt(jd, lat, lon) + 0.8333) / rate) * 60);
+    }
+    assertTable(`${site} rise/set`, errs);
   }
 });
 

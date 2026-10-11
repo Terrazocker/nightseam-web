@@ -63,7 +63,7 @@ MOVED = (
     "computeNightTracks", "scoreNightTracks",
     "julianDay", "dateFromJD", "gmstDeg", "precessJ2000ToDate",
     "precessDateToJ2000", "refractionDeg", "altaz", "altazFrame",
-    "altazFrameApply", "sunRaDec", "moonRaDec", "moonDistanceKm", "moonAltAz", "objectDayInfo", "moonIllumination",
+    "altazFrameApply", "sunRaDec", "moonRaDec", "moonDistanceKm", "moonAltAz", "objectDayInfo", "objectNightInfo", "moonIllumination",
     "moonAge",
     "sunAlt", "sunCrossings", "nightInfo", "pickDarkWindow", "scrubWindowMs",
     "scrubBounds", "scrubClamp", "sepDeg", "nightStats",

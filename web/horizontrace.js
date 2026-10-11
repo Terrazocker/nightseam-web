@@ -1,5 +1,5 @@
 /* Skyline interaction only; rasterization, crops and history live in core. */
-import { MASK_W, MASK_H, clearMask } from './core.js?v=63';
+import { MASK_W, MASK_H, clearMask } from './core.js?v=64';
 import { vizTheme } from './viztheme.js?v=6';
 
 export function traceToolsHTML() {

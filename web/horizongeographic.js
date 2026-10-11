@@ -1,6 +1,6 @@
 /* Geographic evidence UI and immutable orientation preview; geometry stays in core. */
-import { normalizeCoverageEvidence } from './core.js?v=63';
-export { previewPhotoOrientation as geographicAlignment } from './core.js?v=63';
+import { normalizeCoverageEvidence } from './core.js?v=64';
+export { previewPhotoOrientation as geographicAlignment } from './core.js?v=64';
 
 export function geographicEvidenceHTML(){return `<details id="geographic-evidence"><summary>Coverage and capture evidence</summary>
   <label>Planning coverage <select id="geographic-policy"><option value="legacy">Keep this horizon's existing assumptions</option><option value="inferred-open">Infer open sky above the skyline</option><option value="strict-measured">Use only photographed coverage; exclude unknown sky</option></select></label>

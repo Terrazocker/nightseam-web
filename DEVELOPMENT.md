@@ -399,7 +399,9 @@ calendar noon-to-next-noon range, including the drag endpoint. Zone changes
 invalidate the anchor; date edits reposition selection to the chosen site noon.
 Full spans contain 23 or 25 elapsed hours across DST without changing scoring.
 objectDayInfo now belongs to core/astro.js: culmination scans the complete
-site calendar day separately from rise/set's midnight ±12h search.
+site calendar day separately from rise/set's midnight ±12h search. Since
+October 11, 2026 the detail card uses objectNightInfo instead: rise, set and
+culmination within the planned night's site noon-to-next-noon span.
 
 The shared lunar state holds equatorial-of-date coordinates and a truncated
 Meeus table 47A distance. moonRaDec exposes geocentric J2000 coordinates for

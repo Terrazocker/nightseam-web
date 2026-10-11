@@ -1,6 +1,6 @@
 /* Image-first setup UI. All calibration math and evidence validation live in core. */
-import { normalizePhotoCalibration, photoPoint, photoPointAngles, fitPhotoReferences, fitMultiplePhotoReferences,photoCalibrationReport } from './core.js?v=63';
-import { geographicAlignment } from './horizongeographic.js?v=5';
+import { normalizePhotoCalibration, photoPoint, photoPointAngles, fitPhotoReferences, fitMultiplePhotoReferences,photoCalibrationReport } from './core.js?v=64';
+import { geographicAlignment } from './horizongeographic.js?v=6';
 
 const pointHTML = (key, title) => `<fieldset class="setup-point"><legend>${title}</legend>
   <button class="btn primary" type="button" data-simple-pick="${key}">Choose point on photo</button>

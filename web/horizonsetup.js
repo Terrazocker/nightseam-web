@@ -1,9 +1,9 @@
 /* Guided photo setup; geometry and evidence decisions live in core. */
 import { normalizePhotoCalibration, photoPoint, photoPointAngles, alignPhotoBearing,
-  fitPhotoVertical, photoCalibrationReport } from './core.js?v=63';
-import { simpleSetupHTML, wireSimpleSetup } from './horizonsimple.js?v=13';
-import { photoConversionHTML } from './horizonphoto.js?v=7';
-import { geographicEvidenceHTML } from './horizongeographic.js?v=5';
+  fitPhotoVertical, photoCalibrationReport } from './core.js?v=64';
+import { simpleSetupHTML, wireSimpleSetup } from './horizonsimple.js?v=14';
+import { photoConversionHTML } from './horizonphoto.js?v=8';
+import { geographicEvidenceHTML } from './horizongeographic.js?v=6';
 
 const CONVERTED_NOTE = 'This view was converted from the original photo, so its geometry comes from that conversion. Refine it with the photo setup above; these steps can only review it.';
 const STEPS = ['Coverage', 'Direction', 'Vertical scale', 'Verify', 'Paint'];

@@ -29,18 +29,23 @@ Resolved locally on branch horizon-calibration (receipt in RELEASES.md):
   inherited v0.6.x tags hid an uncurated v0.1.x tag. It now uses creation order.
 - Release names: inherited tags occupy 0.1.5 through 0.6.36. Releases continue
   at 0.7.0 (DECISIONS.md); pre_tag_check.py refuses reused or lower names.
+- Published times: reference anchors now include USNO 2026 rise/set and
+  civil/nautical/astronomical twilight tables for five sites. Core twilight
+  times match at ~18 s RMS (the tables' minute rounding); sidereal-rate, solar
+  longitude and equation-of-centre mutations now fail. Two grazing nights
+  with under ten minutes of astronomical darkness are skipped by the 10-minute
+  scan; the 0.020*sin(2g) term is below the tables' resolution.
+- Detail card: rise, set and culmination now describe the coming night (site
+  noon to next site noon) instead of the calendar day (DECISIONS.md).
 
 Confirmed and still open (review severity in brackets):
 
-- [assumption] Reference anchors contain no published sunrise/sunset or
-  twilight times; mutating the GMST rate, solar L0 (0.16°) or the equation of
-  centre survives every anchor. planning.js cites them as its authority.
-- [assumption] The detail card's rise/set (midnight ±12 h) and culmination
-  (selected calendar day, DECISIONS.md) describe mostly the previous night.
 - [assumption] Strict measured coverage excludes all sky above a converted
   photo's top edge, and obstacle mode cannot express photographed clear sky.
-- [low] Sunset/sunrise use the 10-minute linear refraction step, 2–10 min early
-  against the -0.833° convention. Scorer fast path and ceilFor differ for
+- [low] The planner's sunset/sunrise labels and "sun" scrub range use the
+  apparent centre on the horizon (with a 10-minute linear step across the
+  refraction cutoff), 2–10 min earlier than the published upper-limb
+  convention. The Sun model itself matches USNO (usno_sunrise_sunset_2026). Scorer fast path and ceilFor differ for
   non-finite profile values. Backup sites/rigs lack lat/lon/focal ranges;
   imported minAlt outside the 5–70 slider desynchronizes it. Thumbnail
   idbOpen leaks connections. Weather row time is not escaped. Landing pages

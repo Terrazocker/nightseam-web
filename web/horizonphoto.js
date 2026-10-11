@@ -1,6 +1,6 @@
 /* Source retention and pixel rendering only; projection math stays in core. */
 import { createPhotoModel, normalizePhotoCalibration, readPanoramaMetadata,
-  PHOTO_MAX_PIXELS, workingPhotoSize, photoSampleMap,photoFileDimensions,normalizePhotoSource,normalizeCoverageEvidence } from './core.js?v=63';
+  PHOTO_MAX_PIXELS, workingPhotoSize, photoSampleMap,photoFileDimensions,normalizePhotoSource,normalizeCoverageEvidence } from './core.js?v=64';
 
 export async function inspectPhoto(dataURL,file){
   const prefix=new Uint8Array(await file.slice(0,1048576).arrayBuffer()),header=photoFileDimensions(prefix);

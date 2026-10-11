@@ -323,6 +323,30 @@ export function sepDeg(alt1Deg, az1Deg, alt2Deg, az2Deg) {
     Math.sin(p1) * Math.sin(p2) + Math.cos(p1) * Math.cos(p2) * Math.cos(dra)))) * R2D;
 }
 
+/** Rise, set and culmination of one object within one site night. The planner
+ * passes consecutive site noons around the planned night (23/25 h across DST),
+ * so its detail card describes the coming night rather than a calendar day that
+ * mostly belongs to the previous one. Rise/set are the first upward/downward
+ * apparent-horizon crossings in [startUTC, endUTC] (null when none);
+ * culmination is the highest apparent altitude in the span. */
+export function objectNightInfo(raDeg, decDeg, startUTC, endUTC, lat, lon) {
+  const start = julianDay(startUTC), end = julianDay(endUTC);
+  const steps = Math.max(1, Math.ceil((end - start) * 720)), dt = (end - start) / steps;
+  let previous = null, rise = null, set = null, maxAlt = -90, maxJd = start;
+  for (let i = 0; i <= steps; i++) {
+    const jd = start + i * dt;
+    const altitude = altaz(raDeg, decDeg, jd, lat, lon)[0];
+    if (previous !== null && previous !== 0 && Math.sign(previous) !== Math.sign(altitude)) {
+      const crossing = dateFromJD(jd - dt + dt * previous / (previous - altitude));
+      if (altitude > 0) { if (!rise) rise = crossing; }
+      else if (!set) set = crossing;
+    }
+    if (altitude > maxAlt) { maxAlt = altitude; maxJd = jd; }
+    previous = altitude;
+  }
+  return { rise, set, transit: dateFromJD(maxJd), maxAlt };
+}
+
 /** Rise/set keep the midnight ±12h search; culmination spans the complete
  * site's calendar day, including a supplied next midnight on 23/25h DST days. */
 export function objectDayInfo(raDeg, decDeg, dayStartUTC, lat, lon, dayEndUTC) {

@@ -67,7 +67,7 @@ export {
 export {
   julianDay, dateFromJD, gmstDeg, precessJ2000ToDate, precessDateToJ2000,
   refractionDeg, altaz, altazFrame, altazFrameApply,
-  objectDayInfo, sunRaDec, moonRaDec, moonDistanceKm, moonAltAz, moonIllumination, moonAge, sunAlt, sepDeg,
+  objectDayInfo, objectNightInfo, sunRaDec, moonRaDec, moonDistanceKm, moonAltAz, moonIllumination, moonAge, sunAlt, sepDeg,
 } from './astro.js';
 
 export {

@@ -8,17 +8,17 @@
  *   • Settings — sites, rigs, custom targets, backup/restore (webstore.js)
  * All sky math runs client-side (astro.js, Meeus algorithms).
  */
-import * as E from './astro.js?v=48';
-import * as Hor from './horizon.js?v=108';
-import * as WS from './webstore.js?v=62';
+import * as E from './astro.js?v=49';
+import * as Hor from './horizon.js?v=109';
+import * as WS from './webstore.js?v=63';
 import { fmtSize, sizeArcmin, framePct, magVisible, skyClampZoom,
-         skyViewMatrix, skyScreenToBase, skyClampFocus } from './format.js?v=55';
-import { nightStats, nightStatsBatch, sampleVisible } from './nightrank.js?v=47';
+         skyViewMatrix, skyScreenToBase, skyClampFocus } from './format.js?v=56';
+import { nightStats, nightStatsBatch, sampleVisible } from './nightrank.js?v=48';
 import { TYPE_LABELS, TYPE_COLORS, searchBlob as coreSearchBlob,
          TIER_ORDER, assignPopularityTiers, wikiTitles,
          inTonightPool, PLANNER_CHANGE_EVENT, panoramaRevision,
-         panoramaVisibilityReason } from './core.js?v=63';
-import { popularityFactor as corePopularityFactor } from './core.js?v=63';
+         panoramaVisibilityReason } from './core.js?v=64';
+import { popularityFactor as corePopularityFactor } from './core.js?v=64';
 import { vizTheme, drawMoonPhaseMarker } from './viztheme.js?v=6';
 import { wikimediaCredit, wikiImageCredit, renderImageCredit } from './imagecredits.js?v=2';
 
@@ -2614,9 +2614,10 @@ function openDetail(id, opener = null, { refresh = false } = {}) {
   const info = E.nightInfo(nightAnchor(), lat, lon, siteNoon(nightAnchor()));
   const jd = E.julianDay(S.skyTime);
   const [altNow, azNow] = E.altaz(o.ra_hours * 15, o.dec_deg, jd, lat, lon);
-  // Culmination belongs to the complete site's selected calendar day.
-  const localMidnight = siteClock(S.date, 0);
-  const dayInfo = E.objectDayInfo(o.ra_hours * 15, o.dec_deg, localMidnight, lat, lon, siteClock(S.date, 0, 1));
+  // Rise, set and culmination describe the planned (coming) night: from the
+  // site's noon on the selected date to the next site noon.
+  const nightNoon = siteNoon(nightAnchor());
+  const dayInfo = E.objectNightInfo(o.ra_hours * 15, o.dec_deg, nightNoon, nextSiteNoon(nightNoon), lat, lon);
 
   // Moon distance at the selected planner time + tonight's peak.
   const [moonAltNow, moonAzNow] = E.moonAltAz(jd, lat, lon);

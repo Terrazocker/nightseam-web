@@ -1,5 +1,20 @@
 # Independent website decisions
 
+## 2026-10-11 — Detail card describes the coming night; USNO time anchors
+
+Owner decision: the detail card's rise, set and culmination, and the Moon
+warning at culmination, belong to the planned night from the site's noon on
+the selected date to the next site noon (23/25 h across DST). This supersedes
+the 2026-10-10 rule that culmination belongs to the complete calendar day,
+whose early hours are the previous night. core objectNightInfo implements it;
+objectDayInfo remains for compatibility.
+
+Published twilight and rise/set times are reference anchors: USNO 2026 yearly
+tables for five sites, verbatim in tests/fixtures/usno_2026. Minute rounding
+limits single events, so the anchors assert per-table bias (8 s), RMS (21 s)
+and worst event (100 s). The planner keeps its apparent-centre sunset label;
+the rise/set anchor checks the Sun model at USNO's upper-limb instants.
+
 ## 2026-10-11 — Continue release names above inherited tags (0.7.0)
 
 The public series restarted at 0.1.0, but inherited tags occupy 0.1.5-0.1.7,
