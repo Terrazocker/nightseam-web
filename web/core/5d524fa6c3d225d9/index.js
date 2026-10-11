@@ -77,7 +77,7 @@ export {
 
 export {
   aboveHorizon, sampleVisible, statusOf, effectiveMinAlt,
-  VISIBILITY_REASON, visibilityReason, summarizeVisibility,
+  VISIBILITY_REASON, visibilityReason, panoramaVisibilityReason, summarizeVisibility,
   ADV_TONIGHT_MAG_CAP, TONIGHT_MAG_UNCAPPED, vmagKnownAndUnder, inTonightPool,
 } from './visibility.js';
 

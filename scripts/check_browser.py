@@ -30,6 +30,7 @@ import horizon_phase3_checks  # noqa: E402,F401  (guided import and measured cal
 import horizon_phases45_checks  # noqa: E402,F401  (tracing and final software acceptance)
 import horizon_simple_checks  # noqa: E402,F401  (two-point image-first setup and uncovered rulers)
 import horizon_def_checks  # noqa: E402,F401  (projection conversion and multiple measured references)
+import planner_safety_checks  # noqa: E402,F401  (timezones, converted setup, photo size, recovery copy)
 import phase1_app_checks  # noqa: E402,F401  (save/delete failures and complete restore recovery)
 import review_phase567_checks  # noqa: E402,F401  (remaining Catalog, weather and accessibility findings)
 

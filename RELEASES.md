@@ -1,5 +1,25 @@
 # Independent website release record
 
+## Workspace review fixes — October 11, 2026 (local development)
+
+Branch horizon-calibration resolves the four medium review findings recorded in
+BUGS.md: timezone validation at every entry point, the converted-photo guard
+in Advanced reference setup, refusal of unrecoverable pre-import safety copies
+and of photos whose header and decoded sizes differ, and the core-owned
+UNKNOWN_HORIZON reason shared by Catalog and the detail panel.
+
+Core rebuilt as 5d524fa6c3d225d9 (token 63, N-1 42ba4edfe51950ef); module
+tokens bumped through bump_web_tokens.py and the AGENTS.md register.
+
+Actual checks on the final tree: pytest 355 passed with the existing
+optional-data skip; check_js, check_core, check_js_tokens, check_encoding and
+check_release --allow-dirty --no-stage passed. Chrome: 114/116 before staging.
+web-immutable-publication failed only because the new core tree was untracked
+and passed 1/1 once staged. web-horizon-phases12-long-history-latency failed
+3/3 on unchanged commit 9e6d3ee as well (load-dependent timing; see BUGS.md).
+Four new web-safety Chrome checks passed 4/4 and failed 4/4 with each fix
+disabled. This is a development commit without a release tag or deployment.
+
 ## Horizon simplification D/E/F — October 11, 2026 (local development)
 
 Owner-authorized D/E adds bounded/validated GPano metadata, supported angular,

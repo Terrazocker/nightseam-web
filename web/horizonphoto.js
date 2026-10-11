@@ -1,10 +1,13 @@
 /* Source retention and pixel rendering only; projection math stays in core. */
 import { createPhotoModel, normalizePhotoCalibration, readPanoramaMetadata,
-  PHOTO_MAX_PIXELS, workingPhotoSize, photoSampleMap,photoFileDimensions,normalizePhotoSource,normalizeCoverageEvidence } from './core.js?v=62';
+  PHOTO_MAX_PIXELS, workingPhotoSize, photoSampleMap,photoFileDimensions,normalizePhotoSource,normalizeCoverageEvidence } from './core.js?v=63';
 
 export async function inspectPhoto(dataURL,file){
-  const prefix=new Uint8Array(await file.slice(0,1048576).arrayBuffer());photoFileDimensions(prefix);
+  const prefix=new Uint8Array(await file.slice(0,1048576).arrayBuffer()),header=photoFileDimensions(prefix);
   const img=await decodePhoto(dataURL);
+  // Stored geometry uses the decoded size, while restore re-checks it against
+  // the header: refuse a photo the two disagree on instead of an unrestorable record.
+  if(header.width!==img.naturalWidth||header.height!==img.naturalHeight)throw new Error('This photo decodes at a different size or orientation than its file header states. Re-save it as a plain JPEG or PNG and import it again.');
   if(img.naturalWidth*img.naturalHeight>PHOTO_MAX_PIXELS)throw new Error('That image exceeds the 32-million-pixel limit. Resize it before importing.');
   let metadata=readPanoramaMetadata(prefix,img.naturalWidth,img.naturalHeight);
   const value={width:img.naturalWidth,height:img.naturalHeight,metadata};

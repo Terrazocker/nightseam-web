@@ -1,5 +1,54 @@
 # Current NightSeam Web findings
 
+## Workspace review — October 11, 2026
+
+Resolved locally on branch horizon-calibration (receipt in RELEASES.md):
+
+- Timezones: the site form and backup sites accepted any text. core/time.js
+  treats an unknown zone as none, so planning silently used the browser zone
+  while weather sent the bogus name. One validator (webstore validTimeZone)
+  now guards the form, backup sites and settings; an unknown stored zone
+  falls back to browser local for planning and weather alike.
+- Converted photos: Advanced reference setup could overwrite a converted
+  view's coverage/bearing/vertical geometry with linear v1 evidence while
+  keeping its photo model. It now refuses to apply and says why.
+- Restore recovery: the pre-import safety copy was only shape-checked, while
+  rollback runs the full panorama contract. A copy that fails it is now
+  refused before any write. Photo import also refuses a file whose header
+  and decoded sizes differ, the known way to create such a record.
+- Unknown horizon: the unknown-coverage refinement was pasted three times in
+  app.js, partly dead in Tonight and absent from the detail summary. Core
+  owns VISIBILITY_REASON.UNKNOWN_HORIZON and panoramaVisibilityReason; the
+  catalog cell, selected-time line and detail summary use it.
+
+Confirmed and still open (review severity in brackets):
+
+- [workflow] build_changelog.py --check sorts tags by version, so inherited
+  v0.6.x tags hide an uncurated v0.1.x tag; pre_tag_check.py is the only
+  effective curation gate. No CI or hooks run the gates.
+- [assumption] Reference anchors contain no published sunrise/sunset or
+  twilight times; mutating the GMST rate, solar L0 (0.16°) or the equation of
+  centre survives every anchor. planning.js cites them as its authority.
+- [assumption] The detail card's rise/set (midnight ±12 h) and culmination
+  (selected calendar day, DECISIONS.md) describe mostly the previous night.
+- [assumption] Strict measured coverage excludes all sky above a converted
+  photo's top edge, and obstacle mode cannot express photographed clear sky.
+- [low] Sunset/sunrise use the 10-minute linear refraction step, 2–10 min early
+  against the -0.833° convention. Scorer fast path and ceilFor differ for
+  non-finite profile values. Backup sites/rigs lack lat/lon/focal ranges;
+  imported minAlt outside the 5–70 slider desynchronizes it. Thumbnail
+  idbOpen leaks connections. Weather row time is not escaped. Landing pages
+  send no security headers. altazFrameApply omits precession.
+- [low] Horizon: blank sky-mode records cannot be converted; physical checks
+  count as independent at 1e-8 separation; undo leaves added landmarks/
+  provenance/confidence keys; full-resolution canvas work repeats per review.
+- [test] web-horizon-phases12-long-history-latency asserts that incremental
+  painting materially improves frame time. It failed 3/3 on unchanged commit
+  9e6d3ee and 2/3 with these fixes on the same machine, after passing earlier
+  the same day: a load-dependent timing gate, not a functional regression.
+- [legal, not advice] Impressum names a pseudonym without postal address;
+  privacy lacks Art. 13 legal bases, rights and complaint authority.
+
 ## Geographic calibration follow-up — October 11, 2026 (P1/P2)
 
 P1/P2 are implemented locally with integrated software gates pending. Evidence

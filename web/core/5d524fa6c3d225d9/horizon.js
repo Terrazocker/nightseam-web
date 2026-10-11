@@ -96,7 +96,8 @@ function validEvidenceDate(value) {
 export function normalizeCoverageEvidence(value, strict = false) {
   const legacy = () => ({ version: 1, policy: 'legacy', observer: null, captureDate: null });
   if (value == null) return legacy();
-  const fail = () => { if (strict) throw new Error('Invalid horizon coverage evidence'); return legacy(); };
+  const fail = () => { if (strict) throw new Error('Invalid horizon coverage evidence');
+    return {version:1,policy:'strict-measured',observer:null,captureDate:null}; };
   if (!value || Array.isArray(value) || value.version !== 1
       || !['legacy', 'inferred-open', 'strict-measured'].includes(value.policy)) return fail();
   let observer = null;
@@ -114,7 +115,9 @@ export function normalizeCoverageEvidence(value, strict = false) {
 
 /** Fast policy access for the shared scorer; callers normalize at storage.
  * An absent policy has exactly the historical behavior. */
-export const horizonCoveragePolicy = p => p?.coverageEvidence?.policy ?? 'legacy';
+export const horizonCoveragePolicy = p => p?.coverageEvidence == null ? 'legacy'
+  : ['legacy','inferred-open','strict-measured'].includes(p.coverageEvidence.policy)
+    ? p.coverageEvidence.policy : 'strict-measured';
 
 /** Normalize user-entered obstruction landmarks into a safe, portable shape.
  *  Landmarks are annotations, not geometry; malformed entries are ignored and

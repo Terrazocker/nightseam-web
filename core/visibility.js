@@ -9,6 +9,8 @@
  * tracks only and the clients derive visibility.
  */
 
+import { NO_BLOCK, ceilFor, queryHorizonEvidence } from './horizon.js';
+
 /** Selected-time sky visibility for a body (Sun, Moon or catalog object): it
  *  is a visible sky object only while its APPARENT altitude is above the
  *  horizon. The chart's Sun/Moon used to be drawn down to a fixed -6 deg
@@ -32,6 +34,9 @@ export const VISIBILITY_REASON = Object.freeze({
   BELOW_HORIZON: "below_horizon",
   BELOW_MINIMUM_ALTITUDE: "below_minimum_altitude",
   BLOCKED_BY_HORIZON: "blocked_by_horizon",
+  // Excluded by the horizon policy where no recorded evidence covers the
+  // direction (strict coverage); a refinement of BLOCKED_BY_HORIZON.
+  UNKNOWN_HORIZON: "unknown_horizon",
   OUTSIDE_SELECTED_WINDOW: "outside_selected_window",
   NEVER_RISES: "never_rises",
   NO_USABLE_WINDOW: "no_usable_window",
@@ -49,6 +54,19 @@ export function visibilityReason(alt, minAlt, ceil, ceilTop, inWindow = true) {
   }
   if (alt < minAlt) return VISIBILITY_REASON.BELOW_MINIMUM_ALTITUDE;
   return VISIBILITY_REASON.VISIBLE;
+}
+
+/** visibilityReason() against a panorama at one sample, with the same ceiling
+ * the scorer uses. A horizon block in a direction without recorded evidence is
+ * reported as UNKNOWN_HORIZON, so every shell names it identically. */
+export function panoramaVisibilityReason(pano, alt, azDeg, minAlt, inWindow = true) {
+  const ceiling = pano ? ceilFor(pano, azDeg) : { ceil: NO_BLOCK, ceilTop: null };
+  const reason = visibilityReason(alt, minAlt, ceiling.ceil, ceiling.ceilTop, inWindow);
+  if (reason === VISIBILITY_REASON.BLOCKED_BY_HORIZON && pano
+      && queryHorizonEvidence(pano, azDeg, alt).state === 'unknown') {
+    return VISIBILITY_REASON.UNKNOWN_HORIZON;
+  }
+  return reason;
 }
 
 /** Summarize a scored span without formatting time or locale-specific prose.

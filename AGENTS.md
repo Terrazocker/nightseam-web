@@ -68,24 +68,24 @@ versions or recreate the combined desktop project here. The deprecated
 
 Keep this register aligned with entry-point references and the core manifest.
 Current:
-- `web/app.js?v=200`
-- `web/astro.js?v=47`
-- `web/horizon.js?v=107`
-- `web/horizonsetup.js?v=15`
-- `web/horizonsimple.js?v=12`
-- `web/horizontrace.js?v=14`
-- `web/horizonphoto.js?v=6`
-- `web/horizongeographic.js?v=4`
-- `web/webstore.js?v=61`
-- `web/format.js?v=54`
-- `web/nightrank.js?v=46`
+- `web/app.js?v=201`
+- `web/astro.js?v=48`
+- `web/horizon.js?v=108`
+- `web/horizonsetup.js?v=16`
+- `web/horizonsimple.js?v=13`
+- `web/horizontrace.js?v=15`
+- `web/horizonphoto.js?v=7`
+- `web/horizongeographic.js?v=5`
+- `web/webstore.js?v=62`
+- `web/format.js?v=55`
+- `web/nightrank.js?v=47`
 - `web/viztheme.js?v=6`
 - `web/imagecredits.js?v=2`
 - Public stylesheet: `landing/style.css?v=4`
 - Public decorative map: `landing/sky-map.svg?v=1`
 - Public share preview: `landing/social-preview.png?v=1`
 - Public pages load canonical role tokens: `/astro/themes.css?v=22`
-- `web/core.js?v=62`
+- `web/core.js?v=63`
 - `web/style.css?v=63`
 - `web/themes.css?v=22`
 

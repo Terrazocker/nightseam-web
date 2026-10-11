@@ -1,10 +1,11 @@
 /* Guided photo setup; geometry and evidence decisions live in core. */
 import { normalizePhotoCalibration, photoPoint, photoPointAngles, alignPhotoBearing,
-  fitPhotoVertical, photoCalibrationReport } from './core.js?v=62';
-import { simpleSetupHTML, wireSimpleSetup } from './horizonsimple.js?v=12';
-import { photoConversionHTML } from './horizonphoto.js?v=6';
-import { geographicEvidenceHTML } from './horizongeographic.js?v=4';
+  fitPhotoVertical, photoCalibrationReport } from './core.js?v=63';
+import { simpleSetupHTML, wireSimpleSetup } from './horizonsimple.js?v=13';
+import { photoConversionHTML } from './horizonphoto.js?v=7';
+import { geographicEvidenceHTML } from './horizongeographic.js?v=5';
 
+const CONVERTED_NOTE = 'This view was converted from the original photo, so its geometry comes from that conversion. Refine it with the photo setup above; these steps can only review it.';
 const STEPS = ['Coverage', 'Direction', 'Vertical scale', 'Verify', 'Paint'];
 const POINTS = [['bearing', 'Direction feature'], ['level', 'Level reference'],
   ['scale', 'Second altitude reference'], ['check', 'Independent check feature']];
@@ -109,12 +110,16 @@ export function wirePhotoSetup(root, p, ui, hooks) {
     simple?.render();
   }
   function step(value, focus = true) {
-    hooks.settle(); cancelPick(); simple?.cancelPick(); ui.legacySetup = true; ui.setupStep = value; message(); render();
+    hooks.settle(); cancelPick(); simple?.cancelPick(); ui.legacySetup = true; ui.setupStep = value;
+    message(p.photoModel && value < 4 ? CONVERTED_NOTE : ''); render();
     if (focus && value === 4) hooks.focusCanvas();
     else if (focus) root.querySelector(`[data-pane="${value}"] input, [data-pane="${value}"] select`)?.focus();
   }
   function apply(action) {
     hooks.settle();
+    // The linear legacy evidence cannot describe a converted photograph; applying
+    // it would overwrite the conversion's geometry while keeping its photo model.
+    if (p.photoModel) { message(CONVERTED_NOTE); render(); return; }
     try { action(); cancelPick(); hooks.changed(); message('Applied to the live plan. Save to keep these changes.'); }
     catch (err) { message(err.message); }
     render();

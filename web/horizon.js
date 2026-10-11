@@ -15,11 +15,11 @@
    ./core/<hash>/ and imported through the stable ./core.js stub. The shell
    re-exports it so app.js/nightrank.js keep their public surface. */
 import { vizTheme } from './viztheme.js?v=6';
-import { photoSetupHTML, wirePhotoSetup } from './horizonsetup.js?v=15';
-import { traceToolsHTML, tracePointsHTML, wireTraceTools } from './horizontrace.js?v=14';
-import { inspectPhoto, angularPhotoCanvas, wirePhotoConversion } from './horizonphoto.js?v=6';
-import { wireGeographicEvidence } from './horizongeographic.js?v=4';
-import { normalizeWebPrefs, WEB_PREF_DEFAULTS } from './webstore.js?v=61';
+import { photoSetupHTML, wirePhotoSetup } from './horizonsetup.js?v=16';
+import { traceToolsHTML, tracePointsHTML, wireTraceTools } from './horizontrace.js?v=15';
+import { inspectPhoto, angularPhotoCanvas, wirePhotoConversion } from './horizonphoto.js?v=7';
+import { wireGeographicEvidence } from './horizongeographic.js?v=5';
+import { normalizeWebPrefs, WEB_PREF_DEFAULTS } from './webstore.js?v=62';
 import {
   NO_BLOCK, BINS, MASK_W, MASK_H,
   rebuildMask, wrapsFor, altOf, rowOfAlt, xOfAz, azOfX, profileFromMask,
@@ -41,7 +41,7 @@ import {
   historyRedo as coreHistoryRedo, historyMarkSaved as coreHistoryMarkSaved,
   historyDirty as coreHistoryDirty, PANO_HISTORY_LIMIT as coreHISTORY_LIMIT,
   PLANNER_CHANGE_EVENT, nextPlannerRevision, plannerChange, panoramaRevision,
-} from './core.js?v=62';
+} from './core.js?v=63';
 
 export {
   NO_BLOCK, BINS, MASK_W, MASK_H,

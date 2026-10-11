@@ -1,5 +1,23 @@
 # Independent website decisions
 
+## 2026-10-11 — Validate zones at entry; name unknown horizons in core
+
+An unknown IANA zone is refused at every entry point rather than planned in
+the browser zone: the site form alerts, a backup site rejects the whole bundle
+before confirmation (as invalid settings already did), and an unknown stored
+zone activates browser local for planning and weather together.
+
+Unknown-coverage horizon blocks are a core reason, not shell prose. Core's
+panoramaVisibilityReason refines BLOCKED_BY_HORIZON to UNKNOWN_HORIZON only
+where queryHorizonEvidence finds no evidence, leaving legacy reasons
+unchanged. The detail summary names a night "coverage unknown" only when every
+horizon-limited sample in its window lacks evidence.
+
+Converted photographs are refined only through source-aware setup; the legacy
+linear steps stay reviewable but refuse to apply. Imports refuse photos whose
+header and decoded dimensions differ, and backup import refuses to start when
+the current data could not be restored by rollback.
+
 ## 2026-10-11 — P1/P2 physical orientation and evidence policy
 
 Use supported source rays to fit heading, pitch and roll jointly while keeping

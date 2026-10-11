@@ -10,7 +10,7 @@
  * the app moved to nightseam.de, so every visitor starts on a fresh origin.
  */
 
-import { offsetEastMin, zonedWallToUtcMs, normalizeCoverageEvidence, normalizePhotoCalibration } from './core.js?v=62';
+import { offsetEastMin, zonedWallToUtcMs, normalizeCoverageEvidence, normalizePhotoCalibration } from './core.js?v=63';
 
 const DB_NAME = 'nightseam-db-v1';
 const DB_VER = 1;
@@ -281,7 +281,16 @@ function sexa(s) {
 
 let activeTz = null; // IANA name of the active site, or null = browser local
 
-export function setActiveTz(tz) { activeTz = tz || null; }
+/** True for an IANA zone this browser resolves. Every timezone entry point
+ *  (site form, backup sites, settings) uses it: core/time.js treats an unknown
+ *  zone as "no zone", which would silently plan in the browser's zone. */
+export function validTimeZone(v) {
+  if (typeof v !== 'string' || !v || v.length > 100) return false;
+  try { new Intl.DateTimeFormat('en', { timeZone: v }); return true; } catch { return false; }
+}
+
+// An unknown stored zone falls back to browser local for planning AND weather.
+export function setActiveTz(tz) { activeTz = validTimeZone(tz) ? tz : null; }
 export function tz() { return activeTz; }
 
 /** UTC offset of `tz` (minutes east of UTC) at the instant `date`. DST-aware.
@@ -429,11 +438,7 @@ export function normalizeWebPrefs(value, { strict = false } = {}) {
   check('activeSiteId', (v) => v === null || v === '' || id(v));
   check('activeRigId', (v) => v === null || v === '' || id(v));
   if (out.activeRigId === null) out.activeRigId = ''; // older no-rig convention
-  check('tz', (v) => {
-    if (v === null || v === '' || v === 'auto') return true;
-    if (typeof v !== 'string' || v.length > 100) return false;
-    try { new Intl.DateTimeFormat('en', { timeZone: v }); return true; } catch { return false; }
-  });
+  check('tz', (v) => v === null || v === '' || v === 'auto' || validTimeZone(v));
   if (out.tz === null || out.tz === 'auto') out.tz = '';
   check('savedTargetIds', Array.isArray);
   if (Array.isArray(source.savedTargetIds)) {
@@ -469,10 +474,15 @@ export function stageBackup(data) {
       `this build reads ${BUNDLE_VERSION}) - reload/update the page and try ` +
       `again`);
   }
-  const siteOf = (s) => cleanRecord(s, {
-    numbers: ['lat', 'lon', 'elev'],
-    strings: ['name', 'tz', 'notes'],
-  });
+  const siteOf = (s) => {
+    const clean = cleanRecord(s, {
+      numbers: ['lat', 'lon', 'elev'],
+      strings: ['name', 'tz', 'notes'],
+    });
+    if (!clean || clean.tz == null || clean.tz === '') return clean;
+    if (!validTimeZone(clean.tz)) throw new Error('backup site has an unknown timezone');
+    return clean;
+  };
   const rigOf = (r) => cleanRecord(r, {
     numbers: ['focal_mm', 'sensor_w', 'sensor_h', 'fov_w', 'fov_h'],
     strings: ['name'],
