@@ -13,12 +13,21 @@
 /** Minutes EAST of UTC for an IANA zone at epoch ms (DST-aware).
  *  Parses Intl's long/short offset names ("GMT+02:00", "GMT+5:30", "GMT");
  *  returns null for an unknown/missing zone. */
+const offsetFormatters = new Map();
 export function offsetEastMin(tzName, ms) {
   if (!tzName) return null;
   try {
-    const parts = new Intl.DateTimeFormat('en-US', {
-      timeZone: tzName, timeZoneName: 'longOffset', hour12: false,
-    }).formatToParts(new Date(ms));
+    // Cache the formatter, never the offset: each instant still consults the
+    // host timezone database, including folds, gaps and date-line transitions.
+    let formatter = offsetFormatters.get(tzName);
+    if (!formatter) {
+      formatter = new Intl.DateTimeFormat('en-US', {
+        timeZone: tzName, timeZoneName: 'longOffset', hour12: false,
+      });
+      if (offsetFormatters.size >= 32) offsetFormatters.delete(offsetFormatters.keys().next().value);
+      offsetFormatters.set(tzName, formatter);
+    }
+    const parts = formatter.formatToParts(new Date(ms));
     const p = parts.find((x) => x.type === 'timeZoneName');
     if (!p || !p.value) return null;
     if (p.value === 'GMT' || p.value === 'UTC') return 0;

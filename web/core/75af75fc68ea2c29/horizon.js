@@ -16,7 +16,31 @@ export const NO_BLOCK = -90;
 export const BINS = 720;
 export const BIN_DEG = 0.5;
 export const MASK_W = 720;
-export const MASK_H = 360; // 0.25 deg per row of altitude
+export const MASK_H = 360; // Row spacing is the calibrated altitude span / 359.
+
+/** Photo coordinates are normalized against the retained original image. */
+export function normalizeSourceRect(value, strict = false) {
+  const full = { x: 0, y: 0, w: 1, h: 1 };
+  if (value == null) return full;
+  const valid = value && !Array.isArray(value) &&
+    ['x', 'y', 'w', 'h'].every((k) => Number.isFinite(value[k])) &&
+    value.x >= 0 && value.x < 1 && value.y >= 0 && value.y < 1 && value.w > 0 && value.h > 0 &&
+    value.x + value.w <= 1 + 1e-9 && value.y + value.h <= 1 + 1e-9;
+  if (!valid) {
+    if (strict) throw new Error('Invalid panorama photo source rectangle');
+    return full;
+  }
+  return { x: value.x, y: value.y, w: Math.min(value.w, 1 - value.x),
+    h: Math.min(value.h, 1 - value.y) };
+}
+
+/** Preserve a positive vertical calibration span within physical altitude bounds. */
+export function normalizePanoCalibration(bottom, top) {
+  const finite = (v, fallback) => Number.isFinite(Number(v)) ? Number(v) : fallback;
+  const altBottom = Math.max(-30, Math.min(85, finite(bottom, 0)));
+  const altTop = Math.max(altBottom + 5, Math.min(90, finite(top, 60)));
+  return { altBottom, altTop };
+}
 
 /** Metadata vocabulary for the horizon editor.  These values are descriptive
  * only: they never alter the planning profile.  Keeping the vocabulary in the
@@ -32,6 +56,65 @@ const HORIZON_TEXT_LIMITS = Object.freeze({
 });
 
 const horizonText = (value, limit) => String(value ?? '').trim().slice(0, limit);
+
+/** Optional measurement provenance; absent uncertainty is not invented. */
+export function normalizeReferenceMeasurement(value, strict = false) {
+  const fail = () => { if (strict) throw new Error('Invalid reference measurement provenance'); return {}; };
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return fail();
+  const out = {};
+  for (const [key, limit] of [['source', 96], ['exclusionReason', 320], ['measurementGroup', 96]]) {
+    if (value[key] == null) continue;
+    if (typeof value[key] !== 'string' || value[key].length > limit) return fail();
+    out[key] = value[key].trim();
+  }
+  if (value.sigmaDegrees != null) {
+    if (typeof value.sigmaDegrees !== 'number' || !Number.isFinite(value.sigmaDegrees)
+        || value.sigmaDegrees <= 0 || value.sigmaDegrees > 30) return fail();
+    out.sigmaDegrees = value.sigmaDegrees;
+  }
+  if (value.captureTime != null) {
+    if (!validEvidenceDate(value.captureTime)) return fail();
+    out.captureTime = value.captureTime;
+  }
+  return out;
+}
+
+function validEvidenceDate(value) {
+  if (typeof value !== 'string' || value.length > 40
+      || !/^\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?(?:Z|[+-]\d{2}:\d{2}))?$/.test(value)) return false;
+  const time = Date.parse(value);
+  if (!Number.isFinite(time)) return false;
+  const [year, month, day] = value.slice(0, 10).split('-').map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day;
+}
+
+/** Coverage policy is separate from the authoritative obstruction arrays.
+ * Legacy records keep their previous inference rules; no source mask or
+ * measured coverage is fabricated by migration. Observer coordinates retain
+ * entered precision and cannot correct a changed viewpoint or parallax. */
+export function normalizeCoverageEvidence(value, strict = false) {
+  const legacy = () => ({ version: 1, policy: 'legacy', observer: null, captureDate: null });
+  if (value == null) return legacy();
+  const fail = () => { if (strict) throw new Error('Invalid horizon coverage evidence'); return legacy(); };
+  if (!value || Array.isArray(value) || value.version !== 1
+      || !['legacy', 'inferred-open', 'strict-measured'].includes(value.policy)) return fail();
+  let observer = null;
+  if (value.observer != null) {
+    const o = value.observer, finite = (n, lo, hi) => typeof n === 'number' && Number.isFinite(n) && n >= lo && n <= hi;
+    if (!o || typeof o !== 'object' || Array.isArray(o) || ((o.lat == null) !== (o.lon == null))
+        || (o.lat != null && (!finite(o.lat, -90, 90) || !finite(o.lon, -180, 180)))
+        || (o.opticalHeight != null && !finite(o.opticalHeight, -100, 10000))) return fail();
+    observer = { lat: o.lat ?? null, lon: o.lon ?? null, opticalHeight: o.opticalHeight ?? null };
+    if (observer.lat == null && observer.opticalHeight == null) observer = null;
+  }
+  if (value.captureDate != null && !validEvidenceDate(value.captureDate)) return fail();
+  return { version: 1, policy: value.policy, observer, captureDate: value.captureDate ?? null };
+}
+
+/** Fast policy access for the shared scorer; callers normalize at storage.
+ * An absent policy has exactly the historical behavior. */
+export const horizonCoveragePolicy = p => p?.coverageEvidence?.policy ?? 'legacy';
 
 /** Normalize user-entered obstruction landmarks into a safe, portable shape.
  *  Landmarks are annotations, not geometry; malformed entries are ignored and
@@ -140,8 +223,9 @@ const worldBin = (azDeg) => {
 /** FOV-relative position (deg in [0, fov]) of world bin `i` inside the
  *  calibrated frame [0, fov], or null when the bin lies entirely outside it.
  *
- *  ONE coverage rule, shared by the profile producers, the preview and the
- *  crop, and it MUST agree with the scorer, which gates per azimuth
+ *  Legacy representative-position coverage, used by migration, preview and
+ *  crop. Derived masks aggregate all overlapping columns separately. Both
+ *  agree with the scorer's continuous frame gate, which gates per azimuth
  *  continuously (`ceilFor`: inside while `0 <= az - azOffset <= fov`). A bin is
  *  therefore in frame when ANY part of its 0.5 deg span overlaps the frame:
  *  - a bin that starts inside keeps its left-edge position (unchanged mapping);
@@ -170,6 +254,14 @@ export function fovBinRel(i, azOff, fov) {
 export function rebuildMask(strokes, wrap = false) {
   const mask = new Uint8Array(MASK_W * MASK_H);
   for (const s of strokes) {
+    applyDabToMask(mask, s, wrap);
+  }
+  return mask;
+}
+
+/** The same rasterizer serves replay and incremental live edits. */
+export function applyDabToMask(mask, s, wrap = false) {
+    if (s.m === 'trace') return applySkylineToMask(mask, s.points);
     const val = s.m === 'b' ? 255 : 0;
     const rx = s.rx ?? s.r; // legacy dabs are circles; crops stretch only x
     const xs = wrap ? [s.x - MASK_W, s.x, s.x + MASK_W] : [s.x];
@@ -184,8 +276,76 @@ export function rebuildMask(strokes, wrap = false) {
         for (let cy = y0; cy <= y1; cy++) mask[cy * MASK_W + cx] = val;
       }
     }
+  return mask;
+}
+
+/** A skyline is an ordered paint operation, not a second competing profile.
+ * Later dabs/erasers remain corrections when an earlier trace is edited.
+ * Only connected columns are filled; endpoints do not imply unseen terrain. */
+export function normalizeSkylineStroke(s) {
+  if (!s || s.m !== 'trace' || !Array.isArray(s.points) ||
+      !s.points.length || s.points.length > 256) throw new Error('Invalid skyline trace');
+  let previous = -1;
+  const points = s.points.map((point) => {
+    if (!Array.isArray(point) || point.length !== 2 ||
+        !point.every(Number.isFinite) || point[0] < 0 || point[0] > MASK_W ||
+        point[1] < 0 || point[1] > MASK_H - 1 || point[0] <= previous) {
+      throw new Error('Skyline points must be finite, ordered image coordinates');
+    }
+    previous = point[0];
+    return point.slice();
+  });
+  return { m: 'trace', points };
+}
+
+export function applySkylineToMask(mask, points) {
+  for (let i = 1; i < points.length; i++) {
+    const [ax, ay] = points[i - 1], [bx, by] = points[i];
+    if (!(bx > ax)) continue;
+    // Cover the whole column footprint, including sub-column segments, using
+    // its highest connected skyline edge. Downward altitude rounding is unsafe.
+    for (let x = Math.max(0, Math.floor(ax)); x <= Math.min(MASK_W - 1, Math.floor(bx)); x++) {
+      const lo = Math.max(ax, x), hi = Math.min(bx, x + 1);
+      const at = v => ay + (by - ay) * (v - ax) / (bx - ax);
+      const y = Math.max(0, Math.min(MASK_H - 1, Math.floor(Math.min(at(lo), at(hi)) + 1e-9)));
+      for (let row = y; row < MASK_H; row++) mask[row * MASK_W + x] = 255;
+    }
   }
   return mask;
+}
+
+/** Clip segments at the kept band's exact edges before stretching. The same
+ * operation stays at its position in the dab timeline; seam endpoint heights
+ * are explicit, so no hidden wrap segment appears after a crop. */
+export function cropSkylineStroke(s, x0, width) {
+  const right = x0 + width, points = [];
+  const add = (x, y) => {
+    const point = [Math.max(0, Math.min(MASK_W, (x - x0) / width * MASK_W)), y];
+    if (!points.length || point[0] > points[points.length - 1][0] + 1e-9) points.push(point);
+  };
+  for (let i = 1; i < s.points.length; i++) {
+    const [ax, ay] = s.points[i - 1], [bx, by] = s.points[i];
+    const left = Math.max(x0, ax), end = Math.min(right, bx);
+    if (end < left) continue;
+    const y = x => ay + (by - ay) * (x - ax) / (bx - ax);
+    add(left, y(left)); add(end, y(end));
+  }
+  if (s.points.length === 1 && s.points[0][0] >= x0 && s.points[0][0] <= right) add(...s.points[0]);
+  return points.length ? { m: 'trace', points } : null;
+}
+
+/** Join sparse pointer samples with overlapping dabs. No new storage shape. */
+export function strokeSegment(from, to, r, mode = 'b') {
+  const radius = Math.max(1, Number(r) || 1);
+  const bound = (v, max) => Math.max(-radius, Math.min(max + radius, v));
+  const end = [bound(to[0], MASK_W), bound(to[1], MASK_H)];
+  if (!from) return [{ m: mode, x: end[0], y: end[1], r: radius }];
+  const start = [bound(from[0], MASK_W), bound(from[1], MASK_H)];
+  const length = Math.hypot(end[0] - start[0], end[1] - start[1]);
+  const count = Math.ceil(length / Math.max(0.5, radius / 2));
+  return Array.from({ length: count }, (_, i) => ({ m: mode,
+    x: start[0] + (end[0] - start[0]) * (i + 1) / count,
+    y: start[1] + (end[1] - start[1]) * (i + 1) / count, r: radius }));
 }
 
 /** Mask row -> apparent altitude (image y=0 = altTop, y=MASK_H-1 = altBottom). */
@@ -217,45 +377,65 @@ export function azOfX(p, x) {
 }
 
 /** Seam wrap applies only to a full 360 deg panorama. */
-export const wrapsFor = (p) => Number(p.fov) >= 359.5;
+export const wrapsFor = (p) => Math.abs(Number(p.fov) - 360) <= 1e-8;
 
 /** Obstruction profile from a mask - shared by computeProfile() and the live
  *  overlay (which must not rebuild the mask or hit storage per pointer sample).
  *
- *  D1: the mask is FOV-relative (column 0 = azOffset); the produced profile is
- *  WORLD-AZIMUTH, exactly like the desktop editor and the Python server. Each
- *  world bin i takes the mask column of its FOV-relative position through the
- *  ONE rule `fovBinRel()` (see above), which also covers the bin straddling the
- *  frame start, so the 720-mask-column vs 0.5-deg-bin oversampling cannot
- *  disagree with the desktop representative. Bins outside
- *  the calibrated FOV keep the mode sentinel (sky = 90 blocked, obstacle =
- *  NO_BLOCK). Marks the record's bin space so the adapter never converts it
- *  twice. */
+ *  Every world bin combines all overlapping source columns: the highest
+ *  obstacle, or the intersection of allowed sky bands. Unpainted sky columns
+ *  block fully. Authoritative stored profiles and their legacy migration are
+ *  not resampled by this mask-derivation policy. */
+function binColumnRanges(i, azOff, fov) {
+  const rel = (((i * BIN_DEG - azOff) % 360) + 360) % 360;
+  const ranges = [];
+  // A nonaligned full-360 bin may overlap both ends of the photograph.
+  for (const start of [rel - 360, rel]) {
+    const lo = Math.max(0, start), hi = Math.min(fov, start + BIN_DEG);
+    if (hi <= lo + 1e-10) continue;
+    const first = Math.max(0, Math.floor(lo * MASK_W / fov + 1e-9));
+    const last = Math.min(MASK_W - 1, Math.ceil(hi * MASK_W / fov - 1e-9) - 1);
+    if (last >= first) ranges.push([first, last]);
+  }
+  // The scorer includes the right photo endpoint. Preserve its final column
+  // even when that world bin only touches the frame at a zero-width boundary.
+  if (!ranges.length && Math.abs(rel - fov) <= 1e-10) ranges.push([MASK_W - 1, MASK_W - 1]);
+  return ranges;
+}
+
 export function profileFromMask(p, mask) {
   const fov = Number(p.fov) > 0 ? Number(p.fov) : 360;
   const azOff = Number(p.azOffset) || 0;
   const sky = p.paintMode === 'sky';
   const prof = new Array(BINS).fill(sky ? 90 : NO_BLOCK);
   const top = new Array(BINS).fill(NO_BLOCK);
+  // Sequential row reads summarize each source column once; avoid scanning
+  // all rows again for every bin/column overlap in a narrow photograph.
+  const firstRow = new Int16Array(MASK_W).fill(-1), lastRow = new Int16Array(MASK_W).fill(-1);
+  for (let row = 0; row < MASK_H; row++) {
+    for (let col = 0; col < MASK_W; col++) {
+      if (!mask[row * MASK_W + col]) continue;
+      if (firstRow[col] < 0) firstRow[col] = row;
+      lastRow[col] = row;
+    }
+  }
   for (let i = 0; i < BINS; i++) {
-    const rel = fovBinRel(i, azOff, fov);
-    if (rel === null) continue;              // outside the calibrated FOV
-    const col = Math.min(BINS - 1, Math.floor(rel * BINS / fov));
-    let minRow = -1, maxRow = -1;
-    for (let row = 0; row < MASK_H; row++) {
-      if (mask[row * MASK_W + col]) { if (minRow < 0) minRow = row; maxRow = row; }
+    const ranges = binColumnRanges(i, azOff, fov);
+    if (!ranges.length) continue;
+    let lower = NO_BLOCK, upper = 90.5, blocked = false;
+    for (const [first, last] of ranges) {
+      for (let col = first; col <= last; col++) {
+        if (firstRow[col] < 0) { if (sky) blocked = true; continue; }
+        const edge = altOf(p, firstRow[col]);
+        if (sky) {
+          lower = Math.max(lower, altOf(p, lastRow[col]));
+          upper = Math.min(upper, edge >= p.altTop - 4 ? 90.5 : edge);
+        } else lower = Math.max(lower, edge);
+      }
     }
-    if (minRow < 0) continue;                // unpainted: sky column stays blocked
-    if (sky) {
-      prof[i] = altOf(p, maxRow);            // sky mode: bottom edge of painted band
-      // Painted to (near) the frame top = open sky above: 90.5 is the "no
-      // upper ceiling" sentinel (desktop parity) - without it, everything
-      // above a band that reaches altTop was wrongly treated as blocked.
-      const eTop = altOf(p, minRow);
-      top[i] = eTop >= p.altTop - 4 ? 90.5 : eTop;
-    } else {
-      prof[i] = altOf(p, minRow);            // top of the painted mask
-    }
+    if (sky && (blocked || (p.blockAbove && upper <= lower))) continue;
+    prof[i] = lower;
+    if (sky) top[i] = upper;
   }
   p.profileBins = WORLD_BINS;
   return { prof, top };
@@ -265,9 +445,9 @@ export function profileFromMask(p, mask) {
  *  canonical world-azimuth bins, in place. Idempotent: records already marked
  *  `profileBins === WORLD_BINS` pass through untouched; a stroke-derived
  *  profile is already world (profileFromMask marks it). Uses the desktop
- *  representative column (`col = floor(rel/fov*720)`), so a converted record
- *  is byte-equivalent to what the desktop editor recomputes from the same
- *  mask. Bins outside the calibrated FOV get the mode sentinel. */
+ *  representative column (`col = floor(rel/fov*720)`) to retain legacy values;
+ *  newly derived masks instead aggregate overlapping columns conservatively.
+ *  Bins outside the calibrated FOV get the mode sentinel. */
 export function normalizeProfileBins(p) {
   if (!p || p.profileBins === WORLD_BINS) return p;
   const prof = (Array.isArray(p.profile) && p.profile.length === BINS) ? p.profile : null;
@@ -463,7 +643,8 @@ export function cropKeptBand(fovOld, azOffOld, sel, W) {
   const w = width * fov / fov0;
   const x = Math.min(width - w, Math.max(0, Number(sel?.x) || 0));
   const azOffset = ((az0 + x / width * fov0) % 360 + 360) % 360;
-  return { fov, azOffset, kept: { x, w }, expanded: w > requested + 1e-9 };
+  return { fov, azOffset, kept: { x, w }, expanded: w > requested + 1e-9,
+    minimumApplied: fov0 * requested / width < Math.min(CROP_MIN_FOV, fov0) };
 }
 
 /** Transform and clip dabs to the effective kept band. Vertical geometry stays
@@ -476,6 +657,11 @@ export function cropStrokes(strokes, sel, W, wrap = false) {
   const scale = 1 / frac;
   const out = [];
   for (const s of strokes || []) {
+    if (s.m === 'trace') {
+      const trace = cropSkylineStroke(s, x0, MASK_W * frac);
+      if (trace) out.push(trace);
+      continue;
+    }
     const rx = (s.rx ?? s.r) * scale;
     const centers = wrap && frac < 1 ? [s.x - MASK_W, s.x, s.x + MASK_W] : [s.x];
     for (const center of centers) {
@@ -517,6 +703,10 @@ export function clipProfileToFov(p) {
 export function cropPano(p, sel, W) {
   const wrap = wrapsFor(p);
   const { fov, azOffset, kept } = cropKeptBand(p.fov, p.azOffset, sel, W);
+  const source = normalizeSourceRect(p.sourceRect);
+  const width = W > 0 ? W : MASK_W;
+  p.sourceRect = { ...source, x: source.x + source.w * kept.x / width,
+    w: source.w * kept.w / width };
   p.fov = fov;
   p.azOffset = azOffset;
   if (Array.isArray(p.strokes) && p.strokes.length) {
@@ -535,7 +725,7 @@ export function cropPano(p, sel, W) {
  *   visible = alt >= minAlt && alt > ceil && alt < (ceilTop ?? 90.5)
  * Outside the calibrated FOV: obstacle mode = unblocked, sky mode = blocked.
  */
-export function ceilFor(p, azDeg) {
+function profileCeilingFor(p, azDeg) {
   // Guard the record: an imported or legacy panorama without a well-formed
   // profile must degrade to "nothing blocks" (as the desktop and the server
   // do), never to `undefined` - `alt > undefined` is false, which would hide
@@ -553,6 +743,7 @@ export function ceilFor(p, azDeg) {
   const azOff = Number(p.azOffset) || 0;
   const d = ((azDeg - azOff) % 360 + 360) % 360;
   if (d > fov) {
+    if(p.photoModel)return {ceil:90,ceilTop:null}; // converted view: unphotographed directions are unknown/blocked
     return p.paintMode === 'sky' ? { ceil: 90, ceilTop: null } : { ceil: NO_BLOCK, ceilTop: null };
   }
   const col = worldBin(azDeg);   // D1: world-azimuth bins (Python ceil_lookup)
@@ -574,6 +765,52 @@ export function ceilFor(p, azDeg) {
     return { ceil: element(prof[col], 90), ceilTop: top };
   }
   return { ceil: element(prof[col], NO_BLOCK), ceilTop: null };
+}
+
+/** Planning policy over the unchanged profile. Strict coverage is conservative
+ * at photograph boundaries and at unassessed columns; inferred-open retains
+ * vertical skyline inference but excludes unphotographed azimuths. */
+export function ceilFor(p, azDeg) {
+  const raw = profileCeilingFor(p, azDeg), policy = horizonCoveragePolicy(p);
+  if (policy === 'legacy') return raw;
+  if (!p || !Number.isFinite(azDeg)) return { ceil: 90, ceilTop: null };
+  const d = ((azDeg - p.azOffset) % 360 + 360) % 360;
+  if (!Number.isFinite(d) || !(p.fov > 0) || d > p.fov) return { ceil: 90, ceilTop: null };
+  if (policy !== 'strict-measured') return raw;
+  const value = p.profile?.[worldBin(azDeg)];
+  if (!Number.isFinite(p.altBottom) || !Number.isFinite(p.altTop) || p.altTop <= p.altBottom
+      || !Number.isFinite(value) || value <= NO_BLOCK + 0.5) return { ceil: 90, ceilTop: null };
+  const bandTop = p.paintMode === 'sky' ? p.profileTop?.[worldBin(azDeg)] : null;
+  if (p.paintMode === 'sky' && (!Number.isFinite(bandTop) || bandTop <= NO_BLOCK + 0.5))
+    return { ceil: 90, ceilTop: null };
+  const measuredTop = Number.isFinite(bandTop) && bandTop > NO_BLOCK + 0.5 ? bandTop : raw.ceilTop ?? 90.5;
+  return { ceil: Math.max(raw.ceil, p.altBottom), ceilTop: Math.min(measuredTop, p.altTop) };
+}
+
+/** Evidence is not the same as permission to plan. Profile layers cannot
+ * assert a complete source-pixel state map: outside coverage, empty columns
+ * and extrapolated open sky remain unknown even when legacy policy allows it. */
+export function queryHorizonEvidence(p, azDeg, altitude) {
+  const policy = horizonCoveragePolicy(p), ceiling = ceilFor(p, azDeg);
+  const allowed = Number.isFinite(altitude) && altitude > ceiling.ceil && altitude < (ceiling.ceilTop ?? 90.5);
+  const result = (state, provenance) => ({ state, provenance, assumed: state === 'unknown' && allowed, allowed, policy });
+  if (!p || !Number.isFinite(azDeg) || !Number.isFinite(altitude)) return result('unknown', 'missing-evidence');
+  const d = ((azDeg - p.azOffset) % 360 + 360) % 360;
+  if (!Number.isFinite(d) || !(p.fov > 0) || d > p.fov) return result('unknown', 'outside-azimuth-coverage');
+  const col = worldBin(azDeg), edge = p.profile?.[col], top = p.profileTop?.[col];
+  if (!Number.isFinite(edge) || edge <= NO_BLOCK + 0.5 || (p.paintMode === 'sky' && edge >= 90))
+    return result('unknown', 'unassessed-profile-column');
+  if (p.paintMode === 'sky' && (!Number.isFinite(top) || top <= NO_BLOCK + 0.5))
+    return result('unknown', 'unassessed-sky-band');
+  if (!Number.isFinite(p.altBottom) || !Number.isFinite(p.altTop)
+      || altitude <= p.altBottom || altitude >= p.altTop) return result('unknown', 'outside-vertical-evidence');
+  if (altitude <= edge) return result('blocked', 'recorded-profile');
+  if (p.paintMode === 'sky') {
+    if (Number.isFinite(top) && top > NO_BLOCK + 0.5 && top < 90.5 && altitude >= top)
+      return p.blockAbove ? result('blocked', 'recorded-upper-profile') : result('unknown', 'inferred-open-above-band');
+    return result('clear', 'recorded-sky-band');
+  }
+  return policy === 'legacy' ? result('unknown', 'legacy-skyline-inference') : result('clear', 'covered-profile-opening');
 }
 
 /** Raw painted band TOP at an azimuth (sky mode), or null when the column is

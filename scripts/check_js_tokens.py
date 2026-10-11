@@ -98,48 +98,68 @@ _VERIFIED_BASELINE_JSON = r"""
    "token": "4"
   },
   "app.js": {
-   "sha256": "b45fe846d559bfd89fcd54a9d936b565d1da65c7e918c7b1a0ae4a17e636b5be",
-   "token": "174"
+   "sha256": "60786720ca415e20ffdfdd88db8a04627787474d571e72859579f3cf949cb6ab",
+   "token": "200"
   },
   "astro.js": {
-   "sha256": "bf25b29ee6532782e769cfbed42f8374ef1e9024da979cdb0bdb62c5a5cb0a64",
-   "token": "33"
-  },
-  "core.js": {
-   "sha256": "79090e2a82406ea1925844352a247d5839552d75653737872f1684369a064c88",
+   "sha256": "bf734ffcb74659d0c0f29c8571cf444feb2665f6e3ab07eefac1177dab68b0ad",
    "token": "47"
   },
+  "core.js": {
+   "sha256": "23e0902f1f8b2d28b53e73cdaf522f0000553193da418d1984f12175c764bf9f",
+   "token": "62"
+  },
   "format.js": {
-   "sha256": "19d10a66787ec4a4e526f45df4b7cdc368bf8f131750a5a1232da13aff24196b",
-   "token": "40"
+   "sha256": "e2260580bac32fe1366bb09486534ff193aa5f8740bbe7c8279ffef68d7d7d39",
+   "token": "54"
   },
   "horizon.js": {
-   "sha256": "9e873578d7d5a58c8e65b4667c9bee8f89c567438bd09e66fa91d5f041863f6b",
-   "token": "81"
+   "sha256": "886b14bc44cd8288945771e148f634a041c75129d92fdd55b0247c82255a36e4",
+   "token": "107"
+  },
+  "horizongeographic.js": {
+   "sha256": "89aaf66ddb3de86546df468fbe47afed8e77c571cdf335a61756aa17cb770bc8",
+   "token": "4"
+  },
+  "horizonphoto.js": {
+   "sha256": "a70126f382b371b9750ba674a5e65fb86d8704af70dfe08d59ddeae16d68826b",
+   "token": "6"
+  },
+  "horizonsetup.js": {
+   "sha256": "35929cc27ae7d804178aec1248dbe71cec8c5e97b9c882cfc7bac0b5a8b86f9d",
+   "token": "15"
+  },
+  "horizonsimple.js": {
+   "sha256": "7235de4d703a75e046771dd2981ff825c6a1d97d1ebe5ba7490bb23062379f9f",
+   "token": "12"
+  },
+  "horizontrace.js": {
+   "sha256": "e7e54906ecf34375174d31563586f74dc91156dca1d2660d7e7c5fd26e2e7d7a",
+   "token": "14"
   },
   "imagecredits.js": {
    "sha256": "8c8b650a0ad6ef6462eea251b67642103cb0eb9010c1f9dde09fce2ba7fa8952",
    "token": "2"
   },
   "nightrank.js": {
-   "sha256": "0849c8d470dea767bc3670c3de670d55b19f2ab9fbc336499c5245b66dacf29f",
-   "token": "32"
+   "sha256": "31d936bd5f583ce1de0f5213f31df22ed17056b93b239db060d54dba7c91a5c5",
+   "token": "46"
   },
   "style.css": {
-   "sha256": "e4e3a67e762a3e9a6078a6eab0e9a98880123cee7b6c2f24fcd455c5fa869cb0",
-   "token": "56"
+   "sha256": "5ac822a19207d6ce1a83c2aa51aef570d65e886954a02f2bf3a5e33c466114e3",
+   "token": "63"
   },
   "themes.css": {
-   "sha256": "0626178a98b9675ddd05621b6b9bd2a7cf7cb545ab52996b0c5df229c1b9164a",
-   "token": "21"
+   "sha256": "557c43137a5e7fe8ea69ca313a9fa79bf4659cdcc340d5005fd52cfc0dcc4bee",
+   "token": "22"
   },
   "viztheme.js": {
    "sha256": "78c5502fff9083dd46136133d95383148e69bf97c4da3b1521722177f727e27a",
    "token": "6"
   },
   "webstore.js": {
-   "sha256": "8c9cfde461331df4bebcdc519741321cb803b99ea84943690aa39f555b03cbb6",
-   "token": "47"
+   "sha256": "42912d68d0aac1dace6a61ed548a68990f0ed4e110672ba4320c2f8a343a1b2e",
+   "token": "61"
   }
  }
 }

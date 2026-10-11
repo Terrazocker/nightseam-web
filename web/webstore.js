@@ -10,7 +10,7 @@
  * the app moved to nightseam.de, so every visitor starts on a fresh origin.
  */
 
-import { offsetEastMin, zonedWallToUtcMs } from './core.js?v=47';
+import { offsetEastMin, zonedWallToUtcMs, normalizeCoverageEvidence, normalizePhotoCalibration } from './core.js?v=62';
 
 const DB_NAME = 'nightseam-db-v1';
 const DB_VER = 1;
@@ -387,10 +387,12 @@ function cleanRecord(r, { numbers = [], strings = [] } = {}) {
   return out;
 }
 
-/** v3 adds independent horizontal dab radii. v1 (unstamped) and v2 remain
- * readable; earlier clients refuse v3 instead of silently losing crop geometry.
+/** v5 preserves photo calibration evidence alongside v4's non-destructive
+ * source rectangles and v3's horizontal dab radii. Formats 1–4 remain readable;
+ * earlier clients refuse v5 rather than silently losing reference evidence.
  * Bump this together with any incompatible bundle change. */
-export const BUNDLE_VERSION = 3;
+// v10 preserves physical orientation and geographic coverage/measurement evidence.
+export const BUNDLE_VERSION = 10;
 
 export const WEB_PREF_DEFAULTS = Object.freeze({
   bortle: 4, minAlt: null, moonAware: false, viewFullDay: false, edge: 16,
@@ -489,6 +491,13 @@ export function stageBackup(data) {
   }
   if (!Array.isArray(data.panos.panos)) {
     throw new Error('backup panorama section is not a list of panoramas');
+  }
+  // Reject incompatible geographic/reference evidence while the whole bundle
+  // is still staged. Invalid records later discarded by id cannot hide it.
+  for (const pano of data.panos.panos) {
+    if (!pano || typeof pano !== 'object') continue;
+    normalizeCoverageEvidence(pano.coverageEvidence, true);
+    normalizePhotoCalibration(pano.calibration, true);
   }
   const panos = data.panos;
   const records = (key, clean) => {

@@ -154,10 +154,13 @@ def crop(c):
     result=c.page.evaluate('''async m=>{
       const H=await import(m.horizon),W=await import(m.webstore);
       const bundle=await W.collectBackup(H.getPrefs(),await H.exportPanosWithImages(),'workbench');
-      await W.restoreBackup(bundle,null);
+      const norm=H.normalizePanos(bundle.panos),staged=W.stageBackup({...bundle,panos:norm});
+      await H.applyPanosSnapshot({panos:[],activeId:null});
+      await W.restoreBackup({...bundle,panos:norm},null);
+      if(!await H.applyPanosSnapshot(staged.panos))throw new Error('Panorama restore failed');
       return {version:bundle.version,p:H.activePano()};
     }''',modules())
-    c.expect_eq(result['version'],3,'ellipse backup declares compatible schema')
+    c.expect_eq(result['version'],10,'photo crop/reference backup declares compatible schema')
     c.expect_eq(result['p']['profile'][370],expected,'backup restore keeps cropped geometry')
     c.page.reload(wait_until='domcontentloaded');c.page.wait_for_selector('#pano-canvas',state='visible')
     c.expect_eq(model(c)['strokes'][0]['rx'],80,'reload retains independent horizontal radius')

@@ -10,6 +10,7 @@
 
 import { gmstDeg, precessJ2000ToDate, refractionDeg, sepDeg } from './astro.js';
 import { visibilityReason, summarizeVisibility } from './visibility.js';
+import { ceilFor, normalizeCoverageEvidence } from './horizon.js';
 
 /* how badly an object type suffers under moonlight (nebulae worst, clusters
    least). CO-09 (0.6.32 review): null prototype, because `otype` and the filter
@@ -150,9 +151,11 @@ export function scoreNightTracks(tracks, objects, jd0, step, minAlt, pano, ctx =
   const topsArr = (pano && Array.isArray(pano.profileTop) && pano.profileTop.length === 720)
     ? Float64Array.from(pano.profileTop) : null;
   const sky = !!(pano && pano.paintMode === 'sky');
+  const converted = !!(pano && pano.photoModel);
   const fov = pano && Number(pano.fov) > 0 ? Number(pano.fov) : 360;
   const azOff = pano ? (Number(pano.azOffset) || 0) : 0;
   const blockAbove = !!(pano && pano.blockAbove);
+  const measuredPolicy=pano?normalizeCoverageEvidence(pano.coverageEvidence).policy!=='legacy':false;
 
   // moon path: the minimum distance only depends on the night's age + filter,
   // so the Math.pow curve is evaluated once per batch
@@ -203,7 +206,7 @@ export function scoreNightTracks(tracks, objects, jd0, step, minAlt, pano, ctx =
       if (prof) {
         const d = (((az - azOff) % 360) + 360) % 360;
         if (d > fov) {
-          ceil = sky ? 90 : -90;
+          ceil = sky || converted ? 90 : -90;
         } else {
           let b = Math.floor((((az % 360) + 360) % 360) / 0.5);
           if (b > 719) b = 719;
@@ -211,6 +214,9 @@ export function scoreNightTracks(tracks, objects, jd0, step, minAlt, pano, ctx =
           if (sky && blockAbove && topsArr && topsArr[b] > -89.5) top = topsArr[b];
         }
       }
+      // New evidence policies use the shared coverage query. Keep the historical
+      // typed-array path unchanged for old records, without duplicating new rules.
+      if(measuredPolicy){const bounds=ceilFor(pano,az);ceil=bounds.ceil;top=bounds.ceilTop;}
 
       const up = alt > 0;
       const vis = alt >= minAlt && alt > ceil && alt < (top == null ? 90.5 : top);

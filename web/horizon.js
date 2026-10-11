@@ -15,10 +15,19 @@
    ./core/<hash>/ and imported through the stable ./core.js stub. The shell
    re-exports it so app.js/nightrank.js keep their public surface. */
 import { vizTheme } from './viztheme.js?v=6';
-import { normalizeWebPrefs, WEB_PREF_DEFAULTS } from './webstore.js?v=47';
+import { photoSetupHTML, wirePhotoSetup } from './horizonsetup.js?v=15';
+import { traceToolsHTML, tracePointsHTML, wireTraceTools } from './horizontrace.js?v=14';
+import { inspectPhoto, angularPhotoCanvas, wirePhotoConversion } from './horizonphoto.js?v=6';
+import { wireGeographicEvidence } from './horizongeographic.js?v=4';
+import { normalizeWebPrefs, WEB_PREF_DEFAULTS } from './webstore.js?v=61';
 import {
   NO_BLOCK, BINS, MASK_W, MASK_H,
   rebuildMask, wrapsFor, altOf, rowOfAlt, xOfAz, azOfX, profileFromMask,
+  normalizeSourceRect, normalizePanoCalibration, applyDabToMask, strokeSegment,
+  normalizeSkylineStroke,
+  normalizePhotoCalibration, photoPoint, photoPointAngles,
+  normalizePhotoModel,normalizePhotoSource,photoFileDimensions,
+  normalizeCoverageEvidence,queryHorizonEvidence,
   normalizeProfileBins, WORLD_BINS, profileSegments, visibleSkyBands,
   skyBandPolygons, computeProfile, clearMask, ceilFor, bandTopFor,
   overhangRuns, assumedOpenRuns, assumedOpenHatchPolys,
@@ -32,7 +41,7 @@ import {
   historyRedo as coreHistoryRedo, historyMarkSaved as coreHistoryMarkSaved,
   historyDirty as coreHistoryDirty, PANO_HISTORY_LIMIT as coreHISTORY_LIMIT,
   PLANNER_CHANGE_EVENT, nextPlannerRevision, plannerChange, panoramaRevision,
-} from './core.js?v=47';
+} from './core.js?v=62';
 
 export {
   NO_BLOCK, BINS, MASK_W, MASK_H,
@@ -42,10 +51,12 @@ export {
   wrapsFor, CROP_MIN_FOV, cropKeptBand, cropStrokes, clipProfileToFov, cropPano,
   HORIZON_LANDMARK_KINDS, normalizeHorizonLandmarks,
   normalizeHorizonProvenance, normalizeHorizonConfidence, profileDifference,
+  normalizeCoverageEvidence, queryHorizonEvidence,
 };
 
 const LS_KEY = 'nightseam_panos_v1';
 const PROFILE_HEIGHT = 150;
+const pendingPhotoSetup = new Set();
 let plannerRevision = 0;
 
 /** Publish the shared planner invalidation contract for this web shell. */
@@ -66,13 +77,10 @@ function announcePanoChanged(pano, cause = 'edit') {
   });
 }
 
-/* ----- compressed panorama-image cache (survives reload) -----
-   The full-resolution photo is memory-only (it can exceed localStorage
-   quota), but a downscaled JPEG copy is kept in IndexedDB so the painted
-   horizon doesn't vanish after a reload — the user never has to re-upload. */
+/* Original panorama bytes live in IndexedDB; memory-only angular surfaces are
+   rebuilt from validated geometry. Legacy records may retain only a compressed
+   preview; conversion cannot restore detail or metadata already discarded. */
 const PANOIMG_DB = 'nightseam-panoimg';
-const PANOIMG_MAX_W = 1400;   // downscale width cap
-const PANOIMG_QUALITY = 0.78;
 
 function panoImgOpen() {
   return new Promise((resolve, reject) => {
@@ -108,26 +116,6 @@ const panoImgGet = (id) => panoImgRequest('readonly', (store) => store.get(id));
 const panoImgSet = (id, blob) => panoImgRequest('readwrite', (store) => store.put(blob, id));
 const panoImgDel = (id) => panoImgRequest('readwrite', (store) => store.delete(id));
 
-/** Downscale a data-URL image to a compressed JPEG blob (in-browser). */
-function compressImage(dataUrl, maxW, quality) {
-  return new Promise((resolve) => {
-    const img = new Image();
-    img.onload = () => {
-      try {
-        const scale = img.width > maxW ? maxW / img.width : 1;
-        const w = Math.max(1, Math.round(img.width * scale));
-        const h = Math.max(1, Math.round(img.height * scale));
-        const cv = document.createElement('canvas');
-        cv.width = w; cv.height = h;
-        cv.getContext('2d').drawImage(img, 0, 0, w, h);
-        cv.toBlob((b) => resolve(b), 'image/jpeg', quality);
-      } catch { resolve(null); }
-    };
-    img.onerror = () => resolve(null);
-    img.src = dataUrl;
-  });
-}
-
 let db = load();
 
 // WB4 (review): panoramas live in ONE localStorage blob. Without a cross-tab
@@ -151,6 +139,18 @@ function load() {
         // D1 adapter: stored profiles used to be FOV-relative mask columns;
         // convert once to the canonical world-azimuth bins (idempotent).
         d.panos.forEach(normalizeProfileBins);
+        d.panos.forEach((p) => {
+          p.sourceRect = normalizeSourceRect(p.sourceRect);
+          p.calibration = normalizePhotoCalibration(p.calibration);
+          p.photoModel = normalizePhotoModel(p.photoModel);
+          p.photoSource = normalizePhotoSource(p.photoSource);
+          p.coverageEvidence = normalizeCoverageEvidence(p.coverageEvidence);
+          const cal = normalizePanoCalibration(p.altBottom, p.altTop);
+          if (cal.altBottom !== p.altBottom || cal.altTop !== p.altTop) {
+            Object.assign(p, cal);
+            if (p.strokes?.length) computeProfile(p);
+          }
+        });
         return d;
       }
     }
@@ -215,7 +215,7 @@ function dataUrlToBlob(dataUrl) {
   return new Blob([arr], { type: m[1] });
 }
 
-/** TRUE backup of panoramas: embed the compressed photo for every record whose
+/** TRUE backup of panoramas: embed the retained original photo for every record whose
  *  image actually exists. A missing/unreadable photograph fails the backup:
  *  safety snapshots must not silently omit data needed for rollback. */
 export async function exportPanosWithImages() {
@@ -256,6 +256,27 @@ export function normalizePanos(data) {
   try {
     for (const p of data.panos) {
       if (p && p.image !== undefined && p.image !== null) dataUrlToBlob(p.image);
+      if (p) normalizeSourceRect(p.sourceRect, true);
+      if (p) normalizePhotoCalibration(p.calibration, true);
+      if (p) normalizeCoverageEvidence(p.coverageEvidence, true);
+      if(p){const model=normalizePhotoModel(p.photoModel,true);
+        const source=normalizePhotoSource(p.photoSource,true);
+        if(model&&source&&(model.width!==source.width||model.height!==source.height))throw new Error('Photo source dimensions do not match the projection');
+        if((model||source)&&p.image){
+          const match=/^data:(image\/[^;,]+)(;base64)?,([\s\S]*)$/i.exec(p.image);
+          const prefix=match[2]?atob(match[3].slice(0,1398104)):decodeURIComponent(match[3]).slice(0,1048576);
+          const size=photoFileDimensions(Uint8Array.from(prefix,c=>c.charCodeAt(0)));
+          const expected=model??source;
+          if(size.width!==expected.width||size.height!==expected.height)throw new Error('Photo bytes do not match stored source dimensions');
+        }
+        if(model&&[2,3].includes(p.calibration?.version))throw new Error('Converted photos require source-aware calibration evidence');}
+      for (const stroke of p?.strokes || []) {
+        if (stroke?.m === 'trace') {
+          normalizeSkylineStroke(stroke);
+          if (p.paintMode === 'sky') throw new Error('A skyline cannot represent a sky band');
+        }
+      }
+      if ((p?.strokes || []).filter(s => s?.m === 'trace').length > 32) throw new Error('Too many skyline traces');
     }
   } catch { return null; }
   const blank = () => new Array(BINS).fill(NO_BLOCK);
@@ -274,14 +295,19 @@ export function normalizePanos(data) {
     return true;
   }).map((p) => {
     const image = (typeof p.image === 'string' && p.image.startsWith('data:')) ? p.image : null;
-    const strokes = (Array.isArray(p.strokes) ? p.strokes : []).slice(0, 60000); // up to three seam copies of a legacy 20,000-dab record
+    const strokes = (Array.isArray(p.strokes) ? p.strokes : []).slice(0, 60000)
+      .map(s => s?.m === 'trace' ? normalizeSkylineStroke(s) : { ...s }); // legacy dabs stay ordered
     const rec = {
       id: token(p.id),
       name: p.name || 'Panorama',
       azOffset: num(p.azOffset, 0),
-      altBottom: num(p.altBottom, 0),
-      altTop: num(p.altTop, 60),
+      ...normalizePanoCalibration(p.altBottom, p.altTop),
       fov: num(p.fov, 360) > 0 ? num(p.fov, 360) : 360,
+      sourceRect: normalizeSourceRect(p.sourceRect),
+      calibration: normalizePhotoCalibration(p.calibration),
+      photoModel:normalizePhotoModel(p.photoModel),
+      photoSource:normalizePhotoSource(p.photoSource),
+      coverageEvidence:normalizeCoverageEvidence(p.coverageEvidence),
       paintMode: p.paintMode === 'sky' ? 'sky' : 'obstacle',
       // sky mode: TRUE when the user explicitly says "block above the band";
       // default FALSE = everything above the painted band is free sky
@@ -397,6 +423,10 @@ export function newPano(name) {
   const p = {
     id, name,
     azOffset: 0, altBottom: 0, altTop: 60, fov: 360,
+    sourceRect: normalizeSourceRect(null),
+    calibration: normalizePhotoCalibration(null),
+    photoModel: null, photoSource: null,
+    coverageEvidence:normalizeCoverageEvidence(null),
     paintMode: 'obstacle',
     blockAbove: false,
     strokes: [],
@@ -450,7 +480,8 @@ const HISTORY_KEYS = {
   azOffset: 'azOffset', altBottom: 'altBottom', altTop: 'altTop', fov: 'fov',
   paintMode: 'paintMode', strokes: 'strokes', blockAbove: 'blockAbove',
   profile: 'profile', profileTop: 'profileTop', landmarks: 'landmarks',
-  provenance: 'provenance', confidence: 'confidence',
+  provenance: 'provenance', confidence: 'confidence', sourceRect: 'sourceRect', calibration: 'calibration',photoModel:'photoModel',
+  coverageEvidence:'coverageEvidence',
 };
 
 /** JSON snapshot of a panorama's EDITABLE state (strokes + calibration + paint
@@ -571,11 +602,11 @@ export function renderHorizon(box, onChanged) {
       <div style="margin-top:12px">
         <label>Name <input id="pano-name" type="text" value="backyard" style="width:120px"></label>
         <div class="btnrow action-row" style="margin-top:12px">
-          <label class="btn primary" for="pano-file" role="button" tabindex="0" style="text-align:center" title="choose a photo">📷 Upload photo</label>
+          <label class="btn primary" for="pano-file" role="button" tabindex="0" style="text-align:center" title="choose a photo">📷 Add horizon photo</label>
           <button class="btn" id="pano-blank">Blank sky</button>
         </div>
         <input type="file" id="pano-file" accept="image/*" class="vhidden" hidden tabindex="-1">
-        <p class="sub" id="pano-note" style="margin-top:8px">Nothing is uploaded to any server. A compressed copy of the photo is saved in your browser's storage so it returns after a reload. Painting changes the live plan immediately; press Save in the editor to keep the changes (you are warned before switching or closing with unsaved edits).</p>
+        <p class="sub" id="pano-note" style="margin-top:8px">Photos stay in this browser. Edits affect your plan immediately; Save horizon keeps them after reload.</p>
       </div>
     </div>
     <div class="card" style="margin-top:14px">
@@ -602,16 +633,28 @@ export function renderHorizon(box, onChanged) {
     }
     const controlBar = editor.querySelector('.ed-tools');
     const hint = editor.querySelector('.ed-hint');
-    const calibration = editor.querySelector(':scope > .cal-grid');
+    const calibration = editor.querySelector(':scope > .ed-calibration');
+    const setup = editor.querySelector(':scope > .horizon-setup');
     const meta = [...editor.querySelectorAll(':scope > .horizon-meta')];
     const canvasBox = editor.querySelector('#pano-box');
     const profile = editor.querySelector('.horizon-profile-panel');
     const profileSelection = editor.querySelector('.horizon-selected-bin');
-    if (controlBar) tools.append(controlBar);
-    if (hint) tools.append(hint);
-    if (calibration) settings.append(calibration);
-    meta.forEach((item) => settings.append(item));
-    if (profileSelection) settings.append(profileSelection);
+    if (controlBar) stage.append(controlBar);
+    if (hint) stage.append(hint);
+    const display = editor.querySelector('.ed-display');
+    if (setup) settings.append(setup);
+    if (display) settings.append(display);
+    const tracePoints = editor.querySelector('.ed-trace-tools');
+    const advanced = document.createElement('details');
+    advanced.className = 'horizon-advanced';
+    const summary = document.createElement('summary'); summary.textContent = 'Advanced editing'; advanced.append(summary);
+    if (tracePoints) advanced.append(tracePoints);
+    if (calibration) advanced.append(calibration);
+    meta.forEach((item) => advanced.append(item));
+    if (profileSelection) advanced.append(profileSelection);
+    const paintModes = controlBar?.querySelector('.ed-mode');
+    if (paintModes) advanced.insertBefore(paintModes, summary.nextSibling);
+    settings.append(advanced);
     if (settings.childElementCount) layout.append(settings);
     const canvasStage = document.createElement('section');
     canvasStage.className = 'horizon-canvas-stage';
@@ -643,19 +686,17 @@ export function renderHorizon(box, onChanged) {
   });
 
   // create
-  const mk = (imgDataUrl) => {
+  const mk = (imgDataUrl,photoSource=null) => {
     flushHorizonEdits();
     try {
       const name = ($('#pano-name').value.trim()) || 'horizon';
       const p = newPano(name);
       if (imgDataUrl) {
         p.hasImage = true; p._img = imgDataUrl;
-        // keep a compressed JPEG copy so the photo survives reloads
-        compressImage(imgDataUrl, PANOIMG_MAX_W, PANOIMG_QUALITY)
-          .then((blob) => {
-            if (!blob) throw new Error('Could not compress panorama photograph');
-            return panoImgSet(p.id, blob);
-          }).catch(() => {
+        p.photoSource=photoSource;
+        pendingPhotoSetup.add(p.id);
+        // Retain original bytes. Angular previews are derived in memory only.
+        panoImgSet(p.id,dataUrlToBlob(imgDataUrl)).catch(() => {
             const note = $('#pano-note', box);
             if (note) note.textContent = 'The photograph could not be saved in browser storage. Export a backup before closing this tab to keep it.';
           });
@@ -702,7 +743,7 @@ export function renderHorizon(box, onChanged) {
     const f = ev.target.files && ev.target.files[0];
     if (!f || !acceptUpload(f)) return;
     const rd = new FileReader();
-    rd.onload = () => mk(rd.result);
+    rd.onload = async () => {try{const source=await inspectPhoto(rd.result,f);mk(rd.result,source);}catch(err){$('#pano-note').textContent=err.message;}};
     rd.onerror = () => { const n = $('#pano-note'); if (n) n.textContent = '😕 could not read the file'; };
     rd.readAsDataURL(f);
   });
@@ -717,7 +758,7 @@ export function renderHorizon(box, onChanged) {
       ev.preventDefault();
       if (!acceptUpload(f)) return;
       const rd = new FileReader();
-      rd.onload = () => mk(rd.result);
+      rd.onload = async () => {try{const source=await inspectPhoto(rd.result,f);mk(rd.result,source);}catch(err){$('#pano-note').textContent=err.message;}};
       rd.readAsDataURL(f);
     });
   }
@@ -725,7 +766,7 @@ export function renderHorizon(box, onChanged) {
   if (active) {
     const p = activePano();
     if (p && p.hasImage && !p._img) {
-      // restore the compressed photo from IndexedDB (was saved on upload)
+      // Restore retained bytes; legacy records may contain compressed previews.
       panoImgGet(p.id).then((blob) => {
         if (blob) {
           const rd = new FileReader();
@@ -749,7 +790,8 @@ function hideSplash(box) {
 function haziEditorHTML(p) {
   return `
     <div class="ed-tools">
-      <div class="ed-row">
+      ${traceToolsHTML()}
+      <div class="ed-row" id="ed-paint-options">
         <span class="ed-rowlabel">Paint</span>
         <div class="ed-group ed-mode">
           <select id="ed-mode" title="paint mode" aria-label="Paint mode">
@@ -786,32 +828,47 @@ function haziEditorHTML(p) {
         </div>
         <div class="ed-group ed-status-group">
           <span id="ed-status" class="ed-status" role="status" aria-live="polite">Saved</span>
-          <button class="btn primary" id="ed-save" title="Save this horizon">💾 Save</button>
+          <button class="btn primary" id="ed-save" title="Save this horizon">💾 Save horizon</button>
         </div>
       </div>
     </div>
     <p class="sub ed-hint" style="margin-top:8px">
-      cursor: <output id="ed-pos" class="mono">az \u2014 \u00B7 alt \u2014</output>
-      \u00B7 wheel = zoom \u00B7 middle-drag or Space+drag = pan \u00B7 hold right-click = erase
+      <span class="ed-readout">cursor: <output id="ed-pos" class="mono">az \u2014 \u00B7 alt \u2014</output></span>
+      <span id="ed-brush-value" class="mono"></span>
+      <span class="ed-help">wheel = zoom \u00B7 middle-drag or Space+drag = pan \u00B7 hold right-click = erase</span>
     </p>
+    ${tracePointsHTML()}
+    ${photoSetupHTML()}
+    <details class="ed-calibration"><summary>Exact angles / fine adjustment</summary>
+    <p class="sub">Use Photo setup to align known features. Manual changes may require another check.</p>
     <div class="cal-grid" style="margin-top:10px">
-      <label>Az @ left
+      <label>Left edge true bearing (°)
+        <input id="ed-az-n" type="number" min="0" max="360" step="any" value="${p.azOffset}">
         <input id="ed-az" type="range" min="0" max="360" step="any" value="${p.azOffset}">
         <output id="ed-az-v">${p.azOffset}\u00B0</output>
       </label>
-      <label>Alt bottom
-        <input id="ed-ab" type="range" min="-30" max="90" step="any" value="${p.altBottom}">
+      <label>Bottom edge altitude (°)
+        <input id="ed-ab-n" type="number" min="-30" max="85" step="any" value="${p.altBottom}">
+        <input id="ed-ab" type="range" min="-30" max="85" step="any" value="${p.altBottom}">
         <output id="ed-ab-v">${p.altBottom}\u00B0</output>
       </label>
-      <label>Alt top
+      <label>Top edge altitude (°)
+        <input id="ed-at-n" type="number" min="${p.altBottom + 5}" max="90" step="any" value="${p.altTop}">
         <input id="ed-at" type="range" min="0" max="90" step="any" value="${p.altTop}">
         <output id="ed-at-v">${p.altTop}\u00B0</output>
       </label>
-      <label>FOV
+      <label>Horizontal width (°)
+        <input id="ed-fov-n" type="number" min="5" max="360" step="any" value="${p.fov}">
         <input id="ed-fov" type="range" min="5" max="360" step="any" value="${p.fov}">
         <output id="ed-fov-v">${p.fov}\u00B0</output>
       </label>
-    </div>
+    </div><p id="ed-cal-error" class="sub" role="alert"></p></details>
+    <details class="ed-display">
+      <summary>Display</summary>
+      <label>Paint opacity <input id="ed-opacity" type="range" min="15" max="85" value="65" aria-label="Paint opacity"></label>
+      <label><input id="ed-grid" type="checkbox" checked> Show grid</label>
+      <p class="sub">Brush size covers the same angles at every zoom; its preview magnifies with the photo.</p>
+    </details>
     <details class="horizon-meta">
       <summary>Named obstruction landmarks</summary>
       <div id="ed-landmarks" class="landmark-list" role="list"></div>
@@ -826,7 +883,7 @@ function haziEditorHTML(p) {
     </details>
     <details class="horizon-meta">
       <summary>Precise horizon values (advanced)</summary>
-      <p class="sub">Enter exact angles if you know them. For normal setup, paint the obstructions on your photo instead.</p>
+      <p class="sub">Applying a bin keeps the current world profile, changes that bin and replaces all brush paint and editable traces. Undo restores them. For ordinary terrain, use Trace skyline; use Brush for local corrections or sky openings.</p>
       <div class="cal-grid">
         <label>Direction (azimuth °)
           <input id="ed-profile-az" type="number" min="0" max="359.5" step="0.5" value="0">
@@ -851,7 +908,10 @@ function haziEditorHTML(p) {
       <p class="sub">Apply values keeps the current horizon heights and changes this direction, but replaces all editable paint strokes with stored angles. Undo restores the previous state. Press Save to keep the change.</p>
     </details>
     <div class="pano-canvas-box" id="pano-box">
+      <canvas id="pano-ruler-top" aria-hidden="true"></canvas>
+      <canvas id="pano-ruler-left" aria-hidden="true"></canvas>
       <canvas id="pano-canvas" width="720" height="360" tabindex="0" role="img" aria-label="Panorama horizon editor" aria-describedby="panoChartSummary"></canvas>
+      <button id="ed-point-remove" class="btn small" type="button" hidden>Remove point</button>
       <p id="panoChartSummary" class="visually-hidden" role="note">Panorama horizon editor. Use the paint controls to mark obstructions or visible sky.</p>
       <div class="ed-view-overlay" role="group" aria-label="View controls">
         <button class="btn small" id="ed-zoom-out" title="Zoom out" aria-label="Zoom out">\u2212</button>
@@ -860,8 +920,8 @@ function haziEditorHTML(p) {
         <button class="btn small" id="ed-fit" title="Fit the whole panorama">Fit</button>
       </div>
     </div>
-    <section class="horizon-profile-panel" aria-labelledby="panoProfileHeading">
-      <header class="horizon-profile-heading"><h4 id="panoProfileHeading">Horizon profile</h4><span>720 bins · 0.5° per bin</span></header>
+    <details class="horizon-profile-panel" aria-labelledby="panoProfileHeading">
+      <summary id="panoProfileHeading">Horizon profile · 720 bins</summary>
       <canvas id="pano-profile" width="720" height="${PROFILE_HEIGHT}" tabindex="0" role="img" aria-label="Horizon profile by world azimuth" aria-describedby="panoProfileSummary panoProfileBinSummary"></canvas>
       <p id="panoProfileSummary" class="visually-hidden" role="note">Horizon profile preview.</p>
       <div class="horizon-profile-metrics" role="group" aria-label="Stored horizon profile summary">
@@ -880,7 +940,7 @@ function haziEditorHTML(p) {
         <p>Click the graph to select a world-azimuth bin. The solid profile is stored data; the dashed blue line appears only when another horizon is selected for comparison. Amber marks the existing minimum-altitude guide.</p>
         <p>Edits affect planning immediately. Press Save to keep them, or Revert to discard them.</p>
       </details>
-    </section>
+    </details>
     <section class="horizon-selected-bin" aria-labelledby="panoProfileBinHeading">
       <h4 id="panoProfileBinHeading">Selected profile bin</h4>
       <p id="panoProfileBinSummary" class="profile-bin-summary" role="status" aria-live="polite">Select a point on the profile to inspect its 0.5° world-azimuth bin.</p>
@@ -1033,8 +1093,16 @@ function wireEditor(box, p, onChanged) {
   const profCvs = $('#pano-profile', box);
   const profCtx = profCvs.getContext('2d');
   const boxEl = $('#pano-box', box);
+  const rulerTop = $('#pano-ruler-top', box), rulerLeft = $('#pano-ruler-left', box);
 
-  let eraser = false;
+  const ui = activeSession?.panoId === p.id && activeSession.ui ? activeSession.ui : {
+    view: { zoom: 1, fx: null, fy: null }, brush: 28, eraser: false, opacity: 65, grid: true,
+    setupStep: pendingPhotoSetup.has(p.id) ? 0 : 4,
+  };
+  pendingPhotoSetup.delete(p.id);
+  let setup = null;
+  let traceTools = null, tracing = false;
+  let eraser = ui.eraser;
   let gestureErase = false;   // right-button drag erases for the whole gesture
   let painting = false;
   let panning = false;
@@ -1044,6 +1112,11 @@ function wireEditor(box, p, onChanged) {
   let spaceDown = false;
   let panPrev = null;
   let imgEl = null;
+  let angularEl=null,angularKey='',conversionPreview=null;
+  function ensurePhotoSurface(){
+    const key=JSON.stringify(p.photoModel??null);if(key===angularKey)return;
+    angularEl=p.photoModel&&imgEl?angularPhotoCanvas(imgEl,p.photoModel):null;angularKey=key;
+  }
   let imgErr = false;
   let mask = rebuildMask(p.strokes, wrapsFor(p));
 
@@ -1052,7 +1125,14 @@ function wireEditor(box, p, onChanged) {
   maskCanvas.height = MASK_H;
   const maskCtx = maskCanvas.getContext('2d');
 
-  const view = { zoom: 1, fx: null, fy: null };
+  const view = ui.view;
+  $('#ed-brush', box).value = String(ui.brush);
+  $('#ed-opacity', box).value = String(ui.opacity);
+  $('#ed-grid', box).checked = ui.grid;
+  $('#ed-eraser', box).classList.toggle('on', eraser);
+  $('#ed-eraser', box).setAttribute('aria-pressed', String(eraser));
+  let brushPoint = null, activePointerId = null, lastPaintPoint = null;
+  let paintFrame = null, maskDirty = true, profileDirty = true;
   /* WE-05 (0.6.32 review): re-rendering the SAME panorama must NOT reset the
      history baseline. `newHistory(p)` makes the CURRENT state - including
      unsaved paint - the "saved" baseline, so any `refreshView()` while the
@@ -1065,11 +1145,17 @@ function wireEditor(box, p, onChanged) {
                       && activeSession.panoId === p.id && activeSession.hist);
   const hist = samePano ? activeSession.hist : newHistory(p);
   if (activeSession?.disconnect) activeSession.disconnect();
+  ui.disclosures ??= {};
+  box.querySelectorAll('details').forEach(el => {
+    const key = el.id || el.querySelector(':scope > summary')?.textContent;
+    if (key && key in ui.disclosures) el.open = ui.disclosures[key];
+    el.addEventListener('toggle', () => { if (key && el.isConnected) ui.disclosures[key] = el.open; });
+  });
   let status = 'saved';                    // 'saved' | 'saving' | 'failed'
   let metadataPending = false;
   const paintMode = () => p.paintMode;
   const paintRGB = () => (p.paintMode === 'obstacle' ? [255, 80, 80] : [120, 230, 140]);
-  const dirty = () => metadataPending || historyDirty(hist, p);
+  const dirty = () => painting || tracing || metadataPending || historyDirty(hist, p);
 
   function markMetadataPending() {
     metadataPending = true;
@@ -1078,6 +1164,7 @@ function wireEditor(box, p, onChanged) {
 
   let displayedBin = profileIndex();
   function syncMetadataFromUI() {
+    finishGesture();
     const field = $('#ed-profile-confidence', box);
     if (!field || (field.value !== '' && !field.validity.valid)) return;
     const value = field.value === '' ? null : num(field.value);
@@ -1166,6 +1253,7 @@ function wireEditor(box, p, onChanged) {
         <button class="btn small" data-lm-remove type="button" aria-label="Remove ${esc(lm.name)}">Remove</button>
       </div>`).join('') || '<p class="sub">No named landmarks yet.</p>';
     list.querySelectorAll('[data-lm]').forEach((el) => el.addEventListener('change', () => {
+      finishGesture();
       const row = el.closest('[data-lm-index]');
       const i = Number(row?.dataset.lmIndex);
       if (!Number.isInteger(i) || !p.landmarks[i]) return;
@@ -1176,6 +1264,7 @@ function wireEditor(box, p, onChanged) {
       markMetadataPending();
     }));
     list.querySelectorAll('[data-lm-remove]').forEach((el) => el.addEventListener('click', () => {
+      finishGesture();
       const row = el.closest('[data-lm-index]');
       const i = Number(row?.dataset.lmIndex);
       if (!Number.isInteger(i)) return;
@@ -1204,13 +1293,18 @@ function wireEditor(box, p, onChanged) {
    *      lines and labels stay sharp; all drawing stays in the 720x360 logical
    *      space, so the stored geometry and the pointer mapping never change. */
   function fitCanvas() {
-    const w = Math.max(64, boxEl.clientWidth || MASK_W);
+    if (!cvs.isConnected) return; // a late photo decode cannot repaint an old editor/profile
+    const w = Math.max(64, (boxEl.clientWidth || MASK_W) - 43);
     const dpr = window.devicePixelRatio || 1;
-    const sourceRatio = imgEl && imgEl.naturalWidth > 0
-      ? imgEl.naturalHeight / imgEl.naturalWidth : MASK_H / MASK_W;
+    const photo=angularEl??imgEl;
+    const sourceRatio = photo && (photo.naturalWidth||photo.width)>0
+      ? (photo.naturalHeight||photo.height) * normalizeSourceRect(p.sourceRect).h /
+        ((photo.naturalWidth||photo.width) * normalizeSourceRect(p.sourceRect).w) : MASK_H / MASK_W;
     cvs.width = Math.round(w * dpr);
     cvs.height = Math.round(w * sourceRatio * dpr);
-    profCvs.width = Math.round(w * dpr);
+    rulerTop.width = cvs.width; rulerTop.height = Math.round(23 * dpr);
+    rulerLeft.width = Math.round(43 * dpr); rulerLeft.height = cvs.height;
+    profCvs.width = Math.round((boxEl.clientWidth || MASK_W) * dpr);
     profCvs.height = Math.round(PROFILE_HEIGHT * dpr);
     overlay();
   }
@@ -1244,7 +1338,8 @@ function wireEditor(box, p, onChanged) {
     imgEl = null; imgErr = false;
     if (p._img) {
       const img = new Image();
-      img.onload = () => { imgEl = img; fitCanvas(); };
+      img.onload = () => {try{imgEl=img;angularKey='';ensurePhotoSurface();fitCanvas();}
+        catch(err){imgErr=true;imgEl=null;angularEl=null;$('#photo-result',box).textContent=err.message;fitCanvas();}};
       img.onerror = () => { imgErr = true; fitCanvas(); };
       img.src = p._img;
     } else {
@@ -1253,6 +1348,8 @@ function wireEditor(box, p, onChanged) {
   }
 
   function syncMaskCanvas() {
+    if (!maskDirty) return;
+    maskDirty = false;
     maskCtx.setTransform(1, 0, 0, 1, 0, 0);
     maskCtx.clearRect(0, 0, MASK_W, MASK_H);
     const img = maskCtx.createImageData(MASK_W, MASK_H);
@@ -1263,86 +1360,117 @@ function wireEditor(box, p, onChanged) {
         img.data[o] = col[0];
         img.data[o + 1] = col[1];
         img.data[o + 2] = col[2];
-        img.data[o + 3] = 165;
+        img.data[o + 3] = Math.round(ui.opacity * 2.55);
       }
     }
     maskCtx.putImageData(img, 0, 0);
   }
 
   function overlay() {
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, cvs.width, cvs.height);
     ctxTransform();
-    ctx.clearRect(0, 0, MASK_W, MASK_H);
-    if (imgEl && imgEl.complete && imgEl.naturalWidth) drawImageStage(ctx, imgEl, MASK_W, MASK_H);
+    if (imgEl && imgEl.complete && imgEl.naturalWidth) drawImageStage(ctx, angularEl??imgEl, MASK_W, MASK_H, p.sourceRect);
     else drawGrid(imgErr);
     syncMaskCanvas();
     ctx.drawImage(maskCanvas, 0, 0, MASK_W, MASK_H);
-    drawGuides();
-    drawProfile();
     drawCropOverlay();
+    drawGuides();
+    drawCalibrationPoints();
+    traceTools?.draw(ctx);
+    drawBrushPreview();
+    drawProfile();
     renderStatus();
   }
 
-  /** Guides use the SAME logical transform as the mask/calibration (they are
-   *  drawn under ctxTransform), so a line that looks centered IS centered.
-   *  Density rises with zoom; majors stay N/E/S/W + the horizon line. */
+  /** Project angular guides, then draw rulers/text in CSS pixels, never image pixels. */
+  function screenGeometry() {
+    const r = cvs.getBoundingClientRect();
+    const w = Math.max(1, r.width), h = Math.max(1, r.height);
+    const m = editorViewMatrix(MASK_W, MASK_H, view.zoom, view.fx, view.fy);
+    return { w, h, x: (x) => (m.a * x + m.e) * w / MASK_W,
+      y: (y) => (m.d * y + m.f) * h / MASK_H };
+  }
   function drawGuides() {
-    const V = vizTheme();
+    const V = vizTheme(), g = screenGeometry();
+    const q = setup?.preview() || p;
+    const top = rulerTop.getContext('2d'), left = rulerLeft.getContext('2d');
+    top.setTransform(rulerTop.width/g.w,0,0,rulerTop.height/23,0,0);
+    left.setTransform(rulerLeft.width/43,0,0,rulerLeft.height/g.h,0,0);
+    top.clearRect(0,0,g.w,23); left.clearRect(0,0,43,g.h);
+    for (const axis of [top,left]) { axis.font = '12px system-ui'; axis.textBaseline = 'middle'; }
     ctx.save();
-    ctx.textBaseline = 'alphabetic';
-    const altStep = view.zoom >= 3 ? 5 : 15;
-    const azStep = view.zoom >= 3 ? 10 : 30;
-    ctx.textAlign = 'left';
-    ctx.font = '10px system-ui';
-    const ab = Number(p.altBottom), at = Number(p.altTop);
-    for (let alt = Math.ceil(ab / altStep) * altStep; alt <= at + 1e-6; alt += altStep) {
-      const base = Math.abs(alt) < 1e-6;
-      let y = rowOfAlt(p, alt);
-      // UI-06 (0.6.32 review): the alt-0 line is the horizon the user calibrates
-      // against and the ONE guide the legend colours green - but the guard below
-      // skipped it whenever it landed on the frame, which is exactly the default
-      // case (altBottom 0 puts it on the bottom edge), so the editor appeared to
-      // draw no horizon guide at all. Keep the base line visible; other lines
-      // still skip when they fall outside.
-      if (base) y = Math.min(Math.max(y, 6), MASK_H - 6);
-      else if (y < 6 || y > MASK_H - 2) continue;
-      ctx.strokeStyle = base ? V.good : V.grid;
-      ctx.lineWidth = base ? 1.4 : 1;
-      ctx.setLineDash(base ? [7, 5] : []);
-      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(MASK_W, y); ctx.stroke();
+    ctx.setTransform(cvs.width / g.w, 0, 0, cvs.height / g.h, 0, 0);
+    const line = (x0, y0, x1, y1, color, dashed = false) => {
+      ctx.strokeStyle = color; ctx.lineWidth = 1;
+      ctx.setLineDash(dashed ? [4, 4] : []);
+      ctx.beginPath(); ctx.moveTo(Math.round(x0) + 0.5, Math.round(y0) + 0.5);
+      ctx.lineTo(Math.round(x1) + 0.5, Math.round(y1) + 0.5); ctx.stroke();
       ctx.setLineDash([]);
-      ctx.fillStyle = base ? V.good : V.axis;
-      ctx.fillText((alt > 0 ? '+' : '') + alt + '\u00B0', 3, y - 3);
+    };
+    ctx.font = '12px system-ui'; ctx.textBaseline = 'middle';
+    const niceStep = (desired) => [1, 2, 5, 10, 15, 30, 45, 90].find((v) => v >= desired) || 90;
+    const altStep = niceStep((q.altTop - q.altBottom) / view.zoom * 40 / g.h);
+    for (let alt = Math.ceil(q.altBottom / altStep) * altStep; alt <= q.altTop; alt += altStep) {
+      const y = g.y(rowOfAlt(q, alt));
+      const zero = Math.abs(alt) < 1e-6;
+      if (y < -1 || y > g.h + 1) continue;
+      const labelY = Math.min(g.h - 8, Math.max(8, y));
+      if (ui.grid || zero) line(0, Math.min(g.h - 1, y), g.w, Math.min(g.h - 1, y), zero ? V.good : V.grid, zero);
+      left.fillStyle = zero ? V.good : V.axis; left.textAlign = 'left';
+      left.fillText(`${alt > 0 ? '+' : ''}${alt}°`, 4, labelY);
     }
-    ctx.textAlign = 'center';
-    const fov = Number(p.fov) || 360;
-    const azOff = Number(p.azOffset) || 0;
-    for (let a = Math.ceil(azOff / azStep) * azStep; a <= azOff + fov + 1e-6; a += azStep) {
-      const x = xOfAz(p, a);
-      if (x < -1 || x > MASK_W + 1) continue;
-      const cardA = ((a % 360) + 360) % 360;
-      const major = cardA % 90 === 0;
-      ctx.strokeStyle = major ? V.gridStrong : V.gridSub;
-      ctx.lineWidth = major ? 1.3 : 1;
-      ctx.setLineDash(major ? [] : [3, 4]);
-      ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, MASK_H); ctx.stroke();
-      ctx.setLineDash([]);
-      const lab = major ? ['N', 'E', 'S', 'W'][cardA / 90] : cardA + '\u00B0';
-      ctx.fillStyle = major ? V.minLabel : V.axis;
-      ctx.font = major ? 'bold 11px system-ui' : '10px system-ui';
-      ctx.fillText(lab, x, 13);
+    const step = niceStep(q.fov / view.zoom * 65 / g.w);
+    let labels = 0;
+    for (let a = Math.ceil(q.azOffset / step) * step; a <= q.azOffset + q.fov + 1e-6; a += step) {
+      const x = g.x(xOfAz(q, a));
+      if (x < 18 || x > g.w - 18) continue;
+      const az = ((a % 360) + 360) % 360, major = az % 90 === 0;
+      if (ui.grid) line(x, 0, x, g.h, major ? V.gridStrong : V.gridSub, !major);
+      top.font = major ? '600 12px system-ui' : '12px system-ui';
+      top.fillStyle = major ? V.minLabel : V.axis; top.textAlign = 'center';
+      top.fillText(major ? ['N', 'E', 'S', 'W'][az / 90] : `${az}°`, x, 12);
+      labels++;
     }
-    if (fov < 359.5) {
-      const xc = xOfAz(p, azOff + fov / 2);
-      if (xc >= 0 && xc <= MASK_W) {
-        ctx.strokeStyle = V.dim;
-        ctx.lineWidth = 1;
-        ctx.setLineDash([2, 3]);
-        ctx.beginPath(); ctx.moveTo(xc, 0); ctx.lineTo(xc, MASK_H); ctx.stroke();
-        ctx.setLineDash([]);
-        ctx.fillStyle = V.text;
-        ctx.font = '10px system-ui';
-        ctx.fillText('center', xc, MASK_H - 4);
-      }
+    if (!labels) {
+      const [x] = editorScreenToBase(MASK_W, MASK_H, view.zoom, view.fx, view.fy, MASK_W / 2, MASK_H / 2);
+      top.fillStyle = V.axis; top.textAlign = 'center';
+      top.fillText(`${azOfX(q, x).toFixed(1)}°`, g.w / 2, 12);
+    }
+    ctx.restore();
+  }
+  function drawBrushPreview() {
+    if (!brushPoint || cropTool || panning || (traceTools?.active() && !gestureErase) || setup?.isPicking()) return;
+    const g = screenGeometry(), r = ui.brush;
+    ctx.save(); ctx.setTransform(cvs.width / g.w, 0, 0, cvs.height / g.h, 0, 0);
+    ctx.lineWidth = 1.5; ctx.strokeStyle = (eraser || gestureErase) ? vizTheme().warn : vizTheme().text;
+    ctx.setLineDash((eraser || gestureErase) ? [3, 3] : []);
+    ctx.beginPath();
+    const xs = wrapsFor(p) ? [brushPoint[0] - MASK_W, brushPoint[0], brushPoint[0] + MASK_W] : [brushPoint[0]];
+    for (const x of xs) {
+      ctx.moveTo(g.x(x) + r * g.w / MASK_W * view.zoom, g.y(brushPoint[1]));
+      ctx.ellipse(g.x(x), g.y(brushPoint[1]), r * g.w / MASK_W * view.zoom,
+        r * g.h / MASK_H * view.zoom, 0, 0, Math.PI * 2);
+    }
+    ctx.stroke(); ctx.restore();
+  }
+
+  function drawCalibrationPoints() {
+    if (ui.setupStep === 4) return;
+    const e = normalizePhotoCalibration(p.calibration), g = screenGeometry(), V = vizTheme();
+    const draftMarkers = setup?.markers();
+    const points = draftMarkers ? draftMarkers.map(v => [photoPoint(p,v.x,v.y),v.label])
+      : [[e.bearing, 'D'], [e.vertical[0], 'L'], [e.vertical[1], 'V'], [e.check, 'C']];
+    ctx.save(); ctx.setTransform(cvs.width / g.w, 0, 0, cvs.height / g.h, 0, 0);
+    ctx.font = '600 12px system-ui'; ctx.lineWidth = 2; ctx.textAlign = 'left';
+    for (const [point, label] of points) {
+      if (!point) continue;
+      const position = photoPointAngles(p, point);
+      if (!position.inside) continue;
+      const x = g.x(position.x * MASK_W), y = g.y(position.y * (MASK_H - 1));
+      ctx.strokeStyle = V.text; ctx.fillStyle = V.canvas;
+      ctx.beginPath(); ctx.arc(x, y, 6, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+      ctx.fillRect(x + 8, y - 10, 18, 20); ctx.fillStyle = V.text; ctx.fillText(label, x + 11, y + 4);
     }
     ctx.restore();
   }
@@ -1350,12 +1478,13 @@ function wireEditor(box, p, onChanged) {
   function drawProfile() {
     const V = vizTheme();
     // Invariant: with no strokes the stored profile stays authoritative.
-    if (p.strokes.length > 0) {
+    if (p.strokes.length > 0 && profileDirty) {
+      profileDirty = false;
       const { prof, top } = profileFromMask(p, mask);
       p.profile = prof;
       p.profileTop = top;
     }
-    const W = 720, H = PROFILE_HEIGHT;
+    const W = Math.max(1, profCvs.getBoundingClientRect().width), H = PROFILE_HEIGHT;
     const sx = profCvs.width / W, sy = profCvs.height / H;
     profCtx.setTransform(sx, 0, 0, sy, 0, 0);
     profCtx.clearRect(0, 0, W, H);
@@ -1456,10 +1585,10 @@ function wireEditor(box, p, onChanged) {
       profCtx.restore();
     }
     profCtx.fillStyle = V.axis;
-    profCtx.font = '9px system-ui';
+    profCtx.font = '12px system-ui';
     profCtx.fillText(lo.toFixed(0) + '\u00B0', 2, H - 3);
     profCtx.fillText(hi.toFixed(0) + '\u00B0', 2, 12);
-    profCtx.fillText('profile \u2014 ' + paintMode() + ' \u00B7 alt ' + lo.toFixed(0) + '\u2026' + hi.toFixed(0) + '\u00B0', 540, 14);
+    profCtx.fillText('profile \u2014 ' + paintMode() + ' \u00B7 alt ' + lo.toFixed(0) + '\u2026' + hi.toFixed(0) + '\u00B0', Math.max(45, W - 230), 14);
     const selected = profileIndex();
     const selectedX = selected / Math.max(1, BINS - 1) * W;
     profCtx.strokeStyle = V.minStroke;
@@ -1478,7 +1607,7 @@ function wireEditor(box, p, onChanged) {
     }
     const requestedX = Math.min(cropSel.x0, cropSel.x1);
     const requestedWidth = Math.abs(cropSel.x1 - cropSel.x0);
-    const { fov, azOffset, kept, expanded } =
+    const { fov, azOffset, kept, expanded, minimumApplied } =
       cropKeptBand(p.fov, p.azOffset, { x: requestedX, w: requestedWidth }, MASK_W);
     const x0 = kept.x, x1 = kept.x + kept.w;
     ctx.save();
@@ -1497,11 +1626,19 @@ function wireEditor(box, p, onChanged) {
     ctx.fillText(`keep ${Math.round(x1 - x0)}px`, x0 + 6, 16);
     ctx.restore();
     if (hint) {
-      hint.textContent = `FOV \u2192 ${fov}\u00B0 \u00B7 az left ${+azOffset.toFixed(2)}\u00B0${expanded ? ' · kept band expanded to minimum FOV' : ''}`;
+      hint.textContent = `FOV \u2192 ${fov}\u00B0 \u00B7 az left ${+azOffset.toFixed(2)}\u00B0${minimumApplied ? ' · kept band expanded to minimum FOV' : expanded ? ' · rounded to whole-degree FOV' : ''}`;
     }
   }
 
   function renderStatus() {
+    setup?.render();
+    const activeRow = $('#pano-list input:checked', box)?.closest('li');
+    if (activeRow?.dataset.id === p.id) {
+      const tags = activeRow.querySelector('.p-tags');
+      if (tags) tags.textContent = `${p.paintMode} · ${+p.fov.toFixed(2)}°${p.hasImage ? ' · 📷' : ''}`;
+    }
+    const brush = $('#ed-brush-value', box);
+    if (brush) brush.textContent = ` · brush ${(ui.brush * 2 / MASK_W * p.fov).toFixed(1)}° az × ${(ui.brush * 2 / (MASK_H - 1) * (p.altTop - p.altBottom)).toFixed(1)}° alt`;
     const modeInput = $('#ed-mode', box);
     if (modeInput) modeInput.value = p.paintMode;
     const blockInput = $('#ed-block-above', box);
@@ -1540,11 +1677,24 @@ function wireEditor(box, p, onChanged) {
     updateProfileMetrics();
   }
 
-  const rebuildMaskNow = () => { mask = rebuildMask(p.strokes, wrapsFor(p)); };
+  const rebuildMaskNow = () => { mask = rebuildMask(p.strokes, wrapsFor(p)); maskDirty = true; profileDirty = true; };
+
+  function schedulePaint() {
+    if (paintFrame !== null) return;
+    paintFrame = requestAnimationFrame(() => {
+      paintFrame = null;
+      if (cvs.isConnected) overlay();
+    });
+  }
+  function flushPaint() {
+    if (paintFrame !== null) { cancelAnimationFrame(paintFrame); paintFrame = null; }
+    overlay();
+  }
 
   function commit() {
     metadataPending = false;
     historyCommit(hist, p);
+    traceTools?.sync();
     announcePanoChanged(p, 'edit');
     renderStatus();
   }
@@ -1556,28 +1706,34 @@ function wireEditor(box, p, onChanged) {
   }
 
   function syncRestoredControls() {
+    ensurePhotoSurface();
     metadataPending = false;
     rebuildMaskNow();
     syncCalInputs();
+    setup?.sync();
+    traceTools?.restore();
     renderLandmarkRows();
     readProfileBin();
     compareProfile();
-    overlay();
+    fitCanvas();
     renderStatus();
   }
   function doUndo() {
+    finishGesture();
     commitMetadata();
     if (!historyUndo(hist, p)) return;
     syncRestoredControls();
     announcePanoChanged(p, 'undo');
   }
   function doRedo() {
+    finishGesture();
     commitMetadata();
     if (!historyRedo(hist, p)) return;
     syncRestoredControls();
     announcePanoChanged(p, 'redo');
   }
   function revertSession() {
+    finishGesture();
     if (!dirty()) return;
     commitMetadata();
     applySnapshot(p, hist.baseline);
@@ -1585,6 +1741,8 @@ function wireEditor(box, p, onChanged) {
     commit();               // the revert itself is undoable
   }
   function saveSession() {
+    finishGesture();
+    flushPaint();
     status = 'saving';
     renderStatus();
     syncMetadataFromUI();
@@ -1603,6 +1761,7 @@ function wireEditor(box, p, onChanged) {
   }
 
   async function doClear() {
+    finishGesture();
     const ok = await confirmDialog(box, {
       title: 'Clear horizon?',
       body: 'Remove all paint from this horizon; the profile becomes open sky. You can undo this.',
@@ -1610,6 +1769,7 @@ function wireEditor(box, p, onChanged) {
     });
     if (!ok) return;
     clearMask(p);
+    traceTools?.restore(true);
     rebuildMaskNow();
     overlay();
     commit();
@@ -1623,130 +1783,136 @@ function wireEditor(box, p, onChanged) {
     return editorScreenToBase(MASK_W, MASK_H, view.zoom, view.fx, view.fy, sx, sy);
   };
   const strokeAt = (x, y, forceErase = false) => {
-    const r = Number($('#ed-brush', box).value);
-    p.strokes.push({ m: (forceErase || eraser) ? 'e' : 'b', x, y, r });
-    rebuildMaskNow();
-    overlay();
+    const samples = strokeSegment(lastPaintPoint, [x, y], ui.brush, (forceErase || eraser) ? 'e' : 'b');
+    for (const dab of samples) { p.strokes.push(dab); applyDabToMask(mask, dab, wrapsFor(p)); }
+    lastPaintPoint = [x, y];
+    maskDirty = true; profileDirty = true;
+    schedulePaint();
   };
   const updateReadout = (ev) => {
-    const el = $('#ed-pos', box);
-    if (!el) return;
     const [x, y] = toCanvas(ev);
+    brushPoint = [x, y];
     const az = azOfX(p, x), alt = altOf(p, y);
-    const outside = (x < 0 || x > MASK_W || y < 0 || y > MASK_H);
-    el.textContent = `az ${az.toFixed(1)}\u00B0 ${cardinal(az)} \u00B7 alt `
-      + `${alt >= 0 ? '+' : ''}${alt.toFixed(1)}\u00B0`
-      + (outside ? ' \u00B7 outside image' : '');
+    const outside = x < 0 || x > MASK_W || y < 0 || y > MASK_H;
+    $('#ed-pos', box).textContent = `az ${az.toFixed(1)}° ${cardinal(az)} · alt ${alt >= 0 ? '+' : ''}${alt.toFixed(1)}°${outside ? ' · outside image' : ''}`;
   };
   const setPanCursor = (on) => cvs.classList.toggle('panning', on);
+  const endPan = () => { panning = false; panPrev = null; setPanCursor(false); };
 
+  // Cancel/lost capture/blur retains visible partial paint as ONE undoable edit.
+  function finishGesture(ev = null, cancelled = false) {
+    if (activePointerId === null || (ev && ev.pointerId !== activePointerId)) return;
+    const pointer = activePointerId;
+    if (painting && ev && !cancelled && ev.type === 'pointerup') {
+      const [x, y] = toCanvas(ev); strokeAt(x, y, gestureErase);
+    }
+    if (tracing && ev && !cancelled && ev.type === 'pointerup') {
+      const [x, y] = toCanvas(ev); traceTools.move(x, y);
+    }
+    const edited = painting || (tracing && traceTools.finish());
+    if (cropping && (cancelled || !cropSel || Math.abs(cropSel.x1 - cropSel.x0) < 4)) cropSel = null;
+    activePointerId = null; painting = false; tracing = false; cropping = false; gestureErase = false; lastPaintPoint = null;
+    endPan();
+    if (cvs.hasPointerCapture(pointer)) cvs.releasePointerCapture(pointer);
+    setup?.finishDrag();
+    flushPaint();
+    if (edited) commit();
+  }
   cvs.addEventListener('pointerdown', (ev) => {
+    if (activePointerId !== null || ![0, 1, 2].includes(ev.button)) return;
+    if (!setup?.isPicking() && ev.button === 0 && !spaceDown) {
+      const [x,y] = toCanvas(ev); setup?.hit(x/MASK_W,y/(MASK_H-1),screenGeometry());
+    }
+    if (setup?.isPicking() && ev.button !== 1 && !spaceDown) {
+      ev.preventDefault();
+      if (ev.button === 0) {
+        const [x, y] = toCanvas(ev);
+        if (x >= 0 && x <= MASK_W && y >= 0 && y <= MASK_H) {
+          // Own the whole pick gesture until up/cancel. Selecting its point
+          // exits pick mode, but a second held pointer must not start painting.
+          activePointerId = ev.pointerId;
+          cvs.setPointerCapture(ev.pointerId);
+          setup.pick(x / MASK_W, Math.min(1, y / (MASK_H - 1)));
+        }
+      }
+      return;
+    }
+    if (ui.setupStep !== 4 && !ui.legacySetup && ev.button !== 1 && !spaceDown) return;
+    commitMetadata();
     cvs.focus();
-    if (cropTool) {
-      const [cx] = toCanvas(ev);
-      const x = Math.max(0, Math.min(MASK_W, cx));
-      cropSel = { x0: x, x1: x };
-      cropping = true;
-      cvs.setPointerCapture(ev.pointerId);
-      overlay();
-      ev.preventDefault();
-      return;
-    }
-    const wantPan = ev.button === 1 || (ev.button === 0 && spaceDown);
-    if (wantPan) {
-      panning = true;
-      panPrev = { x: ev.clientX, y: ev.clientY };
-      cvs.setPointerCapture(ev.pointerId);
-      setPanCursor(true);
-      ev.preventDefault();
-      return;
-    }
-    if (ev.button === 2) {
-      // hold the right button to erase continuously (one history entry for the
-      // whole gesture); the context menu is suppressed below
-      painting = true;
-      gestureErase = true;
-      cvs.setPointerCapture(ev.pointerId);
-      const [x, y] = toCanvas(ev);
-      strokeAt(x, y, true);
-      ev.preventDefault();
-      return;
-    }
-    if (ev.button !== 0) return;
-    painting = true;
-    gestureErase = false;
+    activePointerId = ev.pointerId;
     cvs.setPointerCapture(ev.pointerId);
-    const [x, y] = toCanvas(ev);
-    strokeAt(x, y);
+    updateReadout(ev);
+    if (cropTool) {
+      const [cx] = toCanvas(ev), x = Math.max(0, Math.min(MASK_W, cx));
+      cropSel = { x0: x, x1: x }; cropping = true; overlay();
+    } else if (ev.button === 1 || (ev.button === 0 && spaceDown)) {
+      panning = true; panPrev = { x: ev.clientX, y: ev.clientY }; setPanCursor(true);
+    } else if (traceTools?.active() && ev.button === 0) {
+      const [x, y] = toCanvas(ev); tracing = traceTools.down(x, y);
+    } else {
+      painting = true; gestureErase = ev.button === 2; lastPaintPoint = null;
+      const [x, y] = toCanvas(ev); strokeAt(x, y, gestureErase);
+    }
     ev.preventDefault();
   });
   cvs.addEventListener('pointermove', (ev) => {
+    if (activePointerId !== null && ev.pointerId !== activePointerId) return;
     updateReadout(ev);
-    if (cropTool && cropping && cropSel) {
-      const [cx] = toCanvas(ev);
-      cropSel.x1 = Math.max(0, Math.min(MASK_W, cx));
-      overlay();
-      return;
-    }
-    if (panning) {
+    if (setup?.isDragging()) {
+      const [x,y] = toCanvas(ev); setup.drag(x/MASK_W,y/(MASK_H-1));
+    } else if (cropping && cropSel) {
+      const [cx] = toCanvas(ev); cropSel.x1 = Math.max(0, Math.min(MASK_W, cx)); schedulePaint();
+    } else if (panning) {
       const r = cvs.getBoundingClientRect();
       const dx = (ev.clientX - panPrev.x) / r.width * MASK_W;
       const dy = (ev.clientY - panPrev.y) / r.height * MASK_H;
-      const cx = view.fx == null ? MASK_W / 2 : view.fx;
-      const cy = view.fy == null ? MASK_H / 2 : view.fy;
-      [view.fx, view.fy] = editorClampFocus(
-        MASK_W, MASK_H, view.zoom, cx - dx / view.zoom, cy - dy / view.zoom);
-      panPrev = { x: ev.clientX, y: ev.clientY };
-      overlay();
-      return;
-    }
-    if (!painting) return;
-    const [x, y] = toCanvas(ev);
-    strokeAt(x, y, gestureErase);
+      [view.fx, view.fy] = editorClampFocus(MASK_W, MASK_H, view.zoom,
+        (view.fx ?? MASK_W / 2) - dx / view.zoom, (view.fy ?? MASK_H / 2) - dy / view.zoom);
+      panPrev = { x: ev.clientX, y: ev.clientY }; schedulePaint();
+    } else if (tracing) {
+      const [x, y] = toCanvas(ev); traceTools.move(x, y);
+    } else if (painting) {
+      const samples = ev.getCoalescedEvents?.() || [];
+      for (const sample of samples.length ? samples : [ev]) {
+        const [x, y] = toCanvas(sample); strokeAt(x, y, gestureErase);
+      }
+    } else schedulePaint();
   });
-  const endPan = () => {
-    if (!panning) return;
-    panning = false;
-    panPrev = null;
-    setPanCursor(false);
-  };
   cvs.addEventListener('pointerleave', () => {
-    const el = $('#ed-pos', box);
-    if (el) el.textContent = 'az \u2014 \u00B7 alt \u2014';
+    if (activePointerId !== null) return;
+    brushPoint = null; $('#ed-pos', box).textContent = 'az — · alt —'; schedulePaint();
   });
-  cvs.addEventListener('pointerup', () => {
-    if (cropping) {
-      cropping = false;
-      if (cropSel && Math.abs(cropSel.x1 - cropSel.x0) < 4) cropSel = null;
-      overlay();
-      return;
-    }
-    endPan();
-    if (!painting) return;
-    painting = false;
-    gestureErase = false;
-    commit();               // one history entry per gesture; persists only on Save
-  });
+  cvs.addEventListener('pointerup', (ev) => finishGesture(ev));
+  cvs.addEventListener('pointercancel', (ev) => finishGesture(ev, true));
+  cvs.addEventListener('lostpointercapture', (ev) => finishGesture(ev, true));
   cvs.addEventListener('contextmenu', (ev) => {
     ev.preventDefault();    // the right-button drag (above) already erased
   });
 
   /** Push p's calibration back into the slider DOM (used after a crop and
    *  after undo/redo, which previously left the sliders showing stale values). */
-  function syncCalInputs() {
+  function syncCalInputs(except = null) {
     const az = $('#ed-az', box), ab = $('#ed-ab', box), at = $('#ed-at', box), fv = $('#ed-fov', box);
     if (az) az.value = String(p.azOffset);
     if (ab) ab.value = String(p.altBottom);
     if (at) { at.min = String(Math.min(90, p.altBottom + 5)); at.value = String(p.altTop); }
     if (fv) fv.value = String(p.fov);
+    for (const [id, key] of [['ed-az', 'azOffset'], ['ed-ab', 'altBottom'], ['ed-at', 'altTop'], ['ed-fov', 'fov']]) {
+      const el = $('#' + id + '-n', box);
+      if (el) { if (el !== except) el.value = String(p[key]); if (key === 'altTop') el.min = String(p.altBottom + 5); }
+    }
     const set = (sel, txt) => { const e = $(sel, box); if (e) e.textContent = txt; };
-    set('#ed-az-v', p.azOffset + '\u00B0');
-    set('#ed-ab-v', p.altBottom + '\u00B0');
-    set('#ed-at-v', p.altTop + '\u00B0');
-    set('#ed-fov-v', p.fov + '\u00B0');
+    set('#ed-az-v', +p.azOffset.toFixed(2) + '\u00B0');
+    set('#ed-ab-v', +p.altBottom.toFixed(2) + '\u00B0');
+    set('#ed-at-v', +p.altTop.toFixed(2) + '\u00B0');
+    set('#ed-fov-v', +p.fov.toFixed(2) + '\u00B0');
   }
 
   function setCropTool(on) {
+    finishGesture(null, true);
+    if (on) setup?.cancelPick();
+    brushPoint = null;
     cropTool = !!on;
     if (!cropTool) { cropSel = null; cropping = false; }
     const apply = $('#ed-crop-apply', box), cancel = $('#ed-crop-cancel', box), btn = $('#ed-crop', box);
@@ -1769,11 +1935,15 @@ function wireEditor(box, p, onChanged) {
     rebuildMaskNow();
     setCropTool(false);
     syncCalInputs();
+    setup?.sync();
+    traceTools?.restore(true);
     commit();
-    overlay();
+    view.zoom = 1; view.fx = null; view.fy = null;
+    fitCanvas();
   }
 
   function zoomTo(z, ax, ay) {
+    finishGesture();
     const nz = editorClampZoom(z);
     if (nz === view.zoom) return;
     if (ax != null) {
@@ -1799,16 +1969,27 @@ function wireEditor(box, p, onChanged) {
   $('#ed-zoom-in', box).addEventListener('click', () => zoomTo(view.zoom * 1.25));
   $('#ed-zoom-out', box).addEventListener('click', () => zoomTo(view.zoom * 0.8));
   $('#ed-fit', box).addEventListener('click', () => {
+    finishGesture();
     view.zoom = 1; view.fx = null; view.fy = null;
     overlay();
     renderStatus();
   });
 
   $('#ed-eraser', box).addEventListener('click', (ev) => {
-    eraser = !eraser;
+    finishGesture();
+    traceTools?.choose('brush');
+    eraser = !eraser; ui.eraser = eraser;
     ev.target.classList.toggle('on', eraser);
     ev.target.setAttribute('aria-pressed', String(eraser));
+    overlay();
   });
+  $('#ed-brush', box).addEventListener('input', (ev) => {
+    finishGesture(); ui.brush = Number(ev.target.value); overlay();
+  });
+  $('#ed-opacity', box).addEventListener('input', (ev) => {
+    ui.opacity = Number(ev.target.value); maskDirty = true; schedulePaint();
+  });
+  $('#ed-grid', box).addEventListener('change', (ev) => { ui.grid = ev.target.checked; overlay(); });
   $('#ed-undo', box).addEventListener('click', doUndo);
   $('#ed-redo', box).addEventListener('click', doRedo);
   $('#ed-revert', box).addEventListener('click', revertSession);
@@ -1819,29 +2000,44 @@ function wireEditor(box, p, onChanged) {
   $('#ed-crop-cancel', box).addEventListener('click', () => setCropTool(false));
 
   // calibration sliders: live preview on input, ONE history entry on release
-  const calApply = () => {
+  const calApply = (ev) => {
+    finishGesture();
+    const source = ev?.target;
+    if (source?.id.endsWith('-n')) {
+      if (source.value === '' || !source.checkValidity()) {
+        $('#ed-cal-error', box).textContent = 'Enter an angle within the displayed limits.';
+        if (ev.type === 'change') syncCalInputs();
+        return;
+      }
+      $('#' + source.id.slice(0, -2), box).value = source.value;
+    }
+    $('#ed-cal-error', box).textContent = '';
+    const oldFov = p.fov;
     p.azOffset = clampNum($('#ed-az', box).value, 0, 360, 0);
-    p.altBottom = clampNum($('#ed-ab', box).value, -30, 90, 0);
-    p.altTop = clampNum($('#ed-at', box).value, -30, 90, 60);
+    Object.assign(p, normalizePanoCalibration($('#ed-ab', box).value, $('#ed-at', box).value));
     p.fov = clampNum($('#ed-fov', box).value, 5, 360, 360);
-    if (p.altTop <= p.altBottom) p.altTop = p.altBottom + 5;
-    const at = $('#ed-at', box);
-    at.min = String(Math.min(90, p.altBottom + 5));
-    at.value = String(p.altTop);
-    $('#ed-az-v', box).textContent = p.azOffset + '\u00B0';
-    $('#ed-ab-v', box).textContent = p.altBottom + '\u00B0';
-    $('#ed-at-v', box).textContent = p.altTop + '\u00B0';
-    $('#ed-fov-v', box).textContent = p.fov + '\u00B0';
-    rebuildMaskNow();       // fov change toggles seam wrap
-    overlay();
+    if (oldFov !== p.fov) setup?.syncCoverage();
+    syncCalInputs(ev?.type === 'input' ? source : null);
+    metadataPending = true;
+    rebuildMaskNow(); overlay();
   };
   ['ed-az', 'ed-ab', 'ed-at', 'ed-fov'].forEach((id) => {
-    const el = $('#' + id, box);
-    el.addEventListener('input', calApply);
-    el.addEventListener('change', () => { calApply(); commit(); });
+    for (const suffix of ['', '-n']) {
+      const el = $('#' + id + suffix, box);
+      el.addEventListener('input', calApply);
+      el.addEventListener('change', (ev) => { calApply(ev); commitMetadata(); });
+    }
   });
-  $('#ed-mode', box).addEventListener('change', (ev) => {
-    p.paintMode = ev.target.value;
+  $('#ed-mode', box).addEventListener('change', async (ev) => {
+    finishGesture();
+    const next = ev.target.value;
+    if (next === 'sky' && p.strokes.some(s => s.m === 'trace')) {
+      const ok = await confirmDialog(box, { title: 'Switch to visible sky?',
+        body: 'Skyline traces describe obstacles. Switching removes the traces and keeps brush paint, which becomes visible sky. You can undo this. Paint the sky opening and choose block above band for an overhang.', ok: 'Switch mode' });
+      if (!ok) { ev.target.value = p.paintMode; return; }
+      p.strokes = p.strokes.filter(s => s.m !== 'trace');
+    }
+    p.paintMode = next;
     // Ruling C (DE-03/WE-02): a DELIBERATE paint-mode switch is mode-specific for
     // a record with no strokes - the stored values were authored in the other
     // mode - so re-derive the canonical blank for the new mode. This is the ONLY
@@ -1849,13 +2045,16 @@ function wireEditor(box, p, onChanged) {
     // and the snapshot above makes the switch ONE undoable history entry.
     if (!p.strokes.length) clearMask(p);
     rebuildMaskNow();
+    traceTools?.restore(true);
     overlay();
     commit();
   });
   // "block above band": opt OUT of the default open-above assumption. Re-derives
   // the profile ceiling immediately (and is undoable like any other edit).
   $('#ed-block-above', box).addEventListener('change', (ev) => {
+    finishGesture();
     p.blockAbove = !!ev.target.checked;
+    profileDirty = true;
     renderStatus();
     overlay();
     commit();
@@ -1888,6 +2087,7 @@ function wireEditor(box, p, onChanged) {
   });
   const applyBin = $('#ed-profile-apply', box);
   if (applyBin) applyBin.addEventListener('click', () => {
+    finishGesture();
     const idx = profileIndex();
     const alt = num($('#ed-profile-alt', box)?.value);
     const top = num($('#ed-profile-top', box)?.value);
@@ -1906,11 +2106,13 @@ function wireEditor(box, p, onChanged) {
     p.profileBins = WORLD_BINS;
     metadataPending = false;
     rebuildMaskNow();
+    traceTools?.restore(true);
     overlay();
     commit();
   });
   const addLandmark = $('#ed-landmark-add', box);
   if (addLandmark) addLandmark.addEventListener('click', () => {
+    finishGesture();
     const name = $('#ed-landmark-name', box)?.value.trim();
     const az = num($('#ed-landmark-az', box)?.value);
     const alt = num($('#ed-landmark-alt', box)?.value);
@@ -1936,6 +2138,9 @@ function wireEditor(box, p, onChanged) {
 
   if (undoHandler) document.removeEventListener('keydown', undoHandler);
   undoHandler = (ev) => {
+    if (ev.key === 'Escape' && setup?.isPicking()) {
+      ev.preventDefault(); setup.cancelPick(); return;
+    }
     if (ev.key === 'Escape' && cropTool) {
       if (!document.querySelector('#pano-canvas') || !box.contains(document.activeElement)) return;
       ev.preventDefault();
@@ -1968,19 +2173,22 @@ function wireEditor(box, p, onChanged) {
   document.addEventListener('keydown', spaceKeys);
   document.addEventListener('keyup', spaceKeys);
   cvs.addEventListener('blur', releaseSpace);
-  window.addEventListener('blur', releaseSpace);
+  const blurGesture = () => { finishGesture(null, true); releaseSpace(); };
+  window.addEventListener('blur', blurGesture);
 
   const cleanup = [() => {
+    finishGesture(null, true);
     commitMetadata();
     releaseSpace();
+    if (paintFrame !== null) cancelAnimationFrame(paintFrame);
     document.removeEventListener('keydown', currentUndoHandler);
     document.removeEventListener('keydown', spaceKeys);
     document.removeEventListener('keyup', spaceKeys);
     cvs.removeEventListener('blur', releaseSpace);
-    window.removeEventListener('blur', releaseSpace);
+    window.removeEventListener('blur', blurGesture);
   }];
-  activeSession = { panoId: p.id, hist, dirty, revert: revertSession, save: saveSession,
-    settle: commitMetadata, disconnect: () => cleanup.forEach((fn) => fn()) };
+  activeSession = { panoId: p.id, hist, ui, dirty, revert: revertSession, save: saveSession,
+    settle: () => { finishGesture(null, true); flushPaint(); commitMetadata(); }, disconnect: () => cleanup.forEach((fn) => fn()) };
   if (typeof ResizeObserver !== 'undefined') {
     let resizeFrame = null;
     const ro = new ResizeObserver(() => {
@@ -1997,16 +2205,53 @@ function wireEditor(box, p, onChanged) {
     });
   }
 
+  setup = wirePhotoSetup(box.querySelector('.horizon-setup'), p, ui, {
+    settle: () => { finishGesture(); commitMetadata(); setCropTool(false); },
+    redraw: schedulePaint,
+    focusCanvas: () => { cvs.focus(); cvs.scrollIntoView({ block: 'center', behavior: 'instant' }); },
+    changed: () => { syncCalInputs(); rebuildMaskNow(); overlay(); fitCanvas();commit(); },
+    drawing: () => traceTools?.choose(p.paintMode === 'obstacle' ? 'trace' : 'brush'),
+    prepareGeometry:model=>{if(!imgEl)throw new Error('Wait for the photograph to load.');const surface=angularPhotoCanvas(imgEl,model);angularEl=surface;angularKey=JSON.stringify(model);},
+    previewGeometry:model=>{const target=$('#photo-preview-canvas',box);if(!model){target.hidden=true;conversionPreview=null;return;}
+      if(!imgEl)throw new Error('Wait for the photograph to load.');const surface=angularPhotoCanvas(imgEl,model);conversionPreview={key:JSON.stringify(model),surface};
+      target.width=surface.width;target.height=surface.height;target.getContext('2d').drawImage(surface,0,0);target.hidden=false;},
+  });
+  const geographicEvidence=wireGeographicEvidence(box,p,{
+    settle:()=>{finishGesture();commitMetadata();setCropTool(false);},
+    changed:()=>{rebuildMaskNow();overlay();commit();},
+  });
+  wirePhotoConversion(box,p,{
+    settle:()=>{finishGesture();commitMetadata();setCropTool(false);setup?.cancelPick();},
+    photoSize:()=>imgEl?{width:imgEl.naturalWidth,height:imgEl.naturalHeight}:null,
+    preview:model=>{const target=$('#photo-preview-canvas',box);
+      if(!model){target.hidden=true;conversionPreview=null;return;}
+      const surface=angularPhotoCanvas(imgEl,model);conversionPreview={key:JSON.stringify(model),surface};
+      target.width=surface.width;target.height=surface.height;target.getContext('2d').drawImage(surface,0,0);target.hidden=false;},
+    prepare:model=>{const key=JSON.stringify(model);angularEl=conversionPreview?.key===key?conversionPreview.surface:angularPhotoCanvas(imgEl,model);angularKey=key;},
+    changed:()=>{syncCalInputs();rebuildMaskNow();setup?.sync();geographicEvidence.sync();fitCanvas();commit();},
+  });
+  traceTools = wireTraceTools(box, p, ui, {
+    canvas: cvs, geometry: screenGeometry,
+    pointActions: () => !cropTool && !panning,
+    settle: () => { finishGesture(); commitMetadata(); },
+    cancelOtherTools: () => { setCropTool(false); setup?.cancelPick(); },
+    redraw: schedulePaint,
+    changed: (saveHistory) => { rebuildMaskNow(); overlay(); if (saveHistory) commit(); },
+  });
+  $('.horizon-profile-panel',box).addEventListener('toggle', () => { fitCanvas(); });
   fitCanvas();
   readProfileBin();
   loadImage();
   renderStatus();
 }
-function drawImageStage(ctx, img, w, h) {
+function drawImageStage(ctx, img, w, h, sourceRect) {
   // The backing store adopts the source image's aspect ratio. The canonical
   // 720x360 editor transform then scales both photo and mask together into that
   // aspect; all source pixels stay visible and stored coordinates stay fixed.
-  ctx.drawImage(img, 0, 0, w, h);
+  const source = normalizeSourceRect(sourceRect);
+  const iw=img.naturalWidth||img.width,ih=img.naturalHeight||img.height;
+  ctx.drawImage(img, source.x * iw, source.y * ih,
+    source.w * iw, source.h * ih, 0, 0, w, h);
 }
 
 function clampNum(v, lo, hi, dflt) {

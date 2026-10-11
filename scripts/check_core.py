@@ -25,7 +25,18 @@ SCRIPTS_DIR = ROOT / "scripts"
 # MOVED pin): `clearMask` (the desktop editor keeps its own UI-level variant)
 # and `popularityFactor` (the shells wrap it to resolve m.popularity first).
 MOVED = (
+    "normalizePhotoModel", "createPhotoModel", "sourcePhotoAngles", "anglesSourcePhoto",
+    "photoRectangleCovered", "sourceWorkingPoint", "workingSourcePoint", "workingPhotoSize",
+    "photoSampleMap", "readPanoramaMetadata", "photoFileDimensions", "normalizePhotoSource",
+    "fitMultiplePhotoReferences",
+    "sourcePhotoRay", "photoDirectionVector", "photoAngularDistance",
+    "fitPhotoOrientation", "reportPhotoOrientation", "previewPhotoOrientation",
+    "normalizeReferenceMeasurement", "normalizeCoverageEvidence", "queryHorizonEvidence",
     "rebuildMask", "altOf", "rowOfAlt", "xOfAz", "azOfX", "wrapsFor",
+    "applyDabToMask", "strokeSegment", "normalizeSourceRect", "normalizePanoCalibration",
+    "normalizeSkylineStroke", "applySkylineToMask", "cropSkylineStroke",
+    "normalizePhotoCalibration", "photoPoint", "photoPointAngles", "alignPhotoBearing",
+    "fitPhotoVertical", "fitPhotoReferences", "photoCalibrationReport",
     "profileFromMask", "normalizeProfileBins", "profileSegments", "fovBinRel",
     "visibleSkyBands", "skyBandPolygons", "computeProfile",
     "ceilFor", "bandTopFor", "overhangRuns", "assumedOpenRuns",

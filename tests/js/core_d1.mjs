@@ -34,6 +34,20 @@ const representativeCol = (i, azOff, fov) => {
   return -1;
 };
 
+// Independent geometric oracle: enumerate source cells in unwrapped world
+// coordinates, rather than calculating column ranges from relative bins.
+const overlappingCols = (i, offset, fov) => {
+  const cols = [];
+  for (let c = 0; c < BINS; c++) {
+    const left = offset + c * fov / BINS, right = offset + (c + 1) * fov / BINS;
+    if ([-1, 0, 1, 2].some(k => Math.min(right, i * .5 + k * 360 + .5) -
+        Math.max(left, i * .5 + k * 360) > 1e-10)) cols.push(c);
+  }
+  if (!cols.length && binOf(offset + fov) === i &&
+      Math.abs((offset + fov) / .5 - Math.round((offset + fov) / .5)) < 1e-9) cols.push(719);
+  return cols;
+};
+
 const CASES = [
   { fov: 360, azOffset: 0 },
   { fov: 360, azOffset: 90 },
@@ -58,16 +72,15 @@ function slantedMask() {
   return m;
 }
 
-/* ---- 1. profileFromMask -> world bins, desktop representative column ---- */
+/* ---- 1. derived obstacle bins take the highest overlapping source cell ---- */
 const mask = slantedMask();
 for (const { fov, azOffset } of CASES) {
   const p = { paintMode: "obstacle", fov, azOffset, altBottom: 0, altTop: 60 };
   const { prof } = H.profileFromMask(p, mask);
   for (let i = 0; i < BINS; i++) {
-    const col = representativeCol(i, azOffset, fov);
-    const want = col < 0 ? H.NO_BLOCK
-      : H.altOf(p, 40 + ((col * 7) % 60));
-    if (col < 0) {
+    const cols = overlappingCols(i, azOffset, fov);
+    const want = Math.max(H.NO_BLOCK, ...cols.map(col => H.altOf(p, 40 + ((col * 7) % 60))));
+    if (!cols.length) {
       if (prof[i] !== H.NO_BLOCK) { fail(`outside-FOV bin ${i} not sentinel`); break; }
     } else if (!near(prof[i], want, 1e-9)) {
       fail(`obstacle fov=${fov} azOff=${azOffset} bin ${i}: ${prof[i]} != ${want}`);
@@ -89,13 +102,12 @@ for (const { fov, azOffset } of CASES) {
   const p = { paintMode: "sky", fov, azOffset, altBottom: 0, altTop: 60 };
   const { prof, top } = H.profileFromMask(p, skyMask);
   for (const i of [0, 100, 359, 500, 719]) {
-    const col = representativeCol(i, azOffset, fov);
-    if (col < 0) {
+    const cols = overlappingCols(i, azOffset, fov);
+    if (!cols.length) {
       if (prof[i] !== 90 || top[i] !== H.NO_BLOCK) { fail(`sky outside-FOV bin ${i}`); }
       continue;
     }
-    const topRow = 60 + ((col * 5) % 40);
-    const eTop = H.altOf(p, topRow);
+    const eTop = Math.min(...cols.map(col => H.altOf(p, 60 + ((col * 5) % 40))));
     if (!near(prof[i], H.altOf(p, 260))) fail(`sky bottom fov=${fov} bin ${i}`);
     if (!near(top[i], eTop >= p.altTop - 4 ? 90.5 : eTop)) fail(`sky top fov=${fov} bin ${i}`);
   }
@@ -196,13 +208,13 @@ for (const { fov, azOffset } of CASES) {
   }
   // the frame-start bin must not clamp to the FAR mask column
   const startBin = binOf((((azOffset + 0.05) % 360) + 360) % 360);
-  const far = H.altOf(p, 40 + ((719 * 7) % 60));
-  const want = H.altOf(p, 40 + ((representativeCol(startBin, azOffset, fov) * 7) % 60));
+  const cols = overlappingCols(startBin, azOffset, fov);
+  const want = Math.max(...cols.map(col => H.altOf(p, 40 + ((col * 7) % 60))));
   if (!near(prof[startBin], want, 1e-9)) {
     fail(`CR3: frame-start bin ${startBin} != its own mask column (fov=${fov} azOff=${azOffset})`);
   }
-  if (near(prof[startBin], far, 1e-9)) {
-    fail(`CR3: frame-start bin ${startBin} clamped to the far mask column (fov=${fov})`);
+  if (fov < 360 && cols.includes(719)) {
+    fail(`CR3: frame-start bin ${startBin} includes the far mask column (fov=${fov})`);
   }
 }
 

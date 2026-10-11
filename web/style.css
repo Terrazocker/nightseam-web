@@ -555,6 +555,20 @@ a.wiki { color: var(--accent); }
 .cal-grid label { font-size: 12px; color: var(--muted); display: flex; flex-direction: column; gap: 4px; }
 .cal-grid output { font-family: var(--mono); color: var(--txt); font-size: 12.5px; }
 .cal-grid input[type="range"] { width: 100%; margin: 0; padding: 0; accent-color: var(--accent); }
+.horizon-setup { padding: 10px 0; border-bottom: 1px solid var(--line-soft); min-width: 0; }
+.horizon-setup h4, .horizon-setup h5 { margin: 0 0 8px; }
+.horizon-setup label { display: flex; flex-direction: column; gap: 4px; margin: 8px 0; font-size: 12px; color: var(--muted); }
+.horizon-setup input, .horizon-setup select, .cal-grid input[type="number"] { width: 100%; min-width: 0; box-sizing: border-box; }
+.horizon-setup .setup-steps { display: flex; gap: 4px; flex-wrap: wrap; margin: 10px 0; }
+.setup-steps [aria-current="step"], .setup-point [aria-pressed="true"] { border-color: var(--accent); outline: 1px solid var(--accent); }
+.setup-point { margin: 10px 0; padding: 8px 0; border: 0; border-top: 1px solid var(--line-soft); min-width: 0; }
+.setup-point legend { color: var(--txt); font-size: 12px; }
+.setup-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 8px; }
+.setup-status { font-weight: 600; margin: 6px 0; }
+.ed-calibration { padding: 10px 0; border-bottom: 1px solid var(--line-soft); min-width: 0; }
+.ed-calibration summary { cursor: pointer; }
+.ed-hint .ed-readout { display: block; min-height: 3em; line-height: 1.5; }
+.ed-hint #ed-brush-value, .ed-hint .ed-help { display: block; }
 .horizon-meta { margin-top: 10px; padding: 9px 11px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; }
 .horizon-meta summary { cursor: pointer; color: var(--txt); font-size: 12px; font-weight: 600; }
 .horizon-meta > label { display: flex; flex-direction: column; gap: 4px; margin-top: 8px; color: var(--muted); font-size: 12px; }
@@ -571,9 +585,20 @@ a.wiki { color: var(--accent); }
 /* UI-07 (0.6.32 review): the view controls used to sit ON TOP of the canvas's
    top-right corner, covering the top gridline and the 300 deg region (a third of
    the canvas at 360 px). Reserve a strip above the canvas for them instead. */
-.pano-canvas-box { margin-top: 10px; position: relative; padding-top: 34px; }
+.pano-canvas-box { margin-top: 10px; position: relative; padding-top: 34px;
+  display: grid; grid-template-columns: 43px minmax(0, 1fr); grid-template-rows: 23px auto; }
+#pano-ruler-top { grid-column: 2; grid-row: 1; width: 100%; height: 23px; display: block; }
+#pano-ruler-left { grid-column: 1; grid-row: 2; width: 43px; height: 100%; min-height: 0; display: block; }
+#pano-canvas { grid-column: 2; grid-row: 2; }
+#ed-point-remove { position: absolute; z-index: 3; background: var(--bg); border: 1px solid var(--line); }
+#ed-point-remove[hidden], #ed-paint-options[hidden] { display: none; }
+.horizon-advanced > summary, .horizon-profile-panel > summary { cursor: pointer; color: var(--muted); padding: 8px 0; }
+.horizon-advanced .ed-mode { padding: 8px 0; }
+.horizon-setting-up .ed-tools > .ed-row:not(:last-child), .horizon-setting-up .ed-hint { display: none; }
+.horizon-setup input[type="checkbox"] { width: auto; }
+#simple-preview, #simple-message, #simple-check-result { font-size: 12px; line-height: 1.5; }
 #pano-canvas {
-  width: 100%; max-width: 135vh; margin: 0 auto;
+  width: 100%; min-width: 0; margin: 0 auto; box-sizing: border-box;
   border: 1px solid var(--line); border-radius: 10px;
   touch-action: none; cursor: crosshair; display: block; background: #0c1830;
 }
@@ -597,6 +622,11 @@ a.wiki { color: var(--accent); }
 .ed-group { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .ed-group .btn { flex: 0 0 auto; }
 .ed-group select { max-width: 100%; }
+.ed-trace-tools { border-top: 1px solid var(--line-soft); padding-top: 8px; }
+.ed-trace-tools .ed-group { flex-wrap: wrap; align-items: end; }
+.ed-trace-tools label { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.ed-trace-tools input { width: 110px; max-width: 100%; }
+#pano-canvas.tracing { cursor: crosshair; }
 .ed-destructive { color: var(--bad, #ff8a8a); margin-left: 10px; }
 .ed-brush { font-size: 12px; color: var(--muted); display: flex; align-items: center; gap: 8px; }
 .ed-brush input[type="range"] { width: 160px; max-width: 40vw; accent-color: var(--accent); }
@@ -887,6 +917,21 @@ input.night-scrub::-moz-range-thumb { width: 13px; height: 13px; border: 1px sol
 .horizon-tools-rail #pano-list { display: grid; }
 .horizon-tools-rail #pano-list li { flex-basis: auto; min-width: 0; }
 .horizon-stage { min-width: 0; }
+.horizon-stage > .ed-tools { gap: 6px; margin-bottom: 8px; position: sticky; top: 150px;
+  z-index: 12; background: var(--bg); max-height: calc(100dvh - 170px); overflow-y: auto; }
+.horizon-stage > .ed-tools .ed-row { padding: 6px 0; gap: 6px 12px; background: none; border: 0; border-bottom: 1px solid var(--line-soft); border-radius: 0; }
+.horizon-stage > .ed-tools .ed-group { flex-wrap: wrap; }
+.horizon-stage .ed-brush input { width: 100px; }
+.horizon-stage .ed-rowlabel { min-width: 44px; }
+.horizon-stage .ed-status-group { flex-wrap: wrap; }
+.horizon-stage .ed-hint { line-height: 1.5; overflow-wrap: anywhere; }
+.ed-display { padding: 8px 0; border-bottom: 1px solid var(--line-soft); color: var(--muted); font-size: 12px; }
+.ed-display summary { cursor: pointer; }
+.ed-display > label { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 8px; }
+.ed-display input[type="range"] { width: 120px; max-width: 100%; }
+@media (max-width: 640px) {
+  .horizon-stage > .ed-tools { top: 8px; max-height: min(240px, 40dvh); }
+}
 .horizon-editor-title { margin: 0 0 12px; }
 .horizon-settings-rail { display: grid; align-content: start; gap: 8px; position: sticky; top: 150px; max-height: calc(100dvh - 170px); overflow: auto; min-width: 0; }
 .horizon-settings-rail:empty { display: none; }

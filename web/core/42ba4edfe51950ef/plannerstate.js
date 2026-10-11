@@ -50,6 +50,10 @@ export function panoramaRevision(pano) {
       add(stroke && stroke.x);
       add(stroke && stroke.y);
       add(stroke && stroke.r);
+      add(stroke && (stroke.rx ?? stroke.r));
+      if (stroke?.m === 'trace') {
+        for (const point of stroke.points || []) addArray(point);
+      }
     }
   };
   add(pano.id);
@@ -59,6 +63,8 @@ export function panoramaRevision(pano) {
   add(pano.altBottom ?? pano.alt_bottom);
   add(pano.altTop ?? pano.alt_top);
   add(pano.fov);
+  add(pano.photoModel ? JSON.stringify(pano.photoModel) : '');
+  add(pano.coverageEvidence?.policy ?? 'legacy');
   addArray(pano.profile);
   addArray(pano.profileTop ?? pano.profile_top);
   addStrokes(pano.strokes);
