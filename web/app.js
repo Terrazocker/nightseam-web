@@ -1,6 +1,6 @@
 /*
  * NightSeam Web — static in-browser night-planning app.
- * Port of NightSeam (<archive>\Object-Astro) core features:
+ * Planner views:
  *   • Tonight  — dark time, moon phase, ranked best targets
  *   • Sky map  — live polar all-dome chart with sun/moon/all catalog objects
  *   • Catalog  — search/sort across 12,176 objects (OpenNGC + supplement)
@@ -8,17 +8,17 @@
  *   • Settings — sites, rigs, custom targets, backup/restore (webstore.js)
  * All sky math runs client-side (astro.js, Meeus algorithms).
  */
-import * as E from './astro.js?v=33';
-import * as Hor from './horizon.js?v=81';
-import * as WS from './webstore.js?v=47';
+import * as E from './astro.js?v=51';
+import * as Hor from './horizon.js?v=115';
+import * as WS from './webstore.js?v=66';
 import { fmtSize, sizeArcmin, framePct, magVisible, skyClampZoom,
-         skyViewMatrix, skyScreenToBase, skyClampFocus } from './format.js?v=40';
-import { nightStats, nightStatsBatch, sampleVisible } from './nightrank.js?v=32';
+         skyViewMatrix, skyScreenToBase, skyClampFocus } from './format.js?v=57';
+import { nightStats, nightStatsBatch, sampleVisible } from './nightrank.js?v=49';
 import { TYPE_LABELS, TYPE_COLORS, searchBlob as coreSearchBlob,
          TIER_ORDER, assignPopularityTiers, wikiTitles,
          inTonightPool, PLANNER_CHANGE_EVENT, panoramaRevision,
-         visibilityReason } from './core.js?v=47';
-import { popularityFactor as corePopularityFactor } from './core.js?v=47';
+         panoramaVisibilityReason } from './core.js?v=65';
+import { popularityFactor as corePopularityFactor } from './core.js?v=65';
 import { vizTheme, drawMoonPhaseMarker } from './viztheme.js?v=6';
 import { wikimediaCredit, wikiImageCredit, renderImageCredit } from './imagecredits.js?v=2';
 
@@ -87,7 +87,6 @@ const S = {
   date: new Date(),
   skyTime: new Date(),
   skyMag: 10,                     // all-sky chart magnitude limit (desktop #skyMag twin)
-  playing: false,
   view: 'tonight',
   // WEB-REV-003: ONE selected-target identity for Tonight, Catalog and Sky
   // View (`detailId`), plus EXPLICIT inspector visibility (`detailOpen`).
@@ -109,7 +108,7 @@ const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '
 const typeColor = (o) => TYPE_COLORS[o.otype] || '#9fb4d8';
 
 /* Hidden popularity scoring - log-scale normalization of the popularity source
-   community scores BAKED into the catalog payload (`app/popularity_data.py` ->
+   community scores BAKED into the catalog payload (`catalog_data/popularity_data.py` ->
    `web/catalog.json`). The web app makes NO request to the popularity source: that
    snapshot was fetched once (see `scripts/match_popularity.py`, which is
    offline by default) and ships with the catalog, so ranking works fully
@@ -228,7 +227,7 @@ function obsNightGrid() {
    uses nightWindow() directly - this is presentation-only caching. */
 let _winMemo = { key: null, val: null };
 function cachedNightWindow() {
-  const key = `${dateKey(nightAnchor())}|${S.site.lat}|${S.site.lon}|${resolvedZone()}|${siteNoon(nightAnchor()).getTime()}`;
+  const key = `${dateKey(nightAnchor())}|${S.site.lat}|${S.site.lon}|${resolvedZone()}`;
   if (_winMemo.key !== key) _winMemo = { key, val: nightWindow() };
   return _winMemo.val;
 }
@@ -407,16 +406,15 @@ function selectedVisibility(o, grid) {
   const { lat, lon } = S.site;
   const jd = E.julianDay(S.skyTime);
   const [alt, az] = E.altaz(o.ra_hours * 15, o.dec_deg, jd, lat, lon);
-  const pano = Hor.activePano();
-  const ceiling = pano ? Hor.ceilFor(pano, az) : { ceil: Hor.NO_BLOCK, ceilTop: null };
   const win = cachedNightWindow();
   const inWindow = S.skyTime >= win.startT && S.skyTime < win.endT;
-  const reason = visibilityReason(alt, Hor.effectiveMinAlt(), ceiling.ceil, ceiling.ceilTop, inWindow);
+  const reason = panoramaVisibilityReason(Hor.activePano(), alt, az, Hor.effectiveMinAlt(), inWindow);
   const night = grid ? obsCache.get(obsKey(grid, o.id))?.night : null;
   return { alt, reason, visible: reason === 'visible', night };
 }
 function catalogCondition(reason) {
   return ({ visible: 'Usable now', blocked_by_horizon: 'Horizon blocked',
+    unknown_horizon:'Horizon coverage unknown',
     below_minimum_altitude: 'Below altitude limit', outside_selected_window: 'Outside planning window',
     below_horizon: 'Below horizon', never_rises: 'Below horizon' })[reason] || 'Not usable now';
 }
@@ -556,6 +554,7 @@ function wxRows(data) {
   const times = Array.isArray(h.time) ? h.time : [];
   const aqIndex = new Map((Array.isArray(aq.time) ? aq.time : []).map((t, i) => [t, i]));
   const value = (key, i) => wxNumber(Array.isArray(h[key]) ? h[key][i] : null);
+  // Times come from the provider and reach markup: keep only well-formed ISO hours.
   return times.map((time, i) => {
     const ai = aqIndex.get(time);
     const aqValue = (key) => ai == null || !Array.isArray(aq[key]) ? null : wxNumber(aq[key][ai]);
@@ -585,7 +584,7 @@ function wxRows(data) {
       aerosol: aqValue('aerosol_optical_depth'),
       pm25: aqValue('pm2_5'),
     };
-  }).filter((row) => row.time);
+  }).filter((row) => typeof row.time === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(row.time));
 }
 function wxRowsForNight(data) {
   const rows = wxRows(data);
@@ -817,15 +816,24 @@ function wxRenderPanel() {
 // Cached photos are reused first. Results (image blobs AND definite
 // "no photo" answers) are cached in IndexedDB per object; transient network
 // failures are NOT cached so they retry next open.
+// One shared thumbnail connection: opening one per read/write leaked them and
+// would block any future version upgrade. Reopened after a close or failure.
+let thumbDb = null;
 function idbOpen() {
-  return new Promise((resolve, reject) => {
+  thumbDb ??= new Promise((resolve, reject) => {
     try {
       const rq = indexedDB.open('nightseam-images', 1);
       rq.onupgradeneeded = () => { rq.result.createObjectStore('thumbs'); };
-      rq.onsuccess = () => resolve(rq.result);
+      rq.onsuccess = () => {
+        const db = rq.result;
+        db.onversionchange = () => { db.close(); thumbDb = null; };
+        db.onclose = () => { thumbDb = null; };
+        resolve(db);
+      };
       rq.onerror = () => reject(rq.error);
     } catch (e) { reject(e); }
-  });
+  }).catch((e) => { thumbDb = null; throw e; });
+  return thumbDb;
 }
 async function idbGet(key) {
   try {
@@ -1186,14 +1194,11 @@ function renderTonight(silent, immediate = false) {
       const [altNow, azNow] = E.altaz(o.ra_hours * 15, o.dec_deg, jdSel, lat, lon);
       const ceilNow = pano ? Hor.ceilFor(pano, azNow) : { ceil: Hor.NO_BLOCK, ceilTop: null };
       const visNow = sampleVisible(altNow, minAlt, ceilNow.ceil, ceilNow.ceilTop);
-      const selectedInWindow = selTime >= win.startT && selTime < win.endT;
-      const selectedReason = visibilityReason(
-        altNow, minAlt, ceilNow.ceil, ceilNow.ceilTop, selectedInWindow);
       const pop = popularityFactor(o);
       // popularity is a silent TIEBREAKER (like the desktop): the pure
       // visibility score decides, popularity only separates equal scores
       const score = Math.round((moonAware ? st.sMoon : st.sClassic) * 10) / 100;
-      rows.push({ o, maxAlt: st.maxAlt, altNow, visNow, selectedReason, score,
+      rows.push({ o, maxAlt: st.maxAlt, altNow, visNow, score,
                   bestRun: st.bestRun, bestStart: st.bestStart,
                   bestEnd: st.bestEnd, transitJd: st.transitJd,
                   culminationAlt: st.culminationAlt, riseJd: st.riseJd,
@@ -2353,6 +2358,20 @@ function dialogStops(dialog) {
     .filter((el) => el.tabIndex >= 0 && reachableControl(el));
 }
 
+// Tonight and Catalog refreshes (scrub, the 60 s timer, a late boot pass)
+// replace their rows while a card is open. A detached opener is mapped to the
+// same control in the same target's live row, so focus returns to it instead
+// of falling back to the tab bar.
+function liveEquivalent(el) {
+  if (!el || el.isConnected) return el;
+  const row = el.closest('tr[data-tonight-id], tr[data-id]');
+  if (!row) return el;
+  const attr = row.hasAttribute('data-tonight-id') ? 'data-tonight-id' : 'data-id';
+  const classes = [...el.classList].map((c) => '.' + CSS.escape(c)).join('');
+  return document.querySelector(`tr[${attr}="${CSS.escape(row.getAttribute(attr))}"] `
+    + el.localName + classes) || el;
+}
+
 function restoreControlFocus(opener) {
   const target = reachableControl(opener) ? opener : $(`#tab-${S.view}`);
   target?.focus({ preventScroll: true });
@@ -2505,13 +2524,11 @@ function updateDetailSelectedTime() {
   const [alt, az] = E.altaz(o.ra_hours * 15, o.dec_deg, jd, lat, lon);
   const [moonAlt, moonAz] = E.moonAltAz(jd, lat, lon);
   const separation = E.sepDeg(alt, az, moonAlt, moonAz);
-  const pano = Hor.activePano();
-  const ceiling = pano ? Hor.ceilFor(pano, az) : { ceil: Hor.NO_BLOCK, ceilTop: null };
   const win = cachedNightWindow();
   const inNight = S.skyTime >= win.startT && S.skyTime < win.endT;
-  const reason = visibilityReason(alt, Hor.effectiveMinAlt(), ceiling.ceil,
-    ceiling.ceilTop, inNight);
+  const reason = panoramaVisibilityReason(Hor.activePano(), alt, az, Hor.effectiveMinAlt(), inNight);
   const reasonText = reason === 'visible' ? 'visible above minimum altitude' :
+    reason === 'unknown_horizon' ? 'unknown horizon coverage; excluded from planning' :
     reason === 'blocked_by_horizon' ? 'blocked by horizon or ceiling' :
       reason === 'below_minimum_altitude' ? 'below minimum altitude' :
         reason === 'below_horizon' ? 'below horizon' : 'outside dusk-to-dawn window';
@@ -2620,9 +2637,10 @@ function openDetail(id, opener = null, { refresh = false } = {}) {
   const info = E.nightInfo(nightAnchor(), lat, lon, siteNoon(nightAnchor()));
   const jd = E.julianDay(S.skyTime);
   const [altNow, azNow] = E.altaz(o.ra_hours * 15, o.dec_deg, jd, lat, lon);
-  // Culmination belongs to the complete site's selected calendar day.
-  const localMidnight = siteClock(S.date, 0);
-  const dayInfo = E.objectDayInfo(o.ra_hours * 15, o.dec_deg, localMidnight, lat, lon, siteClock(S.date, 0, 1));
+  // Rise, set and culmination describe the planned (coming) night: from the
+  // site's noon on the selected date to the next site noon.
+  const nightNoon = siteNoon(nightAnchor());
+  const dayInfo = E.objectNightInfo(o.ra_hours * 15, o.dec_deg, nightNoon, nextSiteNoon(nightNoon), lat, lon);
 
   // Moon distance at the selected planner time + tonight's peak.
   const [moonAltNow, moonAzNow] = E.moonAltAz(jd, lat, lon);
@@ -2786,10 +2804,11 @@ function openDetail(id, opener = null, { refresh = false } = {}) {
     const ceil = pano ? Hor.ceilFor(pano, az) : { ceil: Hor.NO_BLOCK, ceilTop: null };
     const vis = sampleVisible(alt, minAlt, ceil.ceil, ceil.ceilTop);
     const mAlt = E.moonAltAz(jdt, lat, lon)[0];
+    const reason = panoramaVisibilityReason(pano, alt, az, minAlt);
     samples.push({
       t: jdt, alt, az, ceil,
-      vis,
-      state: ({ below_horizon: 'below', blocked_by_horizon: 'blocked', below_minimum_altitude: 'warn', visible: 'clear' })[visibilityReason(alt, minAlt, ceil.ceil, ceil.ceilTop)],
+      vis, reason,
+      state: ({ below_horizon: 'below', blocked_by_horizon: 'blocked', unknown_horizon: 'blocked', below_minimum_altitude: 'warn', visible: 'clear' })[reason],
       mAlt,
     });
   }
@@ -2815,9 +2834,17 @@ function openDetail(id, opener = null, { refresh = false } = {}) {
     ? `Best window (clear, ≥${minAlt.toFixed(0)}°): ${bestWindowText}`
     : 'No clear window tonight';
   $('#win-note').textContent = winNote;
+  // The night summary counts horizon blocks; name them "unknown coverage" only
+  // when every horizon-limited sample in the window lacks recorded evidence.
+  const horizonLimited = samples.filter((sample) => sample.t >= detailWin.jd0 && sample.t < detailWin.jd1
+    && (sample.reason === 'blocked_by_horizon' || sample.reason === 'unknown_horizon'));
+  const coverageUnknown = horizonLimited.length > 0
+    && horizonLimited.every((sample) => sample.reason === 'unknown_horizon');
   const detailReasonText = (reason) => {
     if (reason === 'visible') return `visible for ${fmtDur(detailSummary.visibleMinutes)}`;
-    if (reason === 'blocked_by_horizon') return 'blocked because of horizon';
+    if (reason === 'blocked_by_horizon') {
+      return coverageUnknown ? 'excluded: horizon coverage unknown' : 'blocked because of horizon';
+    }
     if (reason === 'below_minimum_altitude') return 'below minimum altitude';
     if (reason === 'outside_selected_window') return 'outside the selected window';
     if (reason === 'never_rises') return 'never rises in this window';
@@ -3058,8 +3085,9 @@ function closeDetail({ restoreFocus = true } = {}) {
   detailTimeFrame = null;
   syncSkyDetailPlaceholder();
   if (!restoreFocus) return;
-  const target = reachableControl(detailReturnFocus) ? detailReturnFocus
-    : S.view === 'sky' ? $('#sky-selected-detail') || $('#sky') : detailReturnFocus;
+  const opener = liveEquivalent(detailReturnFocus);
+  const target = reachableControl(opener) ? opener
+    : S.view === 'sky' ? $('#sky-selected-detail') || $('#sky') : opener;
   detailReturnFocus = null;
   restoreControlFocus(target);
 }
@@ -3554,6 +3582,11 @@ async function renderSettings() {
     // record contract and turns the staged bundle into one complete model.
     const norm = Hor.normalizePanos(data && data.panos);
     if (!norm) throw new Error('missing panorama section or malformed panorama data');
+    // A rollback re-normalizes `current` the same way; prove it can before any
+    // record is replaced, or a failed import could not be undone.
+    if (!rollback && current && !Hor.normalizePanos(current.panos)) {
+      throw new Error('your current horizons cannot be captured as a recovery copy, so nothing was changed');
+    }
     const staged = WS.stageBackup({ ...data, panos: norm });
     if (rollback) await WS.writeStaged(staged);
     else await WS.restoreBackup({ ...data, panos: norm }, current);
@@ -3667,6 +3700,10 @@ async function saveSiteForm() {
   if (!name) { alert('Please name the site.'); return; }
   if (!Number.isFinite(lat) || lat < -90 || lat > 90 || !Number.isFinite(lon) || lon < -180 || lon > 180) {
     alert('Latitude must be -90…90 and longitude -180…180.');
+    return;
+  }
+  if (tz && !WS.validTimeZone(tz)) {
+    alert('Timezone must be an IANA name such as Europe/Berlin, or empty for the browser default.');
     return;
   }
   const id = $('#sf-site-id').value || WS.NEW_SITE_ID();

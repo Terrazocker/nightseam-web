@@ -146,23 +146,28 @@ def smooth_scrub_and_horizon_scroll(c):
         state = c.page.evaluate('''() => {
           const rail=document.querySelector('.horizon-tools-rail');
           const card=rail.querySelector('.card').getBoundingClientRect();
-          const tools=rail.querySelector('.ed-tools').getBoundingClientRect();
+          const toolbar=document.querySelector('.horizon-stage > .ed-tools');
+          const tools=toolbar.getBoundingClientRect();
           const r=rail.getBoundingClientRect();
-          return {top:r.top,bottom:r.bottom,cardBottom:card.bottom,toolsTop:tools.top,
+          return {top:r.top,bottom:r.bottom,cardBottom:card.bottom,toolsTop:tools.top,toolsBottom:tools.bottom,
+            toolPosition:getComputedStyle(toolbar).position,toolBackground:getComputedStyle(toolbar).backgroundColor,
             position:getComputedStyle(rail).position, childPosition:getComputedStyle(rail.querySelector('.card')).position};
         }''')
         c.expect_eq(state['position'], 'sticky')
         c.expect(state['childPosition'] != 'sticky', 'first section cannot stick over paint tools')
-        c.expect(state['toolsTop'] >= state['cardBottom'], 'photo information and paint tools never overlap')
+        c.expect_eq(state['toolPosition'], 'sticky', 'stage tools remain available beside the tall photo')
+        c.expect_eq(state['toolBackground'], 'rgb(11, 17, 21)', 'sticky tools stay opaque over the scrolling photo')
+        c.expect(state['toolsTop'] >= 0 and state['toolsBottom'] <= height, 'whole toolbar fits the viewport')
         c.expect(state['top'] >= 0 and state['bottom'] <= height, 'whole rail fits the viewport')
         c.page.locator('.horizon-tools-rail').focus()
         c.page.locator('#ed-save').focus()
         c.page.wait_for_timeout(50)
         save = c.page.locator('#ed-save').bounding_box()
         c.expect(save['y'] >= 0 and save['y']+save['height'] <= height,
-                 f'keyboard can reach Save inside bounded rail: viewport={height}, save={save}, rail={state}')
+                 f'keyboard can reach Save inside bounded toolbar: viewport={height}, save={save}, rail={state}')
         c.expect(c.page.locator('.topbar').bounding_box()['y'] >= 0, 'header stays visible throughout the tall editor')
         c.page.screenshot(path=str(c.artifacts / f'followup-horizon-scroll-{width}.png'))
+    c.page.locator('.horizon-advanced').evaluate('e=>e.open=true')
     c.page.locator('details.horizon-meta').filter(has=c.page.locator('#ed-profile-az')).locator('summary').click()
     c.expect(c.page.locator('#ed-profile-top').is_disabled(), 'sky-band upper edge is inactive in obstruction mode')
     c.page.locator('#ed-mode').select_option('sky')
@@ -264,8 +269,24 @@ def advanced_live_mode(c):
     scrubbed = time.monotonic() - t1
     c.expect_eq(c.page.locator('td.pct').all_text_contents(), percentages, 'scrubbing reuses night percentages while selected-time facts refresh')
     c.expect(c.page.locator('#busy').evaluate("el => el.classList.contains('hidden')"), 'scrubbing does not restart full-night warming')
-    c.expect(scrubbed < 2, 'cached scrubbing stays responsive')
+    c.expect(scrubbed < 2, f'cached scrubbing stays responsive ({scrubbed:.2f}s; limit 2s)')
     print(f'        three cached Catalog scrubs, 4x CPU: {scrubbed:.2f}s')
+    # Timing must not improve by displaying stale selected-time facts.
+    facts=c.page.evaluate('''async () => {
+      const token=[...document.querySelectorAll('script[type="module"]')][0].src;
+      const source=await (await fetch(token)).text();
+      const url=name=>source.match(new RegExp("\\\\./"+name+"\\\\.js\\\\?v=\\\\d+"))[0];
+      const E=await import(url('astro')),W=await import(url('webstore'));
+      const catalog=await (await fetch('./catalog.json')).json();
+      const pool=Array.isArray(catalog)?catalog:catalog.objects;
+      const site=(await W.getSites()).find(s=>s.id===document.querySelector('#tb-site').value);
+      const jd=E.julianDay(new Date(window.__ns_scrub_sel()));
+      return [...document.querySelectorAll('table.cat tbody tr[data-id]')].map(row=>{
+        const o=pool.find(o=>o.id===row.dataset.id),alt=E.altaz(o.ra_hours*15,o.dec_deg,jd,site.lat,site.lon)[0];
+        return {shown:row.children[5].textContent,expected:alt.toFixed(0)+'°'};
+      });
+    }''')
+    c.expect(all(f['shown']==f['expected'] for f in facts),'cached Catalog rows show the final selected minute')
     c.page.locator('#cat-q').fill('Andromeda')
     c.page.wait_for_function("() => document.querySelectorAll('table.cat tbody tr[data-id]').length < 20 && [...document.querySelectorAll('table.cat tbody tr')].some(el => el.textContent.includes('Andromeda'))")
     # Start new-night warming, then supersede it with another date/search in
@@ -621,7 +642,7 @@ def responsive_planner(c):
                 tools = c.page.locator('.horizon-tools-rail').bounding_box()
                 stage = c.page.locator('.horizon-stage').bounding_box()
                 c.expect(stage['y'] >= tools['y'] + tools['height'], 'phone Horizon editor stacks below its tools')
-                upload = c.page.get_by_role('button', name='Upload photo')
+                upload = c.page.get_by_role('button', name='Add horizon photo')
                 upload.focus()
                 with c.page.expect_file_chooser():
                     c.page.keyboard.press('Enter')

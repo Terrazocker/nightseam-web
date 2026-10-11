@@ -27,8 +27,8 @@ PUBLIC_RELEASES = [{"version": "0.1.1", "date": "2026-10-08"},
                    {"version": "0.1.0", "date": "2026-10-07"}]
 
 CURATED = {
-    "0.1.1": "A clearer planning workspace: open the planner from any public page, edit Site and Rig directly from the top bar, and filter object types with simple checkboxes. Catalog pages now show 50 objects with clearer visibility conditions. Sky View has a wider time slider, twilight colors and smoother one-minute scrubbing, without repeated date fields or target lists. Tonight is simpler, and Horizon tools remain readable when scrolling. Filter advice and precise horizon editing now explain their effects.",
-    "0.1.0": "NightSeam starts anew as an independent browser planner. Bring your own panorama and calculate when deep-sky targets clear your skyline, with planning data saved in your browser. The website and Windows catalog now have separate versions and development.",
+    "0.1.1": "A clearer planning workspace: open the planner from any public page, edit Site and Rig directly from the top bar, and filter object types with simple checkboxes. The Catalog tab shows 50 objects per page with clearer visibility conditions. Sky View has a wider time slider, twilight colors and smoother one-minute scrubbing. Tonight is simpler, and Horizon tools stay readable while you scroll. Filter advice and precise horizon editing explain what each setting does.",
+    "0.1.0": "NightSeam starts anew as an independent browser planner. Bring your own panorama and calculate when deep-sky targets clear your skyline, with planning data saved in your browser. NightSeam is now a browser-only planner with its own version history.",
     # Curate before tagging; a tag does not establish public deployment.
     "0.6.36": "Website packaging fix: catalog metadata keeps identical bytes on Windows checkouts, so release integrity checks remain reproducible. Planner behavior is unchanged from 0.6.35.",
     "0.6.35": "The website and Windows image catalog are now independent projects. The browser planner uses Workbench, with improved layout and weather controls. Experimental modeled sky brightness has been removed. Existing sites, equipment, panoramas and browser backups are preserved.",
@@ -205,7 +205,7 @@ def has_summary(curated: dict, version: str) -> bool:
 def split_uncurated(tags, curated):
     """Split uncurated tags into (since the newest curated entry, older).
 
-    `tags` is newest-first (git tag --sort=-version:refname). Only the first
+    `tags` is newest-first by CREATION (release_tags()). Only the first
     list matters for release integrity: those are the releases that happened
     AFTER the newest entry the repository release guard knows about. Everything older
     is the historical backlog (pre-0.4.2 tags) and is never curated. An EMPTY
@@ -217,6 +217,16 @@ def split_uncurated(tags, curated):
         return list(versions), []
     return ([v for v in versions[:newest] if not has_summary(curated, v)],
             [v for v in versions[newest + 1:] if not has_summary(curated, v)])
+
+
+def release_tags():
+    """Tags newest-first by creation date, not by version number.
+
+    The independent website restarted at 0.1.0 while inherited 0.6.x tags
+    remain, so version order put every new tag below the legacy series and an
+    uncurated new release read as historical backlog. Release integrity is
+    about what was tagged AFTER the newest curated entry, which is time order."""
+    return [t for t in git("tag", "--sort=-creatordate").splitlines() if t]
 
 
 def build_entries(tags, dates, curated=None):
@@ -303,7 +313,7 @@ def main(argv=None):
                              "is uncurated or generated release history is stale")
     args = parser.parse_args(argv)
 
-    tags = [t for t in git("tag", "--sort=-version:refname").splitlines() if t]
+    tags = release_tags()
     if not tags:
         print("no git tags found - run from the repo root of a tagged checkout.")
         return 1 if args.check else 0

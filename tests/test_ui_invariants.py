@@ -250,10 +250,10 @@ def test_web_hold_right_click_erases_and_sky_chart_has_no_chord():
     run so a gap is never bridged by a straight chord."""
     js = _read("web", "horizon.js")
     assert "ev.button === 2" in js, "the right-button paint gesture is gone"
-    assert "strokeAt(x, y, true)" in js, "the right-button gesture must erase"
+    assert "gestureErase = ev.button === 2" in js, "right-button erase owns the whole gesture"
     assert "gestureErase" in js and "strokeAt(x, y, gestureErase)" in js, \
         "pointermove must continue the right-button erase gesture"
-    assert "if (ev.button !== 0) return;" in js
+    assert "![0, 1, 2].includes(ev.button)" in js, "unsupported pointer buttons must be ignored"
     # TR-11 (0.6.32 review): this used to assert the COMMENT text "already
     # erased", which only a prose edit could break while the behaviour it names
     # could come back green. Pin the HANDLER shape instead: the contextmenu

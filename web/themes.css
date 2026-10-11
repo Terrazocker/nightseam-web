@@ -149,6 +149,8 @@ html[data-theme="workbench"] #menuPanel.menu-panel,
 html[data-theme="workbench"] #weatherPanel.weather-panel {
   background: var(--panel); border-color: var(--line); box-shadow: none; backdrop-filter: none;
 }
+/* Sticky editing actions need an opaque surface while the photo scrolls below. */
+html[data-theme="workbench"] .horizon-stage > .ed-tools { background: var(--bg); }
 html[data-theme="workbench"] .modal-wrap { background: color-mix(in srgb, var(--bg) 76%, transparent); }
 html[data-theme="workbench"] .modal { background: var(--panel); border-color: var(--line); border-radius: 6px; box-shadow: none; }
 html[data-theme="workbench"] #modal.detail-docked {

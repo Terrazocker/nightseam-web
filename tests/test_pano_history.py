@@ -127,12 +127,16 @@ H.applySnapshot(d0, sd, KEYS_D);
 out.desktopRoundTrip = d0.az_offset === 20 && d0.fov === 300
   && d0.paint_mode === 'sky' && d0.block_above === true;
 
-// 9) the two shells must produce the SAME snapshot for equivalent records
+// 9) legacy common geometry is identical; photo source bounds are a new web field.
 const wEq = { ...web(), strokes: [{ m: 'b', x: 1, y: 2, r: 3 }] };
 const dEq = { az_offset: 10, alt_bottom: 0, alt_top: 45, fov: 360,
               paint_mode: 'obstacle', block_above: false,
               strokes: [{ m: 'b', x: 1, y: 2, r: 3 }] };
-out.crossShellIdentical = H.snapshot(wEq, KEYS) === H.snapshot(dEq, KEYS_D);
+const commonWeb = JSON.parse(H.snapshot(wEq, KEYS));
+out.webSourceDefault = JSON.stringify(commonWeb.sr) === JSON.stringify({x:0,y:0,w:1,h:1});
+delete commonWeb.sr;
+  delete commonWeb.cal;
+out.crossShellIdentical = JSON.stringify(commonWeb) === H.snapshot(dEq, KEYS_D);
 
 // 10) zoom is NOT part of the snapshot
 const z0 = { ...web(), editorZoom: 4 };
@@ -210,9 +214,9 @@ def test_the_history_is_bounded_and_the_baseline_tracks_saves(probe):
 
 
 def test_both_shells_encode_the_same_state_through_their_own_keys(probe):
-    """The whole point of the unification: the desktop's snake_case record and
-    the web's camelCase record produce the SAME snapshot, so the two editors
-    cannot disagree about what "the editable state" is."""
+    """Common geometry uses the same encoding; web-only source bounds default
+    non-destructively without requiring changes to the independent catalog."""
     assert probe["desktopEncodes"] is True
     assert probe["desktopRoundTrip"] is True
     assert probe["crossShellIdentical"] is True
+    assert probe["webSourceDefault"] is True

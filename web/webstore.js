@@ -1,16 +1,16 @@
 /*
  * NightSeam Web — storage & settings module.
- * Browser-side mirror of the local NightSeam SQLite user tables:
- *   sites   — {id, name, lat, lon, elev, tz}            (local: sites table)
- *   rigs    — {id, name, focal_mm, sensor_w, sensor_h, fov_w, fov_h}  (rigs)
- *   targets — custom objects, id "u_*"                   (custom_objects)
+ * User records in IndexedDB (nightseam-db-v1):
+ *   sites   — {id, name, lat, lon, elev, tz}
+ *   rigs    — {id, name, focal_mm, sensor_w, sensor_h, fov_w, fov_h}
+ *   targets — custom objects, id "u_*"
  * Plus: per-site timezone helpers (DST-aware, Intl), backup/restore of all
  * user data as JSON, and the version stamp (version.json, git describe).
  * IndexedDB database: "nightseam-db-v1". Renaming the storage keys was free:
  * the app moved to nightseam.de, so every visitor starts on a fresh origin.
  */
 
-import { offsetEastMin, zonedWallToUtcMs } from './core.js?v=47';
+import { offsetEastMin, zonedWallToUtcMs, normalizeCoverageEvidence, normalizePhotoCalibration } from './core.js?v=65';
 
 const DB_NAME = 'nightseam-db-v1';
 const DB_VER = 1;
@@ -281,7 +281,16 @@ function sexa(s) {
 
 let activeTz = null; // IANA name of the active site, or null = browser local
 
-export function setActiveTz(tz) { activeTz = tz || null; }
+/** True for an IANA zone this browser resolves. Every timezone entry point
+ *  (site form, backup sites, settings) uses it: core/time.js treats an unknown
+ *  zone as "no zone", which would silently plan in the browser's zone. */
+export function validTimeZone(v) {
+  if (typeof v !== 'string' || !v || v.length > 100) return false;
+  try { new Intl.DateTimeFormat('en', { timeZone: v }); return true; } catch { return false; }
+}
+
+// An unknown stored zone falls back to browser local for planning AND weather.
+export function setActiveTz(tz) { activeTz = validTimeZone(tz) ? tz : null; }
 export function tz() { return activeTz; }
 
 /** UTC offset of `tz` (minutes east of UTC) at the instant `date`. DST-aware.
@@ -387,10 +396,12 @@ function cleanRecord(r, { numbers = [], strings = [] } = {}) {
   return out;
 }
 
-/** v3 adds independent horizontal dab radii. v1 (unstamped) and v2 remain
- * readable; earlier clients refuse v3 instead of silently losing crop geometry.
- * Bump this together with any incompatible bundle change. */
-export const BUNDLE_VERSION = 3;
+/** Backup bundle format. Every earlier format stays readable; an older client
+ * refuses a newer bundle rather than silently losing evidence it cannot keep
+ * (v3 dab radii, v4 source rectangles, v5 calibration evidence, ... v10
+ * physical orientation and coverage/measurement evidence). Bump this together
+ * with any incompatible bundle change. */
+export const BUNDLE_VERSION = 10;
 
 export const WEB_PREF_DEFAULTS = Object.freeze({
   bortle: 4, minAlt: null, moonAware: false, viewFullDay: false, edge: 16,
@@ -420,6 +431,9 @@ export function normalizeWebPrefs(value, { strict = false } = {}) {
   const inRange = (v, lo, hi) => typeof v === 'number' && Number.isFinite(v) && v >= lo && v <= hi;
   check('bortle', (v) => Number.isInteger(v) && inRange(v, 1, 9));
   check('minAlt', (v) => v === null || inRange(v, 0, 90));
+  // The top-bar slider is whole degrees from 5 to 70; a stored value it cannot
+  // show would leave the thumb and the planner disagreeing.
+  if (typeof out.minAlt === 'number') out.minAlt = Math.min(70, Math.max(5, Math.round(out.minAlt)));
   check('edge', (v) => inRange(v, 0, 300));
   check('minVis', (v) => inRange(v, 0, 100));
   check('sizeUnit', (v) => ['arcmin', 'arcsec', 'deg'].includes(v));
@@ -427,11 +441,7 @@ export function normalizeWebPrefs(value, { strict = false } = {}) {
   check('activeSiteId', (v) => v === null || v === '' || id(v));
   check('activeRigId', (v) => v === null || v === '' || id(v));
   if (out.activeRigId === null) out.activeRigId = ''; // older no-rig convention
-  check('tz', (v) => {
-    if (v === null || v === '' || v === 'auto') return true;
-    if (typeof v !== 'string' || v.length > 100) return false;
-    try { new Intl.DateTimeFormat('en', { timeZone: v }); return true; } catch { return false; }
-  });
+  check('tz', (v) => v === null || v === '' || v === 'auto' || validTimeZone(v));
   if (out.tz === null || out.tz === 'auto') out.tz = '';
   check('savedTargetIds', Array.isArray);
   if (Array.isArray(source.savedTargetIds)) {
@@ -467,14 +477,29 @@ export function stageBackup(data) {
       `this build reads ${BUNDLE_VERSION}) - reload/update the page and try ` +
       `again`);
   }
-  const siteOf = (s) => cleanRecord(s, {
-    numbers: ['lat', 'lon', 'elev'],
-    strings: ['name', 'tz', 'notes'],
-  });
-  const rigOf = (r) => cleanRecord(r, {
-    numbers: ['focal_mm', 'sensor_w', 'sensor_h', 'fov_w', 'fov_h'],
-    strings: ['name'],
-  });
+  const siteOf = (s) => {
+    const clean = cleanRecord(s, {
+      numbers: ['lat', 'lon', 'elev'],
+      strings: ['name', 'tz', 'notes'],
+    });
+    if (clean && (clean.lat < -90 || clean.lat > 90 || clean.lon < -180 || clean.lon > 180)) {
+      throw new Error('backup site has coordinates out of range');
+    }
+    if (!clean || clean.tz == null || clean.tz === '') return clean;
+    if (!validTimeZone(clean.tz)) throw new Error('backup site has an unknown timezone');
+    return clean;
+  };
+  const rigOf = (r) => {
+    const clean = cleanRecord(r, {
+      numbers: ['focal_mm', 'sensor_w', 'sensor_h', 'fov_w', 'fov_h'],
+      strings: ['name'],
+    });
+    // Optics feed field-of-view arithmetic: absent is allowed, zero/negative is not.
+    if (clean && ['focal_mm', 'sensor_w', 'sensor_h', 'fov_w', 'fov_h'].some((k) => clean[k] != null && !(clean[k] > 0))) {
+      throw new Error('backup rig has a non-positive focal length, sensor or field size');
+    }
+    return clean;
+  };
   const targetOf = (t) => cleanRecord(t, {
     numbers: ['ra_hours', 'dec_deg', 'vmag'],
     strings: ['primary_name', 'otype', 'size_am', 'constellation', 'blurb'],
@@ -489,6 +514,13 @@ export function stageBackup(data) {
   }
   if (!Array.isArray(data.panos.panos)) {
     throw new Error('backup panorama section is not a list of panoramas');
+  }
+  // Reject incompatible geographic/reference evidence while the whole bundle
+  // is still staged. Invalid records later discarded by id cannot hide it.
+  for (const pano of data.panos.panos) {
+    if (!pano || typeof pano !== 'object') continue;
+    normalizeCoverageEvidence(pano.coverageEvidence, true);
+    normalizePhotoCalibration(pano.calibration, true);
   }
   const panos = data.panos;
   const records = (key, clean) => {

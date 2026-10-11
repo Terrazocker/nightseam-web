@@ -88,10 +88,61 @@ The local exposure catalog has its own design document in Nightseam-catalog.
   Use one altitude chart and one set of target facts. The inspector is inline
   and complementary at every width; on phones the rail stacks below the map.
   Closing it preserves the selected target with a small reopen action.
-- **Horizon:** fit the panorama at its source aspect ratio. Keep a readable
+- **Horizon:** fit the panorama at its source aspect ratio, or its angular working
+  aspect after explicit conversion. Keep a readable
   profile, honest calibration summary, settings, and Save/Undo/Redo in the first
   viewport where practical. Profile bins use the shared world-azimuth geometry.
-  Do not show calibration provenance entry fields; retain saved/imported metadata.
+  Display the retained photo region after cropping, without changing original
+  photo bytes. Keep paint/crop/history controls in a bounded sticky toolbar above
+  the image and zoom controls on the image. Draw adaptive edge rulers, degree
+  labels and brush outlines in CSS pixels under DPR scaling; image geometry
+  remains in angular coordinates. Quieter grid/opacity controls belong in the
+  closed Display disclosure. Preserve view/tool state on same-panorama rerenders.
+  Newly imported photos enter Confirm geometry → Align or check → Review →
+  Draw skyline → Save. Alignment points have a true bearing and altitude angle.
+  Confirmed known geometry can be checked without mandatory fitting points.
+  Preview before applying a complete fit; offer a separate optional check and a
+  clearly approximate route. Existing records open directly with a review action;
+  separate legacy references remain under Advanced setup, which can review but
+  never re-apply linear geometry to a converted photo.
+  Optional Photo geometry / leveling shows detected metadata or requests known
+  source parameters, previews corrected pixels and requires explicit Apply before
+  drawing. Original bytes and original-pixel references remain authoritative;
+  crops affect the working view. Never reinterpret existing painted records.
+  Keep extra fitting/check points in a closed optional disclosure. Show each fit
+  residual, explicit exclusions, worst held-out errors and poor-spread warnings.
+  Promoting a check removes its independent-check claim after validation.
+  Rulers occupy gutters outside the photo, preserving its pixel rectangle and
+  pointer transform. Default to tracing for obstacles, offer nearby undoable
+  selected-point removal, and collapse profile/specialist editing controls while
+  preserving the user's disclosure state.
+  Use known true-bearing and measured altitude references, with clickable photo
+  points and keyboard-accessible percentage alternatives. Keep exact angle/fine
+  adjustment controls behind disclosure. State assumed, approximate or checked
+  references in text; “checked” means separate references agree within the saved
+  policy (1° directional error for physical orientation, historical per-axis
+  limits for legacy fits), not a precision guarantee. Unsupported projections
+  remain approximate. Show unknown coverage in text separately from whether the
+  chosen policy permits planning it.
+  Reserve cursor-readout space so pointer movement cannot shift the image.
+  Optional measurement source, angular error, time, group and exclusion reason
+  belong in a closed Advanced evidence disclosure. Optional observing position,
+  optical height and capture date also stay behind disclosure. The coverage
+  assumption is the exception: "Sky outside the photo" stays visible in photo
+  setup, defaults to open sky above the skyline for converted photos and
+  explains the current choice in one line.
+  Retain saved/imported metadata; ordinary setup must not require these fields.
+  Offer Brush / eraser and Trace skyline as named authoring tools with a plain
+  active-tool explanation. Put exact point controls in the settings rail, keep
+  the image available, and draw selected points and adaptive markers in CSS
+  pixels. Traces fill only between explicit endpoints and preserve later brush
+  corrections. Sky openings/overhangs retain their separate band workflow.
+  Explain precise-bin replacement next to the advanced action.
+  An unconnected first point is explicitly an unsaved draft, leaving the existing
+  horizon intact. Give plain feedback for discarded drafts and rejected additions.
+  On phones, cap the sticky toolbar at 40% of viewport height (at most 240px),
+  with internal scrolling so actions remain reachable without covering zoom.
+
 Across Tonight, Catalog, and Sky View, keep one selected target and one inspector.
 Keep tables native: rows and cells expose table semantics, with named target
 buttons inside cells. Sort headers use real buttons and expose their direction

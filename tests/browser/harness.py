@@ -58,6 +58,14 @@ class BrowserHTTPServer(http.server.ThreadingHTTPServer):
     # Concurrent module imports can exceed TCPServer's default queue of five.
     request_queue_size = 64
 
+    def handle_error(self, request, client_address):
+        # A reload or navigation cancels in-flight downloads; the aborted
+        # write is expected and only buried the gate output in tracebacks.
+        if isinstance(sys.exc_info()[1], (ConnectionAbortedError, ConnectionResetError,
+                                          BrokenPipeError)):
+            return
+        super().handle_error(request, client_address)
+
 
 # ---------------------------------------------------------------- registry
 
@@ -123,6 +131,11 @@ class StaticServer:
 
 
 class _QuietHandler(http.server.SimpleHTTPRequestHandler):
+    # Keep-alive: with HTTP/1.0 every module import opened a new socket, and
+    # the Windows CI runner once ran out of socket buffers mid-suite
+    # (net::ERR_NO_BUFFER_SPACE, October 11, 2026).
+    protocol_version = "HTTP/1.1"
+
     def log_message(self, *args):  # keep the gate output readable
         pass
 

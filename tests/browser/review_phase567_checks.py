@@ -135,10 +135,19 @@ def keyboard_catalog(c):
     c.page.wait_for_selector('#tonight-rank-table .target-open')
     c.expect_eq(c.page.locator('tr[data-tonight-id][role]').count(), 0, 'Tonight preserves native rows')
     button = c.page.locator('#tonight-rank-table .target-open').first
+    row_id = button.evaluate("e=>e.closest('tr').dataset.tonightId")
+    opener = button.element_handle()
     button.focus(); c.page.keyboard.press('Space')
     c.page.wait_for_selector('#modal:not([hidden]) .modal')
+    # A Tonight refresh (scrub, the 60 s timer, or a late boot pass on a slow
+    # machine) replaces the rows while the card is open; focus must still
+    # return to the same target's button, not fall back to the tab bar.
+    c.page.evaluate("window.dispatchEvent(new CustomEvent('sky:time', {detail: {}}))")
+    c.page.wait_for_function('e => !e.isConnected', arg=opener)
     c.page.keyboard.press('Escape')
-    c.expect(button.evaluate('e=>e===document.activeElement'), 'target button receives restored focus')
+    focused = c.page.evaluate("""() => { const a = document.activeElement;
+      return a.matches('.target-open') ? a.closest('tr')?.dataset.tonightId : a.id || a.tagName; }""")
+    c.expect_eq(focused, row_id, 'the same target button receives restored focus after a refresh')
     tab(c, 'catalog')
     c.expect_eq(c.page.locator('tr[data-id][role]').count(), 0, 'Catalog preserves native rows')
     c.page.locator('#cat-more > summary').click()

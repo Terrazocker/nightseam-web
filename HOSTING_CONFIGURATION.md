@@ -1,6 +1,11 @@
 # Prepared static delivery configuration
 
-## Current status — October 10, 2026
+## Current status — October 11, 2026
+
+Open hosting items are tracked in BUGS.md: HOST-DELIVERY-001 (compression) and
+server headers for the public pages (framing protection and nosniff; the pages
+already carry a document CSP and referrer policy). Prepared release assets keep
+their `?v=` query, so the token-based immutable rule below applies to them too.
 
 The live website remains v0.1.1, deployed October 8. RELEASES.md records that
 deployment's byte/cache/browser acceptance. Local review remediation now uses

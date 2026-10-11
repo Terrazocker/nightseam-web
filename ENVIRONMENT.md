@@ -2,6 +2,15 @@
 
 The current workspace is the website repository. Browser tests use Playwright
 with system Chrome, Node parses JavaScript, and Python runs build/test guards.
+Install development packages with `python -m pip install -r requirements-dev.txt`;
+the website's build/catalog tools use the standard library (requirements.txt).
+Use an installed Node.js and Chrome for the JavaScript and real-browser gates.
+See README.md for the normal check sequence.
+
+Run the full Python suite separately from JavaScript, browser, release and
+publication checks. Core-drift regression tests temporarily replace or remove
+shipped modules to prove the guards reject them; overlapping processes can see
+those deliberately invalid files and report misleading failures.
 
 This machine's restricted sandbox has allowed plain process pipes but denied
 Chromium named pipes and Playwright overlapped-pipe startup. Use one elevated
@@ -30,6 +39,16 @@ dialogs/process failures under restricted tokens. Do not run git gc casually.
 Text writes must use explicit UTF-8 without BOM; do not use a legacy PowerShell
 Get-Content/Set-Content roundtrip for non-ASCII shipped text.
 
-The former desktop environment and executable were moved to the independent
-Nightseam-catalog repository. The website has no desktop build or SQLite
-dependency. Historical measurements survive in Git/recovery snapshots.
+CI runs the same gates on GitHub with Python 3.14, Node 22 and the runner's
+installed Chrome (`.github/workflows/checks.yml`): the guards and pytest on
+windows-latest, the browser suite on ubuntu-latest. The sandbox limits above
+apply only to this development machine. Windows-specific browser behaviour is
+covered by local runs here.
+
+Linux Chrome renders the planner in DejaVu Sans / DejaVu Sans Mono, which are
+wider than Segoe UI / Cascadia Mono. To reproduce a Linux-only layout failure
+here, temporarily put `Verdana` first in the body font stacks
+(`web/style.css`, `landing/style.css`) and `"Courier New"` first in `--mono`
+(`web/themes.css`); their widths are close to DejaVu's. Run the failing check
+with `--only`, then restore the files. Never commit the substitution. The repository is private, so CI time counts
+against the account's monthly Actions minutes (Windows minutes count double).

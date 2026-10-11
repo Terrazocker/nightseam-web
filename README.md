@@ -1,62 +1,78 @@
 # NightSeam Web
 
 NightSeam is a browser-based deep-sky night planner at
-[nightseam.de/astro](https://nightseam.de/astro/). This repository now owns only
-the website and landing pages. Astronomy and planning run locally in the browser;
-optional images and weather use the documented external services.
+[nightseam.de/astro](https://nightseam.de/astro/), with its public pages at
+[nightseam.de](https://nightseam.de/). It shows when deep-sky targets are
+usable from your site and date, above your own skyline. Astronomy and
+planning run in the browser; saved data stays in browser storage. Optional
+online features are Open-Meteo weather and Wikipedia/Wikimedia object photos.
 
-The Windows exposure catalog was extracted on October 1, 2026 into the
-independent `<workspace>/Nightseam-catalog`
-repository, beginning at version 0.1.0. Its source, executable, tests, source
-library and packaged library live there. This repository keeps its existing
-branch/history and inherited tags. The independent public website series starts
-anew at 0.1.0; development version stamps still report truthful git describe.
+The Windows image catalog is a separate project
+(`<workspace>/Nightseam-catalog`) with its own
+versions; nothing here depends on it.
+
+## Repository layout
+
+| Path | Contents |
+|---|---|
+| `web/` | The planner (served under `/astro/`): plain ES modules, no bundler |
+| `landing/` | The public pages (served at `/`) |
+| `core/` | The only astronomy, planning, scoring and horizon implementation; baked into `web/core/<hash>/` |
+| `catalog_data/` | Catalog sources, parsers, supplement and popularity policy |
+| `scripts/` | Build, guard, release and publication tools (standard library only) |
+| `tests/` | pytest, Node (`tests/js/*.mjs`) and real-browser checks (`tests/browser/`) |
+| `docs/` | Acceptance checklists, active horizon plans and history |
+
+The catalog contains 12,176 objects. `web/catalog.json` is a committed
+payload rebuilt from `catalog_data/` (see [CATALOG.md](CATALOG.md)).
 
 ## Run and check
 
+Requires Python, Node.js and an installed Chrome.
+
 ```powershell
-python -m http.server 8080 --directory web
-python -m pytest tests/ -q --tb=no
-python scripts/check_js.py
-python scripts/check_browser.py --web
-python scripts/preview_site.py --port 8081 --performance
+python -m pip install -r requirements-dev.txt
+python -m http.server 8080 --directory web      # planner at http://localhost:8080
+python scripts/preview_site.py --port 8081      # planner and public pages together
 ```
 
-No local FastAPI server, SQLite application database, desktop build or sibling
-checkout is needed. `web/catalog.json` is a committed browser payload. The catalog contains 12,176 objects. Its
-rebuild uses this repository's neutral catalog_data sources and popularity
-policy. core/ is the astronomy/planning authority; scripts/build_core.py bakes
-only the website's content-hashed core tree.
+Checks (all must pass before a commit is called done):
 
-Read AGENTS.md, DESIGN.md, CATALOG.md and DEVELOPMENT.md. Cache-token, core-drift,
-published astronomy anchors and real-browser checks remain release gates.
-Publication uses a verified immutable bundle: planner files map beneath /astro
-and public pages to /. Assets are installed and verified before atomic entry-HTML
-switches; raw mutable website uploads are refused. See
-[RELEASE_WORKFLOW.md](RELEASE_WORKFLOW.md) for candidate preparation and publication.
+```powershell
+python scripts/check_js.py                      # syntax, imports, cache tokens
+python scripts/check_core.py                    # baked core matches core/
+python scripts/check_release.py --allow-dirty --no-stage
+python -m pytest tests/ -q                      # run alone: drift tests swap shipped files
+python scripts/check_browser.py --web           # real Chrome; launch failure is exit 2, never a skip
+```
 
-Current backlog: [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md). Review remediation
-phases 1–7 resolve all 38 October 9 findings locally; the final eleven fixes and
-their checks are recorded in
-[REVIEW_REMAINING_IMPLEMENTATION_PLAN.md](REVIEW_REMAINING_IMPLEMENTATION_PLAN.md)
-and [RELEASES.md](RELEASES.md). These changes await a public release.
-Completed design plans and the earlier review are indexed in
-[docs/history/README.md](docs/history/README.md).
-Optional source details load on demand with retry; elevation is recorded metadata
-and does not adjust visibility. v0.1.1 is published and deployed, including the
-[annotation improvements](docs/history/WEB_ANNOTATION_IMPLEMENTATION_PLAN.md), with verified
-live bytes, cache policy and browser acceptance. Full text/large-payload host
-compression and human accessibility acceptance remain open; see RELEASES.md.
+The same gates run on GitHub for every pull request and every push to `master`
+(`.github/workflows/checks.yml`). After editing `core/`, run
+`python scripts/build_core.py`; after any behaviour change, bump cache tokens
+with `python scripts/bump_web_tokens.py` (see [AGENTS.md](AGENTS.md)).
 
-MIT; see LICENSE and NOTICE for OpenNGC, Wikimedia, Open-Meteo and popularity
-data credits. Recovery snapshots of the pre-split branch and working tree are
-kept locally in ignored logs/repository-split/.
+## Documentation
 
-Disposable test scratch belongs in ignored logs/. Pytest and JS guards recover
-abandoned owned runs and report cleanup failures; normal build stages and browser
-artifacts replace fixed destinations. Historical evidence is retained deliberately;
-see [ENVIRONMENT.md](ENVIRONMENT.md) for the lifecycle and limits.
-Obsolete combined-project
-concept assets and stale local build candidates were archived during the
-October 10 cleanup; see the history index. Rebuild publication candidates from
-current sources rather than reusing archived candidates.
+| Document | Use it for |
+|---|---|
+| [AGENTS.md](AGENTS.md) | Rules for changing this repository and the commands to use |
+| [DEVELOPMENT.md](DEVELOPMENT.md) | How the planner works: architecture, data flow, storage, horizon model |
+| [DESIGN.md](DESIGN.md) | Workbench design system and UI conventions |
+| [CATALOG.md](CATALOG.md) | Catalog sources, supplement and rebuild |
+| [ROADMAP.md](ROADMAP.md) | Status, the next release and open work |
+| [BUGS.md](BUGS.md) | Open defects and known limitations |
+| [DECISIONS.md](DECISIONS.md) | Why things are the way they are (newest first) |
+| [RELEASES.md](RELEASES.md) | Validation and deployment receipts (newest first) |
+| [RELEASE_WORKFLOW.md](RELEASE_WORKFLOW.md) | Tagging, staging and publishing a release |
+| [HOSTING_CONFIGURATION.md](HOSTING_CONFIGURATION.md) | Server cache, compression and header policy |
+| [ENVIRONMENT.md](ENVIRONMENT.md) | Windows sandbox limits and test scratch handling |
+| [docs/](docs/history/README.md) | Acceptance checklists, horizon plans, history |
+
+## Status
+
+v0.1.1 is published. The next release is 0.7.0; see [ROADMAP.md](ROADMAP.md).
+
+## License
+
+MIT; see [LICENSE](LICENSE). [NOTICE](NOTICE) credits OpenNGC, Wikimedia,
+Open-Meteo and the popularity data.

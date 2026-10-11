@@ -34,7 +34,7 @@ export const HISTORY_KEYS = {
   azOffset: 'azOffset', altBottom: 'altBottom', altTop: 'altTop', fov: 'fov',
   paintMode: 'paintMode', strokes: 'strokes', blockAbove: 'blockAbove',
   profile: 'profile', profileTop: 'profileTop', landmarks: 'landmarks',
-  provenance: 'provenance', confidence: 'confidence',
+  provenance: 'provenance', confidence: 'confidence', sourceRect: 'sourceRect', calibration: 'calibration', photoModel:'photoModel', coverageEvidence:'coverageEvidence',
 };
 
 /** The desktop's record shape, ready to pass as `keys`. */
@@ -72,12 +72,16 @@ const cloneValue = (v) => {
  *  record's own properties; the short JSON keys are the wire format and must
  *  stay stable (a stored history is never persisted, but tests compare them). */
 export function snapshot(state, keys = HISTORY_KEYS) {
-  const s = clone(state[keys.strokes]);
+  const s = cloneValue(arr(state[keys.strokes]));
   const out = {
     a: state[keys.azOffset], b: state[keys.altBottom], t: state[keys.altTop],
     f: state[keys.fov], m: state[keys.paintMode],
     s, o: state[keys.blockAbove] ? 1 : 0,
   };
+  if (keys.sourceRect) out.sr = cloneValue(state[keys.sourceRect] ?? { x: 0, y: 0, w: 1, h: 1 });
+  if (keys.calibration) out.cal = cloneValue(state[keys.calibration] ?? null);
+  if (keys.photoModel && state[keys.photoModel] != null) out.pm = cloneValue(state[keys.photoModel]);
+  if (keys.coverageEvidence && state[keys.coverageEvidence] != null) out.ce = cloneValue(state[keys.coverageEvidence]);
   if (!s.length) {
     out.pr = arr(state[keys.profile]).slice();
     out.pt = arr(state[keys.profileTop]).slice();
@@ -101,13 +105,21 @@ export function applySnapshot(state, snap, keys = HISTORY_KEYS) {
   state[keys.altTop] = o.t; state[keys.fov] = o.f;
   state[keys.paintMode] = o.m; state[keys.strokes] = o.s;
   state[keys.blockAbove] = !!o.o;
+  if (keys.sourceRect) state[keys.sourceRect] = o.sr ?? { x: 0, y: 0, w: 1, h: 1 };
+  if (keys.calibration) state[keys.calibration] = o.cal ?? null;
+  if (keys.photoModel) state[keys.photoModel] = o.pm ?? null;
+  if (keys.coverageEvidence) state[keys.coverageEvidence] = o.ce ?? null;
   if (o.pr !== undefined) {
     state[keys.profile] = o.pr;
     state[keys.profileTop] = o.pt;
   }
-  if (o.lm !== undefined && keys.landmarks) state[keys.landmarks] = o.lm;
-  if (o.pv !== undefined && keys.provenance) state[keys.provenance] = o.pv;
-  if (o.cf !== undefined && keys.confidence) state[keys.confidence] = o.cf;
+  // An absent snapshot key means the earlier state had none: remove it, or an
+  // undo would keep landmarks/provenance/confidence added after that state.
+  for (const [key, value] of [[keys.landmarks, o.lm], [keys.provenance, o.pv], [keys.confidence, o.cf]]) {
+    if (!key) continue;
+    if (value !== undefined) state[key] = value;
+    else delete state[key];
+  }
   return state;
 }
 

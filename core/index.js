@@ -9,16 +9,33 @@
  */
 
 export {
+  PHOTO_MAX_PIXELS, PHOTO_WORKING_MAX_PIXELS, normalizePhotoModel, createPhotoModel,
+  sourcePhotoAngles, anglesSourcePhoto, photoRectangleCovered, sourceWorkingPoint,
+  workingSourcePoint, workingPhotoSize, photoSampleMap, readPanoramaMetadata,photoFileDimensions,normalizePhotoSource,
+  sourcePhotoRay, photoDirectionVector, photoAngularDistance,
+} from './horizonprojection.js';
+
+export {
   NO_BLOCK, BINS, BIN_DEG, MASK_W, MASK_H, WORLD_BINS,
   HORIZON_LANDMARK_KINDS, normalizeHorizonLandmarks,
   normalizeHorizonProvenance, normalizeHorizonConfidence, profileDifference,
+  normalizeCoverageEvidence, queryHorizonEvidence,
   rebuildMask, altOf, rowOfAlt, xOfAz, azOfX, wrapsFor,
+  normalizeSourceRect, normalizePanoCalibration, applyDabToMask, strokeSegment,
+  normalizeSkylineStroke, applySkylineToMask, cropSkylineStroke,
   profileFromMask, normalizeProfileBins, profileSegments, fovBinRel,
   visibleSkyBands, skyBandPolygons,
-  computeProfile, clearMask, ceilFor, bandTopFor,
+  computeProfile, clearMask, hasHorizonDrawing, ceilFor, bandTopFor,
   overhangRuns, assumedOpenRuns, assumedOpenHatchPolys,
   CROP_MIN_FOV, cropKeptBand, cropStrokes, clipProfileToFov, cropPano,
 } from './horizon.js';
+
+export {
+  CALIBRATION_CHECK_TOLERANCE, normalizePhotoCalibration, photoPoint,
+  photoPointAngles, alignPhotoBearing, fitPhotoVertical, fitPhotoReferences, photoCalibrationReport,
+  fitMultiplePhotoReferences,
+  fitPhotoOrientation, reportPhotoOrientation, previewPhotoOrientation, ORIENTATION_ANGULAR_TOLERANCE,
+} from './horizoncalibration.js';
 
 export {
   fmtSize, sizeArcmin, fmtFov, fmtFovPair, framePct, magVisible,
@@ -50,7 +67,7 @@ export {
 export {
   julianDay, dateFromJD, gmstDeg, precessJ2000ToDate, precessDateToJ2000,
   refractionDeg, altaz, altazFrame, altazFrameApply,
-  objectDayInfo, sunRaDec, moonRaDec, moonDistanceKm, moonAltAz, moonIllumination, moonAge, sunAlt, sepDeg,
+  objectDayInfo, objectNightInfo, sunRaDec, moonRaDec, moonDistanceKm, moonAltAz, moonIllumination, moonAge, sunAlt, sepDeg,
 } from './astro.js';
 
 export {
@@ -60,7 +77,7 @@ export {
 
 export {
   aboveHorizon, sampleVisible, statusOf, effectiveMinAlt,
-  VISIBILITY_REASON, visibilityReason, summarizeVisibility,
+  VISIBILITY_REASON, visibilityReason, panoramaVisibilityReason, summarizeVisibility,
   ADV_TONIGHT_MAG_CAP, TONIGHT_MAG_UNCAPPED, vmagKnownAndUnder, inTonightPool,
 } from './visibility.js';
 

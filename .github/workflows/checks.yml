@@ -1,0 +1,75 @@
+# Release gates from README.md/AGENTS.md for every pull request and every push
+# to master (a branch with an open pull request runs once, as the pull
+# request). Source guards and pytest run on Windows like the development
+# environment (CRLF checkout); the browser suite runs on Linux, because
+# GitHub's Windows runners intermittently failed single local requests with
+# net::ERR_NO_BUFFER_SPACE (DECISIONS.md, 2026-10-11). Full history:
+# check_release needs tags, the latency gate a baseline. It never builds a
+# publication candidate, tags or deploys.
+name: checks
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: checks-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  guards:
+    name: Source guards and pytest
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.14'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: python -m pip install -r requirements-dev.txt
+      # web/version.json is generated and gitignored; check_release reads it.
+      - run: python web/build_web.py version
+      - run: python scripts/check_js.py
+      - run: python scripts/check_core.py
+      - run: python scripts/check_js_tokens.py
+      - run: python scripts/check_encoding.py
+      - run: python scripts/build_changelog.py --check
+      - run: python scripts/check_release.py --allow-dirty --no-stage
+      # Last and alone: drift tests temporarily replace shipped modules.
+      - run: python -m pytest tests/ -q --tb=short
+
+  browser:
+    name: Real-browser web suite
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.14'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: python -m pip install -r requirements-dev.txt
+      - run: python web/build_web.py version
+      - run: python scripts/check_browser.py --web
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-artifacts
+          path: |
+            logs/browser/artifacts/
+            tests/browser/artifacts/
+          if-no-files-found: ignore

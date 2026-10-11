@@ -1,0 +1,34 @@
+import assert from 'node:assert/strict';
+import * as H from '../../core/horizon.js';
+import * as History from '../../core/panohistory.js';
+const p = {azOffset:0,fov:360,altBottom:0,altTop:60,paintMode:'obstacle',
+  strokes:[{m:'b',x:180,y:160,r:8}],profile:[],profileTop:[]};
+H.computeProfile(p);
+const history = History.newHistory(p), before = H.ceilFor(p,90);
+H.cropPano(p,{x:90,w:540},720); History.historyCommit(history,p);
+assert.deepEqual(p.sourceRect,{x:.125,y:0,w:.75,h:1});
+assert.equal(p.strokes[0].x,120);
+assert.deepEqual(H.ceilFor(p,90),before);
+H.cropPano(p,{x:0,w:360},720); History.historyCommit(history,p);
+assert.deepEqual(p.sourceRect,{x:.125,y:0,w:.375,h:1});
+History.historyUndo(history,p);assert.equal(p.sourceRect.w,.75);
+History.historyUndo(history,p);assert.equal(p.sourceRect.w,1);
+History.historyRedo(history,p);assert.equal(p.sourceRect.x,.125);
+assert.deepEqual(H.normalizeSourceRect(undefined),{x:0,y:0,w:1,h:1});
+for(const bad of [{x:0,y:0,w:-1,h:1},{x:.9,y:0,w:.5,h:1},{x:NaN,y:0,w:1,h:1}])
+  assert.throws(()=>H.normalizeSourceRect(bad,true));
+assert.deepEqual(H.normalizePanoCalibration(90,90),{altBottom:85,altTop:90});
+assert.deepEqual(H.normalizePanoCalibration(-50,-60),{altBottom:-30,altTop:-25});
+const rounded=H.cropKeptBand(360,0,{x:0,w:427.6},720);
+assert.equal(rounded.expanded,true);assert.equal(rounded.minimumApplied,false);
+assert.equal(H.cropKeptBand(360,0,{x:0,w:20},720).minimumApplied,true);
+const dabs=[...H.strokeSegment(null,[20,180],3),...H.strokeSegment([20,180],[600,180],3)];
+const live=new Uint8Array(720*360);
+for(const dab of dabs)H.applyDabToMask(live,dab,true);
+assert.deepEqual(live,H.rebuildMask(dabs,true));
+for(let x=20;x<=600;x++)assert.equal(live[180*720+x],255,`continuous paint at ${x}`);
+const erase=H.strokeSegment([20,180],[600,180],3,'e');
+for(const dab of erase)H.applyDabToMask(live,dab,true);
+assert.deepEqual(live,H.rebuildMask([...dabs,...erase],true));
+for(let x=20;x<=600;x++)assert.equal(live[180*720+x],0);
+console.log('Horizon phases 1/2 core contracts passed');

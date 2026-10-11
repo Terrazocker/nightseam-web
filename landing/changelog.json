@@ -2,11 +2,11 @@
  {
   "version": "0.1.1",
   "date": "2026-10-08",
-  "summary": "A clearer planning workspace: open the planner from any public page, edit Site and Rig directly from the top bar, and filter object types with simple checkboxes. Catalog pages now show 50 objects with clearer visibility conditions. Sky View has a wider time slider, twilight colors and smoother one-minute scrubbing, without repeated date fields or target lists. Tonight is simpler, and Horizon tools remain readable when scrolling. Filter advice and precise horizon editing now explain their effects."
+  "summary": "A clearer planning workspace: open the planner from any public page, edit Site and Rig directly from the top bar, and filter object types with simple checkboxes. The Catalog tab shows 50 objects per page with clearer visibility conditions. Sky View has a wider time slider, twilight colors and smoother one-minute scrubbing. Tonight is simpler, and Horizon tools stay readable while you scroll. Filter advice and precise horizon editing explain what each setting does."
  },
  {
   "version": "0.1.0",
   "date": "2026-10-07",
-  "summary": "NightSeam starts anew as an independent browser planner. Bring your own panorama and calculate when deep-sky targets clear your skyline, with planning data saved in your browser. The website and Windows catalog now have separate versions and development."
+  "summary": "NightSeam starts anew as an independent browser planner. Bring your own panorama and calculate when deep-sky targets clear your skyline, with planning data saved in your browser. NightSeam is now a browser-only planner with its own version history."
  }
 ]

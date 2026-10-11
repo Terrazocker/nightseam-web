@@ -111,8 +111,11 @@ html[data-theme="workbench"] .public-site main {
 }
 @media (max-width: 360px) {
   .public-site .site-header .container { width: calc(100% - 32px); }
-  .public-site .navrow { gap: 8px; }
-  .public-site .brand { font-size: 22px; }
+  .public-site .navrow { gap: 6px; }
+  .public-site .brand { font-size: 20px; }
+  /* Room for wider system fonts (Linux, large text) at 320 px. */
+  .public-site .header-actions { gap: 4px; }
+  .public-site .header-cta { font-size: 13px; padding: 8px 10px; }
 }
 @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
 @media print { .public-site .sky-map, .public-site .header-actions { display: none; } }

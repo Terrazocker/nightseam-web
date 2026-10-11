@@ -4,3 +4,6 @@ catalog_data/data/*.csv -text whitespace=-blank-at-eol
 # Hash-paired catalog payloads must survive Windows checkout conversion.
 catalog_data/data/catalog_provenance.json -text
 web/catalog*.json -text
+
+# Published USNO tables are verbatim reference evidence.
+tests/fixtures/usno_2026/*.txt -text

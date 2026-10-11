@@ -12,11 +12,17 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def _mod():
+def _mod(tags=(), floor=(0, 0, 0)):
+    """The gate with a stubbed tag list and, by default, no release floor: other
+    tests exercise curation and token guards with historical versions; the
+    version-name rules are tested below (floor=None keeps the real floor)."""
     spec = importlib.util.spec_from_file_location(
         "pre_tag_check", ROOT / "scripts" / "pre_tag_check.py")
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
+    mod.existing_tags = lambda: list(tags)
+    if floor is not None:
+        mod.RELEASE_FLOOR = floor
     return mod
 
 
@@ -59,6 +65,76 @@ def test_the_generator_agrees_that_an_empty_entry_is_uncurated():
     assert mod.build_entries(["v9.9.9", "v0.6.32"], lambda t: "2026-01-01",
                              curated) == [
         {"version": "0.6.32", "date": "2026-01-01", "summary": "text"}]
+
+
+def _changelog():
+    spec = importlib.util.spec_from_file_location(
+        "build_changelog", ROOT / "scripts" / "build_changelog.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def test_an_uncurated_tag_after_the_version_reset_blocks_the_check():
+    """The website restarted at 0.1.0 below the inherited 0.6.x tags. In
+    creation order a new uncurated tag is release backlog, not history."""
+    mod = _changelog()
+    curated = {"0.1.1": "text", "0.1.0": "text", "0.6.36": "text"}
+    by_creation = ["v0.1.2", "v0.1.1", "v0.1.0", "v0.6.36", "v0.6.35"]
+    backlog, older = mod.split_uncurated(by_creation, curated)
+    assert backlog == ["0.1.2"], (backlog, older)
+    by_version = ["v0.6.36", "v0.6.35", "v0.1.2", "v0.1.1", "v0.1.0"]
+    assert mod.split_uncurated(by_version, curated)[0] == [], \
+        "version order is the order that hid the uncurated tag"
+
+
+def test_release_tags_are_read_in_creation_order(monkeypatch):
+    mod = _changelog()
+    calls = []
+    monkeypatch.setattr(mod, "git", lambda *args: calls.append(args) or "v0.1.1\nv0.6.36\n\n")
+    assert mod.release_tags() == ["v0.1.1", "v0.6.36"]
+    assert calls == [("tag", "--sort=-creatordate")]
+
+
+def test_release_names_continue_above_every_existing_tag():
+    """Owner decision (October 11, 2026): after the reset to 0.1.x, inherited
+    tags occupy 0.1.5 through 0.6.36, so releases continue at 0.7.0."""
+    m = _mod()
+    tags = ["v0.1", "v0.1.0", "v0.1.1", "v0.1.5", "v0.5.12", "v0.6.36"]
+    assert m.version_problems("0.7.0", tags) == []
+    assert m.version_problems("v1.0.0", tags) == []
+    assert "already exists" in m.version_problems("0.6.36", tags)[0]
+    assert "already exists" in m.version_problems("0.1.5", tags)[0]
+    problem = m.version_problems("0.1.2", tags)[0]
+    assert "below the highest existing tag v0.6.36" in problem and "0.7.0" in problem
+    assert "not an X.Y.Z" in m.version_problems("0.7", tags)[0]
+    assert m.version_problems("0.1.0", []) == [], "a repository without tags may start anywhere"
+
+
+def test_the_real_tags_require_0_7_0_or_above():
+    real = importlib.util.spec_from_file_location("pre_tag_real", ROOT / "scripts" / "pre_tag_check.py")
+    mod = importlib.util.module_from_spec(real)
+    real.loader.exec_module(mod)
+    tags = mod.existing_tags()
+    assert mod.version_problems("0.1.2", tags)
+    assert mod.version_problems("0.7.0", tags) == []
+
+
+def test_the_floor_holds_without_the_inherited_tags():
+    """A clone that lacks v0.6.35/v0.6.36 (the first CI checkout) must still
+    refuse names below 0.7.0."""
+    m = _mod(floor=None)
+    for name in ("0.1.2", "0.6.35", "0.6.37"):
+        assert any("below 0.7.0" in p for p in m.version_problems(name, ["v0.1.1"])), name
+    assert m.version_problems("0.7.0", ["v0.1.1"]) == []
+    assert m.version_problems("0.7.0", ["v0.7.0"]), "reuse is still refused"
+
+
+def test_main_refuses_a_reused_release_name(monkeypatch, capsys):
+    m = _mod(["v0.6.11", "v0.6.36"])
+    monkeypatch.setattr(sys, "argv", ["pre_tag_check.py", "0.6.11"])
+    assert m.main() == 1
+    assert "already exists" in capsys.readouterr().out
 
 
 def test_the_catalog_guard_is_wired_into_the_pre_tag_gate(monkeypatch, capsys):

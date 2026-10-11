@@ -3,6 +3,10 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- Document policy: these pages run no scripts and embed nothing from other origins.
+     Framing and nosniff need server headers (HOSTING_CONFIGURATION.md). -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+<meta name="referrer" content="strict-origin-when-cross-origin">
 <title>Imprint — NightSeam</title>
 <meta name="description" content="NightSeam project contact and provider information.">
 <link rel="canonical" href="https://nightseam.de/impressum.html">
@@ -14,8 +18,8 @@
 <meta property="og:image:alt" content="NightSeam — know what you can see, with your panorama and calculated target visibility">
 <meta name="twitter:card" content="summary_large_image">
 <link rel="icon" type="image/png" href="app.png">
-<link rel="stylesheet" href="/astro/themes.css?v=21">
-<link rel="stylesheet" href="style.css?v=4">
+<link rel="stylesheet" href="/astro/themes.css?v=22">
+<link rel="stylesheet" href="style.css?v=5">
 </head>
 <body class="public-site">
 <a class="skip-link" href="#content">Skip to content</a>
@@ -29,10 +33,10 @@
 </div></header>
 <main id="content" tabindex="-1" class="container"><section class="hero"><svg class="sky-map" aria-hidden="true" focusable="false" viewBox="0 0 960 760"><use href="sky-map.svg?v=1#sky-art"></use></svg><div class="hero-copy"><p class="eyebrow">Project contact</p><h1>Imprint.</h1><p class="hero-sub">Contact and project information.</p></div></section><section class="editorial"><h2>Provider</h2><p>
         TerraZa<br>
-        E-Mail: <a href="mailto:terraza@proton.me">terraza@proton.me</a>
+        Email: <a href="mailto:terraza@proton.me">terraza@proton.me</a>
       </p>
       <p class="hero-note">NightSeam is a free, non-commercial browser-planning
-      project. Its software is MIT licensed — nothing is sold here.</p></section><section class="editorial"><h2>Terms and external links</h2><p>External links are provided for convenience; their operators are
+      project. Its software is MIT licensed — nothing is sold here.</p></section><section class="editorial"><h2>Disclaimer and external links</h2><p>External links are provided for convenience; their operators are
       responsible for their content. The software is provided as-is, without
       warranty of completeness, accuracy or availability.</p></section><p class="back-link"><a href="/">← Home</a></p></main>
 <footer class="site-footer container"><div class="foot-inner"><span>NightSeam · Browser night planner</span><nav aria-label="Footer navigation"><a href="/astro/">Planner</a><a href="features.html">Features</a><a href="about.html">About</a><a href="download.html">Changes</a><a href="privacy.html">Privacy</a><a href="impressum.html" aria-current="page">Imprint</a></nav></div></footer>

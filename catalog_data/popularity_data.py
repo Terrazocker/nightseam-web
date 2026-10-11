@@ -2,8 +2,8 @@
 
 One entry per catalog id, used for TWO things:
   * the SILENT ranking tiebreaker (visibility decides, popularity separates
-    equals - the number is never shown in either app), and
-  * the STANDARD-MODE selection (`app/catalog_data.STANDARD_TOP_N`: the N
+    equals - the number is never shown in the planner), and
+  * the STANDARD-MODE selection (`catalog_data.STANDARD_TOP_N`: the N
     most popular objects are the standard catalog, the rest are advanced).
 
 GENERATED - do not hand-edit. Re-run:

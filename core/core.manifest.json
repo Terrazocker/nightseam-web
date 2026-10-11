@@ -1,18 +1,20 @@
 {
-  "hash": "8e090bcf870e108d",
-  "token": 47,
-  "previous": "282a2f0070874c8a",
+  "hash": "b3ca8ecef233213a",
+  "token": 65,
+  "previous": "b5029923cf7ae513",
   "files": {
-    "astro.js": "4b1a1a05446030ea6b2f41a3343eb19fe4593f30c35d0163e9e46c95168ed4b6",
+    "astro.js": "e654826a26a0c22c7b1ffb0de11d6f6b269d398b13000a1c1ebe7a35903500b4",
     "catalog.js": "6afcd78f5e7420d5e6ef72e46b695b90147438d5d5828b6dbb67848739819dd0",
     "format.js": "b04f2d369d22f497dd879a81f4f70453eb5fc740e4a8a47d3047786cfcb855fc",
-    "horizon.js": "f1e567acbeddd471a00d725da8c0ed5ff8c5a6a939462e2fa5d1f8dfd30af0cb",
-    "index.js": "dbe31358edb5c06bcb7537766a8792172799840c55202053c7f8cabe1f055ea6",
-    "panohistory.js": "9760545951580292093c56095d0d1b129169ca901cfc7d2a57032129be3d7ebc",
-    "plannerstate.js": "d4968748a21f13922b4828a4a60fcdd13c7d181bd3a77662210099ed543a7a84",
+    "horizon.js": "a3a31d513621a272f1930c976bb6df6391b558aba8ee4ed4587d8b1b456a1a03",
+    "horizoncalibration.js": "8dec467eb86154608392f74330a0ad74a7f6986ac825f68bea0bdac5cd4cd7b1",
+    "horizonprojection.js": "a7e644391652009f0c2d574763b3966df79adb4edd97c7bb7dba413e0b7b4572",
+    "index.js": "ed21f12a01e4269e2c02710de35e51adb13bbd8fff01d35ba3bcf19952100e2d",
+    "panohistory.js": "9bfaada90aa31949e28b07a7547feb0e3b595a6e042d5ea5a96a18be302334b5",
+    "plannerstate.js": "6c0dabe02c7e45f3b6126f1c792b971bc9fca56a39e6c9a3b2a5d971e71a007c",
     "planning.js": "8fb807802ae61016f077822decfe35830f643bb8fbcf351d1d10ee5e3d7f2c82",
-    "scoring.js": "87abfcd8dd945f82190bbee7bbbc560267be4d53c7fe6cacfcba01b43f9f34ea",
-    "time.js": "8a28dcf4f1911f08c75fabaafd2b6c132df1b83b770194e1213c5429fbc34c3f",
-    "visibility.js": "d503071e60ad139beaa44c995782595f426fe50072f21713922e54efa217ad5a"
+    "scoring.js": "5aa52336de81deedcfc08a3c877f29705ee7760ed14d8b0c3ce64cd98af5c7ee",
+    "time.js": "8a8145fc28f9b266c468b9a507b3fcd71b219fc7faef4ddca077c50f2f207dee",
+    "visibility.js": "2ecb4178d9fe7ac5a9191a11c3896f670c2b4c73f534b47d30d9f0877545029a"
   }
 }

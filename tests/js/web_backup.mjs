@@ -209,7 +209,7 @@ await WS.writeStaged(WS.stageBackup({
   targets: [], panos: emptyPanos,
 }));
 const backup = await WS.collectBackup({ bortle: 6 }, { panos: [], activeId: null }, 'classic');
-assert(backup.app === 'nightseam-web' && backup.version === 3, 'backup carries schema version 3 for elliptical crops');
+assert(backup.app === 'nightseam-web' && backup.version === 10, 'backup carries schema version 10 for coverage and physical calibration evidence');
 assert(backup.theme === 'workbench', 'collectBackup carries the canonical theme');
 assert(backup.sites.length === 1 && backup.rigs.length === 1, 'collectBackup reads the stores');
 
@@ -318,6 +318,18 @@ const cstAgain = H.normalizePanos({ panos: [JSON.parse(JSON.stringify(cst))] }).
 assert(cstAgain.fov === 180 && cstAgain.azOffset === 90, 'crop fov/az survive normalize');
 assert(cstAgain.strokes.length === cst.strokes.length, 'cropped strokes survive normalize');
 
+const traced = panoRec({ id:'trace-backup', strokes:[
+  {m:'trace',points:[[0,240],[300,120],[720,240]]}, {m:'e',x:300,y:160,r:25}], profile:blank720() });
+const traceNorm=H.normalizePanos({panos:[traced]}).panos[0];
+assert(traceNorm.profile.some(alt=>alt>0),'trace operations win over a supplied stale profile');
+assert(JSON.stringify(H.normalizePanos({panos:[traceNorm]}).panos[0].strokes)===JSON.stringify(traceNorm.strokes),'trace and corrections round-trip');
+for(const points of [[],[[1,2],[1,3]],[[1,'4']],[[1,NaN]],[[721,5]],Array(257).fill([0,1])]) {
+  assert(H.normalizePanos({panos:[panoRec({id:'trace-malformed',strokes:[{m:'trace',points}]})]})===null,'malformed trace refuses normalization');
+  assert(H.normalizePanos({panos:[panoRec({id:'discarded id',strokes:[{m:'trace',points}]})]})===null,'discarded ID cannot hide malformed trace');
+}
+assert(H.normalizePanos({panos:[panoRec({id:'trace-in-sky',paintMode:'sky',strokes:[{m:'trace',points:[[0,1],[720,1]]}]})]})===null,'obstacle trace cannot masquerade as a sky band');
+assert(H.normalizePanos({panos:[panoRec({id:'trace-limit',strokes:Array(33).fill({m:'trace',points:[[0,1],[720,1]]})})]})===null,'trace count is bounded before replay');
+
 // (b) legacy profile-only record: migrate (world bins), crop, then export and
 // re-import; the cropped record must come back byte-identical.
 const legacyCrop = H.normalizePanos({ panos: [panoRec({
@@ -348,6 +360,7 @@ assert(JSON.stringify(reimported.profileTop) === JSON.stringify(legacyCrop.profi
 const good = { app: 'nightseam-web', version: 2, sites: [], rigs: [], targets: [],
                prefs: {}, panos: { panos: [], activeId: null } };
 assert(WS.stageBackup(good), 'a v2 bundle must remain readable');
+for (const version of [1, 2, 3, 4, 5, 6, 7, 8]) assert(WS.stageBackup({ ...good, version }), `format ${version} remains readable`);
 const savedPrefs = WS.stageBackup({ ...good, theme: 'dome', prefs: {
   savedTargetIds: ['ngc224', 'u_capture', 'ngc224', 'bad/id', ' <img> '],
   skyBrightnessProvider: 'nasa', theme: 'dome', themeVariant: 'glass',
@@ -497,8 +510,8 @@ assert((await WS.getSites({ strict: true }))[0].id === 's_replacement' &&
   (await WS.lastSafetySnapshot()).targets[0].id === 'u_original',
   'successful replacement commits records and the usable safety snapshot together');
 
-// v3 elliptical crop geometry survives staging, storage, export and restore.
-const ellipse = panoRec({ strokes: [{m:'b',x:360,y:180,r:20,rx:80}] });
+// Old v3 elliptical crop geometry remains readable in v5.
+const ellipse = panoRec({ sourceRect: {x:.125,y:0,w:.75,h:1}, strokes: [{m:'b',x:360,y:180,r:20,rx:80}] });
 const elliptical = H.normalizePanos({panos:[ellipse],activeId:ellipse.id});
 const expectedEllipse = elliptical.panos[0].profile.slice();
 await H.applyPanosSnapshot(elliptical);
@@ -507,6 +520,35 @@ await H.applyPanosSnapshot(H.normalizePanos(ellipseBackup));
 assert(H.activePano().strokes[0].rx === 80, 'backup preserves horizontal radius');
 assert(H.activePano().strokes[0].r === 20, 'backup preserves vertical radius');
 assert(H.activePano().profile.every((v,i)=>v===expectedEllipse[i]), 'backup preserves elliptical profile');
+assert(JSON.stringify(H.activePano().sourceRect) === JSON.stringify(ellipse.sourceRect),
+  'backup preserves original-photo crop coordinates');
+assert(H.normalizePanos({panos:[panoRec({sourceRect:{x:1,y:0,w:.1,h:1}})]}) === null,
+  'malformed photo coordinates reject the entire staged panorama bundle');
+const legacyPhoto = H.normalizePanos({panos:[panoRec()]});
+assert(JSON.stringify(legacyPhoto.panos[0].sourceRect) === JSON.stringify({x:0,y:0,w:1,h:1}),
+  'legacy panorama without photo coordinates retains the whole original');
+const oldInvalid = H.normalizePanos({panos:[panoRec({altBottom:90,altTop:95})]});
+assert(oldInvalid.panos[0].altBottom===85 && oldInvalid.panos[0].altTop===90,
+  'old invalid calibration is repaired before it reaches the editor');
+assert(oldInvalid.panos[0].profile[0]===panoRec().profile[0],
+  'calibration repair preserves authoritative stroke-less profiles');
+
+const calibration = {version:1,projection:'equirectangular',coverage:360,
+  bearing:{x:.25,y:.4,azimuth:80},vertical:[{x:.2,y:.75,altitude:0},{x:.8,y:.25,altitude:30}],
+  check:{x:.6,y:.5,azimuth:206,altitude:15}};
+const measured = H.normalizePanos({panos:[panoRec({calibration})]});
+await H.applyPanosSnapshot(measured);
+const measuredExport = await H.exportPanosWithImages();
+assert(JSON.stringify(H.normalizePanos(measuredExport).panos[0].calibration) === JSON.stringify(calibration),
+  'reference evidence survives panorama export and staging');
+assert(legacyPhoto.panos[0].calibration.projection === 'unknown', 'legacy angles never infer a checked projection');
+const beforeBadCalibration = JSON.stringify(H.exportPanos());
+for (const bad of [{...calibration,version:2},{...calibration,check:{...calibration.check,x:2}},
+  {...calibration,vertical:[{...calibration.vertical[0],altitude:'0'}]}]) {
+  assert(H.normalizePanos({panos:[panoRec({calibration:bad})]}) === null, 'malformed evidence rejects staged panorama data');
+  assert(H.normalizePanos({panos:[{id:'invalid/id',calibration:bad}]}) === null, 'discarded records cannot hide bad evidence');
+  assert(JSON.stringify(H.exportPanos()) === beforeBadCalibration, 'invalid evidence staging has no storage mutations');
+}
 
 console.log(ok ? 'web backup integrity held' : 'web backup integrity FAILED');
 process.exit(ok ? 0 : 1);

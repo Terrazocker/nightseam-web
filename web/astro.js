@@ -10,8 +10,7 @@
 export const D2R = Math.PI / 180;
 export const R2D = 180 / Math.PI;
 
-/* keyboard scrub steps in minutes - shared with the desktop
-   (static/js/derive.js) and pinned by tests/test_js_parity.py: a plain arrow
+/* keyboard scrub steps in minutes, pinned by tests/test_js_parity.py: a plain arrow
    key is the fine step (one 6-min night-grid sample), Shift is the coarse one. */
 export const SCRUB_STEP_MIN = 6;
 export const SCRUB_SHIFT_STEP_MIN = 60;
@@ -27,15 +26,15 @@ const JD_UNIX_EPOCH = 2440587.5;
 import {
   julianDay, dateFromJD, gmstDeg, precessJ2000ToDate, precessDateToJ2000,
   refractionDeg, altaz,
-  sunRaDec, moonRaDec, moonAltAz, objectDayInfo, moonIllumination, moonAge, sunAlt,
+  sunRaDec, moonRaDec, moonAltAz, objectDayInfo, objectNightInfo, moonIllumination, moonAge, sunAlt,
   sunCrossings, nightInfo, pickDarkWindow, scrubWindowMs,
   scrubBounds, scrubClamp, sepDeg,
-} from './core.js?v=47';
+} from './core.js?v=65';
 
 export {
   julianDay, dateFromJD, gmstDeg, precessJ2000ToDate, precessDateToJ2000,
   refractionDeg, altaz,
-  sunRaDec, moonRaDec, moonAltAz, objectDayInfo, moonIllumination, moonAge, sunAlt,
+  sunRaDec, moonRaDec, moonAltAz, objectDayInfo, objectNightInfo, moonIllumination, moonAge, sunAlt,
   sunCrossings, nightInfo, pickDarkWindow, scrubWindowMs,
   scrubBounds, scrubClamp, sepDeg,
 };
@@ -50,7 +49,7 @@ export {
  * target) is a different question and does NOT belong here.
  */
 /** Apparent-altitude visibility predicate - shared in core/ (Phase 2). */
-export { aboveHorizon } from './core.js?v=47';
+export { aboveHorizon } from './core.js?v=65';
 
 /** Sun/moon elongation angle in degrees and phase label. */
 export function moonPhase(jd) {
@@ -94,7 +93,7 @@ export function sunAltAz(jd, lat, lon) {
 export {
   MOON_TYPE_FACTOR, moonSensitivity, moonMinDist,
   effectiveMoonGlow, moonPenalty, bortleMoonFactor,
-} from './core.js?v=47';
+} from './core.js?v=65';
 
 /** Sample an object's altitude over [jd0, jd1] at stepMin minutes. */
 export function objectTrack(raDeg, decDeg, jd0, jd1, lat, lon, stepMin = 4) {

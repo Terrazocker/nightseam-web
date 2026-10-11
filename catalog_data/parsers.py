@@ -5,13 +5,10 @@ import re
 def _finite_float(value) -> float | None:
     """The float value, or None when it is not a finite float.
 
-    PY-04 (review 0.6.24): FITS cards are untrusted input, so `nan`/`inf`/
-    `1e400` must never leave a parser as a float. `_finite` on the API boundary
-    exists for exactly this reason (`allow_nan=False` JSON responses), but the
-    header parsers sit BELOW it: a non-finite coordinate reached `math.sin()`
-    (500 on ingest) and an `inf` EXPTIME was stored in the images/
-    import_batches rows, wedging /api/library forever. Treat a non-finite
-    number exactly like an unparseable one (None).
+    Catalog source values are untrusted input, so `nan`/`inf`/`1e400` must
+    never leave a parser as a float: a non-finite coordinate would reach the
+    planner's trigonometry. Treat a non-finite number exactly like an
+    unparseable one (None).
 
     Used by `parse_ra_hours` / `parse_dec_deg`; `_parse_value` keeps its own
     inline test because there a failed float() must fall back to the raw card
@@ -24,7 +21,15 @@ def _finite_float(value) -> float | None:
 
 
 def parse_ra_hours(value) -> float | None:
-    """Decimal hours (dot or comma), or sexagesimal 'HH MM SS.s' -> hours."""
+    """Decimal hours (dot or comma), or sexagesimal 'HH MM SS.s' -> hours.
+
+    Right ascension lies in [0, 24); anything else (including a signed
+    sexagesimal value) is rejected as None rather than reinterpreted."""
+    hours = _parse_ra_unchecked(value)
+    return hours if hours is not None and 0 <= hours < 24 else None
+
+
+def _parse_ra_unchecked(value) -> float | None:
     if value is None:
         return None
     s = str(value).strip().replace(",", ".")

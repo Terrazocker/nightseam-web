@@ -38,7 +38,13 @@ for(const mode of ['obstacle','sky']) {
   H.computeProfile(p);
   const expected=H.ceilFor(p,358);
   H.cropPano(p,{x:360,w:360},720);
-  assert.deepEqual(H.ceilFor(p,358),expected);
+  // Crop doubles horizontal raster resolution. Aggregating the whole world
+  // bin can include the next sample of the circular edge: at this known
+  // seam case its vertical change is bounded by one calibrated row.
+  const cropped=H.ceilFor(p,358),row=(p.altTop-p.altBottom)/359;
+  near(cropped.ceil,expected.ceil,row+1e-9);
+  if(expected.ceilTop!==null)near(cropped.ceilTop,expected.ceilTop,row+1e-9);
+  else assert.equal(cropped.ceilTop,null);
   const mask=H.rebuildMask(p.strokes);
   assert.equal(mask[180*720+719],0,'seam eraser must follow seam paint');
 }

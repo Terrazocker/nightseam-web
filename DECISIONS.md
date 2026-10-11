@@ -1,5 +1,335 @@
 # Independent website decisions
 
+Decisions are recorded newest first and are not rewritten; a later entry that
+supersedes an earlier one says so. Entries about the former desktop app (FITS,
+Library, SQLite, desktop CSP) are history only.
+
+## Rules still in force (index)
+
+- **Scope and authority:** one JS core for astronomy and planning (0.6.20);
+  published reference anchors over fixtures; Workbench is the only theme;
+  global catalog IDs (0.6.12); the website and the Windows catalog are
+  independent projects (2026-10-01 split).
+- **Time and planning:** site-zoned noon anchoring and calendar dates
+  (2026-10-10); bounded, half-open planning intervals (2026-10-05); the detail
+  card describes the coming night (2026-10-11, supersedes the calendar-day
+  culmination rule); unknown timezones are refused at entry (2026-10-11).
+- **Horizon:** strokes win over stored profiles; non-destructive crops kept
+  with their source (2026-10-10); guided and physical-orientation calibration
+  with retained evidence (2026-10-10/11); converted photos infer open sky above
+  the skyline, with a visible switch (2026-10-11, supersedes the strict default).
+- **Data and privacy:** transactional, staged backups with rollback; Wikipedia
+  is the only object-photo source (2026-10-06); popularity is never visible
+  (2026-10-06); the CSP is delivered in the document (0.6.33).
+- **Delivery:** cache tokens checked against a verified baseline (0.6.24/25);
+  immutable release graphs with older releases retained (2026-10-10); CI runs
+  the browser suite on Linux and the rest on Windows (2026-10-11).
+- **Releases:** the public history restarted at 0.1.0 (2026-10-06); later
+  releases continue at 0.7.0 above inherited tags (2026-10-11).
+- **Documentation:** see "Documentation layout" (2026-10-11), which updates the
+  older "Docs policy".
+
+## 2026-10-11 — CI: browser suite on Linux, one run per change
+
+**Decision.** The browser job runs on `ubuntu-latest`; the source guards and
+pytest stay on `windows-latest`. CI runs for every pull request and every push
+to `master`, no longer for every push to every branch.
+
+**Why.** On GitHub's Windows runners about every other browser run failed one
+check because Chrome reported `net::ERR_NO_BUFFER_SPACE` for a single local
+request, each time a different small file (`app.js`, `plannerstate.js`,
+`app.png`); the same code passed on rerun and locally. HTTP keep-alive on the
+test server did not stop it. The planner runs only in the browser, so the
+runner's operating system does not change what the checks test, and the
+Windows-specific parts (CRLF checkout, Python tooling) keep their Windows job.
+Running pushes and pull requests separately doubled every run; in a private
+repository that also doubled the Actions minutes used.
+
+**Rejected.** Retrying a check after a network error (bends the no-retry rule
+and would hide real network faults); leaving it and rerunning by hand (trains
+people to ignore red CI); a self-hosted runner in WSL (CI would depend on the
+development PC being on, and serving from the Windows drive is not faster).
+
+**Consequences.** A branch without a pull request gets no automatic CI run;
+start one by hand (workflow_dispatch) if needed. If the Linux job shows a
+Linux-only difference (fonts, case-sensitive paths), fix it or revert the
+runner. The first Linux run had no network failures but four layout failures
+from Linux's wider default fonts; they were real narrow-screen fragilities
+(the catalog count line widened phone pages and hid the progress text; the
+landing header overflowed at 320 px) and were fixed in the layout, plus one
+check that measured a label against a narrow rail. ENVIRONMENT.md describes
+how to reproduce Linux font widths locally. One Windows run also missed the advanced-catalog speed budget under
+4x CPU throttling; watch whether that recurs on Linux.
+
+## 2026-10-11 — Short AGENTS.md; no hand-kept token register
+
+AGENTS.md is rewritten as short, plain-language rules: what lives where, what
+never happens without the owner, the change workflow, commands, behaviour that
+must not regress, releases, where things are recorded and which subagent does
+what. History, script internals and details the guards already enforce are
+left to DECISIONS.md, DEVELOPMENT.md and the scripts.
+
+The hand-maintained cache-token register is removed with its test
+(`test_web_token_register_matches_the_sources`). It duplicated the generated
+verified baseline in `scripts/check_js_tokens.py`, which already checks every
+module's bytes against its token and that all references agree, while
+`scripts/check_core.py` checks the core stub token against the manifest. The
+register only added a manual step to every change.
+
+## 2026-10-11 — Documentation layout
+
+Keep the root to current, maintained documents: README (entry point and map),
+AGENTS (rules and commands), DEVELOPMENT (how the planner works,
+rewritten as a current guide), DESIGN, CATALOG, ROADMAP (status and open work;
+replaces IMPLEMENTATION_PLAN and FUTURE_FEATURE_SCOPE), BUGS (open findings
+only), DECISIONS, RELEASES, RELEASE_WORKFLOW, HOSTING_CONFIGURATION and
+ENVIRONMENT. Owner checklists go to docs/acceptance/, active horizon plans to
+docs/horizon/, and finished plans, reviews and dated logs to docs/history/
+unchanged. RELEASES keeps website receipts; pre-split combined-project receipts
+are archived. The older "Docs policy" still holds against separate ARCHITECTURE,
+WORKFLOWS, CONTRIBUTING and CHANGELOG files; DEVELOPMENT describes behaviour,
+AGENTS stays the authority for rules and commands.
+
+## 2026-10-11 — Converted photos infer open sky above the skyline
+
+Owner decision: confirming a converted photo defaults to inferred-open coverage.
+Sky above the recorded skyline counts as clear, including above the photo's top
+edge, while directions outside the photographed azimuths stay excluded. This
+supersedes the P1/P2 rule that newly confirmed converted photos use strict
+measured coverage, which excluded nearly all sky above an ordinary photo's
+narrow vertical field. A record whose policy is already inferred-open or
+strict-measured keeps it on reconversion; legacy, the default every record
+carries, is treated as unchosen. The photo setup shows a "Sky outside the
+photo" select (open above the skyline / only what the photo shows / open
+everywhere) that applies immediately as one undoable edit; the advanced
+coverage evidence select stays in step.
+
+## 2026-10-11 — Detail card describes the coming night; USNO time anchors
+
+Owner decision: the detail card's rise, set and culmination, and the Moon
+warning at culmination, belong to the planned night from the site's noon on
+the selected date to the next site noon (23/25 h across DST). This supersedes
+the 2026-10-10 rule that culmination belongs to the complete calendar day,
+whose early hours are the previous night. core objectNightInfo implements it;
+objectDayInfo remains for compatibility.
+
+Published twilight and rise/set times are reference anchors: USNO 2026 yearly
+tables for five sites, verbatim in tests/fixtures/usno_2026. Minute rounding
+limits single events, so the anchors assert per-table bias (8 s), RMS (21 s)
+and worst event (100 s). The planner keeps its apparent-centre sunset label;
+the rise/set anchor checks the Sun model at USNO's upper-limb instants.
+
+## 2026-10-11 — Continue release names above inherited tags (0.7.0)
+
+The public series restarted at 0.1.0, but inherited tags occupy 0.1.5-0.1.7,
+0.2.x, 0.3.x, 0.4.x, 0.5.x and 0.6.0-0.6.36. The owner chose to skip ahead:
+the next public release is 0.7.0, and every later release is above the highest
+existing tag. Names never collide with or sort inside the inherited history,
+so version order and creation order agree again. PUBLIC_RELEASES keeps 0.1.0
+and 0.1.1; the ledger jumps from 0.1.1 to 0.7.0. pre_tag_check.py refuses an
+existing or lower version before tagging.
+
+## 2026-10-11 — Validate zones at entry; name unknown horizons in core
+
+An unknown IANA zone is refused at every entry point rather than planned in
+the browser zone: the site form alerts, a backup site rejects the whole bundle
+before confirmation (as invalid settings already did), and an unknown stored
+zone activates browser local for planning and weather together.
+
+Unknown-coverage horizon blocks are a core reason, not shell prose. Core's
+panoramaVisibilityReason refines BLOCKED_BY_HORIZON to UNKNOWN_HORIZON only
+where queryHorizonEvidence finds no evidence, leaving legacy reasons
+unchanged. The detail summary names a night "coverage unknown" only when every
+horizon-limited sample in its window lacks evidence.
+
+Converted photographs are refined only through source-aware setup; the legacy
+linear steps stay reviewable but refuse to apply. Imports refuse photos whose
+header and decoded dimensions differ, and backup import refuses to start when
+the current data could not be restored by rollback.
+
+## 2026-10-11 — P1/P2 physical orientation and evidence policy
+
+Use supported source rays to fit heading, pitch and roll jointly while keeping
+declared geometry fixed. Weighted Wahba fitting minimizes unit-ray chordal loss;
+optional angular Huber IRLS reduces influence visibly without deleting evidence.
+Report spherical residuals and apply a separate 1° directional policy. Preserve
+v1–v4 interpretation and their historical per-axis checks. Do not infer a precision
+percentage or independence from the number of points alone.
+
+Evidence v5 and backup 10 preserve source/current models, fit/check roles and
+optional source/error/time/group/exclusion metadata. Known geometry proceeds to
+review/checking with zero fitting references. Unknown FOV is limited to corrected
+rectilinear optics, four fitting points, two held-out checks, 5–150° bounds,
+0.1° held-out improvement and bounded curvature. It cannot repair arbitrary
+distortion or stitching. Preview and pixel preparation precede one undoable Apply;
+painted/profile records cannot be reinterpreted until source painting exists.
+
+Separate evidence state from permission to plan. Newly confirmed converted
+photos use strict measured coverage; legacy records keep their assumptions.
+Profile-derived unknown coverage is conservatively excluded under strict policy,
+without labeling it measured blockage. Both planning paths share this policy.
+Optional observer/capture metadata records the viewpoint without claiming a
+parallax correction. Keep measurement entry behind Advanced disclosures.
+
+P1/P2 are local software pending integrated gates. P3–P7, owner physical acceptance
+and separately authorized publication remain open. Actual receipts belong in
+RELEASES.md; dated D/E choices below remain historical compatibility context.
+
+## 2026-10-11 — Supported projection conversion and held-out checks
+
+Use a derived angular working photo so the existing image/mask/ruler/crop/profile
+geometry stays coherent. Keep original bytes and references in original source
+coordinates. Supported source rays follow GPano east/north/up orientation:
+angular, cylindrical and corrected centred square-pixel rectilinear models with
+known geometry. Metadata prefills require review and matching decoded dimensions;
+stale/conflicting metadata and unsupported models remain explicit prompts.
+Preview pixels before Apply, prove the entire working rectangle photographed and
+block excluded directions in both planning paths. Cap source/working allocation.
+Never silently remap painted records: require a new horizon/redrawing.
+
+Evidence v4 adds equal-weight multi-reference fitting and multiple held-out
+checks. Retain explicit exclusions, reject ambiguous wrap/poor spread/conflicting
+fits and show each residual plus worst check error. The 1° discrepancy threshold
+is a policy, not physical certainty. Checks cannot verify their own fitting
+feature; validated promotion removes the check role and requests another check.
+Preserve v1–v3 interpretation and declare new geometry/evidence in backup 9.
+Original-photo crops and undo/redo share the model, with restore validation before
+any store write. No automatic lens/stitching inference or confidence percentage.
+
+F ends at software validation and a verified immutable local review candidate.
+Owner photographs, touch/pen, native zoom and screen-reader acceptance remain
+separate; publication still needs explicit authorization.
+
+## 2026-10-11 — Conservative horizon cell coverage
+
+Continuing the authorized accuracy work, derive each 0.5° world bin from all
+overlapping mask columns. A highest obstacle is safer than a representative
+sample that can miss a narrow pole. For sky mode, intersect allowed lower edges
+and explicit upper ceilings; an unpainted column blocks. Preserve default
+open-above even when raw painted bands do not overlap. Keep the existing 4°
+near-photo-top sentinel and one interval per column as documented limitations.
+
+Trace cells use their highest connected edge and upward altitude rounding,
+including sub-column segments. Retain inclusive endpoints, ordered corrections,
+source/crop evidence, legacy migration and authoritative no-stroke profiles.
+Conservative bins may overstate a narrow obstacle's width; crop regridding may
+shift brush edges within the calibrated raster resolution. Test independent
+geometric overlap and boundary cases instead of rewriting astronomy fixtures.
+
+## 2026-10-11 — Evidence semantics and honest accuracy diagnostics
+
+The owner's accuracy research request authorizes focused improvements. For a
+confirmed full-360 original, fit one shared circular offset from both measured
+bearings and display the signed residuals. Accept at most 1° per point as an
+explicit consistency policy; do not call it a confidence estimate. Version this
+behavior as evidence v3 and backup 8 so v2 reading keeps its original exact fit.
+Keep the separate check out of the fitting data and retain manual-drift detection.
+
+Expose deterministic edge sensitivity rather than a percentage confidence score.
+Warn above 3× input-angle amplification, clearly excluding click/projection error.
+Preserve numerical full-width tolerance for seam wrapping; half-bin coverage is
+not proof of a full panorama. Correct the misleading fixed vertical-row comment.
+
+Research establishes that projection, orientation and measurement quality are
+distinct limits. Document narrow-obstacle aliasing and skyline row bias before
+changing planner sampling. A conservative policy needs dedicated obstacle/sky
+and overhang acceptance, and must preserve authoritative profiles without strokes.
+Do not bolt a nonlinear projection onto only rulers or fit labels; image, points,
+mask, crops and planner mapping must use the same transform.
+
+Improve current documentation navigation/setup and retain dated receipts. Do not
+rewrite historical desktop/release references or overwrite the unknown existing
+WORKSPACE_AUDIT_REPORT.md. New audit findings live in
+WORKSPACE_DOCUMENTATION_REVIEW.md, with actual checks in RELEASES.md.
+
+## 2026-10-11 — Two-point setup and a photo-first editor
+
+Implement the owner's authorized phases A–C using existing core/history/skyline
+operations. Reserve ruler gutters, default to tracing for obstacles, expose
+nearby undoable point removal and collapse specialist editing controls.
+
+Two complete points establish a level/upright angular mapping; a perfect fit is
+not an independent check. Preview without mutation, apply in one history step,
+retain source-pixel evidence, constrain known full-360 coverage and reject
+impossible/poorly separated references. Keep alignment/check status distinct;
+unknown projections remain approximate. Preserve legacy evidence and its advanced
+editor without inventing missing measurements. Backup format 7 protects new
+complete references. Projection conversion/multi-point fitting remain future
+phases, physical-photo/device acceptance stays with the owner, and deployment
+has not been authorized.
+
+## 2026-10-10 — Ordered editable skyline operations and software acceptance
+
+Implement phase 4 traces inside the existing ordered mask-operation timeline,
+rather than a second competing profile. Connected segments fill below; explicit
+endpoints avoid assuming unseen terrain or a hidden seam closure. Preserve
+later corrections on node edits, deep-copy nested points in history, clip at
+crop intersections and protect editable traces with backup format 6. Keep sky
+openings separate; an explicit, undoable switch removes obstacle-only traces.
+Precise-bin editing visibly replaces paint/trace geometry with world-bin values.
+Keep the first unconnected point as a session draft, so starting a trace cannot
+clear an authoritative stored horizon. It becomes persisted geometry only with
+its second point. Discard obsolete drafts on crop/clear/profile replacement and
+history restoration; communicate rejected limits/duplicate horizontal positions.
+
+Profile the existing Catalog acceptance failure before changing its performance
+gate. Cache bounded timezone formatter instances, not offsets, and remove
+redundant noon resolution from memo hits. Retain the 2-second limit and verify
+final selected-time row altitudes to prevent a timing win from stale rendering.
+
+The owner authorized phase 5 software validation/local immutable preparation
+and elected to perform real-photo, physical-device and assistive-technology
+acceptance themselves. No synthetic test proves a camera's projection or a
+physical bearing. Keep these explicit remaining acceptance items; publication
+requires its separate authorization.
+
+## 2026-10-10 — Guided calibration with retained measurement evidence
+
+Implement authorized phase 3 as coverage, known true bearing, two measured
+altitudes, independent verification and painting. Keep an editable review path
+for existing records and exact controls behind disclosure. Picking never paints;
+percentage positions provide a keyboard alternative. Use the existing angular
+core mapping, without inventing another camera projection or magnetic conversion.
+
+Save bounded reference evidence against the original photograph, include it in
+history and backup format 5, and retain older formats. Derive assumed/approximate/
+checked status from current geometry and evidence. Only declared equirectangular
+images can reach checked references; exact fit references and a spatially
+independent check must agree within 1° on both axes. This is a software consistency
+check, not proof of physical photograph accuracy. Cropping cannot move references
+or preserve a checked current-view claim when alignment points leave the frame.
+
+Preserve unapplied point drafts within a same-record session, refresh coverage
+after manual width changes, and move keyboard focus into the canvas on entering
+Paint. Reserve cursor-readout space after browser reproduction of a wrapping
+readout shifting the canvas during a gesture. Skyline authoring and real-photo/
+device/assistive-technology acceptance remain phases 4 and 5. No public release
+or deployment is authorized by this implementation.
+
+## 2026-10-10 — Horizon/Panorama correctness before guided calibration
+
+Implement the owner's authorized phases 1/2 with retained original photo bytes
+and composed normalized source rectangles, shared incremental rasterization and
+CSS-pixel angular rulers. Format 4 prevents older clients from silently discarding
+source bounds while formats 1–3 remain importable. Unknown legacy crop bounds
+must not be inferred from azimuth/FOV alone; they cannot establish the original
+calibration. Invalid legacy altitude spans are repaired at load/restore, keeping
+stroke-less profiles authoritative.
+
+Retain visible partial paint as one undoable edit when a gesture is interrupted.
+The active pointer owns the gesture; tool/history/view/teardown and metadata
+changes settle it. Angular brush size stays fixed under zoom, with an accurately
+scaled footprint (including 360° seam copies). Keep view/display state in the
+editor session rather than backups/history; moves to another panorama start a
+fresh view. A bounded sticky stage toolbar keeps common actions near the photo.
+Measure pointer handling and next-frame rendering separately; batch render per
+frame and share the replay rasterizer rather than introducing another mask model.
+Defer dirty-region complexity unless the recorded latency target needs it.
+
+Guided import/true-bearing calibration, editable skyline traces and real-world
+photo/assistive-technology/device acceptance remain phases 3–5. This work does
+not authorize a public release/deployment.
+
 ## 2026-10-10 — Recover abandoned scratch rather than silently accumulating it
 
 Moving pytest paths under logs did not address ignored deletion failures. Use
@@ -1168,8 +1498,8 @@ header. BUG-003 requires the live HTML response itself to carry the policy.
 
 ### Cache-token register history (moved out of AGENTS.md)
 
-AGENTS.md carries only the CURRENT register; the cascade record lives here so the
-instructions stay inside their byte budget. Every core re-bake moves the stub
+AGENTS.md no longer carries a register (2026-10-11); this is the historical
+cascade record. Every core re-bake moves the stub
 token and changes the bytes of every module importing it, so those tokens move in
 the same commit:
 

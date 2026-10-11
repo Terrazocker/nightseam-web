@@ -152,6 +152,9 @@ export function altazFrame(latDeg, lonDeg, jds) {
   });
 }
 
+/** Apparent alt/az from a precomputed sidereal frame. Unlike altaz(), RA/Dec
+ *  must already be of date: callers precess once per grid (see scoring.js);
+ *  passing J2000 coordinates would be ~0.3 deg off in 2026. */
 export function altazFrameApply(frame, raDeg, decDeg, i) {
   const f = frame[i];
   let ha = (f.lst - raDeg) % 360;
@@ -164,6 +167,7 @@ export function altazFrameApply(frame, raDeg, decDeg, i) {
   const north = sind * f.cosp - cosd * f.sinp * Math.cos(h);
   let az = Math.atan2(east, north) * R2D % 360;
   if (az < 0) az += 360;
+  if (az >= 360 || az === 0) az = 0; // same [0, 360) edge handling as altaz()
   alt = alt * R2D + refractionDeg(alt * R2D);
   return [alt, az];
 }
@@ -321,6 +325,30 @@ export function sepDeg(alt1Deg, az1Deg, alt2Deg, az2Deg) {
   const dra = D2R * (az1Deg - az2Deg);
   return Math.acos(Math.max(-1, Math.min(1,
     Math.sin(p1) * Math.sin(p2) + Math.cos(p1) * Math.cos(p2) * Math.cos(dra)))) * R2D;
+}
+
+/** Rise, set and culmination of one object within one site night. The planner
+ * passes consecutive site noons around the planned night (23/25 h across DST),
+ * so its detail card describes the coming night rather than a calendar day that
+ * mostly belongs to the previous one. Rise/set are the first upward/downward
+ * apparent-horizon crossings in [startUTC, endUTC] (null when none);
+ * culmination is the highest apparent altitude in the span. */
+export function objectNightInfo(raDeg, decDeg, startUTC, endUTC, lat, lon) {
+  const start = julianDay(startUTC), end = julianDay(endUTC);
+  const steps = Math.max(1, Math.ceil((end - start) * 720)), dt = (end - start) / steps;
+  let previous = null, rise = null, set = null, maxAlt = -90, maxJd = start;
+  for (let i = 0; i <= steps; i++) {
+    const jd = start + i * dt;
+    const altitude = altaz(raDeg, decDeg, jd, lat, lon)[0];
+    if (previous !== null && previous !== 0 && Math.sign(previous) !== Math.sign(altitude)) {
+      const crossing = dateFromJD(jd - dt + dt * previous / (previous - altitude));
+      if (altitude > 0) { if (!rise) rise = crossing; }
+      else if (!set) set = crossing;
+    }
+    if (altitude > maxAlt) { maxAlt = altitude; maxJd = jd; }
+    previous = altitude;
+  }
+  return { rise, set, transit: dateFromJD(maxJd), maxAlt };
 }
 
 /** Rise/set keep the midnight ±12h search; culmination spans the complete

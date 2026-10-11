@@ -3,6 +3,10 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- Document policy: these pages run no scripts and embed nothing from other origins.
+     Framing and nosniff need server headers (HOSTING_CONFIGURATION.md). -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+<meta name="referrer" content="strict-origin-when-cross-origin">
 <title>About — NightSeam</title>
 <meta name="description" content="How NightSeam plans observing nights in your browser, with sources and credits.">
 <link rel="canonical" href="https://nightseam.de/about.html">
@@ -14,8 +18,8 @@
 <meta property="og:image:alt" content="NightSeam — know what you can see, with your panorama and calculated target visibility">
 <meta name="twitter:card" content="summary_large_image">
 <link rel="icon" type="image/png" href="app.png">
-<link rel="stylesheet" href="/astro/themes.css?v=21">
-<link rel="stylesheet" href="style.css?v=4">
+<link rel="stylesheet" href="/astro/themes.css?v=22">
+<link rel="stylesheet" href="style.css?v=5">
 </head>
 <body class="public-site">
 <a class="skip-link" href="#content">Skip to content</a>
@@ -28,8 +32,8 @@
 </div>
 </div></header>
 <main id="content" tabindex="-1" class="container"><section class="hero"><svg class="sky-map" aria-hidden="true" focusable="false" viewBox="0 0 960 760"><use href="sky-map.svg?v=1#sky-art"></use></svg><div class="hero-copy"><p class="eyebrow">About NightSeam</p><h1>Built around your observing site.</h1><p class="hero-sub">A browser planner for finding deep-sky targets that suit your night and skyline.</p></div></section><section class="editorial"><h2>Planning on your device.</h2><p>Astronomy calculations run in your browser. Saved sites, equipment and panoramas stay in browser storage.</p></section>
-<section class="editorial"><h2>A project with a clear focus.</h2><p>NightSeam plans observing nights. The Windows exposure catalog is developed separately.</p></section><details class="disclosure"><summary>Data sources and credits</summary><div class="disclosure-body"><p>The catalog includes <b>12,176</b> catalog objects and a deterministic Standard selection of 200 targets.</p><ul>
-        <li><b>Catalog:</b> <a href="https://github.com/mattiaverga/OpenNGC" target="_blank" rel="noopener">OpenNGC</a>
+<section class="editorial"><h2>A project with a clear focus.</h2><p>NightSeam plans observing nights in your browser. There is nothing to install and no account to create.</p></section><details class="disclosure"><summary>Data sources and credits</summary><div class="disclosure-body"><p>NightSeam ships <b>12,176</b> catalog objects, with a fixed Standard list of 200 well-known targets.</p><ul>
+        <li><b>Catalog:</b> <a href="https://github.com/mattiaverga/OpenNGC" target="_blank" rel="noopener">OpenNGC</a> by Mattia Verga
             (CC BY-SA 4.0), plus a small supplement of objects OpenNGC cannot carry.</li>
         <li><b>Images:</b> online object photos are sourced through
             <a href="https://en.wikipedia.org/" target="_blank" rel="noopener">Wikipedia</a> and
@@ -52,7 +56,7 @@
       in the loaded tab while disconnected, but offline reopening or reloading is
       not guaranteed. Saved planning data is specific to your browser and site
       address; export a JSON backup before clearing browser storage or moving to
-      another device.</p></div></details><section class="editorial contact"><h2>Questions or feedback?</h2><p><a href="impressum.html">Contact the project →</a><span class="link-divider" aria-hidden="true"> · </span><a href="privacy.html">Privacy</a></p><p class="small">For a problem report, include the planner version, browser and steps to reproduce. Share only the site or backup data you want the recipient to see.</p></section></main>
+      another device.</p></div></details><section class="editorial contact"><h2>Questions or feedback?</h2><p><a href="impressum.html">Contact the project →</a><span class="link-divider" aria-hidden="true"> · </span><a href="privacy.html">Privacy</a></p><p class="small">For a problem report, include the planner version (shown under About in the planner’s ☰ menu), browser and steps to reproduce. Share only the site or backup data you want the recipient to see.</p></section></main>
 <footer class="site-footer container"><div class="foot-inner"><span>NightSeam · Browser night planner</span><nav aria-label="Footer navigation"><a href="/astro/">Planner</a><a href="features.html">Features</a><a href="about.html" aria-current="page">About</a><a href="download.html">Changes</a><a href="privacy.html">Privacy</a><a href="impressum.html">Imprint</a></nav></div></footer>
 </body>
 </html>

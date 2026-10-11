@@ -250,6 +250,11 @@ def open_editor(c):
     c.page.wait_for_selector("#pano-blank", timeout=20000)
     c.page.click("#pano-blank")
     c.page.wait_for_selector("#pano-canvas", state="visible", timeout=20000)
+    # Legacy brush/advanced checks explicitly choose their tools; the simpler
+    # defaults have separate acceptance checks.
+    if c.page.locator('#ed-tool').count():
+        c.page.locator('#ed-tool').select_option('brush')
+    c.page.locator('#pano-box').evaluate("e=>e.closest('.horizon-layout')?.querySelectorAll('details').forEach(d=>d.open=true)")
     # The editor is tall (canvas ~608 px below the topbar): give the viewport
     # room for the whole canvas so pointer paint/crop gestures land on it.
     c.page.set_viewport_size({"width": 1366, "height": 1500})
@@ -259,6 +264,11 @@ def open_editor(c):
 
 
 def paint(c, x0=0.30, x1=0.62, y=0.35, button="left"):
+    if c.page.locator('#simple-flow').count() and c.page.locator('#simple-flow').is_visible():
+        c.page.locator('#simple-cancel').click()
+    if c.page.locator('#ed-tool').count():
+        c.page.locator('#ed-tool').select_option('brush')
+    c.page.locator('#pano-canvas').scroll_into_view_if_needed()
     box = c.page.locator("#pano-canvas").bounding_box()
     c.expect(box and box["width"] > 20, "pano canvas must have a size")
     y0 = box["y"] + min(box["height"] * y, box["height"] - 4)
@@ -303,6 +313,7 @@ def web_load_smoke(c):
     c.assert_clean()
 
 
+
 @check("web-cache-tokens", "web")
 def web_cache_tokens(c):
     """A mixed module set (old index.html + new modules) is prevented by the
@@ -338,15 +349,22 @@ def web_horizon_actions(c):
         c.page.wait_for_timeout(250)
         info = c.page.evaluate(
             """() => {
+              // Measured in a temporarily widened row: a narrow rail plus a
+              // wide system font (Linux) made a content-width label look
+              // "full row" (177/190 px). Stretching still fills 1000 px.
               const row = document.querySelector('.btnrow.action-row');
               if (!row) return null;
+              const saved = row.style.cssText;
+              row.style.width = '1000px'; row.style.maxWidth = 'none';
               const rw = row.getBoundingClientRect().width;
               const items = Array.from(
                 row.querySelectorAll(':scope > .btn, :scope > label.btn'));
-              return { rw, items: items.map(e => {
+              const out = { rw, items: items.map(e => {
                 const b = e.getBoundingClientRect();
                 return { t: (e.textContent || '').trim().slice(0, 24), w: b.width };
               }) };
+              row.style.cssText = saved;
+              return out;
             }""")
         c.expect(info and info["items"], "the horizons action row must have controls")
         for it in info["items"]:
@@ -472,7 +490,7 @@ def web_pano_canvas_dpr_resize(c):
             """() => { const cv = document.querySelector('#pano-canvas');
                  const boxEl = document.querySelector('#pano-box');
                  return { w: cv.width, h: cv.height,
-                          bw: boxEl.clientWidth, bh: boxEl.clientHeight,
+                          bw: cv.getBoundingClientRect().width, bh: cv.getBoundingClientRect().height,
                           dpr: window.devicePixelRatio || 1 }; }""")
 
     for width in (1024, 1500):
@@ -506,7 +524,9 @@ def web_horizon_stage_preserves_photo_aspect(c):
               if (Math.abs(ratio - expected) > 0.03) return false;
               const ctx = cv.getContext('2d');
               const y = Math.floor(cv.height / 2);
-              const left = ctx.getImageData(Math.floor(cv.width * .02), y, 1, 1).data;
+              // The persistent altitude ruler occupies the first 43 CSS pixels.
+              const left = ctx.getImageData(Math.floor(Math.max(cv.width * .02,
+                48 * (window.devicePixelRatio || 1))), y, 1, 1).data;
               const right = ctx.getImageData(Math.floor(cv.width * .98), y, 1, 1).data;
               return left[0] > left[2] && right[2] > right[0];
             }""",
@@ -531,8 +551,11 @@ def web_horizon_profile_region(c):
     c.page.click("#pano-blank")
     panel = c.page.locator(".horizon-profile-panel")
     panel.wait_for(state="visible", timeout=10000)
+    c.expect(not panel.evaluate('e=>e.open'), 'profile starts collapsed to keep drawing simple')
+    panel.locator('summary').first.click()
     c.expect(panel.bounding_box()["height"] >= 190,
-             "the profile panel must reserve the required first-viewport height")
+             "the expanded profile panel must remain readable")
+    c.page.locator('.horizon-advanced').evaluate('e=>e.open=true')
     c.expect_eq(c.page.locator(".horizon-profile-metrics > span").count(), 4,
                 "profile summary must show coverage, profile value, landmarks, and confidence counts")
     c.expect(c.page.locator(".horizon-selected-bin").is_visible(),
@@ -1452,6 +1475,7 @@ def web_pano_crop_recalibrate(c):
     boot(c)
     open_editor(c)
     paint(c)
+    c.page.locator('.ed-calibration summary').click()
     # a partial 180 deg frame so the crop is a real recalibration
     c.page.evaluate(
         """() => { const s = document.querySelector('#ed-fov');
@@ -1464,9 +1488,9 @@ def web_pano_crop_recalibrate(c):
     c.page.click("#ed-crop-apply")
     c.page.wait_for_timeout(250)
     # kept half of a 180 deg frame -> 90 deg; az = 0 + 0.25*180 = 45
-    c.expect_in("90\u00B0", c.page.inner_text("#ed-fov-v"),
+    c.expect_in("90\u00B0", c.page.locator("#ed-fov-v").text_content(),
                 "the crop must keep half the FOV")
-    c.expect_in("45\u00B0", c.page.inner_text("#ed-az-v"),
+    c.expect_in("45\u00B0", c.page.locator("#ed-az-v").text_content(),
                 "the crop must move the left-edge azimuth")
     c.expect_in("Unsaved", c.page.inner_text("#ed-status"),
                 "a crop must dirty the editor")
@@ -1498,7 +1522,9 @@ def web_pano_crop_recalibrate(c):
     c.page.wait_for_selector("#pano-list li[data-id]", timeout=30000)
     c.page.click("#pano-list li[data-id]")
     c.page.wait_for_selector("#pano-canvas", timeout=30000)
-    c.expect_in("90\u00B0", c.page.inner_text("#ed-fov-v"),
+    c.page.locator('.horizon-advanced').evaluate('e=>e.open=true')
+    c.page.locator('.ed-calibration summary').click()
+    c.expect_in("90\u00B0", c.page.locator("#ed-fov-v").text_content(),
                 "reload must keep the cropped FOV")
     c.expect(active_profile(c) == saved,
              "the blocked profile must match the pre-save geometry")
@@ -1993,3 +2019,8 @@ def panorama_editor_history_rollback(c):
     c.expect_eq(c.page.evaluate("async url=>(await import(url)).horizonUnsaved()", url), True,
                 'Redo after rollback must preserve the original unsaved edit')
     c.assert_clean()
+
+
+# Import after helper definitions: these checks reuse the canonical browser paths.
+import horizon_geographic_checks  # noqa: E402,F401
+import horizon_geographic_fit_checks  # noqa: E402,F401

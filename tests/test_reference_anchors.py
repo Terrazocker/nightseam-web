@@ -41,7 +41,7 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 HARNESS = ROOT / "tests" / "js" / "reference_anchors.mjs"
-ANCHOR_COUNT = 24
+ANCHOR_COUNT = 26
 
 
 def _run(core_dir=None):
@@ -286,3 +286,23 @@ def test_missing_lunar_parallax_fails_independent_observer_anchors(tmp_path):
 def test_lunar_distance_regression_fails_independent_reference(tmp_path):
     _assert_mutation_fails(tmp_path, '385000.56 - 20905.355',
                            '385000.56 - 10905.355', 'moon_independent_distance')
+
+def test_sidereal_rate_mutation_fails_the_published_twilight_tables(tmp_path):
+    """A GMST rate error is zero at J2000, so it survived every earlier anchor.
+    The USNO 2026 tables see 360.98564 as a ~17 s systematic shift."""
+    failed = _failed(_mutated_core(tmp_path, "360.98564736629 * d", "360.98564 * d"))
+    assert "usno_twilight_2026" in failed, sorted(failed)
+    assert "usno_sunrise_sunset_2026" in failed, sorted(failed)
+
+
+def test_solar_longitude_mutation_fails_the_published_twilight_tables(tmp_path):
+    """0.16 deg of solar mean longitude survived the 0.75 deg solar RA anchor."""
+    _assert_mutation_fails(tmp_path, "280.460 + 0.9856474", "280.620 + 0.9856474",
+                           "usno_twilight_2026")
+
+
+def test_equation_of_centre_mutation_fails_the_published_twilight_tables(tmp_path):
+    """1.915 -> 1.80 is a seasonal +-27 s error: no bias, but a larger scatter."""
+    _assert_mutation_fails(tmp_path, "l + 1.915 * Math.sin(g)", "l + 1.80 * Math.sin(g)",
+                           "usno_twilight_2026")
+
