@@ -1,5 +1,19 @@
 # Independent website release record
 
+## CI workflow and release-gate fixes — October 11, 2026 (local development)
+
+Commit c4b8606 adds .github/workflows/checks.yml (Windows; guards, changelog
+and development release checks, pytest, then the browser suite in its own
+job), orders build_changelog.py --check by tag creation and pins the latency
+gate's full-replay baseline to cacdacf. The previous entry's note that the
+latency failure was load-dependent was wrong; see BUGS.md.
+
+The workflow has not run on GitHub: the branch is not pushed. Its exact
+command sequence ran in a fresh detached checkout of c4b8606 on the
+development machine: all guards passed, check_release reported 0 errors
+(not-a-release-tag warning), pytest 357 passed with the optional-data skip
+and Chrome passed 116/116. No tag, publication candidate or deployment.
+
 ## Workspace review fixes — October 11, 2026 (local development)
 
 Branch horizon-calibration resolves the four medium review findings recorded in
