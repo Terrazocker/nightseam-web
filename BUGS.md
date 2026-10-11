@@ -53,3 +53,8 @@ entry here when it is fixed and record the fix in RELEASES.md.
 - **BROWSER-LOCAL-001.** The local test server's connection queue was raised
   from 5 to 64 after refused module loads; failures are recorded with server
   thread health and failed URLs, never retried or skipped.
+- **BROWSER-CI-001.** One GitHub Windows run (October 11, 2026) failed
+  `web-safety-import-refuses-unrecoverable-current-horizons` with Chrome's
+  `net::ERR_NO_BUFFER_SPACE` after a reload; the next run of the same code
+  passed. The test server now keeps connections alive instead of opening one
+  socket per module import. Remove this entry if it does not recur.
