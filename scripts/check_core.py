@@ -31,7 +31,7 @@ MOVED = (
     "fitMultiplePhotoReferences",
     "sourcePhotoRay", "photoDirectionVector", "photoAngularDistance",
     "fitPhotoOrientation", "reportPhotoOrientation", "previewPhotoOrientation",
-    "normalizeReferenceMeasurement", "normalizeCoverageEvidence", "queryHorizonEvidence", "panoramaVisibilityReason",
+    "normalizeReferenceMeasurement", "normalizeCoverageEvidence", "queryHorizonEvidence", "panoramaVisibilityReason", "hasHorizonDrawing",
     "rebuildMask", "altOf", "rowOfAlt", "xOfAz", "azOfX", "wrapsFor",
     "applyDabToMask", "strokeSegment", "normalizeSourceRect", "normalizePanoCalibration",
     "normalizeSkylineStroke", "applySkylineToMask", "cropSkylineStroke",

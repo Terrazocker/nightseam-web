@@ -616,6 +616,17 @@ export function computeProfile(p) {
 /** Explicitly clear a panorama's mask: no strokes AND a canonical blank profile
  *  for the paint mode. This is the ONE place a stored profile is discarded,
  *  because the user asked for it. Pure (in-memory only). */
+/** True when a record holds drawing or an authoritative profile that a
+ * geometry change would have to remap: any brush or trace stroke, or a profile
+ * that differs from its mode's blank value (sky 90, obstacle NO_BLOCK).
+ * Eraser-only strokes on a blank record change nothing. */
+export function hasHorizonDrawing(p) {
+  if ((p?.strokes || []).some((s) => s?.m === 'b' || s?.m === 'trace')) return true;
+  const blank = p?.paintMode === 'sky' ? 90 : NO_BLOCK;
+  return (p?.profile ?? []).some((v) => v !== blank)
+    || (p?.profileTop ?? []).some((v) => v != null && v !== NO_BLOCK);
+}
+
 export function clearMask(p) {
   p.strokes = [];
   p.profile = new Array(BINS).fill(p.paintMode === 'sky' ? 90 : NO_BLOCK);

@@ -152,6 +152,9 @@ export function altazFrame(latDeg, lonDeg, jds) {
   });
 }
 
+/** Apparent alt/az from a precomputed sidereal frame. Unlike altaz(), RA/Dec
+ *  must already be of date: callers precess once per grid (see scoring.js);
+ *  passing J2000 coordinates would be ~0.3 deg off in 2026. */
 export function altazFrameApply(frame, raDeg, decDeg, i) {
   const f = frame[i];
   let ha = (f.lst - raDeg) % 360;
@@ -164,6 +167,7 @@ export function altazFrameApply(frame, raDeg, decDeg, i) {
   const north = sind * f.cosp - cosd * f.sinp * Math.cos(h);
   let az = Math.atan2(east, north) * R2D % 360;
   if (az < 0) az += 360;
+  if (az >= 360 || az === 0) az = 0; // same [0, 360) edge handling as altaz()
   alt = alt * R2D + refractionDeg(alt * R2D);
   return [alt, az];
 }

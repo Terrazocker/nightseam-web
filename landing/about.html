@@ -3,6 +3,10 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- Document policy: these pages run no scripts and embed nothing from other origins.
+     Framing and nosniff need server headers (HOSTING_CONFIGURATION.md). -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+<meta name="referrer" content="strict-origin-when-cross-origin">
 <title>About — NightSeam</title>
 <meta name="description" content="How NightSeam plans observing nights in your browser, with sources and credits.">
 <link rel="canonical" href="https://nightseam.de/about.html">

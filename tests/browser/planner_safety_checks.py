@@ -154,3 +154,26 @@ def converted_coverage(c):
     again = convert(c, upload=False)
     c.expect_eq(again['coverageEvidence']['policy'], 'strict-measured', 'reconversion keeps an explicit choice')
     c.assert_clean()
+
+
+@check('web-safety-weather-rows-require-well-formed-times', 'web')
+def weather_times(c):
+    """Provider times reach markup: a hostile or non-string time is dropped
+    instead of injecting elements or crashing the panel."""
+    from review_phase567_checks import start, SITES, forecast, deferred_weather, complete_weather
+    from phase3_astronomy_checks import seed as seed_sites, date as set_date
+    start(c)
+    seed_sites(c, [SITES[0]], minVis=0)
+    set_date(c, '2026-10-09')
+    deferred_weather(c)
+    c.page.locator('#btnWeather').click()
+    data = forecast()
+    # Sorts inside the night window and survives the 16-character title slice,
+    # closing the title attribute to add one of its own.
+    data['hourly']['time'][20] = '2026-10-09T20" z'
+    data['hourly']['time'][21] = 1791576000
+    complete_weather(c, 0, data, air_fail=True)
+    c.page.wait_for_function("() => document.querySelector('#wxChip').textContent.includes('100/100')")
+    c.expect_eq(c.page.locator('#wxBody [z]').count(), 0, 'no provider text becomes markup')
+    c.expect(c.page.locator('#wxBody .wx-hour').count() > 0, 'well-formed hours still render')
+    c.assert_clean()

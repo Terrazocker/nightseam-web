@@ -113,9 +113,13 @@ export function applySnapshot(state, snap, keys = HISTORY_KEYS) {
     state[keys.profile] = o.pr;
     state[keys.profileTop] = o.pt;
   }
-  if (o.lm !== undefined && keys.landmarks) state[keys.landmarks] = o.lm;
-  if (o.pv !== undefined && keys.provenance) state[keys.provenance] = o.pv;
-  if (o.cf !== undefined && keys.confidence) state[keys.confidence] = o.cf;
+  // An absent snapshot key means the earlier state had none: remove it, or an
+  // undo would keep landmarks/provenance/confidence added after that state.
+  for (const [key, value] of [[keys.landmarks, o.lm], [keys.provenance, o.pv], [keys.confidence, o.cf]]) {
+    if (!key) continue;
+    if (value !== undefined) state[key] = value;
+    else delete state[key];
+  }
   return state;
 }
 

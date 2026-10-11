@@ -10,7 +10,7 @@
  * the app moved to nightseam.de, so every visitor starts on a fresh origin.
  */
 
-import { offsetEastMin, zonedWallToUtcMs, normalizeCoverageEvidence, normalizePhotoCalibration } from './core.js?v=64';
+import { offsetEastMin, zonedWallToUtcMs, normalizeCoverageEvidence, normalizePhotoCalibration } from './core.js?v=65';
 
 const DB_NAME = 'nightseam-db-v1';
 const DB_VER = 1;
@@ -396,11 +396,11 @@ function cleanRecord(r, { numbers = [], strings = [] } = {}) {
   return out;
 }
 
-/** v5 preserves photo calibration evidence alongside v4's non-destructive
- * source rectangles and v3's horizontal dab radii. Formats 1–4 remain readable;
- * earlier clients refuse v5 rather than silently losing reference evidence.
- * Bump this together with any incompatible bundle change. */
-// v10 preserves physical orientation and geographic coverage/measurement evidence.
+/** Backup bundle format. Every earlier format stays readable; an older client
+ * refuses a newer bundle rather than silently losing evidence it cannot keep
+ * (v3 dab radii, v4 source rectangles, v5 calibration evidence, ... v10
+ * physical orientation and coverage/measurement evidence). Bump this together
+ * with any incompatible bundle change. */
 export const BUNDLE_VERSION = 10;
 
 export const WEB_PREF_DEFAULTS = Object.freeze({
@@ -431,6 +431,9 @@ export function normalizeWebPrefs(value, { strict = false } = {}) {
   const inRange = (v, lo, hi) => typeof v === 'number' && Number.isFinite(v) && v >= lo && v <= hi;
   check('bortle', (v) => Number.isInteger(v) && inRange(v, 1, 9));
   check('minAlt', (v) => v === null || inRange(v, 0, 90));
+  // The top-bar slider is whole degrees from 5 to 70; a stored value it cannot
+  // show would leave the thumb and the planner disagreeing.
+  if (typeof out.minAlt === 'number') out.minAlt = Math.min(70, Math.max(5, Math.round(out.minAlt)));
   check('edge', (v) => inRange(v, 0, 300));
   check('minVis', (v) => inRange(v, 0, 100));
   check('sizeUnit', (v) => ['arcmin', 'arcsec', 'deg'].includes(v));
@@ -479,14 +482,24 @@ export function stageBackup(data) {
       numbers: ['lat', 'lon', 'elev'],
       strings: ['name', 'tz', 'notes'],
     });
+    if (clean && (clean.lat < -90 || clean.lat > 90 || clean.lon < -180 || clean.lon > 180)) {
+      throw new Error('backup site has coordinates out of range');
+    }
     if (!clean || clean.tz == null || clean.tz === '') return clean;
     if (!validTimeZone(clean.tz)) throw new Error('backup site has an unknown timezone');
     return clean;
   };
-  const rigOf = (r) => cleanRecord(r, {
-    numbers: ['focal_mm', 'sensor_w', 'sensor_h', 'fov_w', 'fov_h'],
-    strings: ['name'],
-  });
+  const rigOf = (r) => {
+    const clean = cleanRecord(r, {
+      numbers: ['focal_mm', 'sensor_w', 'sensor_h', 'fov_w', 'fov_h'],
+      strings: ['name'],
+    });
+    // Optics feed field-of-view arithmetic: absent is allowed, zero/negative is not.
+    if (clean && ['focal_mm', 'sensor_w', 'sensor_h', 'fov_w', 'fov_h'].some((k) => clean[k] != null && !(clean[k] > 0))) {
+      throw new Error('backup rig has a non-positive focal length, sensor or field size');
+    }
+    return clean;
+  };
   const targetOf = (t) => cleanRecord(t, {
     numbers: ['ra_hours', 'dec_deg', 'vmag'],
     strings: ['primary_name', 'otype', 'size_am', 'constellation', 'blurb'],

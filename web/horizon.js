@@ -15,11 +15,11 @@
    ./core/<hash>/ and imported through the stable ./core.js stub. The shell
    re-exports it so app.js/nightrank.js keep their public surface. */
 import { vizTheme } from './viztheme.js?v=6';
-import { photoSetupHTML, wirePhotoSetup } from './horizonsetup.js?v=20';
-import { traceToolsHTML, tracePointsHTML, wireTraceTools } from './horizontrace.js?v=16';
-import { inspectPhoto, angularPhotoCanvas, wirePhotoConversion } from './horizonphoto.js?v=10';
-import { wireGeographicEvidence } from './horizongeographic.js?v=6';
-import { normalizeWebPrefs, WEB_PREF_DEFAULTS } from './webstore.js?v=63';
+import { photoSetupHTML, wirePhotoSetup } from './horizonsetup.js?v=21';
+import { traceToolsHTML, tracePointsHTML, wireTraceTools } from './horizontrace.js?v=17';
+import { inspectPhoto, angularPhotoCanvas, wirePhotoConversion } from './horizonphoto.js?v=11';
+import { wireGeographicEvidence } from './horizongeographic.js?v=7';
+import { normalizeWebPrefs, WEB_PREF_DEFAULTS } from './webstore.js?v=65';
 import {
   NO_BLOCK, BINS, MASK_W, MASK_H,
   rebuildMask, wrapsFor, altOf, rowOfAlt, xOfAz, azOfX, profileFromMask,
@@ -41,7 +41,7 @@ import {
   historyRedo as coreHistoryRedo, historyMarkSaved as coreHistoryMarkSaved,
   historyDirty as coreHistoryDirty, PANO_HISTORY_LIMIT as coreHISTORY_LIMIT,
   PLANNER_CHANGE_EVENT, nextPlannerRevision, plannerChange, panoramaRevision,
-} from './core.js?v=64';
+} from './core.js?v=65';
 
 export {
   NO_BLOCK, BINS, MASK_W, MASK_H,
@@ -2212,9 +2212,13 @@ function wireEditor(box, p, onChanged) {
     focusCanvas: () => { cvs.focus(); cvs.scrollIntoView({ block: 'center', behavior: 'instant' }); },
     changed: () => { syncCalInputs(); rebuildMaskNow(); overlay(); fitCanvas(); geographicEvidence?.sync(); commit(); },
     drawing: () => traceTools?.choose(p.paintMode === 'obstacle' ? 'trace' : 'brush'),
-    prepareGeometry:model=>{if(!imgEl)throw new Error('Wait for the photograph to load.');const surface=angularPhotoCanvas(imgEl,model);angularEl=surface;angularKey=JSON.stringify(model);},
+    // Converting a large photo costs a full-resolution pass: reuse the surface
+    // already built for the same model instead of rebuilding on every review.
+    prepareGeometry:model=>{if(!imgEl)throw new Error('Wait for the photograph to load.');const key=JSON.stringify(model);
+      if(angularKey===key&&angularEl)return;angularEl=conversionPreview?.key===key?conversionPreview.surface:angularPhotoCanvas(imgEl,model);angularKey=key;},
     previewGeometry:model=>{const target=$('#photo-preview-canvas',box);if(!model){target.hidden=true;conversionPreview=null;return;}
-      if(!imgEl)throw new Error('Wait for the photograph to load.');const surface=angularPhotoCanvas(imgEl,model);conversionPreview={key:JSON.stringify(model),surface};
+      if(!imgEl)throw new Error('Wait for the photograph to load.');const key=JSON.stringify(model);
+      const surface=conversionPreview?.key===key?conversionPreview.surface:angularKey===key&&angularEl?angularEl:angularPhotoCanvas(imgEl,model);conversionPreview={key,surface};
       target.width=surface.width;target.height=surface.height;target.getContext('2d').drawImage(surface,0,0);target.hidden=false;},
   });
   geographicEvidence=wireGeographicEvidence(box,p,{

@@ -1,9 +1,12 @@
 /* Photo calibration evidence and solvers. All angles use true north and the
  * same linear mapping as the horizon mask. Evidence refers to the original
  * photograph, so a non-destructive crop cannot move a measurement. */
-import { MASK_W, MASK_H, normalizeSourceRect, azOfX, altOf, normalizeReferenceMeasurement } from './horizon.js';
+import { MASK_W, MASK_H, normalizeSourceRect, azOfX, altOf, normalizeReferenceMeasurement, hasHorizonDrawing } from './horizon.js';
 import { sourceWorkingPoint, workingSourcePoint, createPhotoModel, normalizePhotoModel,
   sourcePhotoRay, sourcePhotoAngles, photoDirectionVector, photoAngularDistance } from './horizonprojection.js';
+// A held-out check counts as independent only at least 2% of the source image
+// away from every active fitting point (both evidence models).
+const CHECK_MIN_SEPARATION = 0.02;
 
 const wrap = (a) => ((a % 360) + 360) % 360;
 const delta = (a, b) => wrap(a - b + 180) - 180;
@@ -329,7 +332,7 @@ function multipleCalibrationReport(p,e){
   };
   report.edgeSensitivity={azimuth:e.full360?1:sensitivity('x',r.x,r.x+r.w),altitude:sensitivity('y',r.y,r.y+r.h)};
   report.checkResiduals=e.checks.map(q=>{const a=photoPointAngles(p,q);return {azimuth:delta(a.azimuth,q.azimuth),altitude:a.altitude-q.altitude,
-    independent:a.inside&&e.references.filter(v=>!v.excluded).every(v=>{const b=photoPointAngles(p,v);return Math.hypot(a.x-b.x,a.y-b.y)>=.02;})};});
+    independent:a.inside&&e.references.filter(v=>!v.excluded).every(v=>{const b=photoPointAngles(p,v);return Math.hypot(a.x-b.x,a.y-b.y)>=CHECK_MIN_SEPARATION;})};});
   if(e.checks.length){report.azimuthError=Math.max(...report.checkResiduals.map(q=>Math.abs(q.azimuth)));report.altitudeError=Math.max(...report.checkResiduals.map(q=>Math.abs(q.altitude)));
     const q=e.checks.map(v=>photoPointAngles(p,v));report.checkSpread={horizontal:Math.max(...q.map(v=>v.x))-Math.min(...q.map(v=>v.x)),vertical:Math.max(...q.map(v=>v.y))-Math.min(...q.map(v=>v.y))};}
   const validFit=Math.abs(delta(p.azOffset,fitted.azOffset))<1e-6&&['fov','altTop','altBottom'].every(k=>Math.abs(p[k]-fitted[k])<1e-6)&&Math.abs(e.coverage-fitted.calibration.coverage)<1e-6;
@@ -448,7 +451,7 @@ export function reportPhotoOrientation(model,references=[],checks=[],influence=n
   const fitResiduals=refs.map(v=>{const i=index;if(!v.excluded)index++;const error=residual(v),factor=v.excluded?0:influence?.weights?
     influence.weights[i]/influence.baseWeights[i]:influence?.robust?Math.min(1,(v.sigmaDegrees??(2/3))*1.5/Math.max(1e-12,error.angular)):1;
     return {...error,excluded:!!v.excluded,weight:v.excluded?0:influence?.weights?.[i]??precision[i]*factor,influence:factor};});
-  const checkResiduals=held.map(v=>({...residual(v),independent:active.every(q=>Math.hypot(q.x-v.x,q.y-v.y)>=1e-8),
+  const checkResiduals=held.map(v=>({...residual(v),independent:active.every(q=>Math.hypot(q.x-v.x,q.y-v.y)>=CHECK_MIN_SEPARATION),
     sharedMeasurementGroup:!!v.measurementGroup&&active.some(q=>q.measurementGroup===v.measurementGroup)}));
   const included=fitResiduals.filter(v=>!v.excluded),rmsAngular=included.length?Math.sqrt(included.reduce((s,v)=>s+v.angular*v.angular,0)/included.length):null;
   const maxAngular=included.length?Math.max(...included.map(v=>v.angular)):null;
@@ -515,7 +518,7 @@ export function previewPhotoOrientation(p, references, {checks=[],robust=false,e
   const sourceModel=knownGeometry?p.photoModel:previous.version===5?previous.sourceModel:p.photoModel;
   let model=sourceModel;
   if (!knownGeometry) {
-    if (p.strokes?.length || (p.profile??[]).some(v=>v!==-90))
+    if (hasHorizonDrawing(p))
       throw new Error('This horizon already contains drawing or an authoritative profile. Use a new horizon to change orientation; existing painting cannot yet be remapped.');
     model=fitPhotoOrientation(sourceModel,references,{checks,robust,estimateFov}).photoModel;
   }

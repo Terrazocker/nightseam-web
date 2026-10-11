@@ -25,7 +25,7 @@ export {
   normalizeSkylineStroke, applySkylineToMask, cropSkylineStroke,
   profileFromMask, normalizeProfileBins, profileSegments, fovBinRel,
   visibleSkyBands, skyBandPolygons,
-  computeProfile, clearMask, ceilFor, bandTopFor,
+  computeProfile, clearMask, hasHorizonDrawing, ceilFor, bandTopFor,
   overhangRuns, assumedOpenRuns, assumedOpenHatchPolys,
   CROP_MIN_FOV, cropKeptBand, cropStrokes, clipProfileToFov, cropPano,
 } from './horizon.js';
@@ -67,7 +67,7 @@ export {
 export {
   julianDay, dateFromJD, gmstDeg, precessJ2000ToDate, precessDateToJ2000,
   refractionDeg, altaz, altazFrame, altazFrameApply,
-  objectDayInfo, sunRaDec, moonRaDec, moonDistanceKm, moonAltAz, moonIllumination, moonAge, sunAlt, sepDeg,
+  objectDayInfo, objectNightInfo, sunRaDec, moonRaDec, moonDistanceKm, moonAltAz, moonIllumination, moonAge, sunAlt, sepDeg,
 } from './astro.js';
 
 export {

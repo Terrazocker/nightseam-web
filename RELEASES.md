@@ -1,5 +1,20 @@
 # Independent website release record
 
+## Review backlog fixes — October 11, 2026 (local development)
+
+Resolves the low-severity review backlog listed in BUGS.md: backup site/rig
+range validation, slider-representable minimum altitude, one thumbnail
+IndexedDB connection, ISO-only weather times (a title-attribute injection was
+reproduced and is now covered), scorer/ceilFor element parity, bounded
+popularity factor, finite moon-aware scores, blank sky-mode conversion, one
+2% check-separation rule, history key removal on undo, reuse of converted
+canvases, right-ascension range checks, landing-page document CSP and referrer
+policy, and stale comments/dead state. Core rebuilt as b3ca8ecef233213a
+(token 65).
+
+Actual checks: pytest 378 passed with the optional-data skip; Chrome 119/119;
+check_release --allow-dirty --no-stage 0 errors. No tag or deployment.
+
 ## Converted-photo coverage default and switch — October 11, 2026 (local development)
 
 Confirming a converted photo now defaults to inferred-open coverage instead of

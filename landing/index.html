@@ -3,6 +3,10 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- Document policy: these pages run no scripts and embed nothing from other origins.
+     Framing and nosniff need server headers (HOSTING_CONFIGURATION.md). -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+<meta name="referrer" content="strict-origin-when-cross-origin">
 <title>Know what you can see — NightSeam</title>
 <meta name="description" content="Deep-sky targets and visibility windows, computed entirely in your browser. OpenNGC catalogue and a small supplement: 12,176 objects. Use your own panorama to plan around your skyline.">
 <link rel="canonical" href="https://nightseam.de/">

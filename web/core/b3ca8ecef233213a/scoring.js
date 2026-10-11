@@ -59,8 +59,9 @@ export function bortleMoonFactor(bortle) {
    -> 0..1: log-scale normalization, M42 (165k) ~ 1.0, dim object (100) ~ 0.3.
    The shells resolve the live map/catalog field and pass the number. */
 export function popularityFactor(pop) {
-  if (!pop) return 0;
-  return Math.min(1, 0.3 + 0.7 * Math.log10(pop) / 5.2);
+  if (!(pop > 0)) return 0;
+  // Counts below 1 would give a negative tiebreaker; the factor stays in [0, 1].
+  return Math.min(1, Math.max(0, 0.3 + 0.7 * Math.log10(pop) / 5.2));
 }
 
 /** Per-object apparent alt/az tracks for ONE (site, night): the sidereal frame
@@ -146,11 +147,14 @@ export function scoreNightTracks(tracks, objects, jd0, step, minAlt, pano, ctx =
 
   // horizon profile as flat typed arrays; the ceiling is inlined bit-for-bit
   // with core/horizon.js::ceilFor (world-azimuth bins, FOV gate, blockAbove)
-  const prof = (pano && Array.isArray(pano.profile) && pano.profile.length === 720)
-    ? Float64Array.from(pano.profile) : null;
-  const topsArr = (pano && Array.isArray(pano.profileTop) && pano.profileTop.length === 720)
-    ? Float64Array.from(pano.profileTop) : null;
+  // Elements follow ceilFor too: a non-finite or non-number value (NaN, "10",
+  // null) is "nothing recorded", never a coerced number or a NaN ceiling.
   const sky = !!(pano && pano.paintMode === 'sky');
+  const finiteOr = (fallback) => (v) => (Number.isFinite(v) ? v : fallback);
+  const prof = (pano && Array.isArray(pano.profile) && pano.profile.length === 720)
+    ? Float64Array.from(pano.profile, finiteOr(sky ? 90 : -90)) : null;
+  const topsArr = (pano && Array.isArray(pano.profileTop) && pano.profileTop.length === 720)
+    ? Float64Array.from(pano.profileTop, finiteOr(-90)) : null;
   const converted = !!(pano && pano.photoModel);
   const fov = pano && Number(pano.fov) > 0 ? Number(pano.fov) : 360;
   const azOff = pano ? (Number(pano.azOffset) || 0) : 0;
@@ -162,12 +166,16 @@ export function scoreNightTracks(tracks, objects, jd0, step, minAlt, pano, ctx =
   const moonAware = !!ctx.moonAware && Array.isArray(ctx.moonAlt);
   const moonAlt = moonAware ? ctx.moonAlt : null;
   const moonAz = moonAware ? ctx.moonAz : null;
-  const minD = moonAware ? moonMinDist(ctx.filterType, ctx.moonAgeDays) : 0;
-  const illum = ctx.illum;
+  // A missing moon input must not turn every moon-aware score into NaN (which
+  // also breaks sorting): fall back to the neutral factor for that input.
+  const finite = (v, fallback) => (Number.isFinite(v) ? v : fallback);
+  const minD = moonAware ? finite(moonMinDist(ctx.filterType, ctx.moonAgeDays), 0) : 0;
+  const illum = finite(ctx.illum, 0);
+  const bortleF = finite(ctx.bortleF, 1);
   // moon sensitivity is per OBJECT (it depends on the type); a shell may still
   // pass one number for a uniform batch
   const typeFOf = Array.isArray(ctx.typeF)
-    ? (k) => ctx.typeF[k] : () => ctx.typeF;
+    ? (k) => finite(ctx.typeF[k], 1) : () => finite(ctx.typeF, 1);
 
   const out = new Array(objects.length);
   // Compare actual run duration: a run with a short final cell must not win
@@ -245,7 +253,7 @@ export function scoreNightTracks(tracks, objects, jd0, step, minAlt, pano, ctx =
       if (moonAware && moonAlt[i] > 0) {
         const sep = sepDeg(alt, az, moonAlt[i], moonAz[i]);
         const glow = illum * Math.max(0, 1 - Math.max(0, sep - minD) / 180);
-        w *= Math.max(0.05, 1 - 0.95 * glow * typeFOf(k) * ctx.bortleF);
+        w *= Math.max(0.05, 1 - 0.95 * glow * typeFOf(k) * bortleF);
       }
       sMoon += w * cellWeight;
       if (run === 0) runStart = cellStart;

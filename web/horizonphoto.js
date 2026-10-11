@@ -1,6 +1,6 @@
 /* Source retention and pixel rendering only; projection math stays in core. */
 import { createPhotoModel, normalizePhotoCalibration, readPanoramaMetadata,
-  PHOTO_MAX_PIXELS, workingPhotoSize, photoSampleMap,photoFileDimensions,normalizePhotoSource,normalizeCoverageEvidence } from './core.js?v=64';
+  PHOTO_MAX_PIXELS, workingPhotoSize, photoSampleMap,photoFileDimensions,normalizePhotoSource,normalizeCoverageEvidence,hasHorizonDrawing } from './core.js?v=65';
 
 export async function inspectPhoto(dataURL,file){
   const prefix=new Uint8Array(await file.slice(0,1048576).arrayBuffer()),header=photoFileDimensions(prefix);
@@ -52,7 +52,7 @@ export function wirePhotoConversion(root,p,hooks){
   $('photo-detected').textContent=detected?.reason??'No supported panorama metadata detected. Enter known source geometry manually.';
   const defaults=p.photoModel??detected?.input;
   if(defaults)for(const key of ids){const el=$('photo-'+key);if(key==='corrected')el.checked=!!defaults.lensCorrected;else if(defaults[key]!==undefined)el.value=defaults[key];}
-  const compatible=()=>!p.strokes?.length&&!(p.profile??[]).some(v=>v!==-90);
+  const compatible=()=>!hasHorizonDrawing(p);
   const calculate=()=>{
     if(!compatible())throw new Error('This horizon already contains drawing or an authoritative profile. Upload the photo as a new horizon to convert and redraw.');
     const size=hooks.photoSize();if(!size)throw new Error('Wait for the photograph to load.');

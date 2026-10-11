@@ -8,17 +8,17 @@
  *   • Settings — sites, rigs, custom targets, backup/restore (webstore.js)
  * All sky math runs client-side (astro.js, Meeus algorithms).
  */
-import * as E from './astro.js?v=49';
-import * as Hor from './horizon.js?v=112';
-import * as WS from './webstore.js?v=63';
+import * as E from './astro.js?v=50';
+import * as Hor from './horizon.js?v=114';
+import * as WS from './webstore.js?v=65';
 import { fmtSize, sizeArcmin, framePct, magVisible, skyClampZoom,
-         skyViewMatrix, skyScreenToBase, skyClampFocus } from './format.js?v=56';
-import { nightStats, nightStatsBatch, sampleVisible } from './nightrank.js?v=48';
+         skyViewMatrix, skyScreenToBase, skyClampFocus } from './format.js?v=57';
+import { nightStats, nightStatsBatch, sampleVisible } from './nightrank.js?v=49';
 import { TYPE_LABELS, TYPE_COLORS, searchBlob as coreSearchBlob,
          TIER_ORDER, assignPopularityTiers, wikiTitles,
          inTonightPool, PLANNER_CHANGE_EVENT, panoramaRevision,
-         panoramaVisibilityReason } from './core.js?v=64';
-import { popularityFactor as corePopularityFactor } from './core.js?v=64';
+         panoramaVisibilityReason } from './core.js?v=65';
+import { popularityFactor as corePopularityFactor } from './core.js?v=65';
 import { vizTheme, drawMoonPhaseMarker } from './viztheme.js?v=6';
 import { wikimediaCredit, wikiImageCredit, renderImageCredit } from './imagecredits.js?v=2';
 
@@ -87,7 +87,6 @@ const S = {
   date: new Date(),
   skyTime: new Date(),
   skyMag: 10,                     // all-sky chart magnitude limit (desktop #skyMag twin)
-  playing: false,
   view: 'tonight',
   // WEB-REV-003: ONE selected-target identity for Tonight, Catalog and Sky
   // View (`detailId`), plus EXPLICIT inspector visibility (`detailOpen`).
@@ -109,7 +108,7 @@ const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '
 const typeColor = (o) => TYPE_COLORS[o.otype] || '#9fb4d8';
 
 /* Hidden popularity scoring - log-scale normalization of the popularity source
-   community scores BAKED into the catalog payload (`app/popularity_data.py` ->
+   community scores BAKED into the catalog payload (`catalog_data/popularity_data.py` ->
    `web/catalog.json`). The web app makes NO request to the popularity source: that
    snapshot was fetched once (see `scripts/match_popularity.py`, which is
    offline by default) and ships with the catalog, so ranking works fully
@@ -555,6 +554,7 @@ function wxRows(data) {
   const times = Array.isArray(h.time) ? h.time : [];
   const aqIndex = new Map((Array.isArray(aq.time) ? aq.time : []).map((t, i) => [t, i]));
   const value = (key, i) => wxNumber(Array.isArray(h[key]) ? h[key][i] : null);
+  // Times come from the provider and reach markup: keep only well-formed ISO hours.
   return times.map((time, i) => {
     const ai = aqIndex.get(time);
     const aqValue = (key) => ai == null || !Array.isArray(aq[key]) ? null : wxNumber(aq[key][ai]);
@@ -584,7 +584,7 @@ function wxRows(data) {
       aerosol: aqValue('aerosol_optical_depth'),
       pm25: aqValue('pm2_5'),
     };
-  }).filter((row) => row.time);
+  }).filter((row) => typeof row.time === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(row.time));
 }
 function wxRowsForNight(data) {
   const rows = wxRows(data);
@@ -816,15 +816,24 @@ function wxRenderPanel() {
 // Cached photos are reused first. Results (image blobs AND definite
 // "no photo" answers) are cached in IndexedDB per object; transient network
 // failures are NOT cached so they retry next open.
+// One shared thumbnail connection: opening one per read/write leaked them and
+// would block any future version upgrade. Reopened after a close or failure.
+let thumbDb = null;
 function idbOpen() {
-  return new Promise((resolve, reject) => {
+  thumbDb ??= new Promise((resolve, reject) => {
     try {
       const rq = indexedDB.open('nightseam-images', 1);
       rq.onupgradeneeded = () => { rq.result.createObjectStore('thumbs'); };
-      rq.onsuccess = () => resolve(rq.result);
+      rq.onsuccess = () => {
+        const db = rq.result;
+        db.onversionchange = () => { db.close(); thumbDb = null; };
+        db.onclose = () => { thumbDb = null; };
+        resolve(db);
+      };
       rq.onerror = () => reject(rq.error);
     } catch (e) { reject(e); }
-  });
+  }).catch((e) => { thumbDb = null; throw e; });
+  return thumbDb;
 }
 async function idbGet(key) {
   try {

@@ -42,21 +42,32 @@ Resolved locally on branch horizon-calibration (receipt in RELEASES.md):
   explicitly chosen policy, and the photo setup shows a "Sky outside the photo"
   select that switches the assumption immediately (undoable).
 
-Confirmed and still open (review severity in brackets):
+Backlog resolved locally (same date): backup site coordinate and rig optics
+ranges; imported minimum altitude rounded/clamped to the 5-70 deg slider;
+one shared thumbnail IndexedDB connection; weather rows require ISO times (an
+attribute injection through the hour title was reproducible); scorer profile
+elements follow ceilFor for NaN/strings/null; popularity factor clamped to
+[0, 1]; missing moon inputs keep moon-aware scores finite; altazFrameApply
+documents its of-date input and normalizes azimuth; blank sky-mode horizons
+convert (hasHorizonDrawing); both check models require 2% separation; undo
+removes landmark/provenance/confidence keys added later; converted canvases
+are reused per model; right ascension outside [0, 24) is rejected; landing
+pages carry a document CSP and referrer policy.
+
+Confirmed and still open:
 
 - [assumption] Obstacle mode cannot express photographed clear sky: under the
   selectable strict policy an unpainted column inside the photo stays excluded.
-- [low] The planner's sunset/sunrise labels and "sun" scrub range use the
-  apparent centre on the horizon (with a 10-minute linear step across the
-  refraction cutoff), 2–10 min earlier than the published upper-limb
-  convention. The Sun model itself matches USNO (usno_sunrise_sunset_2026). Scorer fast path and ceilFor differ for
-  non-finite profile values. Backup sites/rigs lack lat/lon/focal ranges;
-  imported minAlt outside the 5–70 slider desynchronizes it. Thumbnail
-  idbOpen leaks connections. Weather row time is not escaped. Landing pages
-  send no security headers. altazFrameApply omits precession.
-- [low] Horizon: blank sky-mode records cannot be converted; physical checks
-  count as independent at 1e-8 separation; undo leaves added landmarks/
-  provenance/confidence keys; full-resolution canvas work repeats per review.
+- [convention] Sunset/sunrise labels and the "sun" scrub range use the apparent
+  centre on the horizon, 2-10 min earlier than the published upper-limb
+  convention. The Sun model itself matches USNO. Owner decision pending.
+- [hosting] Landing pages need server headers for framing protection and
+  nosniff; a document CSP cannot set them. Changing .htaccess requires the
+  separate server-policy review (HOSTING_CONFIGURATION.md).
+- [low] The thumbnail cache has no size limit or eviction and ignores quota
+  errors. Converting photos above roughly 16.7 MP may exceed iOS Safari canvas
+  limits. pickDarkWindow can pair an astronomical dusk with a nautical dawn on
+  the single transition night above about 84.5 deg latitude.
 - [legal, not advice] Impressum names a pseudonym without postal address;
   privacy lacks Art. 13 legal bases, rights and complaint authority.
 
