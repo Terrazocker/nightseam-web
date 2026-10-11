@@ -53,11 +53,3 @@ entry here when it is fixed and record the fix in RELEASES.md.
 - **BROWSER-LOCAL-001.** The local test server's connection queue was raised
   from 5 to 64 after refused module loads; failures are recorded with server
   thread health and failed URLs, never retried or skipped.
-- **BROWSER-CI-001.** On GitHub's Windows runners, roughly every other
-  browser run fails one check because Chrome reports `net::ERR_NO_BUFFER_SPACE`
-  for a single local request. The file differs each time (`app.js`,
-  `core/.../plannerstate.js`, `app.png`, all a few KB), and the same code
-  passes on the next run and locally (119/119). Keep-alive on the test server
-  (October 11) did not stop it. One run also missed the advanced-catalog
-  speed budget under 4x CPU throttling. The browser job now runs on Linux
-  (DECISIONS.md, 2026-10-11); remove this entry once Linux runs stay clean.

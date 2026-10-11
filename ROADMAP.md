@@ -16,7 +16,7 @@ Where NightSeam Web stands and what comes next. Open defects are in
 
 ## Before 0.7.0
 
-1. Push the development branch, let CI pass on GitHub and merge into master.
+1. Merge pull request #1 (`horizon-calibration` into master); CI passes on it.
 2. Owner decision: run the horizon real-photo acceptance first
    ([checklist](docs/acceptance/HORIZON_PANORAMA_ACCEPTANCE.md)) or release
    with it still open.

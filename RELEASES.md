@@ -22,7 +22,10 @@ Reproduced locally with Verdana/Courier New substituted, fixed in the layout
 (catalog count line on phones, landing header at 320 px) and in one
 font-dependent measurement, then passed with the substitution and without
 it. Local validation after the fix: pytest 378 passed / 1 skipped; real-Chrome
-suite 119/119. The next Linux CI result is still to be recorded.
+suite 119/119. GitHub CI on a7a240e (run 38162392160): source guards and
+pytest passed on Windows (5m20s), real-browser suite passed on Linux (5m45s,
+previously about 8.5 minutes on Windows). Two Linux runs, no network failures;
+BROWSER-CI-001 is closed and reopens if net::ERR_NO_BUFFER_SPACE recurs.
 
 ## Documentation reorganization and website copy — October 11, 2026 (local development)
 
