@@ -184,15 +184,21 @@ def rulers(c):
         finally:context.close()
 
 
+# Last commit whose editor replays the full stroke history on every move. The
+# comparison used HEAD, which only held the slow editor until incremental
+# painting was committed (223c412); afterwards it compared the code to itself.
+FULL_REPLAY_BASELINE='cacdacf393042b25243f66d515b5c3f89ce40292'
+
+
 @check('web-horizon-phases12-long-history-latency', 'web')
 def latency(c):
-    """Compare actual synchronous pointer handling and next-frame paint to HEAD.
+    """Compare actual synchronous pointer handling and next-frame paint to full replay.
 
     Initial target: p95 visible paint <50ms and >=2x faster pointer handling than
     full replay for a 20,000-dab history. Avoid asserting hardware-specific ms
     ceilings on CI; preserve measured evidence and enforce improvement ratio.
     """
-    baseline=subprocess.check_output(['git','show','HEAD:web/horizon.js'],cwd=ROOT)
+    baseline=subprocess.check_output(['git','show',FULL_REPLAY_BASELINE+':web/horizon.js'],cwd=ROOT)
     results={}
     for name in ('before','after'):
         context,page=_new_context(c.page.context.browser);local=Ctx(page,c.base,'web',c.artifacts);_attach(local)

@@ -21,11 +21,17 @@ Resolved locally on branch horizon-calibration (receipt in RELEASES.md):
   owns VISIBILITY_REASON.UNKNOWN_HORIZON and panoramaVisibilityReason; the
   catalog cell, selected-time line and detail summary use it.
 
+- Latency gate (correcting the first note): web-horizon-phases12-long-history-
+  latency compared against HEAD:web/horizon.js, which held the full-replay editor
+  only until 223c412 committed incremental painting; it then compared the code
+  to itself and failed. It now pins cacdacf, the last full-replay commit.
+- Release guard: build_changelog.py --check ordered tags by version, so the
+  inherited v0.6.x tags hid an uncurated v0.1.x tag. It now uses creation order.
+
 Confirmed and still open (review severity in brackets):
 
-- [workflow] build_changelog.py --check sorts tags by version, so inherited
-  v0.6.x tags hide an uncurated v0.1.x tag; pre_tag_check.py is the only
-  effective curation gate. No CI or hooks run the gates.
+- [workflow] Inherited tags occupy v0.1.5-0.1.7, v0.2.0-0.2.1, v0.3.x and v0.4.x,
+  so the reset series has only v0.1.2-0.1.4 free before an existing tag name.
 - [assumption] Reference anchors contain no published sunrise/sunset or
   twilight times; mutating the GMST rate, solar L0 (0.16°) or the equation of
   centre survives every anchor. planning.js cites them as its authority.
@@ -42,10 +48,6 @@ Confirmed and still open (review severity in brackets):
 - [low] Horizon: blank sky-mode records cannot be converted; physical checks
   count as independent at 1e-8 separation; undo leaves added landmarks/
   provenance/confidence keys; full-resolution canvas work repeats per review.
-- [test] web-horizon-phases12-long-history-latency asserts that incremental
-  painting materially improves frame time. It failed 3/3 on unchanged commit
-  9e6d3ee and 2/3 with these fixes on the same machine, after passing earlier
-  the same day: a load-dependent timing gate, not a functional regression.
 - [legal, not advice] Impressum names a pseudonym without postal address;
   privacy lacks Art. 13 legal bases, rights and complaint authority.
 

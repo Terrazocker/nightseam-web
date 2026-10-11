@@ -61,6 +61,35 @@ def test_the_generator_agrees_that_an_empty_entry_is_uncurated():
         {"version": "0.6.32", "date": "2026-01-01", "summary": "text"}]
 
 
+def _changelog():
+    spec = importlib.util.spec_from_file_location(
+        "build_changelog", ROOT / "scripts" / "build_changelog.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def test_an_uncurated_tag_after_the_version_reset_blocks_the_check():
+    """The website restarted at 0.1.0 below the inherited 0.6.x tags. In
+    creation order a new uncurated tag is release backlog, not history."""
+    mod = _changelog()
+    curated = {"0.1.1": "text", "0.1.0": "text", "0.6.36": "text"}
+    by_creation = ["v0.1.2", "v0.1.1", "v0.1.0", "v0.6.36", "v0.6.35"]
+    backlog, older = mod.split_uncurated(by_creation, curated)
+    assert backlog == ["0.1.2"], (backlog, older)
+    by_version = ["v0.6.36", "v0.6.35", "v0.1.2", "v0.1.1", "v0.1.0"]
+    assert mod.split_uncurated(by_version, curated)[0] == [], \
+        "version order is the order that hid the uncurated tag"
+
+
+def test_release_tags_are_read_in_creation_order(monkeypatch):
+    mod = _changelog()
+    calls = []
+    monkeypatch.setattr(mod, "git", lambda *args: calls.append(args) or "v0.1.1\nv0.6.36\n\n")
+    assert mod.release_tags() == ["v0.1.1", "v0.6.36"]
+    assert calls == [("tag", "--sort=-creatordate")]
+
+
 def test_the_catalog_guard_is_wired_into_the_pre_tag_gate(monkeypatch, capsys):
     """TR-01 (0.6.32 review): neither this gate nor check_release.py ran the
     catalog DATA token guard, so a COMMITTED catalog change with an unbumped

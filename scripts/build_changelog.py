@@ -205,7 +205,7 @@ def has_summary(curated: dict, version: str) -> bool:
 def split_uncurated(tags, curated):
     """Split uncurated tags into (since the newest curated entry, older).
 
-    `tags` is newest-first (git tag --sort=-version:refname). Only the first
+    `tags` is newest-first by CREATION (release_tags()). Only the first
     list matters for release integrity: those are the releases that happened
     AFTER the newest entry the repository release guard knows about. Everything older
     is the historical backlog (pre-0.4.2 tags) and is never curated. An EMPTY
@@ -217,6 +217,16 @@ def split_uncurated(tags, curated):
         return list(versions), []
     return ([v for v in versions[:newest] if not has_summary(curated, v)],
             [v for v in versions[newest + 1:] if not has_summary(curated, v)])
+
+
+def release_tags():
+    """Tags newest-first by creation date, not by version number.
+
+    The independent website restarted at 0.1.0 while inherited 0.6.x tags
+    remain, so version order put every new tag below the legacy series and an
+    uncurated new release read as historical backlog. Release integrity is
+    about what was tagged AFTER the newest curated entry, which is time order."""
+    return [t for t in git("tag", "--sort=-creatordate").splitlines() if t]
 
 
 def build_entries(tags, dates, curated=None):
@@ -303,7 +313,7 @@ def main(argv=None):
                              "is uncurated or generated release history is stale")
     args = parser.parse_args(argv)
 
-    tags = [t for t in git("tag", "--sort=-version:refname").splitlines() if t]
+    tags = release_tags()
     if not tags:
         print("no git tags found - run from the repo root of a tagged checkout.")
         return 1 if args.check else 0
