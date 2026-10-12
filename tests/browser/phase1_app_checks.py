@@ -4,7 +4,7 @@ import json
 import re
 
 from harness import ROOT, check
-from web_suite import boot, tab, horizon_test_png, paint
+from web_suite import boot, tab, horizon_test_png, sketch
 
 
 def modules():
@@ -65,7 +65,7 @@ def snapshot(c):
       const W=await import(m.webstore), H=await import(m.horizon);
       return {sites:await W.allStrict('sites'),rigs:await W.allStrict('rigs'),
         targets:await W.allStrict('targets'),prefs:structuredClone(H.getPrefs()),
-        panos:await H.exportPanosWithImages(),
+        horizons:await H.exportHorizonsWithPhotos(),
         prefsRaw:localStorage.getItem('nightseam_prefs_v1'),
         theme:localStorage.getItem('nightseam_theme')};
     }''', modules())
@@ -296,16 +296,15 @@ def backup_read_failure(c):
 def backup_post_commit_failure(c):
     boot(c)
     messages=dialogs(c)
-    # Include a real persisted panorama photograph so rollback must recover both stores.
+    # Include a real persisted horizon photo so rollback must recover both stores.
     tab(c,'horizon')
-    c.page.locator('#pano-file').set_input_files({'name':'rollback-horizon.png',
+    c.page.locator('#hz-photo-file').set_input_files({'name':'rollback-horizon.png',
         'mimeType':'image/png','buffer':horizon_test_png(120,40)})
-    c.page.wait_for_selector('#pano-canvas')
-    c.page.locator('#ed-save').click()
-    paint(c)
+    c.page.wait_for_selector('#hz-ph-width')
+    sketch(c)
     history_before = c.page.evaluate('async m => (await import(m.horizon)).captureEditorHistory()', modules())
-    c.expect(c.page.evaluate('async m => (await import(m.horizon)).horizonUnsaved()', modules()),
-             'rollback fixture includes a dirty undo branch')
+    c.expect(history_before and history_before['hist']['index'] > 0,
+             'rollback fixture includes an undo branch')
     c.page.evaluate('''async m => {
       const W=await import(m.webstore), H=await import(m.horizon);
       await W.saveRigRec({id:'rollback-rig',name:'Original rig',focal_mm:600,
@@ -316,8 +315,8 @@ def backup_post_commit_failure(c):
     }''',modules())
     setup(c,'backup')
     before=snapshot(c)
-    c.expect(before['panos']['panos'][0].get('image','').startswith('data:image/'),
-             'fixture includes actual persisted panorama photograph')
+    c.expect(before['horizons']['horizons'][0].get('image','').startswith('data:image/'),
+             'fixture includes an actual persisted horizon photo')
     site_id=c.page.locator('#tb-site').input_value()
     c.page.evaluate('''() => {
       const original=Storage.prototype.setItem;
@@ -334,14 +333,12 @@ def backup_post_commit_failure(c):
     upload(c,fixture_bundle())
     wait_alert(c,messages,n,'Import failed')
     c.expect(c.page.evaluate('window.__phasePrefsFailed'), 'post-commit prefs failure actually injected')
-    c.expect_eq(snapshot(c),before,'post-commit failure restores records, preferences and panorama image')
+    c.expect_eq(snapshot(c),before,'post-commit failure restores records, preferences and horizon photo')
     c.expect_eq(c.page.evaluate('async m => (await import(m.horizon)).captureEditorHistory()', modules()),
                 history_before, 'failed import preserves the original editor history')
-    c.expect(c.page.evaluate('async m => (await import(m.horizon)).horizonUnsaved()', modules()),
-             'rollback must preserve the dirty saved baseline')
     safety=c.page.evaluate('async m => (await import(m.webstore)).lastSafetySnapshot()',modules())
     c.expect_eq(safety['sites'],[r['val'] for r in before['sites']])
-    c.expect_eq(safety['panos'],before['panos'],'safety snapshot retains photograph bytes')
+    c.expect_eq(safety['horizons'],before['horizons'],'safety snapshot retains photo bytes')
     c.expect_eq(c.page.locator('#tb-site').input_value(),site_id)
     c.expect_eq(c.page.locator('#rigSelect').input_value(),'rollback-rig')
     c.expect(c.page.locator('#m-set-title').is_visible(),'failed import stays reviewable')
@@ -351,8 +348,8 @@ def backup_post_commit_failure(c):
     c.page.locator('tr[data-id="u_rollback"]').wait_for()
     c.expect_eq(c.page.locator('tr[data-id="u_incoming"]').count(),0)
     tab(c,'horizon')
-    c.page.wait_for_selector('#pano-canvas')
-    c.expect(c.page.locator('#pano-canvas').is_visible(),'old panorama is usable after rollback')
+    c.page.wait_for_selector('#hz-canvas')
+    c.expect(c.page.locator('#hz-canvas').is_visible(),'the old horizon is usable after rollback')
     c.assert_clean()
 
 

@@ -88,60 +88,40 @@ The local exposure catalog has its own design document in Nightseam-catalog.
   Use one altitude chart and one set of target facts. The inspector is inline
   and complementary at every width; on phones the rail stacks below the map.
   Closing it preserves the selected target with a small reopen action.
-- **Horizon:** fit the panorama at its source aspect ratio, or its angular working
-  aspect after explicit conversion. Keep a readable
-  profile, honest calibration summary, settings, and Save/Undo/Redo in the first
-  viewport where practical. Profile bins use the shared world-azimuth geometry.
-  Display the retained photo region after cropping, without changing original
-  photo bytes. Keep paint/crop/history controls in a bounded sticky toolbar above
-  the image and zoom controls on the image. Draw adaptive edge rulers, degree
-  labels and brush outlines in CSS pixels under DPR scaling; image geometry
-  remains in angular coordinates. Quieter grid/opacity controls belong in the
-  closed Display disclosure. Preserve view/tool state on same-panorama rerenders.
-  Newly imported photos enter Confirm geometry → Align or check → Review →
-  Draw skyline → Save. Alignment points have a true bearing and altitude angle.
-  Confirmed known geometry can be checked without mandatory fitting points.
-  Preview before applying a complete fit; offer a separate optional check and a
-  clearly approximate route. Existing records open directly with a review action;
-  separate legacy references remain under Advanced setup, which can review but
-  never re-apply linear geometry to a converted photo.
-  Optional Photo geometry / leveling shows detected metadata or requests known
-  source parameters, previews corrected pixels and requires explicit Apply before
-  drawing. Original bytes and original-pixel references remain authoritative;
-  crops affect the working view. Never reinterpret existing painted records.
-  Keep extra fitting/check points in a closed optional disclosure. Show each fit
-  residual, explicit exclusions, worst held-out errors and poor-spread warnings.
-  Promoting a check removes its independent-check claim after validation.
-  Rulers occupy gutters outside the photo, preserving its pixel rectangle and
-  pointer transform. Default to tracing for obstacles, offer nearby undoable
-  selected-point removal, and collapse profile/specialist editing controls while
-  preserving the user's disclosure state.
-  Use known true-bearing and measured altitude references, with clickable photo
-  points and keyboard-accessible percentage alternatives. Keep exact angle/fine
-  adjustment controls behind disclosure. State assumed, approximate or checked
-  references in text; “checked” means separate references agree within the saved
-  policy (1° directional error for physical orientation, historical per-axis
-  limits for legacy fits), not a precision guarantee. Unsupported projections
-  remain approximate. Show unknown coverage in text separately from whether the
-  chosen policy permits planning it.
-  Reserve cursor-readout space so pointer movement cannot shift the image.
-  Optional measurement source, angular error, time, group and exclusion reason
-  belong in a closed Advanced evidence disclosure. Optional observing position,
-  optical height and capture date also stay behind disclosure. The coverage
-  assumption is the exception: "Sky outside the photo" stays visible in photo
-  setup, defaults to open sky above the skyline for converted photos and
-  explains the current choice in one line.
-  Retain saved/imported metadata; ordinary setup must not require these fields.
-  Offer Brush / eraser and Trace skyline as named authoring tools with a plain
-  active-tool explanation. Put exact point controls in the settings rail, keep
-  the image available, and draw selected points and adaptive markers in CSS
-  pixels. Traces fill only between explicit endpoints and preserve later brush
-  corrections. Sky openings/overhangs retain their separate band workflow.
-  Explain precise-bin replacement next to the advanced action.
-  An unconnected first point is explicitly an unsaved draft, leaving the existing
-  horizon intact. Give plain feedback for discarded drafts and rejected additions.
-  On phones, cap the sticky toolbar at 40% of viewport height (at most 240px),
-  with internal scrolling so actions remain reachable without covering zoom.
+- **Horizon:** the job is "where is my sky blocked"; keep the editor to that.
+  Three rails: the horizon list with *New from photo*, *Draw by hand* and
+  *Import file*; the stage; and a settings rail with the Photo panel and closed
+  *Points by numbers*, *Phone compass* and *Display* disclosures. Keep about
+  20 controls visible at first glance and about 40 including the disclosures.
+  - The stage is one compass grid (azimuth across, altitude up, N/E/S/W on the
+    ruler, the minimum altitude as a dashed line) with the photo underneath.
+    The skyline is a line with a shaded obstruction below it, never colour
+    alone: a text summary names the highest and lowest obstruction and their
+    directions.
+  - A sticky toolbar holds Draw / Overhang / Align photo, Undo, Redo, Clear and
+    the save status; zoom controls sit on the canvas. On phones cap the toolbar at 40%
+    of the viewport height (at most 240px) with internal scrolling.
+  - Draw: click adds a point, dragging a point moves it between its
+    neighbours, dragging across the grid sketches and replaces that stretch,
+    Delete removes the selected point. Keyboard: arrows select and move points;
+    the points form adds them by numbers.
+  - Overhang: drag along the underside of a balcony, roof or branch; the sky
+    above that edge is shaded as blocked, with a dashed edge so it reads apart
+    from the skyline. Points drag, arrow keys and Delete work as in Draw; the
+    points form adds a flat overhang.
+  - Align photo: drag the photo; partial photos also get two round level
+    handles. A full panorama is never rolled. The Photo panel shows width,
+    north, tilt and roll as numbers, *Set north from a landmark*, *Set north
+    from the Sun*, *Detect skyline* and *Remove photo*; the skyline and
+    overhangs always move with the photo.
+  - Phone compass: Start, a live direction readout, *Add point here*, *Start
+    / Finish tracing* and a landmark correction. Say plainly that phone
+    compasses are rough and that a correction comes first.
+  - After a new photo, show a short three-step guide (width, north, skyline)
+    that can be dismissed; never a wizard. A partial photo opens zoomed to
+    itself.
+  - Edits save at once and the status says "Saved"; a failed save says so and
+    keeps the edit. Clear, Delete and Remove photo confirm in-page.
 
 Across Tonight, Catalog, and Sky View, keep one selected target and one inspector.
 Keep tables native: rows and cells expose table semantics, with named target
@@ -181,14 +161,9 @@ Web layouts must work at
 table regions where needed. Keep controls reachable when rails stack, and do
 not scale charts below a size that makes their labels unclear.
 
-On wide screens, the complete Horizon tools rail sticks and scrolls within the
-viewport. Never stick the photo/list section independently over the paint/history
-controls. Narrow layouts return to normal page flow. Long panoramas grow the body
-so the sticky common header remains visible throughout the editor.
-Precise horizon values remain a closed optional disclosure with direction/height
-labels and plain explanations of confidence, read-only comparison, and the
-replacement of painted strokes when applying numbers. History restores matching
-mode labels and values as well as the actual horizon data.
+On wide screens, the complete Horizon list rail sticks and scrolls within the
+viewport. Never stick its card independently over the editing toolbar. Narrow
+layouts return to normal page flow, with the list above the editor.
 
 
 ## Public website — approved October 6, 2026
@@ -203,8 +178,8 @@ opaque and flat; no photographic starfield, glow, blur or gradients.
 Use a compact plain wordmark, open typography and quiet separators. Every public
 page has a compact brass Open planner action aligned with the wordmark and desktop
 navigation. On phones it stays visible beside the native menu, including when the
-menu is closed. Home and Features retain their hero action. Panorama setup and
-calculated target visibility lead. Detailed
+menu is closed. Home and Features retain their hero action. Your own skyline
+and calculated target visibility lead. Detailed
 features, first-night guidance, sources and privacy information remain accessible through native disclosures.
 Changes contains the independent public release ledger starting at 0.1.0. No-JavaScript phone
 navigation uses a labeled native disclosure. Do not reintroduce screenshot-heavy

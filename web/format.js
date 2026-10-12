@@ -13,4 +13,4 @@ export {
   fmtSize, sizeArcmin, fmtFov, fmtFovPair, framePct, magVisible,
   SKY_ZOOM_MIN, SKY_ZOOM_MAX, skyClampZoom, skyViewMatrix,
   skyScreenToBase, skyClampFocus,
-} from './core.js?v=65';
+} from './core.js?v=66';

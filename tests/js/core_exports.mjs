@@ -1,13 +1,10 @@
 /*
  * TO-09 (0.6.24 review, carry-over TS4): the core exports NO test named.
  *
- * Eight exported FUNCTIONS were referenced nowhere under tests/ (the probe also
- * listed four constants), so a regression in them could be caught only indirectly
- * - or not at all (clipProfileToFov, fmtFov, fmtFovPair, isCustomId, searchBlob,
- * sizeArcmin). Each check asserts a PROPERTY of the documented contract, never a
- * golden value:
- *   clipProfileToFov  resets out-of-FOV bins to the mode sentinel, keeps the in-FOV
- *                     world bins and repairs a malformed profile
+ * Exported FUNCTIONS that were referenced nowhere under tests/ (fmtFov,
+ * fmtFovPair, isCustomId, searchBlob, sizeArcmin, sunAlt, sunCrossings) could
+ * regress unnoticed. Each check asserts a PROPERTY of the documented contract,
+ * never a golden value:
  *   fmtFov/fmtFovPair render arcminutes with the degrees in brackets
  *   isCustomId        accepts only the server's `u_` prefix
  *   searchBlob        lowercases and joins the searchable fields
@@ -47,23 +44,6 @@ eq(C.searchBlob({ id: "M 31", primary_name: "Andromeda", messier: "M31",
                   ngcic: null, other: null, otype: "G", constellation: "And",
                   blurb: "", distance: null }),
    "m 31 andromeda m31 g and", "searchBlob must lowercase and join the fields");
-
-/* ---- clipProfileToFov (core/horizon.js) ---- */
-const BINS = 720;
-const pano = { paintMode: "obstacle", fov: 180, azOffset: 0,
-               profile: new Array(BINS).fill(30),
-               profileTop: new Array(BINS).fill(-90) };
-C.clipProfileToFov(pano);
-eq(pano.profile[0], 30, "an in-FOV bin keeps its world value");
-eq(pano.profile[360], 30, "the 180 deg boundary bin is still in frame");
-eq(pano.profile[361], C.NO_BLOCK, "the first out-of-FOV bin resets to the sentinel");
-eq(pano.profile[719], C.NO_BLOCK, "the last bin resets too");
-eq(pano.profileBins, "world", "the record must stay world-azimuth");
-const broken = { paintMode: "sky", fov: 360, azOffset: 0, profile: "nope" };
-C.clipProfileToFov(broken);
-eq(broken.profile.length, BINS, "a malformed profile is repaired");
-eq(broken.profile[0], 90, "sky mode repairs to the fully-blocked sentinel");
-eq(broken.profileTop.length, BINS, "a missing profileTop is repaired");
 
 /* ---- sunAlt / sunCrossings (core/astro.js + core/planning.js) ---- */
 const noon = C.julianDay(new Date("2026-06-21T12:00:00Z"));

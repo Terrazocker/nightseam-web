@@ -85,10 +85,12 @@ machine's sandbox limits (Chrome named pipes, elevated runs).
 - Popularity only breaks ties and is never shown in the UI.
 
 **Horizons**
-- Profiles are stored in world-azimuth bins.
-- Stored strokes win over a stored profile; a record without strokes keeps its
-  profile. Crops never modify the original photo.
-- Editor history stays safe: dirty state, undo/redo and the leave-page warning.
+- Skyline points and overhang edges are the only source of truth. The
+  planner's world-azimuth profiles are derived from them and never stored.
+- A photo is a tracing aid: moving it moves the skyline and overhangs with
+  it, and its bytes are never modified.
+- Editor history stays safe: edits save at once, undo/redo keep working, and
+  a failed save stays dirty with the leave-page warning armed.
 
 **Catalog**
 - Standard catalog IDs are globally unique and stable. The standard 200-object
@@ -134,6 +136,9 @@ machine's sandbox limits (Chrome named pipes, elevated runs).
 | docs/history/ | Finished plans, reviews and old logs (may mention removed desktop files; this file is the current authority) |
 
 ## Subagents
+
+The definitions live in `.claude/agents/` (reviewer: Opus, effort high;
+digest-reader and validator: Sonnet, effort xhigh).
 
 - Bulk reading across several files: use `digest-reader` and ask for a digest
   with file:line references, not file contents.

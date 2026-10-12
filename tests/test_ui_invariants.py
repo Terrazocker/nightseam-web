@@ -75,77 +75,39 @@ def test_web_chip_row_has_no_popular_chip():
     assert "const CHIP_LABELS = { all: 'All', messier:" in js
 
 
-def test_web_panorama_editor_switch_flush_and_beforeunload():
-    """Switch-to-another-panorama must FLUSH the open editor's edits (they belong
-    to the original id) and never write them into the new selection; the web has
-    no pending save timer (the flush is synchronous). beforeunload is
-    warn-only/best-effort - it must not persist, so a hard close can be lossy
-    (the in-app navigation flush and the warning are the protection)."""
+def test_web_horizon_editor_switch_flush_and_beforeunload():
+    """Switching to another horizon must FLUSH the open editor first, so edits
+    stay with the horizon they belong to; the flush is synchronous (no save
+    timer). beforeunload only warns while something is unsaved."""
     js = _read("web", "horizon.js")
     assert "if (activeSession && activeSession.dirty()) activeSession.save();" in js
-    assert "flushHorizonEdits();          // never lose edits when switching" in js
+    radio = js[js.index("$('input[type=radio]', li).addEventListener('change'"):]
+    assert radio.index("flushHorizonEdits();") < radio.index("setActive(li.dataset.id);"), \
+        "switching must flush before activating the other horizon"
     assert "addEventListener('beforeunload'" in js
     assert "ev.returnValue = ''" in js
     assert "saveTimer" not in js          # web flush is synchronous, not a timer
 
 
-def test_web_panorama_editor_controls_and_no_blocking_dialogs():
-    """The redesigned web panorama editor exposes the full control set and never
-    uses a blocking browser alert/confirm (Clear uses an in-page dialog)."""
+def test_web_horizon_editor_controls_and_no_blocking_dialogs():
+    """The horizon editor exposes its whole control set and never uses a
+    blocking browser alert/confirm (Clear, Delete and Remove photo use an
+    in-page dialog)."""
     js = _read("web", "horizon.js")
-    for cid in ("ed-undo", "ed-redo", "ed-revert", "ed-clear", "ed-save",
-                "ed-zoom-in", "ed-zoom-out", "ed-fit", "ed-status", "ed-pos"):
+    for cid in ("hz-mode-draw", "hz-mode-align", "ed-undo", "ed-redo", "hz-clear",
+                "ed-zoom-in", "ed-zoom-out", "ed-fit", "ed-status", "ed-pos",
+                "hz-export", "hz-name", "hz-new-draw", "hz-photo-file", "hz-import-file"):
         assert f'id="{cid}"' in js, f"missing editor control #{cid}"
-    assert "alert(" not in js and "window.confirm(" not in js
-    for fn in ("snapshotPano", "historyUndo", "historyRedo", "editorClampZoom",
-               "editorScreenToBase", "horizonUnsaved", "flushHorizonEdits"):
+    assert "alert(" not in js and "window.confirm(" not in js and " confirm(" not in js
+    assert js.count("await confirmDialog(box,") >= 3, "Clear, Delete and Remove photo ask in-page"
+    for fn in ("horizonUnsaved", "flushHorizonEdits", "clampView", "describeHorizon"):
         assert f"export function {fn}" in js, fn
-
-
-
-
 
 
 def _js_body(src: str, header: str) -> str:
     """Body of a top-level JS function, up to its first closing brace."""
     start = src.index(header)
     return src[start:src.index("\n}", start)]
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 def test_attribute_hidden_panels_restore_display_none():
@@ -165,8 +127,6 @@ def test_attribute_hidden_panels_restore_display_none():
     assert "function showRigPicker()" in js
 
 
-
-
 def test_rig_selector_sits_in_the_topbar():
     """The imaging rig belongs next to Site, not buried in the hamburger menu."""
     for tree in ("web",):
@@ -175,7 +135,6 @@ def test_rig_selector_sits_in_the_topbar():
         assert sep, f"{tree}/index.html lost its hamburger menu"
         assert 'id="rigSelect"' in head, f"{tree}: the rig selector left the topbar"
         assert 'id="rigSelect"' not in menu, f"{tree}: the rig selector is back in the hamburger menu"
-
 
 
 def test_progressive_disclosure_keeps_advanced_controls_in_the_menu():
@@ -225,10 +184,9 @@ def test_progressive_disclosure_keeps_advanced_controls_in_the_menu():
 
 def test_web_action_rows_are_not_full_width():
     """ITEM B (0.6.13): an action button used AS a label must not become a
-    full-width flex block. `.btnrow label { display:flex }` stretched the
-    "Upload photo" label-button across the whole horizons panel while
-    "Blank sky" stayed content-width. Pin the scoped rule, the auto-width
-    action-row, and the horizons row using it."""
+    full-width flex block. `.btnrow label { display:flex }` stretched an
+    upload label-button while its siblings stayed content-width. Pin the
+    scoped rule, the auto-width action-row, and the horizon create buttons."""
     css = _read("web", "style.css")
     assert ".btnrow label:not(.btn)" in css, \
         "the .btnrow label rule must exclude label-buttons (class=btn)"
@@ -237,69 +195,36 @@ def test_web_action_rows_are_not_full_width():
     assert ".action-row .btn { flex: 0 0 auto; }" in css, \
         "action-row buttons must be auto-width, not stretched"
     js = _read("web", "horizon.js")
-    assert 'class="btnrow action-row"' in js, \
-        "the horizons create row must use the auto-width action-row"
-    assert 'class="btn primary" for="pano-file"' in js, \
-        "the upload control must stay a label-button (auto-width)"
+    assert 'class="btn primary" for="hz-photo-file"' in js, \
+        "the photo control must stay a label-button"
+    assert ".hz-new { display: grid;" in css, "the create buttons share one grid column"
 
 
-def test_web_hold_right_click_erases_and_sky_chart_has_no_chord():
-    """0.6.13 follow-up: a held right-button drag must erase for the WHOLE
-    gesture (one history entry), not a single contextmenu dab; and the sky
-    chart must draw the sky-mode blocked-above region per contiguous overhang
-    run so a gap is never bridged by a straight chord."""
+def test_web_horizon_canvas_has_no_context_menu_and_sky_chart_has_no_chord():
+    """The editor canvas only suppresses the browser menu on right-click (it
+    starts no gesture), and the sky chart strokes only the ceiling curve, so
+    the az 0 seam never shows a radial chord."""
     js = _read("web", "horizon.js")
-    assert "ev.button === 2" in js, "the right-button paint gesture is gone"
-    assert "gestureErase = ev.button === 2" in js, "right-button erase owns the whole gesture"
-    assert "gestureErase" in js and "strokeAt(x, y, gestureErase)" in js, \
-        "pointermove must continue the right-button erase gesture"
-    assert "![0, 1, 2].includes(ev.button)" in js, "unsupported pointer buttons must be ignored"
-    # TR-11 (0.6.32 review): this used to assert the COMMENT text "already
-    # erased", which only a prose edit could break while the behaviour it names
-    # could come back green. Pin the HANDLER shape instead: the contextmenu
-    # listener must only suppress the browser menu - a re-added one-shot erase
-    # would call strokeAt() there.
-    handler = re.search(
-        r"cvs\.addEventListener\('contextmenu',\s*\(ev\)\s*=>\s*\{(.*?)\}\)",
-        js, re.S)
-    assert handler, "the contextmenu handler is gone"
-    assert "preventDefault" in handler.group(1), \
-        "contextmenu must suppress the browser menu"
-    assert "strokeAt" not in handler.group(1), \
-        "contextmenu must not perform a separate one-shot erase"
-    assert "export function overhangRuns" in _read("core", "horizon.js"), \
-        "overhangRuns helper missing from core"
+    handler = re.search(r"cvs\.addEventListener\('contextmenu',\s*\(ev\)\s*=>\s*([^;]*)\);", js)
+    assert handler and handler.group(1).strip() == "ev.preventDefault()", \
+        "contextmenu must only suppress the browser menu"
+    assert "} else if (ev.button !== 0) {\n      return;" in js, \
+        "only the primary button (and middle/Space pan) start gestures"
     app = _read("web", "app.js")
-    assert "Hor.overhangRuns(pano, 2)" in app, \
-        "the sky chart must draw blocked-above per contiguous overhang run"
-    assert "topPts" not in app, \
-        "the old single top polygon (chord across gaps) must be gone"
+    seam = app[app.index("// stroke ONLY the ceiling curve"):]
+    seam = seam[:seam.index("ctx.stroke();")]
+    assert "ceilPts.forEach" in seam and "cx + R * Math.sin" not in seam, \
+        "the stroke must follow the ceiling only, never the rim polygon"
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-def test_web_sky_mode_is_one_obstruction_colour_and_scrub_time_is_clamped():
-    """0.6.13 follow-up: sky-band shading must be ONE obstruction colour (the
-    sky view = the obstruction view inverted; no unexplained second/yellow
-    region), and the selected scrub time must be pulled into the window at
-    boot / on a site or date change so a daytime load never shows a daylight
+def test_web_sky_chart_has_one_obstruction_colour_and_scrub_time_is_clamped():
+    """The sky chart shades obstructions in ONE colour (no second, yellow
+    region), and the selected scrub time is pulled into the window at boot /
+    on a site or date change so a daytime load never shows a daylight
     "visible at" instant."""
     app = _read("web", "app.js")
     assert "rgba(255, 209, 102, .12)" not in app, \
-        "sky mode must not paint a second (yellow) blocked colour"
-    assert "Hor.overhangRuns(pano, 2)" in app
+        "the sky chart must not paint a second (yellow) blocked colour"
     assert app.count("clampSkyTime();") >= 2, \
         "clamp the scrub time at boot and on refresh"
     assert "clampSkyTime({ repaint: true });" in app, \
@@ -308,10 +233,6 @@ def test_web_sky_mode_is_one_obstruction_colour_and_scrub_time_is_clamped():
         "refresh-driven clamps must synchronize controls without a second render"
     assert "if (!S.site) return null;" in app, \
         "clampSkyTime must guard before the active site is known"
-
-
-
-
 
 
 def test_web_night_info_anchors_the_polar_fallback():
@@ -326,21 +247,17 @@ def test_batch3_web_hardening_wiring():
     """Batch 3 web items that are not browser-testable here (WB3/WB4/WB6/WB7):
     the reload path is shared, the cross-tab guard exists, an IDB upgrade
     blocked by another tab rejects instead of hanging, and a bundle without a
-    pano section cannot wipe horizons. Behavioural guards for WB5 are in
-    tests/js/pano_ui.mjs."""
+    horizon section cannot wipe horizons. Behavioural guards are in
+    tests/js/horizon_ui.mjs and tests/js/web_backup.mjs."""
     app = _read("web", "app.js")
     assert len(re.findall(r"await reloadRigs\((?:options)?\);", app)) >= 3, \
         "boot, renderSettings and reinitUserData must share reloadRigs()"
-    assert "missing panorama section" in app
+    assert "missing horizon section" in app
     hz = _read("web", "horizon.js")
-    assert 'addEventListener("storage"' in hz, \
-        "another tab's pano/prefs write must trigger a reload (WB4)"
+    assert "addEventListener('storage'" in hz, \
+        "another tab's horizon/prefs write must trigger a reload (WB4)"
     ws = _read("web", "webstore.js")
     assert "rq.onblocked" in ws, "a blocked IDB upgrade must reject (WB6)"
-
-
-
-
 
 
 def test_web_charts_expose_descriptions_and_accessibility_modes():
@@ -403,19 +320,19 @@ def test_web_content_width_follows_free_space_without_a_pixel_cap():
     assert literals == ["320px"]
 
 
-def test_web_horizon_legend_and_hatching_explain_the_obstruction():
+def test_web_horizon_legend_explains_the_obstruction():
     app = _read("web", "app.js")
-    for text in ("blocked by horizon", "above band: open (assumed)", "obstacleStroke", "obstacleFill", "assumedHatch"):
+    for text in ("blocked by horizon", "obstacleStroke", "obstacleFill"):
         assert text in app
-    assert "rgba(210, 225, 255, .55)" in _read("web", "style.css")
-    assert "assumedOpenHatchPolys(p, W, H, lo, hi)" in _read("web", "horizon.js")
-    for token in ("--viz-obstacle-fill:", "--viz-obstacle-stroke:", "--viz-assumed-hatch:"):
+    assert "above band: open (assumed)" not in app and "assumedHatch" not in app, \
+        "the retired sky-band hatching must not come back half-wired"
+    for token in ("--viz-obstacle-fill:", "--viz-obstacle-stroke:"):
         assert token in _read("web", "themes.css")
 
 
 def test_web_altitude_graph_explains_states_and_clips_moon_tracks():
     app = _read("web", "app.js")
-    for text in ('class="chart-legend"', "Target state", "Chart guides", "Minimum altitude", "Moon altitude", "Obstruction ceiling", "white phase discs"):
+    for text in ('class="chart-legend"', "Target state", "Chart guides", "Minimum altitude", "Moon altitude", "<b>Horizon</b>", "white phase discs"):
         assert text in app
     assert "gCtx.rect(padL, padT, W - padL - padR, H - padT - padB);" in app
     assert "s.mAlt < -10 || s.mAlt > 90" in app

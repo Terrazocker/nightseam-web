@@ -10,7 +10,7 @@
  * the app moved to nightseam.de, so every visitor starts on a fresh origin.
  */
 
-import { offsetEastMin, zonedWallToUtcMs, normalizeCoverageEvidence, normalizePhotoCalibration } from './core.js?v=65';
+import { offsetEastMin, zonedWallToUtcMs } from './core.js?v=66';
 
 const DB_NAME = 'nightseam-db-v1';
 const DB_VER = 1;
@@ -352,7 +352,7 @@ export function currentTheme() {
   } catch { return 'workbench'; }
 }
 
-export async function collectBackup(prefs, panos, theme) {
+export async function collectBackup(prefs, horizons, theme) {
   const [sites, rigs, targets] = await Promise.all([
     allStrict('sites'), allStrict('rigs'), allStrict('targets'),
   ]);
@@ -364,7 +364,7 @@ export async function collectBackup(prefs, panos, theme) {
     // the key the boot script actually reads, so a restore can re-apply it
     theme: currentTheme(),
     prefs: cleanWebPrefs(prefs),
-    panos: panos || { panos: [], activeId: null },
+    horizons: horizons || { horizons: [], activeId: null },
     sites: sites.map((r) => r.val),
     rigs: rigs.map((r) => r.val),
     targets: targets.map((r) => r.val),
@@ -396,12 +396,30 @@ function cleanRecord(r, { numbers = [], strings = [] } = {}) {
   return out;
 }
 
-/** Backup bundle format. Every earlier format stays readable; an older client
- * refuses a newer bundle rather than silently losing evidence it cannot keep
- * (v3 dab radii, v4 source rectangles, v5 calibration evidence, ... v10
- * physical orientation and coverage/measurement evidence). Bump this together
- * with any incompatible bundle change. */
-export const BUNDLE_VERSION = 10;
+/** Backup bundle format. An older client refuses a newer bundle rather than
+ * silently losing data it cannot keep. Format 11 replaced the panorama section
+ * (`panos`) with skyline horizons (`horizons`); formats 1-10 still restore
+ * their sites, rigs, targets and settings, but their panoramas are not
+ * converted. Bump this together with any incompatible bundle change. */
+export const BUNDLE_VERSION = 11;
+const FIRST_HORIZON_VERSION = 11;
+
+const bundleVersion = (data) => (data && data.version != null ? Number(data.version) : 1);
+
+/** The horizon section a bundle restores: its own for format 11+, an empty one
+ *  for older bundles (whose retired panorama section is ignored). */
+export function backupHorizonSection(data) {
+  const v = bundleVersion(data);
+  if (Number.isInteger(v) && v < FIRST_HORIZON_VERSION) return { horizons: [], activeId: null };
+  return data ? data.horizons : undefined;
+}
+
+/** True when an older bundle carried panoramas that will not be imported. */
+export function backupHasRetiredHorizons(data) {
+  const v = bundleVersion(data);
+  return Number.isInteger(v) && v < FIRST_HORIZON_VERSION
+    && Array.isArray(data?.panos?.panos) && data.panos.panos.length > 0;
+}
 
 export const WEB_PREF_DEFAULTS = Object.freeze({
   bortle: 4, minAlt: null, moonAware: false, viewFullDay: false, edge: 16,
@@ -467,7 +485,7 @@ export function stageBackup(data) {
   if (!data || data.app !== 'nightseam-web') {
     throw new Error('not a NightSeam Web backup');
   }
-  const v = data.version == null ? 1 : Number(data.version);
+  const v = bundleVersion(data);
   if (!Number.isInteger(v) || v < 1) {
     throw new Error('backup has an unusable version stamp');
   }
@@ -504,25 +522,18 @@ export function stageBackup(data) {
     numbers: ['ra_hours', 'dec_deg', 'vmag'],
     strings: ['primary_name', 'otype', 'size_am', 'constellation', 'blurb'],
   });
-  // WE-02 (0.6.32 review): the panorama section is required and its outer
+  // WE-02 (0.6.32 review): the horizon section is required and its outer
   // shape must be validated HERE, with everything else. The UI performs the
   // deeper horizon normalization before calling restoreBackup, so no caller
-  // can clear IndexedDB and only then discover that the panorama payload was
-  // unusable.
-  if (!data.panos || typeof data.panos !== 'object') {
-    throw new Error('backup panorama section is missing');
+  // can clear IndexedDB and only then discover that the horizon payload was
+  // unusable. Older formats restore an empty section.
+  const horizons = backupHorizonSection(data);
+  if (!horizons || typeof horizons !== 'object') {
+    throw new Error('backup horizon section is missing');
   }
-  if (!Array.isArray(data.panos.panos)) {
-    throw new Error('backup panorama section is not a list of panoramas');
+  if (!Array.isArray(horizons.horizons)) {
+    throw new Error('backup horizon section is not a list of horizons');
   }
-  // Reject incompatible geographic/reference evidence while the whole bundle
-  // is still staged. Invalid records later discarded by id cannot hide it.
-  for (const pano of data.panos.panos) {
-    if (!pano || typeof pano !== 'object') continue;
-    normalizeCoverageEvidence(pano.coverageEvidence, true);
-    normalizePhotoCalibration(pano.calibration, true);
-  }
-  const panos = data.panos;
   const records = (key, clean) => {
     // Legacy exports could omit empty sections; a present section of the
     // wrong type must never be converted into a destructive empty array.
@@ -548,7 +559,7 @@ export function stageBackup(data) {
     rigs: records('rigs', rigOf),
     targets,
     prefs: cleanWebPrefs(data.prefs),
-    panos,
+    horizons,
     // Keep unknown values out of localStorage. The old flat names are safe
     // aliases and are staged under the new canonical default name.
     theme: 'workbench',
@@ -577,7 +588,7 @@ export function lastSafetySnapshot() { return get('meta', 'safety'); }
  *  `current` is a full snapshot of the CURRENT state. Its safety record and
  *  the replacement commit together; a failed transaction preserves all old
  *  records and metadata without a second destructive rollback transaction.
- *  Returns the staged records (including prefs/panos/theme) for the caller to
+ *  Returns the staged records (including prefs/horizons/theme) for the caller to
  *  apply to localStorage / IndexedDB. */
 export async function restoreBackup(data, current) {
   const staged = stageBackup(data);          // validate FIRST - no writes yet

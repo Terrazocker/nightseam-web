@@ -26,12 +26,7 @@ Web modules import only `./core.js?v=<token>`, never `web/core/<hash>/`.
 | `app.js` | Shell state (`S`), Tonight, Catalog, Sky View, the detail card, weather and Wikipedia photos |
 | `astro.js` | Thin wrapper over core astronomy and planning |
 | `nightrank.js`, `format.js` | Re-exports of core scoring and formatting |
-| `horizon.js` | Panorama editor, persistence and undo/redo history |
-| `horizonsetup.js` | Guided photo setup and the "Sky outside the photo" switch |
-| `horizonsimple.js` | Two-point reference picking, preview, apply and checks |
-| `horizontrace.js` | Skyline tracing |
-| `horizonphoto.js` | Original-photo bytes, header checks and resampling to the angular view |
-| `horizongeographic.js` | Coverage and capture evidence |
+| `horizon.js` | Horizon editor, horizon and photo storage, preferences |
 | `webstore.js` | IndexedDB records, preferences, timezones and backup/restore |
 | `viztheme.js` | Canvas colors read from `themes.css` |
 | `imagecredits.js` | Exact-file photo credits |
@@ -60,46 +55,79 @@ One loop scores every view: `computeNightTracks` builds object tracks on a
 6-minute grid and `scoreNightTracks`/`nightStats` turn them into usable
 minutes, best windows and scores. Grid cells are half-open and clipped to the
 exact dark window. A sample is usable when it is above the minimum altitude,
-above the horizon ceiling and below any upper ceiling. `visibilityReason` and
-`panoramaVisibilityReason` name why it is not; `unknown_horizon` marks a block
-caused by missing horizon evidence rather than a recorded obstruction.
+above the horizon ceiling and below any overhang edge above it.
+`visibilityReason` and `panoramaVisibilityReason` name why it is not.
 Popularity only breaks ties and is never shown.
 
 ## Horizon model
 
-- **Profiles.** A horizon is a 720-bin world-azimuth profile (0.5 deg bins),
-  derived from a 720x360 mask. Obstacle mode records the obstruction top; sky
-  mode records painted sky bands, optionally blocking above them.
-- **Strokes win.** Ordered brush/eraser dabs and skyline traces are the source
-  of truth when present; a record without strokes keeps its stored profile.
-- **Crops** are non-destructive rectangles against the original photo.
-- **Photo conversion.** A source photo (angular panorama, cylindrical panorama
-  or corrected ordinary photo; up to 32 MP and a 25 MB upload) is resampled
-  into an angular working view of at most 2 MP. The original bytes are kept.
-- **Calibration evidence** has versions 1-5. Version 5 fits heading, pitch and
-  roll from reference points (1 deg tolerance), with held-out checks that must
-  lie at least 2% of the image away from every fitting point.
-- **Coverage policy** decides what counts outside the photo: `legacy` (open
-  everywhere), `inferred-open` (open above the skyline, unphotographed
-  directions excluded; the default for converted photos) and `strict-measured`
-  (only what the photo shows). `ceilFor` and the scorer share it.
+Design and reasons: [DECISIONS.md](DECISIONS.md) ("Rebuild the horizon
+editor"); plan: [docs/horizon/HORIZON_REBUILD_PLAN.md](docs/horizon/HORIZON_REBUILD_PLAN.md).
+
+- **Record.** `{ id, name, points, overhangs, photo, hasPhoto }`. `points`
+  are world azimuth/altitude pairs (altitude -10 to 90), sorted, one per
+  0.01 deg of azimuth, at most 1440. `overhangs` are up to 20 edge lines with
+  azimuths within 0-360 (an edge crossing north is split there).
+  `core/horizon.js` normalizes every record.
+- **Profile.** Points are joined by straight lines around the circle; no
+  points blocks nothing, one point is a flat skyline. `skylineProfile` turns
+  them into 720 world-azimuth bins (0.5 deg) holding the highest altitude in
+  each bin. `overhangProfile` gives `profileTop`: for every bin an overhang
+  touches, the lowest edge altitude in it, else 90.5 (open). `withProfile`
+  attaches both in memory; `ceilFor` returns them as `ceil`/`ceilTop` and the
+  scorer reads the same arrays. They are never stored or backed up.
+- **Photo placement.** `{ width, heading, tilt, roll }`: the horizontal angle
+  (360 = full panorama, which wraps and is never rolled), the azimuth and
+  altitude of the photo centre and its rotation, with square pixels in
+  degrees. `photoToWorld`/`worldToPhoto` map between them; `reprojectPoints`
+  moves the skyline when the placement changes; `headingForLandmark` sets
+  north from one known direction. Ordinary photos use the same linear mapping,
+  an approximation that grows towards their edges.
+- **Detection.** `detectSkylineRows` finds the sky/ground boundary per column
+  of a downscaled daylight photo (Otsu threshold on brightness plus blueness,
+  a run of three ground pixels, a 5-column median); the editor maps the rows
+  through the placement and simplifies them (0.25 deg).
+- **Files.** `parseHorizonFile` reads `azimuth altitude` lines (Stellarium,
+  N.I.N.A., plain lists); `formatHorizonFile` writes them. Overhangs have no
+  place in those formats and stay in NightSeam and its backups.
+- **Phone compass.** `devicePointing(alpha, beta, gamma)` gives the back
+  camera's direction from W3C device orientation. The editor prefers absolute
+  (`deviceorientationabsolute`, or iOS `webkitCompassHeading`) readings and
+  adds a session-only correction set from one landmark, which covers compass
+  error and magnetic declination. `requestPermission` is raced against 1.5 s,
+  because some browsers expose it without ever settling it.
+- **North from the Sun.** `sunDirection(jd, lat, lon)` is the apparent Sun;
+  `placementFromKnownDirection` sets heading and tilt so a marked pixel lands
+  on it. `photoCaptureTime` reads DateTimeOriginal and OffsetTimeOriginal
+  from JPEG EXIF; without an offset the camera clock is read as site time.
+- **Editor.** One canvas: azimuth 0-360 across, altitude -10 to 80 up, with a
+  zoom of 1-12x. Draw mode adds, drags, sketches and deletes points; Align
+  photo drags the photo (and rolls partial photos); Overhang mode draws and
+  edits overhang edges. Each finished gesture is one history entry
+  (`core/horizonhistory.js`, 100 entries, covering points, overhangs and the
+  placement) and saves at once.
+  Re-rendering the same horizon keeps its history.
+- **Limits.** 50 horizons; uploads are JPEG or PNG up to 25 MB and 32 MP
+  (checked from the header before decoding); imported files up to 1 MB.
 
 ## Storage and backups
 
 | Where | What |
 |---|---|
 | localStorage `nightseam_prefs_v1` | Preferences |
-| localStorage `nightseam_panos_v1` | Panorama records (without photos) |
+| localStorage `nightseam_horizons_v2` | Horizon records (without photos or profiles) |
 | localStorage `nightseam_site_v1`, `nightseam_theme` | Legacy site record, theme |
 | IndexedDB `nightseam-db-v1` | Sites, rigs, custom targets, safety snapshot |
-| IndexedDB `nightseam-panoimg` | Original panorama photos |
+| IndexedDB `nightseam-horizon-photos` | Original horizon photos |
 | IndexedDB `nightseam-images` | Wikipedia thumbnail cache |
 
-A backup is one JSON bundle (format 10; formats 1-9 still import, newer ones
-are refused). Restore validates and stages the whole bundle, checks that the
+A backup is one JSON bundle (format 11; formats 1-10 still restore their
+sites, rigs, targets and settings but not their retired panoramas; newer
+formats are refused). The retired `nightseam_panos_v1` and `nightseam-panoimg`
+stores are deleted on load, not converted. Restore validates and stages the whole bundle, checks that the
 current data could itself be restored, then replaces the records and a safety
 snapshot in one transaction; any later failure rolls the whole app back.
-Other open tabs reload when panoramas or preferences change.
+Other open tabs reload when horizons or preferences change.
 
 ## Catalog
 

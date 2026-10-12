@@ -130,3 +130,14 @@ def test_shells_delegate_timezone_math_to_core():
     assert "zonedWallToUtcMs(zone, Date.UTC(" in ws
     assert "return wallFieldsToUtc(date.getFullYear()" in ws
     assert "timeZoneName" not in ws, "web kept a private Intl parser"
+
+
+def test_cached_formatters_never_reuse_an_offset():
+    """A cached Intl formatter must not carry an offset across a DST
+    transition or from one zone to another."""
+    node = shutil.which("node")
+    assert node, "Node is required"
+    result = subprocess.run([node, str(ROOT / "tests/js/timezone_cache.mjs")],
+                            cwd=ROOT, capture_output=True, text=True, encoding="utf-8", timeout=60)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "timezone formatter cache held" in result.stdout

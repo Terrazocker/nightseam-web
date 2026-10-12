@@ -4,6 +4,7 @@ import {
   plannerChange,
   panoramaRevision,
 } from '../../core/plannerstate.js';
+import { withProfile } from '../../core/horizon.js';
 
 const assert = (condition, message) => {
   if (!condition) throw new Error(message);
@@ -16,22 +17,19 @@ assert(nextPlannerRevision(-1) === 1, 'negative revisions reset');
 assert(nextPlannerRevision(Number.MAX_SAFE_INTEGER) === 1,
   'overflowing revisions reset');
 
-const event = plannerChange('panorama', 4, { cause: 'undo', panoId: 'p1' });
-assert(event.kind === 'panorama' && event.revision === 4 && event.cause === 'undo',
+const event = plannerChange('horizon', 4, { cause: 'undo', horizonId: 'h1' });
+assert(event.kind === 'horizon' && event.revision === 4 && event.cause === 'undo',
   'change payload keeps the shared fields');
 
-const base = {
-  id: 'p1', paint_mode: 'obstacle', block_above: false,
-  az_offset: 0, alt_bottom: 0, alt_top: 45, fov: 360,
-  profile: [-90, 10], profile_top: [],
-  strokes: [{ m: 'b', x: 0.2, y: 0.4, r: 0.1 }],
-};
-const changed = { ...base, strokes: [{ ...base.strokes[0], x: 0.3 }] };
+const base = withProfile({ id: 'h1', points: [{ az: 90, alt: 20 }, { az: 270, alt: 5 }] });
+const changed = withProfile({ ...base, points: [{ az: 90, alt: 21 }, { az: 270, alt: 5 }] });
 assert(panoramaRevision(base) !== panoramaRevision(changed),
-  'a stroke edit changes the content revision');
-const strokeAlias = { ...base, strokes: base.strokes.map((s) => ({ ...s })) };
-assert(panoramaRevision(base) === panoramaRevision(strokeAlias),
-  'equal panorama content has a stable revision');
-assert(panoramaRevision(null) === '-', 'missing panorama has a sentinel revision');
+  'a skyline edit changes the content revision');
+const copy = withProfile({ id: 'h1', points: base.points.map((p) => ({ ...p })), name: 'renamed' });
+assert(panoramaRevision(base) === panoramaRevision(copy),
+  'equal skyline content has a stable revision; the name does not affect planning');
+assert(panoramaRevision({ ...base, id: 'h2' }) !== panoramaRevision(base),
+  'another horizon with the same skyline is another revision');
+assert(panoramaRevision(null) === '-', 'missing horizon has a sentinel revision');
 
 console.log('planner state contract held');

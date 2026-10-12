@@ -21,28 +21,20 @@ WEB_DIR = ROOT / "web"
 SCRIPTS_DIR = ROOT / "scripts"
 
 # Functions that must exist only in core/. Keep in sync with core/index.js.
-# Two deliberate shell-level variants stay OUT (pinned by test_core_drift.py's
-# MOVED pin): `clearMask` (the desktop editor keeps its own UI-level variant)
-# and `popularityFactor` (the shells wrap it to resolve m.popularity first).
+# One deliberate shell-level variant stays OUT (pinned by test_core_drift.py's
+# MOVED pin): `popularityFactor` (the shells wrap it to resolve m.popularity
+# first).
 MOVED = (
-    "normalizePhotoModel", "createPhotoModel", "sourcePhotoAngles", "anglesSourcePhoto",
-    "photoRectangleCovered", "sourceWorkingPoint", "workingSourcePoint", "workingPhotoSize",
-    "photoSampleMap", "readPanoramaMetadata", "photoFileDimensions", "normalizePhotoSource",
-    "fitMultiplePhotoReferences",
-    "sourcePhotoRay", "photoDirectionVector", "photoAngularDistance",
-    "fitPhotoOrientation", "reportPhotoOrientation", "previewPhotoOrientation",
-    "normalizeReferenceMeasurement", "normalizeCoverageEvidence", "queryHorizonEvidence", "panoramaVisibilityReason", "hasHorizonDrawing",
-    "rebuildMask", "altOf", "rowOfAlt", "xOfAz", "azOfX", "wrapsFor",
-    "applyDabToMask", "strokeSegment", "normalizeSourceRect", "normalizePanoCalibration",
-    "normalizeSkylineStroke", "applySkylineToMask", "cropSkylineStroke",
-    "normalizePhotoCalibration", "photoPoint", "photoPointAngles", "alignPhotoBearing",
-    "fitPhotoVertical", "fitPhotoReferences", "photoCalibrationReport",
-    "profileFromMask", "normalizeProfileBins", "profileSegments", "fovBinRel",
-    "visibleSkyBands", "skyBandPolygons", "computeProfile",
-    "ceilFor", "bandTopFor", "overhangRuns", "assumedOpenRuns",
-    "assumedOpenHatchPolys", "normalizeHorizonLandmarks",
-    "normalizeHorizonProvenance", "normalizeHorizonConfidence", "profileDifference",
-    "cropKeptBand", "cropStrokes", "clipProfileToFov", "cropPano",
+    # core/horizon.js - the skyline model, photo placement and horizon files.
+    "wrapAz", "azDelta", "normalizePoints", "normalizePhotoPlacement", "normalizeHorizon",
+    "skylineAltAt", "skylineProfile", "withProfile", "binOf", "ceilFor", "hasSkyline",
+    "replacePointsInRange", "simplifyLine", "detectSkylineRows",
+    "photoScale", "photoToWorld", "worldToPhoto", "reprojectPoints", "headingForLandmark",
+    "defaultPhotoPlacement", "photoFileDimensions", "parseHorizonFile", "formatHorizonFile",
+    "normalizeOverhang", "normalizeOverhangs", "overhangAltAt", "overhangProfile", "splitAtNorth",
+    "replaceOverhangsInRange", "flatOverhang", "reprojectOverhangs",
+    "photoCaptureTime", "sunDirection", "placementFromKnownDirection", "devicePointing",
+    "panoramaVisibilityReason",
     "fmtSize", "sizeArcmin", "fmtFov", "fmtFovPair", "framePct", "magVisible",
     "skyClampZoom", "skyViewMatrix", "skyScreenToBase", "skyClampFocus",
     "searchBlob", "isCustomId", "wikiTitles",
@@ -52,9 +44,7 @@ MOVED = (
     "visibilityReason", "summarizeVisibility",
     "vmagKnownAndUnder", "inTonightPool",
     "nextPlannerRevision", "plannerChange", "panoramaRevision",
-    # core/panohistory.js - the panorama editor's snapshot/undo model. These
-    # names used to be re-implemented per shell (the desktop's pushPanoUndo
-    # built its own snapshot object), which is what the guard prevents.
+    # core/horizonhistory.js - the horizon editor's snapshot/undo model.
     "snapshot", "applySnapshot", "newHistory", "historyCommit",
     "historyCanUndo", "historyCanRedo", "historyUndo", "historyRedo",
     "historyMarkSaved", "historyDirty",
@@ -81,27 +71,13 @@ MOVED_PY = (
 RETIRED_PY_MODULES = ("astro.py", "planning.py", "nightcalc.py")
 # Shell files deliberately carry thin arrow wrappers around these core
 # functions (they inject shell state: esc(), S.minAlt, cfg); a const/arrow
-# definition of them is NOT a moved-concept violation. `clearMask` and
-# `popularityFactor` are not in MOVED at all (documented above).
+# definition of them is NOT a moved-concept violation. `popularityFactor` is
+# not in MOVED at all (documented above).
 SHELL_WRAPPERS = {"fmtSize", "statusOf", "effectiveMinAlt"}
-# SHELL-UNIFICATION PASS: the web's panorama-history functions became thin
-# delegates to core/panohistory.js (the desktop calls the core snapshot/apply
-# helpers from its own undo stack under different local names). A `function
-# name(...)` wrapper is legitimate ONLY while it actually delegates - so the
-# plain-function exemption is granted per name and its body must contain the
-# core call. A shell that re-implements one instead of calling core still fails.
-SHELL_WRAPPER_DELEGATES = {
-    "snapshot": ("coreSnapshotPano",),
-    "applySnapshot": ("coreApplySnapshot",),
-    "newHistory": ("coreSnapshotPano",),
-    "historyCommit": ("coreHistoryCommit",),
-    "historyCanUndo": ("coreHistoryCanUndo",),
-    "historyCanRedo": ("coreHistoryCanRedo",),
-    "historyUndo": ("coreHistoryUndo",),
-    "historyRedo": ("coreHistoryRedo",),
-    "historyMarkSaved": ("coreHistoryMarkSaved",),
-    "historyDirty": ("coreHistoryDirty",),
-}
+# A shell `function name(...)` wrapper of a MOVED name is legitimate only while
+# it delegates: the exemption is granted per name and its body must contain
+# the listed core call. No shell needs one at present.
+SHELL_WRAPPER_DELEGATES: dict[str, tuple[str, ...]] = {}
 # CO-03 (0.6.32 review): the purity list named CAPABILITIES but no LOADER, so
 # `eval(...)`, `new Function(...)`, `importScripts(...)` and a dynamic
 # `import('data:text/javascript,...')` all passed inside core/. A `data:`-URL
