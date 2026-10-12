@@ -595,6 +595,122 @@ def web_horizon_blocks_planning(c):
     c.assert_clean()
 
 
+@check("web-horizon-overhang-blocks-sky", "web")
+def web_horizon_overhang_blocks_sky(c):
+    """Overhang mode draws an edge with the sky above it blocked; an overhang
+    all round at 1 deg leaves nothing usable; it is one undoable edit and the
+    keyboard reaches its points."""
+    boot(c)
+    c.expect(c.page.locator(READY).count() > 0, "without a horizon Tonight has targets")
+    open_editor(c)
+    c.page.click("#hz-mode-overhang")
+    c.expect_eq(c.page.get_attribute("#hz-mode-overhang", "aria-pressed"), "true", "Overhang mode is announced")
+    sketch(c, 0.40, 0.55, 0.30, 0.25)
+    edges = active_horizon(c)["overhangs"]
+    c.expect(len(edges) == 1 and len(edges[0]) >= 2, f"the drag stores one overhang edge: {edges}")
+    c.expect("overhang" in c.page.inner_text("#hz-summary"), "the summary names the overhang")
+    c.page.locator("#hz-canvas").focus()
+    c.page.keyboard.press("ArrowRight")
+    c.expect("overhang 1, point 1" in c.page.inner_text("#ed-pos"), "arrow keys walk overhang points")
+    c.page.locator("#hz-points-panel summary").click()
+    c.page.fill("#hz-oh-from", "0")
+    c.page.fill("#hz-oh-to", "0")
+    c.page.fill("#hz-oh-alt", "1")
+    c.page.click("#hz-oh-add")
+    c.page.wait_for_function("() => /Overhang added/.test(document.querySelector('#hz-note').textContent)")
+    tab(c, "tonight")
+    c.page.wait_for_timeout(600)
+    c.expect_eq(c.page.locator(READY).count(), 0, "an overhang edge at 1 deg all the way round leaves nothing usable")
+    tab(c, "horizon")
+    c.page.wait_for_selector("#hz-canvas", timeout=10000)
+    c.page.click("#ed-undo")
+    c.page.wait_for_timeout(200)
+    c.expect_eq(len(active_horizon(c)["overhangs"]), 1, "adding the overhang is one undo step")
+    c.assert_clean()
+
+
+@check("web-horizon-phone-compass", "web")
+def web_horizon_phone_compass(c):
+    """The phone compass turns device orientation into skyline points: a
+    landmark correction, a single point and a traced sweep (Chrome's
+    orientation override stands in for the sensor)."""
+    boot(c)
+    open_editor(c)
+    cdp = c.page.context.new_cdp_session(c.page)
+    orient = lambda a, b: cdp.send("DeviceOrientation.setDeviceOrientationOverride",
+                                   {"alpha": a, "beta": b, "gamma": 0})
+    orient(0, 90)
+    c.page.locator("#hz-compass-panel summary").click()
+    c.page.click("#hz-cmp-start")
+    try:
+        c.page.wait_for_function("() => /Pointing 0/.test(document.querySelector('#hz-cmp-read').textContent)",
+                                 timeout=10000)
+    except Exception as exc:
+        raise AssertionError(f"no compass reading: {c.page.inner_text('#hz-cmp-read')!r} / "
+                             f"{c.page.inner_text('#hz-cmp-status')!r}") from exc
+    c.page.fill("#hz-cmp-true", "10")
+    c.page.click("#hz-cmp-correct")
+    c.expect("+10" in c.page.inner_text("#hz-cmp-status"), "the landmark sets a +10 deg correction")
+    c.page.wait_for_function("() => /Pointing 10/.test(document.querySelector('#hz-cmp-read').textContent)",
+                             timeout=10000)
+    c.page.click("#hz-cmp-add")
+    pts = active_horizon(c)["points"]
+    c.expect(len(pts) == 1 and abs(pts[0]["az"] - 10) < 0.6 and abs(pts[0]["alt"]) < 0.6,
+             f"an upright phone facing the landmark adds a level point at 10 deg: {pts}")
+    c.page.click("#hz-cmp-trace")
+    for alpha, beta in ((350, 95), (340, 100), (330, 98), (320, 92)):
+        orient(alpha, beta)
+        c.page.wait_for_timeout(150)
+    c.page.click("#hz-cmp-trace")
+    pts = active_horizon(c)["points"]
+    c.expect(any(abs(p["az"] - 30) < 1 and abs(p["alt"] - 10) < 1 for p in pts),
+             f"the sweep stores the 10 deg high point at 30 deg (alpha 340 + correction): {pts}")
+    c.expect(max(p["az"] for p in pts) >= 39, f"the trace reaches the end of the sweep: {pts}")
+    c.page.click("#hz-cmp-start")
+    c.expect("Not measuring" in c.page.inner_text("#hz-cmp-read"), "Stop ends measuring")
+    c.assert_clean()
+
+
+@check("web-horizon-sun-sets-north", "web")
+def web_horizon_sun_sets_north(c):
+    """Marking the Sun in a photo and its capture time sets north and tilt from
+    the Sun's computed position at the observing site."""
+    boot(c)
+    tab(c, "horizon")
+    upload_photo(c, "sunny.png", horizon_test_png(144, 72))
+    c.page.locator('#hz-guide [data-guide="close"]').click()
+    c.page.click("#hz-sun")
+    # Mark the grid point az 200, alt 20 of the default placement (heading
+    # 180, tilt 0): 20 deg right of and 20 deg above the photo centre.
+    box = c.page.locator("#hz-canvas").bounding_box()
+    c.page.mouse.click(box["x"] + 40 + 200 / 360 * (box["width"] - 48),
+                       box["y"] + 24 + (80 - 20) / 90 * (box["height"] - 32))
+    c.page.wait_for_selector("#hz-sun-form:not([hidden])", timeout=5000)
+    c.page.fill("#hz-sun-time", "2026-06-21T15:00")
+    c.page.click("#hz-sun-apply")
+    c.page.wait_for_function("() => /north and tilt are set/.test(document.querySelector('#hz-note').textContent)",
+                             timeout=5000)
+    source = (ROOT / "web/app.js").read_text(encoding="utf-8")
+    ws = re.search(r"\./webstore\.js\?v=\d+", source).group(0)
+    sun = c.page.evaluate("""async (ws) => {
+      const W = await import(ws), C = await import('./core.js');
+      const sites = await W.getSites();
+      const site = sites.find((s) => s.id === document.querySelector('#tb-site').value) || { lat: 52.52, lon: 13.4 };
+      return C.sunDirection(C.julianDay(W.wallFieldsToUtc(2026, 5, 21, 15, 0, 0)), site.lat, site.lon);
+    }""", ws)
+    photo = active_horizon(c)["photo"]
+    c.expect(abs(((photo["heading"] + 20 - sun["az"] + 180) % 360) - 180) < 1.0,
+             f"the marked pixel faces the Sun's azimuth: photo {photo}, sun {sun}")
+    c.expect(abs(photo["tilt"] + 20 - sun["alt"]) < 1.0,
+             f"the marked pixel sits at the Sun's altitude: photo {photo}, sun {sun}")
+    c.page.click("#hz-sun")
+    c.page.mouse.click(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
+    c.page.fill("#hz-sun-time", "2026-06-21T23:30")
+    c.page.click("#hz-sun-apply")
+    c.expect("below the horizon" in c.page.inner_text("#hz-note"), "a night-time capture is refused")
+    c.assert_clean()
+
+
 @check("web-sun-moon-above-horizon", "web")
 def web_sun_moon_above_horizon(c):
     """The Sun/Moon are only sky objects while the APPARENT altitude > 0:

@@ -55,9 +55,8 @@ One loop scores every view: `computeNightTracks` builds object tracks on a
 6-minute grid and `scoreNightTracks`/`nightStats` turn them into usable
 minutes, best windows and scores. Grid cells are half-open and clipped to the
 exact dark window. A sample is usable when it is above the minimum altitude,
-above the horizon ceiling and below any upper ceiling (reserved for overhangs;
-none today). `visibilityReason` and `panoramaVisibilityReason` name why it is
-not.
+above the horizon ceiling and below any overhang edge above it.
+`visibilityReason` and `panoramaVisibilityReason` name why it is not.
 Popularity only breaks ties and is never shown.
 
 ## Horizon model
@@ -65,14 +64,18 @@ Popularity only breaks ties and is never shown.
 Design and reasons: [DECISIONS.md](DECISIONS.md) ("Rebuild the horizon
 editor"); plan: [docs/horizon/HORIZON_REBUILD_PLAN.md](docs/horizon/HORIZON_REBUILD_PLAN.md).
 
-- **Record.** `{ id, name, points, photo, hasPhoto }`. `points` are world
-  azimuth/altitude pairs (altitude -10 to 90), sorted, one per 0.01 deg of
-  azimuth, at most 1440. `core/horizon.js` normalizes every record.
+- **Record.** `{ id, name, points, overhangs, photo, hasPhoto }`. `points`
+  are world azimuth/altitude pairs (altitude -10 to 90), sorted, one per
+  0.01 deg of azimuth, at most 1440. `overhangs` are up to 20 edge lines with
+  azimuths within 0-360 (an edge crossing north is split there).
+  `core/horizon.js` normalizes every record.
 - **Profile.** Points are joined by straight lines around the circle; no
   points blocks nothing, one point is a flat skyline. `skylineProfile` turns
   them into 720 world-azimuth bins (0.5 deg) holding the highest altitude in
-  each bin. `withProfile` attaches it in memory; `ceilFor` and the scorer read
-  it. It is never stored or backed up.
+  each bin. `overhangProfile` gives `profileTop`: for every bin an overhang
+  touches, the lowest edge altitude in it, else 90.5 (open). `withProfile`
+  attaches both in memory; `ceilFor` returns them as `ceil`/`ceilTop` and the
+  scorer reads the same arrays. They are never stored or backed up.
 - **Photo placement.** `{ width, heading, tilt, roll }`: the horizontal angle
   (360 = full panorama, which wraps and is never rolled), the azimuth and
   altitude of the photo centre and its rotation, with square pixels in
@@ -85,11 +88,24 @@ editor"); plan: [docs/horizon/HORIZON_REBUILD_PLAN.md](docs/horizon/HORIZON_REBU
   a run of three ground pixels, a 5-column median); the editor maps the rows
   through the placement and simplifies them (0.25 deg).
 - **Files.** `parseHorizonFile` reads `azimuth altitude` lines (Stellarium,
-  N.I.N.A., plain lists); `formatHorizonFile` writes them.
+  N.I.N.A., plain lists); `formatHorizonFile` writes them. Overhangs have no
+  place in those formats and stay in NightSeam and its backups.
+- **Phone compass.** `devicePointing(alpha, beta, gamma)` gives the back
+  camera's direction from W3C device orientation. The editor prefers absolute
+  (`deviceorientationabsolute`, or iOS `webkitCompassHeading`) readings and
+  adds a session-only correction set from one landmark, which covers compass
+  error and magnetic declination. `requestPermission` is raced against 1.5 s,
+  because some browsers expose it without ever settling it.
+- **North from the Sun.** `sunDirection(jd, lat, lon)` is the apparent Sun;
+  `placementFromKnownDirection` sets heading and tilt so a marked pixel lands
+  on it. `photoCaptureTime` reads DateTimeOriginal and OffsetTimeOriginal
+  from JPEG EXIF; without an offset the camera clock is read as site time.
 - **Editor.** One canvas: azimuth 0-360 across, altitude -10 to 80 up, with a
   zoom of 1-12x. Draw mode adds, drags, sketches and deletes points; Align
-  photo drags the photo (and rolls partial photos). Each finished gesture is
-  one history entry (`core/horizonhistory.js`, 100 entries) and saves at once.
+  photo drags the photo (and rolls partial photos); Overhang mode draws and
+  edits overhang edges. Each finished gesture is one history entry
+  (`core/horizonhistory.js`, 100 entries, covering points, overhangs and the
+  placement) and saves at once.
   Re-rendering the same horizon keeps its history.
 - **Limits.** 50 horizons; uploads are JPEG or PNG up to 25 MB and 32 MP
   (checked from the header before decoding); imported files up to 1 MB.

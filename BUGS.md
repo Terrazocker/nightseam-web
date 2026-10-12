@@ -32,9 +32,12 @@ entry here when it is fixed and record the fix in RELEASES.md.
 
 ## Known limitations
 
-- **Horizon model.** One skyline per direction: sky visible under a balcony
-  or between branches (an opening above an obstruction) cannot be recorded
-  yet; overhangs are planned work.
+- **Horizon model.** One open interval per direction (above the skyline,
+  below any overhang edge): sky seen through gaps above an obstruction, such
+  as between branches, cannot be recorded.
+- **Phone compass.** Readings are only as good as the phone's compass (often
+  5-10 deg off near metal or buildings); the landmark correction lasts until
+  the page reloads.
 - **Photo mapping.** Pixels are treated as square degrees. That is exact for
   equirectangular panoramas and approximate for ordinary photos, increasingly
   towards their edges (about 1 deg at the edge of a 60 deg photo). No fisheye

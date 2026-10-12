@@ -20,7 +20,7 @@ export function plannerChange(kind, revision, fields = {}) {
 
 /**
  * Content fingerprint for a horizon's planning-relevant state: its id and the
- * derived profile the planner reads.
+ * derived profiles the planner reads.
  *
  * The id is deliberately not enough: an edit or a restored record may retain
  * the same id. This is a compact FNV-1a fingerprint rather than JSON.stringify
@@ -45,5 +45,6 @@ export function panoramaRevision(pano) {
   };
   add(pano.id);
   addArray(pano.profile);
+  addArray(pano.profileTop);
   return (h >>> 0).toString(16);
 }

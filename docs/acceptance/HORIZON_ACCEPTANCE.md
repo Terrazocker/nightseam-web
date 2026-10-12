@@ -25,7 +25,16 @@ north) and, if you can, the height angle of one obstruction.
    the skyline.
 5. **Persistence.** Reload, switch horizons, export a backup, restore it, and
    export/import the horizon as a text file. The skyline and photo placement
-   should come back unchanged.
+   should come back unchanged (a text file carries no overhangs).
+6. **Overhang.** Under a balcony or eave, draw its edge in Overhang mode.
+   A target passing above the edge should read as blocked there, in Tonight,
+   the detail card and Sky View.
+7. **North from the Sun.** On a daylight photo with the Sun in it, use *Set
+   north from the Sun*. Check the prefilled time and compare the result with
+   your landmark directions.
+8. **Phone compass.** On the phone, correct the compass with a known
+   landmark, add a few points and trace a stretch of skyline. Compare with the
+   photo trace; expect a few degrees of difference.
 
 ## Devices and accessibility
 

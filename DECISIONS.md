@@ -17,7 +17,8 @@ Library, SQLite, desktop CSP) are history only.
 - **Horizon:** a horizon is skyline points on a compass grid, with a photo
   only as a tracing aid; the profile is derived, edits save automatically, and
   0.1.x horizons are not converted (2026-10-11, "Rebuild the horizon editor",
-  supersedes every earlier horizon entry).
+  supersedes every earlier horizon entry); overhangs, phone-compass capture
+  and north from the Sun follow it (2026-10-12).
 - **Data and privacy:** transactional, staged backups with rollback; Wikipedia
   is the only object-photo source (2026-10-06); popularity is never visible
   (2026-10-06); the CSP is delivered in the document (0.6.33).
@@ -28,6 +29,27 @@ Library, SQLite, desktop CSP) are history only.
   releases continue at 0.7.0 above inherited tags (2026-10-11).
 - **Documentation:** see "Documentation layout" (2026-10-11), which updates the
   older "Docs policy".
+
+## 2026-10-12 — Overhangs, phone compass and north from the Sun
+
+Owner request: the three follow-ups of the horizon rebuild, as phases 4-6.
+
+- **Overhangs block everything above their edge.** One edge line per span
+  gives one upper ceiling per direction, which the visibility rule already
+  had (`ceilTop`). Per bin the lowest edge altitude counts, the conservative
+  choice. Edges never cross north (they are split there), and drawing over an
+  existing edge replaces exactly the span drawn. Sky visible through gaps
+  above an obstruction (between branches) is still not representable.
+- **The compass correction is per session and from one landmark.** Browsers
+  give magnetic, often several degrees off, headings; one known direction
+  corrects both error and declination without a geomagnetic model. Absolute
+  readings are preferred; relative ones are labelled. Because some browsers
+  expose `requestPermission` without settling it, only an explicit refusal
+  stops the compass.
+- **The Sun sets north and tilt.** A marked Sun and its time give a full
+  direction, so both are set; width and roll stay. A Sun below the horizon at
+  the entered time is refused. EXIF time without an offset is read as site
+  time, and the form says so.
 
 ## 2026-10-11 — Rebuild the horizon editor around a skyline
 

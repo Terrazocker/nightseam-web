@@ -90,25 +90,33 @@ The local exposure catalog has its own design document in Nightseam-catalog.
   Closing it preserves the selected target with a small reopen action.
 - **Horizon:** the job is "where is my sky blocked"; keep the editor to that.
   Three rails: the horizon list with *New from photo*, *Draw by hand* and
-  *Import file*; the stage; and a settings rail with the Photo panel, a closed
-  *Points by numbers* disclosure and a closed *Display* disclosure. Keep the
-  whole editor under about 30 visible controls.
+  *Import file*; the stage; and a settings rail with the Photo panel and closed
+  *Points by numbers*, *Phone compass* and *Display* disclosures. Keep about
+  20 controls visible at first glance and about 40 including the disclosures.
   - The stage is one compass grid (azimuth across, altitude up, N/E/S/W on the
     ruler, the minimum altitude as a dashed line) with the photo underneath.
     The skyline is a line with a shaded obstruction below it, never colour
     alone: a text summary names the highest and lowest obstruction and their
     directions.
-  - A sticky toolbar holds Draw / Align photo, Undo, Redo, Clear and the save
-    status; zoom controls sit on the canvas. On phones cap the toolbar at 40%
+  - A sticky toolbar holds Draw / Overhang / Align photo, Undo, Redo, Clear and
+    the save status; zoom controls sit on the canvas. On phones cap the toolbar at 40%
     of the viewport height (at most 240px) with internal scrolling.
   - Draw: click adds a point, dragging a point moves it between its
     neighbours, dragging across the grid sketches and replaces that stretch,
     Delete removes the selected point. Keyboard: arrows select and move points;
     the points form adds them by numbers.
+  - Overhang: drag along the underside of a balcony, roof or branch; the sky
+    above that edge is shaded as blocked, with a dashed edge so it reads apart
+    from the skyline. Points drag, arrow keys and Delete work as in Draw; the
+    points form adds a flat overhang.
   - Align photo: drag the photo; partial photos also get two round level
     handles. A full panorama is never rolled. The Photo panel shows width,
-    north, tilt and roll as numbers, *Set north from a landmark*, *Detect
-    skyline* and *Remove photo*; the skyline always moves with the photo.
+    north, tilt and roll as numbers, *Set north from a landmark*, *Set north
+    from the Sun*, *Detect skyline* and *Remove photo*; the skyline and
+    overhangs always move with the photo.
+  - Phone compass: Start, a live direction readout, *Add point here*, *Start
+    / Finish tracing* and a landmark correction. Say plainly that phone
+    compasses are rough and that a correction comes first.
   - After a new photo, show a short three-step guide (width, north, skyline)
     that can be dismissed; never a wizard. A partial photo opens zoomed to
     itself.

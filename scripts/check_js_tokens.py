@@ -98,24 +98,24 @@ _VERIFIED_BASELINE_JSON = r"""
    "token": "5"
   },
   "app.js": {
-   "sha256": "83479003ae95b337b064e823e2911d3c7efbb34d0e2d3d21cb5e8b3092cdac13",
-   "token": "218"
+   "sha256": "2f399827da75824bc248a38d1cc8b3f2c66334c5b96deb0bb69fc4c32ffb18ad",
+   "token": "223"
   },
   "astro.js": {
    "sha256": "a4120b2e3a1bcaca3edde2ca356f35443eca52c06f6cf861907a15facfd243fd",
-   "token": "54"
+   "token": "57"
   },
   "core.js": {
-   "sha256": "ff07ff3d156b738a83d7d0db289bd3e87648381b41ed829ac383908e8a29b4ea",
+   "sha256": "c96f0a2a4f0ef5602195aa37a9307a7e17c40273b019522b0bc1cb8627b40cb2",
    "token": "66"
   },
   "format.js": {
    "sha256": "275d1a75954e75cf0235fb5cc8452bb79a53b53776b75f7ca75fe598d823dc8c",
-   "token": "60"
+   "token": "63"
   },
   "horizon.js": {
-   "sha256": "99ebe1df1b4446e02029f3da00e664576c8c90a8b4a1afb23455177cf293c047",
-   "token": "124"
+   "sha256": "6562aa6f53a62cde64d0c82f54bfb0e803d8c0fc9f6ca816e5e4b3fc15e8abe5",
+   "token": "129"
   },
   "imagecredits.js": {
    "sha256": "8c8b650a0ad6ef6462eea251b67642103cb0eb9010c1f9dde09fce2ba7fa8952",
@@ -123,7 +123,7 @@ _VERIFIED_BASELINE_JSON = r"""
   },
   "nightrank.js": {
    "sha256": "54973052a93b15258fc55d2dd1db965c19290581184212774cf0b690d1fbf6b0",
-   "token": "52"
+   "token": "55"
   },
   "style.css": {
    "sha256": "0ce58ee1077d79e64cf515a0a552461d09aed760f0c92f5c990bdd79e65cbdb9",
@@ -139,7 +139,7 @@ _VERIFIED_BASELINE_JSON = r"""
   },
   "webstore.js": {
    "sha256": "f6810158b1d8081064e8004941894f39784d5cd11cdc6608faf60532b0acccf8",
-   "token": "69"
+   "token": "72"
   }
  }
 }

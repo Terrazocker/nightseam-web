@@ -326,10 +326,17 @@ def simplified_panels(c):
     open_editor(c)
     for retired in ('[id^="ed-prov-"]', '#ed-profile-apply', '#ed-landmark-add', '#ed-crop', '#simple-flow'):
         c.expect_eq(c.page.locator(retired).count(), 0, f'retired editor control {retired} stays removed')
-    visible = c.page.evaluate('''() => [...document.querySelectorAll(
+    counts = c.page.evaluate('''() => {
+      const all = [...document.querySelectorAll(
         '.horizon-layout input, .horizon-layout select, .horizon-layout button, .horizon-layout label.btn')]
-      .filter(e => e.getClientRects().length && getComputedStyle(e).visibility !== 'hidden').length''')
-    c.expect(visible <= 30, f'the horizon editor stays simple: {visible} visible controls')
+        .filter(e => e.getClientRects().length && getComputedStyle(e).visibility !== 'hidden');
+      // Chrome still lays out the content of a closed <details>; at first
+      // glance only controls outside closed disclosures are visible.
+      const glance = all.filter(e => !e.closest('details:not([open])') || e.closest('summary'));
+      return { glance: glance.length, total: all.length };
+    }''')
+    c.expect(counts['glance'] <= 20, f'the horizon editor stays simple at first glance: {counts}')
+    c.expect(counts['total'] <= 40, f'the horizon editor stays small including its disclosures: {counts}')
     c.assert_clean()
 
 

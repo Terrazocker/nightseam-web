@@ -26,10 +26,12 @@ Where NightSeam Web stands and what comes next. Open defects are in
 
 ## Open work
 
-- **Horizon after the rebuild** ([plan](docs/horizon/HORIZON_REBUILD_PLAN.md)):
-  overhangs and balcony openings, a phone-compass capture mode, and placing a
-  photo from the Sun's position at capture time. The earlier P3-P7 plan is
-  retired ([history](docs/history/HORIZON_GEOGRAPHIC_CALIBRATION_PLAN.md)).
+- **Horizon rebuild** ([plan](docs/horizon/HORIZON_REBUILD_PLAN.md)): phases
+  1-6 (skyline editor, photo, detection, overhangs, phone compass, north from
+  the Sun) are implemented on `horizon-rebuild` and need review, CI and the
+  owner's [acceptance](docs/acceptance/HORIZON_ACCEPTANCE.md). Possible next:
+  several openings per direction. The earlier P3-P7 plan is retired
+  ([history](docs/history/HORIZON_GEOGRAPHIC_CALIBRATION_PLAN.md)).
 - **Owner gates:** A11Y-001 accessibility acceptance and HOST-DELIVERY-001
   compression ([BUGS.md](BUGS.md)).
 

@@ -10,7 +10,7 @@
 
 import { gmstDeg, precessJ2000ToDate, refractionDeg, sepDeg } from './astro.js';
 import { visibilityReason, summarizeVisibility } from './visibility.js';
-import { BINS, BIN_DEG, NO_BLOCK } from './horizon.js';
+import { BINS, BIN_DEG, NO_BLOCK, OPEN_TOP } from './horizon.js';
 
 /* how badly an object type suffers under moonlight (nebulae worst, clusters
    least). CO-09 (0.6.32 review): null prototype, because `otype` and the filter
@@ -145,12 +145,14 @@ export function scoreNightTracks(tracks, objects, jd0, step, minAlt, pano, ctx =
   const windowDays = windowEnd - windowStart;
   const wantAlts = !!ctx.maxAlt;
 
-  // The horizon profile as a flat typed array; the lookup is inlined
+  // The horizon profiles as flat typed arrays; the lookup is inlined
   // bit-for-bit with core/horizon.js::ceilFor (world-azimuth bins). A
   // non-finite element (NaN, "10", null) is "nothing recorded", as in ceilFor.
+  const finiteOr = (fallback) => (v) => (typeof v === 'number' && Number.isFinite(v) ? v : fallback);
   const prof = (pano && Array.isArray(pano.profile) && pano.profile.length === BINS)
-    ? Float64Array.from(pano.profile, (v) => (typeof v === 'number' && Number.isFinite(v) ? v : NO_BLOCK))
-    : null;
+    ? Float64Array.from(pano.profile, finiteOr(NO_BLOCK)) : null;
+  const tops = (pano && Array.isArray(pano.profileTop) && pano.profileTop.length === BINS)
+    ? Float64Array.from(pano.profileTop, finiteOr(OPEN_TOP)) : null;
 
   // moon path: the minimum distance only depends on the night's age + filter,
   // so the Math.pow curve is evaluated once per batch
@@ -201,12 +203,12 @@ export function scoreNightTracks(tracks, objects, jd0, step, minAlt, pano, ctx =
       prevAlt = alt;
       if (wantAlts) alts[i] = alt;
 
-      let ceil = NO_BLOCK;
-      const top = null;
-      if (prof) {
+      let ceil = NO_BLOCK, top = null;
+      if (prof || tops) {
         let b = Math.floor((((az % 360) + 360) % 360) / BIN_DEG);
         if (b > BINS - 1) b = BINS - 1;
-        ceil = prof[b];
+        if (prof) ceil = prof[b];
+        if (tops && tops[b] < OPEN_TOP) top = tops[b];
       }
 
       const up = alt > 0;

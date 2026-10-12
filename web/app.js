@@ -8,12 +8,12 @@
  *   • Settings — sites, rigs, custom targets, backup/restore (webstore.js)
  * All sky math runs client-side (astro.js, Meeus algorithms).
  */
-import * as E from './astro.js?v=54';
-import * as Hor from './horizon.js?v=124';
-import * as WS from './webstore.js?v=69';
+import * as E from './astro.js?v=57';
+import * as Hor from './horizon.js?v=129';
+import * as WS from './webstore.js?v=72';
 import { fmtSize, sizeArcmin, framePct, magVisible, skyClampZoom,
-         skyViewMatrix, skyScreenToBase, skyClampFocus } from './format.js?v=60';
-import { nightStats, nightStatsBatch, sampleVisible } from './nightrank.js?v=52';
+         skyViewMatrix, skyScreenToBase, skyClampFocus } from './format.js?v=63';
+import { nightStats, nightStatsBatch, sampleVisible } from './nightrank.js?v=55';
 import { TYPE_LABELS, TYPE_COLORS, searchBlob as coreSearchBlob,
          TIER_ORDER, assignPopularityTiers, wikiTitles,
          inTonightPool, PLANNER_CHANGE_EVENT, panoramaRevision,
@@ -1002,7 +1002,8 @@ function route() {
 function renderHorizonView() {
   const box = $('#view');
   box.innerHTML = '';
-  Hor.renderHorizon(box, () => { /* other views re-read H state at render time */ });
+  Hor.renderHorizon(box, () => { /* other views re-read H state at render time */ },
+    { site: () => S.site });
 }
 
 /* ----------------------------- tonight ----------------------------- */
@@ -1512,6 +1513,30 @@ function renderSky() {
       ctx.beginPath();
       ceilPts.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
       ctx.stroke();
+
+      // Overhangs block from their edge up to the zenith. Each contiguous run
+      // of covered directions is its own sector through the centre, so a gap
+      // between overhangs is never bridged.
+      let run = [];
+      const flushRun = () => {
+        if (run.length > 1) {
+          ctx.beginPath();
+          run.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
+          ctx.lineTo(cx, cy);
+          ctx.closePath();
+          ctx.fill();
+          ctx.beginPath();
+          run.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
+          ctx.stroke();
+        }
+        run = [];
+      };
+      for (let az = 0; az <= 360; az += 0.5) {
+        const { ceilTop } = Hor.ceilFor(pano, Math.min(az, 359.99));
+        if (ceilTop == null) flushRun();
+        else run.push(radiusFor(az, Math.max(0, Math.min(ceilTop, 90))));
+      }
+      flushRun();
     }
 
     const jd = E.julianDay(S.skyTime);
@@ -2643,7 +2668,7 @@ function openDetail(id, opener = null, { refresh = false } = {}) {
             <span class="chart-legend-item"><i class="legend-swatch guide-moon"></i><span><b>Moon altitude</b><small>dash-dot line · white phase discs</small></span></span>
             <span class="chart-legend-item"><i class="legend-swatch guide-twilight"></i><span><b>Twilight</b><small>shaded time outside the dark window</small></span></span>
             <span class="chart-legend-item"><i class="legend-swatch guide-window"></i><span><b>Best window</b><small>longest clear run tonight</small></span></span>
-            ${pano ? `<span class="chart-legend-item"><i class="legend-swatch guide-obstruction"></i><span><b>Horizon</b><small>short dash</small></span></span>` : ''}
+            ${pano ? `<span class="chart-legend-item"><i class="legend-swatch guide-obstruction"></i><span><b>Horizon</b><small>short dash${pano.overhangs?.length ? ' · overhang edge: dash-dot' : ''}</small></span></span>` : ''}
           </div>
         </div>
         <p class="win-note" id="win-note"></p>

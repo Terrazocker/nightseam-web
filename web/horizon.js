@@ -9,12 +9,14 @@
  * core/horizonhistory.js. This module also owns the planner preferences.
  */
 import { vizTheme } from './viztheme.js?v=7';
-import { normalizeWebPrefs, WEB_PREF_DEFAULTS } from './webstore.js?v=69';
+import { normalizeWebPrefs, WEB_PREF_DEFAULTS, wallFieldsToUtc, utcToWall } from './webstore.js?v=72';
 import {
   NO_BLOCK, ALT_MIN, ALT_MAX, MAX_POINTS,
   wrapAz, azDelta, normalizePoints, normalizePhotoPlacement, normalizeHorizon,
   withProfile, ceilFor, replacePointsInRange, simplifyLine, detectSkylineRows,
   photoToWorld, worldToPhoto, reprojectPoints, headingForLandmark,
+  normalizeOverhang, normalizeOverhangs, replaceOverhangsInRange, flatOverhang, reprojectOverhangs,
+  photoCaptureTime, sunDirection, placementFromKnownDirection, devicePointing, julianDay,
   defaultPhotoPlacement, photoFileDimensions, parseHorizonFile, formatHorizonFile,
   effectiveMinAlt as coreMinAlt,
   newHistory, historyCommit, historyCanUndo, historyCanRedo, historyUndo,
@@ -34,6 +36,10 @@ export const MAX_HORIZONS = 50;
 const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
 const MAX_IMPORT_BYTES = 1024 * 1024;
 const DETECT_WIDTH = 720;
+const COMPASS_WAIT_MS = 3000;
+
+/** The planner's active site ({ lat, lon, label, tz }), provided by app.js. */
+let siteContext = () => null;
 
 /* ------------------------------ planner events ------------------------------ */
 
@@ -151,7 +157,8 @@ function load() {
   return { horizons: [], activeId: null };
 }
 
-const stored = (h) => ({ id: h.id, name: h.name, points: h.points, photo: h.photo, hasPhoto: !!h.hasPhoto });
+const stored = (h) => ({ id: h.id, name: h.name, points: h.points, overhangs: h.overhangs || [],
+  photo: h.photo, hasPhoto: !!h.hasPhoto });
 
 /** Persist records (never photo bytes or derived profiles). Returns false on a
  *  storage failure; callers must surface it rather than claim "Saved". */
@@ -510,9 +517,9 @@ const HIT_PX = 9;
 
 /** Presentation state that survives re-rendering the same horizon. */
 const ui = {
-  id: null, mode: 'draw', zoom: 1, fx: 180, fy: 30, selected: -1,
-  opacity: 0.8, grid: true, guideFor: null, landmark: null,
-  openPanels: { points: false, display: false },
+  id: null, mode: 'draw', zoom: 1, fx: 180, fy: 30, selected: -1, ohSel: null,
+  opacity: 0.8, grid: true, guideFor: null, landmark: null, sun: null, compassOffset: 0,
+  openPanels: { points: false, display: false, compass: false },
 };
 
 /** Clamp the view focus so the visible window stays inside the grid. */
@@ -528,12 +535,23 @@ export function clampView(zoom, fx, fy) {
 
 /** One-sentence description of a horizon for assistive technology. */
 export function describeHorizon(h) {
-  if (!h || !h.points.length) return 'No skyline yet: nothing is blocked. Click the grid to add points, or drag across it to sketch the skyline.';
-  let hi = h.points[0], lo = h.points[0];
-  for (const p of h.points) { if (p.alt > hi.alt) hi = p; if (p.alt < lo.alt) lo = p; }
-  return `${h.points.length} skyline point${h.points.length === 1 ? '' : 's'}. `
-    + `Highest obstruction ${fmt(hi.alt)}° toward ${cardinal(hi.az)} (${fmt(hi.az)}°); `
-    + `lowest ${fmt(lo.alt)}° toward ${cardinal(lo.az)} (${fmt(lo.az)}°).`;
+  const overhangs = (h && h.overhangs) || [];
+  let text;
+  if (!h || !h.points.length) {
+    text = 'No skyline yet: nothing is blocked from below. Click the grid to add points, or drag across it to sketch the skyline.';
+  } else {
+    let hi = h.points[0], lo = h.points[0];
+    for (const p of h.points) { if (p.alt > hi.alt) hi = p; if (p.alt < lo.alt) lo = p; }
+    text = `${h.points.length} skyline point${h.points.length === 1 ? '' : 's'}. `
+      + `Highest obstruction ${fmt(hi.alt)}° toward ${cardinal(hi.az)} (${fmt(hi.az)}°); `
+      + `lowest ${fmt(lo.alt)}° toward ${cardinal(lo.az)} (${fmt(lo.az)}°).`;
+  }
+  if (!overhangs.length) return text;
+  let low = overhangs[0][0];
+  for (const line of overhangs) for (const p of line) if (p.alt < low.alt) low = p;
+  const spans = overhangs.map((line) => `${fmt(line[0].az)}–${fmt(line[line.length - 1].az)}°`).join(', ');
+  return `${text} ${overhangs.length} overhang${overhangs.length === 1 ? '' : 's'} (${spans}) block the sky above them; `
+    + `the lowest edge is ${fmt(low.alt)}° toward ${cardinal(low.az)}.`;
 }
 
 /** Small in-page confirm dialog (never a blocking browser alert/confirm). */
@@ -604,10 +622,12 @@ async function readPhotoFile(file) {
  * Horizon tab. `box` is the #view container; `onChanged` runs after a change
  * that other views should notice (they also listen to planner events).
  */
-export function renderHorizon(box, onChanged = () => {}) {
+export function renderHorizon(box, onChanged = () => {}, context = {}) {
+  if (typeof context.site === 'function') siteContext = context.site;
   const h = activeHorizon();
   if (!h || ui.id !== h.id) {
-    Object.assign(ui, { id: h ? h.id : null, mode: 'draw', zoom: 1, fx: 180, fy: 30, selected: -1, landmark: null });
+    Object.assign(ui, { id: h ? h.id : null, mode: 'draw', zoom: 1, fx: 180, fy: 30, selected: -1,
+      ohSel: null, landmark: null, sun: null });
     // Open a partial photo zoomed to itself rather than as a sliver of the circle.
     if (h && h.photo && h.photo.width < 360) {
       Object.assign(ui, clampView(Math.min(3, 360 / (h.photo.width * 1.4)), h.photo.heading, h.photo.tilt + 12));
@@ -659,12 +679,13 @@ function editorHTML(h) {
       <div class="ed-tools" role="toolbar" aria-label="Horizon editing">
         <div class="ed-group hz-modes" role="group" aria-label="Mode">
           <button class="btn" type="button" id="hz-mode-draw" aria-pressed="true">✏ Draw</button>
+          <button class="btn" type="button" id="hz-mode-overhang" aria-pressed="false" title="Draw the edge of a balcony, roof or branch: the sky above it is blocked">⌒ Overhang</button>
           <button class="btn" type="button" id="hz-mode-align" aria-pressed="false">✥ Align photo</button>
         </div>
         <div class="ed-group ed-history">
           <button class="btn" type="button" id="ed-undo" title="Undo (Ctrl+Z)">↩ Undo</button>
           <button class="btn" type="button" id="ed-redo" title="Redo (Ctrl+Shift+Z)">↪ Redo</button>
-          <button class="btn" type="button" id="hz-clear" title="Remove all skyline points (asks first; undoable)">Clear…</button>
+          <button class="btn" type="button" id="hz-clear" title="Remove the skyline and all overhangs (asks first; undoable)">Clear…</button>
         </div>
         <span id="ed-status" class="ed-status" role="status" aria-live="polite">Saved</span>
       </div>
@@ -691,7 +712,7 @@ function editorHTML(h) {
         <span id="hz-help" class="ed-help"></span>
       </p>
       <p id="hz-summary" class="sub hz-summary" role="note"></p>
-      <p id="hz-keys" class="visually-hidden">Keyboard: Left and Right arrows select the previous or next point; with Shift they move it sideways. Up and Down arrows raise or lower it. Delete removes it. Use "Points by numbers" to add points.</p>
+      <p id="hz-keys" class="visually-hidden">Keyboard: in Draw mode the arrows work on skyline points, in Overhang mode on overhang edge points. Left and Right arrows select the previous or next point; with Shift they move it sideways. Up and Down arrows raise or lower it. Delete removes it. Use "Points by numbers" to add points and overhangs.</p>
     </section>
     <aside class="horizon-settings-rail" aria-label="Horizon settings">
       <section class="hz-panel" id="hz-photo-panel" aria-labelledby="hz-photo-title"></section>
@@ -709,7 +730,32 @@ function editorHTML(h) {
           <label>Altitude (°) <input id="hz-add-alt" type="number" min="${ALT_MIN}" max="${ALT_MAX}" step="0.5"></label>
           <button class="btn small" type="button" id="hz-add">Add point</button>
         </fieldset>
+        <fieldset class="hz-fields">
+          <legend>Add an overhang (sky above it is blocked)</legend>
+          <label>From azimuth (°) <input id="hz-oh-from" type="number" min="0" max="359.99" step="0.5"></label>
+          <label>To azimuth (°) <input id="hz-oh-to" type="number" min="0" max="359.99" step="0.5"></label>
+          <label>Edge altitude (°) <input id="hz-oh-alt" type="number" min="${ALT_MIN}" max="${ALT_MAX}" step="0.5"></label>
+          <button class="btn small" type="button" id="hz-oh-add">Add overhang</button>
+        </fieldset>
         <p class="sub">0° = north, 90° = east, 180° = south, 270° = west. Altitude is the angle above the level horizon.</p>
+      </details>
+      <details class="hz-panel" id="hz-compass-panel">
+        <summary>Phone compass</summary>
+        <p class="sub">On a phone: hold it upright and point the back camera at the skyline. Phone compasses are often several degrees off and point to magnetic north, so correct with a landmark first.</p>
+        <div class="btnrow">
+          <button class="btn small" type="button" id="hz-cmp-start" aria-pressed="false">Start compass</button>
+        </div>
+        <p class="mono" id="hz-cmp-read" aria-live="off">Not measuring.</p>
+        <div class="btnrow">
+          <button class="btn small primary" type="button" id="hz-cmp-add" disabled>Add point here</button>
+          <button class="btn small" type="button" id="hz-cmp-trace" aria-pressed="false" disabled>Start tracing</button>
+        </div>
+        <fieldset class="hz-fields">
+          <legend>Correct with a landmark</legend>
+          <label>True direction of what you point at (°) <input id="hz-cmp-true" type="number" min="0" max="359.99" step="0.5"></label>
+          <button class="btn small" type="button" id="hz-cmp-correct" disabled>Set correction</button>
+        </fieldset>
+        <p class="sub" id="hz-cmp-status" role="status" aria-live="polite"></p>
       </details>
       <details class="hz-panel ed-display" id="hz-display-panel">
         <summary>Display</summary>
@@ -858,7 +904,7 @@ function wireEditor(box, h, onChanged) {
   activeSession = {
     horizonId: h.id, record: h, hist, dirty, settle,
     save: persist,
-    disconnect: () => { observer?.disconnect(); gesture = null; },
+    disconnect: () => { observer?.disconnect(); gesture = null; stopCompass(); },
   };
 
   /* ---- geometry ---- */
@@ -904,6 +950,7 @@ function wireEditor(box, h, onChanged) {
     if (ui.grid) drawGrid(f, V);
     drawMinAlt(f, V);
     drawSkyline(f, V);
+    drawOverhangs(f, V);
     if (gesture?.type === 'sketch') drawSketch(f, V);
     if (ui.mode === 'align' && photo && h.photo) drawAlignHandles(f, V);
     ctx.restore();
@@ -1002,6 +1049,38 @@ function wireEditor(box, h, onChanged) {
     });
   }
 
+  /* Overhangs block everything above their edge: shade from the edge to the
+     top of the grid, with a dashed edge so they read apart from the skyline. */
+  function drawOverhangs(f, V) {
+    const lines = gesture?.type === 'ohpoint' ? gesture.lines : (h.overhangs || []);
+    const top = f.y - 2;
+    lines.forEach((line, i) => {
+      ctx.beginPath();
+      ctx.moveTo(X(f, line[0].az), top);
+      for (const p of line) ctx.lineTo(X(f, p.az), Y(f, p.alt));
+      ctx.lineTo(X(f, line[line.length - 1].az), top);
+      ctx.closePath();
+      ctx.fillStyle = V.obstacleFill;
+      ctx.fill();
+      ctx.beginPath();
+      line.forEach((p, j) => (j ? ctx.lineTo : ctx.moveTo).call(ctx, X(f, p.az), Y(f, p.alt)));
+      ctx.strokeStyle = V.obstacleStroke;
+      ctx.lineWidth = 2;
+      ctx.setLineDash([7, 4]);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      if (ui.mode !== 'overhang') return;
+      line.forEach((p, j) => {
+        const sel = ui.ohSel && ui.ohSel.i === i && ui.ohSel.j === j;
+        ctx.beginPath();
+        ctx.arc(X(f, p.az), Y(f, p.alt), sel ? 6 : 3.5, 0, Math.PI * 2);
+        ctx.fillStyle = sel ? V.text : V.obstacleStroke;
+        ctx.fill();
+        if (sel) { ctx.lineWidth = 2; ctx.strokeStyle = V.canvas; ctx.stroke(); }
+      });
+    });
+  }
+
   function drawSketch(f, V) {
     const s = gesture.samples;
     if (s.length < 2) return;
@@ -1082,7 +1161,7 @@ function wireEditor(box, h, onChanged) {
     status.classList.toggle('failed', saveFailed);
     $('#ed-undo', box).disabled = !historyCanUndo(hist);
     $('#ed-redo', box).disabled = !historyCanRedo(hist);
-    $('#hz-clear', box).disabled = !h.points.length;
+    $('#hz-clear', box).disabled = !h.points.length && !(h.overhangs || []).length;
   }
 
   function renderSummary() {
@@ -1091,8 +1170,13 @@ function wireEditor(box, h, onChanged) {
     if (tag) tag.textContent = `${h.points.length} pt${h.hasPhoto ? ' · photo' : ''}`;
   }
 
+  /** The selected point of the current mode's layer, or undefined. */
+  const selectedPoint = () => (ui.mode === 'overhang'
+    ? (ui.ohSel ? h.overhangs[ui.ohSel.i]?.[ui.ohSel.j] : undefined)
+    : h.points[ui.selected]);
+
   function renderSelection() {
-    const p = h.points[ui.selected];
+    const p = ui.mode === 'align' ? undefined : selectedPoint();
     const az = $('#hz-sel-az', box), alt = $('#hz-sel-alt', box), del = $('#hz-sel-del', box);
     for (const el of [az, alt, del]) el.disabled = !p;
     az.value = p ? String(p.az) : '';
@@ -1103,14 +1187,19 @@ function wireEditor(box, h, onChanged) {
     const hasPhoto = !!(h.photo && photo);
     if (ui.mode === 'align' && !hasPhoto) ui.mode = 'draw';
     $('#hz-mode-draw', box).setAttribute('aria-pressed', String(ui.mode === 'draw'));
+    $('#hz-mode-overhang', box).setAttribute('aria-pressed', String(ui.mode === 'overhang'));
     $('#hz-mode-align', box).setAttribute('aria-pressed', String(ui.mode === 'align'));
     $('#hz-mode-align', box).disabled = !hasPhoto;
     cvs.dataset.mode = ui.mode;
-    $('#hz-help', box).textContent = ui.landmark === 'pick'
+    $('#hz-help', box).textContent = ui.sun === 'pick'
+      ? 'Click the centre of the Sun in the photo. Esc cancels.'
+      : ui.landmark === 'pick'
       ? 'Click the landmark in the photo. Esc cancels.'
       : ui.mode === 'align'
         ? `Drag the photo to move it (north and tilt)${canRoll() ? ' · drag a round handle to level it' : ''} · the skyline moves with the photo`
-        : 'Click = add point · drag a point = move · drag across the grid = sketch the skyline · Delete = remove · wheel = zoom · Space+drag = pan';
+        : ui.mode === 'overhang'
+          ? 'Drag along the underside of a balcony, roof or branch: the sky above that edge is blocked · drag a point = move · Delete = remove'
+          : 'Click = add point · drag a point = move · drag across the grid = sketch the skyline · Delete = remove · wheel = zoom · Space+drag = pan';
     $('#ed-zoom-label', box).textContent = `${ui.zoom.toFixed(1)}×`;
   }
 
@@ -1120,6 +1209,7 @@ function wireEditor(box, h, onChanged) {
     persist();
     announceHorizonChanged(h, cause);
     if (ui.selected >= h.points.length) ui.selected = -1;
+    if (ui.ohSel && !h.overhangs[ui.ohSel.i]?.[ui.ohSel.j]) ui.ohSel = null;
     renderStatus(); renderSummary(); renderSelection(); renderPhotoPanel(); renderMode();
     draw();
     onChanged();
@@ -1139,6 +1229,23 @@ function wireEditor(box, h, onChanged) {
 
   const selectAz = (az) => { ui.selected = h.points.findIndex((p) => Math.abs(p.az - az) < 0.006); };
 
+  /** Select the overhang point nearest a world position (after a re-sort). */
+  const selectOverhangAt = (az, alt) => {
+    let best = null, bestD = Infinity;
+    h.overhangs.forEach((line, i) => line.forEach((p, j) => {
+      const d = Math.hypot(p.az - az, p.alt - alt);
+      if (d < bestD) { bestD = d; best = { i, j }; }
+    }));
+    ui.ohSel = bestD < 0.02 ? best : null;
+  };
+
+  /** Move the photo; the skyline and overhangs move with it. */
+  function placePhoto(next, from = h.photo, points = h.points, overhangs = h.overhangs) {
+    h.points = reprojectPoints(points, photo.width, photo.height, from, next);
+    h.overhangs = reprojectOverhangs(overhangs, photo.width, photo.height, from, next);
+    h.photo = next;
+  }
+
   /* ---- pointer gestures ---- */
   function hitPoint(f, x, y) {
     let best = -1, bestD = HIT_PX;
@@ -1148,6 +1255,15 @@ function wireEditor(box, h, onChanged) {
         if (d < bestD) { bestD = d; best = i; }
       }
     });
+    return best;
+  }
+
+  function hitOverhang(f, x, y) {
+    let best = null, bestD = HIT_PX;
+    (h.overhangs || []).forEach((line, i) => line.forEach((p, j) => {
+      const d = Math.hypot(X(f, p.az) - x, Y(f, p.alt) - y);
+      if (d < bestD) { bestD = d; best = { i, j }; }
+    }));
     return best;
   }
 
@@ -1167,6 +1283,12 @@ function wireEditor(box, h, onChanged) {
       gesture = { type: 'pan', x, y, fx: ui.fx, fy: ui.fy };
     } else if (ev.button !== 0) {
       return;
+    } else if (ui.sun === 'pick' && photo && h.photo) {
+      const px = worldToPhoto(h.photo, photo.width, photo.height, wrapAz(w.az), w.alt);
+      ui.sun = { x: px.x, y: px.y };
+      renderPhotoPanel(); renderMode();
+      openSunForm();
+      return;
     } else if (ui.landmark === 'pick' && photo && h.photo) {
       const px = worldToPhoto(h.photo, photo.width, photo.height, wrapAz(w.az), w.alt);
       ui.landmark = { x: px.x, y: px.y };
@@ -1175,8 +1297,18 @@ function wireEditor(box, h, onChanged) {
       return;
     } else if (ui.mode === 'align' && photo && h.photo) {
       const handle = hitHandle(f, x, y);
-      gesture = { type: handle >= 0 ? 'roll' : 'move', start: w, photo0: { ...h.photo }, points0: h.points.map((p) => ({ ...p })) };
+      gesture = { type: handle >= 0 ? 'roll' : 'move', start: w, photo0: { ...h.photo },
+        points0: h.points.map((p) => ({ ...p })), overhangs0: h.overhangs.map((l) => l.map((p) => ({ ...p }))) };
       if (handle >= 0) gesture.angle0 = Math.atan2(w.alt - h.photo.tilt, azDelta(w.az, h.photo.heading));
+    } else if (ui.mode === 'overhang') {
+      const hit = hitOverhang(f, x, y);
+      if (hit) {
+        ui.ohSel = hit;
+        gesture = { type: 'ohpoint', ...hit, lines: h.overhangs.map((l) => l.map((p) => ({ ...p }))), moved: false };
+        renderSelection();
+      } else {
+        gesture = { type: 'sketch', x, y, far: false, samples: [{ az: Math.max(0, Math.min(360, w.az)), alt: clampAlt(w.alt) }] };
+      }
     } else {
       const hit = hitPoint(f, x, y);
       if (hit >= 0) {
@@ -1206,6 +1338,12 @@ function wireEditor(box, h, onChanged) {
       const hi = i < pts.length - 1 ? pts[i + 1].az - 0.01 : 359.99;
       pts[i] = { az: Math.max(lo, Math.min(hi, w.az)), alt: clampAlt(w.alt) };
       gesture.moved = true;
+    } else if (gesture.type === 'ohpoint') {
+      const line = gesture.lines[gesture.i], j = gesture.j;
+      const lo = j > 0 ? line[j - 1].az + 0.01 : 0;
+      const hi = j < line.length - 1 ? line[j + 1].az - 0.01 : 360;
+      line[j] = { az: Math.max(lo, Math.min(hi, w.az)), alt: clampAlt(w.alt) };
+      gesture.moved = true;
     } else if (gesture.type === 'sketch') {
       if (Math.hypot(x - gesture.x, y - gesture.y) > 4) gesture.far = true;
       gesture.samples.push({ az: Math.max(0, Math.min(360, w.az)), alt: clampAlt(w.alt) });
@@ -1218,8 +1356,7 @@ function wireEditor(box, h, onChanged) {
         const angle = Math.atan2(w.alt - p0.tilt, azDelta(w.az, p0.heading));
         next = { ...p0, roll: azDelta(p0.roll + (angle - gesture.angle0) * 180 / Math.PI, 0) };
       }
-      h.photo = normalizePhotoPlacement(next);
-      h.points = reprojectPoints(gesture.points0, photo.width, photo.height, p0, h.photo);
+      placePhoto(normalizePhotoPlacement(next), p0, gesture.points0, gesture.overhangs0);
       gesture.moved = true;
       renderPhotoFields();
     }
@@ -1235,6 +1372,20 @@ function wireEditor(box, h, onChanged) {
       const moved = g.points[g.index];
       h.points = normalizePoints(g.points);
       selectAz(Math.round(moved.az * 100) / 100);
+      commit();
+    } else if (g.type === 'ohpoint' && g.moved && apply) {
+      const moved = g.lines[g.i][g.j];
+      h.overhangs = normalizeOverhangs(g.lines);
+      selectOverhangAt(moved.az, moved.alt);
+      commit();
+    } else if (g.type === 'sketch' && apply && ui.mode === 'overhang') {
+      if (!g.far) { note('Drag along the underside of the overhang to draw its edge.'); draw(); return; }
+      const buckets = new Map();
+      for (const s of g.samples) buckets.set(Math.round(s.az * 4), s);
+      const edge = simplifyLine([...buckets.values()].sort((a, b) => a.az - b.az), 0.15);
+      if (!normalizeOverhang(edge)) { note('An overhang edge needs to span some azimuth: drag sideways.'); draw(); return; }
+      h.overhangs = replaceOverhangsInRange(h.overhangs, edge);
+      ui.ohSel = null;
       commit();
     } else if (g.type === 'sketch' && apply) {
       if (!g.far) {
@@ -1254,7 +1405,7 @@ function wireEditor(box, h, onChanged) {
       }
     } else if ((g.type === 'move' || g.type === 'roll') && g.moved) {
       if (apply) commit('align');
-      else { h.photo = g.photo0; h.points = g.points0; draw(); }
+      else { h.photo = g.photo0; h.points = g.points0; h.overhangs = g.overhangs0; draw(); }
     } else draw();
   }
 
@@ -1289,10 +1440,11 @@ function wireEditor(box, h, onChanged) {
     if (ev.key === ' ') { spaceDown = true; ev.preventDefault(); return; }
     if (ev.key === 'Escape') {
       if (gesture) finishGesture(false);
-      else if (ui.landmark) { ui.landmark = null; renderPhotoPanel(); renderMode(); }
+      else if (ui.landmark || ui.sun) { ui.landmark = null; ui.sun = null; renderPhotoPanel(); renderMode(); }
       else { ui.selected = -1; renderSelection(); draw(); }
       return;
     }
+    if (ui.mode === 'overhang') { overhangKey(ev); return; }
     if (ui.mode !== 'draw' || !h.points.length) return;
     const n = h.points.length;
     const i = ui.selected;
@@ -1329,6 +1481,46 @@ function wireEditor(box, h, onChanged) {
       $('#ed-pos', box).textContent = `az ${fmt(next.az)}° · alt ${fmt(next.alt)}°`;
     }
   });
+  /** Arrow/Delete keys on overhang edge points (Overhang mode). */
+  function overhangKey(ev) {
+    const flat = [];
+    h.overhangs.forEach((line, i) => line.forEach((_, j) => flat.push({ i, j })));
+    if (!flat.length) return;
+    const at = ui.ohSel ? flat.findIndex((q) => q.i === ui.ohSel.i && q.j === ui.ohSel.j) : -1;
+    if ((ev.key === 'ArrowLeft' || ev.key === 'ArrowRight') && !ev.shiftKey) {
+      ev.preventDefault();
+      ui.ohSel = flat[at < 0 ? 0 : (at + (ev.key === 'ArrowRight' ? 1 : flat.length - 1)) % flat.length];
+      const p = selectedPoint();
+      if (X(frame(), p.az) < MARGIN.l || X(frame(), p.az) > size.w - MARGIN.r) Object.assign(ui, clampView(ui.zoom, p.az, ui.fy));
+      renderSelection(); draw();
+      $('#ed-pos', box).textContent = `overhang ${ui.ohSel.i + 1}, point ${ui.ohSel.j + 1}: az ${fmt(p.az)}° ${cardinal(p.az)} · alt ${fmt(p.alt)}°`;
+      return;
+    }
+    if (at < 0) return;
+    const { i, j } = ui.ohSel, line = h.overhangs[i], p = line[j];
+    if (ev.key === 'Delete' || ev.key === 'Backspace') {
+      ev.preventDefault();
+      const rest = line.filter((_, k) => k !== j);
+      h.overhangs = normalizeOverhangs(h.overhangs.map((l, k) => (k === i ? rest : l)));
+      ui.ohSel = null;
+      commit();
+      $('#ed-pos', box).textContent = rest.length < 2 ? 'overhang removed' : 'point removed';
+      return;
+    }
+    let next = null;
+    const step = ev.shiftKey ? 2 : 0.5;
+    if (ev.key === 'ArrowUp' || ev.key === 'ArrowDown') next = { az: p.az, alt: clampAlt(p.alt + (ev.key === 'ArrowUp' ? step : -step)) };
+    if (ev.shiftKey && (ev.key === 'ArrowLeft' || ev.key === 'ArrowRight')) {
+      const lo = j > 0 ? line[j - 1].az + 0.01 : 0, hi = j < line.length - 1 ? line[j + 1].az - 0.01 : 360;
+      next = { az: Math.max(lo, Math.min(hi, p.az + (ev.key === 'ArrowRight' ? 0.5 : -0.5))), alt: p.alt };
+    }
+    if (!next) return;
+    ev.preventDefault();
+    h.overhangs = normalizeOverhangs(h.overhangs.map((l, k) => (k === i ? l.map((q, m) => (m === j ? next : q)) : l)));
+    selectOverhangAt(Math.round(next.az * 100) / 100, Math.round(next.alt * 100) / 100);
+    commit();
+    $('#ed-pos', box).textContent = `az ${fmt(next.az)}° · alt ${fmt(next.alt)}°`;
+  }
   cvs.addEventListener('keyup', (ev) => { if (ev.key === ' ') spaceDown = false; });
   cvs.addEventListener('blur', () => { spaceDown = false; });
 
@@ -1346,14 +1538,17 @@ function wireEditor(box, h, onChanged) {
   $('#ed-undo', box).addEventListener('click', undo);
   $('#ed-redo', box).addEventListener('click', redo);
   $('#hz-clear', box).addEventListener('click', async () => {
-    const ok = await confirmDialog(box, { title: 'Clear the skyline?', body: 'All skyline points are removed. Undo brings them back.', ok: 'Clear' });
+    const ok = await confirmDialog(box, { title: 'Clear the horizon?', body: 'The skyline and all overhangs are removed. Undo brings them back.', ok: 'Clear' });
     if (!ok) return;
     h.points = [];
+    h.overhangs = [];
     ui.selected = -1;
+    ui.ohSel = null;
     commit();
   });
-  const setMode = (mode) => { settle(); ui.mode = mode; ui.landmark = null; renderMode(); renderPhotoPanel(); draw(); };
+  const setMode = (mode) => { settle(); ui.mode = mode; ui.landmark = null; ui.sun = null; renderMode(); renderPhotoPanel(); draw(); };
   $('#hz-mode-draw', box).addEventListener('click', () => setMode('draw'));
+  $('#hz-mode-overhang', box).addEventListener('click', () => setMode('overhang'));
   $('#hz-mode-align', box).addEventListener('click', () => setMode('align'));
 
   $('#hz-name', box).addEventListener('change', (ev) => {
@@ -1368,6 +1563,7 @@ function wireEditor(box, h, onChanged) {
   $('#hz-export', box).addEventListener('click', () => {
     if (!h.points.length) { note('There is nothing to export yet: the skyline has no points.'); return; }
     download(`${fileSlug(h.name)}-horizon.txt`, formatHorizonFile(h));
+    if (h.overhangs.length) note('Exported the skyline. Horizon files have no overhangs, so those stay only in NightSeam and its backups.');
   });
 
   /* ---- guide after a new photo ---- */
@@ -1386,16 +1582,45 @@ function wireEditor(box, h, onChanged) {
   $('#hz-sel-alt', box).addEventListener('change', () => editSelected());
   function editSelected() {
     const az = field('#hz-sel-az'), alt = field('#hz-sel-alt');
-    if (ui.selected < 0 || !Number.isFinite(az) || !Number.isFinite(alt)) { renderSelection(); return; }
-    h.points = normalizePoints([...h.points.filter((_, k) => k !== ui.selected), { az, alt }]);
-    selectAz(Math.round(wrapAz(az) * 100) / 100);
+    if (!selectedPoint() || !Number.isFinite(az) || !Number.isFinite(alt)) { renderSelection(); return; }
+    if (ui.mode === 'overhang') {
+      const { i, j } = ui.ohSel;
+      const a = Math.max(0, Math.min(360, az));
+      h.overhangs = normalizeOverhangs(h.overhangs.map((l, k) => (k === i ? l.map((q, m) => (m === j ? { az: a, alt } : q)) : l)));
+      selectOverhangAt(Math.round(a * 100) / 100, Math.round(Math.max(ALT_MIN, Math.min(ALT_MAX, alt)) * 100) / 100);
+    } else {
+      h.points = normalizePoints([...h.points.filter((_, k) => k !== ui.selected), { az, alt }]);
+      selectAz(Math.round(wrapAz(az) * 100) / 100);
+    }
     commit();
   }
   $('#hz-sel-del', box).addEventListener('click', () => {
-    if (ui.selected < 0) return;
-    h.points = h.points.filter((_, k) => k !== ui.selected);
-    ui.selected = -1;
+    if (!selectedPoint()) return;
+    if (ui.mode === 'overhang') {
+      const { i, j } = ui.ohSel;
+      h.overhangs = normalizeOverhangs(h.overhangs.map((l, k) => (k === i ? l.filter((_, m) => m !== j) : l)));
+      ui.ohSel = null;
+    } else {
+      h.points = h.points.filter((_, k) => k !== ui.selected);
+      ui.selected = -1;
+    }
     commit();
+  });
+  $('#hz-oh-add', box).addEventListener('click', () => {
+    const from = field('#hz-oh-from'), to = field('#hz-oh-to'), alt = field('#hz-oh-alt');
+    if (![from, to, alt].every(Number.isFinite)) {
+      note('Enter where the overhang starts and ends (going east; the same direction twice means all the way round) and the altitude of its edge, in degrees.');
+      return;
+    }
+    let next = h.overhangs;
+    for (const piece of flatOverhang(from, to, alt)) next = replaceOverhangsInRange(next, piece);
+    h.overhangs = next;
+    if (ui.mode !== 'overhang') { ui.mode = 'overhang'; renderMode(); }
+    ui.ohSel = null;
+    commit();
+    note(wrapAz(from) === wrapAz(to)
+      ? `Overhang added: the sky above ${fmt(alt)}° is blocked all the way round.`
+      : `Overhang added: the sky above ${fmt(alt)}° is blocked from ${fmt(wrapAz(from))}° to ${fmt(wrapAz(to))}°.`);
   });
   $('#hz-add', box).addEventListener('click', () => {
     const az = field('#hz-add-az'), alt = field('#hz-add-alt');
@@ -1405,7 +1630,7 @@ function wireEditor(box, h, onChanged) {
     selectAz(Math.round(wrapAz(az) * 100) / 100);
     commit();
   });
-  for (const [id, key] of [['#hz-points-panel', 'points'], ['#hz-display-panel', 'display']]) {
+  for (const [id, key] of [['#hz-points-panel', 'points'], ['#hz-display-panel', 'display'], ['#hz-compass-panel', 'compass']]) {
     const el = $(id, box);
     el.open = !!ui.openPanels[key];
     el.addEventListener('toggle', () => { ui.openPanels[key] = el.open; });
@@ -1443,6 +1668,7 @@ function wireEditor(box, h, onChanged) {
         <p class="sub">360° is a full panorama; a phone photo is about 65° wide, a phone panorama 120–240°. The skyline moves with the photo.</p>
         <div class="btnrow">
           <button class="btn small" type="button" id="hz-landmark">Set north from a landmark</button>
+          <button class="btn small" type="button" id="hz-sun">Set north from the Sun</button>
           <button class="btn small" type="button" id="hz-detect">Detect skyline</button>
           <button class="btn small" type="button" id="hz-photo-remove">Remove photo</button>
         </div>
@@ -1451,6 +1677,14 @@ function wireEditor(box, h, onChanged) {
           <div class="btnrow">
             <button class="btn small primary" type="button" id="hz-landmark-apply">Apply</button>
             <button class="btn small" type="button" id="hz-landmark-cancel">Cancel</button>
+          </div>
+        </div>
+        <div id="hz-sun-form" class="hz-landmark" hidden>
+          <label>When the photo was taken (site time) <input id="hz-sun-time" type="datetime-local" step="1"></label>
+          <p class="sub" id="hz-sun-source"></p>
+          <div class="btnrow">
+            <button class="btn small primary" type="button" id="hz-sun-apply">Apply</button>
+            <button class="btn small" type="button" id="hz-sun-cancel">Cancel</button>
           </div>
         </div>`;
       wirePhotoFields();
@@ -1500,6 +1734,9 @@ function wireEditor(box, h, onChanged) {
     if (form) form.hidden = !(ui.landmark && typeof ui.landmark === 'object');
     const btn = $('#hz-landmark', panel);
     if (btn) btn.setAttribute('aria-pressed', String(!!ui.landmark));
+    const sunForm = $('#hz-sun-form', panel);
+    if (sunForm) sunForm.hidden = !(ui.sun && typeof ui.sun === 'object');
+    $('#hz-sun', panel)?.setAttribute('aria-pressed', String(!!ui.sun));
   }
 
   function wirePhotoFields() {
@@ -1510,8 +1747,7 @@ function wireEditor(box, h, onChanged) {
         if (key === 'width' && v >= 360) patch.roll = 0;   // full panoramas are not rolled
         const next = Number.isFinite(v) ? normalizePhotoPlacement({ ...h.photo, ...patch }) : null;
         if (!next || !photo) { renderPhotoFields(); note('Width is 1–360°, tilt −90 to 90°.'); return; }
-        h.points = reprojectPoints(h.points, photo.width, photo.height, h.photo, next);
-        h.photo = next;
+        placePhoto(next);
         followPhoto();
         commit('align');
       });
@@ -1532,16 +1768,71 @@ function wireEditor(box, h, onChanged) {
       const next = normalizePhotoPlacement({
         ...h.photo, heading: headingForLandmark(h.photo, photo.width, photo.height, ui.landmark.x, ui.landmark.y, az),
       });
-      h.points = reprojectPoints(h.points, photo.width, photo.height, h.photo, next);
-      h.photo = next;
+      placePhoto(next);
       ui.landmark = null;
       followPhoto();
       renderMode();
       commit('align');
       note(`North set: the photo centre now faces ${fmt(next.heading)}° (${cardinal(next.heading)}).`);
     });
+    $('#hz-sun', panel).addEventListener('click', () => {
+      settle();
+      if (!siteContext()) { note('Set an observing site first: the Sun\u2019s position depends on where you are.'); return; }
+      ui.sun = ui.sun ? null : 'pick';
+      ui.landmark = null;
+      renderPhotoFields(); renderMode();
+      if (ui.sun) { note('Click the centre of the Sun in the photo.'); cvs.focus(); }
+    });
+    $('#hz-sun-cancel', panel).addEventListener('click', () => { ui.sun = null; renderPhotoFields(); renderMode(); });
+    $('#hz-sun-apply', panel).addEventListener('click', applySun);
     $('#hz-detect', panel).addEventListener('click', detect);
     $('#hz-photo-remove', panel).addEventListener('click', removePhoto);
+  }
+
+  /* ---- north from the Sun ---- */
+  const pad = (n) => String(n).padStart(2, '0');
+  const wallInput = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+
+  /** Fill the capture time from the photo's EXIF data when it has one. */
+  async function openSunForm() {
+    const input = $('#hz-sun-time', panel), source = $('#hz-sun-source', panel);
+    if (!input) return;
+    source.textContent = 'Enter when the photo was taken, in the observing site\u2019s time.';
+    input.focus();
+    let taken = null;
+    try { taken = photoCaptureTime(new Uint8Array(await photo.blob.slice(0, 262144).arrayBuffer())); } catch { /* no EXIF */ }
+    if (!taken || !input.isConnected || input.value) return;
+    if (taken.offsetMin == null) {
+      const d = new Date(taken.wall);
+      input.value = `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}T${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}:${pad(d.getUTCSeconds())}`;
+      source.textContent = 'From the photo\u2019s camera clock, read as site time. Check it if the camera was set to another zone.';
+    } else {
+      input.value = wallInput(utcToWall(new Date(taken.wall - taken.offsetMin * 60000)));
+      source.textContent = 'From the photo\u2019s capture time, shown in the observing site\u2019s time.';
+    }
+  }
+
+  function applySun() {
+    const site = siteContext();
+    const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?/.exec($('#hz-sun-time', panel).value || '');
+    if (!site || !photo || !ui.sun || typeof ui.sun !== 'object' || !m) {
+      note('Enter the date and time the photo was taken.');
+      return;
+    }
+    const [y, mo, d, hh, mi, ss] = m.slice(1).map((v) => Number(v || 0));
+    const when = wallFieldsToUtc(y, mo - 1, d, hh, mi, ss);
+    const sun = sunDirection(julianDay(when), site.lat, site.lon);
+    if (sun.alt < -0.5) {
+      note(`At that time the Sun was ${fmt(-sun.alt)}° below the horizon at ${site.label || 'this site'}. Check the date, time and observing site.`);
+      return;
+    }
+    const next = placementFromKnownDirection(h.photo, photo.width, photo.height, ui.sun.x, ui.sun.y, sun.az, sun.alt);
+    placePhoto(next);
+    ui.sun = null;
+    followPhoto();
+    renderMode();
+    commit('align');
+    note(`The Sun was at ${fmt(sun.az)}° (${cardinal(sun.az)}), ${fmt(sun.alt)}° high: north and tilt are set from it.`);
   }
 
   async function removePhoto() {
@@ -1597,6 +1888,115 @@ function wireEditor(box, h, onChanged) {
     commit('detect');
     note(`Detected ${simple.length} skyline points. Check them and drag any that are off (trees and wires can confuse detection).`);
   }
+
+  /* ---- phone compass ---- */
+  const cmp = { on: false, reading: null, absoluteAt: 0, trace: null, timer: null, frame: null };
+  const cmpStatus = (text) => { const el = $('#hz-cmp-status', box); if (el) el.textContent = text; };
+
+  function onOrientation(ev) {
+    if (ev.alpha == null || ev.beta == null || ev.gamma == null) return;
+    let alpha = ev.alpha, absolute = ev.type === 'deviceorientationabsolute' || ev.absolute === true;
+    if (typeof ev.webkitCompassHeading === 'number') { alpha = 360 - ev.webkitCompassHeading; absolute = true; }
+    // Prefer absolute (compass) readings while they keep arriving.
+    if (!absolute && Date.now() - cmp.absoluteAt < 1000) return;
+    if (absolute) cmp.absoluteAt = Date.now();
+    const raw = devicePointing(alpha, ev.beta, ev.gamma);
+    cmp.reading = { raw: raw.az, az: wrapAz(raw.az + ui.compassOffset), alt: raw.alt, absolute };
+    if (cmp.trace) {
+      const last = cmp.trace[cmp.trace.length - 1];
+      if (!last || Math.abs(azDelta(cmp.reading.az, last.az)) >= 0.3 || Math.abs(cmp.reading.alt - last.alt) >= 0.3) {
+        cmp.trace.push({ az: cmp.reading.az, alt: clampAlt(cmp.reading.alt) });
+      }
+    }
+    if (cmp.frame == null) cmp.frame = requestAnimationFrame(renderCompass);
+  }
+
+  function renderCompass() {
+    cmp.frame = null;
+    const read = $('#hz-cmp-read', box);
+    if (!read) return;
+    const r = cmp.reading;
+    read.textContent = !cmp.on ? 'Not measuring.' : !r ? 'Waiting for the compass…'
+      : `Pointing ${fmt(r.az)}° ${cardinal(r.az)} · ${fmt(r.alt)}° high${r.absolute ? '' : ' (relative: set a correction)'}`
+        + `${cmp.trace ? ` · tracing ${cmp.trace.length} samples` : ''}`;
+    $('#hz-cmp-start', box).textContent = cmp.on ? 'Stop compass' : 'Start compass';
+    $('#hz-cmp-start', box).setAttribute('aria-pressed', String(cmp.on));
+    for (const id of ['#hz-cmp-add', '#hz-cmp-trace', '#hz-cmp-correct']) $(id, box).disabled = !(cmp.on && r);
+    $('#hz-cmp-trace', box).textContent = cmp.trace ? 'Finish tracing' : 'Start tracing';
+    $('#hz-cmp-trace', box).setAttribute('aria-pressed', String(!!cmp.trace));
+  }
+
+  function stopCompass() {
+    if (!cmp.on) return;
+    removeEventListener('deviceorientationabsolute', onOrientation);
+    removeEventListener('deviceorientation', onOrientation);
+    clearTimeout(cmp.timer);
+    Object.assign(cmp, { on: false, reading: null, trace: null });
+    if (cvs.isConnected) renderCompass();
+  }
+
+  async function startCompass() {
+    if (typeof DeviceOrientationEvent === 'undefined') { cmpStatus('This browser has no orientation sensor.'); return; }
+    if (typeof DeviceOrientationEvent.requestPermission === 'function') {
+      // iOS asks; some browsers expose the call but never settle it. Only an
+      // explicit refusal stops us; otherwise listen, and readings arrive once
+      // (or if) access is granted.
+      const answer = await Promise.race([
+        DeviceOrientationEvent.requestPermission().catch(() => 'denied'),
+        new Promise((resolve) => setTimeout(() => resolve('pending'), 1500)),
+      ]);
+      if (answer === 'denied') { cmpStatus('Motion and orientation access was not allowed.'); return; }
+    }
+    cmp.on = true;
+    addEventListener('deviceorientationabsolute', onOrientation);
+    addEventListener('deviceorientation', onOrientation);
+    cmpStatus('Compass started. Correct it with a landmark, then add points or trace along the skyline.');
+    cmp.timer = setTimeout(() => {
+      if (cmp.on && !cmp.reading) cmpStatus('No orientation readings: this device may have no compass. Use a phone or tablet.');
+    }, COMPASS_WAIT_MS);
+    renderCompass();
+  }
+
+  $('#hz-cmp-start', box).addEventListener('click', () => (cmp.on ? stopCompass() : startCompass()));
+  $('#hz-cmp-add', box).addEventListener('click', () => {
+    const r = cmp.reading;
+    if (!r) return;
+    if (h.points.length >= MAX_POINTS) { cmpStatus(`A horizon has at most ${MAX_POINTS} points.`); return; }
+    h.points = normalizePoints([...h.points, { az: r.az, alt: r.alt }]);
+    selectAz(Math.round(r.az * 100) / 100);
+    commit('compass');
+    cmpStatus(`Added a point at ${fmt(r.az)}° ${cardinal(r.az)}, ${fmt(r.alt)}° high.`);
+  });
+  $('#hz-cmp-trace', box).addEventListener('click', () => {
+    if (!cmp.trace) {
+      cmp.trace = cmp.reading ? [{ az: cmp.reading.az, alt: clampAlt(cmp.reading.alt) }] : [];
+      cmpStatus('Tracing: sweep slowly along the skyline, then press Finish tracing.');
+      renderCompass();
+      return;
+    }
+    const samples = cmp.trace;
+    cmp.trace = null;
+    renderCompass();
+    if (samples.length < 2) { cmpStatus('Nothing traced: sweep the phone along the skyline while tracing.'); return; }
+    let prev = null;
+    const line = simplifyLine(samples.map((p) => {
+      const az = prev == null ? p.az : prev + azDelta(p.az, prev);
+      prev = az;
+      return { az, alt: p.alt };
+    }), 0.3);
+    h.points = replacePointsInRange(h.points, line).slice(0, MAX_POINTS);
+    ui.selected = -1;
+    commit('compass');
+    cmpStatus(`Traced ${line.length} points from ${fmt(wrapAz(line[0].az))}° to ${fmt(wrapAz(line[line.length - 1].az))}°.`);
+  });
+  $('#hz-cmp-correct', box).addEventListener('click', () => {
+    const truth = num($('#hz-cmp-true', box).value), r = cmp.reading;
+    if (!Number.isFinite(truth) || !r) { cmpStatus('Point at a landmark and enter its true direction in degrees.'); return; }
+    ui.compassOffset = azDelta(truth, r.raw);
+    r.az = wrapAz(r.raw + ui.compassOffset);   // show the corrected reading at once
+    renderCompass();
+    cmpStatus(`Correction set: ${ui.compassOffset >= 0 ? '+' : ''}${fmt(ui.compassOffset)}°. It applies until you reload the page.`);
+  });
 
   /* ---- start ---- */
   Object.assign(ui, clampView(ui.zoom, ui.fx, ui.fy));

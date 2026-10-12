@@ -85,10 +85,10 @@ machine's sandbox limits (Chrome named pipes, elevated runs).
 - Popularity only breaks ties and is never shown in the UI.
 
 **Horizons**
-- Skyline points are the only source of truth. The planner's world-azimuth
-  profile is derived from them and never stored.
-- A photo is a tracing aid: moving it moves the skyline with it, and its bytes
-  are never modified.
+- Skyline points and overhang edges are the only source of truth. The
+  planner's world-azimuth profiles are derived from them and never stored.
+- A photo is a tracing aid: moving it moves the skyline and overhangs with
+  it, and its bytes are never modified.
 - Editor history stays safe: edits save at once, undo/redo keep working, and
   a failed save stays dirty with the leave-page warning armed.
 

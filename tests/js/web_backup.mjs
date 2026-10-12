@@ -184,6 +184,8 @@ for (const [bad, why] of [
   [{ horizons: [hzRec({ photo: PLACED, image: 'data:image/png;base64,!!!' })] }, 'undecodable photo bytes'],
   [{ horizons: [hzRec({ photo: PLACED, image: 'data:image/jpeg;base64,' + Buffer.from('JPEGBYTES').toString('base64') })] }, 'bytes that are not a JPEG'],
   [{ horizons: Array.from({ length: H.MAX_HORIZONS + 1 }, (_, i) => hzRec({ id: `h${i}` })) }, 'too many horizons'],
+  [{ horizons: [hzRec({ overhangs: [[{ az: 10, alt: 40 }]] })] }, 'a one-point overhang'],
+  [{ horizons: [hzRec({ overhangs: [[{ az: -10, alt: 40 }, { az: 10, alt: 40 }]] })] }, 'an overhang across north'],
   [{ panos: [] }, 'a missing horizon list'],
   [null, 'a missing section'],
 ]) assert(H.normalizeHorizons(bad) === null, `${why} refuses the whole section`);
@@ -205,6 +207,14 @@ const beforeBad = JSON.stringify(await H.exportHorizonsWithPhotos());
 assert(await H.applyHorizonsSnapshot({ horizons: [{ ...hzRec(), image: 'data:image/png;base64,' }], activeId: 'h1' }) === false,
   'an unusable photo fails the restore');
 assert(JSON.stringify(await H.exportHorizonsWithPhotos()) === beforeBad, 'a failed restore leaves the horizons unchanged');
+
+const roofed = H.normalizeHorizons({ horizons: [hzRec({ overhangs: [[{ az: 100, alt: 40 }, { az: 120, alt: 35 }]] })] });
+await H.applyHorizonsSnapshot(roofed);
+const roofExport = await H.exportHorizonsWithPhotos();
+assert(JSON.stringify(roofExport.horizons[0].overhangs) === JSON.stringify([[{ az: 100, alt: 40 }, { az: 120, alt: 35 }]]),
+  'overhangs are backed up');
+assert(!('profileTop' in roofExport.horizons[0]), 'the derived overhang profile is never stored');
+assert(Math.abs(H.ceilFor(H.activeHorizon(), 110).ceilTop - 37.375) < 1e-9, 'restored overhangs block the sky above them (lowest edge in the bin)');
 
 /* 3. older bundles: everything but their panoramas ----------------------- */
 const oldBundle = { app: 'nightseam-web', version: 10, sites: [{ id: 's1', name: 'Home', lat: 1, lon: 2 }],

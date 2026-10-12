@@ -6,14 +6,13 @@ development, so nothing needs to stay backwards compatible. It replaces the
 geographic calibration plan (P3-P7), now in `docs/history/` together with the
 accuracy research.
 
-Status: phases 1-3 are implemented locally on branch `horizon-rebuild`;
-phase 4 is open. Real-photo and device acceptance:
+Status: phases 1-6 are implemented locally on branch `horizon-rebuild`. Real-photo and device acceptance:
 [HORIZON_ACCEPTANCE.md](../acceptance/HORIZON_ACCEPTANCE.md).
 
 ## Owner decisions
 
 - A horizon is a skyline on a compass grid. Photos are only a tracing aid.
-- Overhangs and balcony openings come later, not in the first version.
+- Overhangs and balcony openings come after the first version (phase 4).
 - Ordinary (non-panorama) photos are supported as partial photos with an
   approximate linear angle mapping.
 - Horizons saved by the published 0.1.x builds are dropped, not converted.
@@ -24,7 +23,8 @@ phase 4 is open. Real-photo and device acceptance:
 
 ```
 { id, name,
-  points: [{ az, alt }, ...],   // world azimuth/altitude in degrees, sorted by az
+  points: [{ az, alt }, ...],     // world azimuth/altitude in degrees, sorted by az
+  overhangs: [[{ az, alt }, ...]], // edge lines within 0-360, sky above them blocked
   photo: null | { width, heading, tilt, roll } }
 ```
 
@@ -81,8 +81,22 @@ phase 4 is open. Real-photo and device acceptance:
 3. **Skyline detection.** A pure core function finds the sky/ground boundary
    in a daylight photo, column by column, and simplifies it to points the user
    can correct.
-4. **Later.** Overhangs/openings, a phone-compass capture mode, and placing
-   the photo from the Sun's position at capture time.
+4. **Overhangs.** Edge lines over part of the circle (a balcony underside, a
+   roof edge, a branch); everything above an edge is blocked. They derive an
+   upper-ceiling profile (`profileTop`) that the shared visibility rule, the
+   scorer, Sky View and the detail chart already understand. An Overhang mode
+   draws and edits them; a numeric form adds a flat one (the same direction
+   twice means all the way round).
+5. **Phone compass.** On a phone or tablet, the device orientation gives the
+   direction the back camera points: add one point, or trace by sweeping
+   along the skyline. A landmark sets a correction for compass error and
+   magnetic declination.
+6. **North from the Sun.** Mark the Sun in a daylight photo; the capture time
+   (from EXIF when the photo has it) and the observing site give the Sun's
+   direction, which sets the photo's north and tilt.
+
+Still open after phase 6: sky visible through gaps above an obstruction
+(between branches), which needs more than one opening per direction.
 
 Each phase ends with the touched tests, the token and core build steps from
 AGENTS.md, and updated documents. The full suite runs at the end of the

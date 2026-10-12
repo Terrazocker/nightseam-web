@@ -83,6 +83,10 @@ const stats = (profile) => S.nightStats(obj, ...night, 15, { id: 'h', profile },
 const open = stats(Array(720).fill(-90));
 const blocked = stats(Array(720).fill(89));
 assert.ok(blocked.visibleMinutes === 0 && open.visibleMinutes > 0, 'the scorer reads the horizon profile');
+const roofed = S.nightStats(obj, ...night, 15, { id: 'h', profile: Array(720).fill(-90), profileTop: Array(720).fill(10) }, 52.52, 13.405);
+assert.equal(roofed.visibleMinutes, 0, 'the scorer reads the overhang profile: nothing above a 10 deg roof edge');
+const highRoof = S.nightStats(obj, ...night, 15, { id: 'h', profile: Array(720).fill(-90), profileTop: Array(720).fill(90.5) }, 52.52, 13.405);
+assert.deepEqual(highRoof, open, 'an open top (90.5) changes nothing');
 for (const bad of [NaN, '10', null]) {
   assert.deepEqual(stats(Array(720).fill(bad)), open, `a ${String(bad)} element reads as unrecorded, like ceilFor`);
 }
