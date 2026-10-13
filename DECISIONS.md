@@ -22,7 +22,8 @@ Library, SQLite, desktop CSP) are history only.
   and north from the Sun follow it (2026-10-12).
 - **Data and privacy:** transactional, staged backups with rollback; Wikipedia
   is the only object-photo source (2026-10-06); popularity is never visible
-  (2026-10-06); the CSP is delivered in the document (0.6.33).
+  (2026-10-06); the CSP is delivered in the document (0.6.33) and, for the
+  landing pages too, as response headers (2026-10-13).
 - **Delivery:** cache tokens checked against a verified baseline (0.6.24/25);
   immutable release graphs with older releases retained (2026-10-10); CI runs
   the browser suite on Linux and the rest on Windows (2026-10-11).
@@ -30,6 +31,17 @@ Library, SQLite, desktop CSP) are history only.
   releases continue at 0.7.0 above inherited tags (2026-10-11).
 - **Documentation:** see "Documentation layout" (2026-10-11), which updates the
   older "Docs policy".
+
+## 2026-10-13 — Security headers for the landing pages
+
+Owner decision after the server-policy review: landing/.htaccess sends the
+landing pages' existing CSP plus `frame-ancestors 'none'`, `X-Content-Type-
+Options: nosniff` and their referrer policy as response headers, the same
+mechanism web/.htaccess uses for /astro/. Browsers ignore frame-ancestors in a
+meta CSP and nosniff has no meta form, so these two protections were missing.
+Nothing on the pages changes; /astro/ keeps its own policy, which replaces the
+inherited one. tests/test_landing_headers.py keeps the header and meta forms
+identical apart from frame-ancestors.
 
 ## 2026-10-13 — Sunset and sunrise follow the published convention
 

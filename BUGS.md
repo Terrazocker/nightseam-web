@@ -18,9 +18,10 @@ entry here when it is fixed and record the fix in RELEASES.md.
 - **HOST-DELIVERY-001 — compression.** Live HTML/JS and the two large catalog
   JSON payloads are served without gzip. Enable it through the provider's
   controls and measure real responses ([HOSTING_CONFIGURATION.md](HOSTING_CONFIGURATION.md)).
-- **Landing server headers.** The public pages carry a document CSP, but
-  framing protection (`frame-ancestors`) and `nosniff` need server headers,
-  which require the separate server-policy review.
+- **Landing server headers (approved, not live).** `landing/.htaccess` now
+  sets the pages' CSP with `frame-ancestors 'none'`, `nosniff` and the
+  referrer policy (owner approval 2026-10-13). Close this after the next
+  deployment once the live response headers for `/` show all three.
 - **Legal pages: deferred by the owner (2026-10-11).** Not release work and
   not to be raised again unless the owner asks. For reference only: the
   Impressum names a pseudonym without a postal address, and the privacy page

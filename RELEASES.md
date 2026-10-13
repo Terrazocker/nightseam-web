@@ -5,6 +5,17 @@ Actual validation outcomes, newest first. Published releases: v0.1.1 (October 8,
 development awaiting the next release, 0.7.0. Upload success alone is never
 recorded as acceptance.
 
+## Landing security headers — October 13, 2026 (local development)
+
+Owner-approved server-policy change: landing/.htaccess sends the landing CSP
+plus frame-ancestors 'none', nosniff and the referrer policy. Live check
+before deployment: `/` sends none of the three; `/astro/` sends all three from
+web/.htaccess, so the host applies .htaccess headers to HTML. New
+tests/test_landing_headers.py (2 tests) fails when the header and meta forms
+drift (checked with a changed referrer value). Not verified on a live server:
+no Apache here. Local validation: pytest 355 passed / 1 skipped; real-Chrome
+suite 83/83; check_release 0 errors; check_encoding OK.
+
 ## Sunset and sunrise on the published convention — October 13, 2026 (local development)
 
 nightInfo's sunset/sunrise now use the upper limb with standard refraction
