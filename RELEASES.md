@@ -5,6 +5,16 @@ Actual validation outcomes, newest first. Published releases: v0.1.1 (October 8,
 development awaiting the next release, 0.7.0. Upload success alone is never
 recorded as acceptance.
 
+## Photo cache budget — October 13, 2026 (local development)
+
+The Wikipedia photo cache is capped at 25 MiB: past it, the least recently
+viewed photos go until 80% is used, and expired "no photo" answers and
+unreadable rows are removed on the same pass. Writes now wait for the
+transaction to commit, so a full disk (QuotaExceededError) is seen; it trims
+the cache to a quarter of the budget and retries once. New check
+web-photo-cache-budget (30 MiB seeded, simulated full disk) passes; against
+the previous app.js it fails ("31457373 bytes"). Photo checks 8/8.
+
 ## Live hosting measurements — October 13, 2026 (v0.1.1, live)
 
 Browser-like GET requests (`Accept-Encoding: gzip, deflate, br, zstd`) are

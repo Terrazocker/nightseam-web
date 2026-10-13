@@ -49,7 +49,6 @@ entry here when it is fixed and record the fix in RELEASES.md.
   darkness at a level (two such nights in the 2026 reference tables), and above
   about 84.5 deg latitude pickDarkWindow can pair an astronomical dusk with a
   nautical dawn on the single transition night.
-- **Thumbnail cache.** No size limit or eviction; quota errors are ignored.
 
 ## Monitoring
 

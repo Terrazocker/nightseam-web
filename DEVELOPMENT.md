@@ -120,7 +120,7 @@ editor"); plan: [docs/horizon/HORIZON_REBUILD_PLAN.md](docs/horizon/HORIZON_REBU
 | localStorage `nightseam_site_v1`, `nightseam_theme` | Legacy site record, theme |
 | IndexedDB `nightseam-db-v1` | Sites, rigs, custom targets, safety snapshot |
 | IndexedDB `nightseam-horizon-photos` | Original horizon photos |
-| IndexedDB `nightseam-images` | Wikipedia thumbnail cache |
+| IndexedDB `nightseam-images` | Wikipedia thumbnail cache, at most 25 MiB: least recently viewed photos are removed first; a full disk trims it to a quarter and retries once |
 
 A backup is one JSON bundle (format 11; formats 1-10 still restore their
 sites, rigs, targets and settings but not their retired panoramas; newer
