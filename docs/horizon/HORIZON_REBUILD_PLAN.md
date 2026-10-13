@@ -6,7 +6,8 @@ development, so nothing needs to stay backwards compatible. It replaces the
 geographic calibration plan (P3-P7), now in `docs/history/` together with the
 accuracy research.
 
-Status: phases 1-6 are implemented locally on branch `horizon-rebuild`. Real-photo and device acceptance:
+Status: phases 1-6 are merged into master (pull request #2, October 12, 2026)
+and unreleased. Real-photo and device acceptance is still open:
 [HORIZON_ACCEPTANCE.md](../acceptance/HORIZON_ACCEPTANCE.md).
 
 ## Owner decisions

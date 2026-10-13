@@ -8,28 +8,25 @@ Where NightSeam Web stands and what comes next. Open defects are in
 - **Published:** v0.1.1 (October 8, 2026), after v0.1.0 (October 7).
 - **Next release: 0.7.0.** Release names continue above the inherited tags,
   which occupy 0.1.5 through 0.6.36 ([DECISIONS.md](DECISIONS.md)).
-- **Ready locally, unreleased:** horizon photo conversion with guided and
-  physical-orientation calibration, coverage evidence with a visible "Sky
-  outside the photo" switch, the coming-night detail card, USNO-anchored
-  twilight checks, timezone validation, the October review fixes and a CI
-  workflow.
+- **On master, unreleased:** the rebuilt horizon editor (skyline on a compass
+  grid, photo underlay, skyline detection, overhangs, phone compass, north
+  from the Sun), the coming-night detail card, USNO-anchored twilight checks,
+  timezone validation, the October review fixes and a CI workflow.
 
 ## Before 0.7.0
 
-1. Merge pull request #1 (`horizon-calibration` into master); CI passes on it.
-2. Owner decision: run the horizon real-photo acceptance first
+1. Owner decision: run the horizon real-photo acceptance first
    ([checklist](docs/acceptance/HORIZON_ACCEPTANCE.md)) or release
    with it still open.
-3. Curate the 0.7.0 changelog entry, then follow
+2. Curate the 0.7.0 changelog entry, then follow
    [RELEASE_WORKFLOW.md](RELEASE_WORKFLOW.md): pre-tag check, tag, clean stage,
    publication candidate and separately authorized deployment.
 
 ## Open work
 
 - **Horizon rebuild** ([plan](docs/horizon/HORIZON_REBUILD_PLAN.md)): phases
-  1-6 (skyline editor, photo, detection, overhangs, phone compass, north from
-  the Sun) are implemented on `horizon-rebuild` and need review, CI and the
-  owner's [acceptance](docs/acceptance/HORIZON_ACCEPTANCE.md). Possible next:
+  1-6 are merged (pull request #2) and await the owner's
+  [acceptance](docs/acceptance/HORIZON_ACCEPTANCE.md). Possible next:
   several openings per direction. The earlier P3-P7 plan is retired
   ([history](docs/history/HORIZON_GEOGRAPHIC_CALIBRATION_PLAN.md)).
 - **Owner gates:** A11Y-001 accessibility acceptance and HOST-DELIVERY-001
