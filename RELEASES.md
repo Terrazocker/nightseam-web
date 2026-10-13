@@ -5,6 +5,20 @@ Actual validation outcomes, newest first. Published releases: v0.1.1 (October 8,
 development awaiting the next release, 0.7.0. Upload success alone is never
 recorded as acceptance.
 
+## Brief twilight spells and same-level dark windows — October 13, 2026 (local development)
+
+sunCrossings now checks each turn between three samples on one side of a
+level and, near the level, finds the true extremum and both crossings, so a
+dark or bright spell shorter than the 10-minute step is no longer skipped.
+pickDarkWindow takes dusk and dawn from the same level. New
+tests/js/twilight_brief.mjs (synthetic 4-minute spells, a turn 0.003 deg short
+of the level, a mixed-level night) passes; the previous core fails 4 of its 5
+cases. The USNO twilight and rise/set anchors no longer excuse any event
+shorter than 10 minutes: a miss is allowed only where the model Sun turns
+within 0.01 deg of the level. Berlin 2026-07-25 (astronomical) is now found;
+Tromso 2026-09-16 remains a near-tangent miss (model -17.996 deg). Frozen
+twilight fixtures unchanged (all 30 nights within 2 s).
+
 ## Photo cache budget — October 13, 2026 (local development)
 
 The Wikipedia photo cache is capped at 25 MiB: past it, the least recently

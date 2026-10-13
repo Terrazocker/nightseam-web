@@ -9,7 +9,7 @@
  * core/horizonhistory.js. This module also owns the planner preferences.
  */
 import { vizTheme } from './viztheme.js?v=7';
-import { normalizeWebPrefs, WEB_PREF_DEFAULTS, wallFieldsToUtc, utcToWall } from './webstore.js?v=73';
+import { normalizeWebPrefs, WEB_PREF_DEFAULTS, wallFieldsToUtc, utcToWall } from './webstore.js?v=74';
 import {
   NO_BLOCK, ALT_MIN, ALT_MAX, MAX_POINTS,
   wrapAz, azDelta, normalizePoints, normalizePhotoPlacement, normalizeHorizon,
@@ -22,7 +22,7 @@ import {
   newHistory, historyCommit, historyCanUndo, historyCanRedo, historyUndo,
   historyRedo, historyMarkSaved, historyDirty,
   PLANNER_CHANGE_EVENT, nextPlannerRevision, plannerChange, panoramaRevision,
-} from './core.js?v=67';
+} from './core.js?v=68';
 
 export { NO_BLOCK, ceilFor };
 

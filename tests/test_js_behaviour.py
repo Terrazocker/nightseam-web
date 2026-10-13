@@ -75,6 +75,13 @@ def test_scrub_window_degeneracy_policy():
     assert "scrub degeneracy policy held" in out
 
 
+def test_brief_twilight_spells_and_same_level_window():
+    """A dark or bright spell shorter than the 10-minute scan step is found
+    between samples, and the dark window never mixes twilight levels."""
+    out = run_node_harness("twilight_brief.mjs")
+    assert "brief twilight policy held" in out
+
+
 def test_web_horizon_editor_shell():
     """The horizon editor's DOM-free logic (web/horizon.js): loading drops the
     retired panorama storage and malformed records, the view clamp, the text

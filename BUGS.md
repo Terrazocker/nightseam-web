@@ -45,10 +45,11 @@ entry here when it is fixed and record the fix in RELEASES.md.
   panorama must be levelled in the panorama app.
 - **Skyline detection** needs a daylight photo with clear sky. Bright walls,
   clouds, wires and thin branches can pull the line; it is a draft to correct.
-- **Twilight scan.** The 10-minute scan skips a night with under ten minutes of
-  darkness at a level (two such nights in the 2026 reference tables), and above
-  about 84.5 deg latitude pickDarkWindow can pair an astronomical dusk with a
-  nautical dawn on the single transition night.
+- **Near-tangent twilight.** When the Sun turns within about 0.01 deg of a
+  twilight level, the Sun model and the published tables can disagree on
+  whether a spell of a few minutes happens at all (Tromso 2026-09-16: USNO
+  lists 5 minutes of astronomical night; the model turns at -17.996 deg). The
+  dark window then falls back to the next level for that night.
 
 ## Monitoring
 

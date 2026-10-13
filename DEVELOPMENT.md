@@ -39,8 +39,10 @@ Web modules import only `./core.js?v=<token>`, never `web/core/<hash>/`.
   IANA zones are refused at every entry point.
 - **Dark window.** `nightInfo` scans 30 h from site noon for sunset/sunrise
   (upper limb on the horizon: true centre -0.8333 deg) and the -6/-12/-18 deg
-  crossings; `pickDarkWindow` uses astronomical darkness, else nautical, else
-  civil, else a fixed 20:00-04:00 site-clock fallback (polar day or twilight).
+  crossings, refining a turn between samples so spells shorter than the
+  10-minute step are found; `pickDarkWindow` takes dusk and dawn from one
+  level: astronomical darkness, else nautical, else civil, else a fixed
+  20:00-04:00 site-clock fallback (polar day or twilight).
 - **Selected time.** One selected instant (`S.skyTime`, one-minute steps)
   drives every view. The time slider spans sunset to sunrise, or the fallback,
   or noon to the next noon in full-day mode (23 or 25 h across DST).
