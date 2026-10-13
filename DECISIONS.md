@@ -13,7 +13,8 @@ Library, SQLite, desktop CSP) are history only.
 - **Time and planning:** site-zoned noon anchoring and calendar dates
   (2026-10-10); bounded, half-open planning intervals (2026-10-05); the detail
   card describes the coming night (2026-10-11, supersedes the calendar-day
-  culmination rule); unknown timezones are refused at entry (2026-10-11).
+  culmination rule); unknown timezones are refused at entry (2026-10-11);
+  sunset and sunrise use the published upper-limb convention (2026-10-13).
 - **Horizon:** a horizon is skyline points on a compass grid, with a photo
   only as a tracing aid; the profile is derived, edits save automatically, and
   0.1.x horizons are not converted (2026-10-11, "Rebuild the horizon editor",
@@ -29,6 +30,19 @@ Library, SQLite, desktop CSP) are history only.
   releases continue at 0.7.0 above inherited tags (2026-10-11).
 - **Documentation:** see "Documentation layout" (2026-10-11), which updates the
   older "Docs policy".
+
+## 2026-10-13 — Sunset and sunrise follow the published convention
+
+Owner decision: sunset and sunrise are the instants the Sun's upper limb meets
+the horizon with standard refraction, i.e. the true centre at -0.8333 deg, as
+in the USNO tables and weather apps. This supersedes the apparent-centre label
+kept on 2026-10-11, which read 1-5 minutes earlier at sunset and later at
+sunrise than the times users compare against. It changes the Sunset/Sunrise
+labels and the slider's sunset-to-sunrise span; the -6/-12/-18 deg twilight
+levels, the dark window, scoring and the apparent-altitude Sun visibility rule
+are unchanged. The new anchor `usno_planner_sunrise_sunset_2026` compares the
+planner's own times with the five USNO tables; grazing polar events below
+0.02 deg/min are left out as in the Sun-model check.
 
 ## 2026-10-12 — Overhangs, phone compass and north from the Sun
 

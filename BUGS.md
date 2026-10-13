@@ -21,10 +21,6 @@ entry here when it is fixed and record the fix in RELEASES.md.
 - **Landing server headers.** The public pages carry a document CSP, but
   framing protection (`frame-ancestors`) and `nosniff` need server headers,
   which require the separate server-policy review.
-- **Sunset convention (decision).** Sunset/sunrise labels and the "sun" scrub
-  range use the Sun's apparent centre on the horizon, 2-10 minutes earlier than
-  the published upper-limb convention weather apps use. The Sun model itself
-  matches USNO tables.
 - **Legal pages: deferred by the owner (2026-10-11).** Not release work and
   not to be raised again unless the owner asks. For reference only: the
   Impressum names a pseudonym without a postal address, and the privacy page

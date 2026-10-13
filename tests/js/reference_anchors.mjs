@@ -656,12 +656,58 @@ check("usno_twilight_2026", () => {
     }
   }
 });
+const trueAlt = (jd, lat, lon) => { const [ra, dec] = C.sunRaDec(jd); return C.altaz(ra, dec, jd, lat, lon, false)[0]; };
+check("usno_planner_sunrise_sunset_2026", () => {
+  // The planner's sunset/sunrise labels and scrub range come from nightInfo()
+  // and follow the published upper-limb convention (DECISIONS.md 2026-10-13).
+  for (const [site, [lat, lon]] of Object.entries(USNO_SITES)) {
+    const sets = [], rises = [];
+    for (let d = -2; d < 368; d++) {
+      const noon = new Date(Date.UTC(2026, 0, 1 + d, 12) - (lon / 15) * 3600e3);
+      const info = C.nightInfo(noon, lat, lon, noon);
+      // A night's sunrise follows its sunset (Tromso, night of Jan 14: the
+      // sun rises before it sets, and that ascent is not tonight's sunrise).
+      if (info.sunset && info.sunrise) {
+        assert(+info.sunset < +info.sunrise, `${site} ${noon.toISOString()}: sunrise before sunset`);
+      }
+      if (info.sunset) sets.push(+info.sunset);
+      if (info.sunrise) rises.push(+info.sunrise);
+    }
+    const usno = usnoEvents(`${site}_riseset`);
+    const errs = [];
+    for (const u of usno) {
+      const pool = u.kind === "end" ? sets : rises;
+      const nearest = pool.reduce((b, t) => (Math.abs(t - u.t) < Math.abs(b) ? t - u.t : b), Infinity);
+      if (Math.abs(nearest) <= 30 * MIN) {
+        // Grazing polar events (as in usno_sunrise_sunset_2026) are ill-conditioned:
+        // under 0.02 deg/min, a 0.01 deg difference moves the time by 30 s or more.
+        const jd = C.julianDay(new Date(u.t));
+        const rate = (trueAlt(jd + 1 / 1440, lat, lon) - trueAlt(jd - 1 / 1440, lat, lon)) / 2;
+        if (Math.abs(rate) >= 0.02) errs.push(nearest / 1000);
+        continue;
+      }
+      // Allowed misses: a grazing day shorter than the 10-minute scan; the first
+      // sunrise after the polar night, which follows no sunset; and the last
+      // sunset before it, which falls before local noon and so in no night.
+      const grazing = usno.some((o) => o.kind !== u.kind && Math.abs(o.t - u.t) < 10 * MIN);
+      const day = 36 * 60 * MIN;
+      const firstRise = u.kind === "begin" && !usno.some((o) => o.kind === "end" && o.t < u.t && u.t - o.t < day);
+      const lastSet = u.kind === "end" && !usno.some((o) => o.kind === "begin" && o.t > u.t && o.t - u.t < day);
+      assert(grazing || firstRise || lastSet, `${site} ${u.kind === "end" ? "sunset" : "sunrise"} ${new Date(u.t).toISOString()} has no core event`);
+    }
+    const usnoTimes = usno.map((u) => u.t);
+    for (const t of [...sets, ...rises]) {
+      if (t < Date.UTC(2026, 0, 1, 1) || t > Date.UTC(2026, 11, 31, 23)) continue;
+      assert(usnoTimes.some((u) => Math.abs(u - t) <= 30 * MIN),
+        `${site}: core sunset/sunrise ${new Date(t).toISOString()} is not in the USNO table`);
+    }
+    assertTable(`${site} planner rise/set`, errs);
+  }
+});
 check("usno_sunrise_sunset_2026", () => {
   // Published convention: upper limb on the horizon with standard refraction,
   // i.e. true centre altitude -0.8333 deg. This pins the Sun model and time
-  // scale at published instants; the planner's own sunset label uses the
-  // apparent centre (DECISIONS.md) and is not what is compared here.
-  const trueAlt = (jd, lat, lon) => { const [ra, dec] = C.sunRaDec(jd); return C.altaz(ra, dec, jd, lat, lon, false)[0]; };
+  // scale at published instants, independent of the planner's scan.
   for (const [site, [lat, lon]] of Object.entries(USNO_SITES)) {
     const errs = [];
     for (const u of usnoEvents(`${site}_riseset`)) {

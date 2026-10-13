@@ -12,25 +12,35 @@
  *
  * Pairing rule (mirrors planning.py::find_twilight): a dawn only exists AFTER
  * the evening crossing, and it is the FIRST such ascent. A grazing polar day
- * can show an ascent before any descent (Tromso 2026-01-15: the refracted sun
- * pops up at local noon and sets 29 min later) - that is NOT tonight's
+ * can show an ascent before any descent (Tromso, night of 2026-01-14: the sun
+ * rises at 10:29Z the next morning and sets 50 min later) - that is NOT tonight's
  * sunrise, so it is ignored and the oracle's `sunrise = null` is reported
  * instead of an inverted sunset/sunrise pair.
  */
 
-import { julianDay, dateFromJD, sunAlt } from './astro.js';
+import { julianDay, dateFromJD, sunAlt, sunRaDec, altaz } from './astro.js';
+
+/** Sunset/sunrise follow the published convention (USNO tables, weather apps):
+ *  the upper limb on the horizon with standard refraction (34') and a 16'
+ *  semi-diameter, i.e. the TRUE (unrefracted) centre at -0.8333 deg. */
+const SUNSET_TRUE_ALT = -0.8333;
+const sunTrueAlt = (jd, lat, lon) => {
+  const [ra, dec] = sunRaDec(jd);
+  return altaz(ra, dec, jd, lat, lon, false)[0];
+};
 
 /** Sunset/sunrise crossings for one threshold on a noon-anchored 30 h scan.
+ *  `altitude` defaults to the apparent altitude (the twilight levels).
  *  Returns { evening: Date|null, morning: Date|null } (evening = descending). */
-export function sunCrossings(scanStartUTC, lat, lon, thresholdDeg) {
+export function sunCrossings(scanStartUTC, lat, lon, thresholdDeg, altitude = sunAlt) {
   const jd0 = julianDay(scanStartUTC);
   const N = 180; // 10-min steps over 30 h
-  let prev = sunAlt(jd0, lat, lon) - thresholdDeg;
+  let prev = altitude(jd0, lat, lon) - thresholdDeg;
   let prevSign = Math.sign(prev);
   let evening = null, morning = null;
   for (let i = 1; i <= N; i++) {
     const jd = jd0 + i / 144; // 10 minutes = 1/144 day
-    const v = sunAlt(jd, lat, lon) - thresholdDeg;
+    const v = altitude(jd, lat, lon) - thresholdDeg;
     const sign = Math.sign(v);
     if (sign !== prevSign && prevSign !== 0) {
       // crossing between step i-1 and i
@@ -71,8 +81,8 @@ export function nightInfo(localDate, lat, lon, localNoon) {
     ? localNoon
     : new Date(localDate.getFullYear(), localDate.getMonth(), localDate.getDate(), 12, 0, 0);
   const scanStart = new Date(anchor.getTime());
-  const g = (thr) => sunCrossings(scanStart, lat, lon, thr);
-  const zero = g(0), civil = g(-6), naut = g(-12), astro = g(-18);
+  const g = (thr, altitude) => sunCrossings(scanStart, lat, lon, thr, altitude);
+  const zero = g(SUNSET_TRUE_ALT, sunTrueAlt), civil = g(-6), naut = g(-12), astro = g(-18);
   return {
     dayStart: scanStart,
     sunset: zero.evening, sunrise: zero.morning,
@@ -130,8 +140,8 @@ export function pickDarkWindow(info, dayDate, localNoon, fallback) {
 /** Choose the sunset->sunrise-derived range used by the scrub slider and the
  *  detail chart. The pair is used ONLY when it is strictly ordered AND the
  *  sunset precedes the next dawn: a grazing polar day can "set" around local
- *  noon AFTER the dark window has ended (Tromso 2026-01-15 - sunset 11:08Z,
- *  dawn 05:12Z), and using it built an inverted range in both apps.
+ *  noon AFTER the dark window has ended (Tromso, night of 2026-01-14: sunset
+ *  2026-01-15 11:18Z, dawn 05:13Z), and using it built an inverted range.
  *  Otherwise: dusk -> dawn; when those are missing, the site-zoned
  *  20:00-04:00 fallback (localNoon + 8 h / + 16 h).
  *
