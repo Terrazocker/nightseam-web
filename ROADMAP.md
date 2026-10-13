@@ -18,7 +18,8 @@ Where NightSeam Web stands and what comes next. Open defects are in
 1. Owner decision: run the horizon real-photo acceptance first
    ([checklist](docs/acceptance/HORIZON_ACCEPTANCE.md)) or release
    with it still open.
-2. Curate the 0.7.0 changelog entry, then follow
+2. Revise the drafted 0.7.0 summary (`CURATED` in scripts/build_changelog.py)
+   and add its dated `PUBLIC_RELEASES` record, then follow
    [RELEASE_WORKFLOW.md](RELEASE_WORKFLOW.md): pre-tag check, tag, clean stage,
    publication candidate and separately authorized deployment.
 
