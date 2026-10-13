@@ -56,3 +56,8 @@ entry here when it is fixed and record the fix in RELEASES.md.
 - **BROWSER-LOCAL-001.** The local test server's connection queue was raised
   from 5 to 64 after refused module loads; failures are recorded with server
   thread health and failed URLs, never retried or skipped.
+- **BROWSER-CI-002.** Two horizon checks at 360 px failed once on Linux CI
+  (run 38444781285) and passed on rerun: the phone overflow assertion in
+  web-followup-smooth-scrub-and-horizon-scroll and the file-chooser wait in
+  web-phase4-responsive-planner. Not reproduced locally, with or without the
+  Linux font substitution. If either fails again, treat it as a real defect.

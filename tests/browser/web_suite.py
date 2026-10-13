@@ -323,6 +323,10 @@ def wait_status(c, text_value: str, timeout: int = 8000):
 
 def upload_photo(c, name: str, data: bytes, selector: str = "#hz-photo-file"):
     c.page.locator(selector).set_input_files({"name": name, "mimeType": "image/png", "buffer": data})
+    # Each photo opens a new horizon named after the file; wait for that one, or
+    # a second upload would read the previous photo's still-visible fields.
+    c.page.wait_for_function("(n) => document.querySelector('#hz-name')?.value === n",
+                             arg=name.rsplit(".", 1)[0], timeout=15000)
     c.page.wait_for_selector("#hz-ph-width", state="visible", timeout=15000)
     c.page.wait_for_function("() => !document.querySelector('#hz-mode-align').disabled", timeout=15000)
 

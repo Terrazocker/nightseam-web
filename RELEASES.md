@@ -5,6 +5,33 @@ Actual validation outcomes, newest first. Published releases: v0.1.1 (October 8,
 development awaiting the next release, 0.7.0. Upload success alone is never
 recorded as acceptance.
 
+## Photo-placement test race — October 13, 2026 (local development)
+
+GitHub CI on the pull request #2 merge to master (b2fbc76, run 38205547153):
+guards and pytest passed (353 passed / 1 skipped); the browser suite failed
+82/83 in web-horizon-photo-placement ("an ordinary photo starts 60 deg wide:
+got '360', want '60'"). The same tree passed 83/83 on the pull request run
+(38204733786). Cause: the test helper's waits were already satisfied by the
+first photo, so a second upload could be read before its editor rendered. The
+helper now waits for the new horizon, named after the file. Local validation:
+pytest 353 passed / 1 skipped; real-Chrome suite 83/83.
+
+The first CI run of that fix (pull request #3, run 38444781285) failed 81/83
+in two other checks: web-followup-smooth-scrub-and-horizon-scroll ("phone has
+no horizontal overflow") and web-phase4-responsive-planner (timeout waiting for
+the file chooser after Enter on New from photo). Same runner image as the
+green runs; the failed job passed on rerun. Locally both passed 5/5, and 3/3
+with the Linux font substitution. Recorded as BROWSER-CI-002.
+
+## Horizon rebuild — October 12, 2026 (pull request #2)
+
+Horizon editor rebuilt around a skyline (phases 1-6 of
+[the plan](docs/horizon/HORIZON_REBUILD_PLAN.md)). Local validation on Windows:
+pytest 353 passed / 1 skipped (no local the popularity source snapshot); real-Chrome
+suite 83/83; check_release 0 errors; check_js OK. GitHub CI on e0a2c71 (run
+38204733786): source guards and pytest passed on Windows, real-browser suite
+83/83 on Linux. Owner real-photo and device acceptance is still open.
+
 ## First GitHub CI runs, focus and narrow-layout fixes — October 11, 2026 (pull request #1)
 
 GitHub CI on Windows (pull request #1 and branch pushes): the guards job passed
