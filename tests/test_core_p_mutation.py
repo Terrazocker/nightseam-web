@@ -48,7 +48,7 @@ def _epoch(iso):
 
 
 def _mismatch(core_dir) -> bool:
-    """True on a non-lunar fixture mismatch or independent lunar reference failure."""
+    """True on a non-lunar fixture mismatch or a lunar or USNO reference failure."""
     proc = _run([_node(), str(ROOT / "tests" / "js" / "core_fixtures.mjs"),
                  str(FIXTURES), str(core_dir)])
     assert proc.returncode == 0, proc.stderr[-1500:]
@@ -69,7 +69,10 @@ def _mismatch(core_dir) -> bool:
     # but do not let a permanent known mismatch make EVERY mutation pass.
     lunar = _run([_node(), str(ROOT / 'tests/js/reference_anchors.mjs'), str(core_dir)])
     checks = json.loads(lunar.stdout)['checks']
-    if any(c['id'].startswith('moon_') and not c['ok'] for c in checks):
+    # The USNO anchors pin sunset/sunrise and twilight at published instants;
+    # since the 2026-10-13 convention change they also carry the grazing
+    # Tromso night that exposes a broken sunrise pairing.
+    if any(c['id'].startswith(('moon_', 'usno_')) and not c['ok'] for c in checks):
         return True
     for c, res in zip(FX["twilight"], got.get("twilight", [])):
         if res["level"] != c["level"]:

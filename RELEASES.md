@@ -5,6 +5,23 @@ Actual validation outcomes, newest first. Published releases: v0.1.1 (October 8,
 development awaiting the next release, 0.7.0. Upload success alone is never
 recorded as acceptance.
 
+## Sunset and sunrise on the published convention — October 13, 2026 (local development)
+
+nightInfo's sunset/sunrise now use the upper limb with standard refraction
+(true centre -0.8333 deg, DECISIONS.md). New anchor
+usno_planner_sunrise_sunset_2026 against the five USNO 2026 tables, grazing
+events under 0.02 deg/min excluded: Berlin bias -1.0 s / RMS 17.7 s, Sydney
+2.7 / 17.2, Denver 4.1 / 17.6, Quito 0.3 / 17.5, Tromso 3.6 / 18.7 (worst
+40 s). The previous core fails it (Berlin RMS 129 s). Planner preview, Berlin
+2026-10-13: Sunset 18:16, Sunrise 07:29; USNO 16:16 / 05:30 UT. Owner-approved
+fixture update: only the 48 twilight sunset/sunrise values in
+core_fixtures.json were regenerated; dusk and dawn moved by at most 1 s. The
+pairing mutation is now caught by the anchor's sunset-before-sunrise rule
+(Tromso, night of January 14). Local validation: pytest 353 passed /
+1 skipped; real-Chrome suite 82/83 with web-immutable-publication failing
+only because the new core files were not yet in Git, 1/1 after staging them;
+check_js, check_encoding OK; check_release 0 errors.
+
 ## Photo-placement test race — October 13, 2026 (local development)
 
 GitHub CI on the pull request #2 merge to master (b2fbc76, run 38205547153):

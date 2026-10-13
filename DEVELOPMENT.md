@@ -37,7 +37,8 @@ Web modules import only `./core.js?v=<token>`, never `web/core/<hash>/`.
   start at the site's local noon; `core/time.js` resolves zone offsets with DST
   handling (the earlier instant in an overlap, forward through a gap). Unknown
   IANA zones are refused at every entry point.
-- **Dark window.** `nightInfo` scans 30 h from site noon for the -6/-12/-18 deg
+- **Dark window.** `nightInfo` scans 30 h from site noon for sunset/sunrise
+  (upper limb on the horizon: true centre -0.8333 deg) and the -6/-12/-18 deg
   crossings; `pickDarkWindow` uses astronomical darkness, else nautical, else
   civil, else a fixed 20:00-04:00 site-clock fallback (polar day or twilight).
 - **Selected time.** One selected instant (`S.skyTime`, one-minute steps)
