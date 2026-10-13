@@ -29,8 +29,6 @@ Where NightSeam Web stands and what comes next. Open defects are in
   [acceptance](docs/acceptance/HORIZON_ACCEPTANCE.md). Possible next:
   several openings per direction. The earlier P3-P7 plan is retired
   ([history](docs/history/HORIZON_GEOGRAPHIC_CALIBRATION_PLAN.md)).
-- **Owner gates:** A11Y-001 accessibility acceptance and HOST-DELIVERY-001
-  compression ([BUGS.md](BUGS.md)).
 
 ## Proposals (not approved)
 
