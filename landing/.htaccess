@@ -1,6 +1,16 @@
 # Public-site static delivery. Live nginx responses require host verification.
 # Canonical HTML must revalidate so new asset tokens reach returning visitors.
 
+# Security headers (owner-approved 2026-10-13). The pages also carry this CSP
+# as a meta tag, but browsers ignore frame-ancestors there and nosniff only
+# exists as a header. /astro/ sets its own policy in web/.htaccess, which
+# replaces these for the planner. tests/test_landing_headers.py pins both forms.
+<IfModule mod_headers.c>
+Header always set Content-Security-Policy "default-src 'self'; script-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+Header always set Referrer-Policy "strict-origin-when-cross-origin"
+Header always set X-Content-Type-Options "nosniff"
+</IfModule>
+
 <IfModule mod_deflate.c>
 AddOutputFilterByType DEFLATE text/html text/plain text/css text/javascript application/javascript application/json image/svg+xml
 </IfModule>

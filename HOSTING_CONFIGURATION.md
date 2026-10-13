@@ -3,8 +3,10 @@
 ## Current status — October 11, 2026
 
 Open hosting items are tracked in BUGS.md: HOST-DELIVERY-001 (compression) and
-server headers for the public pages (framing protection and nosniff; the pages
-already carry a document CSP and referrer policy). Prepared release assets keep
+server headers for the public pages. Since October 13, landing/.htaccess sets
+the CSP with frame-ancestors, nosniff and the referrer policy, as web/.htaccess
+already does for /astro/ (whose headers are served live); verify `/` after the
+next deployment. Prepared release assets keep
 their `?v=` query, so the token-based immutable rule below applies to them too.
 
 The live website remains v0.1.1, deployed October 8. RELEASES.md records that
