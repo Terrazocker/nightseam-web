@@ -908,6 +908,106 @@ def web_photos_fresh_and_cached(c):
     c.assert_clean()
 
 
+PHOTO_CACHE_ROWS = """async () => {
+  const db = await new Promise((resolve, reject) => {
+    const rq = indexedDB.open('nightseam-images', 1);
+    rq.onsuccess = () => resolve(rq.result); rq.onerror = () => reject(rq.error); });
+  const rows = await new Promise((resolve, reject) => {
+    const out = {}, tx = db.transaction('thumbs');
+    tx.objectStore('thumbs').openCursor().onsuccess = (ev) => {
+      const cur = ev.target.result; if (!cur) return;
+      const v = cur.value;
+      out[cur.key] = v && v.blob instanceof Blob ? v.blob.size : (v && v.missing ? 'missing' : 'other');
+      cur.continue(); };
+    tx.oncomplete = () => resolve(out); tx.onerror = () => reject(tx.error); });
+  db.close();
+  return rows;
+}"""
+
+
+def photo_cache_rows(c, until):
+    """Cache contents once `until(rows)` holds (pruning runs after display)."""
+    for _ in range(50):
+        rows = c.page.evaluate(PHOTO_CACHE_ROWS)
+        if until(rows):
+            return rows
+        c.page.wait_for_timeout(200)
+    return rows
+
+
+@check("web-photo-cache-budget", "web")
+def web_photo_cache_budget(c):
+    """Cached photos stay under 25 MiB, least recently viewed first out; expired
+    "no photo" answers and unreadable rows go; a full disk is retried once."""
+    MIB = 1024 * 1024
+    state, _expected = photo_routes(c)
+    boot(c)
+    c.page.evaluate("""(mib) => new Promise((resolve, reject) => {
+      const rq = indexedDB.open('nightseam-images', 1);
+      rq.onupgradeneeded = () => { rq.result.createObjectStore('thumbs'); };
+      rq.onerror = () => reject(rq.error);
+      rq.onsuccess = () => { const db = rq.result, now = Date.now();
+        const tx = db.transaction('thumbs', 'readwrite'), store = tx.objectStore('thumbs');
+        const bytes = new Uint8Array(mib);
+        for (let i = 0; i < 30; i++) {
+          const used = i === 0 ? now - 1000 : 1000 + i; // seed00 was viewed just now
+          store.put({ blob: new Blob([bytes], { type: 'image/png' }), page: 'Seed', ts: 1000 + i, used },
+                    'w:seed' + String(i).padStart(2, '0'));
+        }
+        store.put({ missing: true, ts: now - 31 * 86400000 }, 'w:negold');
+        store.put({ missing: true, ts: now }, 'w:negnew');
+        store.put({ junk: true }, 'w:junk');
+        tx.oncomplete = () => { db.close(); resolve(); }; tx.onerror = () => reject(tx.error);
+      };
+    })""", MIB)
+    open_catalog_photo(c, "ngc5457", "M101")
+    decoded_photo(c, 24, 12)
+    rows = photo_cache_rows(c, lambda r: "w:ngc5457" in r and "w:seed01" not in r)
+    photos = {k: v for k, v in rows.items() if isinstance(v, int)}
+    total = sum(photos.values())
+    c.expect(total <= 20 * MIB + 64 * 1024, f"photo cache trimmed to 80% of 25 MiB: {total} bytes")
+    c.expect(all(f"w:seed{i:02d}" not in rows for i in range(1, 12)),
+             f"the least recently viewed photos are removed first: {sorted(rows)}")
+    c.expect(all(f"w:seed{i:02d}" in rows for i in range(12, 30)), f"newer photos stay: {sorted(rows)}")
+    c.expect("w:seed00" in rows, "a photo viewed recently stays although it was stored first")
+    c.expect("w:ngc5457" in rows, "the photo just opened stays")
+    c.expect_eq(rows.get("w:negnew"), "missing", "a current 'no photo' answer stays")
+    c.expect("w:negold" not in rows and "w:junk" not in rows,
+             f"expired 'no photo' answers and unreadable rows are removed: {sorted(rows)}")
+    c.assert_clean()
+
+    # A full disk aborts the first photo write: the cache is cut to a quarter
+    # of its budget and the write retried once, so the photo is still kept.
+    c.page.click("#m-close")
+    c.page.evaluate("""() => new Promise((resolve, reject) => {
+      const rq = indexedDB.open('nightseam-images', 1);
+      rq.onerror = () => reject(rq.error);
+      rq.onsuccess = () => { const db = rq.result, tx = db.transaction('thumbs', 'readwrite');
+        tx.objectStore('thumbs').delete('w:ngc5457');
+        tx.oncomplete = () => { db.close(); resolve(); }; tx.onerror = () => reject(tx.error); };
+    })""")
+    c.page.evaluate("""() => {
+      const put = IDBObjectStore.prototype.put;
+      window.__quotaThrown = false;
+      IDBObjectStore.prototype.put = function (value, key) {
+        if (!window.__quotaThrown && value && value.blob && key === 'w:ngc5457') {
+          window.__quotaThrown = true;
+          throw new DOMException('The quota has been exceeded.', 'QuotaExceededError');
+        }
+        return put.call(this, value, key);
+      };
+    }""")
+    open_catalog_photo(c, "ngc5457", "M101")
+    decoded_photo(c, 24, 12)
+    rows = photo_cache_rows(c, lambda r: "w:ngc5457" in r)
+    c.expect(c.page.evaluate("window.__quotaThrown"), "the simulated full disk was hit")
+    c.expect("w:ngc5457" in rows, f"the photo is stored after the retry: {sorted(rows)}")
+    total = sum(v for v in rows.values() if isinstance(v, int))
+    c.expect(total <= 5 * MIB + 64 * 1024, f"a full disk cuts the cache to a fifth of the budget: {total} bytes")
+    c.expect_eq(state["image"], 2, "the deleted photo was downloaded again")
+    c.assert_clean()
+
+
 @check("web-photos-unavailable-retries", "web")
 def web_photos_unavailable_retries(c):
     state, expected_errors = photo_routes(c, transient=True)

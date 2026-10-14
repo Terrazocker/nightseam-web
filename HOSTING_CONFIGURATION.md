@@ -1,21 +1,33 @@
 # Prepared static delivery configuration
 
-## Current status — October 11, 2026
+## Current status — October 13, 2026
 
-Open hosting items are tracked in BUGS.md: HOST-DELIVERY-001 (compression) and
-server headers for the public pages. Since October 13, landing/.htaccess sets
-the CSP with frame-ancestors, nosniff and the referrer policy, as web/.htaccess
-already does for /astro/ (whose headers are served live); verify `/` after the
-next deployment. Prepared release assets keep
-their `?v=` query, so the token-based immutable rule below applies to them too.
+Measured on the live v0.1.1 site with browser-like GET requests
+(`Accept-Encoding: gzip, deflate, br, zstd`):
 
-The live website remains v0.1.1, deployed October 8. RELEASES.md records that
-deployment's byte/cache/browser acceptance. Local review remediation now uses
-immutable content-addressed release graphs and atomic canonical-HTML switches;
-that new publication workflow has not been deployed. HOST-DELIVERY-001 remains
-open: no new live compression measurements were made during this documentation
-pass. The October 7 observations below are dated evidence, not a claim that
-v0.1.0 is still the current website.
+- **Compression works (HOST-DELIVERY-001 closed).** nginx answers with Brotli:
+  `/` 3,292 -> 1,087 bytes, `/astro/` 15,348 -> 4,465, app.js 205,511 ->
+  57,654, style.css 67,353 -> 13,719, catalog.json 5,088,280 -> 801,556,
+  catalog-provenance.json 6,739,158 -> 441,764. A request offering only gzip
+  gets no compression for these files, which is what the October 7
+  measurements below used; browsers always offer `br`.
+- **Two serving paths.** On GET, nginx serves HTML, JS, CSS and the large
+  catalog files itself (nginx-style ETags, no `.htaccess` headers). HEAD
+  requests and small JSON files (version.json, the manifests) are passed to
+  Apache, which applies `.htaccess`: there, and only there, the CSP,
+  `frame-ancestors`, `nosniff` and Referrer-Policy headers appear. So page
+  loads carry no security response headers; the meta CSP in each page is
+  enforced. The provider exposes neither nginx directives nor the compression
+  or static-file settings, so this is a hosting limitation (BUGS.md). The
+  `.htaccess` header blocks stay: they cost nothing and apply if hosting
+  changes. Check headers with GET, never with `curl -I`.
+
+Prepared release assets keep their `?v=` query, so the token-based immutable
+rule below applies to them too. The live website remains v0.1.1, deployed
+October 8. Local review remediation now uses immutable content-addressed
+release graphs and atomic canonical-HTML switches; that new publication
+workflow has not been deployed. The October 7 observations below are dated
+evidence, not a claim that v0.1.0 is still the current website.
 
 Future provider policy must also allow immutable caching for the prepared
 content-addressed release namespaces while canonical entry HTML revalidates.

@@ -622,6 +622,17 @@ function assertTable(label, errs) {
   assert(s.rms <= 21, `${label}: rms ${s.rms.toFixed(1)} s`);
   assert(s.max <= 100, `${label}: worst ${s.max.toFixed(1)} s`);
 }
+const LEVELS = { civil: -6, nautical: -12, astronomical: -18 };
+/** The Sun's turning altitude within 40 minutes of `t`: whichever extreme
+ *  lies inside the window rather than at its edge (the minimum of a short
+ *  night, the maximum of a short day). */
+function extremeNear(t, altAt) {
+  const alts = [];
+  for (let m = -40; m <= 40; m += 0.25) alts.push(altAt(C.julianDay(new Date(t + m * MIN))));
+  const iMin = alts.indexOf(Math.min(...alts)), iMax = alts.indexOf(Math.max(...alts));
+  const inside = (i) => i > 0 && i < alts.length - 1;
+  return inside(iMin) || !inside(iMax) ? alts[iMin] : alts[iMax];
+}
 check("usno_twilight_2026", () => {
   // The dark window's dusk/dawn at -6/-12/-18 deg come from nightInfo().
   for (const [site, [lat, lon]] of Object.entries(USNO_SITES)) {
@@ -640,9 +651,13 @@ check("usno_twilight_2026", () => {
         const pool = u.kind === "end" ? dusk : dawn;
         const nearest = pool.reduce((b, t) => (Math.abs(t - u.t) < Math.abs(b) ? t - u.t : b), Infinity);
         if (Math.abs(nearest) <= 30 * MIN) { errs.push(nearest / 1000); continue; }
-        // Only a grazing night shorter than the 10-minute scan may be missed.
-        const grazing = usno.some((o) => o.kind !== u.kind && Math.abs(o.t - u.t) < 10 * MIN);
-        assert(grazing, `${site} ${table} ${u.kind} ${new Date(u.t).toISOString()} has no core event`);
+        // A miss is allowed only when the model Sun turns within 0.01 deg of the
+        // level, which is below the model's accuracy (Tromso 2026-09-16: USNO
+        // lists a 5-minute astronomical night, the model turns at -17.996 deg).
+        // Dark spells shorter than the 10-minute scan step must be found.
+        const turn = extremeNear(u.t, (jd) => C.sunAlt(jd, lat, lon));
+        assert(Math.abs(turn - LEVELS[table]) < 0.01,
+          `${site} ${table} ${u.kind} ${new Date(u.t).toISOString()} has no core event (Sun turns at ${turn.toFixed(4)})`);
       }
       const usnoTimes = usno.map((u) => u.t);
       for (const [a, b] of nights) {
@@ -686,14 +701,13 @@ check("usno_planner_sunrise_sunset_2026", () => {
         if (Math.abs(rate) >= 0.02) errs.push(nearest / 1000);
         continue;
       }
-      // Allowed misses: a grazing day shorter than the 10-minute scan; the first
-      // sunrise after the polar night, which follows no sunset; and the last
-      // sunset before it, which falls before local noon and so in no night.
-      const grazing = usno.some((o) => o.kind !== u.kind && Math.abs(o.t - u.t) < 10 * MIN);
+      // Allowed misses: the first sunrise after the polar night, which follows
+      // no sunset, and the last sunset before it, which falls before local noon
+      // and so in no night.
       const day = 36 * 60 * MIN;
       const firstRise = u.kind === "begin" && !usno.some((o) => o.kind === "end" && o.t < u.t && u.t - o.t < day);
       const lastSet = u.kind === "end" && !usno.some((o) => o.kind === "begin" && o.t > u.t && o.t - u.t < day);
-      assert(grazing || firstRise || lastSet, `${site} ${u.kind === "end" ? "sunset" : "sunrise"} ${new Date(u.t).toISOString()} has no core event`);
+      assert(firstRise || lastSet, `${site} ${u.kind === "end" ? "sunset" : "sunrise"} ${new Date(u.t).toISOString()} has no core event`);
     }
     const usnoTimes = usno.map((u) => u.t);
     for (const t of [...sets, ...rises]) {

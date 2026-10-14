@@ -100,5 +100,6 @@ if they caused the problem. Smoke-check the restored site. Keep old namespaces
 and core hashes for cached/open clients. Document actual outcomes; upload success
 alone is not acceptance.
 
-Do not describe local fixes, staging, or a tag as public deployment. A11Y-001 and
-live delivery/publication gates remain explicit until their evidence is recorded.
+Do not describe local fixes, staging, or a tag as public deployment. Live
+delivery/publication gates remain explicit until their evidence is recorded.
+A11Y-001 is a known limitation, not a gate (owner decision 2026-10-13).

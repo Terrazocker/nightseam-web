@@ -39,8 +39,10 @@ Web modules import only `./core.js?v=<token>`, never `web/core/<hash>/`.
   IANA zones are refused at every entry point.
 - **Dark window.** `nightInfo` scans 30 h from site noon for sunset/sunrise
   (upper limb on the horizon: true centre -0.8333 deg) and the -6/-12/-18 deg
-  crossings; `pickDarkWindow` uses astronomical darkness, else nautical, else
-  civil, else a fixed 20:00-04:00 site-clock fallback (polar day or twilight).
+  crossings, refining a turn between samples so spells shorter than the
+  10-minute step are found; `pickDarkWindow` takes dusk and dawn from one
+  level: astronomical darkness, else nautical, else civil, else a fixed
+  20:00-04:00 site-clock fallback (polar day or twilight).
 - **Selected time.** One selected instant (`S.skyTime`, one-minute steps)
   drives every view. The time slider spans sunset to sunrise, or the fallback,
   or noon to the next noon in full-day mode (23 or 25 h across DST).
@@ -120,7 +122,7 @@ editor"); plan: [docs/horizon/HORIZON_REBUILD_PLAN.md](docs/horizon/HORIZON_REBU
 | localStorage `nightseam_site_v1`, `nightseam_theme` | Legacy site record, theme |
 | IndexedDB `nightseam-db-v1` | Sites, rigs, custom targets, safety snapshot |
 | IndexedDB `nightseam-horizon-photos` | Original horizon photos |
-| IndexedDB `nightseam-images` | Wikipedia thumbnail cache |
+| IndexedDB `nightseam-images` | Wikipedia thumbnail cache, at most 25 MiB: least recently viewed photos are removed first; a full disk trims it to a quarter and retries once |
 
 A backup is one JSON bundle (format 11; formats 1-10 still restore their
 sites, rigs, targets and settings but not their retired panoramas; newer

@@ -5,12 +5,51 @@ Actual validation outcomes, newest first. Published releases: v0.1.1 (October 8,
 development awaiting the next release, 0.7.0. Upload success alone is never
 recorded as acceptance.
 
+## Brief twilight spells and same-level dark windows — October 13, 2026 (local development)
+
+sunCrossings now checks each turn between three samples on one side of a
+level and, near the level, finds the true extremum and both crossings, so a
+dark or bright spell shorter than the 10-minute step is no longer skipped.
+pickDarkWindow takes dusk and dawn from the same level. New
+tests/js/twilight_brief.mjs (synthetic 4-minute spells, a turn 0.003 deg short
+of the level, a mixed-level night) passes; the previous core fails 4 of its 5
+cases. The USNO twilight and rise/set anchors no longer excuse any event
+shorter than 10 minutes: a miss is allowed only where the model Sun turns
+within 0.01 deg of the level. Berlin 2026-07-25 (astronomical) is now found;
+Tromso 2026-09-16 remains a near-tangent miss (model -17.996 deg). Frozen
+twilight fixtures unchanged (all 30 nights within 2 s).
+
+## Photo cache budget — October 13, 2026 (local development)
+
+The Wikipedia photo cache is capped at 25 MiB: past it, the least recently
+viewed photos go until 80% is used, and expired "no photo" answers and
+unreadable rows are removed on the same pass. Writes now wait for the
+transaction to commit, so a full disk (QuotaExceededError) is seen; it trims
+the cache to a quarter of the budget and retries once. New check
+web-photo-cache-budget (30 MiB seeded, simulated full disk) passes; against
+the previous app.js it fails ("31457373 bytes"). Photo checks 8/8.
+
+## Live hosting measurements — October 13, 2026 (v0.1.1, live)
+
+Browser-like GET requests (`Accept-Encoding: gzip, deflate, br, zstd`) are
+Brotli-compressed by nginx: `/` 3,292 -> 1,087 bytes, `/astro/` 15,348 ->
+4,465, app.js 205,511 -> 57,654, style.css 67,353 -> 13,719, catalog.json
+5,088,280 -> 801,556, catalog-provenance.json 6,739,158 -> 441,764.
+HOST-DELIVERY-001 is closed; earlier measurements offered only gzip, which
+these files do not get. The same GET responses carry no CSP, frame-ancestors,
+nosniff or Referrer-Policy header (nginx-style ETags); those headers appear
+only on HEAD requests and on small JSON files that Apache serves. The landing
+header change above therefore has no effect on page loads; the meta CSP stays
+the enforced policy. Recorded as a hosting limitation in BUGS.md. The owner
+deferred the human screen-reader pass (A11Y-001) as a known limitation.
+
 ## Landing security headers — October 13, 2026 (local development)
 
 Owner-approved server-policy change: landing/.htaccess sends the landing CSP
 plus frame-ancestors 'none', nosniff and the referrer policy. Live check
-before deployment: `/` sends none of the three; `/astro/` sends all three from
-web/.htaccess, so the host applies .htaccess headers to HTML. New
+before deployment: `/` sends none of the three; `/astro/` showed all three, but
+only to a HEAD request (corrected in the next entry: GET page loads bypass
+.htaccess). New
 tests/test_landing_headers.py (2 tests) fails when the header and meta forms
 drift (checked with a changed referrer value). Not verified on a live server:
 no Apache here. Local validation: pytest 355 passed / 1 skipped; real-Chrome

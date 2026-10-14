@@ -8,17 +8,17 @@
  *   • Settings — sites, rigs, custom targets, backup/restore (webstore.js)
  * All sky math runs client-side (astro.js, Meeus algorithms).
  */
-import * as E from './astro.js?v=58';
-import * as Hor from './horizon.js?v=130';
-import * as WS from './webstore.js?v=73';
+import * as E from './astro.js?v=59';
+import * as Hor from './horizon.js?v=131';
+import * as WS from './webstore.js?v=74';
 import { fmtSize, sizeArcmin, framePct, magVisible, skyClampZoom,
-         skyViewMatrix, skyScreenToBase, skyClampFocus } from './format.js?v=64';
-import { nightStats, nightStatsBatch, sampleVisible } from './nightrank.js?v=56';
+         skyViewMatrix, skyScreenToBase, skyClampFocus } from './format.js?v=65';
+import { nightStats, nightStatsBatch, sampleVisible } from './nightrank.js?v=57';
 import { TYPE_LABELS, TYPE_COLORS, searchBlob as coreSearchBlob,
          TIER_ORDER, assignPopularityTiers, wikiTitles,
          inTonightPool, PLANNER_CHANGE_EVENT, panoramaRevision,
-         panoramaVisibilityReason } from './core.js?v=67';
-import { popularityFactor as corePopularityFactor } from './core.js?v=67';
+         panoramaVisibilityReason } from './core.js?v=68';
+import { popularityFactor as corePopularityFactor } from './core.js?v=68';
 import { vizTheme, drawMoonPhaseMarker } from './viztheme.js?v=7';
 import { wikimediaCredit, wikiImageCredit, renderImageCredit } from './imagecredits.js?v=2';
 
@@ -844,17 +844,59 @@ async function idbGet(key) {
     });
   } catch { return null; }
 }
+// A write counts once its transaction commits: a full disk aborts the
+// transaction (QuotaExceededError) after the put request itself succeeded.
+async function idbWrite(work) {
+  const db = await idbOpen();
+  await new Promise((resolve, reject) => {
+    const tx = db.transaction('thumbs', 'readwrite');
+    tx.oncomplete = () => resolve();
+    tx.onabort = tx.onerror = () => reject(tx.error);
+    work(tx.objectStore('thumbs'));
+  });
+}
 async function idbSet(key, val) {
   try {
-    const db = await idbOpen();
-    await new Promise((resolve, reject) => {
-      const t = db.transaction('thumbs', 'readwrite').objectStore('thumbs').put(val, key);
-      t.onsuccess = () => resolve();
-      t.onerror = () => reject(t.error);
-    });
-  } catch { /* storage unavailable — display-only for the session */ }
+    await idbWrite((store) => store.put(val, key));
+  } catch (e) {
+    if (!e || e.name !== 'QuotaExceededError') return; // storage unavailable — display-only
+    // Storage is full: drop most cached photos, then try once more.
+    try {
+      await idbPrune(THUMB_BUDGET / 4);
+      await idbWrite((store) => store.put(val, key));
+    } catch { /* still full — display-only for the session */ }
+  }
 }
 const NEG_TTL = 30 * 86400000; // remember "no photo" for 30 days
+// Cached photos are capped at THUMB_BUDGET bytes. Past it, the least recently
+// viewed photos go until THUMB_KEEP of the budget is used; expired "no photo"
+// answers and unreadable entries are dropped on the same pass.
+const THUMB_BUDGET = 25 * 1024 * 1024;
+const THUMB_KEEP = 0.8;
+async function idbPrune(budget = THUMB_BUDGET) {
+  const now = Date.now();
+  await idbWrite((store) => {
+    const photos = [];
+    store.openCursor().onsuccess = (ev) => {
+      const cursor = ev.target.result;
+      if (cursor) {
+        const v = cursor.value;
+        if (v && v.blob instanceof Blob) photos.push({ key: cursor.key, size: v.blob.size, used: v.used || v.ts || 0 });
+        else if (!v || !v.missing || !(now - v.ts < NEG_TTL)) cursor.delete();
+        cursor.continue();
+        return;
+      }
+      let total = photos.reduce((sum, p) => sum + p.size, 0);
+      if (total <= budget) return;
+      photos.sort((a, b) => a.used - b.used);
+      for (const p of photos) {
+        if (total <= budget * THUMB_KEEP) break;
+        store.delete(p.key);
+        total -= p.size;
+      }
+    };
+  });
+}
 const WIKI_API = 'https://en.wikipedia.org/api/rest_v1/page/summary/';
 let currentObjUrl = null;
 
@@ -868,6 +910,7 @@ async function loadWikiThumb(o, imgEl, phEl, creditEl) {
   if (cached && cached.blob) {
     showBlob(cached.blob);
     renderImageCredit(creditEl, cached.credit);
+    idbSet(key, { ...cached, used: Date.now() }); // recently viewed photos are kept longest
     return;
   }
   if (cached && cached.missing && Date.now() - cached.ts < NEG_TTL) {
@@ -904,12 +947,14 @@ async function loadWikiThumb(o, imgEl, phEl, creditEl) {
     const blob = await ir.blob();
     if (!blob.type.startsWith('image/')) throw new Error('bad-type');
     const initialCredit = wikimediaCredit(resolvedSrc);
-    await idbSet(key, { blob, credit: initialCredit, page, ts: Date.now() });
+    const ts = Date.now();
+    await idbSet(key, { blob, credit: initialCredit, page, ts, used: ts });
     // Display first: optional attribution metadata must not hold up the image.
     showBlob(blob);
     renderImageCredit(creditEl, initialCredit);
+    idbPrune().catch(() => {}); // a new photo may push the cache past its budget
     const credit = await wikiImageCredit(resolvedSrc, { signal: ac.signal });
-    await idbSet(key, { blob, credit, page, ts: Date.now() });
+    await idbSet(key, { blob, credit, page, ts, used: Date.now() });
     renderImageCredit(creditEl, credit);
     const link = imgEl.isConnected && S.detailOpen && S.detailId === o.id
       && document.querySelector('#d-wikilink');

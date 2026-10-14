@@ -32,6 +32,18 @@ Library, SQLite, desktop CSP) are history only.
 - **Documentation:** see "Documentation layout" (2026-10-11), which updates the
   older "Docs policy".
 
+## 2026-10-13 — Hosting headers, compression and the accessibility pass
+
+Measured the same day: browsers already get Brotli compression, so
+HOST-DELIVERY-001 is closed without provider changes. GET page loads are
+served by nginx without `.htaccess`, so the response headers in the entry
+below (and in web/.htaccess) are not delivered with the pages; the provider
+exposes no nginx settings. The header blocks stay in both `.htaccess` files,
+and the meta CSP in every page remains the enforced policy. The owner does
+not have the expertise for a screen-reader pass and chose to treat
+accessibility as covered by the automated checks for now; A11Y-001 is a
+known limitation instead of a release gate.
+
 ## 2026-10-13 — Security headers for the landing pages
 
 Owner decision after the server-policy review: landing/.htaccess sends the

@@ -98,32 +98,32 @@ _VERIFIED_BASELINE_JSON = r"""
    "token": "5"
   },
   "app.js": {
-   "sha256": "ab1838111c06039aefeb7bd61ee4e7736e738f98bf9eda9acd300664df032801",
-   "token": "224"
+   "sha256": "9a3094a5492fbef8b569b29784f93395835a64740ab1db9094261d926bbedf1b",
+   "token": "226"
   },
   "astro.js": {
-   "sha256": "289d176e8d0709d4d566134dfa907228fb69dedbfa0f91ee502bf32ebc047ed3",
-   "token": "58"
+   "sha256": "302b623dc990a95b90251c0df5853107ba23f40084d07d22fc7194c21d6d1955",
+   "token": "59"
   },
   "core.js": {
-   "sha256": "d915d9e3d55672dc90e249324833e27a221e22ed39044499afa450edd8461220",
-   "token": "67"
+   "sha256": "89730746f4b8f630707110e042ea44b2dbbe12d9900ca294c7b788a781d0b004",
+   "token": "68"
   },
   "format.js": {
-   "sha256": "535c813939177a93ea1ba24cce9b8b6f17ba3b9572ea6e62f1ea0d5d0ca32667",
-   "token": "64"
+   "sha256": "47f387f190b63f78da40929c55bfa4630ceb1d3f2a32b25171072b0650d88b06",
+   "token": "65"
   },
   "horizon.js": {
-   "sha256": "0049f4e86c3faf3194131fb0a28d78e92f2bfe6e0194e0e9ec378c26415d982e",
-   "token": "130"
+   "sha256": "941a367f0bed857040937363cfaed3a2cc219f3197c268b6dcab9c509fed85b6",
+   "token": "131"
   },
   "imagecredits.js": {
    "sha256": "8c8b650a0ad6ef6462eea251b67642103cb0eb9010c1f9dde09fce2ba7fa8952",
    "token": "2"
   },
   "nightrank.js": {
-   "sha256": "3afcc4be885002e1defb21388dfd8830b74901491f0ae51610c2496da17927ba",
-   "token": "56"
+   "sha256": "e56ba177d1e8551f900040e3b70b99d1b50e1f9ddc28e8900509fc09316ab0e0",
+   "token": "57"
   },
   "style.css": {
    "sha256": "0ce58ee1077d79e64cf515a0a552461d09aed760f0c92f5c990bdd79e65cbdb9",
@@ -138,8 +138,8 @@ _VERIFIED_BASELINE_JSON = r"""
    "token": "7"
   },
   "webstore.js": {
-   "sha256": "302edf6c441285557c825468657b019992a3340ec68f74144c54ec0c92523902",
-   "token": "73"
+   "sha256": "c54032eb73a1196650fa32b2d1626e3cd9c8dae63525a27cca946d5fc8ba53b9",
+   "token": "74"
   }
  }
 }

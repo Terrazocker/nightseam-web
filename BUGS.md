@@ -8,26 +8,29 @@ entry here when it is fixed and record the fix in RELEASES.md.
 
 ## Needs the owner
 
-- **A11Y-001 — human accessibility acceptance.** A screen-reader and native
-  browser-zoom pass is still outstanding; automated keyboard, contrast and
-  responsive checks do not replace it. Steps:
-  [docs/acceptance/ACCESSIBILITY_ACCEPTANCE.md](docs/acceptance/ACCESSIBILITY_ACCEPTANCE.md).
 - **Horizon real-photo acceptance.** Real panoramas and phone photos with
   known directions, touch/pen input and physical devices for the rebuilt
   editor: [docs/acceptance/HORIZON_ACCEPTANCE.md](docs/acceptance/HORIZON_ACCEPTANCE.md).
-- **HOST-DELIVERY-001 — compression.** Live HTML/JS and the two large catalog
-  JSON payloads are served without gzip. Enable it through the provider's
-  controls and measure real responses ([HOSTING_CONFIGURATION.md](HOSTING_CONFIGURATION.md)).
-- **Landing server headers (approved, not live).** `landing/.htaccess` now
-  sets the pages' CSP with `frame-ancestors 'none'`, `nosniff` and the
-  referrer policy (owner approval 2026-10-13). Close this after the next
-  deployment once the live response headers for `/` show all three.
 - **Legal pages: deferred by the owner (2026-10-11).** Not release work and
   not to be raised again unless the owner asks. For reference only: the
   Impressum names a pseudonym without a postal address, and the privacy page
   lacks GDPR Art. 13 items.
 
 ## Known limitations
+
+- **A11Y-001 — no human screen-reader pass (deferred by the owner,
+  2026-10-13).** Automated checks cover keyboard control and focus, dialog
+  isolation, accessible names, non-colour summaries, reduced motion and
+  enlarged layouts; what a screen reader actually announces and native browser
+  zoom are unverified. Steps, if someone qualified runs them later:
+  [docs/acceptance/ACCESSIBILITY_ACCEPTANCE.md](docs/acceptance/ACCESSIBILITY_ACCEPTANCE.md).
+- **Response headers do not reach page loads.** The host's nginx serves HTML,
+  JS, CSS and the large catalog files directly on GET, without consulting
+  `.htaccess`; only HEAD requests and some JSON reach Apache (measured
+  2026-10-13). So `frame-ancestors`, `nosniff` and the header CSP from
+  `web/.htaccess` and `landing/.htaccess` are not delivered with the pages;
+  the meta CSP in every page is what browsers enforce. The provider exposes no
+  nginx settings, so this stays until hosting changes.
 
 - **Horizon model.** One open interval per direction (above the skyline,
   below any overhang edge): sky seen through gaps above an obstruction, such
@@ -42,11 +45,11 @@ entry here when it is fixed and record the fix in RELEASES.md.
   panorama must be levelled in the panorama app.
 - **Skyline detection** needs a daylight photo with clear sky. Bright walls,
   clouds, wires and thin branches can pull the line; it is a draft to correct.
-- **Twilight scan.** The 10-minute scan skips a night with under ten minutes of
-  darkness at a level (two such nights in the 2026 reference tables), and above
-  about 84.5 deg latitude pickDarkWindow can pair an astronomical dusk with a
-  nautical dawn on the single transition night.
-- **Thumbnail cache.** No size limit or eviction; quota errors are ignored.
+- **Near-tangent twilight.** When the Sun turns within about 0.01 deg of a
+  twilight level, the Sun model and the published tables can disagree on
+  whether a spell of a few minutes happens at all (Tromso 2026-09-16: USNO
+  lists 5 minutes of astronomical night; the model turns at -17.996 deg). The
+  dark window then falls back to the next level for that night.
 
 ## Monitoring
 
