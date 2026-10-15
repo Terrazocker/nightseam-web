@@ -113,11 +113,6 @@ def horizon_test_png(width: int, height: int) -> bytes:
         (80, 125, 230) if x >= width * 0.88 else (65, 145, 110)))
 
 
-def skyline_test_png(width: int, height: int, ground: float) -> bytes:
-    """Daylight sky over dark ground; the ground starts `ground` (0-1) down."""
-    return rgb_png(width, height, lambda _x, y: (120, 170, 235) if y < height * ground else (40, 60, 30))
-
-
 def search_catalog_row(c, object_id: str, search: str):
     """Wait for the debounced search render, not a stale pre-filtered row."""
     old_input = c.page.locator("#cat-q").element_handle()
@@ -321,16 +316,6 @@ def wait_status(c, text_value: str, timeout: int = 8000):
             f"redo-disabled={c.page.is_disabled('#ed-redo')}") from exc
 
 
-def upload_photo(c, name: str, data: bytes, selector: str = "#hz-photo-file"):
-    c.page.locator(selector).set_input_files({"name": name, "mimeType": "image/png", "buffer": data})
-    # Each photo opens a new horizon named after the file; wait for that one, or
-    # a second upload would read the previous photo's still-visible fields.
-    c.page.wait_for_function("(n) => document.querySelector('#hz-name')?.value === n",
-                             arg=name.rsplit(".", 1)[0], timeout=15000)
-    c.page.wait_for_selector("#hz-ph-width", state="visible", timeout=15000)
-    c.page.wait_for_function("() => !document.querySelector('#hz-mode-align').disabled", timeout=15000)
-
-
 # ---------------------------------------------------------------- checks
 
 @check("web-load-smoke", "web")
@@ -373,9 +358,10 @@ def web_cache_tokens(c):
 
 @check("web-horizon-create-buttons-consistent", "web")
 def web_horizon_create_buttons(c):
-    """ITEM B regression, current form: the three ways to start a horizon (two
-    label-buttons and a button) render at one shared width, so a label used as
-    a button can never stretch while its siblings do not. Rendered layout."""
+    """ITEM B regression, current form: the two ways to start a horizon (a
+    button and a label-button; horizon photos are retired) render at one
+    shared width, so a label used as a button can never stretch while its
+    sibling does not. Rendered layout."""
     boot(c)
     tab(c, "horizon")
     c.page.wait_for_selector(".hz-new", timeout=20000)
@@ -385,7 +371,7 @@ def web_horizon_create_buttons(c):
         widths = c.page.evaluate(
             """() => [...document.querySelectorAll('.hz-new > .btn')]
                  .map(e => Math.round(e.getBoundingClientRect().width))""")
-        c.expect(len(widths) == 3, f"three create controls expected, got {widths}")
+        c.expect(len(widths) == 2, f"two create controls expected, got {widths}")
         c.expect(max(widths) - min(widths) <= 2, f"create controls differ in width at {width}px: {widths}")
     c.page.set_viewport_size({"width": 1366, "height": 900})
     c.assert_clean()
@@ -495,87 +481,29 @@ def web_horizon_canvas_dpr_resize(c):
     c.assert_clean()
 
 
-@check("web-horizon-photo-placement", "web")
-def web_horizon_photo_placement(c):
-    """A 2:1 photo is a full panorama laid around the whole grid; any other
-    shape is a 60 deg partial photo; the photo is drawn where it belongs."""
+@check("web-horizon-has-no-photo-tools", "web")
+def web_horizon_has_no_photo_tools(c):
+    """Horizon photos are retired: the editor offers drawing, the phone
+    compass and file import; a dropped photo is explained instead of opened,
+    and a dropped horizon text file imports."""
     boot(c)
-    tab(c, "horizon")
-    upload_photo(c, "full.png", horizon_test_png(144, 72))
-    c.expect_eq(c.page.locator("#hz-ph-width").input_value(), "360", "a 2:1 photo is a full panorama")
-    c.expect(c.page.locator("#hz-ph-roll").is_disabled(), "a full panorama is not rolled")
-    c.page.locator('#hz-guide [data-guide="close"]').click()
-    colours = c.page.evaluate("""() => {
-      const cv = document.querySelector('#hz-canvas'), ctx = cv.getContext('2d');
-      const r = cv.getBoundingClientRect(), dpr = cv.width / r.width;
-      // grid margins 40/8 px, altitude -10..80 at zoom 1; sample 5 deg altitude
-      const x = (az) => (40 + az / 360 * (r.width - 48)) * dpr;
-      const y = (24 + (80 - 5) / 90 * (r.height - 32)) * dpr;
-      const at = (az) => [...ctx.getImageData(Math.round(x(az)), Math.round(y), 1, 1).data];
-      return { west: at(20), mid: at(180), east: at(340) };
-    }""")
-    c.expect(colours["west"][0] > colours["west"][2], f"the photo's left edge sits just east of north: {colours}")
-    c.expect(colours["east"][2] > colours["east"][0], f"the photo's right edge sits just west of north: {colours}")
-    c.expect(colours["mid"][1] > colours["mid"][0], f"the photo centre faces south: {colours}")
-    upload_photo(c, "partial.png", horizon_test_png(96, 72))
-    c.expect_eq(c.page.locator("#hz-ph-width").input_value(), "60", "an ordinary photo starts 60 deg wide")
-    c.expect(c.page.locator("#hz-ph-roll").is_enabled(), "a partial photo can be levelled")
-    c.expect("photo" in c.page.inner_text("#hz-list"), "the list marks horizons with a photo")
-    c.assert_clean()
-
-
-@check("web-horizon-detect-skyline", "web")
-def web_horizon_detect_skyline(c):
-    """Detect skyline turns a daylight photo into points at the right height:
-    ground from 40% down a 2:1 panorama is 18 deg above the level horizon."""
-    boot(c)
-    tab(c, "horizon")
-    upload_photo(c, "garden.png", skyline_test_png(360, 180, 0.40))
-    c.page.locator("#hz-detect").click()
-    c.page.wait_for_function("() => /Detected \\d+ skyline points/.test(document.querySelector('#hz-note').textContent)",
-                             timeout=10000)
-    pts = active_horizon(c)["points"]
-    c.expect(len(pts) >= 2, f"detection must store points: {pts}")
-    c.expect(all(abs(p["alt"] - 18) <= 1.5 for p in pts), f"detected skyline must sit at 18 deg: {pts[:6]}")
-    c.expect(min(p["az"] for p in pts) <= 5 and max(p["az"] for p in pts) >= 355,
-             "a full panorama is detected all the way round")
-    c.page.click("#ed-undo")
-    c.page.wait_for_timeout(200)
-    c.expect_eq(active_points(c), 0, "detection is one undoable step")
-    c.assert_clean()
-
-
-@check("web-horizon-align-moves-skyline", "web")
-def web_horizon_align_moves_skyline(c):
-    """Turning the photo moves the traced skyline with it, as one undo step;
-    Align mode drags the photo."""
-    boot(c)
-    tab(c, "horizon")
-    upload_photo(c, "partial.png", horizon_test_png(96, 72))
-    c.page.locator('#hz-guide [data-guide="close"]').click()
-    sketch(c, 0.35, 0.65, 0.5, 0.45)
-    before = active_horizon(c)
-    heading = c.page.locator("#hz-ph-heading")
-    heading.fill(str(before["photo"]["heading"] + 10))
-    heading.dispatch_event("change")
-    c.page.wait_for_timeout(200)
-    after = active_horizon(c)
-    c.expect_eq(after["photo"]["heading"], before["photo"]["heading"] + 10, "the typed north direction applies")
-    c.expect_eq([round(p["az"] - 10, 2) for p in after["points"]], [p["az"] for p in before["points"]],
-                "every skyline point turns with the photo")
-    c.page.click("#ed-undo")
-    c.page.wait_for_timeout(200)
-    c.expect_eq(active_horizon(c)["points"], before["points"], "the turn is one undo step")
-    c.page.click("#hz-mode-align")
-    c.expect_eq(c.page.get_attribute("#hz-mode-align", "aria-pressed"), "true", "Align mode is announced")
-    sx, sy = canvas_point(c, 0.5, 0.5)
-    c.page.mouse.move(sx, sy)
-    c.page.mouse.down()
-    c.page.mouse.move(sx + 40, sy, steps=6)
-    c.page.mouse.up()
-    c.page.wait_for_timeout(200)
-    c.expect(active_horizon(c)["photo"]["heading"] > before["photo"]["heading"],
-             "dragging the photo to the right turns it east")
+    open_editor(c)
+    for gone in ("#hz-photo-file", "#hz-mode-align", "#hz-photo-panel", "#hz-opacity", "#hz-guide"):
+        c.expect_eq(c.page.locator(gone).count(), 0, f"{gone} is gone")
+    drop = """([name, type, text]) => {
+      const dt = new DataTransfer();
+      dt.items.add(new File([text], name, { type }));
+      document.querySelector('#view').dispatchEvent(new DragEvent('drop', { dataTransfer: dt, bubbles: true, cancelable: true }));
+    }"""
+    count = len(horizon_state(c)["horizons"])
+    c.page.evaluate(drop, ["garden.png", "image/png", "not really a png"])
+    c.page.wait_for_function("() => /no longer used/.test(document.querySelector('#hz-note').textContent)",
+                             timeout=5000)
+    c.expect_eq(len(horizon_state(c)["horizons"]), count, "a dropped photo creates no horizon")
+    c.page.evaluate(drop, ["dropped.txt", "text/plain", "0 10\n90 20\n180 15\n"])
+    c.page.wait_for_function("() => /Imported 3 points from dropped.txt/.test(document.querySelector('#hz-note').textContent)",
+                             timeout=5000)
+    c.expect_eq(active_horizon(c)["name"], "dropped", "a dropped horizon file imports")
     c.assert_clean()
 
 
@@ -672,46 +600,6 @@ def web_horizon_phone_compass(c):
     c.expect(max(p["az"] for p in pts) >= 39, f"the trace reaches the end of the sweep: {pts}")
     c.page.click("#hz-cmp-start")
     c.expect("Not measuring" in c.page.inner_text("#hz-cmp-read"), "Stop ends measuring")
-    c.assert_clean()
-
-
-@check("web-horizon-sun-sets-north", "web")
-def web_horizon_sun_sets_north(c):
-    """Marking the Sun in a photo and its capture time sets north and tilt from
-    the Sun's computed position at the observing site."""
-    boot(c)
-    tab(c, "horizon")
-    upload_photo(c, "sunny.png", horizon_test_png(144, 72))
-    c.page.locator('#hz-guide [data-guide="close"]').click()
-    c.page.click("#hz-sun")
-    # Mark the grid point az 200, alt 20 of the default placement (heading
-    # 180, tilt 0): 20 deg right of and 20 deg above the photo centre.
-    box = c.page.locator("#hz-canvas").bounding_box()
-    c.page.mouse.click(box["x"] + 40 + 200 / 360 * (box["width"] - 48),
-                       box["y"] + 24 + (80 - 20) / 90 * (box["height"] - 32))
-    c.page.wait_for_selector("#hz-sun-form:not([hidden])", timeout=5000)
-    c.page.fill("#hz-sun-time", "2026-06-21T15:00")
-    c.page.click("#hz-sun-apply")
-    c.page.wait_for_function("() => /north and tilt are set/.test(document.querySelector('#hz-note').textContent)",
-                             timeout=5000)
-    source = (ROOT / "web/app.js").read_text(encoding="utf-8")
-    ws = re.search(r"\./webstore\.js\?v=\d+", source).group(0)
-    sun = c.page.evaluate("""async (ws) => {
-      const W = await import(ws), C = await import('./core.js');
-      const sites = await W.getSites();
-      const site = sites.find((s) => s.id === document.querySelector('#tb-site').value) || { lat: 52.52, lon: 13.4 };
-      return C.sunDirection(C.julianDay(W.wallFieldsToUtc(2026, 5, 21, 15, 0, 0)), site.lat, site.lon);
-    }""", ws)
-    photo = active_horizon(c)["photo"]
-    c.expect(abs(((photo["heading"] + 20 - sun["az"] + 180) % 360) - 180) < 1.0,
-             f"the marked pixel faces the Sun's azimuth: photo {photo}, sun {sun}")
-    c.expect(abs(photo["tilt"] + 20 - sun["alt"]) < 1.0,
-             f"the marked pixel sits at the Sun's altitude: photo {photo}, sun {sun}")
-    c.page.click("#hz-sun")
-    c.page.mouse.click(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
-    c.page.fill("#hz-sun-time", "2026-06-21T23:30")
-    c.page.click("#hz-sun-apply")
-    c.expect("below the horizon" in c.page.inner_text("#hz-note"), "a night-time capture is refused")
     c.assert_clean()
 
 
@@ -1912,80 +1800,32 @@ def web_interval_view_agreement(c):
     interval_view_agreement(c)
 
 
-# Photo restore must use the shipped CSP and real IndexedDB commit semantics.
 def horizon_module_url():
     return re.search(r"from '(\./horizon\.js\?v=\d+)'",
                      (ROOT / 'web/app.js').read_text(encoding='utf-8')).group(1)
 
 
-HORIZON_PHOTO_FIXTURE = """async ({url, color}) => {
-  const H = await import(url);
-  const canvas = document.createElement('canvas');
-  canvas.width = canvas.height = 4;
-  const ctx = canvas.getContext('2d');
-  ctx.fillStyle = color; ctx.fillRect(0, 0, 4, 4);
-  const image = canvas.toDataURL('image/png');
-  const snapshot = {activeId:'restore-photo',horizons:[{
-    id:'restore-photo',name:'Photo restore',points:[{az:90,alt:10}],
-    photo:{width:360,heading:180,tilt:0,roll:0},hasPhoto:true,image
-  }]};
-  return {image,snapshot};
-}"""
+HORIZON_RESTORE_FIXTURE = {'activeId': 'restored', 'horizons': [
+    {'id': 'restored', 'name': 'Restored', 'points': [{'az': 90, 'alt': 10}], 'overhangs': []}]}
 
 
-def restored_image(c, url):
-    return c.page.evaluate("""async url => {
-      const H=await import(url);const backup=await H.exportHorizonsWithPhotos();
-      return {image:backup.horizons[0]?.image,hasPhoto:backup.horizons[0]?.hasPhoto};
-    }""", url)
-
-
-@check('web-horizon-photo-restore-durable', 'web')
-def horizon_photo_restore_durable(c):
+@check("web-horizon-restore-durable", "web")
+def horizon_restore_durable(c):
+    """A horizon restore resolves only after its records are stored, survives
+    a reload, and a failed record write leaves the current horizons intact."""
     boot(c)
     url = horizon_module_url()
-    for color in ['#ff0000', '#0000ff']:
-        fixture = c.page.evaluate(HORIZON_PHOTO_FIXTURE, {'url': url, 'color': color})
-        committed = c.page.evaluate("""async ({url,snapshot}) =>
-          (await import(url)).applyHorizonsSnapshot(snapshot)""",
-          {'url': url, 'snapshot': fixture['snapshot']})
-        c.expect(committed, 'photo restore must wait for successful persistence')
-        c.expect_eq(restored_image(c, url)['image'], fixture['image'],
-                    'incoming photo bytes must win over an older photo with the same ID')
-        c.page.reload()
-        c.page.wait_for_selector(READY)
-        c.expect_eq(restored_image(c, url)['image'], fixture['image'],
-                    'the restored photo must survive reload under the shipped CSP')
-    c.assert_clean()
-
-
-@check('web-horizon-photo-restore-transaction-abort', 'web')
-def horizon_photo_restore_abort(c):
-    boot(c)
-    url = horizon_module_url()
-    fixture = c.page.evaluate(HORIZON_PHOTO_FIXTURE, {'url': url, 'color': '#ff0000'})
-    c.expect(c.page.evaluate("""async ({url,snapshot}) =>
-      (await import(url)).applyHorizonsSnapshot(snapshot)""",
-      {'url': url, 'snapshot': fixture['snapshot']}), 'initial photo must persist')
-    incoming = c.page.evaluate(HORIZON_PHOTO_FIXTURE, {'url': url, 'color': '#0000ff'})
-    result = c.page.evaluate("""async ({url,snapshot}) => {
-      const H=await import(url),before=localStorage.getItem('nightseam_horizons_v2');
-      const original=IDBObjectStore.prototype.put;
-      IDBObjectStore.prototype.put=function(...args){
-        const request=original.apply(this,args);
-        if(this.name==='photos')request.addEventListener('success',()=>this.transaction.abort(),{once:true});
-        return request;
-      };
-      let committed;
-      try {committed=await H.applyHorizonsSnapshot(snapshot);}
-      finally {IDBObjectStore.prototype.put=original;}
-      return {committed,unchanged:before===localStorage.getItem('nightseam_horizons_v2'),
-        memoryImage:(await H.exportHorizonsWithPhotos()).horizons[0]?.image};
-    }""", {'url': url, 'snapshot': incoming['snapshot']})
-    c.expect_eq(result['committed'], False, 'request success followed by abort must fail restore')
-    c.expect(result['unchanged'], 'a photo transaction abort must restore the horizon records')
-    c.expect_eq(result['memoryImage'], fixture['image'], 'an aborted restore must preserve live photos')
-    failed_records = c.page.evaluate("""async ({url,snapshot}) => {
+    committed = c.page.evaluate("""async ({url,snapshot}) => {
+      const H=await import(url);
+      return H.applyHorizonsSnapshot(H.normalizeHorizons(snapshot));
+    }""", {'url': url, 'snapshot': HORIZON_RESTORE_FIXTURE})
+    c.expect(committed, 'a restore reports successful persistence')
+    c.page.reload()
+    c.page.wait_for_selector(READY)
+    exported = c.page.evaluate('async url => (await import(url)).exportHorizons()', url)
+    c.expect_eq(exported, HORIZON_RESTORE_FIXTURE, 'the restored horizons survive a reload')
+    incoming = {'activeId': 'other', 'horizons': [{**HORIZON_RESTORE_FIXTURE['horizons'][0], 'id': 'other'}]}
+    failed = c.page.evaluate("""async ({url,snapshot}) => {
       const H=await import(url),before=localStorage.getItem('nightseam_horizons_v2');
       const original=Storage.prototype.setItem;
       Storage.prototype.setItem=function(key,value){
@@ -1993,52 +1833,14 @@ def horizon_photo_restore_abort(c):
         return original.call(this,key,value);
       };
       let committed;
-      try {committed=await H.applyHorizonsSnapshot(snapshot);}
+      try {committed=await H.applyHorizonsSnapshot(H.normalizeHorizons(snapshot));}
       finally {Storage.prototype.setItem=original;}
-      return {committed,unchanged:before===localStorage.getItem('nightseam_horizons_v2')};
-    }""", {'url': url, 'snapshot': incoming['snapshot']})
-    c.expect_eq(failed_records['committed'], False, 'a horizon record quota failure must abort restore')
-    c.expect(failed_records['unchanged'], 'a failed record write must leave horizon records intact')
-    c.page.reload()
-    c.page.wait_for_selector(READY)
-    c.expect_eq(restored_image(c, url)['image'], fixture['image'],
-                'an aborted restore must preserve the original cached photograph')
-    c.assert_clean()
-
-
-@check('web-horizon-backup-unreadable-photo', 'web')
-def horizon_backup_unreadable_photo(c):
-    boot(c)
-    url = horizon_module_url()
-    fixture = c.page.evaluate(HORIZON_PHOTO_FIXTURE, {'url': url, 'color': '#ff0000'})
-    c.expect(c.page.evaluate("""async ({url,snapshot}) =>
-      (await import(url)).applyHorizonsSnapshot(snapshot)""",
-      {'url': url, 'snapshot': fixture['snapshot']}), 'initial photo must persist')
-    c.page.reload()
-    c.page.wait_for_selector(READY)
-    result = c.page.evaluate("""async url => {
-      const H=await import(url),original=IDBObjectStore.prototype.get;
-      IDBObjectStore.prototype.get=function(...args){
-        const request=original.apply(this,args);
-        if(this.name==='photos')request.addEventListener('success',()=>this.transaction.abort(),{once:true});
-        return request;
-      };
-      let readRejected=false;
-      try {await H.exportHorizonsWithPhotos();}catch {readRejected=true;}
-      finally {IDBObjectStore.prototype.get=original;}
-      await new Promise((resolve,reject)=>{
-        const request=indexedDB.open('nightseam-horizon-photos',1);
-        request.onerror=()=>reject(request.error);
-        request.onsuccess=()=>{const db=request.result,tx=db.transaction('photos','readwrite');
-          tx.objectStore('photos').clear();tx.oncomplete=()=>{db.close();resolve();};
-          tx.onabort=()=>{db.close();reject(tx.error);};};
-      });
-      let missingRejected=false;
-      try {await H.exportHorizonsWithPhotos();}catch {missingRejected=true;}
-      return {readRejected,missingRejected};
-    }""", url)
-    c.expect(result['readRejected'], 'backup must reject an aborted photo read after request success')
-    c.expect(result['missingRejected'], 'backup must reject missing photo bytes instead of omitting them')
+      return {committed,unchanged:before===localStorage.getItem('nightseam_horizons_v2'),
+        live:H.exportHorizons()};
+    }""", {'url': url, 'snapshot': incoming})
+    c.expect_eq(failed['committed'], False, 'a horizon record quota failure fails the restore')
+    c.expect(failed['unchanged'], 'a failed record write leaves the stored horizons intact')
+    c.expect_eq(failed['live'], HORIZON_RESTORE_FIXTURE, 'and the live horizons too')
     c.assert_clean()
 
 
@@ -2087,7 +1889,7 @@ def horizon_editor_history_rollback(c):
     url = horizon_module_url()
     result = c.page.evaluate("""async url => {
       const H=await import(url),checkpoint=H.captureEditorHistory();
-      const safety=await H.exportHorizonsWithPhotos();
+      const safety=H.exportHorizons();
       if(!await H.applyHorizonsSnapshot({horizons:[],activeId:null}))throw new Error('forward snapshot failed');
       if(!await H.applyHorizonsSnapshot(H.normalizeHorizons(safety)))throw new Error('rollback snapshot failed');
       const restored=H.restoreEditorHistory(checkpoint);

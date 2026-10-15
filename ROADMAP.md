@@ -12,13 +12,18 @@ Where NightSeam Web stands and what comes next. Open defects are in
   grid, photo underlay, skyline detection, overhangs, phone compass, north
   from the Sun), the coming-night detail card, USNO-anchored twilight checks,
   timezone validation, the October review fixes and a CI workflow.
+- **On branch `horizon-sensor-plan` (pull request #8, not merged until the
+  capture works):** horizon photos removed (phase 1); phone-sensor capture
+  and share links to follow.
 
 ## Before 0.7.0
 
 1. Owner decision: whether 0.7.0 waits for the horizon sensor capture
    ([plan](docs/horizon/HORIZON_SENSOR_CAPTURE_PLAN.md)) or ships the current
    photo editor first. The real-photo acceptance was tried on October 15 and
-   led to replacing photos rather than accepting them.
+   led to replacing photos rather than accepting them. If 0.7.0 waits, the
+   landing pages still describe panoramas and photos (features, privacy and
+   about pages, `og:image:alt`) and need new copy first.
 2. Revise the drafted 0.7.0 summary (`CURATED` in scripts/build_changelog.py)
    and add its dated `PUBLIC_RELEASES` record, then follow
    [RELEASE_WORKFLOW.md](RELEASE_WORKFLOW.md): pre-tag check, tag, clean stage,
@@ -28,8 +33,9 @@ Where NightSeam Web stands and what comes next. Open defects are in
 
 - **Horizon sensor capture** ([plan](docs/horizon/HORIZON_SENSOR_CAPTURE_PLAN.md)):
   capture the skyline with the phone's camera view and sensors, remove photo
-  placement, and move horizons between devices with a share link. Phase 0, a
-  sensor probe on the Pixel 7a, comes first.
+  placement, and move horizons between devices with a share link. Phase 0
+  (sensor probe) passed and phase 1 (photos removed) is done on the branch;
+  phase 2, the camera capture, is next.
 - **Horizon rebuild** ([plan](docs/horizon/HORIZON_REBUILD_PLAN.md)): phases
   1-6 are merged (pull request #2). Its photo parts are to be replaced by the
   sensor capture; the skyline model, overhangs and file import/export stay.

@@ -84,7 +84,6 @@ def simpler_overviews_and_direct_settings(c):
 
 @check('web-followup-smooth-scrub-and-horizon-scroll', 'web')
 def smooth_scrub_and_horizon_scroll(c):
-    from web_suite import horizon_test_png
     c.page.set_viewport_size({'width':1894, 'height':900})
     boot(c)
     tab(c, 'catalog')
@@ -134,11 +133,9 @@ def smooth_scrub_and_horizon_scroll(c):
     c.page.screenshot(path=str(c.artifacts / 'followup-sky-1894.png'))
     # Leave with a queued paint: the old workspace cannot overwrite a new view.
     c.page.evaluate("() => { const s=document.querySelector('#sky-slider'); s.value='240'; s.dispatchEvent(new Event('input')); location.hash='#horizon'; }")
-    c.page.wait_for_selector('#hz-photo-file', state='attached')
-    c.page.locator('#hz-photo-file').set_input_files({'name':'garden.png','mimeType':'image/png',
-                                                    'buffer':horizon_test_png(600,300)})
+    c.page.wait_for_selector('#hz-new-draw', state='visible')
+    c.page.click('#hz-new-draw')
     c.page.wait_for_selector('#hz-canvas', state='visible')
-    c.page.wait_for_selector('#hz-ph-width', state='visible')
     for width, height in ((1894,900),(1440,700)):
         c.page.set_viewport_size({'width':width,'height':height})
         c.page.evaluate('window.scrollTo(0,400)')
@@ -155,15 +152,15 @@ def smooth_scrub_and_horizon_scroll(c):
         }''')
         c.expect_eq(state['position'], 'sticky')
         c.expect(state['childPosition'] != 'sticky', 'first section cannot stick over the editing tools')
-        c.expect_eq(state['toolPosition'], 'sticky', 'stage tools remain available beside the photo')
-        c.expect_eq(state['toolBackground'], 'rgb(11, 17, 21)', 'sticky tools stay opaque over the scrolling photo')
+        c.expect_eq(state['toolPosition'], 'sticky', 'stage tools remain available beside the grid')
+        c.expect_eq(state['toolBackground'], 'rgb(11, 17, 21)', 'sticky tools stay opaque over the scrolling grid')
         c.expect(state['toolsTop'] >= 0 and state['toolsBottom'] <= height, 'whole toolbar fits the viewport')
         c.expect(state['top'] >= 0 and state['bottom'] <= height, 'whole rail fits the viewport')
-        c.page.locator('#hz-mode-align').focus()
+        c.page.locator('#hz-mode-overhang').focus()
         c.page.wait_for_timeout(50)
-        align = c.page.locator('#hz-mode-align').bounding_box()
-        c.expect(align['y'] >= 0 and align['y']+align['height'] <= height,
-                 f'keyboard reaches the mode buttons inside the toolbar: viewport={height}, button={align}')
+        mode = c.page.locator('#hz-mode-overhang').bounding_box()
+        c.expect(mode['y'] >= 0 and mode['y']+mode['height'] <= height,
+                 f'keyboard reaches the mode buttons inside the toolbar: viewport={height}, button={mode}')
         c.expect(c.page.locator('.topbar').bounding_box()['y'] >= 0, 'header stays visible throughout the editor')
         c.page.screenshot(path=str(c.artifacts / f'followup-horizon-scroll-{width}.png'))
     c.page.set_viewport_size({'width':360,'height':900})
@@ -179,7 +176,7 @@ def smooth_scrub_and_horizon_scroll(c):
       return {toolsBottom:tools.bottom,stageTop:stage.top,width:innerWidth};
     }""")
     c.expect(regions['stageTop'] >= regions['toolsBottom'],
-             f'phone stacks the complete tools rail before the image: {regions}')
+             f'phone stacks the complete tools rail before the grid: {regions}')
     c.expect(c.page.evaluate('document.documentElement.scrollWidth <= innerWidth'), 'phone has no horizontal overflow')
     c.page.screenshot(path=str(c.artifacts / 'followup-horizon-360.png'))
     c.assert_clean()
@@ -617,7 +614,7 @@ def responsive_planner(c):
                 tools = c.page.locator('.horizon-tools-rail').bounding_box()
                 stage = c.page.locator('.horizon-stage').bounding_box()
                 c.expect(stage['y'] >= tools['y'] + tools['height'], 'phone Horizon editor stacks below its tools')
-                upload = c.page.get_by_role('button', name='New from photo')
+                upload = c.page.get_by_role('button', name='Import file')
                 upload.focus()
                 with c.page.expect_file_chooser():
                     c.page.keyboard.press('Enter')

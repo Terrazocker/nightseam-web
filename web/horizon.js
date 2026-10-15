@@ -2,40 +2,36 @@
  * NightSeam Web - Horizon editor, horizon storage and shared preferences.
  *
  * A horizon is a skyline on a compass grid (core/horizon.js): points of
- * azimuth/altitude joined by straight lines around the circle. A photo can sit
- * underneath as a tracing aid; moving it moves the skyline with it. Records
- * live in localStorage, photo bytes in IndexedDB. Every finished edit saves
- * automatically; undo/redo and the dirty state come from
- * core/horizonhistory.js. This module also owns the planner preferences.
+ * azimuth/altitude joined by straight lines around the circle, drawn by hand,
+ * typed, imported or traced with the phone compass. Records live in
+ * localStorage. Every finished edit saves automatically; undo/redo and the
+ * dirty state come from core/horizonhistory.js. This module also owns the
+ * planner preferences.
  */
 import { vizTheme } from './viztheme.js?v=7';
-import { normalizeWebPrefs, WEB_PREF_DEFAULTS, wallFieldsToUtc, utcToWall } from './webstore.js?v=74';
+import { normalizeWebPrefs, WEB_PREF_DEFAULTS } from './webstore.js?v=75';
 import {
   NO_BLOCK, ALT_MIN, ALT_MAX, MAX_POINTS,
-  wrapAz, azDelta, normalizePoints, normalizePhotoPlacement, normalizeHorizon,
-  withProfile, ceilFor, replacePointsInRange, simplifyLine, detectSkylineRows,
-  photoToWorld, worldToPhoto, reprojectPoints, headingForLandmark,
-  normalizeOverhang, normalizeOverhangs, replaceOverhangsInRange, flatOverhang, reprojectOverhangs,
-  photoCaptureTime, sunDirection, placementFromKnownDirection, devicePointing, julianDay,
-  defaultPhotoPlacement, photoFileDimensions, parseHorizonFile, formatHorizonFile,
+  wrapAz, azDelta, normalizePoints, normalizeHorizon,
+  withProfile, ceilFor, replacePointsInRange, simplifyLine,
+  normalizeOverhang, normalizeOverhangs, replaceOverhangsInRange, flatOverhang,
+  devicePointing, parseHorizonFile, formatHorizonFile,
   effectiveMinAlt as coreMinAlt,
   newHistory, historyCommit, historyCanUndo, historyCanRedo, historyUndo,
   historyRedo, historyMarkSaved, historyDirty,
   PLANNER_CHANGE_EVENT, nextPlannerRevision, plannerChange, panoramaRevision,
-} from './core.js?v=68';
+} from './core.js?v=69';
 
 export { NO_BLOCK, ceilFor };
 
 const LS_KEY = 'nightseam_horizons_v2';
 const PREFS_KEY = 'nightseam_prefs_v1';
-const PHOTO_DB = 'nightseam-horizon-photos';
-// Storage of the retired panorama editor. Its records are not converted.
+// Storage of the retired panorama editor (records not converted) and the
+// retired horizon photos (deleted; the skylines traced over them stay).
 const LEGACY_LS_KEY = 'nightseam_panos_v1';
-const LEGACY_PHOTO_DB = 'nightseam-panoimg';
+const LEGACY_PHOTO_DBS = ['nightseam-panoimg', 'nightseam-horizon-photos'];
 export const MAX_HORIZONS = 50;
-const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
 const MAX_IMPORT_BYTES = 1024 * 1024;
-const DETECT_WIDTH = 720;
 const COMPASS_WAIT_MS = 3000;
 
 /** The planner's active site ({ lat, lon, label, tz }), provided by app.js. */
@@ -63,79 +59,13 @@ function announceHorizonChanged(h, cause = 'edit') {
   });
 }
 
-/* ------------------------------- photo storage ------------------------------- */
-
-function photoDbOpen() {
-  return new Promise((resolve, reject) => {
-    try {
-      const rq = indexedDB.open(PHOTO_DB, 1);
-      rq.onupgradeneeded = () => { rq.result.createObjectStore('photos'); };
-      rq.onsuccess = () => resolve(rq.result);
-      rq.onerror = () => reject(rq.error);
-      rq.onblocked = () => reject(new Error('Horizon photo storage is blocked by another tab'));
-    } catch (e) { reject(e); }
-  });
-}
-
-async function photoRequest(mode, operation) {
-  const dbh = await photoDbOpen();
-  try {
-    return await new Promise((resolve, reject) => {
-      const tx = dbh.transaction('photos', mode);
-      let result = null;
-      tx.oncomplete = () => resolve(result);
-      tx.onabort = () => reject(tx.error || new Error('Horizon photo transaction aborted'));
-      tx.onerror = () => {}; // onabort owns transaction failure, including commit failure
-      try {
-        const rq = operation(tx.objectStore('photos'));
-        rq.onsuccess = () => { result = rq.result ?? null; };
-      } catch (error) {
-        tx.abort();
-        reject(error);
-      }
-    });
-  } finally { dbh.close(); }
-}
-const photoGet = (id) => photoRequest('readonly', (store) => store.get(id));
-const photoSet = (id, blob) => photoRequest('readwrite', (store) => store.put(blob, id));
-const photoDel = (id) => photoRequest('readwrite', (store) => store.delete(id));
-
-/** Decoded photos for this session: id -> { blob, img, url, width, height }. */
-const photos = new Map();
-
-function forgetPhoto(id) {
-  const entry = photos.get(id);
-  if (entry && entry.url && typeof URL !== 'undefined') URL.revokeObjectURL(entry.url);
-  photos.delete(id);
-}
-
-async function decodePhoto(blob) {
-  const url = URL.createObjectURL(blob);
-  const img = new Image();
-  img.src = url;
-  try { await img.decode(); } catch (error) {
-    URL.revokeObjectURL(url);
-    throw new Error('The photo could not be decoded.');
-  }
-  return { blob, img, url, width: img.naturalWidth, height: img.naturalHeight };
-}
-
-/** The decoded photo of a horizon, or null when it has none or it is missing. */
-async function loadPhoto(h) {
-  if (!h || !h.hasPhoto) return null;
-  if (photos.has(h.id)) return photos.get(h.id);
-  const blob = await photoGet(h.id).catch(() => null);
-  if (!(blob instanceof Blob) || !blob.size) return null;
-  const entry = await decodePhoto(blob).catch(() => null);
-  if (entry) photos.set(h.id, entry);
-  return entry;
-}
-
 /* ------------------------------ horizon records ------------------------------ */
 
 function removeLegacyStorage() {
   try { localStorage.removeItem(LEGACY_LS_KEY); } catch { /* ignore */ }
-  try { if (typeof indexedDB !== 'undefined') indexedDB.deleteDatabase(LEGACY_PHOTO_DB); } catch { /* ignore */ }
+  for (const name of LEGACY_PHOTO_DBS) {
+    try { if (typeof indexedDB !== 'undefined') indexedDB.deleteDatabase(name); } catch { /* ignore */ }
+  }
 }
 
 function load() {
@@ -157,10 +87,9 @@ function load() {
   return { horizons: [], activeId: null };
 }
 
-const stored = (h) => ({ id: h.id, name: h.name, points: h.points, overhangs: h.overhangs || [],
-  photo: h.photo, hasPhoto: !!h.hasPhoto });
+const stored = (h) => ({ id: h.id, name: h.name, points: h.points, overhangs: h.overhangs || [] });
 
-/** Persist records (never photo bytes or derived profiles). Returns false on a
+/** Persist records (never derived profiles). Returns false on a
  *  storage failure; callers must surface it rather than claim "Saved". */
 function save(state = db) {
   try {
@@ -201,7 +130,6 @@ function uniqueName(base) {
 function createHorizon(name, fields = {}) {
   if (db.horizons.length >= MAX_HORIZONS) return null;
   const h = withProfile(normalizeHorizon({ id: newId(), name: uniqueName(name), ...fields }));
-  h.hasPhoto = !!fields.hasPhoto && !!h.photo;
   const previous = db.activeId;
   db.horizons.push(h);
   db.activeId = h.id;
@@ -224,80 +152,31 @@ function deleteHorizon(id) {
   db.horizons = db.horizons.filter((h) => h.id !== id);
   if (db.activeId === id) db.activeId = db.horizons.length ? db.horizons[0].id : null;
   const ok = save();
-  forgetPhoto(id);
-  photoDel(id).catch(() => {}); // an orphaned photo does not affect planning
   announceHorizonChanged(activeHorizon(), 'delete');
   return ok;
 }
 
 /* ------------------------------ backup and restore ------------------------------ */
 
-function blobToDataUrl(blob) {
-  return new Promise((resolve, reject) => {
-    try {
-      const rd = new FileReader();
-      rd.onload = () => typeof rd.result === 'string'
-        ? resolve(rd.result) : reject(new Error('Could not encode horizon photo'));
-      rd.onerror = () => reject(rd.error || new Error('Could not read horizon photo'));
-      rd.readAsDataURL(blob);
-    } catch (error) { reject(error); }
-  });
-}
-
-function dataUrlBytes(dataUrl) {
-  // Decode locally: fetch(data:) is subject to connect-src.
-  const m = typeof dataUrl === 'string'
-    ? /^data:(image\/(?:jpeg|png))(;base64)?,([\s\S]*)$/i.exec(dataUrl) : null;
-  if (!m) throw new Error('Invalid horizon photo data URL');
-  const bin = m[2] ? atob(m[3]) : decodeURIComponent(m[3]);
-  if (!bin.length) throw new Error('Horizon photo is empty');
-  const arr = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
-  return { type: m[1].toLowerCase(), bytes: arr };
-}
-
-function dataUrlToBlob(dataUrl) {
-  const { type, bytes } = dataUrlBytes(dataUrl);
-  return new Blob([bytes], { type });
-}
-
-/** Backup section with every stored photo embedded as a data URL. A photo that
- *  should exist but cannot be read fails the backup: a safety snapshot must
- *  not silently omit data needed for rollback. */
-export async function exportHorizonsWithPhotos() {
-  const horizons = [];
-  for (const h of db.horizons) {
-    const rec = stored(h);
-    if (h.hasPhoto) {
-      const blob = photos.get(h.id)?.blob || await photoGet(h.id);
-      if (!(blob instanceof Blob) || !blob.size) {
-        throw new Error(`The photo of horizon ${h.name} is missing or unreadable; backup cancelled`);
-      }
-      rec.image = await blobToDataUrl(blob);
-    }
-    horizons.push(rec);
-  }
-  return { horizons, activeId: db.activeId };
+/** Backup section: the stored records. Embedded photos of older builds are
+ *  gone, so nothing here can be missing or unreadable. */
+export function exportHorizons() {
+  return { horizons: db.horizons.map(stored), activeId: db.activeId };
 }
 
 /** Validate a backup's horizon section into a canonical snapshot (pure).
- *  Returns null when anything in it is malformed: ids, points, placements,
- *  duplicates or photo bytes. `hasPhoto` is true only for embedded bytes. */
+ *  Returns null when anything in it is malformed: ids, points, overhangs or
+ *  duplicates. Photo placements and embedded images from older backups are
+ *  ignored; their skylines and overhangs restore as they are. */
 export function normalizeHorizons(data) {
   if (!data || typeof data !== 'object' || !Array.isArray(data.horizons)) return null;
   if (data.horizons.length > MAX_HORIZONS) return null;
   try {
     const seen = new Set();
     const horizons = data.horizons.map((raw) => {
-      const image = raw && raw.image != null ? raw.image : null;
-      const rec = normalizeHorizon({ ...raw, hasPhoto: image != null }, true);
+      const rec = normalizeHorizon(raw, true);
       if (seen.has(rec.id)) throw new Error('duplicate horizon id');
       seen.add(rec.id);
-      if (image != null) {
-        if (!rec.photo) throw new Error('a horizon photo needs a placement');
-        photoFileDimensions(dataUrlBytes(image).bytes.subarray(0, 1048576));
-        rec.image = image;
-      }
       return withProfile(rec);
     });
     const activeId = seen.has(data.activeId) ? data.activeId : (horizons[0]?.id ?? null);
@@ -305,73 +184,26 @@ export function normalizeHorizons(data) {
   } catch { return null; }
 }
 
-/** Replace all horizons and photos with a normalized snapshot. Resolves true
- *  after the photo transaction and the record write both committed, false on
- *  an ordinary failure (nothing changed). A failed rollback throws. */
+/** Replace all horizons with a normalized snapshot. Resolves true after the
+ *  record write committed, false on an ordinary failure (nothing changed). */
 export async function applyHorizonsSnapshot(snapshot) {
   if (!snapshot || !Array.isArray(snapshot.horizons)) return false;
-  const pending = [];
   let candidate;
   try {
     candidate = {
-      horizons: snapshot.horizons.map((h) => {
-        if (h.image) pending.push([h.id, dataUrlToBlob(h.image)]);
-        const rec = withProfile(normalizeHorizon(stored(h), true));
-        rec.hasPhoto = !!h.image && !!rec.photo;
-        return rec;
-      }),
+      horizons: snapshot.horizons.map((h) => withProfile(normalizeHorizon(stored(h), true))),
       activeId: snapshot.activeId || null,
     };
   } catch { return false; }
   if (!candidate.horizons.some((h) => h.id === candidate.activeId)) {
     candidate.activeId = candidate.horizons[0]?.id ?? null;
   }
-  // Without photos on either side, photo storage is not involved at all (it
-  // may be unavailable, e.g. in some private windows).
-  if (!pending.length && !db.horizons.some((h) => h.hasPhoto)) {
-    if (!save(candidate)) return false;
-    replaceAll(candidate);
-    return true;
-  }
-  let dbh, previousRaw, wroteRecords = false, rollbackError = null;
-  try {
-    previousRaw = localStorage.getItem(LS_KEY);
-    dbh = await photoDbOpen();
-    await new Promise((resolve, reject) => {
-      const tx = dbh.transaction('photos', 'readwrite');
-      tx.oncomplete = resolve;
-      tx.onerror = () => {};
-      tx.onabort = () => {
-        // IndexedDB rolls the photos back; restore the record half too.
-        if (wroteRecords) {
-          try {
-            if (previousRaw === null) localStorage.removeItem(LS_KEY);
-            else localStorage.setItem(LS_KEY, previousRaw);
-          } catch (error) { rollbackError = error; }
-        }
-        reject(tx.error || new Error('Horizon restore transaction aborted'));
-      };
-      try {
-        const store = tx.objectStore('photos');
-        let last = store.clear();
-        for (const [id, blob] of pending) last = store.put(blob, id);
-        // Runs while the transaction can still be aborted.
-        last.onsuccess = () => {
-          if (!save(candidate)) { tx.abort(); return; }
-          wroteRecords = true;
-        };
-      } catch (error) { tx.abort(); reject(error); }
-    });
-  } catch (error) {
-    if (rollbackError) throw new AggregateError([error, rollbackError], 'Horizon restore failed and its records could not be rolled back');
-    return false;
-  } finally { if (dbh) dbh.close(); }
+  if (!save(candidate)) return false;
   replaceAll(candidate);
   return true;
 }
 
 function replaceAll(candidate) {
-  for (const id of [...photos.keys()]) forgetPhoto(id);
   db = candidate;
   // The open editor still references a replaced record; a later flush must
   // not save that obsolete session over the restored data.
@@ -518,7 +350,7 @@ const HIT_PX = 9;
 /** Presentation state that survives re-rendering the same horizon. */
 const ui = {
   id: null, mode: 'draw', zoom: 1, fx: 180, fy: 30, selected: -1, ohSel: null,
-  opacity: 0.8, grid: true, guideFor: null, landmark: null, sun: null, compassOffset: 0,
+  grid: true, compassOffset: 0,
   openPanels: { points: false, display: false, compass: false },
 };
 
@@ -608,16 +440,6 @@ function download(filename, text) {
 
 const fileSlug = (name) => (String(name).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'horizon');
 
-/** Check an uploaded photo and decode it. Throws with a plain message. */
-async function readPhotoFile(file) {
-  if (!file || !/^image\/(jpeg|png)$/i.test(file.type || '')) throw new Error('Pick a JPEG or PNG photo.');
-  if (file.size > MAX_UPLOAD_BYTES) {
-    throw new Error(`That photo is ${(file.size / 1048576).toFixed(1)} MB; the limit is 25 MB.`);
-  }
-  photoFileDimensions(new Uint8Array(await file.slice(0, 1048576).arrayBuffer()));
-  return decodePhoto(file);
-}
-
 /**
  * Horizon tab. `box` is the #view container; `onChanged` runs after a change
  * that other views should notice (they also listen to planner events).
@@ -626,18 +448,13 @@ export function renderHorizon(box, onChanged = () => {}, context = {}) {
   if (typeof context.site === 'function') siteContext = context.site;
   const h = activeHorizon();
   if (!h || ui.id !== h.id) {
-    Object.assign(ui, { id: h ? h.id : null, mode: 'draw', zoom: 1, fx: 180, fy: 30, selected: -1,
-      ohSel: null, landmark: null, sun: null });
-    // Open a partial photo zoomed to itself rather than as a sliver of the circle.
-    if (h && h.photo && h.photo.width < 360) {
-      Object.assign(ui, clampView(Math.min(3, 360 / (h.photo.width * 1.4)), h.photo.heading, h.photo.tilt + 12));
-    }
+    Object.assign(ui, { id: h ? h.id : null, mode: 'draw', zoom: 1, fx: 180, fy: 30, selected: -1, ohSel: null });
   }
   const row = (item) => `
     <li data-id="${esc(item.id)}">
       <input type="radio" name="hz-active" id="hz-r-${esc(item.id)}" ${h && item.id === h.id ? 'checked' : ''}>
       <label class="p-name" for="hz-r-${esc(item.id)}">${esc(item.name)}</label>
-      <span class="p-tags">${item.points.length} pt${item.hasPhoto ? ' · photo' : ''}</span>
+      <span class="p-tags">${item.points.length} pt</span>
       <button class="btn small" type="button" data-del="${esc(item.id)}" aria-label="Delete horizon ${esc(item.name)}">🗑</button>
     </li>`;
   box.innerHTML = `
@@ -648,18 +465,16 @@ export function renderHorizon(box, onChanged = () => {}, context = {}) {
           <ul class="pick" id="hz-list" aria-label="Horizon used for planning">${db.horizons.length
             ? db.horizons.map(row).join('') : '<li class="hz-empty">No horizon yet. Without one, only the minimum altitude limits the sky.</li>'}</ul>
           <div class="hz-new">
-            <label class="btn primary" for="hz-photo-file" role="button" tabindex="0">📷 New from photo</label>
-            <button class="btn" type="button" id="hz-new-draw">✏ Draw by hand</button>
+            <button class="btn primary" type="button" id="hz-new-draw">✏ Draw by hand</button>
             <label class="btn" for="hz-import-file" role="button" tabindex="0">⬆ Import file</label>
           </div>
-          <input type="file" id="hz-photo-file" accept="image/jpeg,image/png" class="vhidden" hidden tabindex="-1">
           <input type="file" id="hz-import-file" accept=".txt,.hrz,.csv,text/plain" class="vhidden" hidden tabindex="-1">
-          <p class="sub" id="hz-note" role="status" aria-live="polite">Horizons and photos stay in this browser. Changes save automatically.</p>
+          <p class="sub" id="hz-note" role="status" aria-live="polite">Horizons stay in this browser. Changes save automatically.</p>
         </div>
       </aside>
       ${h ? editorHTML(h) : `<section class="horizon-stage" aria-label="Horizon editor">
         <h3 class="horizon-editor-title">Horizon editor</h3>
-        <p class="sub">A horizon is the skyline your trees and roofs make. Start from a photo of it, draw it by hand on a compass grid, or import a Stellarium or N.I.N.A. horizon file.</p>
+        <p class="sub">A horizon is the skyline your trees and roofs make. Draw it on a compass grid, trace it with a phone, or import a Stellarium or N.I.N.A. horizon file.</p>
       </section>`}
     </div>`;
   const sp = $('.splash', box);
@@ -680,7 +495,6 @@ function editorHTML(h) {
         <div class="ed-group hz-modes" role="group" aria-label="Mode">
           <button class="btn" type="button" id="hz-mode-draw" aria-pressed="true">✏ Draw</button>
           <button class="btn" type="button" id="hz-mode-overhang" aria-pressed="false" title="Draw the edge of a balcony, roof or branch: the sky above it is blocked">⌒ Overhang</button>
-          <button class="btn" type="button" id="hz-mode-align" aria-pressed="false">✥ Align photo</button>
         </div>
         <div class="ed-group ed-history">
           <button class="btn" type="button" id="ed-undo" title="Undo (Ctrl+Z)">↩ Undo</button>
@@ -688,15 +502,6 @@ function editorHTML(h) {
           <button class="btn" type="button" id="hz-clear" title="Remove the skyline and all overhangs (asks first; undoable)">Clear…</button>
         </div>
         <span id="ed-status" class="ed-status" role="status" aria-live="polite">Saved</span>
-      </div>
-      <div id="hz-guide" class="hz-guide" hidden>
-        <p><b>Photo added.</b> Three steps:</p>
-        <ol>
-          <li>Check its width under Photo (360° for a full panorama, about 65° for a phone photo).</li>
-          <li>Line up north: <button class="btn small" type="button" data-guide="align">Align photo</button> and drag it, or use <i>Set north from a landmark</i>.</li>
-          <li>Trace the skyline in Draw mode, or <button class="btn small" type="button" data-guide="detect">Detect skyline</button> and correct it.</li>
-        </ol>
-        <button class="btn small" type="button" data-guide="close">Got it</button>
       </div>
       <div class="hz-canvas-box" id="hz-box">
         <canvas id="hz-canvas" tabindex="0" role="img" aria-label="Horizon skyline on a compass grid" aria-describedby="hz-summary hz-keys"></canvas>
@@ -715,7 +520,6 @@ function editorHTML(h) {
       <p id="hz-keys" class="visually-hidden">Keyboard: in Draw mode the arrows work on skyline points, in Overhang mode on overhang edge points. Left and Right arrows select the previous or next point; with Shift they move it sideways. Up and Down arrows raise or lower it. Delete removes it. Use "Points by numbers" to add points and overhangs.</p>
     </section>
     <aside class="horizon-settings-rail" aria-label="Horizon settings">
-      <section class="hz-panel" id="hz-photo-panel" aria-labelledby="hz-photo-title"></section>
       <details class="hz-panel" id="hz-points-panel">
         <summary>Points by numbers</summary>
         <fieldset class="hz-fields" id="hz-selected">
@@ -759,7 +563,6 @@ function editorHTML(h) {
       </details>
       <details class="hz-panel ed-display" id="hz-display-panel">
         <summary>Display</summary>
-        <label>Photo opacity <input id="hz-opacity" type="range" min="15" max="100" value="${Math.round(ui.opacity * 100)}"></label>
         <label><input id="hz-grid" type="checkbox" ${ui.grid ? 'checked' : ''}> Show grid</label>
       </details>
     </aside>`;
@@ -779,8 +582,7 @@ function wireList(box, onChanged) {
       if (!item) return;
       const ok = await confirmDialog(box, {
         title: `Delete ${item.name}?`,
-        body: item.hasPhoto ? 'The skyline and its photo are removed from this browser. This cannot be undone.'
-          : 'The skyline is removed from this browser. This cannot be undone.',
+        body: 'The skyline is removed from this browser. This cannot be undone.',
         ok: 'Delete',
       });
       if (!ok) return;
@@ -814,30 +616,7 @@ function wireList(box, onChanged) {
     if (created(createHorizon('Horizon'))) rerender();
   });
 
-  const newFromPhoto = async (file) => {
-    if (tooMany()) return;
-    let entry;
-    try { entry = await readPhotoFile(file); } catch (error) { note(error.message); return; }
-    flushHorizonEdits();
-    const name = String(file.name || 'Horizon').replace(/\.[a-z0-9]+$/i, '').slice(0, 60) || 'Horizon';
-    const h = createHorizon(name, { photo: defaultPhotoPlacement(entry.width, entry.height), hasPhoto: true });
-    if (!created(h)) { URL.revokeObjectURL(entry.url); return; }
-    photos.set(h.id, entry);
-    ui.guideFor = h.id;
-    try { await photoSet(h.id, entry.blob); } catch {
-      note('The photo could not be stored in this browser; it is only kept until you close the tab.');
-    }
-    rerender();
-  };
-  $('#hz-photo-file', box).addEventListener('change', (ev) => {
-    const f = ev.target.files && ev.target.files[0];
-    ev.target.value = '';
-    if (f) newFromPhoto(f);
-  });
-
-  $('#hz-import-file', box).addEventListener('change', async (ev) => {
-    const f = ev.target.files && ev.target.files[0];
-    ev.target.value = '';
+  const importFile = async (f) => {
     if (!f || tooMany()) return;
     if (f.size > MAX_IMPORT_BYTES) { note('That file is larger than 1 MB; a horizon file is much smaller.'); return; }
     let parsed;
@@ -850,6 +629,11 @@ function wireList(box, onChanged) {
     if (!created(createHorizon(name, { points: parsed.points }))) return;
     rerender();
     note(`Imported ${parsed.points.length} points from ${f.name}${parsed.skipped ? ` (${parsed.skipped} other lines skipped)` : ''}.`);
+  };
+  $('#hz-import-file', box).addEventListener('change', (ev) => {
+    const f = ev.target.files && ev.target.files[0];
+    ev.target.value = '';
+    importFile(f);
   });
 
   if (!box.__hzDrop) {
@@ -861,8 +645,8 @@ function wireList(box, onChanged) {
       const f = ev.dataTransfer?.files?.[0];
       if (!f || location.hash !== '#horizon') return;
       ev.preventDefault();
-      if (/^image\//.test(f.type)) newFromPhoto(f);
-      else note('Drop a JPEG or PNG photo here, or use Import file for a horizon text file.');
+      if (/^image\//.test(f.type)) note('Photos are no longer used for horizons. Draw the skyline, trace it with a phone, or drop a horizon text file.');
+      else importFile(f);
     });
   }
 }
@@ -880,7 +664,6 @@ function wireEditor(box, h, onChanged) {
   const hist = same ? activeSession.hist : newHistory(h);
   if (activeSession?.disconnect) activeSession.disconnect();
 
-  let photo = photos.get(h.id) || null;   // decoded photo entry, once loaded
   let gesture = null;                     // the pointer gesture in progress
   let spaceDown = false;
   let saveFailed = false;
@@ -945,36 +728,13 @@ function wireEditor(box, h, onChanged) {
     ctx.beginPath();
     ctx.rect(f.x, f.y, f.w, f.h);
     ctx.clip();
-    if (photo && h.photo) drawPhoto(f);
-    ctx.setTransform(size.dpr, 0, 0, size.dpr, 0, 0);
     if (ui.grid) drawGrid(f, V);
     drawMinAlt(f, V);
     drawSkyline(f, V);
     drawOverhangs(f, V);
     if (gesture?.type === 'sketch') drawSketch(f, V);
-    if (ui.mode === 'align' && photo && h.photo) drawAlignHandles(f, V);
     ctx.restore();
     drawRulers(f, V);
-  }
-
-  function drawPhoto(f) {
-    const pl = h.photo, iw = photo.width, ih = photo.height;
-    const s = pl.width / iw, r = pl.roll * Math.PI / 180, c = Math.cos(r), sn = Math.sin(r);
-    const shifts = pl.width >= 360 ? [-360, 0, 360] : [-360, 0, 360].filter((k) => {
-      const az = pl.heading + k;
-      return az + pl.width > f.a0 && az - pl.width < f.a0 + 360 / ui.zoom;
-    });
-    ctx.globalAlpha = ui.opacity;
-    for (const k of shifts) {
-      // photo pixel -> world -> screen, as one affine transform (see photoToWorld)
-      const a = f.kx * c * s, b = -f.ky * sn * s, cc = f.kx * sn * s, d = f.ky * c * s;
-      const e = f.x + (pl.heading + k - f.a0) * f.kx + f.kx * (c * (-s * iw / 2) - sn * (s * ih / 2));
-      const ff = f.y + (f.alt1 - pl.tilt) * f.ky - f.ky * (sn * (-s * iw / 2) + c * (s * ih / 2));
-      const D = size.dpr;
-      ctx.setTransform(a * D, b * D, cc * D, d * D, e * D, ff * D);
-      ctx.drawImage(photo.img, 0, 0);
-    }
-    ctx.globalAlpha = 1;
   }
 
   const niceStep = (pxPerDeg, minPx, steps) => steps.find((s) => s * pxPerDeg >= minPx) || steps[steps.length - 1];
@@ -1093,45 +853,6 @@ function wireEditor(box, h, onChanged) {
     ctx.setLineDash([]);
   }
 
-  /* The level line runs through the photo centre along its own horizontal;
-     the two round handles rotate the photo (roll). */
-  function levelHandles() {
-    const pl = h.photo, iw = photo.width, ih = photo.height;
-    const half = (iw / 2) * Math.min(1, 50 / pl.width);
-    return [-1, 1].map((side) => photoToWorld(pl, iw, ih, iw / 2 + side * half, ih / 2));
-  }
-
-  /* A full panorama is not rolled: on a sphere its tilt would be a wave, not a
-     rotation, and panorama apps level their output. Only partial photos get
-     level handles. */
-  const canRoll = () => !!(h.photo && photo && h.photo.width < 360);
-
-  function drawAlignHandles(f, V) {
-    if (!canRoll()) return;
-    const [a, b] = levelHandles();
-    const bx = X(f, a.az + azDelta(b.az, a.az));   // keep the line unbroken across north
-    ctx.strokeStyle = V.warn;
-    ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.moveTo(X(f, a.az), Y(f, a.alt)); ctx.lineTo(bx, Y(f, b.alt)); ctx.stroke();
-    for (const [x, y] of [[X(f, a.az), Y(f, a.alt)], [bx, Y(f, b.alt)]]) {
-      ctx.beginPath(); ctx.arc(x, y, 7, 0, Math.PI * 2);
-      ctx.fillStyle = V.canvas; ctx.fill(); ctx.stroke();
-    }
-    if (h.photo.width < 360) {   // outline of a partial photo
-      const pl = h.photo, iw = photo.width, ih = photo.height;
-      const corners = [[0, 0], [iw, 0], [iw, ih], [0, ih]].map(([x, y]) => photoToWorld(pl, iw, ih, x, y));
-      ctx.strokeStyle = V.dim;
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      corners.forEach((p, i) => {
-        const az = pl.heading + azDelta(p.az, pl.heading);
-        (i ? ctx.lineTo : ctx.moveTo).call(ctx, X(f, az), Y(f, p.alt));
-      });
-      ctx.closePath();
-      ctx.stroke();
-    }
-  }
-
   function drawRulers(f, V) {
     ctx.fillStyle = V.text;
     ctx.font = '11px system-ui, sans-serif';
@@ -1167,7 +888,7 @@ function wireEditor(box, h, onChanged) {
   function renderSummary() {
     $('#hz-summary', box).textContent = describeHorizon(h);
     const tag = box.querySelector(`#hz-list li[data-id="${CSS.escape(h.id)}"] .p-tags`);
-    if (tag) tag.textContent = `${h.points.length} pt${h.hasPhoto ? ' · photo' : ''}`;
+    if (tag) tag.textContent = `${h.points.length} pt`;
   }
 
   /** The selected point of the current mode's layer, or undefined. */
@@ -1176,7 +897,7 @@ function wireEditor(box, h, onChanged) {
     : h.points[ui.selected]);
 
   function renderSelection() {
-    const p = ui.mode === 'align' ? undefined : selectedPoint();
+    const p = selectedPoint();
     const az = $('#hz-sel-az', box), alt = $('#hz-sel-alt', box), del = $('#hz-sel-del', box);
     for (const el of [az, alt, del]) el.disabled = !p;
     az.value = p ? String(p.az) : '';
@@ -1184,33 +905,23 @@ function wireEditor(box, h, onChanged) {
   }
 
   function renderMode() {
-    const hasPhoto = !!(h.photo && photo);
-    if (ui.mode === 'align' && !hasPhoto) ui.mode = 'draw';
     $('#hz-mode-draw', box).setAttribute('aria-pressed', String(ui.mode === 'draw'));
     $('#hz-mode-overhang', box).setAttribute('aria-pressed', String(ui.mode === 'overhang'));
-    $('#hz-mode-align', box).setAttribute('aria-pressed', String(ui.mode === 'align'));
-    $('#hz-mode-align', box).disabled = !hasPhoto;
     cvs.dataset.mode = ui.mode;
-    $('#hz-help', box).textContent = ui.sun === 'pick'
-      ? 'Click the centre of the Sun in the photo. Esc cancels.'
-      : ui.landmark === 'pick'
-      ? 'Click the landmark in the photo. Esc cancels.'
-      : ui.mode === 'align'
-        ? `Drag the photo to move it (north and tilt)${canRoll() ? ' · drag a round handle to level it' : ''} · the skyline moves with the photo`
-        : ui.mode === 'overhang'
-          ? 'Drag along the underside of a balcony, roof or branch: the sky above that edge is blocked · drag a point = move · Delete = remove'
-          : 'Click = add point · drag a point = move · drag across the grid = sketch the skyline · Delete = remove · wheel = zoom · Space+drag = pan';
+    $('#hz-help', box).textContent = ui.mode === 'overhang'
+      ? 'Drag along the underside of a balcony, roof or branch: the sky above that edge is blocked · drag a point = move · Delete = remove'
+      : 'Click = add point · drag a point = move · drag across the grid = sketch the skyline · Delete = remove · wheel = zoom · Space+drag = pan';
     $('#ed-zoom-label', box).textContent = `${ui.zoom.toFixed(1)}×`;
   }
 
-  /** After any change to points or photo: derive, save, announce, repaint. */
+  /** After any change to points or overhangs: derive, save, announce, repaint. */
   function changed(cause = 'edit') {
     withProfile(h);
     persist();
     announceHorizonChanged(h, cause);
     if (ui.selected >= h.points.length) ui.selected = -1;
     if (ui.ohSel && !h.overhangs[ui.ohSel.i]?.[ui.ohSel.j]) ui.ohSel = null;
-    renderStatus(); renderSummary(); renderSelection(); renderPhotoPanel(); renderMode();
+    renderStatus(); renderSummary(); renderSelection(); renderMode();
     draw();
     onChanged();
   }
@@ -1218,13 +929,6 @@ function wireEditor(box, h, onChanged) {
   function commit(cause = 'edit') {
     if (historyCommit(hist, h)) changed(cause);
     else draw();
-  }
-
-  /** Keep the photo in view after it jumps (typed numbers or a landmark). */
-  function followPhoto() {
-    if (!h.photo || !size.w) return;
-    const f = frame(), x = X(f, h.photo.heading);
-    if (x < f.x || x > f.x + f.w) Object.assign(ui, clampView(ui.zoom, h.photo.heading, ui.fy));
   }
 
   const selectAz = (az) => { ui.selected = h.points.findIndex((p) => Math.abs(p.az - az) < 0.006); };
@@ -1238,13 +942,6 @@ function wireEditor(box, h, onChanged) {
     }));
     ui.ohSel = bestD < 0.02 ? best : null;
   };
-
-  /** Move the photo; the skyline and overhangs move with it. */
-  function placePhoto(next, from = h.photo, points = h.points, overhangs = h.overhangs) {
-    h.points = reprojectPoints(points, photo.width, photo.height, from, next);
-    h.overhangs = reprojectOverhangs(overhangs, photo.width, photo.height, from, next);
-    h.photo = next;
-  }
 
   /* ---- pointer gestures ---- */
   function hitPoint(f, x, y) {
@@ -1267,13 +964,6 @@ function wireEditor(box, h, onChanged) {
     return best;
   }
 
-  function hitHandle(f, x, y) {
-    if (!canRoll()) return -1;
-    const [a, b] = levelHandles();
-    const bAz = a.az + azDelta(b.az, a.az);
-    return [[a.az, a.alt], [bAz, b.alt]].findIndex(([az, alt]) => Math.hypot(X(f, az) - x, Y(f, alt) - y) <= 10);
-  }
-
   cvs.addEventListener('contextmenu', (ev) => ev.preventDefault());
   cvs.addEventListener('pointerdown', (ev) => {
     if (gesture) return;
@@ -1283,23 +973,6 @@ function wireEditor(box, h, onChanged) {
       gesture = { type: 'pan', x, y, fx: ui.fx, fy: ui.fy };
     } else if (ev.button !== 0) {
       return;
-    } else if (ui.sun === 'pick' && photo && h.photo) {
-      const px = worldToPhoto(h.photo, photo.width, photo.height, wrapAz(w.az), w.alt);
-      ui.sun = { x: px.x, y: px.y };
-      renderPhotoPanel(); renderMode();
-      openSunForm();
-      return;
-    } else if (ui.landmark === 'pick' && photo && h.photo) {
-      const px = worldToPhoto(h.photo, photo.width, photo.height, wrapAz(w.az), w.alt);
-      ui.landmark = { x: px.x, y: px.y };
-      renderPhotoPanel(); renderMode();
-      $('#hz-landmark-az', box)?.focus();
-      return;
-    } else if (ui.mode === 'align' && photo && h.photo) {
-      const handle = hitHandle(f, x, y);
-      gesture = { type: handle >= 0 ? 'roll' : 'move', start: w, photo0: { ...h.photo },
-        points0: h.points.map((p) => ({ ...p })), overhangs0: h.overhangs.map((l) => l.map((p) => ({ ...p }))) };
-      if (handle >= 0) gesture.angle0 = Math.atan2(w.alt - h.photo.tilt, azDelta(w.az, h.photo.heading));
     } else if (ui.mode === 'overhang') {
       const hit = hitOverhang(f, x, y);
       if (hit) {
@@ -1347,18 +1020,6 @@ function wireEditor(box, h, onChanged) {
     } else if (gesture.type === 'sketch') {
       if (Math.hypot(x - gesture.x, y - gesture.y) > 4) gesture.far = true;
       gesture.samples.push({ az: Math.max(0, Math.min(360, w.az)), alt: clampAlt(w.alt) });
-    } else if (gesture.type === 'move' || gesture.type === 'roll') {
-      const p0 = gesture.photo0;
-      let next;
-      if (gesture.type === 'move') {
-        next = { ...p0, heading: wrapAz(p0.heading + (w.az - gesture.start.az)), tilt: Math.max(-90, Math.min(90, p0.tilt + (w.alt - gesture.start.alt))) };
-      } else {
-        const angle = Math.atan2(w.alt - p0.tilt, azDelta(w.az, p0.heading));
-        next = { ...p0, roll: azDelta(p0.roll + (angle - gesture.angle0) * 180 / Math.PI, 0) };
-      }
-      placePhoto(normalizePhotoPlacement(next), p0, gesture.points0, gesture.overhangs0);
-      gesture.moved = true;
-      renderPhotoFields();
     }
     draw();
   });
@@ -1403,9 +1064,6 @@ function wireEditor(box, h, onChanged) {
         ui.selected = -1;
         commit();
       }
-    } else if ((g.type === 'move' || g.type === 'roll') && g.moved) {
-      if (apply) commit('align');
-      else { h.photo = g.photo0; h.points = g.points0; h.overhangs = g.overhangs0; draw(); }
     } else draw();
   }
 
@@ -1440,7 +1098,6 @@ function wireEditor(box, h, onChanged) {
     if (ev.key === ' ') { spaceDown = true; ev.preventDefault(); return; }
     if (ev.key === 'Escape') {
       if (gesture) finishGesture(false);
-      else if (ui.landmark || ui.sun) { ui.landmark = null; ui.sun = null; renderPhotoPanel(); renderMode(); }
       else { ui.selected = -1; renderSelection(); draw(); }
       return;
     }
@@ -1546,10 +1203,9 @@ function wireEditor(box, h, onChanged) {
     ui.ohSel = null;
     commit();
   });
-  const setMode = (mode) => { settle(); ui.mode = mode; ui.landmark = null; ui.sun = null; renderMode(); renderPhotoPanel(); draw(); };
+  const setMode = (mode) => { settle(); ui.mode = mode; renderMode(); draw(); };
   $('#hz-mode-draw', box).addEventListener('click', () => setMode('draw'));
   $('#hz-mode-overhang', box).addEventListener('click', () => setMode('overhang'));
-  $('#hz-mode-align', box).addEventListener('click', () => setMode('align'));
 
   $('#hz-name', box).addEventListener('change', (ev) => {
     const name = ev.target.value.trim().slice(0, 80);
@@ -1564,16 +1220,6 @@ function wireEditor(box, h, onChanged) {
     if (!h.points.length) { note('There is nothing to export yet: the skyline has no points.'); return; }
     download(`${fileSlug(h.name)}-horizon.txt`, formatHorizonFile(h));
     if (h.overhangs.length) note('Exported the skyline. Horizon files have no overhangs, so those stay only in NightSeam and its backups.');
-  });
-
-  /* ---- guide after a new photo ---- */
-  const guide = $('#hz-guide', box);
-  guide.hidden = ui.guideFor !== h.id;
-  guide.addEventListener('click', (ev) => {
-    const action = ev.target.closest('[data-guide]')?.dataset.guide;
-    if (action === 'align') setMode('align');
-    if (action === 'detect') detect();
-    if (action === 'close') { ui.guideFor = null; guide.hidden = true; cvs.focus(); }
   });
 
   /* ---- points by numbers ---- */
@@ -1637,257 +1283,7 @@ function wireEditor(box, h, onChanged) {
   }
 
   /* ---- display ---- */
-  $('#hz-opacity', box).addEventListener('input', (ev) => { ui.opacity = Number(ev.target.value) / 100; draw(); });
   $('#hz-grid', box).addEventListener('change', (ev) => { ui.grid = ev.target.checked; draw(); });
-
-  /* ---- photo panel ---- */
-  const panel = $('#hz-photo-panel', box);
-  function renderPhotoPanel() {
-    const missing = h.hasPhoto && !photo;
-    if (!h.photo || !h.hasPhoto) {
-      panel.innerHTML = `
-        <h4 id="hz-photo-title">Photo</h4>
-        <p class="sub">A photo of your skyline makes tracing easier. It stays in this browser.</p>
-        <label class="btn" for="hz-attach-file" role="button" tabindex="0">📷 Add a photo</label>
-        <input type="file" id="hz-attach-file" accept="image/jpeg,image/png" class="vhidden" hidden tabindex="-1">`;
-    } else if (missing) {
-      panel.innerHTML = `
-        <h4 id="hz-photo-title">Photo</h4>
-        <p class="sub" id="hz-photo-state">Loading the photo…</p>
-        <button class="btn small" type="button" id="hz-photo-remove">Remove photo</button>`;
-      $('#hz-photo-remove', panel).addEventListener('click', removePhoto);
-    } else if (panel.dataset.state !== 'fields') {
-      panel.innerHTML = `
-        <h4 id="hz-photo-title">Photo</h4>
-        <div class="hz-fields">
-          <label>Width (°) <input id="hz-ph-width" type="number" min="1" max="360" step="1"></label>
-          <label>North: centre direction (°) <input id="hz-ph-heading" type="number" min="0" max="359.99" step="0.5"></label>
-          <label>Tilt: centre altitude (°) <input id="hz-ph-tilt" type="number" min="-90" max="90" step="0.5"></label>
-          <label>Roll (°) <input id="hz-ph-roll" type="number" min="-180" max="180" step="0.5"></label>
-        </div>
-        <p class="sub">360° is a full panorama; a phone photo is about 65° wide, a phone panorama 120–240°. The skyline moves with the photo.</p>
-        <div class="btnrow">
-          <button class="btn small" type="button" id="hz-landmark">Set north from a landmark</button>
-          <button class="btn small" type="button" id="hz-sun">Set north from the Sun</button>
-          <button class="btn small" type="button" id="hz-detect">Detect skyline</button>
-          <button class="btn small" type="button" id="hz-photo-remove">Remove photo</button>
-        </div>
-        <div id="hz-landmark-form" class="hz-landmark" hidden>
-          <label>Compass direction of that landmark (°) <input id="hz-landmark-az" type="number" min="0" max="359.99" step="0.5"></label>
-          <div class="btnrow">
-            <button class="btn small primary" type="button" id="hz-landmark-apply">Apply</button>
-            <button class="btn small" type="button" id="hz-landmark-cancel">Cancel</button>
-          </div>
-        </div>
-        <div id="hz-sun-form" class="hz-landmark" hidden>
-          <label>When the photo was taken (site time) <input id="hz-sun-time" type="datetime-local" step="1"></label>
-          <p class="sub" id="hz-sun-source"></p>
-          <div class="btnrow">
-            <button class="btn small primary" type="button" id="hz-sun-apply">Apply</button>
-            <button class="btn small" type="button" id="hz-sun-cancel">Cancel</button>
-          </div>
-        </div>`;
-      wirePhotoFields();
-    }
-    panel.dataset.state = h.photo && h.hasPhoto && !missing ? 'fields' : 'other';
-    const attach = $('#hz-attach-file', panel);
-    if (attach) {
-      const label = $('label[for="hz-attach-file"]', panel);
-      label.addEventListener('keydown', (ev) => {
-        if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); attach.click(); }
-      });
-      attach.addEventListener('change', async (ev) => {
-        const f = ev.target.files && ev.target.files[0];
-        ev.target.value = '';
-        if (!f) return;
-        let entry;
-        try { entry = await readPhotoFile(f); } catch (error) { note(error.message); return; }
-        try { await photoSet(h.id, entry.blob); } catch {
-          note('The photo could not be stored in this browser; it is only kept until you close the tab.');
-        }
-        forgetPhoto(h.id);
-        photos.set(h.id, entry);
-        photo = entry;
-        h.photo = defaultPhotoPlacement(entry.width, entry.height);
-        h.hasPhoto = true;
-        ui.guideFor = h.id;
-        guide.hidden = false;
-        // Adding a photo cannot be undone step by step: the history restarts here.
-        Object.assign(hist, newHistory(h));
-        changed('photo');
-      });
-    }
-    renderPhotoFields();
-  }
-
-  function renderPhotoFields() {
-    if (!h.photo || !$('#hz-ph-width', panel)) return;
-    const set = (id, v) => { const el = $(id, panel); if (el && document.activeElement !== el) el.value = String(v); };
-    set('#hz-ph-width', h.photo.width);
-    set('#hz-ph-heading', h.photo.heading);
-    set('#hz-ph-tilt', h.photo.tilt);
-    set('#hz-ph-roll', h.photo.roll);
-    const roll = $('#hz-ph-roll', panel);
-    roll.disabled = h.photo.width >= 360;
-    roll.title = roll.disabled ? 'A full panorama is levelled by the panorama app; roll applies to partial photos.' : '';
-    const form = $('#hz-landmark-form', panel);
-    if (form) form.hidden = !(ui.landmark && typeof ui.landmark === 'object');
-    const btn = $('#hz-landmark', panel);
-    if (btn) btn.setAttribute('aria-pressed', String(!!ui.landmark));
-    const sunForm = $('#hz-sun-form', panel);
-    if (sunForm) sunForm.hidden = !(ui.sun && typeof ui.sun === 'object');
-    $('#hz-sun', panel)?.setAttribute('aria-pressed', String(!!ui.sun));
-  }
-
-  function wirePhotoFields() {
-    for (const key of ['width', 'heading', 'tilt', 'roll']) {
-      $(`#hz-ph-${key}`, panel).addEventListener('change', (ev) => {
-        const v = num(ev.target.value);
-        const patch = { [key]: v };
-        if (key === 'width' && v >= 360) patch.roll = 0;   // full panoramas are not rolled
-        const next = Number.isFinite(v) ? normalizePhotoPlacement({ ...h.photo, ...patch }) : null;
-        if (!next || !photo) { renderPhotoFields(); note('Width is 1–360°, tilt −90 to 90°.'); return; }
-        placePhoto(next);
-        followPhoto();
-        commit('align');
-      });
-    }
-    $('#hz-landmark', panel).addEventListener('click', () => {
-      settle();
-      ui.landmark = ui.landmark ? null : 'pick';
-      renderPhotoFields(); renderMode();
-      if (ui.landmark) { note('Click a landmark in the photo whose compass direction you know.'); cvs.focus(); }
-    });
-    $('#hz-landmark-cancel', panel).addEventListener('click', () => { ui.landmark = null; renderPhotoFields(); renderMode(); });
-    $('#hz-landmark-apply', panel).addEventListener('click', () => {
-      const az = num($('#hz-landmark-az', panel).value);
-      if (!Number.isFinite(az) || !photo || typeof ui.landmark !== 'object' || !ui.landmark) {
-        note('Enter the landmark’s compass direction in degrees (0 = north, 90 = east).');
-        return;
-      }
-      const next = normalizePhotoPlacement({
-        ...h.photo, heading: headingForLandmark(h.photo, photo.width, photo.height, ui.landmark.x, ui.landmark.y, az),
-      });
-      placePhoto(next);
-      ui.landmark = null;
-      followPhoto();
-      renderMode();
-      commit('align');
-      note(`North set: the photo centre now faces ${fmt(next.heading)}° (${cardinal(next.heading)}).`);
-    });
-    $('#hz-sun', panel).addEventListener('click', () => {
-      settle();
-      if (!siteContext()) { note('Set an observing site first: the Sun\u2019s position depends on where you are.'); return; }
-      ui.sun = ui.sun ? null : 'pick';
-      ui.landmark = null;
-      renderPhotoFields(); renderMode();
-      if (ui.sun) { note('Click the centre of the Sun in the photo.'); cvs.focus(); }
-    });
-    $('#hz-sun-cancel', panel).addEventListener('click', () => { ui.sun = null; renderPhotoFields(); renderMode(); });
-    $('#hz-sun-apply', panel).addEventListener('click', applySun);
-    $('#hz-detect', panel).addEventListener('click', detect);
-    $('#hz-photo-remove', panel).addEventListener('click', removePhoto);
-  }
-
-  /* ---- north from the Sun ---- */
-  const pad = (n) => String(n).padStart(2, '0');
-  const wallInput = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
-
-  /** Fill the capture time from the photo's EXIF data when it has one. */
-  async function openSunForm() {
-    const input = $('#hz-sun-time', panel), source = $('#hz-sun-source', panel);
-    if (!input) return;
-    source.textContent = 'Enter when the photo was taken, in the observing site\u2019s time.';
-    input.focus();
-    let taken = null;
-    try { taken = photoCaptureTime(new Uint8Array(await photo.blob.slice(0, 262144).arrayBuffer())); } catch { /* no EXIF */ }
-    if (!taken || !input.isConnected || input.value) return;
-    if (taken.offsetMin == null) {
-      const d = new Date(taken.wall);
-      input.value = `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}T${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}:${pad(d.getUTCSeconds())}`;
-      source.textContent = 'From the photo\u2019s camera clock, read as site time. Check it if the camera was set to another zone.';
-    } else {
-      input.value = wallInput(utcToWall(new Date(taken.wall - taken.offsetMin * 60000)));
-      source.textContent = 'From the photo\u2019s capture time, shown in the observing site\u2019s time.';
-    }
-  }
-
-  function applySun() {
-    const site = siteContext();
-    const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?/.exec($('#hz-sun-time', panel).value || '');
-    if (!site || !photo || !ui.sun || typeof ui.sun !== 'object' || !m) {
-      note('Enter the date and time the photo was taken.');
-      return;
-    }
-    const [y, mo, d, hh, mi, ss] = m.slice(1).map((v) => Number(v || 0));
-    const when = wallFieldsToUtc(y, mo - 1, d, hh, mi, ss);
-    const sun = sunDirection(julianDay(when), site.lat, site.lon);
-    if (sun.alt < -0.5) {
-      note(`At that time the Sun was ${fmt(-sun.alt)}° below the horizon at ${site.label || 'this site'}. Check the date, time and observing site.`);
-      return;
-    }
-    const next = placementFromKnownDirection(h.photo, photo.width, photo.height, ui.sun.x, ui.sun.y, sun.az, sun.alt);
-    placePhoto(next);
-    ui.sun = null;
-    followPhoto();
-    renderMode();
-    commit('align');
-    note(`The Sun was at ${fmt(sun.az)}° (${cardinal(sun.az)}), ${fmt(sun.alt)}° high: north and tilt are set from it.`);
-  }
-
-  async function removePhoto() {
-    const ok = await confirmDialog(box, {
-      title: 'Remove the photo?',
-      body: 'The skyline stays. The photo is deleted from this browser and undo history starts again.',
-      ok: 'Remove photo',
-    });
-    if (!ok) return;
-    settle();
-    forgetPhoto(h.id);
-    photoDel(h.id).catch(() => {});
-    photo = null;
-    h.photo = null;
-    h.hasPhoto = false;
-    ui.mode = 'draw';
-    ui.guideFor = null;
-    guide.hidden = true;
-    Object.assign(hist, newHistory(h));
-    changed('photo');
-  }
-
-  /** Find the skyline in the photo and replace the points it spans. */
-  function detect() {
-    if (!photo || !h.photo) return;
-    settle();
-    const dw = Math.min(DETECT_WIDTH, photo.width);
-    const dh = Math.max(2, Math.round(photo.height * dw / photo.width));
-    const c = document.createElement('canvas');
-    c.width = dw; c.height = dh;
-    const cx = c.getContext('2d', { willReadFrequently: true });
-    cx.drawImage(photo.img, 0, 0, dw, dh);
-    let rows;
-    try { rows = detectSkylineRows(cx.getImageData(0, 0, dw, dh)); } catch {
-      note('The photo could not be read for detection.');
-      return;
-    }
-    const sx = photo.width / dw, sy = photo.height / dh;
-    const line = [];
-    let unwrap = null;
-    rows.forEach((row, x) => {
-      if (row == null) return;
-      const w = photoToWorld(h.photo, photo.width, photo.height, (x + 0.5) * sx, row * sy);
-      const az = unwrap == null ? w.az : unwrap + azDelta(w.az, unwrap);
-      unwrap = az;
-      line.push({ az, alt: clampAlt(w.alt) });
-    });
-    if (line.length < 2) { note('No skyline found. Detection needs a daylight photo with clear sky above the skyline.'); return; }
-    const simple = simplifyLine(line, 0.25);
-    h.points = replacePointsInRange(h.points, simple).slice(0, MAX_POINTS);
-    ui.selected = -1;
-    ui.mode = 'draw';
-    commit('detect');
-    note(`Detected ${simple.length} skyline points. Check them and drag any that are off (trees and wires can confuse detection).`);
-  }
 
   /* ---- phone compass ---- */
   const cmp = { on: false, reading: null, absoluteAt: 0, trace: null, timer: null, frame: null };
@@ -2002,18 +1398,6 @@ function wireEditor(box, h, onChanged) {
   Object.assign(ui, clampView(ui.zoom, ui.fx, ui.fy));
   resize();
   observer?.observe($('#hz-box', box));
-  renderStatus(); renderSummary(); renderSelection(); renderPhotoPanel(); renderMode();
+  renderStatus(); renderSummary(); renderSelection(); renderMode();
   draw();
-  if (h.hasPhoto && !photo) {
-    loadPhoto(h).then((entry) => {
-      if (activeSession?.record !== h) return;
-      photo = entry;
-      if (!entry) {
-        const s = $('#hz-photo-state', panel);
-        if (s) s.textContent = 'The photo is missing from this browser’s storage. Remove it to keep working, or add it again.';
-        return;
-      }
-      renderPhotoPanel(); renderMode(); draw();
-    });
-  }
 }

@@ -5,6 +5,34 @@ Actual validation outcomes, newest first. Published releases: v0.1.1 (October 8,
 development awaiting the next release, 0.7.0. Upload success alone is never
 recorded as acceptance.
 
+## Horizon photos removed (sensor capture phase 1) — October 15, 2026 (branch horizon-sensor-plan)
+
+Photo placement, Align mode, skyline detection, the landmark and Sun north
+tools, the EXIF reader and the horizon photo database are gone; the editor
+keeps drawing, overhangs, the points form, the phone compass and file import
+(now also by dropping a file; a dropped photo is explained). Records and
+format 11 backups with photos restore their skylines and overhangs and drop
+the photo fields; the old photo database is deleted on load. Core rebuilt
+(f5e6bc7405b26485, token 69) and cache tokens bumped.
+
+Tests replaced, not loosened: the photo placement, detection, align, Sun,
+photo restore and unreadable-photo checks went with their features. New:
+legacy photo fields dropped in strict and lenient normalization
+(horizon_model.mjs), on load and in stored records (horizon_ui.mjs), in
+backups and exports, plus a full-storage restore failure (web_backup.mjs);
+browser checks web-horizon-has-no-photo-tools, web-horizon-restore-durable
+and web-safety-retired-horizon-photos-are-dropped. The rollback, phase 4
+layout and file-chooser checks now use a drawn horizon and the Import file
+button.
+
+Local validation: pytest 356 passed / 1 skipped (no local the popularity source
+snapshot); check_js, check_core, check_encoding OK; check_release 0 errors
+with the new core staged. Real-Chrome suite 77/79 on the first run: the
+create-buttons check still expected the removed photo button, and the new
+no-photo check did not load the page first. Both test bugs fixed; each then
+passed alone (1/1). Preview: the Horizon tab shows Draw by hand and Import
+file, Draw and Overhang modes, no console errors.
+
 ## Horizon sensor probe, phase 0 (first run) — October 15, 2026 (local development)
 
 Throwaway probe page (ignored logs/sensor-probe/, served to the phone over

@@ -8,12 +8,11 @@ entry here when it is fixed and record the fix in RELEASES.md.
 
 ## Needs the owner
 
-- **Horizon photo calibration is too fiddly (owner test, 2026-10-15).** On a
-  Pixel 7a, width, tilt and roll had to be found by trial and error before
-  north could be set. Not fixed in place: photos are to be replaced by
-  phone-sensor capture ([plan](docs/horizon/HORIZON_SENSOR_CAPTURE_PLAN.md)).
-  Touch/pen and keyboard checks in
-  [HORIZON_ACCEPTANCE.md](docs/acceptance/HORIZON_ACCEPTANCE.md) still apply.
+- **Horizon device acceptance.** Touch/pen and keyboard checks of the
+  editor on real devices:
+  [HORIZON_ACCEPTANCE.md](docs/acceptance/HORIZON_ACCEPTANCE.md). The phone
+  capture gets its own checklist in phase 5 of the
+  [sensor capture plan](docs/horizon/HORIZON_SENSOR_CAPTURE_PLAN.md).
 - **Legal pages: deferred by the owner (2026-10-11).** Not release work and
   not to be raised again unless the owner asks. For reference only: the
   Impressum names a pseudonym without a postal address, and the privacy page
@@ -41,13 +40,6 @@ entry here when it is fixed and record the fix in RELEASES.md.
 - **Phone compass.** Readings are only as good as the phone's compass (often
   5-10 deg off near metal or buildings); the landmark correction lasts until
   the page reloads.
-- **Photo mapping.** Pixels are treated as square degrees. That is exact for
-  equirectangular panoramas and approximate for ordinary photos, increasingly
-  towards their edges (about 1 deg at the edge of a 60 deg photo). No fisheye
-  or lens correction; full panoramas cannot be rolled, so a tilted 360 deg
-  panorama must be levelled in the panorama app.
-- **Skyline detection** needs a daylight photo with clear sky. Bright walls,
-  clouds, wires and thin branches can pull the line; it is a draft to correct.
 - **Near-tangent twilight.** When the Sun turns within about 0.01 deg of a
   twilight level, the Sun model and the published tables can disagree on
   whether a spell of a few minutes happens at all (Tromso 2026-09-16: USNO

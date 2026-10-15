@@ -60,7 +60,7 @@ def test_polar_fallback_never_reads_the_wall_clock():
 
 def test_web_backup_integrity():
     """web/webstore.js + web/horizon.js backup/restore through a fake
-    IndexedDB: truthful hasPhoto, profiles derived from skyline points, older
+    IndexedDB: photo fields of older backups dropped, profiles derived from skyline points, older
     bundles without their retired panoramas, staged validation before any
     write, and rollback to the pre-restore snapshot when a write fails."""
     out = run_node_harness("web_backup.mjs")

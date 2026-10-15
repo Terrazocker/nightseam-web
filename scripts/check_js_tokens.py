@@ -98,36 +98,36 @@ _VERIFIED_BASELINE_JSON = r"""
    "token": "5"
   },
   "app.js": {
-   "sha256": "9a3094a5492fbef8b569b29784f93395835a64740ab1db9094261d926bbedf1b",
-   "token": "226"
+   "sha256": "3b18c099f355be1f878c65f175308cc7bee5c323770a2f0c722101456068a046",
+   "token": "227"
   },
   "astro.js": {
-   "sha256": "302b623dc990a95b90251c0df5853107ba23f40084d07d22fc7194c21d6d1955",
-   "token": "59"
+   "sha256": "db956bf1fbfa80d9a6e917c367d948630eda4b359e06a3168d111abfa38173b4",
+   "token": "60"
   },
   "core.js": {
-   "sha256": "89730746f4b8f630707110e042ea44b2dbbe12d9900ca294c7b788a781d0b004",
-   "token": "68"
+   "sha256": "bf4b0a01c1965608d993417d29a97bc35c6f64c77a6f7b18f3385af3e8dfa600",
+   "token": "69"
   },
   "format.js": {
-   "sha256": "47f387f190b63f78da40929c55bfa4630ceb1d3f2a32b25171072b0650d88b06",
-   "token": "65"
+   "sha256": "622c0b2e79d16c83df94d8e385020989e2e8a4e4c3ea2c7046c5dc2c0b71221b",
+   "token": "66"
   },
   "horizon.js": {
-   "sha256": "941a367f0bed857040937363cfaed3a2cc219f3197c268b6dcab9c509fed85b6",
-   "token": "131"
+   "sha256": "5f099c95348ed24adf865a6ee6c763924f9c41b6ecb4b251b154122de0e942ec",
+   "token": "132"
   },
   "imagecredits.js": {
    "sha256": "8c8b650a0ad6ef6462eea251b67642103cb0eb9010c1f9dde09fce2ba7fa8952",
    "token": "2"
   },
   "nightrank.js": {
-   "sha256": "e56ba177d1e8551f900040e3b70b99d1b50e1f9ddc28e8900509fc09316ab0e0",
-   "token": "57"
+   "sha256": "2d0e6f90db3f24026e1bf7dfb52f7bed18605fcd55191fdbbf1a9b526f47af55",
+   "token": "58"
   },
   "style.css": {
-   "sha256": "0ce58ee1077d79e64cf515a0a552461d09aed760f0c92f5c990bdd79e65cbdb9",
-   "token": "65"
+   "sha256": "904e4efec0f6d8de6f7559c8fb44bb09520d134aebdce7c256bc487548ff54ca",
+   "token": "66"
   },
   "themes.css": {
    "sha256": "f8094c798dbe72b4e7f84faad3f41fc0cdbe896a03c0cb7413ee9d0d1bed2ff8",
@@ -138,8 +138,8 @@ _VERIFIED_BASELINE_JSON = r"""
    "token": "7"
   },
   "webstore.js": {
-   "sha256": "c54032eb73a1196650fa32b2d1626e3cd9c8dae63525a27cca946d5fc8ba53b9",
-   "token": "74"
+   "sha256": "d4014ee5fb4354f098d967b32d1decc060329acc0912ceb52ca8e1bcee122029",
+   "token": "75"
   }
  }
 }

@@ -13,13 +13,18 @@ const store = {
   removeItem(k) { delete this._m[k]; },
 };
 globalThis.localStorage = store;
+// Only the deletion of retired databases touches IndexedDB here.
+const deletedDbs = [];
+globalThis.indexedDB = { deleteDatabase(name) { deletedDbs.push(name); return {}; } };
 
 // Records as a previous session stored them: one valid, one duplicate id,
-// one unsafe id; plus the retired panorama editor's storage.
+// one unsafe id; plus the retired panorama editor's storage. The valid one
+// still carries the photo fields of the builds that placed horizon photos.
 store._m.nightseam_panos_v1 = JSON.stringify({ panos: [{ id: 'p1', strokes: [] }] });
 store._m.nightseam_horizons_v2 = JSON.stringify({
   horizons: [
-    { id: 'h1', name: 'Garden', points: [{ az: 90, alt: 20 }, { az: 270, alt: 5 }, { az: 'x', alt: 1 }], photo: null },
+    { id: 'h1', name: 'Garden', points: [{ az: 90, alt: 20 }, { az: 270, alt: 5 }, { az: 'x', alt: 1 }],
+      photo: { width: 60, heading: 180, tilt: 0, roll: 0 }, hasPhoto: true },
     { id: 'h1', name: 'Duplicate', points: [] },
     { id: '<script>', name: 'Unsafe', points: [] },
   ],
@@ -37,11 +42,14 @@ const assert = (c, m) => { if (!c) fail(m); };
 
 /* loading -------------------------------------------------------------- */
 assert(store.getItem('nightseam_panos_v1') === null, 'the retired panorama storage is removed, not converted');
+assert(['nightseam-panoimg', 'nightseam-horizon-photos'].every((name) => deletedDbs.includes(name)),
+  `the retired photo databases are deleted (${deletedDbs.join(', ')})`);
 const loaded = H.allHorizons();
 assert(loaded.length === 1 && loaded[0].id === 'h1', 'duplicate and unsafe ids are dropped on load');
 assert(loaded[0].points.length === 2, 'malformed points are dropped on load');
 assert(H.activeHorizon() && H.activeHorizon().id === 'h1', 'a dangling active id falls back to the first horizon');
 assert(H.ceilFor(H.activeHorizon(), 90).ceil === 20, 'the planner profile is derived on load');
+assert(!('photo' in loaded[0]) && !('hasPhoto' in loaded[0]), 'photo fields are dropped on load; the skyline stays');
 
 /* view clamp ----------------------------------------------------------- */
 const v1 = H.clampView(0.2, 0, 99);
@@ -70,11 +78,12 @@ const snapshot = H.normalizeHorizons({ horizons: [{ id: 'h9', name: 'New', point
 assert(await H.applyHorizonsSnapshot(snapshot) === false, 'a failed record write reports false');
 assert(JSON.stringify(H.allHorizons()) === before, 'a failed restore keeps the current horizons');
 store.fail = false;
-assert(await H.applyHorizonsSnapshot(snapshot) === true, 'without photos a restore needs no photo storage');
+assert(await H.applyHorizonsSnapshot(snapshot) === true, 'a restore writes the records');
 assert(H.activeHorizon().id === 'h9' && JSON.parse(store.getItem('nightseam_horizons_v2')).horizons[0].id === 'h9',
   'the restored horizons are live and stored');
 assert(!('profile' in JSON.parse(store.getItem('nightseam_horizons_v2')).horizons[0]),
   'the derived profile is never stored');
+assert(!store.getItem('nightseam_horizons_v2').includes('photo'), 'stored records carry no photo fields');
 
 /* preferences ----------------------------------------------------------- */
 store.fail = true;

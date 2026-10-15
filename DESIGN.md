@@ -89,16 +89,18 @@ The local exposure catalog has its own design document in Nightseam-catalog.
   and complementary at every width; on phones the rail stacks below the map.
   Closing it preserves the selected target with a small reopen action.
 - **Horizon:** the job is "where is my sky blocked"; keep the editor to that.
-  Three rails: the horizon list with *New from photo*, *Draw by hand* and
-  *Import file*; the stage; and a settings rail with the Photo panel and closed
-  *Points by numbers*, *Phone compass* and *Display* disclosures. Keep about
-  20 controls visible at first glance and about 40 including the disclosures.
+  Three rails: the horizon list with *Draw by hand* (primary) and *Import
+  file*; the stage; and a settings rail with closed *Points by numbers*,
+  *Phone compass* and *Display* disclosures. Keep about 20 controls visible
+  at first glance and about 40 including the disclosures. There are no
+  horizon photos: a dropped photo gets a one-line explanation, a dropped
+  horizon file imports.
   - The stage is one compass grid (azimuth across, altitude up, N/E/S/W on the
-    ruler, the minimum altitude as a dashed line) with the photo underneath.
+    ruler, the minimum altitude as a dashed line).
     The skyline is a line with a shaded obstruction below it, never colour
     alone: a text summary names the highest and lowest obstruction and their
     directions.
-  - A sticky toolbar holds Draw / Overhang / Align photo, Undo, Redo, Clear and
+  - A sticky toolbar holds Draw / Overhang, Undo, Redo, Clear and
     the save status; zoom controls sit on the canvas. On phones cap the toolbar at 40%
     of the viewport height (at most 240px) with internal scrolling.
   - Draw: click adds a point, dragging a point moves it between its
@@ -109,19 +111,11 @@ The local exposure catalog has its own design document in Nightseam-catalog.
     above that edge is shaded as blocked, with a dashed edge so it reads apart
     from the skyline. Points drag, arrow keys and Delete work as in Draw; the
     points form adds a flat overhang.
-  - Align photo: drag the photo; partial photos also get two round level
-    handles. A full panorama is never rolled. The Photo panel shows width,
-    north, tilt and roll as numbers, *Set north from a landmark*, *Set north
-    from the Sun*, *Detect skyline* and *Remove photo*; the skyline and
-    overhangs always move with the photo.
   - Phone compass: Start, a live direction readout, *Add point here*, *Start
     / Finish tracing* and a landmark correction. Say plainly that phone
     compasses are rough and that a correction comes first.
-  - After a new photo, show a short three-step guide (width, north, skyline)
-    that can be dismissed; never a wizard. A partial photo opens zoomed to
-    itself.
   - Edits save at once and the status says "Saved"; a failed save says so and
-    keeps the edit. Clear, Delete and Remove photo confirm in-page.
+    keeps the edit. Clear and Delete confirm in-page.
 
 Across Tonight, Catalog, and Sky View, keep one selected target and one inspector.
 Keep tables native: rows and cells expose table semantics, with named target

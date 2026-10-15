@@ -833,13 +833,8 @@ input.night-scrub::-moz-range-thumb { width: 13px; height: 13px; border: 1px sol
 .ed-group .btn { flex: 0 0 auto; }
 .hz-modes .btn[aria-pressed="true"] { border-color: var(--accent); outline: 1px solid var(--accent); color: var(--txt); }
 .horizon-stage > .ed-tools .ed-status { margin-left: auto; }
-.hz-guide { margin: 0 0 10px; padding: 10px 12px; border: 1px solid var(--accent); border-radius: 8px; font-size: 12.5px; }
-.hz-guide[hidden] { display: none; }
-.hz-guide p, .hz-guide ol { margin: 0 0 8px; }
-.hz-guide ol { padding-left: 20px; line-height: 1.8; }
 .hz-canvas-box { position: relative; min-width: 0; padding-top: 34px; }
 #hz-canvas { display: block; width: 100%; touch-action: none; cursor: crosshair; background: var(--viz-canvas-bg); }
-#hz-canvas[data-mode="align"] { cursor: move; }
 #hz-canvas.panning { cursor: grabbing; }
 #hz-canvas:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .horizon-stage .ed-hint { line-height: 1.5; overflow-wrap: anywhere; }
@@ -848,18 +843,14 @@ input.night-scrub::-moz-range-thumb { width: 13px; height: 13px; border: 1px sol
 .hz-summary { margin-top: 4px; }
 .horizon-settings-rail { display: grid; align-content: start; gap: 0; position: sticky; top: 150px; max-height: calc(100dvh - 170px); overflow: auto; min-width: 0; }
 .hz-panel { padding: 10px 0; border-bottom: 1px solid var(--line-soft); min-width: 0; font-size: 12px; }
-.hz-panel h4 { margin: 0 0 8px; }
 .hz-panel > summary { cursor: pointer; color: var(--muted); }
 .hz-panel .btnrow { gap: 6px; margin-top: 8px; }
 .hz-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 8px 0 0; padding: 0; border: 0; min-width: 0; }
 .hz-fields legend { padding: 0; margin-bottom: 4px; color: var(--txt); font-size: 12px; }
-.hz-fields label, .hz-landmark label { display: flex; flex-direction: column; gap: 4px; min-width: 0; color: var(--muted); }
-.hz-fields input, .hz-landmark input { width: 100%; min-width: 0; box-sizing: border-box; }
+.hz-fields label { display: flex; flex-direction: column; gap: 4px; min-width: 0; color: var(--muted); }
+.hz-fields input { width: 100%; min-width: 0; box-sizing: border-box; }
 .hz-fields .btn { grid-column: 1 / -1; justify-self: start; }
-.hz-landmark { margin-top: 10px; }
-.hz-landmark[hidden] { display: none; }
 .ed-display > label { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 8px; color: var(--muted); }
-.ed-display input[type="range"] { width: 120px; max-width: 100%; }
 @media (max-width: 640px) {
   .horizon-stage > .ed-tools { top: 8px; max-height: min(240px, 40dvh); overflow-y: auto; }
 }

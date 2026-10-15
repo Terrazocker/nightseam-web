@@ -4,7 +4,7 @@ import json
 import re
 
 from harness import ROOT, check
-from web_suite import boot, tab, horizon_test_png, sketch
+from web_suite import boot, tab, sketch
 
 
 def modules():
@@ -65,7 +65,7 @@ def snapshot(c):
       const W=await import(m.webstore), H=await import(m.horizon);
       return {sites:await W.allStrict('sites'),rigs:await W.allStrict('rigs'),
         targets:await W.allStrict('targets'),prefs:structuredClone(H.getPrefs()),
-        horizons:await H.exportHorizonsWithPhotos(),
+        horizons:H.exportHorizons(),
         prefsRaw:localStorage.getItem('nightseam_prefs_v1'),
         theme:localStorage.getItem('nightseam_theme')};
     }''', modules())
@@ -296,11 +296,11 @@ def backup_read_failure(c):
 def backup_post_commit_failure(c):
     boot(c)
     messages=dialogs(c)
-    # Include a real persisted horizon photo so rollback must recover both stores.
+    # Include a real persisted horizon so rollback must recover both stores
+    # (records in IndexedDB, horizons in localStorage).
     tab(c,'horizon')
-    c.page.locator('#hz-photo-file').set_input_files({'name':'rollback-horizon.png',
-        'mimeType':'image/png','buffer':horizon_test_png(120,40)})
-    c.page.wait_for_selector('#hz-ph-width')
+    c.page.click('#hz-new-draw')
+    c.page.wait_for_selector('#hz-canvas', state='visible')
     sketch(c)
     history_before = c.page.evaluate('async m => (await import(m.horizon)).captureEditorHistory()', modules())
     c.expect(history_before and history_before['hist']['index'] > 0,
@@ -315,8 +315,8 @@ def backup_post_commit_failure(c):
     }''',modules())
     setup(c,'backup')
     before=snapshot(c)
-    c.expect(before['horizons']['horizons'][0].get('image','').startswith('data:image/'),
-             'fixture includes an actual persisted horizon photo')
+    c.expect(len(before['horizons']['horizons'][0].get('points') or []) > 0,
+             'fixture includes an actual persisted horizon skyline')
     site_id=c.page.locator('#tb-site').input_value()
     c.page.evaluate('''() => {
       const original=Storage.prototype.setItem;
@@ -333,12 +333,12 @@ def backup_post_commit_failure(c):
     upload(c,fixture_bundle())
     wait_alert(c,messages,n,'Import failed')
     c.expect(c.page.evaluate('window.__phasePrefsFailed'), 'post-commit prefs failure actually injected')
-    c.expect_eq(snapshot(c),before,'post-commit failure restores records, preferences and horizon photo')
+    c.expect_eq(snapshot(c),before,'post-commit failure restores records, preferences and horizons')
     c.expect_eq(c.page.evaluate('async m => (await import(m.horizon)).captureEditorHistory()', modules()),
                 history_before, 'failed import preserves the original editor history')
     safety=c.page.evaluate('async m => (await import(m.webstore)).lastSafetySnapshot()',modules())
     c.expect_eq(safety['sites'],[r['val'] for r in before['sites']])
-    c.expect_eq(safety['horizons'],before['horizons'],'safety snapshot retains photo bytes')
+    c.expect_eq(safety['horizons'],before['horizons'],'safety snapshot retains the horizons')
     c.expect_eq(c.page.locator('#tb-site').input_value(),site_id)
     c.expect_eq(c.page.locator('#rigSelect').input_value(),'rollback-rig')
     c.expect(c.page.locator('#m-set-title').is_visible(),'failed import stays reviewable')

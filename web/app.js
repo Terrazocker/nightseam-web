@@ -8,17 +8,17 @@
  *   • Settings — sites, rigs, custom targets, backup/restore (webstore.js)
  * All sky math runs client-side (astro.js, Meeus algorithms).
  */
-import * as E from './astro.js?v=59';
-import * as Hor from './horizon.js?v=131';
-import * as WS from './webstore.js?v=74';
+import * as E from './astro.js?v=60';
+import * as Hor from './horizon.js?v=132';
+import * as WS from './webstore.js?v=75';
 import { fmtSize, sizeArcmin, framePct, magVisible, skyClampZoom,
-         skyViewMatrix, skyScreenToBase, skyClampFocus } from './format.js?v=65';
-import { nightStats, nightStatsBatch, sampleVisible } from './nightrank.js?v=57';
+         skyViewMatrix, skyScreenToBase, skyClampFocus } from './format.js?v=66';
+import { nightStats, nightStatsBatch, sampleVisible } from './nightrank.js?v=58';
 import { TYPE_LABELS, TYPE_COLORS, searchBlob as coreSearchBlob,
          TIER_ORDER, assignPopularityTiers, wikiTitles,
          inTonightPool, PLANNER_CHANGE_EVENT, panoramaRevision,
-         panoramaVisibilityReason } from './core.js?v=68';
-import { popularityFactor as corePopularityFactor } from './core.js?v=68';
+         panoramaVisibilityReason } from './core.js?v=69';
+import { popularityFactor as corePopularityFactor } from './core.js?v=69';
 import { vizTheme, drawMoonPhaseMarker } from './viztheme.js?v=7';
 import { wikimediaCredit, wikiImageCredit, renderImageCredit } from './imagecredits.js?v=2';
 
@@ -3552,10 +3552,9 @@ async function renderSettings() {
   $('#set-export').addEventListener('click', async () => {
     if (userDataBusy) return;
     const finish = lockUserDataTransfer();
-    // truthful backup: horizon photos are embedded, hasPhoto matches the data
     try {
       const backup = await WS.collectBackup(Hor.getPrefs(),
-        await Hor.exportHorizonsWithPhotos(), WS.currentTheme());
+        Hor.exportHorizons(), WS.currentTheme());
       if (!WS.downloadText(`nightseam-web-backup-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify(backup, null, 1))) {
         throw new Error('could not start the download');
       }
@@ -3605,8 +3604,8 @@ async function renderSettings() {
     const f = ev.target.files && ev.target.files[0];
     ev.target.value = '';
     if (!f || userDataBusy) return;
-    // the backup can embed horizon photos, so cap the file before reading it
-    // all into memory (a hand-crafted multi-GB file must not wedge the tab)
+    // older backups can embed horizon photos, so cap the file before reading
+    // it all into memory (a hand-crafted multi-GB file must not wedge the tab)
     if (f.size > 200 * 1024 * 1024) { alert('Backup file is too large (200 MB max)'); return; }
     const finish = lockUserDataTransfer();
     const rd = new FileReader();
@@ -3626,11 +3625,11 @@ async function renderSettings() {
         const oldHorizons = WS.backupHasRetiredHorizons(data)
           ? '\nHorizons from this older backup are not imported; the current horizon editor starts fresh.' : '';
         if (!confirm(`Import backup?\nSites: ${counts.sites} · Rigs: ${counts.rigs} · Custom targets: ${counts.targets}\nHorizons: ${counts.horizons}${oldHorizons}\n\nYour current browser data will be replaced.`)) return;
-        // snapshot the CURRENT state (records + horizon photos + prefs + theme)
+        // snapshot the CURRENT state (records + horizons + prefs + theme)
         // before replacing anything; restoreBackup persists it as the safety
         // copy and rolls back if any write fails
         const current = await WS.collectBackup(Hor.getPrefs(),
-          await Hor.exportHorizonsWithPhotos(), WS.currentTheme());
+          Hor.exportHorizons(), WS.currentTheme());
         const previousSite = { ...S.site };
         const previousSelection = S.detailId;
         const previousEditorHistory = Hor.captureEditorHistory();

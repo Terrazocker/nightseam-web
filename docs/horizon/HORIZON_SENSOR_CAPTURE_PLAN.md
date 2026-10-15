@@ -9,7 +9,9 @@ directly. It replaces the photo parts of the
 [rebuild plan](HORIZON_REBUILD_PLAN.md); the skyline model, overhangs, the
 points form and file import/export stay.
 
-Status: phase 0 done on October 15 (RELEASES.md); phase 1 is next. On the
+Status: phases 0 and 1 done on October 15 (RELEASES.md); phase 2 is next.
+Work stays on branch `horizon-sensor-plan` (pull request #8) until the
+capture works. Phase 0 on the
 Pixel 7a the gyroscope-based relative orientation does not drift at rest,
 repeats 0.13 deg between two features and closed two carefully aimed full
 turns within 1.3 deg before any correction; the compass wanders 6-8 deg at
@@ -101,8 +103,10 @@ revisit the plan.
 **Phase 1 — remove photos.** Delete photo placement, Align mode, detection,
 landmark and Sun north, the photo fields, `nightseam-horizon-photos`
 IndexedDB storage (cleared on first load), the EXIF reader and their tests.
-Backup format 12 drops `photo`; older backups restore their points and
-overhangs and ignore photos. Update DEVELOPMENT.md, DESIGN.md, AGENTS.md (the
+Older backups restore their points and overhangs and ignore photos. Done
+without a format bump: dropping optional fields is compatible, since a
+format 11 reader already accepts records without a photo, so backups stay
+format 11. Update DEVELOPMENT.md, DESIGN.md, AGENTS.md (the
 "A photo is a tracing aid" rule), BUGS.md (photo and skyline-detection
 limitations) and the acceptance checklist.
 

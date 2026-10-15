@@ -25,15 +25,13 @@ SCRIPTS_DIR = ROOT / "scripts"
 # MOVED pin): `popularityFactor` (the shells wrap it to resolve m.popularity
 # first).
 MOVED = (
-    # core/horizon.js - the skyline model, photo placement and horizon files.
-    "wrapAz", "azDelta", "normalizePoints", "normalizePhotoPlacement", "normalizeHorizon",
+    # core/horizon.js - the skyline model, overhangs, pointing and horizon files.
+    "wrapAz", "azDelta", "normalizePoints", "normalizeHorizon",
     "skylineAltAt", "skylineProfile", "withProfile", "binOf", "ceilFor", "hasSkyline",
-    "replacePointsInRange", "simplifyLine", "detectSkylineRows",
-    "photoScale", "photoToWorld", "worldToPhoto", "reprojectPoints", "headingForLandmark",
-    "defaultPhotoPlacement", "photoFileDimensions", "parseHorizonFile", "formatHorizonFile",
+    "replacePointsInRange", "simplifyLine", "parseHorizonFile", "formatHorizonFile",
     "normalizeOverhang", "normalizeOverhangs", "overhangAltAt", "overhangProfile", "splitAtNorth",
-    "replaceOverhangsInRange", "flatOverhang", "reprojectOverhangs",
-    "photoCaptureTime", "sunDirection", "placementFromKnownDirection", "devicePointing",
+    "replaceOverhangsInRange", "flatOverhang",
+    "sunDirection", "devicePointing",
     "panoramaVisibilityReason",
     "fmtSize", "sizeArcmin", "fmtFov", "fmtFovPair", "framePct", "magVisible",
     "skyClampZoom", "skyViewMatrix", "skyScreenToBase", "skyClampFocus",

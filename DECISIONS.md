@@ -33,6 +33,19 @@ Library, SQLite, desktop CSP) are history only.
 - **Documentation:** see "Documentation layout" (2026-10-11), which updates the
   older "Docs policy".
 
+## 2026-10-15 — Horizon photos removed; backups stay format 11
+
+Phase 1 of the sensor capture plan. Photo placement, Align mode, skyline
+detection, the landmark and Sun north tools, the EXIF reader and the
+`nightseam-horizon-photos` database are gone; the database is deleted on
+load. Records and backups of builds with photos keep their skylines and
+overhangs, and their photo fields (`photo`, `hasPhoto`, `image`) are dropped
+without being checked, so a malformed old photo can no longer refuse a
+restore. The plan named a backup format 12, but dropping optional fields is
+compatible (a format 11 reader already accepts records without a photo), so
+the format stays 11. `sunDirection` stays in the core for the capture's north
+reference.
+
 ## 2026-10-15 — Capture horizons with the phone's sensors, not photos
 
 Owner decision after testing the photo editor on a Pixel 7a: placing photos
