@@ -19,7 +19,8 @@ Library, SQLite, desktop CSP) are history only.
   only as a tracing aid; the profile is derived, edits save automatically, and
   0.1.x horizons are not converted (2026-10-11, "Rebuild the horizon editor",
   supersedes every earlier horizon entry); overhangs, phone-compass capture
-  and north from the Sun follow it (2026-10-12).
+  and north from the Sun follow it (2026-10-12); photos are to be replaced by
+  phone-sensor capture and share links (2026-10-15, planned).
 - **Data and privacy:** transactional, staged backups with rollback; Wikipedia
   is the only object-photo source (2026-10-06); popularity is never visible
   (2026-10-06); the CSP is delivered in the document (0.6.33) and, for the
@@ -31,6 +32,36 @@ Library, SQLite, desktop CSP) are history only.
   releases continue at 0.7.0 above inherited tags (2026-10-11).
 - **Documentation:** see "Documentation layout" (2026-10-11), which updates the
   older "Docs policy".
+
+## 2026-10-15 — Capture horizons with the phone's sensors, not photos
+
+Owner decision after testing the photo editor on a Pixel 7a: placing photos
+was too fiddly (width, tilt and roll by trial and error before north means
+anything), and the map-landmark calibration (pull request #7, closed) did not
+work well. A scratch comparison with a pinhole camera model put the linear
+photo mapping 2.4 deg off for a level phone photo and up to 12.6 deg for one
+tilted up 30 deg; fixing that needs camera models and fitting, the complexity
+the 2026-10-11 rebuild removed.
+
+- **Capture.** The phone measures directions directly: a live camera view with
+  a crosshair, altitude from gravity, the sweep's shape from the gyroscope
+  (relative orientation), and north set once from a reference (Moon or Sun,
+  a landmark bearing, or the averaged compass), with loop closure removing
+  gyroscope drift.
+- **Photos removed.** Photo placement, Align mode, skyline detection and the
+  landmark and Sun north tools go; only azimuth/altitude points (and
+  overhangs) are stored, as in a N.I.N.A. horizon file.
+- **Transfer.** A share link carries the points in its fragment, so no server
+  storage is needed and the data never reaches the server. A short typed code
+  would need a server-side store, a hosting review and new privacy text; it is
+  reconsidered only if links prove clumsy.
+- **Gate.** A sensor probe on the Pixel 7a comes first; if relative yaw drifts
+  more than about 2 deg per sweep after loop closure, the plan is revisited.
+
+Plan: [HORIZON_SENSOR_CAPTURE_PLAN.md](docs/horizon/HORIZON_SENSOR_CAPTURE_PLAN.md).
+This supersedes the photo parts of the 2026-10-11 rebuild entry and the
+photo-compass parts of the 2026-10-12 entry once phase 1 lands; until then the
+shipped behaviour is unchanged.
 
 ## 2026-10-13 — Hosting headers, compression and the accessibility pass
 

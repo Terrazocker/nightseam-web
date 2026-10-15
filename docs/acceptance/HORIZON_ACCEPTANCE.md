@@ -7,6 +7,11 @@ what you observed; actual outcomes go in RELEASES.md.
 
 ## Real photos
 
+Superseded (October 15, 2026): the owner tried these steps on a Pixel 7a and
+decided to replace photos with phone-sensor capture
+([plan](../horizon/HORIZON_SENSOR_CAPTURE_PLAN.md)). They stay here until
+phase 1 removes the photo tools; phase 5 of that plan replaces this section.
+
 Use one full 360° panorama from a phone panorama app and one ordinary phone
 photo of part of your skyline. Before you start, note the true compass
 direction of one landmark in each (correct a magnetic compass reading to true

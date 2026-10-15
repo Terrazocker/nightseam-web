@@ -8,9 +8,12 @@ entry here when it is fixed and record the fix in RELEASES.md.
 
 ## Needs the owner
 
-- **Horizon real-photo acceptance.** Real panoramas and phone photos with
-  known directions, touch/pen input and physical devices for the rebuilt
-  editor: [docs/acceptance/HORIZON_ACCEPTANCE.md](docs/acceptance/HORIZON_ACCEPTANCE.md).
+- **Horizon photo calibration is too fiddly (owner test, 2026-10-15).** On a
+  Pixel 7a, width, tilt and roll had to be found by trial and error before
+  north could be set. Not fixed in place: photos are to be replaced by
+  phone-sensor capture ([plan](docs/horizon/HORIZON_SENSOR_CAPTURE_PLAN.md)).
+  Touch/pen and keyboard checks in
+  [HORIZON_ACCEPTANCE.md](docs/acceptance/HORIZON_ACCEPTANCE.md) still apply.
 - **Legal pages: deferred by the owner (2026-10-11).** Not release work and
   not to be raised again unless the owner asks. For reference only: the
   Impressum names a pseudonym without a postal address, and the privacy page
