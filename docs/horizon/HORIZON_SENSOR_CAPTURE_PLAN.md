@@ -9,8 +9,14 @@ directly. It replaces the photo parts of the
 [rebuild plan](HORIZON_REBUILD_PLAN.md); the skyline model, overhangs, the
 points form and file import/export stay.
 
-Status: planned, nothing built. Phase 0 decides whether the Pixel's sensors
-are good enough before any product code changes.
+Status: phase 0 done on October 15 (RELEASES.md); phase 1 is next. On the
+Pixel 7a the gyroscope-based relative orientation does not drift at rest,
+repeats 0.13 deg between two features and closed two carefully aimed full
+turns within 1.3 deg before any correction; the compass wanders 6-8 deg at
+rest. Gate passed. Sensor API: RelativeOrientationSensor (quaternions,
+steady 60 Hz), with `deviceorientation` as the fallback. Not yet measured:
+accuracy part-way round a sweep (the landmark check in phase 5) and the
+camera axis's altitude bias (the Moon check in phase 3).
 
 ## Owner decisions
 
@@ -69,7 +75,11 @@ removed. Measuring directions directly avoids the whole problem.
   was taken.
 - **Closing the loop.** A sweep ends back on its starting feature. The yaw
   difference at the closing point is the gyroscope drift; it is spread over
-  the sweep in proportion to time.
+  the sweep in proportion to the angle turned so far, not to time: phase 0
+  showed no drift at rest, so what remains comes with turning. The clean
+  phase 0 turns closed within 1.3 deg, so most of a large closing error is
+  the user's end aim; the capture should show the closing error and offer a
+  redo when it is more than about 3 deg.
 - **Screen orientation.** The pointing direction accounts for
   `screen.orientation.angle`; capture works in portrait and landscape.
 - **Site check.** The phone's position (Geolocation, already used for new

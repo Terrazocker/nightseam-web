@@ -5,6 +5,57 @@ Actual validation outcomes, newest first. Published releases: v0.1.1 (October 8,
 development awaiting the next release, 0.7.0. Upload success alone is never
 recorded as acceptance.
 
+## Horizon sensor probe, phase 0 (first run) — October 15, 2026 (local development)
+
+Throwaway probe page (ignored logs/sensor-probe/, served to the phone over
+`adb reverse`), Pixel 7a, Chrome 155, portrait. Not product code.
+
+- **Available:** RelativeOrientationSensor, AbsoluteOrientationSensor,
+  Gyroscope and GravitySensor at a steady 60 Hz; `deviceorientation` and
+  `deviceorientationabsolute` (rate drops to 0-10 Hz when the phone is still);
+  rear camera via getUserMedia; Wake Lock. Magnetometer is not exposed.
+  The quaternion and Euler paths agree within 0.03 deg.
+- **At rest, 2 min:** relative orientation did not move upright (0.00 deg)
+  and stayed within 0.7 deg lying flat; gyroscope bias 0.04-0.13 deg/min.
+  Absolute (compass) orientation wandered 6.4 deg upright and 8.2 deg flat
+  with the phone untouched.
+- **Aiming, two features 62 deg apart, 5 alternations over 51 s:** relative
+  separation 62.1 deg, sd 0.13 deg, return to feature A within 0.4 deg;
+  altitude repeat within 0.15 deg. Absolute separation 59.1-60.9 deg
+  (sd 0.79) and drifting. A first practice run is not counted.
+- **Full turn:** one valid turn (26 s): relative loop error +3.95 deg,
+  absolute -5.27 deg; the two disagree by 9.2 deg over the same motion. The
+  end aim was off by 2.8 deg in altitude, so the end azimuth error is part of
+  both numbers. A second recorded "turn" covered only 15 deg and is
+  discarded.
+- **GPS, 30 s:** 4 fixes, best accuracy 20 m, one 490 m outlier, fixes
+  within 1.4 m of each other.
+
+First-run outcome: the compass is unusable for the shape of a sweep, as
+planned; the gyroscope is steady at rest and in back-and-forth aiming. One
+sloppy turn could not decide the 2 deg loop gate, so the probe gained a 3x
+aiming zoom and rejects partial turns.
+
+Second run, three full turns with the zoom (relative loop error, end-minus-start
+altitude as a check on the end aim, compass loop error):
+
+| Turn | Direction | Time | Gyroscope loop error | End altitude off | Compass loop error |
+|---|---|---|---|---|---|
+| 16:17 | clockwise | 38 s | +5.80 deg | 5.2 deg | +6.65 deg |
+| 16:18 | clockwise | 31 s | -1.22 deg | 0.05 deg | -1.31 deg |
+| 16:18 | anticlockwise | 25 s | -0.44 deg | 0.22 deg | -7.47 deg |
+
+The two turns that ended on the start feature (altitude within 0.22 deg)
+closed within 1.3 deg before any loop correction. The 16:17 turn ended 5 deg
+away from its start in altitude, and the compass saw the same +6 deg, so its
+error is the end aim, not drift. The three traces did not follow one common
+skyline (their altitude paths differ by up to 15 deg), so accuracy part-way
+round could not be measured here; it is covered by the landmark check in the
+plan's acceptance. Gate passed on this evidence (two clean turns, fast
+sweeps): relative orientation stays within 2 deg per sweep without
+correction. Chosen API: RelativeOrientationSensor, `deviceorientation` as
+fallback.
+
 ## Brief twilight spells and same-level dark windows — October 13, 2026 (local development)
 
 sunCrossings now checks each turn between three samples on one side of a
