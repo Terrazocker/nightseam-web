@@ -42,13 +42,11 @@ entry here when it is fixed and record the fix in RELEASES.md.
   (5-10 deg off near metal or buildings, measured on a Pixel 7a). *North…*
   sets it from the Moon, the Sun or a landmark instead. The Moon and Sun need
   the observing site to be where the phone is.
-- **AR overlay lags while panning (owner, Pixel 7a, 2026-10-15).** The
-  overlay seems to trail the camera image when the phone turns. Not the
-  drawing: frames take 1-2 ms and the gyroscope reports at 60 Hz. The
-  likeliest cause is the assumed 67 deg camera field of view: if the video is
-  narrower (stabilisation crops it), the scene moves further per degree than
-  the overlay, which reads as lag. Unconfirmed; the overlay is exact at the
-  crosshair either way.
+- **AR overlay lag (owner, Pixel 7a, 2026-10-15): fix awaiting the owner's
+  check.** Measured: the camera image trails the gyroscope by about 210 ms and
+  is scaled differently per axis. The capture now aims with the orientation
+  the image shows and calibrates delay and scale per device; remove this
+  entry once the owner confirms it on the phone.
 - **Near-tangent twilight.** When the Sun turns within about 0.01 deg of a
   twilight level, the Sun model and the published tables can disagree on
   whether a spell of a few minutes happens at all (Tromso 2026-09-16: USNO

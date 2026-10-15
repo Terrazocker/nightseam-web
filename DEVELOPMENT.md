@@ -28,6 +28,7 @@ Web modules import only `./core.js?v=<token>`, never `web/core/<hash>/`.
 | `nightrank.js`, `format.js` | Re-exports of core scoring and formatting |
 | `horizon.js` | Horizon editor, horizon storage, preferences |
 | `capture.js` | Phone capture: camera view, crosshair, orientation sensors, tracing |
+| `capturemotion.js` | Worker measuring the camera image's motion for the capture's calibration |
 | `webstore.js` | IndexedDB records, preferences, timezones and backup/restore |
 | `viztheme.js` | Canvas colors read from `themes.css` |
 | `imagecredits.js` | Exact-file photo credits |
@@ -106,7 +107,13 @@ editor", "Capture horizons with the phone's sensors"); plans:
   2.5 s, up to 40 times, while north is missing and no usable compass
   reading has paired for 1.5 s, and again when a motion permission is
   granted. Without a relative source for a second the compass gives the
-  shape too.
+  shape too. While the editor's *Phone capture* panel is open,
+  `warmCompass` keeps an `AbsoluteOrientationSensor` running at 10 Hz (the
+  browser shares one compass between its users), so a capture usually opens
+  on a settled compass; it stops when the panel closes or, within 2 s, when
+  another tab replaces the editor. The north panel's status line
+  (`compassDiag`) says how many compass readings arrive, whether it is
+  settling and by how much, and how often it was restarted.
 - **North references.** *North…* opens a panel: put the crosshair on the
   Moon or the Sun (topocentric apparent position for the observing site and
   the current time, `moonDirection` / `sunDirection`; usable from 2 to 60 deg
@@ -124,15 +131,44 @@ editor", "Capture horizons with the phone's sensors"); plans:
 - **Site check.** Where location access is already granted, the view warns
   when the phone is further than 75 m (or twice the GPS accuracy) from the
   observing site (`siteDistanceM`); it never asks for location itself.
+- **What the camera shows.** The camera image trails the gyroscope (about
+  210 ms on a Pixel 7a, measured), so the readout, the overlay, traced
+  samples, *Add point* and the references all use the orientation from that
+  long ago (`qAt`/`pointingAt` blend a 2 s history), and whatever is under
+  the crosshair on screen is what is recorded. The readout and the overlay
+  (only these) average the orientation over up to 60 ms either side of that
+  moment (`qAt(t, true)`, core `smoothOrientation`), which calms the sensor's
+  jitter without lag. The window narrows to the readings that exist on both
+  sides, so on a phone whose camera trails the gyroscope by less than 60 ms
+  it stays centred instead of leaning on the past; with no reading after
+  that moment it falls back to the plain orientation. recorded
+  directions are not averaged, so a peak traced quickly keeps its place. The
+  readout is one fixed-width line (`fmtDir`, one decimal: `152.0° SSE · alt
+  -12.3°`) and changes at most every 120 ms. The overlay draws the recorded
+  points as dots on their lines. The overlay's scale is this
+  camera's focal length per axis (`kx`, `ky`, as fractions of the video's long
+  side). `capturemotion.js` runs as a module worker
+  (`MediaStreamTrackProcessor`): it shrinks each frame to 108 px wide in
+  memory, closes it, and reports only how far the picture moved; every 2 s
+  `matchMotion` compares that with the gyroscope's rate over the last 8 s
+  and, where they agree (correlation 0.85 or better, upright phone), updates
+  the delay and scale. They are kept per device in localStorage
+  `nightseam_capture_cal_v1` (not in backups); the Pixel 7a's measurement
+  (210 ms, 0.864, 0.752) is the starting value. Browsers without the frame
+  API keep the stored or starting values.
+- **Sharper motion.** Browsers expose no stabilisation (OIS/EIS) control;
+  the Pixel 7a's camera offers manual exposure and ISO. Where a camera allows
+  manual exposure, a *Sharper motion* toggle sets 1/60 s and raises the ISO
+  by the same factor (the same light), since in dim light the automatic
+  exposure reached 60 ms a frame, which smears motion, drops the frame rate
+  and adds delay. Off gives the exposure back to the camera.
 - **AR overlay.** A canvas over the video draws lines only: the level
   horizon with compass marks, the skyline, overhang edges and the trace in
-  progress, each projected with `cameraProject` from the current orientation
-  and north, for directions within reach of the camera axis only, at most
-  1.5x pixel density (about 1-2 ms a frame on a Pixel 7a). The focal
-  length assumes a 67 deg field of view along the long side of the video,
-  scaled the way `object-fit: cover` shows it; device axes turn with
-  `screen.orientation.angle`. The crosshair is exact; away from it the
-  overlay is only as right as the assumed field of view. A trace (one tap
+  progress, each projected with `cameraProject` from the orientation the
+  image shows and north, for directions within reach of the camera axis
+  only, at most 1.5x pixel density (about 1-2 ms a frame on a Pixel 7a). The
+  focal lengths are the calibration's, scaled the way `object-fit: cover`
+  shows the video; device axes turn with `screen.orientation.angle`. A trace (one tap
   starts it, another stops it) becomes one line through
   `sweepLine` (continuous azimuths, latest sample per 0.25 deg, simplified,
   steps of at most 90 deg) and replaces that stretch of skyline, or becomes
@@ -168,6 +204,7 @@ editor", "Capture horizons with the phone's sensors"); plans:
 |---|---|
 | localStorage `nightseam_prefs_v1` | Preferences |
 | localStorage `nightseam_horizons_v2` | Horizon records (without profiles) |
+| localStorage `nightseam_capture_cal_v1` | This device's camera delay and scale for the capture overlay (not backed up) |
 | localStorage `nightseam_site_v1`, `nightseam_theme` | Legacy site record, theme |
 | IndexedDB `nightseam-db-v1` | Sites, rigs, custom targets, safety snapshot |
 | IndexedDB `nightseam-images` | Wikipedia thumbnail cache, at most 25 MiB: least recently viewed photos are removed first; a full disk trims it to a quarter and retries once |

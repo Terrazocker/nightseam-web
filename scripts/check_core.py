@@ -33,7 +33,7 @@ MOVED = (
     "replaceOverhangsInRange", "flatOverhang",
     "sunDirection", "moonDirection", "referenceUsable", "referenceOffset", "closeLoop", "siteDistanceM",
     "devicePointing", "quaternionPointing", "orientationQuaternion", "cameraProject",
-    "circularMean", "sweepLine", "encodeHorizonLink", "decodeHorizonLink",
+    "circularMean", "angularVelocity", "smoothOrientation", "matchMotion", "sweepLine", "encodeHorizonLink", "decodeHorizonLink",
     "panoramaVisibilityReason",
     "fmtSize", "sizeArcmin", "fmtFov", "fmtFovPair", "framePct", "magVisible",
     "skyClampZoom", "skyViewMatrix", "skyScreenToBase", "skyClampFocus",

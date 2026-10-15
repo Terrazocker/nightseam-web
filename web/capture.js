@@ -9,11 +9,12 @@
  * editor, which owns the horizon record, its history and saving.
  */
 import { vizTheme } from './viztheme.js?v=7';
+import { MOTION_WORKER_URL } from './capturemotion.js?v=1';
 import {
   wrapAz, azDelta, quaternionPointing, orientationQuaternion, cameraProject, circularMean,
-  sweepLine, normalizePoints, closeLoop, moonDirection, sunDirection, referenceUsable,
-  referenceOffset, siteDistanceM, julianDay,
-} from './core.js?v=73';
+  sweepLine, normalizePoints, closeLoop, moonDirection, referenceUsable,
+  referenceOffset, siteDistanceM, julianDay, angularVelocity, smoothOrientation, matchMotion,
+} from './core.js?v=76';
 
 const SENSOR_WAIT_MS = 3000;
 const NORTH_WINDOW_MS = 3000;      // compass readings averaged for north
@@ -25,7 +26,31 @@ const NORTH_MAX_ALT = 60;          // pointing steeper than this, azimuth is unr
 const COMPASS_STALE_MS = 1500;     // no usable compass reading for this long while north is missing
 const COMPASS_RETRY_MS = 2500;     // ... restarts the compass, at most this often
 const COMPASS_RETRIES = 40;
-const DEFAULT_FOV_LONG = 67;       // camera field of view along the long side, deg (typical phone main camera)
+// How the camera image relates to the gyroscope, measured on a Pixel 7a
+// (2026-10-15, frame motion against the gyroscope while panning): the image
+// trails the gyroscope by about 210 ms (225 sideways, 195 up-down), and its
+// focal length is 0.864 (sideways) and 0.752 (up-down) of the video's long
+// side, a long-side field of view of 60 and 67 deg. Each device refines its
+// own values while the user pans (calibrate()).
+const DEFAULT_DELAY_MS = 210;
+const DEFAULT_KX = 0.864;
+const DEFAULT_KY = 0.752;
+const CAL_MIN_CORR = 0.85;         // image and gyroscope must agree this well to update the calibration
+const CAL_WINDOW_MS = 8000;        // motion compared each time
+const HISTORY_MS = 2000;           // orientation kept to look back by the image's delay
+// What is shown (the readout and the overlay) is averaged over up to this
+// much either side of the moment the camera image shows: the delay leaves
+// readings after that moment too, so the average is centred and calms the
+// sensor's jitter without adding lag. On a phone whose camera trails by less,
+// the window narrows to what exists on both sides; it is never one-sided. What is recorded is not averaged, so a sharp
+// peak traced quickly keeps its place.
+const SMOOTH_MS = 60;
+const READOUT_MS = 120;            // the direction readout changes at most this often
+// Sharper motion: in dim light the camera exposes each frame for up to 60 ms
+// (measured on a Pixel 7a), which smears motion, drops the frame rate and
+// adds delay. Browsers offer no stabilisation control, but manual exposure:
+// 1/60 s, with the sensitivity raised to keep the brightness.
+const SHORT_EXPOSURE = 1000 / 60 * 10;   // in the API's 0.1 ms units
 const AR_MAX_DPR = 1.5;            // overlay canvas pixel density cap
 const LOOP_MAX_DEG = 3;            // a larger closing error is a missed aim, not drift
 const SITE_NEAR_M = 75;            // further from the site than this (or twice the GPS accuracy) is worth a warning
@@ -36,13 +61,33 @@ const CARDINALS = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE',
                    'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW'];
 const cardinal = (az) => CARDINALS[Math.round(wrapAz(az) / 22.5) % 16];
 const fmt = (v) => (Math.round(v * 10) / 10).toFixed(1).replace(/\.0$/, '');
+/** The crosshair's direction in fixed-width columns, so digits do not jump. */
+const fmtDir = (p) => `${wrapAz(Math.round(p.az * 10) / 10).toFixed(1).padStart(5)}° ${cardinal(p.az).padEnd(3)} · alt ${p.alt.toFixed(1).padStart(5)}°`;
 const now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
+/** Milliseconds on the clock the motion worker also uses. */
+const epochNow = () => (typeof performance !== 'undefined' ? performance.timeOrigin + performance.now() : Date.now());
 
 /** True when this browser could capture: a camera API and an orientation API.
  *  Whether the device really has the sensors shows only once readings arrive. */
 export function captureAvailable() {
   return typeof navigator !== 'undefined' && !!navigator.mediaDevices?.getUserMedia
     && (typeof globalThis.RelativeOrientationSensor === 'function' || typeof DeviceOrientationEvent !== 'undefined');
+}
+
+/** Keep the phone's compass running at a low rate ahead of a capture. A
+ *  compass that has just started needs about 10 s to settle (measured on a
+ *  Pixel 7a); the browser shares one compass between all its users, so a
+ *  capture opened later gets settled readings at once. Returns a function
+ *  that stops it (one that does nothing where there is no compass sensor). */
+export function warmCompass() {
+  const Ctor = globalThis.AbsoluteOrientationSensor;
+  if (typeof Ctor !== 'function') return () => {};
+  try {
+    const s = new Ctor({ frequency: 10, referenceFrame: 'device' });
+    s.addEventListener('error', () => { try { s.stop(); } catch { /* already stopped */ } });
+    s.start();
+    return () => { try { s.stop(); } catch { /* already stopped */ } };
+  } catch { return () => {}; }
 }
 
 /* ------------------------------ orientation ------------------------------ */
@@ -66,11 +111,40 @@ function orientation(onChange) {
     compassStarts: 0, compassStartedAt: 0, pairAt: now(),
     settle: null, northSince: now(), northUnsteady: false,
     source: null,   // null: the compass; else { kind, label, at, altError, compassDiff }
+    absTimes: [],   // when compass readings arrived in the last 2 s, for the status line
+    history: [],    // { t, q }: recent relative orientation (epoch ms), to look back
+    rates: [],      // { t, wx, wy }: angular rate about the device's x and y axes
   };
   const relStops = [], compassStops = [];
 
-  const pointing = () => (st.rel && st.offset != null
-    ? { az: wrapAz(st.rel.az + st.offset), alt: st.rel.alt } : null);
+  /** The relative orientation at epoch time t; `smooth` averages it over up
+   *  to SMOOTH_MS either side (centred: narrower when the camera trails the
+   *  gyroscope by less than that), for display. */
+  function qAt(t, smooth = false) {
+    return (smooth && smoothOrientation(st.history, t, SMOOTH_MS)) || qRaw(t);
+  }
+
+  /** The orientation at epoch time t, blended between the two readings around it. */
+  function qRaw(t) {
+    const h = st.history;
+    if (!h.length) return null;
+    if (t <= h[0].t) return h[0].q;
+    if (t >= h[h.length - 1].t) return h[h.length - 1].q;
+    let i = h.length - 1;
+    while (i > 0 && h[i - 1].t > t) i--;
+    const a = h[i - 1], b = h[i], f = (t - a.t) / (b.t - a.t || 1);
+    const sign = a.q[0] * b.q[0] + a.q[1] * b.q[1] + a.q[2] * b.q[2] + a.q[3] * b.q[3] < 0 ? -1 : 1;
+    const q = a.q.map((v, k) => v * (1 - f) + sign * b.q[k] * f);
+    const n = Math.hypot(...q) || 1;
+    return q.map((v) => v / n);
+  }
+  /** Where the camera pointed at epoch time t, without north (relative azimuth). */
+  const relAt = (t, smooth = false) => { const q = qAt(t, smooth); return q ? quaternionPointing(q) : null; };
+  /** Where the camera pointed at epoch time t, with north. */
+  const pointingAt = (t, smooth = false) => {
+    const p = st.offset != null ? relAt(t, smooth) : null;
+    return p ? { az: wrapAz(p.az + st.offset), alt: p.alt } : null;
+  };
 
   function lockNorth(t) {
     st.pairs = st.pairs.filter((p) => t - p.t <= NORTH_WINDOW_MS);
@@ -95,12 +169,12 @@ function orientation(onChange) {
     st.source = null;
   }
 
-  /** North from a reference in the crosshair (Moon, Sun or a landmark). It
+  /** North from a reference in the crosshair (the Moon or a landmark). It
    *  replaces the compass for the rest of the capture; the compass's own
    *  reading, where there is one, is kept only to say how far it was off. */
-  function setReference(reference, info) {
-    if (!st.rel) return null;
-    const { offset, altError } = referenceOffset(st.rel, reference);
+  function setReference(reference, info, measured = st.rel) {
+    if (!measured) return null;
+    const { offset, altError } = referenceOffset(measured, reference);
     const t = now();
     const fresh = st.pairs.filter((pr) => t - pr.t <= NORTH_WINDOW_MS);
     const compass = fresh.length ? circularMean(fresh.map((pr) => pr.d)) : null;
@@ -120,6 +194,14 @@ function orientation(onChange) {
     // so no compass-against-itself sample stays in the average.
     if (src !== 'compass' && st.compassOnly) { st.compassOnly = false; rereadNorth(); }
     const p = quaternionPointing(q);
+    const e = epochNow(), last = st.history[st.history.length - 1];
+    if (last && src !== 'compass' && e > last.t) {
+      const [wx, wy] = angularVelocity(last.q, q, (e - last.t) / 1000);
+      st.rates.push({ t: (e + last.t) / 2, wx, wy });
+      while (st.rates.length && e - st.rates[0].t > CAL_WINDOW_MS) st.rates.shift();
+    }
+    st.history.push({ t: e, q });
+    while (st.history.length > 2 && e - st.history[0].t > HISTORY_MS) st.history.shift();
     st.rel = p; st.relQ = q; st.relAt = t; st.relSrc = src;
     // Pair with a fresh compass reading, only while the phone is held roughly
     // upright: pointing near straight up or down, azimuth means little.
@@ -140,6 +222,8 @@ function orientation(onChange) {
     const t = now();
     if (src === 'event' && st.absSrc === 'sensor' && t - st.absAt < 500) return;
     st.abs = quaternionPointing(q); st.absAt = t; st.absSrc = src;
+    st.absTimes.push(t);
+    while (st.absTimes.length && t - st.absTimes[0] > 2000) st.absTimes.shift();
     // Without any relative source the compass has to give the shape too, but
     // only after the relative sensor had a second to start: the compass often
     // reports first.
@@ -201,7 +285,9 @@ function orientation(onChange) {
 
   return {
     state: st,
-    pointing,
+    qAt,
+    relAt,
+    pointingAt,
     /** Forget north, start the compass again and average it afresh. */
     rereadNorth() { rereadNorth(); st.compassStarts = 0; startCompass(); },
     setReference,
@@ -232,10 +318,13 @@ function askMotionPermission(onAnswer) {
  *   onUndo()            undo the last edit; canUndo() says whether one exists
  *   onClose(message)    after the view closed
  *   site()              the observing site { lat, lon, label } or null, for
- *                       the Moon and Sun references and the distance check
+ *                       the Moon reference and the distance check
+ *   calibration         this device's stored { delayMs, kx, ky } or null
+ *   onCalibrated(cal)   store an improved calibration for this device
  * Returns { close }.
  */
-export function openCapture({ horizon, onLine, onPoint, onUndo, canUndo, onClose, site = () => null }) {
+export function openCapture({ horizon, onLine, onPoint, onUndo, canUndo, onClose, site = () => null,
+  calibration = null, onCalibrated = () => {} }) {
   const before = document.activeElement;
   const el = document.createElement('div');
   el.className = 'cap';
@@ -248,47 +337,56 @@ export function openCapture({ horizon, onLine, onPoint, onUndo, canUndo, onClose
     <div class="cap-cross" aria-hidden="true"></div>
     <div class="cap-top">
       <h3 id="cap-title" class="visually-hidden">Capture the horizon with the camera</h3>
-      <p class="cap-read mono" id="cap-read">Starting the sensors…</p>
-      <p class="cap-north" id="cap-north"></p>
+      <div class="cap-topline">
+        <button class="btn cap-done" type="button" id="cap-done">✕ Done</button>
+        <p class="cap-read mono" id="cap-read">Starting the sensors…</p>
+      </div>
+      <button class="btn cap-north-btn" type="button" id="cap-north-btn" aria-expanded="false" aria-controls="cap-ref">
+        <span id="cap-north">North: finding…</span><span aria-hidden="true">▾</span></button>
       <p class="cap-site" id="cap-site"></p>
       <p class="cap-status" id="cap-status" role="status" aria-live="polite">Hold the phone upright and point the camera at the skyline.</p>
     </div>
     <div class="cap-bottom">
       <div class="cap-panel" id="cap-loop" role="group" aria-labelledby="cap-loop-text" hidden>
         <p id="cap-loop-text">You turned all the way round. Is the cross back on the spot where you started?</p>
-        <div class="cap-bar">
+        <div class="cap-row cap-pair">
           <button class="btn primary" type="button" id="cap-loop-yes">Yes, close the loop</button>
           <button class="btn" type="button" id="cap-loop-no">No, keep as traced</button>
         </div>
       </div>
       <div class="cap-panel" id="cap-ref" role="group" aria-labelledby="cap-ref-title" hidden>
         <p id="cap-ref-title"><b>Set north</b>: put the cross on one of these, then tap it.</p>
-        <p class="cap-ref-sky" id="cap-ref-sky"></p>
-        <div class="cap-bar">
+        <p class="cap-small" id="cap-north-detail"></p>
+        <p class="cap-small mono" id="cap-compass-diag"></p>
+        <p class="cap-small" id="cap-ref-sky"></p>
+        <div class="cap-row cap-pair">
           <button class="btn" type="button" id="cap-ref-moon">Moon is in the cross</button>
-          <button class="btn" type="button" id="cap-ref-sun">Sun is in the cross</button>
         </div>
-        <div class="cap-bar">
+        <div class="cap-row">
           <input class="cap-ref-az" id="cap-ref-az" type="number" min="0" max="359.9" step="0.1" inputmode="decimal"
-            placeholder="Landmark °" aria-label="Landmark bearing in degrees from true north">
+            placeholder="Bearing °" aria-label="Landmark bearing in degrees from true north">
           <button class="btn" type="button" id="cap-ref-landmark">Landmark is in the cross</button>
         </div>
-        <div class="cap-bar">
+        <div class="cap-row cap-pair">
           <button class="btn" type="button" id="cap-ref-compass">Compass again</button>
           <button class="btn" type="button" id="cap-ref-close">Close</button>
         </div>
       </div>
       <canvas class="cap-strip" id="cap-strip" aria-hidden="true"></canvas>
-      <div class="cap-bar cap-main">
-        <div class="cap-modes" role="group" aria-label="What to trace">
-          <button class="btn small" type="button" id="cap-mode-skyline" aria-pressed="true">Skyline</button>
-          <button class="btn small" type="button" id="cap-mode-overhang" aria-pressed="false">Overhang</button>
+      <div class="cap-main">
+        <div class="cap-row">
+          <div class="cap-modes" role="group" aria-label="What to trace">
+            <button class="btn" type="button" id="cap-mode-skyline" aria-pressed="true">Skyline</button>
+            <button class="btn" type="button" id="cap-mode-overhang" aria-pressed="false">Overhang</button>
+          </div>
+          <button class="btn cap-chip" type="button" id="cap-exposure" aria-pressed="false" hidden
+            title="A shorter exposure: smoother, sharper video while turning, a little grainier">Sharper motion</button>
         </div>
-        <button class="btn primary cap-trace" type="button" id="cap-trace" aria-pressed="false">Start tracing</button>
-        <button class="btn" type="button" id="cap-point">Add point</button>
-        <button class="btn" type="button" id="cap-undo">Undo</button>
-        <button class="btn" type="button" id="cap-north-btn" aria-expanded="false" aria-controls="cap-ref">North…</button>
-        <button class="btn" type="button" id="cap-done">Done</button>
+        <div class="cap-thumb">
+          <button class="btn" type="button" id="cap-undo">↶ Undo</button>
+          <button class="btn primary cap-trace" type="button" id="cap-trace" aria-pressed="false">Start tracing</button>
+          <button class="btn" type="button" id="cap-point">＋ Add point</button>
+        </div>
       </div>
     </div>`;
   document.body.appendChild(el);
@@ -305,9 +403,22 @@ export function openCapture({ horizon, onLine, onPoint, onUndo, canUndo, onClose
   let wake = null;
   let closed = false;
   let lastMessage = '';
+  let motion = null;         // { worker, track, frames, size }: the camera-motion worker
+  let calTimer = null;
+  const lastRead = { at: 0, dir: false };
   const started = now();
+  // What the screen shows is the camera image, which trails the gyroscope:
+  // everything the user aims with (readout, overlay, trace, points,
+  // references) uses the orientation from that long ago.
+  const cal = {
+    delayMs: DEFAULT_DELAY_MS, kx: DEFAULT_KX, ky: DEFAULT_KY, measured: false,
+    ...(calibration && typeof calibration === 'object' ? calibration : {}),
+  };
+  const shownAt = () => epochNow() - cal.delayMs;
+  const view = () => sensors.pointingAt(shownAt());
+  const calmView = () => sensors.pointingAt(shownAt(), true);   // calmed, for display only
   const sensors = orientation(() => {
-    const p = sensors.pointing();
+    const p = view();
     if (trace && p) {
       const last = trace.samples[trace.samples.length - 1];
       if (!last || Math.abs(azDelta(p.az, last.az)) >= TRACE_STEP || Math.abs(p.alt - last.alt) >= TRACE_STEP) {
@@ -322,9 +433,9 @@ export function openCapture({ horizon, onLine, onPoint, onUndo, canUndo, onClose
   function render() {
     frame = null;
     if (closed) return;
-    const st = sensors.state, p = sensors.pointing(), age = now() - started;
+    const st = sensors.state, p = calmView(), age = now() - started;
     let read;
-    if (p) read = `${fmt(p.az)}° ${cardinal(p.az)} · ${fmt(p.alt)}° high`;
+    if (p) read = fmtDir(p);
     else if (st.rel && st.settle != null) {
       read = `The compass is settling (it moved ${fmt(st.settle)}° in the last moment): hold the phone upright and still.`;
     } else if (st.rel) read = 'Finding north from the compass… hold the phone upright and still.';
@@ -334,8 +445,17 @@ export function openCapture({ horizon, onLine, onPoint, onUndo, canUndo, onClose
     if (st.rel && !st.abs && st.offset == null && age > SENSOR_WAIT_MS) {
       read = 'This device gives no compass direction, so north cannot be set.';
     }
-    $('#cap-read').textContent = read;
-    $('#cap-north').textContent = northText(st);
+    // A direction changes at most every READOUT_MS, so the digits can be read.
+    const t = now();
+    if (!p || !lastRead.dir || t - lastRead.at >= READOUT_MS) {
+      $('#cap-read').textContent = read;
+      lastRead.at = t;
+      lastRead.dir = !!p;
+    }
+    $('#cap-read').classList.toggle('cap-read-msg', !p);
+    $('#cap-north').textContent = northShort(st);
+    $('#cap-north-detail').textContent = northText(st);
+    $('#cap-compass-diag').textContent = compassDiag(st);
     const ready = !!p, busy = !!trace || !!pending;
     $('#cap-trace').disabled = (!ready && !trace) || !!pending;
     $('#cap-point').disabled = !ready || mode !== 'skyline' || busy;
@@ -361,6 +481,33 @@ export function openCapture({ horizon, onLine, onPoint, onUndo, canUndo, onClose
 
   const clock = (d) => d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
+  /** What the compass is doing, for the north panel: enough to say why
+   *  north is missing without a debugging session. */
+  function compassDiag(st) {
+    const t = now();
+    const rate = st.absTimes.filter((x) => t - x <= 1000).length;
+    if (!st.abs) return 'Compass: no readings yet.';
+    let text = `Compass: ${rate} reading${rate === 1 ? '' : 's'} a second`;
+    if (t - st.absAt > 1000) text += `, silent for ${fmt((t - st.absAt) / 1000)} s`;
+    if (st.offset == null) {
+      text += st.settle != null ? `, settling (moved ${fmt(st.settle)}° within the last moments)` : ', collecting readings';
+      if (Math.abs(st.abs.alt) >= NORTH_MAX_ALT) text += '; hold the phone more upright';
+    } else if (st.source) text += ', not used (north from a reference)';
+    else text += ', north set';
+    if (st.compassStarts > 1) text += `; restarted ${st.compassStarts - 1} time${st.compassStarts === 2 ? '' : 's'}`;
+    return `${text}.`;
+  }
+
+  /** Where north comes from, in a few words for the north button. */
+  function northShort(st) {
+    if (st.offset == null) {
+      if (st.rel && st.settle != null) return 'North: the compass is settling…';
+      return st.rel && !st.abs && now() - started > SENSOR_WAIT_MS ? 'North: not set (no compass)' : 'North: finding…';
+    }
+    if (st.source) return `North: ${st.source.label}`;
+    return `North: compass, ±${fmt(Math.max(1, st.spread))}°${st.northUnsteady ? ', unsettled' : ''}`;
+  }
+
   /** Where north comes from and how good it is, in words. */
   function northText(st) {
     if (st.offset == null) return '';
@@ -373,17 +520,17 @@ export function openCapture({ horizon, onLine, onPoint, onUndo, canUndo, onClose
       }
       return text;
     }
-    return `North from the compass, within about ${fmt(Math.max(1, st.spread))}°. Compasses can be 5–10° off near cars, railings and buildings: North… sets it from the Moon, the Sun or a landmark.`
+    return `North from the compass, within about ${fmt(Math.max(1, st.spread))}°. Compasses can be 5–10° off near cars, railings and buildings: North… sets it from the Moon or a landmark.`
       + (st.northUnsteady ? ' The compass did not settle, so north may be further off.' : '')
       + (st.compassOnly ? ' This device has no gyroscope reading, so the trace follows the compass.' : '');
   }
 
-  /** The Moon and the Sun as references now, from the observing site. */
+  /** The Moon as a reference now, from the observing site. */
   function skyReferences() {
     const s = site();
     if (!s || !Number.isFinite(s.lat) || !Number.isFinite(s.lon)) return null;
     const jd = julianDay(new Date());
-    return { moon: moonDirection(jd, s.lat, s.lon), sun: sunDirection(jd, s.lat, s.lon) };
+    return { moon: moonDirection(jd, s.lat, s.lon) };
   }
 
   function renderReferences(st) {
@@ -393,11 +540,8 @@ export function openCapture({ horizon, onLine, onPoint, onUndo, canUndo, onClose
       if (use.ok) return `${name} ${fmt(dir.alt)}° high in the ${cardinal(dir.az)}`;
       return use.why === 'below' ? `${name} below the horizon` : `${name} too high to set north (${fmt(dir.alt)}°)`;
     };
-    $('#cap-ref-sky').textContent = !sky ? 'Set an observing site to use the Moon or the Sun.'
-      : `${say('Moon', sky.moon)} · ${say('Sun', sky.sun)}.`
-        + (referenceUsable(sky.sun).ok ? ' Aim at the Sun on the screen only, never by eye.' : '');
+    $('#cap-ref-sky').textContent = !sky ? 'Set an observing site to use the Moon.' : `${say('Moon', sky.moon)}.`;
     $('#cap-ref-moon').disabled = !st.rel || !sky || !referenceUsable(sky.moon).ok;
-    $('#cap-ref-sun').disabled = !st.rel || !sky || !referenceUsable(sky.sun).ok;
     $('#cap-ref-landmark').disabled = !st.rel;
     $('#cap-ref-compass').disabled = !st.abs;
   }
@@ -462,8 +606,9 @@ export function openCapture({ horizon, onLine, onPoint, onUndo, canUndo, onClose
   /* What is recorded, drawn over the camera image where it belongs: the level
      horizon with compass marks, the skyline, overhang edges and the trace in
      progress, as lines only so the scene stays visible.
-     The camera's field of view is assumed (DEFAULT_FOV_LONG along the long
-     side of the video); the crosshair itself is exact. */
+     The orientation is the one the camera image shows (cal.delayMs ago),
+     and the scale is this camera's (cal.kx, cal.ky); the crosshair itself is
+     exact. */
   function drawAR() {
     const started = now();
     const W = el.clientWidth, Hh = el.clientHeight;
@@ -479,26 +624,26 @@ export function openCapture({ horizon, onLine, onPoint, onUndo, canUndo, onClose
     if (!ctx) return;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, W, Hh);
-    const st = sensors.state, view = sensors.pointing();
-    if (!st.relQ || !view) return;
+    const st = sensors.state, here = calmView(), q0 = sensors.qAt(shownAt(), true);
+    if (!q0 || !here) return;
     // Focal length in CSS pixels: the video covers the view (object-fit: cover),
     // so its long side, scaled to cover, spans the camera's long-side angle.
     const vw = video.videoWidth, vh = video.videoHeight;
     const shown = vw && vh ? Math.max(vw, vh) * Math.max(W / vw, Hh / vh) : Math.max(W, Hh);
-    const f = shown / 2 / Math.tan(DEFAULT_FOV_LONG * Math.PI / 360);
+    const fx = cal.kx * shown, fy = cal.ky * shown;
     // Device axes are portrait; turn them with the screen.
     const turn = ((typeof screen !== 'undefined' && screen.orientation && screen.orientation.angle) || 0) * Math.PI / 180;
     const c = Math.cos(turn), sn = Math.sin(turn);
     // Only directions within reach of the camera axis can be on screen; near
     // the zenith or nadir every azimuth can be.
-    const reach = Math.abs(view.alt) > 40 ? 180 : Math.atan(Math.hypot(W, Hh) / 2 / f) * 180 / Math.PI + 8;
-    const near = (az) => Math.abs(azDelta(az, view.az)) <= reach;
+    const reach = Math.abs(here.alt) > 40 ? 180 : Math.atan(Math.hypot(W, Hh) / 2 / Math.min(fx, fy)) * 180 / Math.PI + 8;
+    const near = (az) => Math.abs(azDelta(az, here.az)) <= reach;
     const at = (az, alt) => {
       if (!near(az)) return null;
-      const q = cameraProject(st.relQ, st.offset, az, alt);
+      const q = cameraProject(q0, st.offset, az, alt);
       if (!q) return null;
-      const sx = q.x * c - q.y * sn, sy = q.x * sn + q.y * c;
-      return { x: W / 2 + f * sx, y: Hh / 2 - f * sy };
+      const dx = q.x * fx, dy = q.y * fy;   // device axes, scaled as this camera shows them
+      return { x: W / 2 + dx * c - dy * sn, y: Hh / 2 - (dx * sn + dy * c) };
     };
     // A line of directions as on-screen runs, broken where it leaves the view.
     const runs = (dirs) => {
@@ -512,6 +657,20 @@ export function openCapture({ horizon, onLine, onPoint, onUndo, canUndo, onClose
         } else cur = null;
       }
       return out.filter((r) => r.length > 1);
+    };
+    // The recorded points themselves, as dots on their line.
+    const dots = (list) => {
+      ctx.fillStyle = V.obstacleStroke;
+      ctx.strokeStyle = V.canvas;
+      ctx.lineWidth = 1.5;
+      for (const pt of list) {
+        const xy = at(pt.az, pt.alt);
+        if (!xy) continue;
+        ctx.beginPath();
+        ctx.arc(xy.x, xy.y, 4, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+      }
     };
     const strokeRun = (r) => {
       ctx.beginPath();
@@ -541,7 +700,7 @@ export function openCapture({ horizon, onLine, onPoint, onUndo, canUndo, onClose
     // the level horizon, with a mark every 10 deg and the compass points named
     const span = Math.ceil(reach);
     const level = [];
-    for (let d = -span; d <= span; d += 2) level.push({ az: view.az + d, alt: 0 });
+    for (let d = -span; d <= span; d += 2) level.push({ az: here.az + d, alt: 0 });
     ctx.strokeStyle = V.dim;
     ctx.lineWidth = 1;
     ctx.setLineDash([6, 6]);
@@ -571,6 +730,7 @@ export function openCapture({ horizon, onLine, onPoint, onUndo, canUndo, onClose
       ctx.strokeStyle = V.obstacleStroke;
       ctx.lineWidth = 2.5;
       for (const r of runs(dense(ring))) strokeRun(r);
+      dots(pts);
     }
 
     const edges = ((h && h.overhangs) || []).map((edge) => runs(dense(edge)));
@@ -579,6 +739,7 @@ export function openCapture({ horizon, onLine, onPoint, onUndo, canUndo, onClose
     ctx.setLineDash([8, 5]);
     for (const rs of edges) for (const r of rs) strokeRun(r);
     ctx.setLineDash([]);
+    for (const edge of (h && h.overhangs) || []) dots(edge);
 
     if (trace && trace.samples.length > 1) {
       ctx.strokeStyle = V.warn;
@@ -589,8 +750,8 @@ export function openCapture({ horizon, onLine, onPoint, onUndo, canUndo, onClose
 
   /* ---- tracing ---- */
   function startTrace() {
-    if (trace || !sensors.pointing()) return;
-    trace = { kind: mode, samples: [sensors.pointing()] };
+    if (trace || !view()) return;
+    trace = { kind: mode, samples: [view()] };
     status(mode === 'overhang'
       ? 'Tracing an overhang: follow the underside of the balcony or roof edge, then press Stop tracing.'
       : 'Tracing: keep the cross on the skyline while you turn, then press Stop tracing.');
@@ -648,7 +809,7 @@ export function openCapture({ horizon, onLine, onPoint, onUndo, canUndo, onClose
   $('#cap-loop-no').addEventListener('click', () => settleLoop(false));
 
   $('#cap-point').addEventListener('click', () => {
-    const p = sensors.pointing();
+    const p = view();
     if (!p || trace) return;
     lastMessage = onPoint(p) || '';
     status(lastMessage);
@@ -668,19 +829,17 @@ export function openCapture({ horizon, onLine, onPoint, onUndo, canUndo, onClose
   });
   const closeReferences = () => { refOpen = false; render(); northBtn.focus(); };
   const useReference = (dir, info) => {
-    const src = sensors.setReference(dir, info);
+    const src = sensors.setReference(dir, info, sensors.relAt(shownAt()));
     if (!src) { status('No reading from the motion sensors yet.'); return; }
     status(`North set from ${info.label}.`);
     closeReferences();
   };
-  for (const [id, body] of [['#cap-ref-moon', 'moon'], ['#cap-ref-sun', 'sun']]) {
-    $(id).addEventListener('click', () => {
-      const sky = skyReferences();
-      const dir = sky && sky[body];
-      if (!dir || !referenceUsable(dir).ok) { render(); return; }
-      useReference(dir, { kind: body, label: body === 'moon' ? 'the Moon' : 'the Sun' });
-    });
-  }
+  $('#cap-ref-moon').addEventListener('click', () => {
+    const sky = skyReferences();
+    const dir = sky && sky.moon;
+    if (!dir || !referenceUsable(dir).ok) { render(); return; }
+    useReference(dir, { kind: 'moon', label: 'the Moon' });
+  });
   $('#cap-ref-landmark').addEventListener('click', () => {
     const az = Number($('#cap-ref-az').value);
     if ($('#cap-ref-az').value === '' || !Number.isFinite(az) || az < 0 || az >= 360) {
@@ -688,7 +847,8 @@ export function openCapture({ horizon, onLine, onPoint, onUndo, canUndo, onClose
       $('#cap-ref-az').focus();
       return;
     }
-    useReference({ az, alt: sensors.state.rel ? sensors.state.rel.alt : 0 }, { kind: 'landmark', label: `a landmark at ${fmt(az)}°` });
+    const seen = sensors.relAt(shownAt());
+    useReference({ az, alt: seen ? seen.alt : 0 }, { kind: 'landmark', label: `a landmark at ${fmt(az)}°` });
   });
   $('#cap-ref-close').addEventListener('click', closeReferences);
   $('#cap-ref-compass').addEventListener('click', () => {
@@ -710,8 +870,10 @@ export function openCapture({ horizon, onLine, onPoint, onUndo, canUndo, onClose
   }
   $('#cap-done').addEventListener('click', () => close());
 
+  // Escape closes the view wherever focus is, even when it fell out of it.
+  const onEscape = (ev) => { if (ev.key === 'Escape') { ev.preventDefault(); close(); } };
+  document.addEventListener('keydown', onEscape);
   el.addEventListener('keydown', (ev) => {
-    if (ev.key === 'Escape') { ev.preventDefault(); close(); return; }
     if (ev.key === 'Tab') {   // keep focus inside the view
       const buttons = [...el.querySelectorAll('button:not(:disabled), input:not(:disabled)')].filter((b) => b.offsetParent !== null);
       if (!buttons.length) return;
@@ -754,9 +916,102 @@ export function openCapture({ horizon, onLine, onPoint, onUndo, canUndo, onClose
       });
       if (closed) { for (const t of stream.getTracks()) t.stop(); return; }
       video.srcObject = stream;
+      startMotion();
+      offerExposure();
     } catch (error) {
       el.classList.add('cap-no-video');
       status(`The camera is not available (${error && error.name ? error.name : 'unknown reason'}). You can still aim with the back of the phone.`);
+    }
+  }
+
+  /** Offer Sharper motion where the camera allows manual exposure. */
+  function offerExposure() {
+    const track = stream && stream.getVideoTracks()[0];
+    const caps = track && typeof track.getCapabilities === 'function' ? track.getCapabilities() : {};
+    const ok = Array.isArray(caps.exposureMode) && caps.exposureMode.includes('manual')
+      && caps.exposureMode.includes('continuous') && caps.exposureTime && caps.iso;
+    const btn = $('#cap-exposure');
+    btn.hidden = !ok;
+    if (!ok) return;
+    const clamp = (v, r) => Math.min(r.max, Math.max(r.min, v));
+    btn.addEventListener('click', async () => {
+      const on = btn.getAttribute('aria-pressed') !== 'true';
+      btn.disabled = true;
+      try {
+        if (on) {
+          const now = track.getSettings();
+          const time = clamp(SHORT_EXPOSURE, caps.exposureTime);
+          // the same light: exposure time and sensitivity trade one for one
+          const iso = Math.round(clamp((now.iso || caps.iso.min) * (now.exposureTime || time) / time, caps.iso));
+          await track.applyConstraints({ advanced: [{ exposureMode: 'manual', exposureTime: time, iso }] });
+          status('Sharper motion: each frame is exposed for 1/60 s. The video may look a little grainier.');
+        } else {
+          await track.applyConstraints({ advanced: [{ exposureMode: 'continuous' }] });
+          status('The camera sets its exposure itself again.');
+        }
+        btn.setAttribute('aria-pressed', String(on));
+      } catch (error) {
+        status(`The camera did not accept that (${error && error.name ? error.name : 'unknown reason'}).`);
+      } finally {
+        btn.disabled = false;
+      }
+    });
+  }
+
+  /** Start measuring the camera image's motion in a worker, where the browser
+   *  can hand it the frames. Without it the stored or default calibration is
+   *  used. */
+  function startMotion() {
+    if (typeof MediaStreamTrackProcessor !== 'function' || typeof Worker !== 'function' || !stream) return;
+    try {
+      const track = stream.getVideoTracks()[0].clone();
+      const processor = new MediaStreamTrackProcessor({ track });
+      const worker = new Worker(MOTION_WORKER_URL, { type: 'module' });
+      motion = { worker, track, frames: [], size: null };
+      worker.onmessage = ({ data }) => {
+        if (!motion) return;
+        if (data.size) motion.size = data.size;
+        if (data.f) {
+          motion.frames.push(data.f);
+          while (motion.frames.length && data.f[1] - motion.frames[0][1] > CAL_WINDOW_MS) motion.frames.shift();
+          el.dataset.motion = 'on';
+        }
+      };
+      worker.postMessage({ readable: processor.readable }, [processor.readable]);
+      calTimer = setInterval(calibrate, 2000);
+    } catch { motion = null; }
+  }
+
+  /** Compare the image's motion with the gyroscope's over the last seconds;
+   *  where they agree well, take this camera's delay and scale from them. */
+  function calibrate() {
+    if (!motion || !motion.size || closed) return;
+    // The axes below are those of an upright phone.
+    if (((typeof screen !== 'undefined' && screen.orientation && screen.orientation.angle) || 0) !== 0) return;
+    const [vw, vh, aw, ah] = motion.size, long = Math.max(vw, vh);
+    const rates = sensors.state.rates;
+    const pick = (shiftAt, scoreAt) => motion.frames.filter((f) => f[scoreAt] > 0.6).map((f) => ({ t0: f[0], t1: f[1], d: f[shiftAt] }));
+    const h = matchMotion(rates.map((r) => ({ t: r.t, w: r.wy })), pick(2, 3));
+    const v = matchMotion(rates.map((r) => ({ t: r.t, w: r.wx })), pick(4, 5));
+    const good = (m) => m && Math.abs(m.corr) >= CAL_MIN_CORR && m.lagMs > 0 && m.lagMs < 400;
+    const blend = (old, x) => (cal.measured ? old * 0.6 + x * 0.4 : x);
+    const delays = [];
+    let changed = false;
+    if (good(h)) {
+      const k = Math.abs(h.slope) * (vw / aw) / long;
+      if (k > 0.5 && k < 1.4) { cal.kx = blend(cal.kx, k); changed = true; }
+      delays.push(h.lagMs);
+    }
+    if (good(v)) {
+      const k = Math.abs(v.slope) * (vh / ah) / long;
+      if (k > 0.5 && k < 1.4) { cal.ky = blend(cal.ky, k); changed = true; }
+      delays.push(v.lagMs);
+    }
+    if (delays.length) { cal.delayMs = blend(cal.delayMs, delays.reduce((a, b) => a + b, 0) / delays.length); changed = true; }
+    if (changed) {
+      cal.measured = true;
+      el.dataset.calibrated = 'yes';
+      onCalibrated({ delayMs: Math.round(cal.delayMs), kx: +cal.kx.toFixed(4), ky: +cal.ky.toFixed(4), measured: true });
     }
   }
 
@@ -767,17 +1022,21 @@ export function openCapture({ horizon, onLine, onPoint, onUndo, canUndo, onClose
     closed = true;
     if (frame != null) cancelAnimationFrame(frame);
     sensors.stop();
+    clearInterval(calTimer);
+    if (motion) { motion.worker.terminate(); motion.track.stop(); motion = null; }
     if (stream) for (const t of stream.getTracks()) t.stop();
     video.srcObject = null;
     try { wake?.release(); } catch { /* already released */ }
     document.removeEventListener('visibilitychange', onVisibility);
+    document.removeEventListener('keydown', onEscape);
     el.remove();
     if (before && before.isConnected && typeof before.focus === 'function') before.focus();
     onClose(lastMessage);
   }
 
-  traceBtn.focus();
   render();
+  // Start on the first control that can be used: without north yet, Done.
+  (traceBtn.disabled ? $('#cap-done') : traceBtn).focus();
   askMotionPermission((answer) => {
     if (closed) return;
     if (answer === 'granted') sensors.restartCompass();

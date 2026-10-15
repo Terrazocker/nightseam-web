@@ -211,6 +211,47 @@ assert.ok(turned.every((p) => p.alt === 3), 'a full turn replaces the whole skyl
 const eave = H.splitAtNorth(H.sweepLine([{ az: 340, alt: 50 }, { az: 0, alt: 52 }, { az: 20, alt: 54 }], 0));
 assert.equal(eave.length, 2, 'an overhang swept across north becomes two edges');
 
+// --- camera motion against the gyroscope (overlay calibration) -------------------
+{
+  const yRot = (rad) => [0, Math.sin(rad / 2), 0, Math.cos(rad / 2)];
+  const w = H.angularVelocity([0, 0, 0, 1], yRot(0.1), 0.05);
+  close(w[1], 2, 1e-9, 'a 0.1 rad turn about y in 50 ms is 2 rad/s');
+  close(Math.hypot(w[0], w[2]), 0, 1e-12, 'and nothing about x or z');
+  assert.deepEqual(H.angularVelocity([0, 0, 0, 1], yRot(0.1), 0), [0, 0, 0]);
+  // Display smoothing: 1 s of turning at 2 rad/s, read at 60 Hz, one reading
+  // stored with the opposite sign (the same orientation).
+  const hist = Array.from({ length: 61 }, (_, i) => ({ t: i * 1000 / 60, q: yRot(0.002 * i * 1000 / 60) }));
+  hist[30].q = hist[30].q.map((v) => -v);
+  const angleOf = (q) => 2 * Math.atan2(q[1], q[3]);
+  close(angleOf(H.smoothOrientation(hist, 500, 60)), 1, 1e-4, 'a centred average of a steady turn is where it is now');
+  // A camera only 10 ms behind: the window narrows to 10 ms either side
+  // instead of averaging 60 ms of the past (which would read 25 ms late); the
+  // readings in it are off centre by at most half a reading interval.
+  const late = H.smoothOrientation(hist, 990, 60);
+  close(angleOf(late), 1.98, 0.002 * 500 / 60, 'near the newest reading the window narrows and stays centred');
+  assert.equal(H.smoothOrientation(hist, 1000, 60), null, 'at the newest reading there is nothing after it to centre on');
+  assert.equal(H.smoothOrientation(hist, 1200, 60), null);
+  assert.equal(H.smoothOrientation(hist.slice(0, 1), 0, 60), null);
+  assert.equal(H.smoothOrientation(hist, 500, 0), null);
+  // 8 s of panning: the gyroscope at 60 Hz, the image analysed at 28 frames a
+  // second, moving 165.5 px per radian and 200 ms behind the gyroscope (the
+  // Pixel 7a's measured values).
+  const omega = (t) => 1.2 * Math.sin(t / 700) + 0.6 * Math.sin(t / 233 + 1) + 0.3 * Math.sin(t / 97);
+  const angle = (t) => { let a = 0; for (let s = 0; s < t; s += 1) a += omega(s) / 1000; return a; };
+  const rates = Array.from({ length: 480 }, (_, i) => ({ t: i * 1000 / 60, w: omega(i * 1000 / 60) }));
+  const shifts = [];
+  for (let t0 = 300; t0 + 36 < 8000; t0 += 1000 / 28) {
+    const t1 = t0 + 1000 / 28;
+    shifts.push({ t0, t1, d: 165.5 * (angle(t1 - 200) - angle(t0 - 200)) });
+  }
+  const m = H.matchMotion(rates, shifts);
+  assert.ok(Math.abs(m.lagMs - 200) <= 10, `the image's delay is found: ${m.lagMs} ms`);
+  assert.ok(Math.abs(m.slope - 165.5) / 165.5 < 0.03, `and its scale: ${m.slope} px/rad`);
+  assert.ok(m.corr > 0.98, `with a clear match: ${m.corr}`);
+  assert.equal(H.matchMotion(rates, []), null, 'no image motion, no match');
+  assert.equal(H.matchMotion([], shifts), null, 'no gyroscope, no match');
+}
+
 // --- north references and loop closure ------------------------------------------
 {
   const jd = 2440587.5 + Date.UTC(2026, 9, 15, 20) / 86400000;

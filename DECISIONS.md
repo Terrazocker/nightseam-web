@@ -33,9 +33,87 @@ Library, SQLite, desktop CSP) are history only.
 - **Documentation:** see "Documentation layout" (2026-10-11), which updates the
   older "Docs policy".
 
+## 2026-10-15 — No Sun reference; a calmer readout
+
+- **The Sun is no longer a capture reference.** The owner asked to remove it;
+  the Moon and a landmark bearing remain, and it also removes the need to
+  warn against aiming at the Sun by eye. The core keeps
+  `sunDirection` for planning; the capture no longer offers it.
+- **Smooth what is shown, not what is recorded.** The readout flickered and
+  its width jumped. The readout and overlay now average the orientation over
+  60 ms either side of the moment the image shows (the image delay leaves
+  readings after it, so the average adds no lag), and the readout is one
+  fixed-width line with one decimal, updated at most every 120 ms. Recorded
+  directions stay unaveraged: averaging them moved a sharply traced peak by
+  1 deg in the loop check.
+- **The smoothing window stays centred on every phone.** The camera delay is
+  measured per device (5-400 ms; 210 ms is only the start value), so the
+  window narrows to what exists on both sides of the shown moment rather than
+  assuming the Pixel's delay. A one-sided window on a phone 10 ms behind
+  would read about 25 ms late; the centred one is off by at most half a
+  reading interval.
+- **The overlay shows the recorded points** as dots on their lines, so the
+  user sees what was actually stored.
+
+## 2026-10-15 — Warm the compass before the capture
+
+The owner still saw north fail to appear on some first opens until pressing
+*Compass again*. A compass that has just started swings for about 10 s
+(measured), and the capture waits for it to settle; a second start gets
+settled readings because the browser shares one warm compass. So the editor
+runs the compass at 10 Hz while the *Phone capture* panel is open (open by
+default on phones) and stops it when the panel closes or the tab is left.
+The north panel gained a status line so a remaining failure can be described
+without a debugging session.
+
+## 2026-10-15 — Mobile-first capture view; OIS stays on
+
+- **OIS cannot be avoided from the web.** Sharper motion helped the owner,
+  but the lens stabilisation stays. The Pixel 7a's ultrawide camera has no
+  OIS, but Chrome lists only one back camera ("camera 0, facing back",
+  zoom from 1x), so a web page cannot choose it.
+- **Mobile first.** The capture view was rebuilt for one hand on a phone:
+  opaque bars (the design guide allows no translucent panels), the direction
+  large at the top with a short north button that opens the full account, and
+  a thumb row at the bottom with the brass Start/Stop tracing in the middle.
+  Targets are at least 44 px; the crosshair is never covered, upright or
+  sideways (a browser check measures both).
+
+## 2026-10-15 — No stabilisation button; Sharper motion instead
+
+The owner asked for a button to turn off OIS. Browsers expose no
+stabilisation control (the Pixel 7a's camera capabilities in Chrome list
+none), so it cannot be built. The same readout showed 60 ms exposures in dim
+light, which drop the frame rate to about 16 and smear and delay motion; the
+camera does offer manual exposure and ISO. *Sharper motion* sets 1/60 s and
+raises ISO by the same factor; it is off by default because the picture gets
+grainier, and only shown where the camera supports it.
+
+## 2026-10-15 — The capture aims with what the camera shows
+
+Measured on the Pixel 7a by comparing the camera image's frame-to-frame
+motion with the gyroscope while panning (correlation 0.92 sideways, 0.86
+up-down): the image trails the gyroscope by about 210 ms, and its scale is a
+long-side field of view of 60 deg sideways and 67 deg up-down (probably the
+phone's video stabilisation; the reason is not known). The overlay followed
+the gyroscope at once and so ran ahead of the image while panning, which
+read as lag; drawing itself took 1-2 ms.
+
+- Everything the user aims with uses the orientation from the image's delay
+  ago, so what is under the crosshair on screen is what is recorded. Holding
+  still, nothing changes.
+- The overlay uses a focal length per axis, as measured, not one assumed
+  field of view.
+- Each device refines its own delay and scale while the user pans: frames
+  are shrunk and compared in a worker, in memory, and closed at once; only
+  the motion numbers leave it. The camera promise stands: nothing of the
+  video is recorded, stored or sent. The values are a per-device convenience
+  in localStorage, not backed up.
+
 ## 2026-10-15 — North references and loop closure (sensor capture phase 3)
 
-- **References replace the compass.** The Moon, the Sun or a landmark in the
+- **References replace the compass.** The Moon, the Sun (removed the same
+  day, see "No Sun reference") or a landmark in the
   crosshair sets north for the rest of the capture; the compass only reports
   how far it was off. Moon and Sun use the observing site and the current
   time (not the planner's selected time), apparent and topocentric, and only

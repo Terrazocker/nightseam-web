@@ -37,7 +37,9 @@ Where NightSeam Web stands and what comes next. Open defects are in
   placement, and move horizons between devices with a share link. Phase 0
   (sensor probe) passed; phases 1-4 (photos removed, camera capture with an
   AR overlay, north references and loop closure, share link) are done on the
-  branch; the owner acceptance (phase 5) and the overlay's lag remain.
+  branch; the overlay lag is measured and fixed (awaiting the owner's
+  check) and the owner acceptance checklist (phase 5) is written for the
+  owner to run.
 - **Horizon rebuild** ([plan](docs/horizon/HORIZON_REBUILD_PLAN.md)): phases
   1-6 are merged (pull request #2). Its photo parts are to be replaced by the
   sensor capture; the skyline model, overhangs and file import/export stay.

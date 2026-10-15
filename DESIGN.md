@@ -112,26 +112,45 @@ The local exposure catalog has its own design document in Nightseam-catalog.
     above that edge is shaded as blocked, with a dashed edge so it reads apart
     from the skyline. Points drag, arrow keys and Delete work as in Draw; the
     points form adds a flat overhang.
-  - Phone capture: one button opens a full-screen camera view with a
-    crosshair, a live direction readout, where north comes from, and an
-    overview strip of the circle. Over the video, what is recorded is drawn
-    where it belongs, as lines only so the scene stays visible: the dashed
-    level horizon with N/E/S/W marks, the skyline, overhang edges dashed, and
-    the trace in progress in the warning colour. *Start tracing / Stop
-    tracing* is the large primary toggle; *Skyline / Overhang*, *Add
-    point*, *Undo*, *North…* and *Done* sit beside it. *North…* opens a
-    panel in the view: *Moon / Sun is in the cross* (disabled with the reason
-    when below 2 deg or above 60 deg, and a warning to aim at the Sun on the
-    screen only), a landmark bearing field with *Landmark is in the cross*,
-    *Read the compass again* and *Close*. After a full turn, a two-button
-    question (*Yes, close the loop* / *No, keep as traced*) holds the trace
-    until answered; nothing else can be pressed meanwhile. A panel or
-    question takes the place of the controls and the strip, and the top and
-    bottom areas stay within 35% and 45% of the screen, so nothing ever
-    covers the crosshair: it is what the user aims with. Say plainly
-    that north comes from the compass and how far it may be off, and while
-    the compass settles, that the phone should be held still. Escape and
-    *Done* close it and return focus to the button.
+  - Phone capture: one button opens a full-screen camera view laid out
+    mobile first, for one hand on a phone held upright:
+    - An opaque bar above the camera: *✕ Done* on the left and the
+      crosshair's direction in large monospace digits on one line, always
+      with one decimal and padded so digits do not jump (*152.0° SSE · alt
+      -12.3°*), changing at most every 120 ms (or, before there is one, what
+      the capture waits for); below them a full-width north button
+      saying where north comes from in a few words (*North: compass, ±3°*,
+      *North: the Moon*), which opens the north panel; then a site warning
+      in the warning colour when the phone is far from the site, and the
+      status line.
+    - The camera fills the middle with the crosshair at its centre. Over the
+      video, what is recorded is drawn where it belongs, as lines only so the
+      scene stays visible: the dashed level horizon with N/E/S/W marks, the
+      skyline, overhang edges dashed, the recorded points as small dots on
+      them, and the trace in progress in the warning colour.
+    - An opaque bar below: the overview strip of the whole circle; a row
+      with *Skyline / Overhang* as one segmented control and, where the
+      camera allows manual exposure, a *Sharper motion* toggle; and the thumb
+      row: *Undo*, the large brass *Start tracing / Stop tracing* toggle in
+      the middle, *Add point*.
+    - Every control is at least 44 px (48 px for buttons, 64 px for the
+      trace toggle). The bars stay within 35% and 45% of the screen and
+      never cover the crosshair: it is what the user aims with. On short
+      screens (a phone held sideways) the strip is dropped.
+    - The north panel (*Moon is in the cross*, disabled with the reason
+      when below 2 deg or above 60 deg; a bearing field with *Landmark is in
+      the cross*;
+      *Compass again*; *Close*) and the full-turn question (*Yes, close the
+      loop* / *No, keep as traced*) take the place of the strip and the
+      controls; nothing else can be pressed while the question waits. The
+      north panel also gives the full account of north: which reference and
+      when, how far the compass was off, and while the compass settles, that
+      the phone should be held still; a monospace status line underneath says
+      what the compass itself is doing (readings a second, settling,
+      restarts), so a user can report why north is missing.
+    - The view opens with focus on *Start tracing*, or on *Done* while
+      tracing is not possible yet; Escape and *Done* close it and return
+      focus to the button.
   - Share link: beside *Export file* in the editor head. On phones it opens
     the system share sheet; elsewhere it copies the link or shows it to copy.
     Opening a link asks in-page before adding the horizon and says what it

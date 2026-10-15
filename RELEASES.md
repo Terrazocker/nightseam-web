@@ -5,6 +5,110 @@ Actual validation outcomes, newest first. Published releases: v0.1.1 (October 8,
 development awaiting the next release, 0.7.0. Upload success alone is never
 recorded as acceptance.
 
+## Sun removed, calmer readout, points in the AR view — October 15, 2026 (branch horizon-sensor-plan)
+
+Owner: remove the Sun reference; the readout flashed and jumped between one
+and two lines; show the recorded points. The north panel offers the Moon and
+a landmark only. The readout is one fixed-width line with one decimal
+(`152.0° SSE · alt -12.3°`), updated at most every 120 ms, and the readout and
+overlay average the orientation over ±60 ms; recorded directions are not
+averaged (averaging them moved a fast-traced peak 1 deg in the loop check).
+The overlay draws recorded points as dots. The smoothing window narrows to
+stay centred on phones whose camera trails the gyroscope by less than 60 ms
+(core `smoothOrientation`, with contracts in horizon_model.mjs: a steady turn
+reads where it is, and 10 ms from the newest reading the window narrows).
+
+Checks: phone-capture and references-and-loop read the new format and assert
+no Sun button and a drawn dot; mobile-layout asserts one unclipped line at
+412, 360 and 813 px wide. Capture checks 8/8.
+
+## Compass warm-up and status line — October 15, 2026 (branch horizon-sensor-plan)
+
+Owner: the mobile-first UI is better; the compass still sometimes needs
+*Compass again* on a first open. The editor now runs the compass at 10 Hz
+while the Phone capture panel is open, so a capture starts on a settled
+compass; the north panel shows the compass's readings a second, settling
+and restarts.
+
+New check web-horizon-capture-compass-prewarm (opening the panel starts a
+10 Hz compass, closing it stops it, leaving the tab stops it within 2 s and
+nothing restarts it); the settling and no-compass checks now also read the
+status line. Capture checks 8/8.
+
+## Mobile-first capture view — October 15, 2026 (branch horizon-sensor-plan)
+
+Owner: Sharper motion makes it smoother, but OIS still seems on; asked for a
+mobile-first capture UI. Read over USB debugging: Chrome on the Pixel 7a
+lists one back camera only ("camera 0, facing back", zoom 1-8x), so the
+ultrawide lens without OIS is out of reach and OIS stays.
+
+The capture view now has opaque bars (previously 84% opaque, against the
+design guide), the direction in large digits beside *✕ Done*, a short north
+button that opens the north panel (which now carries the full account), a
+segmented Skyline / Overhang control with Sharper motion beside it, and a
+thumb row (Undo, a 64 px brass Start/Stop tracing, Add point). Measured in
+the preview at 412x813: top bar 0-154 px, crosshair 371-443, bottom bar from
+626, smallest target 44 px; at 813x412 the strip hides and the bars end at
+141 and start at 273 around the crosshair at 170-242.
+
+New check web-horizon-capture-mobile-layout (upright and sideways: crosshair
+uncovered, every control at least 44 px, the thumb row in order at the
+bottom, opaque bars); against the previous layout it fails (no thumb row,
+translucent bars).
+
+## Sharper motion toggle; capture focus fix — October 15, 2026 (branch horizon-sensor-plan)
+
+Owner request: a button to turn off OIS. Read over USB debugging, the Pixel
+7a's camera in Chrome offers no stabilisation control (capabilities: aspect
+ratio, colour temperature, exposure compensation, exposure mode
+continuous/manual, exposure time 0.07 ms-16 s, focus, frame rate up to 60,
+ISO 45-8982, resize mode, torch, white balance, zoom 1-8x), but reported a
+60 ms exposure in the evening light. Added *Sharper motion* (1/60 s, ISO
+scaled to keep the light), shown only where manual exposure exists.
+
+Found by the new check: with no north yet (no sensors), Escape did not
+close the capture view, because the focused Start tracing button was then
+disabled and focus fell out of the view. Escape is now handled while the
+view is open wherever focus is, and the view opens on Done when tracing is
+not possible yet.
+
+New check web-horizon-capture-sharper-motion (no toggle without manual
+exposure; on a Pixel-like camera at 60 ms and ISO 100 it asks for 1/60 s at
+ISO 360; off returns to continuous; Escape closes the view). Capture checks
+6/6.
+
+## Overlay lag measured and fixed; acceptance checklist — October 15, 2026 (branch horizon-sensor-plan)
+
+Measured on the Pixel 7a with a throwaway probe (frames analysed in a worker
+via MediaStreamTrackProcessor, gyroscope at 60.1/s, frames at 27.9/s): the
+camera image's motion matches the gyroscope's with correlation 0.92
+sideways and 0.86 up-down, trailing it by 225 ms and 195 ms; scale 165.9 and
+144.4 analysis px/rad, a long-side field of view of 60.1 and 67.2 deg. A
+first probe that analysed frames on the main thread starved the sensors to
+14 readings a second and was discarded. The core matcher (matchMotion)
+reproduces these numbers from the same recording.
+
+Fix: the capture aims with the orientation from the image's delay ago
+(readout, overlay, trace, points, references); the overlay uses a focal
+length per axis; web/capturemotion.js (module worker) measures each device
+while panning and refines delay and scale (stored per device). Starting
+values: 210 ms, 0.864 and 0.752 of the long side. Core angularVelocity and
+matchMotion, core 01f2baba433b6810, token 74. Phase 5: the Phone capture
+checklist in docs/acceptance/HORIZON_ACCEPTANCE.md (ten checks with targets).
+
+New checks: horizon_model.mjs (angular velocity; a synthetic recording with
+a 200 ms delay and 165.5 px/rad is recovered within 10 ms and 3%);
+test_ui_invariants (the motion worker closes every frame, uses no storage or
+network and posts numbers only); browser
+web-horizon-capture-shows-what-the-camera-saw (with a 300 ms delay, a point
+added right after a swing lands where the screen still showed; the readout
+follows after the delay; the worker receives frames). Without the look-back
+that check fails (the point lands at 70 deg instead of 30).
+
+Local validation: pytest 358 passed / 1 skipped; real-Chrome suite 84/84;
+check_js, check_core, check_encoding OK; check_release 0 errors. Not yet
+checked on the Pixel.
+
 ## North references and loop closure (sensor capture phase 3) — October 15, 2026 (branch horizon-sensor-plan)
 
 *North…* in the capture view sets north from the Moon, the Sun (topocentric

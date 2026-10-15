@@ -18,7 +18,7 @@ export {
   replaceOverhangsInRange, flatOverhang,
   sunDirection, moonDirection, referenceUsable, referenceOffset, closeLoop, siteDistanceM,
   devicePointing, quaternionPointing, orientationQuaternion, cameraProject,
-  circularMean, sweepLine, LINK_VERSION, LINK_MAX_CHARS, encodeHorizonLink, decodeHorizonLink,
+  circularMean, angularVelocity, smoothOrientation, matchMotion, sweepLine, LINK_VERSION, LINK_MAX_CHARS, encodeHorizonLink, decodeHorizonLink,
   parseHorizonFile, formatHorizonFile,
 } from './horizon.js';
 

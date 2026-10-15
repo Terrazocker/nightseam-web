@@ -17,7 +17,7 @@
  * This module must stay pure: no DOM, storage, network or build tokens.
  */
 
-import { altaz, sunRaDec } from './astro.js';
+import { altaz, sunRaDec, moonAltAz } from './astro.js';
 
 export const NO_BLOCK = -90;
 export const BINS = 720;
@@ -316,6 +316,62 @@ export function sunDirection(jd, latDeg, lonDeg) {
   return { az: wrapAz(az), alt };
 }
 
+/** The Moon's apparent topocentric direction from a site at a Julian Day. */
+export function moonDirection(jd, latDeg, lonDeg) {
+  const [alt, az] = moonAltAz(jd, latDeg, lonDeg);
+  return { az: wrapAz(az), alt };
+}
+
+/** Whether a sky reference can set north: it must be up (at least 2 deg, so
+ *  it clears most horizons) and not so high that azimuth means little. */
+export function referenceUsable(dir, maxAlt = 60) {
+  if (!dir || !isNum(dir.alt) || !isNum(dir.az)) return { ok: false, why: 'unknown' };
+  if (dir.alt < 2) return { ok: false, why: 'below' };
+  if (dir.alt > maxAlt) return { ok: false, why: 'high' };
+  return { ok: true, why: '' };
+}
+
+/** North from a reference in the crosshair: the offset that turns the
+ *  relative azimuth the phone reads into the reference's true azimuth, and
+ *  how far the measured altitude is off (a check on the aim and the sensor). */
+export function referenceOffset(measured, reference) {
+  return { offset: wrapAz(reference.az - measured.az), altError: measured.alt - reference.alt };
+}
+
+/** Close a traced loop whose last sample points where the first did. The
+ *  closing error (turned angle minus whole turns) is drift; it is removed in
+ *  proportion to the angle turned so far, not to time (phase 0: drift comes
+ *  with turning). Returns { samples, error } or null for less than about a
+ *  full turn. */
+export function closeLoop(samples) {
+  const src = (Array.isArray(samples) ? samples : []).filter((p) => p && isNum(p.az) && isNum(p.alt));
+  if (src.length < 3) return null;
+  const unwrapped = [src[0].az];
+  const turned = [0];
+  for (let i = 1; i < src.length; i++) {
+    const d = azDelta(src[i].az, src[i - 1].az);
+    unwrapped.push(unwrapped[i - 1] + d);
+    turned.push(turned[i - 1] + Math.abs(d));
+  }
+  const net = unwrapped[unwrapped.length - 1] - unwrapped[0];
+  if (Math.abs(net) < 300) return null;   // not a full turn: nothing to close
+  const turns = Math.round(net / 360);
+  const error = net - 360 * turns;
+  const total = turned[turned.length - 1] || 1;
+  return {
+    error,
+    samples: src.map((p, i) => ({ az: wrapAz(unwrapped[i] - error * turned[i] / total), alt: p.alt })),
+  };
+}
+
+/** Ground distance in metres between two latitude/longitude points (haversine). */
+export function siteDistanceM(lat1, lon1, lat2, lon2) {
+  const r = Math.PI / 180;
+  const a = Math.sin((lat2 - lat1) * r / 2) ** 2
+    + Math.cos(lat1 * r) * Math.cos(lat2 * r) * Math.sin((lon2 - lon1) * r / 2) ** 2;
+  return 2 * 6371008.8 * Math.asin(Math.min(1, Math.sqrt(a)));
+}
+
 /** Where a phone's back camera points, from W3C device orientation angles in
  *  degrees (alpha about the vertical, counter-clockwise from north; beta and
  *  gamma the front-back and side tilts, applied Z-X'-Y''). An upright phone
@@ -377,6 +433,82 @@ export function cameraProject(q, offset, az, alt, maxAngle = 80) {
   const forward = -dz;   // the back camera looks along -z
   if (!(forward > Math.cos(maxAngle * Math.PI / 180))) return null;
   return { x: dx / forward, y: dy / forward };
+}
+
+/** Angular velocity (rad/s, about the device's own x, y, z axes) between two
+ *  orientation quaternions taken `dt` seconds apart. */
+export function angularVelocity(q0, q1, dt) {
+  if (!(dt > 0)) return [0, 0, 0];
+  const [ax, ay, az, aw] = [-q0[0], -q0[1], -q0[2], q0[3]];   // q0 inverse
+  const [bx, by, bz, bw] = q1;
+  let x = aw * bx + ax * bw + ay * bz - az * by;
+  let y = aw * by - ax * bz + ay * bw + az * bx;
+  let z = aw * bz + ax * by - ay * bx + az * bw;
+  let w = aw * bw - ax * bx - ay * by - az * bz;
+  if (w < 0) { x = -x; y = -y; z = -z; w = -w; }
+  const s = Math.hypot(x, y, z);
+  if (s < 1e-12) return [0, 0, 0];
+  const k = 2 * Math.atan2(s, w) / s / dt;
+  return [x * k, y * k, z * k];
+}
+
+/** The orientation at time t (ms) averaged over a window centred on t:
+ *  `history` holds {t, q} readings in time order. The window is `halfMs`
+ *  either side, narrowed to the readings that exist on both sides, so it
+ *  stays centred and adds no lag even when t is close to the newest reading
+ *  (a camera that trails the gyroscope only a little). Returns a unit
+ *  quaternion, or null when fewer than two readings fall in the window. */
+export function smoothOrientation(history, t, halfMs) {
+  const h = Array.isArray(history) ? history : [];
+  if (h.length < 2 || !isNum(t) || !(halfMs > 0)) return null;
+  const half = Math.min(halfMs, h[h.length - 1].t - t, t - h[0].t);
+  if (!(half > 0)) return null;
+  const near = h.filter((e) => Math.abs(e.t - t) <= half);
+  if (near.length < 2) return null;
+  const ref = near[0].q, sum = [0, 0, 0, 0];
+  for (const { q } of near) {
+    const sign = q[0] * ref[0] + q[1] * ref[1] + q[2] * ref[2] + q[3] * ref[3] < 0 ? -1 : 1;
+    for (let k = 0; k < 4; k++) sum[k] += sign * q[k];
+  }
+  const n = Math.hypot(...sum);
+  return n > 0 ? sum.map((v) => v / n) : null;
+}
+
+/** How the camera image's motion follows the gyroscope. `rates` are
+ *  {t, w}: angular rate (rad/s) about one device axis at time t (ms);
+ *  `shifts` are {t0, t1, d}: how far the image moved (pixels) along the
+ *  matching image axis between two frames. Returns the delay (ms) by which
+ *  the image follows the gyroscope and the image shift per radian, with their
+ *  correlation, or null with too little data. The best delay is the one at
+ *  which the two motions agree most. */
+export function matchMotion(rates, shifts, { maxLag = 400, step = 5, minPairs = 60 } = {}) {
+  const r = (Array.isArray(rates) ? rates : []).filter((p) => isNum(p.t) && isNum(p.w));
+  if (r.length < 2) return null;
+  const at = (t) => {
+    let lo = 0, hi = r.length - 1;
+    if (t < r[0].t || t > r[hi].t) return null;
+    while (hi - lo > 1) { const mid = (lo + hi) >> 1; if (r[mid].t <= t) lo = mid; else hi = mid; }
+    const f = r[hi].t === r[lo].t ? 0 : (t - r[lo].t) / (r[hi].t - r[lo].t);
+    return r[lo].w + (r[hi].w - r[lo].w) * f;
+  };
+  const rows = (Array.isArray(shifts) ? shifts : [])
+    .filter((s) => isNum(s.t0) && isNum(s.t1) && isNum(s.d) && s.t1 > s.t0)
+    .map((s) => ({ t: (s.t0 + s.t1) / 2, v: s.d / ((s.t1 - s.t0) / 1000) }));
+  let best = null;
+  for (let lag = 0; lag <= maxLag; lag += step) {
+    let n = 0, sx = 0, sy = 0, sxx = 0, syy = 0, sxy = 0;
+    for (const row of rows) {
+      const w = at(row.t - lag);
+      if (w == null) continue;
+      n++; sx += w; sy += row.v; sxx += w * w; syy += row.v * row.v; sxy += w * row.v;
+    }
+    if (n < minPairs) continue;
+    const cov = sxy - sx * sy / n, vx = sxx - sx * sx / n, vy = syy - sy * sy / n;
+    if (!(vx > 0) || !(vy > 0)) continue;
+    const corr = cov / Math.sqrt(vx * vy);
+    if (!best || Math.abs(corr) > Math.abs(best.corr)) best = { lagMs: lag, slope: cov / vx, corr, n };
+  }
+  return best;
 }
 
 /** Circular mean of angles in degrees and their spread (circular standard

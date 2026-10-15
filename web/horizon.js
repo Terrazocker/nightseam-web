@@ -10,8 +10,8 @@
  * planner preferences.
  */
 import { vizTheme } from './viztheme.js?v=7';
-import { openCapture, captureAvailable } from './capture.js?v=11';
-import { normalizeWebPrefs, WEB_PREF_DEFAULTS } from './webstore.js?v=79';
+import { openCapture, captureAvailable, warmCompass } from './capture.js?v=21';
+import { normalizeWebPrefs, WEB_PREF_DEFAULTS } from './webstore.js?v=82';
 import {
   NO_BLOCK, ALT_MIN, ALT_MAX, MAX_POINTS,
   wrapAz, normalizePoints, normalizeHorizon,
@@ -22,12 +22,15 @@ import {
   newHistory, historyCommit, historyCanUndo, historyCanRedo, historyUndo,
   historyRedo, historyMarkSaved, historyDirty,
   PLANNER_CHANGE_EVENT, nextPlannerRevision, plannerChange, panoramaRevision,
-} from './core.js?v=73';
+} from './core.js?v=76';
 
 export { NO_BLOCK, ceilFor };
 
 const LS_KEY = 'nightseam_horizons_v2';
 const PREFS_KEY = 'nightseam_prefs_v1';
+// This device's camera calibration for the capture overlay (capture.js);
+// device-specific, so not part of backups.
+const CAPTURE_CAL_KEY = 'nightseam_capture_cal_v1';
 // Storage of the retired panorama editor (records not converted) and the
 // retired horizon photos (deleted; the skylines traced over them stay).
 const LEGACY_LS_KEY = 'nightseam_panos_v1';
@@ -429,6 +432,23 @@ function confirmDialog(box, { title, body, ok, cancel = 'Cancel' }) {
   });
 }
 
+/* -------------------------- capture calibration -------------------------- */
+
+/** The stored camera calibration of this device, or null if none or invalid. */
+function loadCaptureCalibration() {
+  try {
+    const v = JSON.parse(localStorage.getItem(CAPTURE_CAL_KEY) || 'null');
+    if (!v || typeof v !== 'object') return null;
+    const ok = (x, lo, hi) => typeof x === 'number' && Number.isFinite(x) && x >= lo && x <= hi;
+    if (!ok(v.delayMs, 0, 400) || !ok(v.kx, 0.5, 1.4) || !ok(v.ky, 0.5, 1.4)) return null;
+    return { delayMs: v.delayMs, kx: v.kx, ky: v.ky, measured: !!v.measured };
+  } catch { return null; }
+}
+
+function saveCaptureCalibration(v) {
+  try { localStorage.setItem(CAPTURE_CAL_KEY, JSON.stringify(v)); } catch { /* a convenience only */ }
+}
+
 /* ------------------------------ share links ------------------------------ */
 
 const hzNote = (box, text) => { const n = $('#hz-note', box); if (n) n.textContent = text; };
@@ -750,7 +770,12 @@ function wireEditor(box, h, onChanged) {
   if (activeSession?.disconnect) activeSession.disconnect();
 
   let gesture = null;
-  let capture = null;                     // the open phone capture view                     // the pointer gesture in progress
+  let capture = null;                     // the open phone capture view
+  let warm = null, warmTimer = null;      // the compass warm-up (stop function) and its check
+  function stopWarm() {
+    if (warm) { warm(); warm = null; }
+    if (warmTimer && !cvs.isConnected) { clearInterval(warmTimer); warmTimer = null; }
+  }                     // the pointer gesture in progress
   let spaceDown = false;
   let saveFailed = false;
   let size = { w: 0, h: 0, dpr: 1 };
@@ -773,7 +798,7 @@ function wireEditor(box, h, onChanged) {
   activeSession = {
     horizonId: h.id, record: h, hist, dirty, settle,
     save: persist,
-    disconnect: () => { observer?.disconnect(); gesture = null; capture?.close(); },
+    disconnect: () => { observer?.disconnect(); gesture = null; capture?.close(); stopWarm(); },
   };
 
   /* ---- geometry ---- */
@@ -1377,6 +1402,17 @@ function wireEditor(box, h, onChanged) {
 
   /* ---- phone capture ---- */
   const capStatus = (text) => { const el = $('#hz-cap-status', box); if (el) el.textContent = text; };
+  // Warm the compass while the Phone capture panel is open, so north is ready
+  // when the capture starts. Leaving the editor (another tab replaces it
+  // without telling it) is noticed within 2 s.
+  function syncWarm() {
+    const want = cvs.isConnected && $('#hz-capture-panel', box)?.open && captureAvailable();
+    if (want && !warm) warm = warmCompass();
+    if (!want) stopWarm();
+  }
+  $('#hz-capture-panel', box).addEventListener('toggle', syncWarm);
+  warmTimer = setInterval(syncWarm, 2000);
+  syncWarm();
   $('#hz-cap-start', box).addEventListener('click', () => {
     if (capture) return;
     if (!captureAvailable()) { capStatus('This browser has no camera or motion sensor access. Use a phone or tablet.'); return; }
@@ -1409,6 +1445,8 @@ function wireEditor(box, h, onChanged) {
       onUndo: undo,
       canUndo: () => historyCanUndo(hist),
       site: () => siteContext(),
+      calibration: loadCaptureCalibration(),
+      onCalibrated: saveCaptureCalibration,
       onClose: (message) => {
         capture = null;
         if (!cvs.isConnected) return;

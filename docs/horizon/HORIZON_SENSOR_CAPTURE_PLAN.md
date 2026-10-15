@@ -10,7 +10,10 @@ directly. It replaces the photo parts of the
 points form and file import/export stay.
 
 Status: phases 0-4 and the AR overlay (2b) done on October 15
-(RELEASES.md); phase 5 (acceptance) remains, with the overlay's lag open. The owner was offered server-stored shortcodes
+(RELEASES.md). The overlay lag was measured (the camera image trails the
+gyroscope by about 210 ms) and fixed by aiming with what the camera shows,
+with per-device calibration; awaiting the owner's check. Phase 5: the
+checklist is in docs/acceptance/HORIZON_ACCEPTANCE.md, awaiting the owner. The owner was offered server-stored shortcodes
 and chose the share link only.
 Work stays on branch `horizon-sensor-plan` (pull request #8) until the
 capture works. Phase 0 on the
@@ -134,7 +137,8 @@ the compass did not start on the first open; its sources now restart while
 north is missing and when a motion permission is granted.
 
 **Phase 3 — north and loop closure.** Done: *North…* sets north from the
-Moon, the Sun or a landmark bearing (works without a compass); a full turn
+Moon or a landmark bearing (works without a compass; the Sun was built and
+then removed at the owner's request); a full turn
 asks whether it ended where it began and closes the loop up to 3 deg of
 drift; the site check warns only where location access is already granted.
 Planned as follows. Reference step before or after the
@@ -149,8 +153,10 @@ system share sheet (Web Share), elsewhere it copies the link. Opening a link
 validates the payload completely and asks before adding the horizon; nothing
 is written silently, and a bad link changes nothing.
 
-**Phase 5 — acceptance.** A new owner checklist replaces the real-photo
-section of [HORIZON_ACCEPTANCE.md](../acceptance/HORIZON_ACCEPTANCE.md).
+**Phase 5 — acceptance.** Written: the *Phone capture* section of
+[HORIZON_ACCEPTANCE.md](../acceptance/HORIZON_ACCEPTANCE.md), ten checks with
+targets (compass, landmark and Moon/Sun north, loop closure, repeatability,
+overhang, overlay, share link, keyboard, wrong site). The owner runs it.
 
 ## Checks
 

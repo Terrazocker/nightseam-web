@@ -118,6 +118,14 @@ def test_phone_capture_only_shows_the_camera():
         assert kept not in js, f"capture.js must not use {kept}"
     assert "for (const t of stream.getTracks()) t.stop();" in js
     assert "video.srcObject = null;" in js
+    worker = _read("web", "capturemotion.js")
+    for kept in ("MediaRecorder", "toBlob", "toDataURL", "convertToBlob", "fetch(", "XMLHttpRequest",
+                 "sendBeacon", "localStorage", "indexedDB", "caches."):
+        assert kept not in worker, f"capturemotion.js must not use {kept}"
+    assert "frame.close();" in worker, "every camera frame is closed at once"
+    posts = [line.strip() for line in worker.splitlines() if "postMessage(" in line]
+    assert posts == ["postMessage({ size: [frame.displayWidth, frame.displayHeight, W, h] });",
+                     "postMessage({ f: [prevT, t, dx, sx, dy, sy] });"], f"the worker reports numbers only: {posts}"
     editor = _read("web", "horizon.js")
     for gone in ("hz-cmp-", "deviceorientation", "devicePointing"):
         assert gone not in editor, f"the old compass code is back: {gone}"
