@@ -9,9 +9,8 @@ directly. It replaces the photo parts of the
 [rebuild plan](HORIZON_REBUILD_PLAN.md); the skyline model, overhangs, the
 points form and file import/export stay.
 
-Status: phases 0-2, the AR overlay (2b) and the share link (phase 4) done
-on October 15 (RELEASES.md); phase 3 (north references, loop closure) and
-phase 5 (acceptance) remain. The owner was offered server-stored shortcodes
+Status: phases 0-4 and the AR overlay (2b) done on October 15
+(RELEASES.md); phase 5 (acceptance) remains, with the overlay's lag open. The owner was offered server-stored shortcodes
 and chose the share link only.
 Work stays on branch `horizon-sensor-plan` (pull request #8) until the
 capture works. Phase 0 on the
@@ -134,7 +133,11 @@ turning, or one landmark at the screen edge). The same Pixel test found that
 the compass did not start on the first open; its sources now restart while
 north is missing and when a motion permission is granted.
 
-**Phase 3 — north and loop closure.** Reference step before or after the
+**Phase 3 — north and loop closure.** Done: *North…* sets north from the
+Moon, the Sun or a landmark bearing (works without a compass); a full turn
+asks whether it ended where it began and closes the loop up to 3 deg of
+drift; the site check warns only where location access is already granted.
+Planned as follows. Reference step before or after the
 sweep (Moon/Sun, landmark bearing, compass average), loop-closure drift
 correction and the site check. The editor shows the reference used and the
 remaining disagreement in degrees, in words as well as numbers.

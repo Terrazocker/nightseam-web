@@ -90,7 +90,7 @@ editor", "Capture horizons with the phone's sensors"); plans:
 - **Phone capture** (`web/capture.js`). A full-screen view over the page:
   the rear camera (`getUserMedia`, only shown, never recorded or stored;
   closing stops its tracks), a crosshair, an overview strip of the whole
-  circle and Start/Stop tracing / Add point / Undo / Re-read compass / Done. The
+  circle and Start/Stop tracing / Add point / Undo / North… / Done. The
   shape comes from the relative orientation (`RelativeOrientationSensor`,
   falling back to `deviceorientation` through `orientationQuaternion`; both
   as quaternions), which does not jump near metal. North is set once the
@@ -107,6 +107,23 @@ editor", "Capture horizons with the phone's sensors"); plans:
   reading has paired for 1.5 s, and again when a motion permission is
   granted. Without a relative source for a second the compass gives the
   shape too.
+- **North references.** *North…* opens a panel: put the crosshair on the
+  Moon or the Sun (topocentric apparent position for the observing site and
+  the current time, `moonDirection` / `sunDirection`; usable from 2 to 60 deg
+  altitude, `referenceUsable`) or on a landmark with a typed true bearing,
+  and tap it. `referenceOffset` turns the relative azimuth into the true one;
+  a reference replaces the compass for the rest of the capture and works
+  without any compass. The view says which reference set north and when, how
+  far the compass was off, and (Moon/Sun) whether the aim read high or low.
+  *Read the compass again* returns to the compass.
+- **Loop closure.** A skyline trace with at least 300 deg of net turn asks
+  whether the crosshair is back where it started. Yes: `closeLoop` removes
+  the closing error in proportion to the angle turned so far; above 3 deg it
+  is a missed aim, not drift, and the trace is kept as traced with a note.
+  No, or closing the view: kept as traced.
+- **Site check.** Where location access is already granted, the view warns
+  when the phone is further than 75 m (or twice the GPS accuracy) from the
+  observing site (`siteDistanceM`); it never asks for location itself.
 - **AR overlay.** A canvas over the video draws lines only: the level
   horizon with compass marks, the skyline, overhang edges and the trace in
   progress, each projected with `cameraProject` from the current orientation

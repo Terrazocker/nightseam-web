@@ -119,7 +119,16 @@ The local exposure catalog has its own design document in Nightseam-catalog.
     level horizon with N/E/S/W marks, the skyline, overhang edges dashed, and
     the trace in progress in the warning colour. *Start tracing / Stop
     tracing* is the large primary toggle; *Skyline / Overhang*, *Add
-    point*, *Undo*, *Re-read compass* and *Done* sit beside it. Say plainly
+    point*, *Undo*, *North…* and *Done* sit beside it. *North…* opens a
+    panel in the view: *Moon / Sun is in the cross* (disabled with the reason
+    when below 2 deg or above 60 deg, and a warning to aim at the Sun on the
+    screen only), a landmark bearing field with *Landmark is in the cross*,
+    *Read the compass again* and *Close*. After a full turn, a two-button
+    question (*Yes, close the loop* / *No, keep as traced*) holds the trace
+    until answered; nothing else can be pressed meanwhile. A panel or
+    question takes the place of the controls and the strip, and the top and
+    bottom areas stay within 35% and 45% of the screen, so nothing ever
+    covers the crosshair: it is what the user aims with. Say plainly
     that north comes from the compass and how far it may be off, and while
     the compass settles, that the phone should be held still. Escape and
     *Done* close it and return focus to the button.

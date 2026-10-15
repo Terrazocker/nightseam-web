@@ -211,6 +211,35 @@ assert.ok(turned.every((p) => p.alt === 3), 'a full turn replaces the whole skyl
 const eave = H.splitAtNorth(H.sweepLine([{ az: 340, alt: 50 }, { az: 0, alt: 52 }, { az: 20, alt: 54 }], 0));
 assert.equal(eave.length, 2, 'an overhang swept across north becomes two edges');
 
+// --- north references and loop closure ------------------------------------------
+{
+  const jd = 2440587.5 + Date.UTC(2026, 9, 15, 20) / 86400000;
+  const [malt, maz] = (await import('../../core/astro.js')).moonAltAz(jd, 52.52, 13.4);
+  const moon = H.moonDirection(jd, 52.52, 13.4);
+  close(moon.alt, malt, 1e-12, 'moonDirection is the apparent topocentric Moon');
+  close(moon.az, ((maz % 360) + 360) % 360, 1e-9);
+}
+assert.deepEqual(H.referenceUsable({ az: 100, alt: 20 }), { ok: true, why: '' });
+assert.equal(H.referenceUsable({ az: 100, alt: 1 }).why, 'below', 'a body on the horizon line is not used');
+assert.equal(H.referenceUsable({ az: 100, alt: 65 }).why, 'high', 'nor one high overhead, where azimuth means little');
+assert.equal(H.referenceUsable(null).ok, false);
+const ref = H.referenceOffset({ az: 350, alt: 21.4 }, { az: 20, alt: 21 });
+close(ref.offset, 30, 1e-9, 'north turns the relative 350 into the true 20');
+close(ref.altError, 0.4, 1e-9, 'the aim reads 0.4 deg high');
+
+// A full turn whose gyroscope runs 2% fast: it reads 367.2 deg for 360.
+const truth = Array.from({ length: 73 }, (_, i) => ({ az: (10 + i * 5) % 360, alt: 5 + 3 * Math.sin(i / 7) }));
+const drifted = truth.map((p, i) => ({ az: (10 + i * 5 * 1.02) % 360, alt: p.alt }));
+const closed = H.closeLoop(drifted);
+close(closed.error, 7.2, 1e-9, 'the closing error is the drift');
+closed.samples.forEach((p, i) => close(Math.abs(H.azDelta(p.az, truth[i].az)), 0, 1e-9, `sample ${i} is back where it belongs`));
+const westward = H.closeLoop(drifted.map((p) => ({ az: (720 - p.az) % 360, alt: p.alt })));
+close(westward.error, -7.2, 1e-9, 'an anticlockwise turn closes too');
+assert.equal(H.closeLoop(truth.slice(0, 40)), null, 'half a turn is no loop');
+assert.equal(H.closeLoop([{ az: 0, alt: 0 }]), null);
+close(H.siteDistanceM(52, 13, 53, 13) / 1000, 111.2, 0.1, 'one degree of latitude is about 111 km');
+close(H.siteDistanceM(52.5, 13.4, 52.5, 13.4), 0, 1e-9);
+
 // --- share links ---------------------------------------------------------------
 const shared = { name: '  Garten am Hang — Süd ', points: H.normalizePoints([{ az: 0, alt: 10 }, { az: 12.34, alt: -3.21 }, { az: 359.99, alt: 89.99 }]),
   overhangs: [[{ az: 100, alt: 40 }, { az: 110.5, alt: 35.25 }], [{ az: 350, alt: 60 }, { az: 360, alt: 60 }]] };

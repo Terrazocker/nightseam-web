@@ -686,6 +686,99 @@ def web_horizon_capture_compass_restarts(c):
     c.assert_clean()
 
 
+@check("web-horizon-capture-references-and-loop", "web")
+def web_horizon_capture_references_and_loop(c):
+    """Without any compass, north comes from a reference in the crosshair (a
+    landmark bearing here; the Moon and Sun buttons say whether each is up).
+    A full turn asks whether it ended where it began; closing the loop
+    removes the gyroscope's drift in proportion to the angle turned, and a
+    miss larger than drift is kept as traced."""
+    boot(c)
+    open_editor(c)
+    c.page.evaluate(CAMERA_STUB)
+    cdp = c.page.context.new_cdp_session(c.page)
+    cdp.send("Emulation.setSensorOverrideEnabled", {"enabled": True, "type": "relative-orientation"})
+    cdp.send("Emulation.setSensorOverrideEnabled", {"enabled": False, "type": "absolute-orientation",
+             "metadata": {"available": False}})
+
+    def rel(az: float, alt: float, wait: int = 40):
+        cdp.send("Emulation.setSensorOverrideReadings", {"type": "relative-orientation",
+                 "reading": {"quaternion": device_quaternion(az, alt)}})
+        c.page.wait_for_timeout(wait)
+
+    rel(0, 5)
+    if not c.page.locator("#hz-capture-panel").evaluate("el => el.open"):
+        c.page.locator("#hz-capture-panel summary").click()
+    c.page.set_viewport_size({"width": 412, "height": 789})   # the Pixel 7a's screen in CSS pixels
+    c.page.click("#hz-cap-start")
+    c.page.wait_for_selector(".cap", timeout=5000)
+    cross_clear = """() => { const r = (s) => document.querySelector(s).getBoundingClientRect();
+      const cross = r('.cap-cross'), top = r('.cap-top'), bottom = r('.cap-bottom');
+      return { clear: top.bottom <= cross.top && bottom.top >= cross.bottom,
+               top: Math.round(top.bottom), cross: [Math.round(cross.top), Math.round(cross.bottom)], bottom: Math.round(bottom.top) }; }"""
+    for _ in range(90):
+        rel(0, 5)
+        if "no compass" in c.page.inner_text("#cap-read"):
+            break
+    c.expect("no compass" in c.page.inner_text("#cap-read"), f"without a compass north is missing: {c.page.inner_text('#cap-read')!r}")
+    c.expect(not c.page.locator("#cap-trace").is_enabled(), "and nothing can be traced yet")
+
+    c.page.click("#cap-north-btn")
+    c.expect(c.page.locator("#cap-ref").is_visible(), "North… opens the reference panel")
+    clear = c.page.evaluate(cross_clear)
+    c.expect(clear["clear"], f"the reference panel leaves the crosshair free to aim with: {clear}")
+    sky = c.page.evaluate("""async () => {
+      const C = await import('./core.js');
+      const jd = C.julianDay(new Date());
+      const site = { lat: 52.52, lon: 13.4 };
+      return { moon: C.referenceUsable(C.moonDirection(jd, site.lat, site.lon)).ok,
+               sun: C.referenceUsable(C.sunDirection(jd, site.lat, site.lon)).ok };
+    }""")
+    c.expect_eq(c.page.locator("#cap-ref-moon").is_enabled(), sky["moon"], "the Moon button follows whether the Moon is usable now")
+    c.expect_eq(c.page.locator("#cap-ref-sun").is_enabled(), sky["sun"], "and the Sun button the Sun")
+    c.expect("Moon" in c.page.inner_text("#cap-ref-sky") and "Sun" in c.page.inner_text("#cap-ref-sky"), "the panel says where both are")
+
+    c.page.fill("#cap-ref-az", "120")
+    rel(0, 5)
+    c.page.click("#cap-ref-landmark")
+    c.expect(not c.page.locator("#cap-ref").is_visible(), "setting north closes the panel")
+    rel(0, 5, 120)
+    c.expect(c.page.inner_text("#cap-read").startswith("120° ESE"), f"the landmark sets north: {c.page.inner_text('#cap-read')!r}")
+    c.expect("landmark at 120°" in c.page.inner_text("#cap-north"), f"the view says where north comes from: {c.page.inner_text('#cap-north')!r}")
+
+    def full_turn(gain: float):
+        """Turn once around a skyline with one sharp peak half way (true 300
+        deg); the gyroscope reads `gain` times the true angle."""
+        c.page.click("#cap-trace")
+        for k in range(0, 181):
+            theta = k * 2
+            alt = 5 + 25 * max(0.0, 1 - abs(theta - 180) / 6)
+            rel(theta * gain, alt, 30)
+        c.page.click("#cap-trace")
+        c.page.wait_for_selector("#cap-loop:not([hidden])", timeout=5000)
+
+    full_turn(362.4 / 360)          # 2.4 deg of drift over the turn
+    c.expect("all the way round" in c.page.inner_text("#cap-loop"), "a full turn asks whether it ended where it began")
+    clear = c.page.evaluate(cross_clear)
+    c.expect(clear["clear"], f"so does the question, to check the cross is on the start: {clear}")
+    c.expect(not c.page.locator("#cap-trace").is_enabled(), "nothing else happens until it is answered")
+    c.page.click("#cap-loop-yes")
+    c.page.wait_for_function("() => /Loop closed: 2.4° of drift removed/.test(document.querySelector('#cap-status').textContent)",
+                             timeout=5000)
+    peak = max(active_horizon(c)["points"], key=lambda q: q["alt"])
+    c.expect(abs(peak["az"] - 300) <= 0.5, f"after closing the loop the peak is where it is, at 300 deg: {peak}")
+
+    full_turn(368 / 360)            # 8 deg: a missed aim, not drift
+    c.page.click("#cap-loop-yes")
+    c.page.wait_for_function("() => /more than drift/.test(document.querySelector('#cap-status').textContent)", timeout=5000)
+    peak = max(active_horizon(c)["points"], key=lambda q: q["alt"])
+    c.expect(abs(peak["az"] - 304) <= 0.6, f"a missed loop is kept as traced (peak at 120 + 184): {peak}")
+    c.page.keyboard.press("Escape")
+    c.page.wait_for_selector(".cap", state="detached", timeout=5000)
+    c.page.set_viewport_size({"width": 1366, "height": 900})
+    c.assert_clean()
+
+
 @check("web-horizon-capture-north-waits-for-compass", "web")
 def web_horizon_capture_north_waits_for_compass(c):
     """A compass that has just started swings towards its heading for several

@@ -17,7 +17,7 @@
  * This module must stay pure: no DOM, storage, network or build tokens.
  */
 
-import { altaz, sunRaDec } from './astro.js';
+import { altaz, sunRaDec, moonAltAz } from './astro.js';
 
 export const NO_BLOCK = -90;
 export const BINS = 720;
@@ -316,6 +316,62 @@ export function sunDirection(jd, latDeg, lonDeg) {
   return { az: wrapAz(az), alt };
 }
 
+/** The Moon's apparent topocentric direction from a site at a Julian Day. */
+export function moonDirection(jd, latDeg, lonDeg) {
+  const [alt, az] = moonAltAz(jd, latDeg, lonDeg);
+  return { az: wrapAz(az), alt };
+}
+
+/** Whether a sky reference can set north: it must be up (at least 2 deg, so
+ *  it clears most horizons) and not so high that azimuth means little. */
+export function referenceUsable(dir, maxAlt = 60) {
+  if (!dir || !isNum(dir.alt) || !isNum(dir.az)) return { ok: false, why: 'unknown' };
+  if (dir.alt < 2) return { ok: false, why: 'below' };
+  if (dir.alt > maxAlt) return { ok: false, why: 'high' };
+  return { ok: true, why: '' };
+}
+
+/** North from a reference in the crosshair: the offset that turns the
+ *  relative azimuth the phone reads into the reference's true azimuth, and
+ *  how far the measured altitude is off (a check on the aim and the sensor). */
+export function referenceOffset(measured, reference) {
+  return { offset: wrapAz(reference.az - measured.az), altError: measured.alt - reference.alt };
+}
+
+/** Close a traced loop whose last sample points where the first did. The
+ *  closing error (turned angle minus whole turns) is drift; it is removed in
+ *  proportion to the angle turned so far, not to time (phase 0: drift comes
+ *  with turning). Returns { samples, error } or null for less than about a
+ *  full turn. */
+export function closeLoop(samples) {
+  const src = (Array.isArray(samples) ? samples : []).filter((p) => p && isNum(p.az) && isNum(p.alt));
+  if (src.length < 3) return null;
+  const unwrapped = [src[0].az];
+  const turned = [0];
+  for (let i = 1; i < src.length; i++) {
+    const d = azDelta(src[i].az, src[i - 1].az);
+    unwrapped.push(unwrapped[i - 1] + d);
+    turned.push(turned[i - 1] + Math.abs(d));
+  }
+  const net = unwrapped[unwrapped.length - 1] - unwrapped[0];
+  if (Math.abs(net) < 300) return null;   // not a full turn: nothing to close
+  const turns = Math.round(net / 360);
+  const error = net - 360 * turns;
+  const total = turned[turned.length - 1] || 1;
+  return {
+    error,
+    samples: src.map((p, i) => ({ az: wrapAz(unwrapped[i] - error * turned[i] / total), alt: p.alt })),
+  };
+}
+
+/** Ground distance in metres between two latitude/longitude points (haversine). */
+export function siteDistanceM(lat1, lon1, lat2, lon2) {
+  const r = Math.PI / 180;
+  const a = Math.sin((lat2 - lat1) * r / 2) ** 2
+    + Math.cos(lat1 * r) * Math.cos(lat2 * r) * Math.sin((lon2 - lon1) * r / 2) ** 2;
+  return 2 * 6371008.8 * Math.asin(Math.min(1, Math.sqrt(a)));
+}
+
 /** Where a phone's back camera points, from W3C device orientation angles in
  *  degrees (alpha about the vertical, counter-clockwise from north; beta and
  *  gamma the front-back and side tilts, applied Z-X'-Y''). An upright phone
@@ -418,6 +474,105 @@ export function sweepLine(samples, tolerance = 0.3) {
     out.push(b);
   }
   return out;
+}
+
+/* -------------------------------- share links -------------------------------- */
+
+export const LINK_VERSION = 1;
+export const LINK_MAX_CHARS = 60000;
+const B64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
+
+/** A horizon as compact text for a share link (URL-safe base64 of version 1:
+ *  the name as UTF-8, then the skyline points and the overhang edges, each
+ *  azimuth and altitude in 0.01 deg stored as the change from the point before
+ *  as a variable-length number). Exact: decodeHorizonLink gives back the same
+ *  normalized name, points and overhangs. */
+export function encodeHorizonLink(h) {
+  const bytes = [LINK_VERSION];
+  const uint = (v) => { do { let b = v & 127; v = Math.floor(v / 128); if (v) b |= 128; bytes.push(b); } while (v); };
+  const sint = (v) => uint(v >= 0 ? v * 2 : -v * 2 - 1);
+  const line = (pts) => {
+    uint(pts.length);
+    let az = 0, alt = 0;
+    for (const p of pts) {
+      const a = Math.round(p.az * 100), b = Math.round(p.alt * 100);
+      sint(a - az); sint(b - alt);
+      az = a; alt = b;
+    }
+  };
+  const name = new TextEncoder().encode(String(h?.name || 'Horizon').trim().slice(0, NAME_MAX) || 'Horizon');
+  uint(name.length);
+  for (const b of name) bytes.push(b);
+  line(normalizePoints(h?.points));
+  const overhangs = normalizeOverhangs(h?.overhangs);
+  uint(overhangs.length);
+  for (const edge of overhangs) line(edge);
+  let out = '';
+  for (let i = 0; i < bytes.length; i += 3) {
+    const n = (bytes[i] << 16) | ((bytes[i + 1] || 0) << 8) | (bytes[i + 2] || 0);
+    out += B64[n >> 18] + B64[(n >> 12) & 63]
+      + (i + 1 < bytes.length ? B64[(n >> 6) & 63] : '') + (i + 2 < bytes.length ? B64[n & 63] : '');
+  }
+  return out;
+}
+
+/** Read share-link text back into { name, points, overhangs }. Throws with a
+ *  plain message for anything damaged, truncated, too large or out of range,
+ *  so nothing half-read is ever saved. */
+export function decodeHorizonLink(text) {
+  if (typeof text !== 'string' || !text || text.length > LINK_MAX_CHARS || !/^[A-Za-z0-9_-]+$/.test(text) || text.length % 4 === 1) {
+    throw new Error('the link is damaged or incomplete');
+  }
+  const bytes = [];
+  for (let i = 0; i < text.length; i += 4) {
+    const n = [0, 1, 2, 3].reduce((acc, k) => acc * 64 + (i + k < text.length ? B64.indexOf(text[i + k]) : 0), 0);
+    bytes.push(n >> 16 & 255);
+    if (i + 2 < text.length) bytes.push(n >> 8 & 255);
+    if (i + 3 < text.length) bytes.push(n & 255);
+  }
+  let at = 0;
+  const fail = (msg = 'the link is damaged or incomplete') => { throw new Error(msg); };
+  const uint = () => {
+    let v = 0, scale = 1;
+    for (let k = 0; k < 5; k++) {
+      if (at >= bytes.length) fail();
+      const b = bytes[at++];
+      v += (b & 127) * scale;
+      if (!(b & 128)) return v;
+      scale *= 128;
+    }
+    return fail();
+  };
+  const sint = () => { const v = uint(); return v % 2 ? -(v + 1) / 2 : v / 2; };
+  if (bytes[at++] !== LINK_VERSION) fail('the link comes from a newer NightSeam or is damaged');
+  const nameLen = uint();
+  if (nameLen > NAME_MAX * 4 || at + nameLen > bytes.length) fail();
+  const name = new TextDecoder('utf-8', { fatal: true }).decode(new Uint8Array(bytes.slice(at, at + nameLen)));
+  at += nameLen;
+  const line = (maxAz) => {
+    const n = uint();
+    if (n > MAX_POINTS) fail('the link holds more points than a horizon can');
+    const out = [];
+    let az = 0, alt = 0;
+    for (let i = 0; i < n; i++) {
+      az += sint(); alt += sint();
+      if (az < 0 || az > maxAz || alt < ALT_MIN * 100 || alt > ALT_MAX * 100) fail();
+      out.push({ az: az / 100, alt: alt / 100 });
+    }
+    return out;
+  };
+  const points = line(35999);
+  const count = uint();
+  if (count > MAX_OVERHANGS) fail('the link holds more overhangs than a horizon can');
+  const overhangs = Array.from({ length: count }, () => line(36000));
+  if (at !== bytes.length) fail();
+  try {
+    return {
+      name: name.trim().slice(0, NAME_MAX) || 'Horizon',
+      points: normalizePoints(points, true),
+      overhangs: normalizeOverhangs(overhangs, true),
+    };
+  } catch { return fail(); }
 }
 
 /* ------------------------------- horizon files ------------------------------- */

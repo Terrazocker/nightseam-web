@@ -33,6 +33,23 @@ Library, SQLite, desktop CSP) are history only.
 - **Documentation:** see "Documentation layout" (2026-10-11), which updates the
   older "Docs policy".
 
+## 2026-10-15 — North references and loop closure (sensor capture phase 3)
+
+- **References replace the compass.** The Moon, the Sun or a landmark in the
+  crosshair sets north for the rest of the capture; the compass only reports
+  how far it was off. Moon and Sun use the observing site and the current
+  time (not the planner's selected time), apparent and topocentric, and only
+  between 2 and 60 deg altitude: lower they hide behind the horizon, higher
+  azimuth means little. The Sun is aimed on the screen only.
+- **Loop closure asks first.** Only the user knows whether the crosshair is
+  back on the starting point, so a full turn (300 deg net or more) asks. Up to
+  3 deg the closing error is drift and is removed by angle turned (phase 0:
+  drift comes with turning, clean turns closed within 1.3 deg); more is a
+  missed aim and the trace is kept as traced.
+- **Site check never prompts.** The distance warning runs only where
+  location access is already granted, so the capture adds no permission
+  prompt.
+
 ## 2026-10-15 — Share links, not server shortcodes; north waits for the compass
 
 - **Transfer.** Asked for "shortcodes for importing on a desktop", the owner

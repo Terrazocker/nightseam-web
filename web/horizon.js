@@ -10,8 +10,8 @@
  * planner preferences.
  */
 import { vizTheme } from './viztheme.js?v=7';
-import { openCapture, captureAvailable } from './capture.js?v=9';
-import { normalizeWebPrefs, WEB_PREF_DEFAULTS } from './webstore.js?v=78';
+import { openCapture, captureAvailable } from './capture.js?v=11';
+import { normalizeWebPrefs, WEB_PREF_DEFAULTS } from './webstore.js?v=79';
 import {
   NO_BLOCK, ALT_MIN, ALT_MAX, MAX_POINTS,
   wrapAz, normalizePoints, normalizeHorizon,
@@ -22,7 +22,7 @@ import {
   newHistory, historyCommit, historyCanUndo, historyCanRedo, historyUndo,
   historyRedo, historyMarkSaved, historyDirty,
   PLANNER_CHANGE_EVENT, nextPlannerRevision, plannerChange, panoramaRevision,
-} from './core.js?v=72';
+} from './core.js?v=73';
 
 export { NO_BLOCK, ceilFor };
 
@@ -1408,6 +1408,7 @@ function wireEditor(box, h, onChanged) {
       },
       onUndo: undo,
       canUndo: () => historyCanUndo(hist),
+      site: () => siteContext(),
       onClose: (message) => {
         capture = null;
         if (!cvs.isConnected) return;

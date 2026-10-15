@@ -11,8 +11,9 @@
 import { vizTheme } from './viztheme.js?v=7';
 import {
   wrapAz, azDelta, quaternionPointing, orientationQuaternion, cameraProject, circularMean,
-  sweepLine, normalizePoints,
-} from './core.js?v=72';
+  sweepLine, normalizePoints, closeLoop, moonDirection, sunDirection, referenceUsable,
+  referenceOffset, siteDistanceM, julianDay,
+} from './core.js?v=73';
 
 const SENSOR_WAIT_MS = 3000;
 const NORTH_WINDOW_MS = 3000;      // compass readings averaged for north
@@ -26,6 +27,8 @@ const COMPASS_RETRY_MS = 2500;     // ... restarts the compass, at most this oft
 const COMPASS_RETRIES = 40;
 const DEFAULT_FOV_LONG = 67;       // camera field of view along the long side, deg (typical phone main camera)
 const AR_MAX_DPR = 1.5;            // overlay canvas pixel density cap
+const LOOP_MAX_DEG = 3;            // a larger closing error is a missed aim, not drift
+const SITE_NEAR_M = 75;            // further from the site than this (or twice the GPS accuracy) is worth a warning
 const TRACE_STEP = 0.2;            // degrees between stored trace samples
 const STRIP_ALT = [-10, 60];
 
@@ -62,6 +65,7 @@ function orientation(onChange) {
     pairs: [], offset: null, spread: null, compassOnly: false, startedAt: now(),
     compassStarts: 0, compassStartedAt: 0, pairAt: now(),
     settle: null, northSince: now(), northUnsteady: false,
+    source: null,   // null: the compass; else { kind, label, at, altError, compassDiff }
   };
   const relStops = [], compassStops = [];
 
@@ -88,6 +92,24 @@ function orientation(onChange) {
   function rereadNorth() {
     st.offset = null; st.spread = null; st.pairs = [];
     st.settle = null; st.northSince = now(); st.northUnsteady = false;
+    st.source = null;
+  }
+
+  /** North from a reference in the crosshair (Moon, Sun or a landmark). It
+   *  replaces the compass for the rest of the capture; the compass's own
+   *  reading, where there is one, is kept only to say how far it was off. */
+  function setReference(reference, info) {
+    if (!st.rel) return null;
+    const { offset, altError } = referenceOffset(st.rel, reference);
+    const t = now();
+    const fresh = st.pairs.filter((pr) => t - pr.t <= NORTH_WINDOW_MS);
+    const compass = fresh.length ? circularMean(fresh.map((pr) => pr.d)) : null;
+    st.offset = offset;
+    st.spread = null;
+    st.northUnsteady = false;
+    st.compassOnly = false;
+    st.source = { ...info, at: new Date(), altError, compassDiff: compass ? azDelta(compass.mean, offset) : null };
+    return st.source;
   }
 
   function relative(q, src) {
@@ -182,6 +204,7 @@ function orientation(onChange) {
     pointing,
     /** Forget north, start the compass again and average it afresh. */
     rereadNorth() { rereadNorth(); st.compassStarts = 0; startCompass(); },
+    setReference,
     /** Start the compass again, keeping north (after a permission arrives). */
     restartCompass() { if (st.offset == null) { st.compassStarts = 0; startCompass(); } },
     stop() { for (const fn of [...relStops.splice(0), ...compassStops.splice(0)]) fn(); },
@@ -208,9 +231,11 @@ function askMotionPermission(onAnswer) {
  *   onPoint(p)          a single skyline point; returns a sentence
  *   onUndo()            undo the last edit; canUndo() says whether one exists
  *   onClose(message)    after the view closed
+ *   site()              the observing site { lat, lon, label } or null, for
+ *                       the Moon and Sun references and the distance check
  * Returns { close }.
  */
-export function openCapture({ horizon, onLine, onPoint, onUndo, canUndo, onClose }) {
+export function openCapture({ horizon, onLine, onPoint, onUndo, canUndo, onClose, site = () => null }) {
   const before = document.activeElement;
   const el = document.createElement('div');
   el.className = 'cap';
@@ -225,11 +250,36 @@ export function openCapture({ horizon, onLine, onPoint, onUndo, canUndo, onClose
       <h3 id="cap-title" class="visually-hidden">Capture the horizon with the camera</h3>
       <p class="cap-read mono" id="cap-read">Starting the sensors…</p>
       <p class="cap-north" id="cap-north"></p>
+      <p class="cap-site" id="cap-site"></p>
       <p class="cap-status" id="cap-status" role="status" aria-live="polite">Hold the phone upright and point the camera at the skyline.</p>
     </div>
     <div class="cap-bottom">
+      <div class="cap-panel" id="cap-loop" role="group" aria-labelledby="cap-loop-text" hidden>
+        <p id="cap-loop-text">You turned all the way round. Is the cross back on the spot where you started?</p>
+        <div class="cap-bar">
+          <button class="btn primary" type="button" id="cap-loop-yes">Yes, close the loop</button>
+          <button class="btn" type="button" id="cap-loop-no">No, keep as traced</button>
+        </div>
+      </div>
+      <div class="cap-panel" id="cap-ref" role="group" aria-labelledby="cap-ref-title" hidden>
+        <p id="cap-ref-title"><b>Set north</b>: put the cross on one of these, then tap it.</p>
+        <p class="cap-ref-sky" id="cap-ref-sky"></p>
+        <div class="cap-bar">
+          <button class="btn" type="button" id="cap-ref-moon">Moon is in the cross</button>
+          <button class="btn" type="button" id="cap-ref-sun">Sun is in the cross</button>
+        </div>
+        <div class="cap-bar">
+          <input class="cap-ref-az" id="cap-ref-az" type="number" min="0" max="359.9" step="0.1" inputmode="decimal"
+            placeholder="Landmark °" aria-label="Landmark bearing in degrees from true north">
+          <button class="btn" type="button" id="cap-ref-landmark">Landmark is in the cross</button>
+        </div>
+        <div class="cap-bar">
+          <button class="btn" type="button" id="cap-ref-compass">Compass again</button>
+          <button class="btn" type="button" id="cap-ref-close">Close</button>
+        </div>
+      </div>
       <canvas class="cap-strip" id="cap-strip" aria-hidden="true"></canvas>
-      <div class="cap-bar">
+      <div class="cap-bar cap-main">
         <div class="cap-modes" role="group" aria-label="What to trace">
           <button class="btn small" type="button" id="cap-mode-skyline" aria-pressed="true">Skyline</button>
           <button class="btn small" type="button" id="cap-mode-overhang" aria-pressed="false">Overhang</button>
@@ -237,7 +287,7 @@ export function openCapture({ horizon, onLine, onPoint, onUndo, canUndo, onClose
         <button class="btn primary cap-trace" type="button" id="cap-trace" aria-pressed="false">Start tracing</button>
         <button class="btn" type="button" id="cap-point">Add point</button>
         <button class="btn" type="button" id="cap-undo">Undo</button>
-        <button class="btn" type="button" id="cap-reread">Re-read compass</button>
+        <button class="btn" type="button" id="cap-north-btn" aria-expanded="false" aria-controls="cap-ref">North…</button>
         <button class="btn" type="button" id="cap-done">Done</button>
       </div>
     </div>`;
@@ -248,6 +298,8 @@ export function openCapture({ horizon, onLine, onPoint, onUndo, canUndo, onClose
 
   let mode = 'skyline';
   let trace = null;          // { kind, samples } while tracing
+  let pending = null;        // a full-turn trace waiting for "close the loop?"
+  let refOpen = false;       // the Set north panel is open
   let frame = null;
   let stream = null;
   let wake = null;
@@ -283,24 +335,71 @@ export function openCapture({ horizon, onLine, onPoint, onUndo, canUndo, onClose
       read = 'This device gives no compass direction, so north cannot be set.';
     }
     $('#cap-read').textContent = read;
-    $('#cap-north').textContent = st.offset == null ? ''
-      : `North from the compass, within about ${fmt(Math.max(1, st.spread))}°. Compasses can be 5–10° off near cars, railings and buildings.`
-        + (st.northUnsteady ? ' The compass did not settle, so north may be further off: press Re-read compass while holding still.' : '')
-        + (st.compassOnly ? ' This device has no gyroscope reading, so the trace follows the compass.' : '');
-    const ready = !!p;
-    $('#cap-trace').disabled = !ready && !trace;
-    $('#cap-point').disabled = !ready || mode !== 'skyline' || !!trace;
-    $('#cap-undo').disabled = !canUndo() || !!trace;
-    $('#cap-reread').disabled = !st.abs || !!trace;
+    $('#cap-north').textContent = northText(st);
+    const ready = !!p, busy = !!trace || !!pending;
+    $('#cap-trace').disabled = (!ready && !trace) || !!pending;
+    $('#cap-point').disabled = !ready || mode !== 'skyline' || busy;
+    $('#cap-undo').disabled = !canUndo() || busy;
+    $('#cap-north-btn').disabled = busy;
+    $('#cap-north-btn').setAttribute('aria-expanded', String(refOpen));
+    $('#cap-ref').hidden = !refOpen;
+    $('#cap-loop').hidden = !pending;
+    // A panel takes the place of the controls and the strip, so the bottom
+    // area never grows over the crosshair in the middle of the screen.
+    el.classList.toggle('cap-asking', refOpen || !!pending);
+    if (refOpen) renderReferences(st);
     $('#cap-trace').textContent = trace ? `Stop tracing (${trace.samples.length})` : 'Start tracing';
     $('#cap-trace').setAttribute('aria-pressed', String(!!trace));
     $('#cap-mode-skyline').setAttribute('aria-pressed', String(mode === 'skyline'));
     $('#cap-mode-overhang').setAttribute('aria-pressed', String(mode === 'overhang'));
-    for (const b of el.querySelectorAll('.cap-modes .btn')) b.disabled = !!trace;
+    for (const b of el.querySelectorAll('.cap-modes .btn')) b.disabled = busy;
     drawStrip(p);
     drawAR();
     // Keep the "no readings" messages coming without a reading to trigger them.
     if (!p && age < SENSOR_WAIT_MS + 500) setTimeout(schedule, 250);
+  }
+
+  const clock = (d) => d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+  /** Where north comes from and how good it is, in words. */
+  function northText(st) {
+    if (st.offset == null) return '';
+    const src = st.source;
+    if (src) {
+      let text = `North from ${src.label}, aimed at ${clock(src.at)}.`;
+      if (src.compassDiff != null) text += ` The compass was ${fmt(Math.abs(src.compassDiff))}° off.`;
+      if (src.kind !== 'landmark' && Math.abs(src.altError) >= 0.5) {
+        text += ` The aim read ${fmt(Math.abs(src.altError))}° ${src.altError > 0 ? 'high' : 'low'}, so check the cross was on its centre.`;
+      }
+      return text;
+    }
+    return `North from the compass, within about ${fmt(Math.max(1, st.spread))}°. Compasses can be 5–10° off near cars, railings and buildings: North… sets it from the Moon, the Sun or a landmark.`
+      + (st.northUnsteady ? ' The compass did not settle, so north may be further off.' : '')
+      + (st.compassOnly ? ' This device has no gyroscope reading, so the trace follows the compass.' : '');
+  }
+
+  /** The Moon and the Sun as references now, from the observing site. */
+  function skyReferences() {
+    const s = site();
+    if (!s || !Number.isFinite(s.lat) || !Number.isFinite(s.lon)) return null;
+    const jd = julianDay(new Date());
+    return { moon: moonDirection(jd, s.lat, s.lon), sun: sunDirection(jd, s.lat, s.lon) };
+  }
+
+  function renderReferences(st) {
+    const sky = skyReferences();
+    const say = (name, dir) => {
+      const use = referenceUsable(dir);
+      if (use.ok) return `${name} ${fmt(dir.alt)}° high in the ${cardinal(dir.az)}`;
+      return use.why === 'below' ? `${name} below the horizon` : `${name} too high to set north (${fmt(dir.alt)}°)`;
+    };
+    $('#cap-ref-sky').textContent = !sky ? 'Set an observing site to use the Moon or the Sun.'
+      : `${say('Moon', sky.moon)} · ${say('Sun', sky.sun)}.`
+        + (referenceUsable(sky.sun).ok ? ' Aim at the Sun on the screen only, never by eye.' : '');
+    $('#cap-ref-moon').disabled = !st.rel || !sky || !referenceUsable(sky.moon).ok;
+    $('#cap-ref-sun').disabled = !st.rel || !sky || !referenceUsable(sky.sun).ok;
+    $('#cap-ref-landmark').disabled = !st.rel;
+    $('#cap-ref-compass').disabled = !st.abs;
   }
 
   /* An overview of the whole circle: the skyline, overhangs, the trace in
@@ -502,18 +601,51 @@ export function openCapture({ horizon, onLine, onPoint, onUndo, canUndo, onClose
     if (!trace) return;
     const { kind, samples } = trace;
     trace = null;
+    if (kind === 'skyline' && closeLoop(samples)) {
+      // A full turn: ask whether it ended where it began before using it.
+      pending = { kind, samples };
+      status('Stopped after a full turn.');
+      render();
+      $('#cap-loop-yes').focus();
+      return;
+    }
+    commitTrace(kind, samples, '');
+    render();   // the button says so at once, not a frame later
+  }
+
+  function commitTrace(kind, samples, note) {
     const line = sweepLine(samples);
     if (!line.length) {
       status('Nothing traced: start tracing, then turn along the skyline before stopping.');
-    } else {
-      lastMessage = onLine(line, kind) || '';
-      status(lastMessage);
+      return;
     }
-    render();   // the button says so at once, not a frame later
+    lastMessage = `${onLine(line, kind) || ''}${note ? ` ${note}` : ''}`;
+    status(lastMessage);
+  }
+
+  /** Answer "is the cross back where you started?" for a full-turn trace. */
+  function settleLoop(closeIt) {
+    if (!pending) return;
+    const { kind, samples } = pending;
+    pending = null;
+    if (!closeIt) {
+      commitTrace(kind, samples, '');
+    } else {
+      const loop = closeLoop(samples);
+      if (Math.abs(loop.error) <= LOOP_MAX_DEG) {
+        commitTrace(kind, loop.samples, `Loop closed: ${fmt(Math.abs(loop.error))}° of drift removed.`);
+      } else {
+        commitTrace(kind, samples, `The end was ${fmt(Math.abs(loop.error))}° from the start, more than drift, so it is kept as traced. Trace again if it looks wrong.`);
+      }
+    }
+    render();
+    traceBtn.focus();
   }
 
   const traceBtn = $('#cap-trace');
   traceBtn.addEventListener('click', () => { if (trace) finishTrace(); else startTrace(); });
+  $('#cap-loop-yes').addEventListener('click', () => settleLoop(true));
+  $('#cap-loop-no').addEventListener('click', () => settleLoop(false));
 
   $('#cap-point').addEventListener('click', () => {
     const p = sensors.pointing();
@@ -528,10 +660,41 @@ export function openCapture({ horizon, onLine, onPoint, onUndo, canUndo, onClose
     status('Undone.');
     schedule();
   });
-  $('#cap-reread').addEventListener('click', () => {
+  const northBtn = $('#cap-north-btn');
+  northBtn.addEventListener('click', () => {
+    refOpen = !refOpen;
+    render();
+    if (refOpen) $('#cap-ref-title').scrollIntoView({ block: 'nearest' });
+  });
+  const closeReferences = () => { refOpen = false; render(); northBtn.focus(); };
+  const useReference = (dir, info) => {
+    const src = sensors.setReference(dir, info);
+    if (!src) { status('No reading from the motion sensors yet.'); return; }
+    status(`North set from ${info.label}.`);
+    closeReferences();
+  };
+  for (const [id, body] of [['#cap-ref-moon', 'moon'], ['#cap-ref-sun', 'sun']]) {
+    $(id).addEventListener('click', () => {
+      const sky = skyReferences();
+      const dir = sky && sky[body];
+      if (!dir || !referenceUsable(dir).ok) { render(); return; }
+      useReference(dir, { kind: body, label: body === 'moon' ? 'the Moon' : 'the Sun' });
+    });
+  }
+  $('#cap-ref-landmark').addEventListener('click', () => {
+    const az = Number($('#cap-ref-az').value);
+    if ($('#cap-ref-az').value === '' || !Number.isFinite(az) || az < 0 || az >= 360) {
+      status('Enter the landmark’s bearing from true north, 0 to 359.9°, then put the cross on it.');
+      $('#cap-ref-az').focus();
+      return;
+    }
+    useReference({ az, alt: sensors.state.rel ? sensors.state.rel.alt : 0 }, { kind: 'landmark', label: `a landmark at ${fmt(az)}°` });
+  });
+  $('#cap-ref-close').addEventListener('click', closeReferences);
+  $('#cap-ref-compass').addEventListener('click', () => {
     sensors.rereadNorth();
     status('Hold still for a moment while the compass is read again.');
-    schedule();
+    closeReferences();
   });
   for (const m of ['skyline', 'overhang']) {
     $(`#cap-mode-${m}`).addEventListener('click', () => {
@@ -550,7 +713,7 @@ export function openCapture({ horizon, onLine, onPoint, onUndo, canUndo, onClose
   el.addEventListener('keydown', (ev) => {
     if (ev.key === 'Escape') { ev.preventDefault(); close(); return; }
     if (ev.key === 'Tab') {   // keep focus inside the view
-      const buttons = [...el.querySelectorAll('button:not(:disabled)')];
+      const buttons = [...el.querySelectorAll('button:not(:disabled), input:not(:disabled)')].filter((b) => b.offsetParent !== null);
       if (!buttons.length) return;
       const i = buttons.indexOf(document.activeElement);
       ev.preventDefault();
@@ -559,6 +722,26 @@ export function openCapture({ horizon, onLine, onPoint, onUndo, canUndo, onClose
   });
   const onVisibility = () => { if (document.visibilityState === 'visible' && !closed) keepAwake(); };
   document.addEventListener('visibilitychange', onVisibility);
+
+  /** Warn when the phone is far from the observing site: a horizon only holds
+   *  where it was measured. Only where location access is already allowed;
+   *  the capture never asks for it. */
+  async function checkSite() {
+    const s = site();
+    if (!s || !Number.isFinite(s.lat) || !Number.isFinite(s.lon)) return;
+    if (typeof navigator === 'undefined' || !navigator.geolocation || !navigator.permissions) return;
+    try {
+      if ((await navigator.permissions.query({ name: 'geolocation' })).state !== 'granted') return;
+    } catch { return; }
+    navigator.geolocation.getCurrentPosition((pos) => {
+      if (closed) return;
+      const d = siteDistanceM(pos.coords.latitude, pos.coords.longitude, s.lat, s.lon);
+      const near = Math.max(SITE_NEAR_M, 2 * (pos.coords.accuracy || 0));
+      const far = d < 1000 ? `${Math.round(d)} m` : `${(d / 1000).toFixed(1)} km`;
+      $('#cap-site').textContent = d <= near ? ''
+        : `You are about ${far} from the site${s.label ? ` “${s.label}”` : ''}. A horizon only holds where it was measured: check the site in the top bar.`;
+    }, () => {}, { maximumAge: 60000, timeout: 10000 });
+  }
 
   async function keepAwake() {
     try { wake = await navigator.wakeLock?.request('screen'); } catch { wake = null; }
@@ -580,6 +763,7 @@ export function openCapture({ horizon, onLine, onPoint, onUndo, canUndo, onClose
   function close() {
     if (closed) return;
     finishTrace();
+    if (pending) settleLoop(false);   // never lose a trace waiting for an answer
     closed = true;
     if (frame != null) cancelAnimationFrame(frame);
     sensors.stop();
@@ -601,5 +785,6 @@ export function openCapture({ horizon, onLine, onPoint, onUndo, canUndo, onClose
   });
   startCamera();
   keepAwake();
+  checkSite();
   return { close };
 }

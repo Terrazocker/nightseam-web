@@ -17,7 +17,7 @@
  * This module must stay pure: no DOM, storage, network or build tokens.
  */
 
-import { altaz, sunRaDec } from './astro.js';
+import { altaz, sunRaDec, moonAltAz } from './astro.js';
 
 export const NO_BLOCK = -90;
 export const BINS = 720;
@@ -314,6 +314,62 @@ export function sunDirection(jd, latDeg, lonDeg) {
   const [ra, dec] = sunRaDec(jd);
   const [alt, az] = altaz(ra, dec, jd, latDeg, lonDeg);
   return { az: wrapAz(az), alt };
+}
+
+/** The Moon's apparent topocentric direction from a site at a Julian Day. */
+export function moonDirection(jd, latDeg, lonDeg) {
+  const [alt, az] = moonAltAz(jd, latDeg, lonDeg);
+  return { az: wrapAz(az), alt };
+}
+
+/** Whether a sky reference can set north: it must be up (at least 2 deg, so
+ *  it clears most horizons) and not so high that azimuth means little. */
+export function referenceUsable(dir, maxAlt = 60) {
+  if (!dir || !isNum(dir.alt) || !isNum(dir.az)) return { ok: false, why: 'unknown' };
+  if (dir.alt < 2) return { ok: false, why: 'below' };
+  if (dir.alt > maxAlt) return { ok: false, why: 'high' };
+  return { ok: true, why: '' };
+}
+
+/** North from a reference in the crosshair: the offset that turns the
+ *  relative azimuth the phone reads into the reference's true azimuth, and
+ *  how far the measured altitude is off (a check on the aim and the sensor). */
+export function referenceOffset(measured, reference) {
+  return { offset: wrapAz(reference.az - measured.az), altError: measured.alt - reference.alt };
+}
+
+/** Close a traced loop whose last sample points where the first did. The
+ *  closing error (turned angle minus whole turns) is drift; it is removed in
+ *  proportion to the angle turned so far, not to time (phase 0: drift comes
+ *  with turning). Returns { samples, error } or null for less than about a
+ *  full turn. */
+export function closeLoop(samples) {
+  const src = (Array.isArray(samples) ? samples : []).filter((p) => p && isNum(p.az) && isNum(p.alt));
+  if (src.length < 3) return null;
+  const unwrapped = [src[0].az];
+  const turned = [0];
+  for (let i = 1; i < src.length; i++) {
+    const d = azDelta(src[i].az, src[i - 1].az);
+    unwrapped.push(unwrapped[i - 1] + d);
+    turned.push(turned[i - 1] + Math.abs(d));
+  }
+  const net = unwrapped[unwrapped.length - 1] - unwrapped[0];
+  if (Math.abs(net) < 300) return null;   // not a full turn: nothing to close
+  const turns = Math.round(net / 360);
+  const error = net - 360 * turns;
+  const total = turned[turned.length - 1] || 1;
+  return {
+    error,
+    samples: src.map((p, i) => ({ az: wrapAz(unwrapped[i] - error * turned[i] / total), alt: p.alt })),
+  };
+}
+
+/** Ground distance in metres between two latitude/longitude points (haversine). */
+export function siteDistanceM(lat1, lon1, lat2, lon2) {
+  const r = Math.PI / 180;
+  const a = Math.sin((lat2 - lat1) * r / 2) ** 2
+    + Math.cos(lat1 * r) * Math.cos(lat2 * r) * Math.sin((lon2 - lon1) * r / 2) ** 2;
+  return 2 * 6371008.8 * Math.asin(Math.min(1, Math.sqrt(a)));
 }
 
 /** Where a phone's back camera points, from W3C device orientation angles in

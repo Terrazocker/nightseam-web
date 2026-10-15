@@ -37,11 +37,11 @@ entry here when it is fixed and record the fix in RELEASES.md.
 - **Horizon model.** One open interval per direction (above the skyline,
   below any overhang edge): sky seen through gaps above an obstruction, such
   as between branches, cannot be recorded.
-- **North in the phone capture.** North comes from the phone's compass,
-  averaged once per capture: it is only as good as that compass (5-10 deg off
-  near metal or buildings, measured on a Pixel 7a). Better references (Moon,
-  Sun, a landmark) and loop closure are phase 3 of the
-  [sensor capture plan](docs/horizon/HORIZON_SENSOR_CAPTURE_PLAN.md).
+- **North in the phone capture.** Without a reference, north comes from
+  the phone's compass, averaged once it settles: only as good as that compass
+  (5-10 deg off near metal or buildings, measured on a Pixel 7a). *North…*
+  sets it from the Moon, the Sun or a landmark instead. The Moon and Sun need
+  the observing site to be where the phone is.
 - **AR overlay lags while panning (owner, Pixel 7a, 2026-10-15).** The
   overlay seems to trail the camera image when the phone turns. Not the
   drawing: frames take 1-2 ms and the gyroscope reports at 60 Hz. The

@@ -33,6 +33,7 @@ WEB_CHECKS = [
     "web-horizon-phone-capture",
     "web-horizon-capture-compass-restarts",
     "web-horizon-capture-north-waits-for-compass",
+    "web-horizon-capture-references-and-loop",
     "web-sun-moon-above-horizon",
     "web-scrub-changes-time",
     "web-mag-slider-changes-sky",

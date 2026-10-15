@@ -5,6 +5,41 @@ Actual validation outcomes, newest first. Published releases: v0.1.1 (October 8,
 development awaiting the next release, 0.7.0. Upload success alone is never
 recorded as acceptance.
 
+## North references and loop closure (sensor capture phase 3) — October 15, 2026 (branch horizon-sensor-plan)
+
+*North…* in the capture view sets north from the Moon, the Sun (topocentric
+apparent positions for the site and the current time, usable 2-60 deg) or a
+landmark bearing, replacing the compass for the capture and working without
+one; the view says which reference, when, how far the compass was off and
+whether the aim read high or low. A skyline trace of a full turn asks
+whether it ended where it began; closing removes up to 3 deg of drift by
+angle turned, a larger miss is kept as traced. A distance warning appears
+where location access is already granted (more than 75 m, or twice the GPS
+accuracy, from the site). Core 036d706559462354, token 73.
+
+Found while testing: closeLoop treated half a turn as one (195 deg rounded
+to a turn, error -165); it now needs at least 300 deg of net turn.
+
+New checks: horizon_model.mjs (moonDirection equals the topocentric
+moonAltAz; references usable only 2-60 deg; referenceOffset; a 2% fast
+gyroscope over a full turn closed back onto the truth sample by sample,
+clockwise and anticlockwise; half a turn is no loop; siteDistanceM);
+browser web-horizon-capture-references-and-loop (no compass: tracing
+blocked until a 120 deg landmark sets north; Moon and Sun buttons agree
+with the core for now; a turn with 2.4 deg of drift closes and puts a sharp
+skyline peak back at its true 300 deg; an 8 deg miss is kept as traced).
+
+Local validation: pytest 358 passed / 1 skipped; real-Chrome suite 83/83;
+check_js, check_core, check_encoding OK; check_release 0 errors.
+
+Owner test on the Pixel: the Set north panel covered the crosshair needed to
+aim at the Moon. A panel or question now replaces the controls and strip;
+the top area is capped at 35% and the bottom at 45% of the screen. The
+references check now runs at 412x789 (the Pixel's screen) and asserts the
+crosshair is uncovered with the panel and with the loop question open;
+against the old layout it fails (bottom area from 346 px over the crosshair
+at 359-431 px).
+
 ## Settled north, start/stop tracing, line-only overlay, share links — October 15, 2026 (branch horizon-sensor-plan)
 
 Measured on the Pixel 7a over USB debugging (Chrome DevTools socket, a
