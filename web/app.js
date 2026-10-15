@@ -8,17 +8,17 @@
  *   • Settings — sites, rigs, custom targets, backup/restore (webstore.js)
  * All sky math runs client-side (astro.js, Meeus algorithms).
  */
-import * as E from './astro.js?v=60';
-import * as Hor from './horizon.js?v=132';
-import * as WS from './webstore.js?v=75';
+import * as E from './astro.js?v=63';
+import * as Hor from './horizon.js?v=141';
+import * as WS from './webstore.js?v=78';
 import { fmtSize, sizeArcmin, framePct, magVisible, skyClampZoom,
-         skyViewMatrix, skyScreenToBase, skyClampFocus } from './format.js?v=66';
-import { nightStats, nightStatsBatch, sampleVisible } from './nightrank.js?v=58';
+         skyViewMatrix, skyScreenToBase, skyClampFocus } from './format.js?v=69';
+import { nightStats, nightStatsBatch, sampleVisible } from './nightrank.js?v=61';
 import { TYPE_LABELS, TYPE_COLORS, searchBlob as coreSearchBlob,
          TIER_ORDER, assignPopularityTiers, wikiTitles,
          inTonightPool, PLANNER_CHANGE_EVENT, panoramaRevision,
-         panoramaVisibilityReason } from './core.js?v=69';
-import { popularityFactor as corePopularityFactor } from './core.js?v=69';
+         panoramaVisibilityReason } from './core.js?v=72';
+import { popularityFactor as corePopularityFactor } from './core.js?v=72';
 import { vizTheme, drawMoonPhaseMarker } from './viztheme.js?v=7';
 import { wikimediaCredit, wikiImageCredit, renderImageCredit } from './imagecredits.js?v=2';
 
@@ -1014,7 +1014,15 @@ function bootFailure(title, detail) {
 }
 
 function route() {
-  const h = location.hash || '#tonight';
+  let h = location.hash || '#tonight';
+  // A shared horizon link (#horizon=...): its points ride in the address, so
+  // take them out of the address bar and history at once, then offer them.
+  let sharedHorizon = null;
+  if (h.startsWith('#horizon=')) {
+    sharedHorizon = h.slice('#horizon='.length);
+    history.replaceState(null, '', `${location.pathname}${location.search}#horizon`);
+    h = '#horizon';
+  }
   const view = ['tonight', 'sky', 'catalog', 'horizon'].includes(h.slice(1)) ? h.slice(1) : 'tonight';
   // WEB-REV-003: a view change closes the inspector but KEEPS the selected
   // target identity (and its highlighting), so the next view shows the same
@@ -1040,7 +1048,10 @@ function route() {
   if (S.view === 'tonight') { renderTonight(); applyTonightMarker(); }
   else if (S.view === 'sky') renderSky();
   else if (S.view === 'catalog') renderCatalog();
-  else renderHorizonView();
+  else {
+    renderHorizonView();
+    if (sharedHorizon) Hor.offerHorizonLink(sharedHorizon, $('#view'), () => {});
+  }
   announceStatus(`${view === 'sky' ? 'Sky View' : view.charAt(0).toUpperCase() + view.slice(1)} view. Selected time ${fmtClock(S.skyTime)}, site time.`);
 }
 

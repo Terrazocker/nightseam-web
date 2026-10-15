@@ -91,7 +91,8 @@ The local exposure catalog has its own design document in Nightseam-catalog.
 - **Horizon:** the job is "where is my sky blocked"; keep the editor to that.
   Three rails: the horizon list with *Draw by hand* (primary) and *Import
   file*; the stage; and a settings rail with closed *Points by numbers*,
-  *Phone compass* and *Display* disclosures. Keep about 20 controls visible
+  *Phone capture* and *Display* disclosures (*Phone capture* starts open on
+  touch devices). Keep about 20 controls visible
   at first glance and about 40 including the disclosures. There are no
   horizon photos: a dropped photo gets a one-line explanation, a dropped
   horizon file imports.
@@ -111,9 +112,21 @@ The local exposure catalog has its own design document in Nightseam-catalog.
     above that edge is shaded as blocked, with a dashed edge so it reads apart
     from the skyline. Points drag, arrow keys and Delete work as in Draw; the
     points form adds a flat overhang.
-  - Phone compass: Start, a live direction readout, *Add point here*, *Start
-    / Finish tracing* and a landmark correction. Say plainly that phone
-    compasses are rough and that a correction comes first.
+  - Phone capture: one button opens a full-screen camera view with a
+    crosshair, a live direction readout, where north comes from, and an
+    overview strip of the circle. Over the video, what is recorded is drawn
+    where it belongs, as lines only so the scene stays visible: the dashed
+    level horizon with N/E/S/W marks, the skyline, overhang edges dashed, and
+    the trace in progress in the warning colour. *Start tracing / Stop
+    tracing* is the large primary toggle; *Skyline / Overhang*, *Add
+    point*, *Undo*, *Re-read compass* and *Done* sit beside it. Say plainly
+    that north comes from the compass and how far it may be off, and while
+    the compass settles, that the phone should be held still. Escape and
+    *Done* close it and return focus to the button.
+  - Share link: beside *Export file* in the editor head. On phones it opens
+    the system share sheet; elsewhere it copies the link or shows it to copy.
+    Opening a link asks in-page before adding the horizon and says what it
+    holds; it never adds silently.
   - Edits save at once and the status says "Saved"; a failed save says so and
     keeps the edit. Clear and Delete confirm in-page.
 

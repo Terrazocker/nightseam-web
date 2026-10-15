@@ -37,9 +37,18 @@ entry here when it is fixed and record the fix in RELEASES.md.
 - **Horizon model.** One open interval per direction (above the skyline,
   below any overhang edge): sky seen through gaps above an obstruction, such
   as between branches, cannot be recorded.
-- **Phone compass.** Readings are only as good as the phone's compass (often
-  5-10 deg off near metal or buildings); the landmark correction lasts until
-  the page reloads.
+- **North in the phone capture.** North comes from the phone's compass,
+  averaged once per capture: it is only as good as that compass (5-10 deg off
+  near metal or buildings, measured on a Pixel 7a). Better references (Moon,
+  Sun, a landmark) and loop closure are phase 3 of the
+  [sensor capture plan](docs/horizon/HORIZON_SENSOR_CAPTURE_PLAN.md).
+- **AR overlay lags while panning (owner, Pixel 7a, 2026-10-15).** The
+  overlay seems to trail the camera image when the phone turns. Not the
+  drawing: frames take 1-2 ms and the gyroscope reports at 60 Hz. The
+  likeliest cause is the assumed 67 deg camera field of view: if the video is
+  narrower (stabilisation crops it), the scene moves further per degree than
+  the overlay, which reads as lag. Unconfirmed; the overlay is exact at the
+  crosshair either way.
 - **Near-tangent twilight.** When the Sun turns within about 0.01 deg of a
   twilight level, the Sun model and the published tables can disagree on
   whether a spell of a few minutes happens at all (Tromso 2026-09-16: USNO

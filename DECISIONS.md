@@ -33,6 +33,23 @@ Library, SQLite, desktop CSP) are history only.
 - **Documentation:** see "Documentation layout" (2026-10-11), which updates the
   older "Docs policy".
 
+## 2026-10-15 — Share links, not server shortcodes; north waits for the compass
+
+- **Transfer.** Asked for "shortcodes for importing on a desktop", the owner
+  was offered server-stored codes (a script on nightseam.de holding the
+  points for a while, new privacy text, PHP on the host unconfirmed) and
+  chose the share link only. NightSeam keeps storing nothing on its server;
+  the points travel in the link's fragment through whatever app the user
+  shares with. Opening a link only offers the horizon.
+- **North.** Measured over USB debugging on the Pixel 7a: a freshly started
+  compass swings towards its heading for about 10 s, and the first capture
+  locked north 44 deg off. North now locks only once compass minus
+  gyroscope is steady over 3 s (halves within 1 deg, spread within 4 deg),
+  with a 20 s fallback that says north may be off.
+- **Capture controls.** Owner request: tracing starts and stops with one
+  button instead of being held, and the AR overlay draws lines only (no
+  shading), so the scene stays visible.
+
 ## 2026-10-15 — Horizon photos removed; backups stay format 11
 
 Phase 1 of the sensor capture plan. Photo placement, Align mode, skyline

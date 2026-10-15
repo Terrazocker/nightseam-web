@@ -144,6 +144,101 @@ near2(point(0, 100, 0).alt, 10, 'tilting the top back raises the camera');
 near2(point(0, 0, 0).alt, -90, 'flat on a table the camera points down');
 near2(point(30, 90, 20).alt, 0, 'twisting the phone about its camera axis keeps the altitude');
 
+// The quaternion path (Generic Sensor API) agrees with the Euler path: build
+// q = qz(alpha) qx(beta) qy(gamma), the same Z-X'-Y'' rotation.
+const qmul = (p, q) => [
+  p[3] * q[0] + p[0] * q[3] + p[1] * q[2] - p[2] * q[1],
+  p[3] * q[1] - p[0] * q[2] + p[1] * q[3] + p[2] * q[0],
+  p[3] * q[2] + p[0] * q[1] - p[1] * q[0] + p[2] * q[3],
+  p[3] * q[3] - p[0] * q[0] - p[1] * q[1] - p[2] * q[2]];
+const axisQ = (axis, deg) => { const h = deg * Math.PI / 360, q = [0, 0, 0, Math.cos(h)]; q[axis] = Math.sin(h); return q; };
+const eulerQ = (a, b, g) => qmul(qmul(axisQ(2, a), axisQ(0, b)), axisQ(1, g));
+near2(H.quaternionPointing([0, 0, 0, 1]).alt, -90, 'the identity quaternion is a phone flat on a table');
+near2(H.quaternionPointing(axisQ(0, 90)).az, 0, 'upright, facing north');
+near2(H.quaternionPointing(qmul(axisQ(2, -90), axisQ(0, 90))).az, 90, 'turned clockwise, facing east');
+for (const [a, b, g] of [[0, 90, 0], [37, 95, -12], [200, 70, 30], [300, 110, 5], [123, 89, -40]]) {
+  const fromQ = H.quaternionPointing(eulerQ(a, b, g)), fromE = H.devicePointing(a, b, g);
+  close(Math.abs(H.azDelta(fromQ.az, fromE.az)), 0, 1e-9, `quaternion and Euler azimuth agree at ${a}/${b}/${g}`);
+  close(fromQ.alt, fromE.alt, 1e-9, `and altitude at ${a}/${b}/${g}`);
+}
+
+for (const [a, b, g] of [[0, 90, 0], [37, 95, -12], [200, 70, 30], [300, 110, 5]]) {
+  const viaQ = H.quaternionPointing(H.orientationQuaternion(a, b, g)), viaE = H.devicePointing(a, b, g);
+  close(Math.abs(H.azDelta(viaQ.az, viaE.az)), 0, 1e-9, `orientationQuaternion matches devicePointing at ${a}/${b}/${g}`);
+  close(viaQ.alt, viaE.alt, 1e-9);
+}
+
+// --- the camera view (AR overlay) ---------------------------------------------
+const facingNorth = axisQ(0, 90);
+const ahead = H.cameraProject(facingNorth, 0, 0, 0);
+close(Math.hypot(ahead.x, ahead.y), 0, 1e-12, 'what the camera faces is at the crosshair');
+close(H.cameraProject(facingNorth, 0, 10, 0).x, Math.tan(10 * Math.PI / 180), 1e-12, 'east of the axis is right of the crosshair');
+close(H.cameraProject(facingNorth, 0, 0, 10).y, Math.tan(10 * Math.PI / 180), 1e-12, 'above the axis is up');
+assert.equal(H.cameraProject(facingNorth, 0, 180, 0), null, 'behind the phone is not drawn');
+assert.equal(H.cameraProject(facingNorth, 0, 85, 0), null, 'far off the axis is not drawn');
+close(H.cameraProject(facingNorth, 30, 30, 0).x, 0, 1e-12, 'the north offset turns the view');
+// Upright, then turned +90 deg about the device z axis (counter-clockwise as
+// seen from the screen): the right edge now points up, so "up" is +x.
+const rolled = qmul(axisQ(0, 90), axisQ(2, 90));
+close(H.cameraProject(rolled, 0, 0, 10).x, Math.tan(10 * Math.PI / 180), 1e-12, 'a phone held sideways shows up towards its raised edge');
+for (const [a, b, g, off] of [[37, 95, -12, 0], [200, 70, 30, 14], [300, 110, 5, -40]]) {
+  const q = H.orientationQuaternion(a, b, g), p = H.quaternionPointing(q);
+  const at = H.cameraProject(q, off, p.az + off, p.alt);
+  close(Math.hypot(at.x, at.y), 0, 1e-9, `the pointed-at direction projects to the centre at ${a}/${b}/${g}`);
+}
+
+// --- compass offset and sweeps ------------------------------------------------
+assert.equal(H.circularMean([]), null);
+close(Math.abs(H.azDelta(H.circularMean([350, 10]).mean, 0)), 0, 1e-9, 'the mean of 350 and 10 is north, not 180');
+assert.ok(H.circularMean([350, 10]).spread > 9.9 && H.circularMean([350, 10]).spread < 10.2, 'their spread is about 10 deg');
+close(H.circularMean([42, 42, 42]).spread, 0, 1e-6, 'identical readings have no spread');
+assert.equal(H.circularMean([0, 180]).spread, 180, 'opposite readings say nothing about north');
+
+const across = H.sweepLine([{ az: 350, alt: 5 }, { az: 355, alt: 9 }, { az: 0, alt: 6 }, { az: 5, alt: 10 }, { az: 10, alt: 7 }], 0);
+assert.deepEqual(across.map((p) => p.az), [350, 355, 360, 365, 370], 'a sweep across north keeps running past 360');
+assert.equal(H.sweepLine([{ az: 10, alt: 5 }, { az: 0, alt: 5 }], 0)[0].az, 0, 'a westward sweep comes out sorted');
+const redone = H.sweepLine([...Array.from({ length: 11 }, (_, i) => ({ az: i, alt: 5 })),
+  ...Array.from({ length: 6 }, (_, i) => ({ az: 10 - i, alt: 9 }))], 0);
+assert.ok(redone.filter((p) => p.az >= 5).every((p) => p.alt === 9) && redone.filter((p) => p.az < 5).every((p) => p.alt === 5),
+  `going back over a stretch redraws it: ${JSON.stringify(redone)}`);
+assert.deepEqual(H.sweepLine([{ az: 10, alt: 5 }, { az: 10.2, alt: 6 }]), [], 'a sweep narrower than 0.5 deg is no line');
+assert.deepEqual(H.sweepLine([{ az: 10, alt: 5 }]), []);
+assert.equal(H.sweepLine([{ az: 1, alt: -40 }, { az: 9, alt: 120 }], 0)[1].alt, 90, 'altitudes are clamped');
+const turn = H.sweepLine(Array.from({ length: 73 }, (_, i) => ({ az: (100 + i * 5) % 360, alt: 3 })));
+assert.ok(turn.every((p, i) => !i || p.az - turn[i - 1].az <= 90), 'a flat sweep keeps steps of at most 90 deg');
+const turned = H.replacePointsInRange(H.normalizePoints([{ az: 50, alt: 40 }, { az: 200, alt: 40 }]), turn);
+assert.ok(turned.every((p) => p.alt === 3), 'a full turn replaces the whole skyline');
+const eave = H.splitAtNorth(H.sweepLine([{ az: 340, alt: 50 }, { az: 0, alt: 52 }, { az: 20, alt: 54 }], 0));
+assert.equal(eave.length, 2, 'an overhang swept across north becomes two edges');
+
+// --- share links ---------------------------------------------------------------
+const shared = { name: '  Garten am Hang — Süd ', points: H.normalizePoints([{ az: 0, alt: 10 }, { az: 12.34, alt: -3.21 }, { az: 359.99, alt: 89.99 }]),
+  overhangs: [[{ az: 100, alt: 40 }, { az: 110.5, alt: 35.25 }], [{ az: 350, alt: 60 }, { az: 360, alt: 60 }]] };
+const code = H.encodeHorizonLink(shared);
+assert.match(code, /^[A-Za-z0-9_-]+$/, 'link text is URL-safe');
+assert.deepEqual(H.decodeHorizonLink(code), { name: 'Garten am Hang — Süd', points: shared.points, overhangs: shared.overhangs },
+  'a link gives back exactly the same skyline, overhangs and name');
+assert.deepEqual(H.decodeHorizonLink(H.encodeHorizonLink({ name: '', points: [] })), { name: 'Horizon', points: [], overhangs: [] });
+const dense360 = H.normalizePoints(Array.from({ length: 720 }, (_, i) => ({ az: i / 2, alt: 10 + 8 * Math.sin(i / 17) })));
+const denseCode = H.encodeHorizonLink({ name: 'Dense', points: dense360 });
+assert.deepEqual(H.decodeHorizonLink(denseCode).points, dense360, 'a dense skyline survives');
+assert.ok(denseCode.length < 4000, `a 720-point skyline stays a usable link: ${denseCode.length} characters`);
+for (const [bad, why] of [
+  ['', 'empty'], ['abc$', 'not URL-safe base64'], [code.slice(0, -3), 'truncated'], [code + 'AAAA', 'trailing data'],
+  ['Ag', 'a newer version'], ['x'.repeat(H.LINK_MAX_CHARS + 1), 'too long'],
+  [H.encodeHorizonLink({ points: [] }).replace(/^./, 'B'), 'a changed version byte'],
+]) assert.throws(() => H.decodeHorizonLink(bad), Error, `${why} is refused`);
+// out-of-range values in an otherwise well-formed link
+const varint = (v) => { const out = []; do { let b = v & 127; v = Math.floor(v / 128); if (v) b |= 128; out.push(b); } while (v); return out; };
+const zz = (v) => varint(v >= 0 ? v * 2 : -v * 2 - 1);
+const raw = (bytes) => Buffer.from(bytes).toString('base64url');
+const onePoint = (az, alt) => raw([1, 0, 1, ...zz(az), ...zz(alt), 0]);
+assert.deepEqual(H.decodeHorizonLink(onePoint(12345, 678)).points, [{ az: 123.45, alt: 6.78 }], 'the hand-built form reads');
+assert.throws(() => H.decodeHorizonLink(onePoint(36500, 0)), /damaged/, 'an azimuth past 360 is refused');
+assert.throws(() => H.decodeHorizonLink(onePoint(100, 9500)), /damaged/, 'an altitude past 90 is refused');
+assert.throws(() => H.decodeHorizonLink(raw([1, 0, 0, 21])), /more overhangs/, 'too many overhangs are refused');
+assert.throws(() => H.decodeHorizonLink(raw([1, 0, ...varint(H.MAX_POINTS + 1)])), /more points/, 'too many points are refused');
+
 // --- horizon files ----------------------------------------------------------
 const parsed = H.parseHorizonFile([
   '# Stellarium polygonal horizon', 'header line', '0 10', '90\t20 # comment',

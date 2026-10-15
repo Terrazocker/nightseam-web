@@ -10,15 +10,14 @@
 
 export {
   NO_BLOCK, BINS, BIN_DEG, ALT_MIN, ALT_MAX, MAX_POINTS, NAME_MAX,
-  PHOTO_MAX_PIXELS, PHOTO_WIDTH_MIN, OPEN_TOP, MAX_OVERHANGS,
-  wrapAz, azDelta, normalizePoints, normalizePhotoPlacement, normalizeHorizon,
+  OPEN_TOP, MAX_OVERHANGS,
+  wrapAz, azDelta, normalizePoints, normalizeHorizon,
   skylineAltAt, skylineProfile, withProfile, binOf, ceilFor, hasSkyline,
-  replacePointsInRange, simplifyLine, detectSkylineRows,
+  replacePointsInRange, simplifyLine,
   normalizeOverhang, normalizeOverhangs, overhangAltAt, overhangProfile, splitAtNorth,
-  replaceOverhangsInRange, flatOverhang, reprojectOverhangs,
-  photoScale, photoToWorld, worldToPhoto, reprojectPoints, headingForLandmark,
-  defaultPhotoPlacement, photoFileDimensions, photoCaptureTime,
-  sunDirection, placementFromKnownDirection, devicePointing,
+  replaceOverhangsInRange, flatOverhang,
+  sunDirection, devicePointing, quaternionPointing, orientationQuaternion, cameraProject,
+  circularMean, sweepLine, LINK_VERSION, LINK_MAX_CHARS, encodeHorizonLink, decodeHorizonLink,
   parseHorizonFile, formatHorizonFile,
 } from './horizon.js';
 

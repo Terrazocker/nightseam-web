@@ -3,24 +3,26 @@
  *
  * A horizon is a skyline on a compass grid (core/horizon.js): points of
  * azimuth/altitude joined by straight lines around the circle, drawn by hand,
- * typed, imported or traced with the phone compass. Records live in
+ * typed, imported or traced with the phone's camera and sensors (capture.js).
+ * Records live in
  * localStorage. Every finished edit saves automatically; undo/redo and the
  * dirty state come from core/horizonhistory.js. This module also owns the
  * planner preferences.
  */
 import { vizTheme } from './viztheme.js?v=7';
-import { normalizeWebPrefs, WEB_PREF_DEFAULTS } from './webstore.js?v=75';
+import { openCapture, captureAvailable } from './capture.js?v=9';
+import { normalizeWebPrefs, WEB_PREF_DEFAULTS } from './webstore.js?v=78';
 import {
   NO_BLOCK, ALT_MIN, ALT_MAX, MAX_POINTS,
-  wrapAz, azDelta, normalizePoints, normalizeHorizon,
+  wrapAz, normalizePoints, normalizeHorizon,
   withProfile, ceilFor, replacePointsInRange, simplifyLine,
   normalizeOverhang, normalizeOverhangs, replaceOverhangsInRange, flatOverhang,
-  devicePointing, parseHorizonFile, formatHorizonFile,
+  splitAtNorth, parseHorizonFile, formatHorizonFile, encodeHorizonLink, decodeHorizonLink,
   effectiveMinAlt as coreMinAlt,
   newHistory, historyCommit, historyCanUndo, historyCanRedo, historyUndo,
   historyRedo, historyMarkSaved, historyDirty,
   PLANNER_CHANGE_EVENT, nextPlannerRevision, plannerChange, panoramaRevision,
-} from './core.js?v=69';
+} from './core.js?v=72';
 
 export { NO_BLOCK, ceilFor };
 
@@ -32,7 +34,6 @@ const LEGACY_LS_KEY = 'nightseam_panos_v1';
 const LEGACY_PHOTO_DBS = ['nightseam-panoimg', 'nightseam-horizon-photos'];
 export const MAX_HORIZONS = 50;
 const MAX_IMPORT_BYTES = 1024 * 1024;
-const COMPASS_WAIT_MS = 3000;
 
 /** The planner's active site ({ lat, lon, label, tz }), provided by app.js. */
 let siteContext = () => null;
@@ -350,8 +351,10 @@ const HIT_PX = 9;
 /** Presentation state that survives re-rendering the same horizon. */
 const ui = {
   id: null, mode: 'draw', zoom: 1, fx: 180, fy: 30, selected: -1, ohSel: null,
-  grid: true, compassOffset: 0,
-  openPanels: { points: false, display: false, compass: false },
+  grid: true,
+  // The capture panel starts open on phones and tablets, where it is the quickest way in.
+  openPanels: { points: false, display: false,
+    capture: typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches },
 };
 
 /** Clamp the view focus so the visible window stays inside the grid. */
@@ -426,6 +429,97 @@ function confirmDialog(box, { title, body, ok, cancel = 'Cancel' }) {
   });
 }
 
+/* ------------------------------ share links ------------------------------ */
+
+const hzNote = (box, text) => { const n = $('#hz-note', box); if (n) n.textContent = text; };
+
+/** The address that carries a horizon to another device. Its points ride in
+ *  the fragment (after #), which browsers never send to a server. */
+export function horizonLinkUrl(h) {
+  return `${location.origin}${location.pathname}#horizon=${encodeHorizonLink(h)}`;
+}
+
+/** Show a link to copy by hand where sharing and the clipboard are not available. */
+function linkDialog(box, url) {
+  const before = document.activeElement;
+  const el = document.createElement('div');
+  el.className = 'ed-confirm';
+  el.setAttribute('role', 'dialog');
+  el.setAttribute('aria-modal', 'true');
+  el.setAttribute('aria-labelledby', 'hz-link-title');
+  el.innerHTML = `
+    <div class="ed-confirm-box">
+      <h4 id="hz-link-title">Copy this link</h4>
+      <p>Open it on the other device to add the horizon there.</p>
+      <textarea class="hz-link-text" id="hz-link-text" rows="4" readonly aria-label="Horizon link">${esc(url)}</textarea>
+      <div class="btnrow"><button class="btn primary" type="button" data-ok>Close</button></div>
+    </div>`;
+  const done = () => { el.remove(); if (before && before.isConnected) before.focus(); };
+  el.querySelector('[data-ok]').addEventListener('click', done);
+  el.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Escape') done();
+    if (ev.key === 'Tab') {   // keep focus inside the dialog
+      const items = [el.querySelector('textarea'), el.querySelector('[data-ok]')];
+      ev.preventDefault();
+      items[(items.indexOf(document.activeElement) + 1) % items.length].focus();
+    }
+  });
+  (box || document.body).appendChild(el);
+  const text = el.querySelector('textarea');
+  text.focus();
+  text.select();
+}
+
+/** Send a horizon on: the system share sheet where there is one, else the
+ *  clipboard, else a dialog with the link to copy. */
+async function shareHorizon(box, h) {
+  const url = horizonLinkUrl(h);
+  if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
+    try {
+      await navigator.share({ title: `NightSeam horizon: ${h.name}`, url });
+      hzNote(box, 'Shared. Open the link on the other device to add the horizon there.');
+      return;
+    } catch (error) {
+      if (error && error.name === 'AbortError') return;   // the user closed the share sheet
+    }
+  }
+  try {
+    await navigator.clipboard.writeText(url);
+    hzNote(box, 'Link copied. Open it on the other device to add the horizon there.');
+  } catch {
+    linkDialog(box, url);
+  }
+}
+
+/** Offer the horizon a shared link carries. Nothing is saved before the user
+ *  agrees, and a damaged link changes nothing. Resolves true when added. */
+export async function offerHorizonLink(code, box, onChanged = () => {}) {
+  let rec;
+  try { rec = decodeHorizonLink(code); } catch (error) {
+    hzNote(box, `This horizon link could not be read (${error.message}). Nothing was added.`);
+    return false;
+  }
+  if (db.horizons.length >= MAX_HORIZONS) {
+    hzNote(box, `You already have ${MAX_HORIZONS} horizons. Delete one, then open the link again.`);
+    return false;
+  }
+  const what = [`${rec.points.length} skyline point${rec.points.length === 1 ? '' : 's'}`];
+  if (rec.overhangs.length) what.push(`${rec.overhangs.length} overhang${rec.overhangs.length === 1 ? '' : 's'}`);
+  const ok = await confirmDialog(box, {
+    title: `Add the horizon “${rec.name}”?`,
+    body: `From a shared link: ${what.join(' and ')}. It is saved in this browser and used for planning.`,
+    ok: 'Add horizon',
+  });
+  if (!ok) { hzNote(box, 'The shared horizon was not added.'); return false; }
+  flushHorizonEdits();
+  const h = createHorizon(rec.name, { points: rec.points, overhangs: rec.overhangs });
+  if (!h) { hzNote(box, 'Could not add the horizon: browser storage is full or blocked.'); return false; }
+  renderHorizon(box, onChanged);
+  onChanged();
+  hzNote(box, `Added “${h.name}” from the shared link. It is now the horizon used for planning.`);
+  return true;
+}
+
 function download(filename, text) {
   const blob = new Blob([text], { type: 'text/plain' });
   const url = URL.createObjectURL(blob);
@@ -489,6 +583,7 @@ function editorHTML(h) {
     <section class="horizon-stage" aria-label="Horizon editor">
       <div class="hz-head">
         <label class="hz-name">Name <input id="hz-name" type="text" maxlength="80" value="${esc(h.name)}"></label>
+        <button class="btn small" type="button" id="hz-share" title="Send this horizon to another device as a link">🔗 Share link</button>
         <button class="btn small" type="button" id="hz-export" title="Save as a plain azimuth/altitude text file">⬇ Export file</button>
       </div>
       <div class="ed-tools" role="toolbar" aria-label="Horizon editing">
@@ -543,23 +638,13 @@ function editorHTML(h) {
         </fieldset>
         <p class="sub">0° = north, 90° = east, 180° = south, 270° = west. Altitude is the angle above the level horizon.</p>
       </details>
-      <details class="hz-panel" id="hz-compass-panel">
-        <summary>Phone compass</summary>
-        <p class="sub">On a phone: hold it upright and point the back camera at the skyline. Phone compasses are often several degrees off and point to magnetic north, so correct with a landmark first.</p>
+      <details class="hz-panel" id="hz-capture-panel">
+        <summary>Phone capture</summary>
+        <p class="sub">On a phone or tablet: look through the camera, keep the cross on the skyline and turn while you hold Trace. The phone's motion sensors give the shape; north comes from its compass, which can be several degrees off near cars, railings and buildings.</p>
         <div class="btnrow">
-          <button class="btn small" type="button" id="hz-cmp-start" aria-pressed="false">Start compass</button>
+          <button class="btn small primary" type="button" id="hz-cap-start">📱 Capture with the camera</button>
         </div>
-        <p class="mono" id="hz-cmp-read" aria-live="off">Not measuring.</p>
-        <div class="btnrow">
-          <button class="btn small primary" type="button" id="hz-cmp-add" disabled>Add point here</button>
-          <button class="btn small" type="button" id="hz-cmp-trace" aria-pressed="false" disabled>Start tracing</button>
-        </div>
-        <fieldset class="hz-fields">
-          <legend>Correct with a landmark</legend>
-          <label>True direction of what you point at (°) <input id="hz-cmp-true" type="number" min="0" max="359.99" step="0.5"></label>
-          <button class="btn small" type="button" id="hz-cmp-correct" disabled>Set correction</button>
-        </fieldset>
-        <p class="sub" id="hz-cmp-status" role="status" aria-live="polite"></p>
+        <p class="sub" id="hz-cap-status" role="status" aria-live="polite"></p>
       </details>
       <details class="hz-panel ed-display" id="hz-display-panel">
         <summary>Display</summary>
@@ -664,7 +749,8 @@ function wireEditor(box, h, onChanged) {
   const hist = same ? activeSession.hist : newHistory(h);
   if (activeSession?.disconnect) activeSession.disconnect();
 
-  let gesture = null;                     // the pointer gesture in progress
+  let gesture = null;
+  let capture = null;                     // the open phone capture view                     // the pointer gesture in progress
   let spaceDown = false;
   let saveFailed = false;
   let size = { w: 0, h: 0, dpr: 1 };
@@ -687,7 +773,7 @@ function wireEditor(box, h, onChanged) {
   activeSession = {
     horizonId: h.id, record: h, hist, dirty, settle,
     save: persist,
-    disconnect: () => { observer?.disconnect(); gesture = null; stopCompass(); },
+    disconnect: () => { observer?.disconnect(); gesture = null; capture?.close(); },
   };
 
   /* ---- geometry ---- */
@@ -1216,6 +1302,10 @@ function wireEditor(box, h, onChanged) {
     if (label) label.textContent = name;
     box.querySelector(`#hz-list li[data-id="${CSS.escape(h.id)}"] [data-del]`)?.setAttribute('aria-label', `Delete horizon ${name}`);
   });
+  $('#hz-share', box).addEventListener('click', () => {
+    if (!h.points.length && !h.overhangs.length) { note('There is nothing to share yet: the skyline has no points.'); return; }
+    shareHorizon(box, h);
+  });
   $('#hz-export', box).addEventListener('click', () => {
     if (!h.points.length) { note('There is nothing to export yet: the skyline has no points.'); return; }
     download(`${fileSlug(h.name)}-horizon.txt`, formatHorizonFile(h));
@@ -1276,7 +1366,7 @@ function wireEditor(box, h, onChanged) {
     selectAz(Math.round(wrapAz(az) * 100) / 100);
     commit();
   });
-  for (const [id, key] of [['#hz-points-panel', 'points'], ['#hz-display-panel', 'display'], ['#hz-compass-panel', 'compass']]) {
+  for (const [id, key] of [['#hz-points-panel', 'points'], ['#hz-display-panel', 'display'], ['#hz-capture-panel', 'capture']]) {
     const el = $(id, box);
     el.open = !!ui.openPanels[key];
     el.addEventListener('toggle', () => { ui.openPanels[key] = el.open; });
@@ -1285,113 +1375,46 @@ function wireEditor(box, h, onChanged) {
   /* ---- display ---- */
   $('#hz-grid', box).addEventListener('change', (ev) => { ui.grid = ev.target.checked; draw(); });
 
-  /* ---- phone compass ---- */
-  const cmp = { on: false, reading: null, absoluteAt: 0, trace: null, timer: null, frame: null };
-  const cmpStatus = (text) => { const el = $('#hz-cmp-status', box); if (el) el.textContent = text; };
-
-  function onOrientation(ev) {
-    if (ev.alpha == null || ev.beta == null || ev.gamma == null) return;
-    let alpha = ev.alpha, absolute = ev.type === 'deviceorientationabsolute' || ev.absolute === true;
-    if (typeof ev.webkitCompassHeading === 'number') { alpha = 360 - ev.webkitCompassHeading; absolute = true; }
-    // Prefer absolute (compass) readings while they keep arriving.
-    if (!absolute && Date.now() - cmp.absoluteAt < 1000) return;
-    if (absolute) cmp.absoluteAt = Date.now();
-    const raw = devicePointing(alpha, ev.beta, ev.gamma);
-    cmp.reading = { raw: raw.az, az: wrapAz(raw.az + ui.compassOffset), alt: raw.alt, absolute };
-    if (cmp.trace) {
-      const last = cmp.trace[cmp.trace.length - 1];
-      if (!last || Math.abs(azDelta(cmp.reading.az, last.az)) >= 0.3 || Math.abs(cmp.reading.alt - last.alt) >= 0.3) {
-        cmp.trace.push({ az: cmp.reading.az, alt: clampAlt(cmp.reading.alt) });
-      }
-    }
-    if (cmp.frame == null) cmp.frame = requestAnimationFrame(renderCompass);
-  }
-
-  function renderCompass() {
-    cmp.frame = null;
-    const read = $('#hz-cmp-read', box);
-    if (!read) return;
-    const r = cmp.reading;
-    read.textContent = !cmp.on ? 'Not measuring.' : !r ? 'Waiting for the compass…'
-      : `Pointing ${fmt(r.az)}° ${cardinal(r.az)} · ${fmt(r.alt)}° high${r.absolute ? '' : ' (relative: set a correction)'}`
-        + `${cmp.trace ? ` · tracing ${cmp.trace.length} samples` : ''}`;
-    $('#hz-cmp-start', box).textContent = cmp.on ? 'Stop compass' : 'Start compass';
-    $('#hz-cmp-start', box).setAttribute('aria-pressed', String(cmp.on));
-    for (const id of ['#hz-cmp-add', '#hz-cmp-trace', '#hz-cmp-correct']) $(id, box).disabled = !(cmp.on && r);
-    $('#hz-cmp-trace', box).textContent = cmp.trace ? 'Finish tracing' : 'Start tracing';
-    $('#hz-cmp-trace', box).setAttribute('aria-pressed', String(!!cmp.trace));
-  }
-
-  function stopCompass() {
-    if (!cmp.on) return;
-    removeEventListener('deviceorientationabsolute', onOrientation);
-    removeEventListener('deviceorientation', onOrientation);
-    clearTimeout(cmp.timer);
-    Object.assign(cmp, { on: false, reading: null, trace: null });
-    if (cvs.isConnected) renderCompass();
-  }
-
-  async function startCompass() {
-    if (typeof DeviceOrientationEvent === 'undefined') { cmpStatus('This browser has no orientation sensor.'); return; }
-    if (typeof DeviceOrientationEvent.requestPermission === 'function') {
-      // iOS asks; some browsers expose the call but never settle it. Only an
-      // explicit refusal stops us; otherwise listen, and readings arrive once
-      // (or if) access is granted.
-      const answer = await Promise.race([
-        DeviceOrientationEvent.requestPermission().catch(() => 'denied'),
-        new Promise((resolve) => setTimeout(() => resolve('pending'), 1500)),
-      ]);
-      if (answer === 'denied') { cmpStatus('Motion and orientation access was not allowed.'); return; }
-    }
-    cmp.on = true;
-    addEventListener('deviceorientationabsolute', onOrientation);
-    addEventListener('deviceorientation', onOrientation);
-    cmpStatus('Compass started. Correct it with a landmark, then add points or trace along the skyline.');
-    cmp.timer = setTimeout(() => {
-      if (cmp.on && !cmp.reading) cmpStatus('No orientation readings: this device may have no compass. Use a phone or tablet.');
-    }, COMPASS_WAIT_MS);
-    renderCompass();
-  }
-
-  $('#hz-cmp-start', box).addEventListener('click', () => (cmp.on ? stopCompass() : startCompass()));
-  $('#hz-cmp-add', box).addEventListener('click', () => {
-    const r = cmp.reading;
-    if (!r) return;
-    if (h.points.length >= MAX_POINTS) { cmpStatus(`A horizon has at most ${MAX_POINTS} points.`); return; }
-    h.points = normalizePoints([...h.points, { az: r.az, alt: r.alt }]);
-    selectAz(Math.round(r.az * 100) / 100);
-    commit('compass');
-    cmpStatus(`Added a point at ${fmt(r.az)}° ${cardinal(r.az)}, ${fmt(r.alt)}° high.`);
-  });
-  $('#hz-cmp-trace', box).addEventListener('click', () => {
-    if (!cmp.trace) {
-      cmp.trace = cmp.reading ? [{ az: cmp.reading.az, alt: clampAlt(cmp.reading.alt) }] : [];
-      cmpStatus('Tracing: sweep slowly along the skyline, then press Finish tracing.');
-      renderCompass();
-      return;
-    }
-    const samples = cmp.trace;
-    cmp.trace = null;
-    renderCompass();
-    if (samples.length < 2) { cmpStatus('Nothing traced: sweep the phone along the skyline while tracing.'); return; }
-    let prev = null;
-    const line = simplifyLine(samples.map((p) => {
-      const az = prev == null ? p.az : prev + azDelta(p.az, prev);
-      prev = az;
-      return { az, alt: p.alt };
-    }), 0.3);
-    h.points = replacePointsInRange(h.points, line).slice(0, MAX_POINTS);
-    ui.selected = -1;
-    commit('compass');
-    cmpStatus(`Traced ${line.length} points from ${fmt(wrapAz(line[0].az))}° to ${fmt(wrapAz(line[line.length - 1].az))}°.`);
-  });
-  $('#hz-cmp-correct', box).addEventListener('click', () => {
-    const truth = num($('#hz-cmp-true', box).value), r = cmp.reading;
-    if (!Number.isFinite(truth) || !r) { cmpStatus('Point at a landmark and enter its true direction in degrees.'); return; }
-    ui.compassOffset = azDelta(truth, r.raw);
-    r.az = wrapAz(r.raw + ui.compassOffset);   // show the corrected reading at once
-    renderCompass();
-    cmpStatus(`Correction set: ${ui.compassOffset >= 0 ? '+' : ''}${fmt(ui.compassOffset)}°. It applies until you reload the page.`);
+  /* ---- phone capture ---- */
+  const capStatus = (text) => { const el = $('#hz-cap-status', box); if (el) el.textContent = text; };
+  $('#hz-cap-start', box).addEventListener('click', () => {
+    if (capture) return;
+    if (!captureAvailable()) { capStatus('This browser has no camera or motion sensor access. Use a phone or tablet.'); return; }
+    settle();
+    capture = openCapture({
+      horizon: () => h,
+      onLine: (line, kind) => {
+        if (kind === 'overhang') {
+          const edges = splitAtNorth(line);
+          if (!edges.length) return 'An overhang edge needs to span some azimuth: turn sideways while tracing.';
+          let next = h.overhangs;
+          for (const edge of edges) next = replaceOverhangsInRange(next, edge);
+          h.overhangs = next;
+          ui.ohSel = null;
+        } else {
+          h.points = replacePointsInRange(h.points, line).slice(0, MAX_POINTS);
+          ui.selected = -1;
+        }
+        commit('capture');
+        const from = wrapAz(line[0].az), to = wrapAz(line[line.length - 1].az);
+        return `${kind === 'overhang' ? 'Overhang traced' : 'Skyline traced'} from ${fmt(from)}° ${cardinal(from)} to ${fmt(to)}° ${cardinal(to)}.`;
+      },
+      onPoint: (p) => {
+        if (h.points.length >= MAX_POINTS) return `A horizon has at most ${MAX_POINTS} points.`;
+        h.points = normalizePoints([...h.points, p]);
+        selectAz(Math.round(wrapAz(p.az) * 100) / 100);
+        commit('capture');
+        return `Added a point at ${fmt(p.az)}° ${cardinal(p.az)}, ${fmt(p.alt)}° high.`;
+      },
+      onUndo: undo,
+      canUndo: () => historyCanUndo(hist),
+      onClose: (message) => {
+        capture = null;
+        if (!cvs.isConnected) return;
+        capStatus(message);
+        draw();
+      },
+    });
   });
 
   /* ---- start ---- */

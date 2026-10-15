@@ -27,6 +27,7 @@ Web modules import only `./core.js?v=<token>`, never `web/core/<hash>/`.
 | `astro.js` | Thin wrapper over core astronomy and planning |
 | `nightrank.js`, `format.js` | Re-exports of core scoring and formatting |
 | `horizon.js` | Horizon editor, horizon storage, preferences |
+| `capture.js` | Phone capture: camera view, crosshair, orientation sensors, tracing |
 | `webstore.js` | IndexedDB records, preferences, timezones and backup/restore |
 | `viztheme.js` | Canvas colors read from `themes.css` |
 | `imagecredits.js` | Exact-file photo credits |
@@ -86,12 +87,53 @@ editor", "Capture horizons with the phone's sensors"); plans:
 - **Files.** `parseHorizonFile` reads `azimuth altitude` lines (Stellarium,
   N.I.N.A., plain lists); `formatHorizonFile` writes them. Overhangs have no
   place in those formats and stay in NightSeam and its backups.
-- **Phone compass.** `devicePointing(alpha, beta, gamma)` gives the back
-  camera's direction from W3C device orientation. The editor prefers absolute
-  (`deviceorientationabsolute`, or iOS `webkitCompassHeading`) readings and
-  adds a session-only correction set from one landmark, which covers compass
-  error and magnetic declination. `requestPermission` is raced against 1.5 s,
-  because some browsers expose it without ever settling it.
+- **Phone capture** (`web/capture.js`). A full-screen view over the page:
+  the rear camera (`getUserMedia`, only shown, never recorded or stored;
+  closing stops its tracks), a crosshair, an overview strip of the whole
+  circle and Start/Stop tracing / Add point / Undo / Re-read compass / Done. The
+  shape comes from the relative orientation (`RelativeOrientationSensor`,
+  falling back to `deviceorientation` through `orientationQuaternion`; both
+  as quaternions), which does not jump near metal. North is set once the
+  compass has settled: the circular mean (`circularMean`) of compass minus
+  relative azimuth over 3 s of readings taken while the phone points within
+  60 deg of level, locked only when the older and newer halves of that
+  window agree within 1 deg and scatter no more than 4 deg (after 20 s an
+  unsettled value is taken and the view says north may be off). A freshly
+  started compass swings towards its heading for about 10 s on a Pixel 7a,
+  and locking earlier set north 44 deg off (measured over USB debugging).
+  North is then kept for the session unless re-read. The compass sources
+  (`AbsoluteOrientationSensor`, `deviceorientationabsolute`) restart every
+  2.5 s, up to 40 times, while north is missing and no usable compass
+  reading has paired for 1.5 s, and again when a motion permission is
+  granted. Without a relative source for a second the compass gives the
+  shape too.
+- **AR overlay.** A canvas over the video draws lines only: the level
+  horizon with compass marks, the skyline, overhang edges and the trace in
+  progress, each projected with `cameraProject` from the current orientation
+  and north, for directions within reach of the camera axis only, at most
+  1.5x pixel density (about 1-2 ms a frame on a Pixel 7a). The focal
+  length assumes a 67 deg field of view along the long side of the video,
+  scaled the way `object-fit: cover` shows it; device axes turn with
+  `screen.orientation.angle`. The crosshair is exact; away from it the
+  overlay is only as right as the assumed field of view. A trace (one tap
+  starts it, another stops it) becomes one line through
+  `sweepLine` (continuous azimuths, latest sample per 0.25 deg, simplified,
+  steps of at most 90 deg) and replaces that stretch of skyline, or becomes
+  overhang edges split at north. Where the browser offers
+  `DeviceOrientationEvent.requestPermission`, it is asked inside the tap and
+  nothing waits on it: a later grant restarts the compass.
+- **Share links.** *Share link* encodes the horizon (`encodeHorizonLink`:
+  version byte, UTF-8 name, points and overhang edges in 0.01 deg as
+  zigzag variable-length deltas, URL-safe base64; exact round trip, a
+  720-point skyline is under 4,000 characters) into
+  `/astro/#horizon=<code>`. The fragment is never sent to a server. It goes
+  to the system share sheet (`navigator.share`), else the clipboard, else a
+  dialog with the link to copy. Opening such an address routes to Horizon,
+  replaces the address with `#horizon` at once (`history.replaceState`), and
+  `offerHorizonLink` decodes the code completely (`decodeHorizonLink`
+  refuses anything damaged, truncated, over 60,000 characters or out of
+  range) and asks before adding it as a new horizon; cancelling or a bad
+  link saves nothing.
 - **The Sun's direction.** `sunDirection(jd, lat, lon)` is the apparent Sun,
   kept for the sensor capture's north reference (plan phase 3).
 - **Editor.** One canvas: azimuth 0-360 across, altitude -10 to 80 up, with a

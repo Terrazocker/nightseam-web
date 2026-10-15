@@ -332,6 +332,193 @@ export function devicePointing(alpha, beta, gamma) {
   return { az: wrapAz(Math.atan2(x, y) / r), alt: Math.asin(Math.max(-1, Math.min(1, z))) / r };
 }
 
+/** Where a phone's back camera points, from an orientation quaternion
+ *  [x, y, z, w] that turns device coordinates into the world frame (x east,
+ *  y north, z up), as the Generic Sensor OrientationSensor reports it. The
+ *  relative sensor's "north" is arbitrary; the caller adds an offset. */
+export function quaternionPointing(q) {
+  const [x, y, z, w] = q;
+  // third column of the rotation matrix, negated: the back-camera axis (0, 0, -1)
+  const dx = -2 * (x * z + w * y), dy = -2 * (y * z - w * x), dz = -(1 - 2 * (x * x + y * y));
+  return { az: wrapAz(Math.atan2(dx, dy) * 180 / Math.PI), alt: Math.asin(Math.max(-1, Math.min(1, dz))) * 180 / Math.PI };
+}
+
+/** The orientation quaternion [x, y, z, w] of W3C device orientation angles
+ *  (degrees, applied Z-X'-Y''), the rotation devicePointing uses, so both
+ *  sensor APIs feed the same quaternion path. */
+export function orientationQuaternion(alpha, beta, gamma) {
+  const h = Math.PI / 360;
+  const [sa, ca] = [Math.sin(alpha * h), Math.cos(alpha * h)];
+  const [sb, cb] = [Math.sin(beta * h), Math.cos(beta * h)];
+  const [sg, cg] = [Math.sin(gamma * h), Math.cos(gamma * h)];
+  // qz(alpha) * qx(beta) * qy(gamma)
+  return [
+    ca * sb * cg - sa * cb * sg,
+    ca * cb * sg + sa * sb * cg,
+    sa * cb * cg + ca * sb * sg,
+    ca * cb * cg - sa * sb * sg,
+  ];
+}
+
+/** Where a world direction (true azimuth `az`, altitude `alt`, degrees) shows
+ *  in the camera of a device with orientation quaternion `q` (see
+ *  quaternionPointing), whose quaternion azimuths read `offset` deg less than
+ *  true ones. Returns {x, y} as tangents of the angles off the camera axis:
+ *  x towards the device's right edge, y towards its top edge (portrait). Null
+ *  when the direction is more than `maxAngle` deg off the axis or behind. */
+export function cameraProject(q, offset, az, alt, maxAngle = 80) {
+  const [x, y, z, w] = q;
+  const a = (az - offset) * Math.PI / 180, h = alt * Math.PI / 180;
+  const vx = Math.sin(a) * Math.cos(h), vy = Math.cos(a) * Math.cos(h), vz = Math.sin(h);
+  // world -> device: the transposed rotation matrix of q
+  const dx = (1 - 2 * (y * y + z * z)) * vx + 2 * (x * y + w * z) * vy + 2 * (x * z - w * y) * vz;
+  const dy = 2 * (x * y - w * z) * vx + (1 - 2 * (x * x + z * z)) * vy + 2 * (y * z + w * x) * vz;
+  const dz = 2 * (x * z + w * y) * vx + 2 * (y * z - w * x) * vy + (1 - 2 * (x * x + y * y)) * vz;
+  const forward = -dz;   // the back camera looks along -z
+  if (!(forward > Math.cos(maxAngle * Math.PI / 180))) return null;
+  return { x: dx / forward, y: dy / forward };
+}
+
+/** Circular mean of angles in degrees and their spread (circular standard
+ *  deviation, degrees), or null without angles. */
+export function circularMean(angles) {
+  const list = (Array.isArray(angles) ? angles : []).filter(isNum);
+  if (!list.length) return null;
+  let s = 0, c = 0;
+  for (const a of list) { s += Math.sin(a * Math.PI / 180); c += Math.cos(a * Math.PI / 180); }
+  const r = Math.min(1, Math.hypot(s, c) / list.length);
+  return {
+    mean: wrapAz(Math.atan2(s, c) * 180 / Math.PI),
+    spread: r > 0 ? Math.min(180, Math.sqrt(-2 * Math.log(r)) * 180 / Math.PI) : 180,
+  };
+}
+
+/** A traced sweep (directions in time order) as one skyline line: azimuths
+ *  run on continuously (past north if the sweep does), the latest sample per
+ *  0.25 deg wins so going back over a stretch redraws it, and the result is
+ *  sorted and simplified. Altitudes are clamped. Steps stay at most 90 deg
+ *  (a flat stretch gets intermediate points), as replacePointsInRange needs.
+ *  Empty for fewer than two usable samples or a sweep narrower than 0.5 deg. */
+export function sweepLine(samples, tolerance = 0.3) {
+  const src = (Array.isArray(samples) ? samples : []).filter((p) => p && isNum(p.az) && isNum(p.alt));
+  if (src.length < 2) return [];
+  const buckets = new Map();
+  let az = src[0].az;
+  for (let i = 0; i < src.length; i++) {
+    if (i) az += azDelta(src[i].az, src[i - 1].az);
+    buckets.set(Math.round(az * 4), { az, alt: clampAlt(src[i].alt) });
+  }
+  const line = [...buckets.values()].sort((a, b) => a.az - b.az);
+  if (line[line.length - 1].az - line[0].az < 0.5) return [];
+  const simple = simplifyLine(line, tolerance);
+  const out = [simple[0]];
+  for (let i = 1; i < simple.length; i++) {
+    const a = simple[i - 1], b = simple[i], n = Math.ceil((b.az - a.az) / 90);
+    for (let k = 1; k < n; k++) out.push({ az: a.az + (b.az - a.az) * k / n, alt: a.alt + (b.alt - a.alt) * k / n });
+    out.push(b);
+  }
+  return out;
+}
+
+/* -------------------------------- share links -------------------------------- */
+
+export const LINK_VERSION = 1;
+export const LINK_MAX_CHARS = 60000;
+const B64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
+
+/** A horizon as compact text for a share link (URL-safe base64 of version 1:
+ *  the name as UTF-8, then the skyline points and the overhang edges, each
+ *  azimuth and altitude in 0.01 deg stored as the change from the point before
+ *  as a variable-length number). Exact: decodeHorizonLink gives back the same
+ *  normalized name, points and overhangs. */
+export function encodeHorizonLink(h) {
+  const bytes = [LINK_VERSION];
+  const uint = (v) => { do { let b = v & 127; v = Math.floor(v / 128); if (v) b |= 128; bytes.push(b); } while (v); };
+  const sint = (v) => uint(v >= 0 ? v * 2 : -v * 2 - 1);
+  const line = (pts) => {
+    uint(pts.length);
+    let az = 0, alt = 0;
+    for (const p of pts) {
+      const a = Math.round(p.az * 100), b = Math.round(p.alt * 100);
+      sint(a - az); sint(b - alt);
+      az = a; alt = b;
+    }
+  };
+  const name = new TextEncoder().encode(String(h?.name || 'Horizon').trim().slice(0, NAME_MAX) || 'Horizon');
+  uint(name.length);
+  for (const b of name) bytes.push(b);
+  line(normalizePoints(h?.points));
+  const overhangs = normalizeOverhangs(h?.overhangs);
+  uint(overhangs.length);
+  for (const edge of overhangs) line(edge);
+  let out = '';
+  for (let i = 0; i < bytes.length; i += 3) {
+    const n = (bytes[i] << 16) | ((bytes[i + 1] || 0) << 8) | (bytes[i + 2] || 0);
+    out += B64[n >> 18] + B64[(n >> 12) & 63]
+      + (i + 1 < bytes.length ? B64[(n >> 6) & 63] : '') + (i + 2 < bytes.length ? B64[n & 63] : '');
+  }
+  return out;
+}
+
+/** Read share-link text back into { name, points, overhangs }. Throws with a
+ *  plain message for anything damaged, truncated, too large or out of range,
+ *  so nothing half-read is ever saved. */
+export function decodeHorizonLink(text) {
+  if (typeof text !== 'string' || !text || text.length > LINK_MAX_CHARS || !/^[A-Za-z0-9_-]+$/.test(text) || text.length % 4 === 1) {
+    throw new Error('the link is damaged or incomplete');
+  }
+  const bytes = [];
+  for (let i = 0; i < text.length; i += 4) {
+    const n = [0, 1, 2, 3].reduce((acc, k) => acc * 64 + (i + k < text.length ? B64.indexOf(text[i + k]) : 0), 0);
+    bytes.push(n >> 16 & 255);
+    if (i + 2 < text.length) bytes.push(n >> 8 & 255);
+    if (i + 3 < text.length) bytes.push(n & 255);
+  }
+  let at = 0;
+  const fail = (msg = 'the link is damaged or incomplete') => { throw new Error(msg); };
+  const uint = () => {
+    let v = 0, scale = 1;
+    for (let k = 0; k < 5; k++) {
+      if (at >= bytes.length) fail();
+      const b = bytes[at++];
+      v += (b & 127) * scale;
+      if (!(b & 128)) return v;
+      scale *= 128;
+    }
+    return fail();
+  };
+  const sint = () => { const v = uint(); return v % 2 ? -(v + 1) / 2 : v / 2; };
+  if (bytes[at++] !== LINK_VERSION) fail('the link comes from a newer NightSeam or is damaged');
+  const nameLen = uint();
+  if (nameLen > NAME_MAX * 4 || at + nameLen > bytes.length) fail();
+  const name = new TextDecoder('utf-8', { fatal: true }).decode(new Uint8Array(bytes.slice(at, at + nameLen)));
+  at += nameLen;
+  const line = (maxAz) => {
+    const n = uint();
+    if (n > MAX_POINTS) fail('the link holds more points than a horizon can');
+    const out = [];
+    let az = 0, alt = 0;
+    for (let i = 0; i < n; i++) {
+      az += sint(); alt += sint();
+      if (az < 0 || az > maxAz || alt < ALT_MIN * 100 || alt > ALT_MAX * 100) fail();
+      out.push({ az: az / 100, alt: alt / 100 });
+    }
+    return out;
+  };
+  const points = line(35999);
+  const count = uint();
+  if (count > MAX_OVERHANGS) fail('the link holds more overhangs than a horizon can');
+  const overhangs = Array.from({ length: count }, () => line(36000));
+  if (at !== bytes.length) fail();
+  try {
+    return {
+      name: name.trim().slice(0, NAME_MAX) || 'Horizon',
+      points: normalizePoints(points, true),
+      overhangs: normalizeOverhangs(overhangs, true),
+    };
+  } catch { return fail(); }
+}
+
 /* ------------------------------- horizon files ------------------------------- */
 
 /** Parse a horizon text file: one `azimuth altitude` pair per line, separated

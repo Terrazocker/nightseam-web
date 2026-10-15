@@ -5,6 +5,104 @@ Actual validation outcomes, newest first. Published releases: v0.1.1 (October 8,
 development awaiting the next release, 0.7.0. Upload success alone is never
 recorded as acceptance.
 
+## Settled north, start/stop tracing, line-only overlay, share links — October 15, 2026 (branch horizon-sensor-plan)
+
+Measured on the Pixel 7a over USB debugging (Chrome DevTools socket, a
+temporary hook, since removed). First open, compass minus locked north:
+9 deg at 2 s, 22 at 3 s, 31 at 4.5 s, 37 at 6 s, 40 at 8 s, 44 from 10 s on;
+the old 2 s lock had set north 44 deg off, which looked like "the compass
+needs initialising". Overlay frames took a median 0.3-1.6 ms (worst 5 ms)
+with the gyroscope at 60 Hz, so drawing is not the overlay's lag. A second
+first open, after the settle rule, locked at 3.3 s and matched the live
+compass for the whole session (52.1 deg, re-read 52.8). The owner felt the
+overlay lag was about the same; still open (BUGS.md).
+
+Changes: north locks once compass minus gyroscope is steady over 3 s
+(halves within 1 deg, spread within 4), 20 s fallback; tracing starts and
+stops with one button; the overlay draws lines only, for directions in
+reach of the camera axis, at 1.5x pixel density; share links (core
+encodeHorizonLink/decodeHorizonLink, *Share link* in the editor head,
+`#horizon=` addresses offered and confirmed before saving). The owner chose
+share links over server-stored shortcodes. Core eb83bc681e04897d, token 72.
+
+New checks: horizon_model.mjs (exact link round trips with a Unicode name,
+overhangs to 360 and a 720-point skyline under 4,000 characters; damaged,
+truncated, trailing, oversized, newer-version, out-of-range and over-limit
+links refused); test_ui_invariants (decode, then ask, then save; the address
+is cleared before the offer); browser web-horizon-capture-north-waits-for-compass
+(a compass swinging 74 to 30 deg: nothing traceable meanwhile, north 30
+after; fails against the old 2 s lock with "north is not set while the
+compass still moves"), web-horizon-share-link (share sheet, exact copy after
+confirming, address cleared, cancel and damaged links add nothing,
+clipboard fallback); web-horizon-phone-capture now starts and stops tracing
+with taps.
+
+Local validation: pytest 358 passed / 1 skipped; real-Chrome suite 82/82;
+check_js, check_core, check_encoding OK; check_release 0 errors. Owner test
+of this build on the Pixel 7a (tracing, overlay, share link to the
+desktop): "works as expected".
+
+## Capture AR overlay and compass restart — October 15, 2026 (branch horizon-sensor-plan)
+
+Owner test of phase 2 on the Pixel 7a: tracing "works pretty good"; the
+compass did not start on the first open, only after reopening the view.
+Changes: the compass sources (AbsoluteOrientationSensor and
+`deviceorientationabsolute`) restart while north is missing and no compass
+reading arrives, and when a motion permission is granted; the capture works
+on quaternions throughout (core orientationQuaternion). New AR overlay over
+the video: level horizon with compass marks, the skyline with the ground
+below it shaded, overhang edges with the sky above shaded, and the trace in
+progress, projected with core cameraProject (assumed 67 deg field of view
+along the video's long side). Core d60ae4f80540e013, token 71.
+
+New checks: horizon_model.mjs (orientationQuaternion equals the Euler path;
+cameraProject puts the pointed-at direction on the crosshair at three
+orientations, east right, up up, a sideways phone sideways, nothing behind);
+web-horizon-phone-capture now also checks the overlay (the traced skyline is
+drawn under the crosshair, nothing where nothing is recorded); new
+web-horizon-capture-compass-restarts (gyroscope first, compass later: north
+is found without reopening). With the restart disabled that check fails with
+"This device gives no compass direction"; with it, it passes.
+
+Local validation: pytest 357 passed / 1 skipped; real-Chrome suite 80/80;
+check_js, check_core, check_encoding OK; check_release 0 errors. Not yet
+tried on the Pixel: the compass fix is inferred from the symptom, and the
+assumed field of view is unverified.
+
+## Phone camera capture (sensor capture phase 2) — October 15, 2026 (branch horizon-sensor-plan)
+
+New web/capture.js: a full-screen camera view with a crosshair, a live
+direction readout and an overview strip; Hold to trace (the keyboard
+toggles), Skyline / Overhang, Add point, Undo, Re-read compass, Done. Shape
+from RelativeOrientationSensor (fallback `deviceorientation`), north from
+the compass averaged once over 2 s while the phone points within 60 deg of
+level. It replaces the old Phone compass panel. Core gains
+quaternionPointing, circularMean and sweepLine (core 2f72457b28a5e455, token
+70).
+
+Found and fixed while testing: a flat sweep simplified to two points 360 deg
+apart replaced nothing (sweepLine now keeps steps of at most 90 deg); the
+compass often reports before the gyroscope, and that first compass-only
+sample pulled north 2.1 deg off (the compass-only fallback now waits a
+second and north is re-read when the gyroscope appears); a sensor that has
+not measured yet reports a zero quaternion (ignored); the mode buttons
+changed their pressed state a frame late (now at once).
+
+New checks: horizon_model.mjs (quaternion path equals the Euler path at five
+orientations, circular mean, sweeps across north, back-and-forth redraws,
+flat full turns, overhangs split at north); test_ui_invariants (capture.js
+never records, grabs frames, stores or sends video and stops its tracks on
+close); browser check web-horizon-phone-capture with Chrome's virtual
+orientation sensors and a canvas camera stream (north 30 deg within 0.2,
+held trace 30-70 deg, Add point, keyboard overhang 180-200 deg, one undo
+step, tracks ended on close, focus returned). Chrome's virtual compass
+reports 29.95 deg for a set 30 deg (it round-trips through Euler angles).
+
+Local validation: pytest 357 passed / 1 skipped; real-Chrome suite 79/79;
+check_js, check_core, check_encoding OK; check_release 0 errors with the new
+files staged. Preview at 375 px: the view fills the screen, crosshair
+centred, no console errors. Not yet tried on a real phone.
+
 ## Horizon photos removed (sensor capture phase 1) — October 15, 2026 (branch horizon-sensor-plan)
 
 Photo placement, Align mode, skyline detection, the landmark and Sun north

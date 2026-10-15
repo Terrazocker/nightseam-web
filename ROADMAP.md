@@ -13,8 +13,9 @@ Where NightSeam Web stands and what comes next. Open defects are in
   from the Sun), the coming-night detail card, USNO-anchored twilight checks,
   timezone validation, the October review fixes and a CI workflow.
 - **On branch `horizon-sensor-plan` (pull request #8, not merged until the
-  capture works):** horizon photos removed (phase 1); phone-sensor capture
-  and share links to follow.
+  capture works):** horizon photos removed (phase 1) and the phone camera
+  capture with an AR overlay (phase 2) and the share link (phase 4); north
+  references and loop closure to follow.
 
 ## Before 0.7.0
 
@@ -34,8 +35,9 @@ Where NightSeam Web stands and what comes next. Open defects are in
 - **Horizon sensor capture** ([plan](docs/horizon/HORIZON_SENSOR_CAPTURE_PLAN.md)):
   capture the skyline with the phone's camera view and sensors, remove photo
   placement, and move horizons between devices with a share link. Phase 0
-  (sensor probe) passed and phase 1 (photos removed) is done on the branch;
-  phase 2, the camera capture, is next.
+  (sensor probe) passed; phases 1 (photos removed), 2 (camera capture with
+  an AR overlay) and 4 (share link) are done on the branch; phase 3, north
+  references and loop closure, and the overlay's lag remain.
 - **Horizon rebuild** ([plan](docs/horizon/HORIZON_REBUILD_PLAN.md)): phases
   1-6 are merged (pull request #2). Its photo parts are to be replaced by the
   sensor capture; the skyline model, overhangs and file import/export stay.

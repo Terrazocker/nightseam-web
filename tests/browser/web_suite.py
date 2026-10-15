@@ -527,6 +527,69 @@ def web_horizon_blocks_planning(c):
     c.assert_clean()
 
 
+@check("web-horizon-share-link", "web")
+def web_horizon_share_link(c):
+    """A horizon travels to another device as a link: Share link hands it to
+    the system share sheet (else the clipboard); opening the link asks before
+    adding an exact copy and clears the points from the address; cancelling
+    or a damaged link adds nothing."""
+    boot(c)
+    tab(c, "horizon")
+    c.page.locator("#hz-import-file").set_input_files({
+        "name": "garden.hrz", "mimeType": "text/plain", "buffer": b"0 10\n90 20.5\n180 15\n270 12.25\n"})
+    c.page.wait_for_function("() => /Imported 4 points/.test(document.querySelector('#hz-note').textContent)")
+    c.page.locator("#hz-points-panel summary").click()
+    c.page.fill("#hz-oh-from", "100")
+    c.page.fill("#hz-oh-to", "130")
+    c.page.fill("#hz-oh-alt", "45")
+    c.page.click("#hz-oh-add")
+    c.page.wait_for_function("() => /Overhang added/.test(document.querySelector('#hz-note').textContent)")
+    original = active_horizon(c)
+    count = len(horizon_state(c)["horizons"])
+
+    c.page.evaluate("() => { window.__shared = null; navigator.share = async (d) => { window.__shared = d; }; }")
+    c.page.click("#hz-share")
+    c.page.wait_for_function("() => !!window.__shared", timeout=5000)
+    url = c.page.evaluate("() => window.__shared.url")
+    c.expect("#horizon=" in url and "garden" in c.page.evaluate("() => window.__shared.title"),
+             f"the share sheet gets a horizon link: {url}")
+
+    def open_link(link):
+        c.page.evaluate("(u) => { location.href = u; }", link)
+
+    open_link(url)
+    c.page.wait_for_selector(".ed-confirm [data-ok]", timeout=5000)
+    c.expect_eq(c.page.evaluate("() => location.hash"), "#horizon", "the points leave the address at once")
+    c.expect("Add the horizon" in c.page.inner_text(".ed-confirm") and "4 skyline points and 1 overhang" in c.page.inner_text(".ed-confirm"),
+             f"the offer says what it adds: {c.page.inner_text('.ed-confirm')!r}")
+    c.expect_eq(len(horizon_state(c)["horizons"]), count, "nothing is saved before the user agrees")
+    c.page.click(".ed-confirm [data-ok]")
+    c.page.wait_for_function("() => /Added/.test(document.querySelector('#hz-note').textContent)", timeout=5000)
+    added = active_horizon(c)
+    c.expect_eq(len(horizon_state(c)["horizons"]), count + 1, "the shared horizon is added")
+    c.expect_eq(added["points"], original["points"], "its skyline is an exact copy")
+    c.expect_eq(added["overhangs"], original["overhangs"], "and so are its overhangs")
+    c.expect(added["name"].startswith("garden") and added["id"] != original["id"], f"a new horizon named after the original: {added['name']}")
+
+    open_link(url)
+    c.page.wait_for_selector(".ed-confirm [data-cancel]", timeout=5000)
+    c.page.click(".ed-confirm [data-cancel]")
+    c.page.wait_for_function("() => /not added/.test(document.querySelector('#hz-note').textContent)", timeout=5000)
+    c.expect_eq(len(horizon_state(c)["horizons"]), count + 1, "cancelling adds nothing")
+
+    open_link(url.split("#")[0] + "#horizon=AAAA$$")
+    c.page.wait_for_function("() => /could not be read/.test(document.querySelector('#hz-note').textContent)", timeout=5000)
+    c.expect_eq(len(horizon_state(c)["horizons"]), count + 1, "a damaged link adds nothing")
+    c.expect_eq(c.page.locator(".ed-confirm").count(), 0, "and offers nothing")
+
+    c.page.evaluate("""() => { delete navigator.share; Object.defineProperty(navigator, 'share', { value: undefined, configurable: true });
+      window.__copied = null; navigator.clipboard.writeText = async (t) => { window.__copied = t; }; }""")
+    c.page.click("#hz-share")
+    c.page.wait_for_function("() => /Link copied/.test(document.querySelector('#hz-note').textContent)", timeout=5000)
+    c.expect("#horizon=" in c.page.evaluate("() => window.__copied"), "without a share sheet the link is copied")
+    c.assert_clean()
+
+
 @check("web-horizon-overhang-blocks-sky", "web")
 def web_horizon_overhang_blocks_sky(c):
     """Overhang mode draws an edge with the sky above it blocked; an overhang
@@ -561,45 +624,205 @@ def web_horizon_overhang_blocks_sky(c):
     c.assert_clean()
 
 
-@check("web-horizon-phone-compass", "web")
-def web_horizon_phone_compass(c):
-    """The phone compass turns device orientation into skyline points: a
-    landmark correction, a single point and a traced sweep (Chrome's
-    orientation override stands in for the sensor)."""
+def device_quaternion(az: float, alt: float) -> dict:
+    """An upright phone whose back camera points at compass azimuth `az`,
+    `alt` degrees up: q = qz(-az) qx(90 + alt), as {x, y, z, w}."""
+    import math
+    hz, hx = math.radians(-az) / 2, math.radians(90 + alt) / 2
+    z, w1 = math.sin(hz), math.cos(hz)
+    x, w2 = math.sin(hx), math.cos(hx)
+    # (0, 0, z, w1) * (x, 0, 0, w2)
+    return {"x": w1 * x, "y": z * x, "z": z * w2, "w": w1 * w2}
+
+
+CAMERA_STUB = """() => {
+  navigator.mediaDevices.getUserMedia = async () => {
+    const cv = document.createElement('canvas');
+    cv.width = 64; cv.height = 48;
+    const ctx = cv.getContext('2d');
+    ctx.fillStyle = '#345'; ctx.fillRect(0, 0, 64, 48);
+    return cv.captureStream(5);
+  };
+}"""
+
+
+@check("web-horizon-capture-compass-restarts", "web")
+def web_horizon_capture_compass_restarts(c):
+    """A compass that does not start with the capture (on a first open the
+    browser may still be deciding a permission) is started again while north
+    is missing, so north is found without closing and reopening the view."""
     boot(c)
     open_editor(c)
+    c.page.evaluate(CAMERA_STUB)
     cdp = c.page.context.new_cdp_session(c.page)
-    orient = lambda a, b: cdp.send("DeviceOrientation.setDeviceOrientationOverride",
-                                   {"alpha": a, "beta": b, "gamma": 0})
-    orient(0, 90)
-    c.page.locator("#hz-compass-panel summary").click()
-    c.page.click("#hz-cmp-start")
+    cdp.send("Emulation.setSensorOverrideEnabled", {"enabled": True, "type": "relative-orientation"})
+    cdp.send("Emulation.setSensorOverrideEnabled", {"enabled": False, "type": "absolute-orientation",
+             "metadata": {"available": False}})
+
+    def rel(wait: int = 80):
+        cdp.send("Emulation.setSensorOverrideReadings", {"type": "relative-orientation",
+                 "reading": {"quaternion": device_quaternion(0, 5)}})
+        c.page.wait_for_timeout(wait)
+
+    rel()
+    if not c.page.locator("#hz-capture-panel").evaluate("el => el.open"):
+        c.page.locator("#hz-capture-panel summary").click()
+    c.page.click("#hz-cap-start")
+    c.page.wait_for_selector(".cap", timeout=5000)
+    for _ in range(20):        # the gyroscope runs; the compass does not
+        rel()
+    c.expect(not c.page.locator("#cap-trace").is_enabled(), "without north nothing can be traced yet")
+    cdp.send("Emulation.setSensorOverrideEnabled", {"enabled": True, "type": "absolute-orientation"})
+    for _ in range(150):       # the compass becomes available later
+        cdp.send("Emulation.setSensorOverrideReadings", {"type": "absolute-orientation",
+                 "reading": {"quaternion": device_quaternion(30, 5)}})
+        rel(60)
+        if c.page.locator("#cap-trace").is_enabled():
+            break
+    c.expect(c.page.locator("#cap-trace").is_enabled(),
+             f"north is found once the compass reports: {c.page.inner_text('#cap-read')!r}")
+    c.expect("NNE" in c.page.inner_text("#cap-read"), f"pointing 30 deg: {c.page.inner_text('#cap-read')!r}")
+    c.page.keyboard.press("Escape")
+    c.assert_clean()
+
+
+@check("web-horizon-capture-north-waits-for-compass", "web")
+def web_horizon_capture_north_waits_for_compass(c):
+    """A compass that has just started swings towards its heading for several
+    seconds (about 10 s on a Pixel 7a, where locking early set north 44 deg
+    off). North is set only once compass and gyroscope agree steadily, from
+    the settled value."""
+    boot(c)
+    open_editor(c)
+    c.page.evaluate(CAMERA_STUB)
+    cdp = c.page.context.new_cdp_session(c.page)
+    for kind in ("relative-orientation", "absolute-orientation"):
+        cdp.send("Emulation.setSensorOverrideEnabled", {"enabled": True, "type": kind})
+
+    def feed(compass_az: float, wait: int = 60):
+        cdp.send("Emulation.setSensorOverrideReadings", {"type": "relative-orientation",
+                 "reading": {"quaternion": device_quaternion(0, 5)}})
+        cdp.send("Emulation.setSensorOverrideReadings", {"type": "absolute-orientation",
+                 "reading": {"quaternion": device_quaternion(compass_az, 5)}})
+        c.page.wait_for_timeout(wait)
+
+    feed(74)
+    if not c.page.locator("#hz-capture-panel").evaluate("el => el.open"):
+        c.page.locator("#hz-capture-panel summary").click()
+    c.page.click("#hz-cap-start")
+    c.page.wait_for_selector(".cap", timeout=5000)
+    start = time.time()
+    while time.time() - start < 5:          # the compass swings from 74 to 30 deg
+        feed(74 - 44 * (time.time() - start) / 5)
+        c.expect(not c.page.locator("#cap-trace").is_enabled(), "north is not set while the compass still moves")
+    c.expect("settling" in c.page.inner_text("#cap-read"), f"the view says why: {c.page.inner_text('#cap-read')!r}")
+    for _ in range(120):                     # then holds steady
+        feed(30)
+        if c.page.locator("#cap-trace").is_enabled():
+            break
+    read = c.page.inner_text("#cap-read")
+    m = re.match(r"([0-9.]+)°", read)
+    c.expect(m and abs(float(m.group(1)) - 30) <= 0.5, f"north comes from the settled compass, 30 deg: {read!r}")
+    c.page.keyboard.press("Escape")
+    c.assert_clean()
+
+
+@check("web-horizon-phone-capture", "web")
+def web_horizon_phone_capture(c):
+    """The camera capture turns the phone's orientation into skyline points:
+    north from the averaged compass, the shape from the gyroscope-based
+    relative sensor, a started and stopped trace, a single point and an overhang, each one
+    undo step; the video is shown and its tracks end on close. Chrome's
+    virtual sensors stand in for the phone and a canvas stream for the camera."""
+    boot(c)
+    open_editor(c)
+    c.page.evaluate(CAMERA_STUB)
+    cdp = c.page.context.new_cdp_session(c.page)
+    for kind in ("relative-orientation", "absolute-orientation"):
+        cdp.send("Emulation.setSensorOverrideEnabled", {"enabled": True, "type": kind})
+    north = 30   # the relative sensor's zero sits 30 deg west of true north
+
+    def aim(rel_az: float, alt: float, wait: int = 40):
+        cdp.send("Emulation.setSensorOverrideReadings", {"type": "relative-orientation",
+                 "reading": {"quaternion": device_quaternion(rel_az, alt)}})
+        cdp.send("Emulation.setSensorOverrideReadings", {"type": "absolute-orientation",
+                 "reading": {"quaternion": device_quaternion(rel_az + north, alt)}})
+        c.page.wait_for_timeout(wait)
+
+    aim(0, 5)
+    if not c.page.locator("#hz-capture-panel").evaluate("el => el.open"):
+        c.page.locator("#hz-capture-panel summary").click()
+    c.page.click("#hz-cap-start")
+    c.page.wait_for_selector(".cap", timeout=5000)
+    for _ in range(80):   # readings until the steady compass sets north (3 s window)
+        aim(0, 5, 80)
+        if c.page.locator("#cap-trace").is_enabled():
+            break
     try:
-        c.page.wait_for_function("() => /Pointing 0/.test(document.querySelector('#hz-cmp-read').textContent)",
-                                 timeout=10000)
+        # Chrome's virtual compass round-trips through Euler angles: 30 deg reads 29.95.
+        c.page.wait_for_function("""() => { const m = /^([0-9.]+)° NNE · 5° high/.exec(document.querySelector('#cap-read').textContent);
+                                       return !!m && Math.abs(Number(m[1]) - 30) <= 0.2; }""", timeout=5000)
     except Exception as exc:
-        raise AssertionError(f"no compass reading: {c.page.inner_text('#hz-cmp-read')!r} / "
-                             f"{c.page.inner_text('#hz-cmp-status')!r}") from exc
-    c.page.fill("#hz-cmp-true", "10")
-    c.page.click("#hz-cmp-correct")
-    c.expect("+10" in c.page.inner_text("#hz-cmp-status"), "the landmark sets a +10 deg correction")
-    c.page.wait_for_function("() => /Pointing 10/.test(document.querySelector('#hz-cmp-read').textContent)",
-                             timeout=10000)
-    c.page.click("#hz-cmp-add")
+        raise AssertionError(f"no capture reading: {c.page.inner_text('#cap-read')!r} / "
+                             f"{c.page.inner_text('#cap-status')!r}") from exc
+    c.expect("compass" in c.page.inner_text("#cap-north"), "the view says where north comes from")
+    c.expect(c.page.evaluate("() => document.querySelector('#cap-video').srcObject instanceof MediaStream"),
+             "the camera stream is shown")
+
+    c.expect_eq(c.page.inner_text("#cap-trace").strip(), "Start tracing", "one tap starts tracing")
+    c.page.click("#cap-trace")
+    c.expect_eq(c.page.get_attribute("#cap-trace", "aria-pressed"), "true", "tracing is announced")
+    for i in range(41):
+        aim(i, 5 + i / 8)
+    c.expect(c.page.inner_text("#cap-trace").startswith("Stop tracing"), "and another tap stops it")
+    c.page.click("#cap-trace")
+    c.page.wait_for_function("() => /Skyline traced/.test(document.querySelector('#cap-status').textContent)",
+                             timeout=5000)
     pts = active_horizon(c)["points"]
-    c.expect(len(pts) == 1 and abs(pts[0]["az"] - 10) < 0.6 and abs(pts[0]["alt"]) < 0.6,
-             f"an upright phone facing the landmark adds a level point at 10 deg: {pts}")
-    c.page.click("#hz-cmp-trace")
-    for alpha, beta in ((350, 95), (340, 100), (330, 98), (320, 92)):
-        orient(alpha, beta)
-        c.page.wait_for_timeout(150)
-    c.page.click("#hz-cmp-trace")
-    pts = active_horizon(c)["points"]
-    c.expect(any(abs(p["az"] - 30) < 1 and abs(p["alt"] - 10) < 1 for p in pts),
-             f"the sweep stores the 10 deg high point at 30 deg (alpha 340 + correction): {pts}")
-    c.expect(max(p["az"] for p in pts) >= 39, f"the trace reaches the end of the sweep: {pts}")
-    c.page.click("#hz-cmp-start")
-    c.expect("Not measuring" in c.page.inner_text("#hz-cmp-read"), "Stop ends measuring")
+    c.expect(len(pts) >= 2 and abs(min(p["az"] for p in pts) - 30) < 0.6 and abs(max(p["az"] for p in pts) - 70) < 0.6,
+             f"the trace spans 30-70 deg, the relative sweep plus north: {pts}")
+    c.expect(all(abs(p["alt"] - (5 + (p["az"] - 30) / 8)) < 0.6 for p in pts), f"its altitudes follow the sweep: {pts}")
+
+    # The AR layer draws the recorded skyline over the video: aimed at the
+    # traced skyline (az 50, alt 7.5) the crosshair sits on its line; aimed
+    # well above it, nothing recorded is there.
+    ar_alpha = """() => { const cv = document.querySelector('#cap-ar'), x = cv.getContext('2d');
+      const d = x.getImageData(Math.round(cv.width / 2) - 6, Math.round(cv.height / 2) - 6, 13, 13).data;
+      let a = 0; for (let i = 3; i < d.length; i += 4) a = Math.max(a, d[i]); return a; }"""
+    aim(20, 7.5, 150)
+    c.expect(c.page.evaluate(ar_alpha) > 100, "the traced skyline is drawn under the crosshair")
+    aim(20, 40, 150)
+    c.expect_eq(c.page.evaluate(ar_alpha), 0, "nothing is drawn where nothing is recorded")
+
+    aim(100, 12)
+    c.page.click("#cap-point")
+    c.expect(any(abs(p["az"] - 130) < 0.6 and abs(p["alt"] - 12) < 0.6 for p in active_horizon(c)["points"]),
+             "Add point stores where the cross points")
+
+    c.page.click("#cap-mode-overhang")
+    c.expect_eq(c.page.get_attribute("#cap-mode-overhang", "aria-pressed"), "true", "Overhang mode is announced")
+    aim(150, 45)                            # aim at the start of the edge first
+    c.page.focus("#cap-trace")
+    c.page.keyboard.press("Enter")          # the keyboard starts and stops it too
+    for i in range(21):
+        aim(150 + i, 45)
+    c.page.keyboard.press("Enter")
+    c.page.wait_for_function("() => /Overhang traced/.test(document.querySelector('#cap-status').textContent)",
+                             timeout=5000)
+    edges = active_horizon(c)["overhangs"]
+    c.expect(len(edges) == 1 and abs(edges[0][0]["az"] - 180) < 0.6 and abs(edges[0][-1]["az"] - 200) < 0.6,
+             f"the overhang edge spans 180-200 deg: {edges}")
+    c.page.click("#cap-undo")
+    c.expect_eq(active_horizon(c)["overhangs"], [], "the overhang is one undo step")
+
+    c.page.evaluate("() => { window.__capStream = document.querySelector('#cap-video').srcObject; }")
+    c.page.keyboard.press("Escape")
+    c.page.wait_for_selector(".cap", state="detached", timeout=5000)
+    c.expect(c.page.evaluate("() => window.__capStream.getTracks().every((t) => t.readyState === 'ended')"),
+             "closing the view stops the camera")
+    c.expect("Add point" not in c.page.inner_text("#hz-cap-status") and c.page.inner_text("#hz-cap-status").strip(),
+             "the editor shows the last capture message")
+    c.expect(c.page.evaluate("() => document.activeElement?.id") == "hz-cap-start", "focus returns to the capture button")
     c.assert_clean()
 
 

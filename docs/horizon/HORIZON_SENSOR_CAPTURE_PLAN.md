@@ -9,7 +9,10 @@ directly. It replaces the photo parts of the
 [rebuild plan](HORIZON_REBUILD_PLAN.md); the skyline model, overhangs, the
 points form and file import/export stay.
 
-Status: phases 0 and 1 done on October 15 (RELEASES.md); phase 2 is next.
+Status: phases 0-2, the AR overlay (2b) and the share link (phase 4) done
+on October 15 (RELEASES.md); phase 3 (north references, loop closure) and
+phase 5 (acceptance) remain. The owner was offered server-stored shortcodes
+and chose the share link only.
 Work stays on branch `horizon-sensor-plan` (pull request #8) until the
 capture works. Phase 0 on the
 Pixel 7a the gyroscope-based relative orientation does not drift at rest,
@@ -116,16 +119,29 @@ uploaded) with a crosshair and the live direction. Modes: trace skyline
 (press and sweep, release to stop), add a single point, and trace an overhang
 edge. Each finished stroke is one undo step and saves at once, as today. The
 button is shown only where the camera and orientation sensors exist; desktop
-keeps Draw, the points form and file import.
+keeps Draw, the points form and file import. Done: the button sits in a
+*Phone capture* panel that replaces the old compass panel and starts open on
+touch devices; elsewhere it says when there are no readings. Until phase 3,
+north is the compass averaged once (2 s, phone near level); the old landmark
+correction went with the compass panel.
+
+**Phase 2b — AR overlay (owner request after the first Pixel test).** Draw
+the recorded skyline, overhangs, the trace and the level horizon with compass
+marks over the camera image. Done with an assumed 67 deg field of view; if the
+overlay slides against the scene as the phone turns, the field of view needs
+measuring per device (from the video's shift against the gyroscope while
+turning, or one landmark at the screen edge). The same Pixel test found that
+the compass did not start on the first open; its sources now restart while
+north is missing and when a motion permission is granted.
 
 **Phase 3 — north and loop closure.** Reference step before or after the
 sweep (Moon/Sun, landmark bearing, compass average), loop-closure drift
 correction and the site check. The editor shows the reference used and the
 remaining disagreement in degrees, in words as well as numbers.
 
-**Phase 4 — share link.** *Share horizon* builds a link to `/astro/` whose
-fragment (`#h=`) carries a versioned, compact encoding of name, points and
-overhangs; the fragment is never sent to the server. On Android it opens the
+**Phase 4 — share link.** *Share link* builds a link to `/astro/` whose
+fragment (`#horizon=`) carries a versioned, compact encoding of name, points
+and overhangs; the fragment is never sent to the server. On Android it opens the
 system share sheet (Web Share), elsewhere it copies the link. Opening a link
 validates the payload completely and asks before adding the horizon; nothing
 is written silently, and a bad link changes nothing.
