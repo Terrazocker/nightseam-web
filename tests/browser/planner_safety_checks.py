@@ -35,27 +35,39 @@ def unknown_timezone(c):
     c.assert_clean()
 
 
-@check('web-safety-import-refuses-unrecoverable-current-horizons', 'web')
-def unrecoverable_current(c):
-    """A horizon whose photo bytes are gone cannot be captured as a recovery
-    copy, so an import refuses before replacing anything."""
+@check('web-safety-retired-horizon-photos-are-dropped', 'web')
+def retired_horizon_photos(c):
+    """A horizon stored by a build with horizon photos keeps its skyline: the
+    photo fields and the photo database are dropped, and its recovery copy
+    during an import needs no photo bytes."""
     boot(c)
-    lost = {'id': 'lost', 'name': 'Lost photo', 'points': [{'az': 90, 'alt': 10}],
-            'photo': {'width': 360, 'heading': 180, 'tilt': 0, 'roll': 0}, 'hasPhoto': True}
-    c.page.evaluate('raw => localStorage.setItem("nightseam_horizons_v2", raw)',
-                    json.dumps({'horizons': [lost], 'activeId': 'lost'}))
+    old = {'id': 'old', 'name': 'Old photo', 'points': [{'az': 90, 'alt': 10}],
+           'photo': {'width': 360, 'heading': 180, 'tilt': 0, 'roll': 0}, 'hasPhoto': True}
+    c.page.evaluate("""raw => new Promise((resolve, reject) => {
+      localStorage.setItem('nightseam_horizons_v2', raw);
+      const rq = indexedDB.open('nightseam-horizon-photos', 1);
+      rq.onupgradeneeded = () => rq.result.createObjectStore('photos');
+      rq.onsuccess = () => { rq.result.close(); resolve(); };
+      rq.onerror = () => reject(rq.error);
+    })""", json.dumps({'horizons': [old], 'activeId': 'old'}))
     c.page.reload(wait_until='domcontentloaded')
     boot(c)
+    c.page.wait_for_function("""async () => !(await indexedDB.databases())
+      .some((d) => d.name === 'nightseam-horizon-photos')""", timeout=10000)
+    loaded = c.page.evaluate('async m => (await import(m.horizon)).exportHorizons()', modules())
+    c.expect_eq(loaded['horizons'], [{'id': 'old', 'name': 'Old photo', 'points': [{'az': 90, 'alt': 10}],
+                                      'overhangs': []}], 'the skyline stays and the photo fields are dropped')
     messages = dialogs(c)
     setup(c, 'backup')
-    sites = 'async m => (await import(m.webstore)).allStrict("sites")'
-    before = c.page.evaluate(sites, modules())
-    n = len(messages)
     upload(c, fixture_bundle())
-    wait_alert(c, messages, n, 'missing or unreadable')
-    c.expect_eq(c.page.evaluate(sites, modules()), before, 'nothing is replaced when rollback would be impossible')
-    c.expect_eq(c.page.evaluate('() => JSON.parse(localStorage.getItem("nightseam_horizons_v2")).horizons[0].id'),
-                'lost', 'the current horizon stays')
+    c.page.wait_for_function("""async m => {
+      const s = await (await import(m.webstore)).lastSafetySnapshot();
+      return !!(s && s.horizons && s.horizons.horizons.some((h) => h.id === 'old'));
+    }""", arg=modules(), timeout=15000)
+    safety = c.page.evaluate('async m => (await import(m.webstore)).lastSafetySnapshot()', modules())
+    kept = next(h for h in safety['horizons']['horizons'] if h['id'] == 'old')
+    c.expect(not ({'photo', 'hasPhoto', 'image'} & set(kept)), f'the recovery copy carries no photo fields: {kept}')
+    c.expect(not any('Import failed' in m['message'] for m in messages), f'the import is not refused: {messages}')
     c.assert_clean()
 
 

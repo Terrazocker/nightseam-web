@@ -55,17 +55,18 @@ assert.equal(H.hasSkyline({ points: [] }), false);
 // --- record normalization ---------------------------------------------------
 assert.equal(H.normalizeHorizon({ id: 'bad id' }), null);
 assert.throws(() => H.normalizeHorizon({ id: '<x>' }, true));
-assert.deepEqual(H.normalizeHorizon({ id: 'a1', name: '  Garden  ', points: [{ az: 5, alt: 2 }], hasPhoto: true }),
-  { id: 'a1', name: 'Garden', points: [{ az: 5, alt: 2 }], overhangs: [], photo: null, hasPhoto: false },
-  'hasPhoto needs a placement');
+assert.deepEqual(H.normalizeHorizon({ id: 'a1', name: '  Garden  ', points: [{ az: 5, alt: 2 }] }),
+  { id: 'a1', name: 'Garden', points: [{ az: 5, alt: 2 }], overhangs: [] });
 assert.equal(H.normalizeHorizon({ id: 'a1', name: 'x'.repeat(200) }).name.length, H.NAME_MAX);
-const placed = H.normalizeHorizon({ id: 'a2', photo: { width: 360, heading: -90, tilt: 1, roll: 190 }, hasPhoto: true });
-assert.deepEqual(placed.photo, { width: 360, heading: 270, tilt: 1, roll: 0 }, 'a full panorama is not rolled');
-assert.equal(H.normalizePhotoPlacement({ width: 90, heading: 0, tilt: 0, roll: 190 }).roll, -170);
-assert.equal(placed.hasPhoto, true);
-assert.throws(() => H.normalizePhotoPlacement({ width: 0, heading: 0, tilt: 0, roll: 0 }, true));
-assert.throws(() => H.normalizePhotoPlacement({ width: 90, heading: 0, tilt: 95, roll: 0 }, true));
-assert.equal(H.normalizePhotoPlacement({ width: 90 }), null);
+// Records and backups of builds that placed photos: the photo fields are
+// dropped, even malformed ones in strict mode; the skyline and overhangs stay.
+const legacy = { id: 'a2', name: 'Old', points: [{ az: 5, alt: 2 }], overhangs: [[{ az: 10, alt: 40 }, { az: 20, alt: 40 }]],
+  photo: { width: 0, heading: 'x', tilt: 400 }, hasPhoto: true, image: 'data:image/jpeg;base64,AAAA' };
+for (const strict of [false, true]) {
+  assert.deepEqual(H.normalizeHorizon(legacy, strict),
+    { id: 'a2', name: 'Old', points: [{ az: 5, alt: 2 }], overhangs: [[{ az: 10, alt: 40 }, { az: 20, alt: 40 }]] },
+    `photo fields of older builds are dropped (strict=${strict})`);
+}
 
 // --- overhangs -------------------------------------------------------------
 assert.equal(H.normalizeOverhang([{ az: 10, alt: 50 }]), null, 'one point is not an edge');
@@ -105,12 +106,6 @@ const fullSet = Array.from({ length: H.MAX_OVERHANGS }, (_, i) => [{ az: i * 10,
 const crowded = H.replaceOverhangsInRange(fullSet, [{ az: 300, alt: 60 }, { az: 305, alt: 60 }]);
 assert.equal(crowded.length, H.MAX_OVERHANGS, 'the limit holds');
 assert.ok(crowded.some((l) => l[0].az === 300), 'the new edge is never the one dropped');
-const turned = H.reprojectOverhangs([[{ az: 170, alt: 40 }, { az: 175, alt: 40 }]], 600, 400,
-  { width: 60, heading: 180, tilt: 0, roll: 0 }, { width: 60, heading: 190, tilt: 0, roll: 0 });
-assert.deepEqual(turned, [[{ az: 180, alt: 40 }, { az: 185, alt: 40 }]], 'overhangs follow the photo');
-const across = H.reprojectOverhangs([[{ az: 170, alt: 40 }, { az: 175, alt: 40 }]], 600, 400,
-  { width: 60, heading: 180, tilt: 0, roll: 0 }, { width: 60, heading: 0, tilt: 0, roll: 0 });
-assert.deepEqual(across, [[{ az: 350, alt: 40 }, { az: 355, alt: 40 }]], 'a turned edge stays whole when it does not cross north');
 assert.ok(H.formatHorizonFile({ points: [], overhangs: [edge] }).includes('overhangs are not'), 'the file says overhangs are left out');
 
 // --- sketch replacement and simplification ---------------------------------
@@ -131,108 +126,13 @@ assert.ok(simple.length <= 5, `step simplifies to its corners, got ${simple.leng
 assert.deepEqual(simple[0], line[0]);
 assert.deepEqual(simple[simple.length - 1], line[100]);
 
-// --- skyline detection ------------------------------------------------------
-const img = (w, h, skyline) => {
-  const data = new Uint8ClampedArray(w * h * 4);
-  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
-    const j = (y * w + x) * 4, isSky = y < skyline(x);
-    data.set(isSky ? [120, 170, 235, 255] : [40, 60, 30, 255], j);
-  }
-  return { width: w, height: h, data };
-};
-const hill = (x) => 20 + Math.round(10 * Math.sin(x / 10));
-const found = H.detectSkylineRows(img(80, 60, hill));
-for (let x = 3; x < 77; x++) assert.ok(Math.abs(found[x] - hill(x)) <= 1, `column ${x}: ${found[x]} vs ${hill(x)}`);
-const wire = img(40, 40, () => 25);
-for (let x = 0; x < 40; x++) wire.data.set([30, 30, 30, 255], (10 * 40 + x) * 4);  // one-pixel wire
-assert.ok(H.detectSkylineRows(wire).every((y) => y === 25), 'a one-pixel wire is not the skyline');
-const post = img(40, 40, (x) => (x === 20 ? 5 : 25));
-assert.equal(H.detectSkylineRows(post)[20], 25, 'a single-column post is smoothed away');
-const clear = img(10, 10, () => 99);
-clear.data.set([40, 60, 30, 255], 0);
-assert.equal(H.detectSkylineRows(clear)[5], null, 'an all-sky column has no boundary');
-assert.throws(() => H.detectSkylineRows({ width: 2, height: 2, data: [] }));
-
-// --- photo placement --------------------------------------------------------
-const photo = { width: 60, heading: 180, tilt: 0, roll: 0 };
-const W = 600, Hh = 400;
-const centre = H.photoToWorld(photo, W, Hh, 300, 200);
-close(centre.az, 180); close(centre.alt, 0);
-const right = H.photoToWorld(photo, W, Hh, 600, 200);
-close(right.az, 210, 1e-9, 'right edge is half the width east of the heading');
-const top = H.photoToWorld(photo, W, Hh, 300, 0);
-close(top.alt, 20, 1e-9, 'square pixels: 200 px up is 20 deg');
-const rolled = { ...photo, roll: 90 };
-const r = H.photoToWorld(rolled, W, Hh, 400, 200);
-close(r.az, 180, 1e-9); close(r.alt, 10, 1e-9, 'a 90 deg roll turns photo-right into up');
-for (const pl of [photo, rolled, { width: 360, heading: 10, tilt: -3, roll: 4 }]) {
-  for (const [x, y] of [[10, 20], [300, 200], [590, 390]]) {
-    const w = H.photoToWorld(pl, W, Hh, x, y);
-    const back = H.worldToPhoto(pl, W, Hh, w.az, w.alt);
-    close(back.x, x, 1e-6, 'round trip x'); close(back.y, y, 1e-6, 'round trip y');
-  }
-}
-const full = { width: 360, heading: 0, tilt: 0, roll: 0 };
-const seam = H.worldToPhoto(full, 720, 360, 359, 0);
-close(seam.x, 358, 1e-9, 'a full panorama wraps x');
-const moved = H.reprojectPoints([{ az: 180, alt: 0 }, { az: 190, alt: 5 }], W, Hh, photo, { ...photo, heading: 200, tilt: 2 });
-assert.deepEqual(moved, [{ az: 200, alt: 2 }, { az: 210, alt: 7 }], 'points follow the photo');
-close(H.headingForLandmark(photo, W, Hh, 450, 200, 90), 75, 1e-9, 'landmark 15 deg right of centre sits at 90');
-assert.deepEqual(H.defaultPhotoPlacement(4000, 2000), { width: 360, heading: 180, tilt: 0, roll: 0 });
-assert.deepEqual(H.defaultPhotoPlacement(4000, 3000), { width: 60, heading: 180, tilt: 0, roll: 0 });
-assert.equal(H.defaultPhotoPlacement(4000, 3000, 75).width, 75);
-
-// --- photo header dimensions ------------------------------------------------
-const pngHead = new Uint8Array(24);
-pngHead.set([137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82]);
-new DataView(pngHead.buffer).setUint32(16, 1200);
-new DataView(pngHead.buffer).setUint32(20, 600);
-assert.deepEqual(H.photoFileDimensions(pngHead), { width: 1200, height: 600 });
-new DataView(pngHead.buffer).setUint32(16, 100000);
-new DataView(pngHead.buffer).setUint32(20, 100000);
-assert.throws(() => H.photoFileDimensions(pngHead), /32 million/);
-const jpeg = new Uint8Array([255, 216, 255, 192, 0, 11, 8, 1, 44, 2, 88, 3, 1, 34, 0, 255, 217]);
-assert.deepEqual(H.photoFileDimensions(jpeg), { width: 600, height: 300 });
-assert.throws(() => H.photoFileDimensions(new Uint8Array([1, 2, 3])));
-
-// --- photo capture time (EXIF) -----------------------------------------------
-const exifJpeg = (original, offset) => {
-  // TIFF (little endian): IFD0 points at an Exif IFD holding DateTimeOriginal
-  // (36867) and, optionally, OffsetTimeOriginal (36881).
-  const t = [], u16 = (v) => t.push(v & 255, v >> 8), u32 = (v) => { u16(v & 0xffff); u16(v >>> 16); };
-  const entries = offset ? 2 : 1;
-  const exifIfd = 26, dataAt = exifIfd + 2 + entries * 12 + 4;
-  t.push(73, 73); u16(42); u32(8);
-  u16(1); u16(34665); u16(4); u32(1); u32(exifIfd); u32(0);           // IFD0
-  u16(entries); u16(36867); u16(2); u32(20); u32(dataAt);
-  if (offset) { u16(36881); u16(2); u32(7); u32(dataAt + 20); }
-  u32(0);
-  for (const ch of original) t.push(ch.charCodeAt(0));
-  t.push(0);
-  if (offset) { for (const ch of offset) t.push(ch.charCodeAt(0)); t.push(0); }
-  const app1 = [69, 120, 105, 102, 0, 0, ...t];
-  const len = app1.length + 2;
-  return new Uint8Array([255, 216, 255, 225, len >> 8, len & 255, ...app1, 255, 217]);
-};
-assert.deepEqual(H.photoCaptureTime(exifJpeg('2026:06:21 14:30:05', '+02:00')),
-  { wall: Date.UTC(2026, 5, 21, 14, 30, 5), offsetMin: 120 });
-assert.deepEqual(H.photoCaptureTime(exifJpeg('2026:01:02 03:04:05')),
-  { wall: Date.UTC(2026, 0, 2, 3, 4, 5), offsetMin: null }, 'no offset: the camera clock only');
-assert.equal(H.photoCaptureTime(exifJpeg('not a date at all!!')), null);
-assert.equal(H.photoCaptureTime(new Uint8Array([255, 216, 255, 217])), null, 'no EXIF, no time');
-assert.equal(H.photoCaptureTime(pngHead), null, 'PNG photos carry no EXIF time here');
-
-// --- the Sun and known directions -------------------------------------------
+// --- the Sun's direction -----------------------------------------------------
 // 2026-06-21 12:00 UTC at 52.5N 13.4E: the Sun is high and a little west of south.
 const noonJd = 2440587.5 + Date.UTC(2026, 5, 21, 12) / 86400000;
 const sun = H.sunDirection(noonJd, 52.5, 13.4);
 assert.ok(sun.az > 185 && sun.az < 215 && sun.alt > 55 && sun.alt < 62, `summer noon Sun at Berlin: ${JSON.stringify(sun)}`);
 const night = H.sunDirection(2440587.5 + Date.UTC(2026, 5, 21, 23) / 86400000, 52.5, 13.4);
 assert.ok(night.alt < 0, 'the Sun is below the horizon at night');
-const placed2 = H.placementFromKnownDirection({ width: 60, heading: 0, tilt: 0, roll: 5 }, 600, 400, 450, 100, 200, 30);
-const hit = H.photoToWorld(placed2, 600, 400, 450, 100);
-close(hit.az, 200, 0.01, 'the marked pixel lands on the known azimuth (placements keep 0.01 deg)'); close(hit.alt, 30, 0.01, 'and altitude');
-assert.equal(placed2.roll, 5, 'roll and width are kept');
 
 // --- phone pointing ----------------------------------------------------------
 const point = (a, b, g) => H.devicePointing(a, b, g);
@@ -243,6 +143,171 @@ near2(point(270, 90, 0).az, 90, '270 faces east');
 near2(point(0, 100, 0).alt, 10, 'tilting the top back raises the camera');
 near2(point(0, 0, 0).alt, -90, 'flat on a table the camera points down');
 near2(point(30, 90, 20).alt, 0, 'twisting the phone about its camera axis keeps the altitude');
+
+// The quaternion path (Generic Sensor API) agrees with the Euler path: build
+// q = qz(alpha) qx(beta) qy(gamma), the same Z-X'-Y'' rotation.
+const qmul = (p, q) => [
+  p[3] * q[0] + p[0] * q[3] + p[1] * q[2] - p[2] * q[1],
+  p[3] * q[1] - p[0] * q[2] + p[1] * q[3] + p[2] * q[0],
+  p[3] * q[2] + p[0] * q[1] - p[1] * q[0] + p[2] * q[3],
+  p[3] * q[3] - p[0] * q[0] - p[1] * q[1] - p[2] * q[2]];
+const axisQ = (axis, deg) => { const h = deg * Math.PI / 360, q = [0, 0, 0, Math.cos(h)]; q[axis] = Math.sin(h); return q; };
+const eulerQ = (a, b, g) => qmul(qmul(axisQ(2, a), axisQ(0, b)), axisQ(1, g));
+near2(H.quaternionPointing([0, 0, 0, 1]).alt, -90, 'the identity quaternion is a phone flat on a table');
+near2(H.quaternionPointing(axisQ(0, 90)).az, 0, 'upright, facing north');
+near2(H.quaternionPointing(qmul(axisQ(2, -90), axisQ(0, 90))).az, 90, 'turned clockwise, facing east');
+for (const [a, b, g] of [[0, 90, 0], [37, 95, -12], [200, 70, 30], [300, 110, 5], [123, 89, -40]]) {
+  const fromQ = H.quaternionPointing(eulerQ(a, b, g)), fromE = H.devicePointing(a, b, g);
+  close(Math.abs(H.azDelta(fromQ.az, fromE.az)), 0, 1e-9, `quaternion and Euler azimuth agree at ${a}/${b}/${g}`);
+  close(fromQ.alt, fromE.alt, 1e-9, `and altitude at ${a}/${b}/${g}`);
+}
+
+for (const [a, b, g] of [[0, 90, 0], [37, 95, -12], [200, 70, 30], [300, 110, 5]]) {
+  const viaQ = H.quaternionPointing(H.orientationQuaternion(a, b, g)), viaE = H.devicePointing(a, b, g);
+  close(Math.abs(H.azDelta(viaQ.az, viaE.az)), 0, 1e-9, `orientationQuaternion matches devicePointing at ${a}/${b}/${g}`);
+  close(viaQ.alt, viaE.alt, 1e-9);
+}
+
+// --- the camera view (AR overlay) ---------------------------------------------
+const facingNorth = axisQ(0, 90);
+const ahead = H.cameraProject(facingNorth, 0, 0, 0);
+close(Math.hypot(ahead.x, ahead.y), 0, 1e-12, 'what the camera faces is at the crosshair');
+close(H.cameraProject(facingNorth, 0, 10, 0).x, Math.tan(10 * Math.PI / 180), 1e-12, 'east of the axis is right of the crosshair');
+close(H.cameraProject(facingNorth, 0, 0, 10).y, Math.tan(10 * Math.PI / 180), 1e-12, 'above the axis is up');
+assert.equal(H.cameraProject(facingNorth, 0, 180, 0), null, 'behind the phone is not drawn');
+assert.equal(H.cameraProject(facingNorth, 0, 85, 0), null, 'far off the axis is not drawn');
+close(H.cameraProject(facingNorth, 30, 30, 0).x, 0, 1e-12, 'the north offset turns the view');
+// Upright, then turned +90 deg about the device z axis (counter-clockwise as
+// seen from the screen): the right edge now points up, so "up" is +x.
+const rolled = qmul(axisQ(0, 90), axisQ(2, 90));
+close(H.cameraProject(rolled, 0, 0, 10).x, Math.tan(10 * Math.PI / 180), 1e-12, 'a phone held sideways shows up towards its raised edge');
+for (const [a, b, g, off] of [[37, 95, -12, 0], [200, 70, 30, 14], [300, 110, 5, -40]]) {
+  const q = H.orientationQuaternion(a, b, g), p = H.quaternionPointing(q);
+  const at = H.cameraProject(q, off, p.az + off, p.alt);
+  close(Math.hypot(at.x, at.y), 0, 1e-9, `the pointed-at direction projects to the centre at ${a}/${b}/${g}`);
+}
+
+// --- compass offset and sweeps ------------------------------------------------
+assert.equal(H.circularMean([]), null);
+close(Math.abs(H.azDelta(H.circularMean([350, 10]).mean, 0)), 0, 1e-9, 'the mean of 350 and 10 is north, not 180');
+assert.ok(H.circularMean([350, 10]).spread > 9.9 && H.circularMean([350, 10]).spread < 10.2, 'their spread is about 10 deg');
+close(H.circularMean([42, 42, 42]).spread, 0, 1e-6, 'identical readings have no spread');
+assert.equal(H.circularMean([0, 180]).spread, 180, 'opposite readings say nothing about north');
+
+const across = H.sweepLine([{ az: 350, alt: 5 }, { az: 355, alt: 9 }, { az: 0, alt: 6 }, { az: 5, alt: 10 }, { az: 10, alt: 7 }], 0);
+assert.deepEqual(across.map((p) => p.az), [350, 355, 360, 365, 370], 'a sweep across north keeps running past 360');
+assert.equal(H.sweepLine([{ az: 10, alt: 5 }, { az: 0, alt: 5 }], 0)[0].az, 0, 'a westward sweep comes out sorted');
+const redone = H.sweepLine([...Array.from({ length: 11 }, (_, i) => ({ az: i, alt: 5 })),
+  ...Array.from({ length: 6 }, (_, i) => ({ az: 10 - i, alt: 9 }))], 0);
+assert.ok(redone.filter((p) => p.az >= 5).every((p) => p.alt === 9) && redone.filter((p) => p.az < 5).every((p) => p.alt === 5),
+  `going back over a stretch redraws it: ${JSON.stringify(redone)}`);
+assert.deepEqual(H.sweepLine([{ az: 10, alt: 5 }, { az: 10.2, alt: 6 }]), [], 'a sweep narrower than 0.5 deg is no line');
+assert.deepEqual(H.sweepLine([{ az: 10, alt: 5 }]), []);
+assert.equal(H.sweepLine([{ az: 1, alt: -40 }, { az: 9, alt: 120 }], 0)[1].alt, 90, 'altitudes are clamped');
+const turn = H.sweepLine(Array.from({ length: 73 }, (_, i) => ({ az: (100 + i * 5) % 360, alt: 3 })));
+assert.ok(turn.every((p, i) => !i || p.az - turn[i - 1].az <= 90), 'a flat sweep keeps steps of at most 90 deg');
+const turned = H.replacePointsInRange(H.normalizePoints([{ az: 50, alt: 40 }, { az: 200, alt: 40 }]), turn);
+assert.ok(turned.every((p) => p.alt === 3), 'a full turn replaces the whole skyline');
+const eave = H.splitAtNorth(H.sweepLine([{ az: 340, alt: 50 }, { az: 0, alt: 52 }, { az: 20, alt: 54 }], 0));
+assert.equal(eave.length, 2, 'an overhang swept across north becomes two edges');
+
+// --- camera motion against the gyroscope (overlay calibration) -------------------
+{
+  const yRot = (rad) => [0, Math.sin(rad / 2), 0, Math.cos(rad / 2)];
+  const w = H.angularVelocity([0, 0, 0, 1], yRot(0.1), 0.05);
+  close(w[1], 2, 1e-9, 'a 0.1 rad turn about y in 50 ms is 2 rad/s');
+  close(Math.hypot(w[0], w[2]), 0, 1e-12, 'and nothing about x or z');
+  assert.deepEqual(H.angularVelocity([0, 0, 0, 1], yRot(0.1), 0), [0, 0, 0]);
+  // Display smoothing: 1 s of turning at 2 rad/s, read at 60 Hz, one reading
+  // stored with the opposite sign (the same orientation).
+  const hist = Array.from({ length: 61 }, (_, i) => ({ t: i * 1000 / 60, q: yRot(0.002 * i * 1000 / 60) }));
+  hist[30].q = hist[30].q.map((v) => -v);
+  const angleOf = (q) => 2 * Math.atan2(q[1], q[3]);
+  close(angleOf(H.smoothOrientation(hist, 500, 60)), 1, 1e-4, 'a centred average of a steady turn is where it is now');
+  // A camera only 10 ms behind: the window narrows to 10 ms either side
+  // instead of averaging 60 ms of the past (which would read 25 ms late); the
+  // readings in it are off centre by at most half a reading interval.
+  const late = H.smoothOrientation(hist, 990, 60);
+  close(angleOf(late), 1.98, 0.002 * 500 / 60, 'near the newest reading the window narrows and stays centred');
+  assert.equal(H.smoothOrientation(hist, 1000, 60), null, 'at the newest reading there is nothing after it to centre on');
+  assert.equal(H.smoothOrientation(hist, 1200, 60), null);
+  assert.equal(H.smoothOrientation(hist.slice(0, 1), 0, 60), null);
+  assert.equal(H.smoothOrientation(hist, 500, 0), null);
+  // 8 s of panning: the gyroscope at 60 Hz, the image analysed at 28 frames a
+  // second, moving 165.5 px per radian and 200 ms behind the gyroscope (the
+  // Pixel 7a's measured values).
+  const omega = (t) => 1.2 * Math.sin(t / 700) + 0.6 * Math.sin(t / 233 + 1) + 0.3 * Math.sin(t / 97);
+  const angle = (t) => { let a = 0; for (let s = 0; s < t; s += 1) a += omega(s) / 1000; return a; };
+  const rates = Array.from({ length: 480 }, (_, i) => ({ t: i * 1000 / 60, w: omega(i * 1000 / 60) }));
+  const shifts = [];
+  for (let t0 = 300; t0 + 36 < 8000; t0 += 1000 / 28) {
+    const t1 = t0 + 1000 / 28;
+    shifts.push({ t0, t1, d: 165.5 * (angle(t1 - 200) - angle(t0 - 200)) });
+  }
+  const m = H.matchMotion(rates, shifts);
+  assert.ok(Math.abs(m.lagMs - 200) <= 10, `the image's delay is found: ${m.lagMs} ms`);
+  assert.ok(Math.abs(m.slope - 165.5) / 165.5 < 0.03, `and its scale: ${m.slope} px/rad`);
+  assert.ok(m.corr > 0.98, `with a clear match: ${m.corr}`);
+  assert.equal(H.matchMotion(rates, []), null, 'no image motion, no match');
+  assert.equal(H.matchMotion([], shifts), null, 'no gyroscope, no match');
+}
+
+// --- north references and loop closure ------------------------------------------
+{
+  const jd = 2440587.5 + Date.UTC(2026, 9, 15, 20) / 86400000;
+  const [malt, maz] = (await import('../../core/astro.js')).moonAltAz(jd, 52.52, 13.4);
+  const moon = H.moonDirection(jd, 52.52, 13.4);
+  close(moon.alt, malt, 1e-12, 'moonDirection is the apparent topocentric Moon');
+  close(moon.az, ((maz % 360) + 360) % 360, 1e-9);
+}
+assert.deepEqual(H.referenceUsable({ az: 100, alt: 20 }), { ok: true, why: '' });
+assert.equal(H.referenceUsable({ az: 100, alt: 1 }).why, 'below', 'a body on the horizon line is not used');
+assert.equal(H.referenceUsable({ az: 100, alt: 65 }).why, 'high', 'nor one high overhead, where azimuth means little');
+assert.equal(H.referenceUsable(null).ok, false);
+const ref = H.referenceOffset({ az: 350, alt: 21.4 }, { az: 20, alt: 21 });
+close(ref.offset, 30, 1e-9, 'north turns the relative 350 into the true 20');
+close(ref.altError, 0.4, 1e-9, 'the aim reads 0.4 deg high');
+
+// A full turn whose gyroscope runs 2% fast: it reads 367.2 deg for 360.
+const truth = Array.from({ length: 73 }, (_, i) => ({ az: (10 + i * 5) % 360, alt: 5 + 3 * Math.sin(i / 7) }));
+const drifted = truth.map((p, i) => ({ az: (10 + i * 5 * 1.02) % 360, alt: p.alt }));
+const closed = H.closeLoop(drifted);
+close(closed.error, 7.2, 1e-9, 'the closing error is the drift');
+closed.samples.forEach((p, i) => close(Math.abs(H.azDelta(p.az, truth[i].az)), 0, 1e-9, `sample ${i} is back where it belongs`));
+const westward = H.closeLoop(drifted.map((p) => ({ az: (720 - p.az) % 360, alt: p.alt })));
+close(westward.error, -7.2, 1e-9, 'an anticlockwise turn closes too');
+assert.equal(H.closeLoop(truth.slice(0, 40)), null, 'half a turn is no loop');
+assert.equal(H.closeLoop([{ az: 0, alt: 0 }]), null);
+close(H.siteDistanceM(52, 13, 53, 13) / 1000, 111.2, 0.1, 'one degree of latitude is about 111 km');
+close(H.siteDistanceM(52.5, 13.4, 52.5, 13.4), 0, 1e-9);
+
+// --- share links ---------------------------------------------------------------
+const shared = { name: '  Garten am Hang — Süd ', points: H.normalizePoints([{ az: 0, alt: 10 }, { az: 12.34, alt: -3.21 }, { az: 359.99, alt: 89.99 }]),
+  overhangs: [[{ az: 100, alt: 40 }, { az: 110.5, alt: 35.25 }], [{ az: 350, alt: 60 }, { az: 360, alt: 60 }]] };
+const code = H.encodeHorizonLink(shared);
+assert.match(code, /^[A-Za-z0-9_-]+$/, 'link text is URL-safe');
+assert.deepEqual(H.decodeHorizonLink(code), { name: 'Garten am Hang — Süd', points: shared.points, overhangs: shared.overhangs },
+  'a link gives back exactly the same skyline, overhangs and name');
+assert.deepEqual(H.decodeHorizonLink(H.encodeHorizonLink({ name: '', points: [] })), { name: 'Horizon', points: [], overhangs: [] });
+const dense360 = H.normalizePoints(Array.from({ length: 720 }, (_, i) => ({ az: i / 2, alt: 10 + 8 * Math.sin(i / 17) })));
+const denseCode = H.encodeHorizonLink({ name: 'Dense', points: dense360 });
+assert.deepEqual(H.decodeHorizonLink(denseCode).points, dense360, 'a dense skyline survives');
+assert.ok(denseCode.length < 4000, `a 720-point skyline stays a usable link: ${denseCode.length} characters`);
+for (const [bad, why] of [
+  ['', 'empty'], ['abc$', 'not URL-safe base64'], [code.slice(0, -3), 'truncated'], [code + 'AAAA', 'trailing data'],
+  ['Ag', 'a newer version'], ['x'.repeat(H.LINK_MAX_CHARS + 1), 'too long'],
+  [H.encodeHorizonLink({ points: [] }).replace(/^./, 'B'), 'a changed version byte'],
+]) assert.throws(() => H.decodeHorizonLink(bad), Error, `${why} is refused`);
+// out-of-range values in an otherwise well-formed link
+const varint = (v) => { const out = []; do { let b = v & 127; v = Math.floor(v / 128); if (v) b |= 128; out.push(b); } while (v); return out; };
+const zz = (v) => varint(v >= 0 ? v * 2 : -v * 2 - 1);
+const raw = (bytes) => Buffer.from(bytes).toString('base64url');
+const onePoint = (az, alt) => raw([1, 0, 1, ...zz(az), ...zz(alt), 0]);
+assert.deepEqual(H.decodeHorizonLink(onePoint(12345, 678)).points, [{ az: 123.45, alt: 6.78 }], 'the hand-built form reads');
+assert.throws(() => H.decodeHorizonLink(onePoint(36500, 0)), /damaged/, 'an azimuth past 360 is refused');
+assert.throws(() => H.decodeHorizonLink(onePoint(100, 9500)), /damaged/, 'an altitude past 90 is refused');
+assert.throws(() => H.decodeHorizonLink(raw([1, 0, 0, 21])), /more overhangs/, 'too many overhangs are refused');
+assert.throws(() => H.decodeHorizonLink(raw([1, 0, ...varint(H.MAX_POINTS + 1)])), /more points/, 'too many points are refused');
 
 // --- horizon files ----------------------------------------------------------
 const parsed = H.parseHorizonFile([
@@ -259,18 +324,19 @@ const dense = Array.from({ length: 3000 }, (_, i) => `${(i * 0.12).toFixed(2)} 5
 assert.ok(H.parseHorizonFile(dense).points.length <= H.MAX_POINTS, 'dense files are simplified to the cap');
 
 // --- history ----------------------------------------------------------------
-const rec = { points: [{ az: 1, alt: 2 }], overhangs: [], photo: null };
+const rec = { points: [{ az: 1, alt: 2 }], overhangs: [] };
 const hist = Hist.newHistory(rec, 3);
 assert.equal(Hist.historyDirty(hist, rec), false);
 assert.equal(Hist.historyCommit(hist, rec), false, 'no change, no entry');
 rec.points = [...rec.points, { az: 5, alt: 6 }];
 assert.equal(Hist.historyCommit(hist, rec), true);
 assert.equal(Hist.historyDirty(hist, rec), true);
-rec.photo = { width: 60, heading: 1, tilt: 0, roll: 0 };
+rec.points = [...rec.points, { az: 7, alt: 8 }];
 Hist.historyCommit(hist, rec);
 Hist.historyUndo(hist, rec);
-assert.equal(rec.photo, null);
 assert.equal(rec.points.length, 2);
+assert.deepEqual(Object.keys(JSON.parse(Hist.snapshot({ ...rec, photo: { width: 60 } }))).sort(), ['o', 'p'],
+  'the history holds points and overhangs only');
 Hist.historyUndo(hist, rec);
 assert.equal(Hist.historyDirty(hist, rec), false, 'undo back to the baseline is clean');
 Hist.historyRedo(hist, rec);

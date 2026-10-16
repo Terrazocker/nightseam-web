@@ -3,9 +3,9 @@
  *
  * Drives the REAL web/webstore.js + web/horizon.js through a minimal fake
  * IndexedDB and a localStorage stub (no browser here). Pins:
- *   - normalized horizon records are TRUTHFUL: hasPhoto === true only when the
- *     backup actually carried photo bytes, and the profile is derived from
- *     the skyline points
+ *   - normalized horizon records hold only points and overhangs: photo
+ *     placements and embedded images of older backups are dropped, and the
+ *     profile is derived from the skyline points
  *   - any malformed horizon data refuses the whole section before a write
  *   - older bundles (format 1-10) restore everything except their retired
  *     panoramas
@@ -21,18 +21,6 @@ globalThis.localStorage = {
   getItem(k) { return Object.prototype.hasOwnProperty.call(this._m, k) ? this._m[k] : null; },
   setItem(k, v) { this._m[k] = String(v); },
   removeItem(k) { delete this._m[k]; },
-};
-
-// FileReader is not in Node; enough to turn a Blob into a data URL for the
-// exportHorizonsWithPhotos path.
-globalThis.FileReader = class {
-  readAsDataURL(blob) {
-    blob.arrayBuffer().then((buf) => {
-      const b64 = Buffer.from(new Uint8Array(buf)).toString('base64');
-      this.result = `data:${blob.type || 'image/jpeg'};base64,${b64}`;
-      if (this.onload) this.onload();
-    }).catch((e) => { if (this.onerror) this.onerror(e); });
-  }
 };
 
 /* ---------------------------------------------------- minimal fake IDB --- */
@@ -146,25 +134,28 @@ let ok = true;
 const fail = (m) => { ok = false; console.log('  FAIL:', m); };
 const assert = (cond, m) => { if (!cond) fail(m); };
 
-// The smallest valid JPEG header: SOF0 with 600 x 300 pixels.
-const JPEG = Buffer.from([255, 216, 255, 192, 0, 11, 8, 1, 44, 2, 88, 3, 1, 34, 0, 255, 217]);
-const DATAURL = 'data:image/jpeg;base64,' + JPEG.toString('base64');
+// What builds with horizon photos wrote into a record and its backup.
+const DATAURL = 'data:image/jpeg;base64,' + Buffer.from([255, 216, 255, 217]).toString('base64');
 const PLACED = { width: 120, heading: 180, tilt: 0, roll: 0 };
 const emptyPanos = { panos: [], activeId: null };
 const emptyHorizons = { horizons: [], activeId: null };
 const hzRec = (over = {}) => ({
-  id: 'h1', name: 'Garden', points: [{ az: 90, alt: 20 }, { az: 270, alt: 5 }],
-  photo: null, ...over,
+  id: 'h1', name: 'Garden', points: [{ az: 90, alt: 20 }, { az: 270, alt: 5 }], ...over,
 });
+const photoFields = (rec) => ['photo', 'hasPhoto', 'image'].filter((k) => k in rec);
 
-/* 1. normalizeHorizons truthfulness ------------------------------------- */
-const withImg = H.normalizeHorizons({ horizons: [hzRec({ photo: PLACED, hasPhoto: true, image: DATAURL })] });
-assert(withImg.horizons[0].hasPhoto === true, 'embedded photo bytes set hasPhoto');
-assert(withImg.horizons[0].image === DATAURL, 'the photo is kept for the restore');
-const noImg = H.normalizeHorizons({ horizons: [hzRec({ photo: PLACED, hasPhoto: true })] });
-assert(noImg.horizons[0].hasPhoto === false, 'hasPhoto without bytes becomes false');
-assert(noImg.horizons[0].image === undefined, 'no image field when absent');
-assert(JSON.stringify(noImg.horizons[0].photo) === JSON.stringify(PLACED), 'a placement without bytes is kept');
+/* 1. normalizeHorizons: records only ----------------------------------- */
+const legacy = H.normalizeHorizons({ horizons: [hzRec({ photo: PLACED, hasPhoto: true, image: DATAURL })] });
+assert(legacy && photoFields(legacy.horizons[0]).length === 0, 'photo fields of an older backup are dropped');
+assert(JSON.stringify(legacy.horizons[0].points) === JSON.stringify(hzRec().points), 'its skyline is kept');
+for (const [odd, why] of [
+  [{ photo: { width: 0, heading: 0, tilt: 0, roll: 0 } }, 'a malformed placement'],
+  [{ image: DATAURL }, 'photo bytes without a placement'],
+  [{ photo: PLACED, image: 'data:text/html;base64,eA==' }, 'a non-image data URL'],
+]) {
+  const norm = H.normalizeHorizons({ horizons: [hzRec(odd)] });
+  assert(norm && photoFields(norm.horizons[0]).length === 0, `${why} from an older backup is ignored, not refused`);
+}
 const derived = H.normalizeHorizons({ horizons: [hzRec({ profile: new Array(720).fill(80) })] }).horizons[0];
 assert(derived.profile[180] === 20 && H.ceilFor(derived, 90).ceil === 20,
   'the profile is derived from the points, never taken from the backup');
@@ -178,11 +169,6 @@ for (const [bad, why] of [
   [{ horizons: [hzRec(), hzRec()] }, 'duplicate ids'],
   [{ horizons: [hzRec({ points: [{ az: 1, alt: '2' }] })] }, 'a malformed point'],
   [{ horizons: [hzRec({ points: 'none' })] }, 'points that are not a list'],
-  [{ horizons: [hzRec({ photo: { width: 0, heading: 0, tilt: 0, roll: 0 } })] }, 'a malformed placement'],
-  [{ horizons: [hzRec({ image: DATAURL })] }, 'photo bytes without a placement'],
-  [{ horizons: [hzRec({ photo: PLACED, image: 'data:text/html;base64,eA==' })] }, 'a non-image data URL'],
-  [{ horizons: [hzRec({ photo: PLACED, image: 'data:image/png;base64,!!!' })] }, 'undecodable photo bytes'],
-  [{ horizons: [hzRec({ photo: PLACED, image: 'data:image/jpeg;base64,' + Buffer.from('JPEGBYTES').toString('base64') })] }, 'bytes that are not a JPEG'],
   [{ horizons: Array.from({ length: H.MAX_HORIZONS + 1 }, (_, i) => hzRec({ id: `h${i}` })) }, 'too many horizons'],
   [{ horizons: [hzRec({ overhangs: [[{ az: 10, alt: 40 }]] })] }, 'a one-point overhang'],
   [{ horizons: [hzRec({ overhangs: [[{ az: -10, alt: 40 }, { az: 10, alt: 40 }]] })] }, 'an overhang across north'],
@@ -191,26 +177,29 @@ for (const [bad, why] of [
 ]) assert(H.normalizeHorizons(bad) === null, `${why} refuses the whole section`);
 
 /* 2. export -> normalize -> apply round trip ----------------------------- */
-assert(await H.applyHorizonsSnapshot(withImg) === true, 'a normalized snapshot applies');
-assert(H.activeHorizon().hasPhoto === true, 'the applied horizon has its photo');
-const exported = await H.exportHorizonsWithPhotos();
-assert(exported.horizons[0].image && exported.horizons[0].image.startsWith('data:image/jpeg'),
-  'export embeds the stored photo');
+assert(await H.applyHorizonsSnapshot(legacy) === true, 'a normalized snapshot applies');
+const exported = H.exportHorizons();
+assert(photoFields(exported.horizons[0]).length === 0, 'export carries no photo fields');
 assert(!('profile' in exported.horizons[0]), 'export never stores the derived profile');
+assert(!localStorage.getItem('nightseam_horizons_v2').includes('photo'), 'stored records carry no photo fields');
 const again = H.normalizeHorizons(exported);
-assert(JSON.stringify(again.horizons[0].points) === JSON.stringify(withImg.horizons[0].points)
-  && JSON.stringify(again.horizons[0].photo) === JSON.stringify(PLACED), 'points and placement round-trip');
+assert(JSON.stringify(again.horizons[0].points) === JSON.stringify(legacy.horizons[0].points), 'points round-trip');
 await H.applyHorizonsSnapshot(again);
-assert(H.activeHorizon().hasPhoto === true && H.ceilFor(H.activeHorizon(), 90).ceil === 20,
-  'the round-tripped horizon still has its photo and skyline');
-const beforeBad = JSON.stringify(await H.exportHorizonsWithPhotos());
-assert(await H.applyHorizonsSnapshot({ horizons: [{ ...hzRec(), image: 'data:image/png;base64,' }], activeId: 'h1' }) === false,
-  'an unusable photo fails the restore');
-assert(JSON.stringify(await H.exportHorizonsWithPhotos()) === beforeBad, 'a failed restore leaves the horizons unchanged');
+assert(H.ceilFor(H.activeHorizon(), 90).ceil === 20, 'the round-tripped horizon keeps its skyline');
+const beforeBad = JSON.stringify(H.exportHorizons());
+assert(await H.applyHorizonsSnapshot({ horizons: [{ ...hzRec(), id: 'bad id' }], activeId: 'h1' }) === false,
+  'an unusable record fails the restore');
+assert(JSON.stringify(H.exportHorizons()) === beforeBad, 'a failed restore leaves the horizons unchanged');
+const setItem = localStorage.setItem;
+localStorage.setItem = () => { throw new Error('QuotaExceededError'); };
+const full = await H.applyHorizonsSnapshot(H.normalizeHorizons({ horizons: [hzRec({ id: 'h9' })] }));
+localStorage.setItem = setItem;
+assert(full === false, 'a full storage fails the restore');
+assert(JSON.stringify(H.exportHorizons()) === beforeBad, 'and leaves the horizons unchanged');
 
 const roofed = H.normalizeHorizons({ horizons: [hzRec({ overhangs: [[{ az: 100, alt: 40 }, { az: 120, alt: 35 }]] })] });
 await H.applyHorizonsSnapshot(roofed);
-const roofExport = await H.exportHorizonsWithPhotos();
+const roofExport = H.exportHorizons();
 assert(JSON.stringify(roofExport.horizons[0].overhangs) === JSON.stringify([[{ az: 100, alt: 40 }, { az: 120, alt: 35 }]]),
   'overhangs are backed up');
 assert(!('profileTop' in roofExport.horizons[0]), 'the derived overhang profile is never stored');

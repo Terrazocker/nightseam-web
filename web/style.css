@@ -569,6 +569,7 @@ a.wiki { color: var(--accent); }
   border-radius: var(--radius, 12px);
 }
 .ed-confirm-box h4 { margin: 0 0 8px; }
+.hz-link-text { display: block; width: 100%; box-sizing: border-box; margin: 0 0 10px; font: 12px var(--mono); overflow-wrap: anywhere; resize: vertical; }
 .ed-confirm-box p { margin: 0 0 14px; font-size: 13px; color: var(--muted); }
 .ed-confirm-box .btnrow { justify-content: flex-end; }
 .ed-confirm-box .btn { flex: 0 0 auto; }
@@ -833,13 +834,8 @@ input.night-scrub::-moz-range-thumb { width: 13px; height: 13px; border: 1px sol
 .ed-group .btn { flex: 0 0 auto; }
 .hz-modes .btn[aria-pressed="true"] { border-color: var(--accent); outline: 1px solid var(--accent); color: var(--txt); }
 .horizon-stage > .ed-tools .ed-status { margin-left: auto; }
-.hz-guide { margin: 0 0 10px; padding: 10px 12px; border: 1px solid var(--accent); border-radius: 8px; font-size: 12.5px; }
-.hz-guide[hidden] { display: none; }
-.hz-guide p, .hz-guide ol { margin: 0 0 8px; }
-.hz-guide ol { padding-left: 20px; line-height: 1.8; }
 .hz-canvas-box { position: relative; min-width: 0; padding-top: 34px; }
 #hz-canvas { display: block; width: 100%; touch-action: none; cursor: crosshair; background: var(--viz-canvas-bg); }
-#hz-canvas[data-mode="align"] { cursor: move; }
 #hz-canvas.panning { cursor: grabbing; }
 #hz-canvas:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .horizon-stage .ed-hint { line-height: 1.5; overflow-wrap: anywhere; }
@@ -848,18 +844,69 @@ input.night-scrub::-moz-range-thumb { width: 13px; height: 13px; border: 1px sol
 .hz-summary { margin-top: 4px; }
 .horizon-settings-rail { display: grid; align-content: start; gap: 0; position: sticky; top: 150px; max-height: calc(100dvh - 170px); overflow: auto; min-width: 0; }
 .hz-panel { padding: 10px 0; border-bottom: 1px solid var(--line-soft); min-width: 0; font-size: 12px; }
-.hz-panel h4 { margin: 0 0 8px; }
 .hz-panel > summary { cursor: pointer; color: var(--muted); }
 .hz-panel .btnrow { gap: 6px; margin-top: 8px; }
 .hz-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 8px 0 0; padding: 0; border: 0; min-width: 0; }
 .hz-fields legend { padding: 0; margin-bottom: 4px; color: var(--txt); font-size: 12px; }
-.hz-fields label, .hz-landmark label { display: flex; flex-direction: column; gap: 4px; min-width: 0; color: var(--muted); }
-.hz-fields input, .hz-landmark input { width: 100%; min-width: 0; box-sizing: border-box; }
+.hz-fields label { display: flex; flex-direction: column; gap: 4px; min-width: 0; color: var(--muted); }
+.hz-fields input { width: 100%; min-width: 0; box-sizing: border-box; }
 .hz-fields .btn { grid-column: 1 / -1; justify-self: start; }
-.hz-landmark { margin-top: 10px; }
-.hz-landmark[hidden] { display: none; }
 .ed-display > label { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 8px; color: var(--muted); }
-.ed-display input[type="range"] { width: 120px; max-width: 100%; }
+/* Phone capture (capture.js): a full-screen camera view with a crosshair.
+   Panels above and below the video stay readable over any scene. */
+.cap { position: fixed; inset: 0; z-index: 80; display: flex; flex-direction: column; justify-content: space-between; overflow: hidden; background: var(--bg); color: var(--txt); }
+.cap-video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.cap-no-video .cap-video { display: none; }
+.cap-ar { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.cap-cross { position: absolute; left: 50%; top: 50%; width: 72px; height: 72px; margin: -36px 0 0 -36px; pointer-events: none; }
+.cap-cross::before, .cap-cross::after { content: ""; position: absolute; background: var(--txt); box-shadow: 0 0 0 1px var(--bg); }
+.cap-cross::before { left: 35px; top: 0; width: 2px; height: 72px; }
+.cap-cross::after { top: 35px; left: 0; width: 72px; height: 2px; }
+/* Mobile first: an opaque bar above and below the camera (no translucent
+   panels), the readout large at the top, and the controls a thumb reaches
+   at the bottom. Nothing grows over the crosshair in the middle. */
+.cap-top, .cap-bottom { position: relative; background: var(--panel); box-sizing: border-box; overflow-y: auto; }
+.cap-top { padding: max(8px, env(safe-area-inset-top)) 14px 8px; border-bottom: 1px solid var(--line); max-height: 35%; }
+.cap-bottom { padding: 8px 14px max(10px, env(safe-area-inset-bottom)); border-top: 1px solid var(--line); max-height: 45%; }
+.cap .btn { min-height: 48px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; font-size: 14px; }
+.cap .btn[hidden] { display: none; }
+.cap-topline { display: flex; align-items: center; gap: 12px; }
+.cap-done { flex: 0 0 auto; }
+.cap-read { flex: 1 1 auto; margin: 0; min-width: 0; text-align: right; font-size: clamp(15px, 4.6vw, 21px); font-weight: 600; font-variant-numeric: tabular-nums; white-space: pre; overflow: hidden; }
+.cap-read.cap-read-msg { font: 13px/1.35 system-ui, sans-serif; text-align: left; color: var(--muted); white-space: normal; }
+.cap .cap-north-btn { width: 100%; margin-top: 8px; min-height: 44px; justify-content: space-between; font-size: 13px; color: var(--muted); }
+.cap-site, .cap-status { margin: 6px 0 0; font-size: 13px; line-height: 1.35; }
+.cap-site { color: var(--amber); }
+.cap-site:empty { display: none; }
+.cap-status { color: var(--muted); }
+.cap-strip { display: block; width: 100%; height: 40px; margin-bottom: 8px; border-radius: 4px; }
+.cap-main { display: grid; gap: 8px; }
+.cap-row { display: flex; align-items: center; gap: 8px; }
+.cap-pair > .btn { flex: 1 1 0; }
+.cap-modes { display: flex; flex: 1 1 auto; }
+.cap-modes .btn { flex: 1 1 0; border-radius: 0; }
+.cap-modes .btn:first-child { border-radius: 6px 0 0 6px; }
+.cap-modes .btn:last-child { border-radius: 0 6px 6px 0; border-left: 0; }
+.cap-modes .btn[aria-pressed="true"], .cap-chip[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); box-shadow: inset 0 -2px 0 var(--accent); }
+.cap-chip { flex: 0 0 auto; }
+.cap-thumb { display: grid; grid-template-columns: 1fr 1.5fr 1fr; gap: 8px; align-items: stretch; }
+.cap .cap-trace { min-height: 64px; font-size: 17px; font-weight: 600; touch-action: manipulation; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+.cap-trace[aria-pressed="true"] { outline: 2px solid var(--accent); outline-offset: 2px; }
+.cap-panel { margin: 0 0 8px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 6px; background: var(--raised); }
+.cap-panel[hidden] { display: none; }
+.cap-panel p { margin: 0 0 8px; }
+.cap-panel .cap-row + .cap-row { margin-top: 8px; }
+.cap-small { font-size: 12.5px; color: var(--muted); }
+.cap-small:empty { display: none; }
+.cap-asking .cap-main, .cap-asking .cap-strip { display: none; }
+.cap-ref-az { flex: 0 1 110px; min-width: 0; min-height: 48px; box-sizing: border-box; }
+.cap-row > #cap-ref-landmark { flex: 1 1 auto; }
+/* Short screens (a phone held sideways): drop the overview strip. */
+@media (max-height: 560px) {
+  .cap-strip { display: none; }
+  .cap-top { max-height: 40%; }
+  .cap-read { font-size: 18px; }
+}
 @media (max-width: 640px) {
   .horizon-stage > .ed-tools { top: 8px; max-height: min(240px, 40dvh); overflow-y: auto; }
 }

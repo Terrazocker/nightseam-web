@@ -7,8 +7,10 @@ geographic calibration plan (P3-P7), now in `docs/history/` together with the
 accuracy research.
 
 Status: phases 1-6 are merged into master (pull request #2, October 12, 2026)
-and unreleased. Real-photo and device acceptance is still open:
-[HORIZON_ACCEPTANCE.md](../acceptance/HORIZON_ACCEPTANCE.md).
+and unreleased. On October 15 the owner decided to replace the photo parts
+with phone-sensor capture:
+[HORIZON_SENSOR_CAPTURE_PLAN.md](HORIZON_SENSOR_CAPTURE_PLAN.md). The skyline
+model, overhangs, points form and file import/export described here stay.
 
 ## Owner decisions
 

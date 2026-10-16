@@ -89,16 +89,19 @@ The local exposure catalog has its own design document in Nightseam-catalog.
   and complementary at every width; on phones the rail stacks below the map.
   Closing it preserves the selected target with a small reopen action.
 - **Horizon:** the job is "where is my sky blocked"; keep the editor to that.
-  Three rails: the horizon list with *New from photo*, *Draw by hand* and
-  *Import file*; the stage; and a settings rail with the Photo panel and closed
-  *Points by numbers*, *Phone compass* and *Display* disclosures. Keep about
-  20 controls visible at first glance and about 40 including the disclosures.
+  Three rails: the horizon list with *Draw by hand* (primary) and *Import
+  file*; the stage; and a settings rail with closed *Points by numbers*,
+  *Phone capture* and *Display* disclosures (*Phone capture* starts open on
+  touch devices). Keep about 20 controls visible
+  at first glance and about 40 including the disclosures. There are no
+  horizon photos: a dropped photo gets a one-line explanation, a dropped
+  horizon file imports.
   - The stage is one compass grid (azimuth across, altitude up, N/E/S/W on the
-    ruler, the minimum altitude as a dashed line) with the photo underneath.
+    ruler, the minimum altitude as a dashed line).
     The skyline is a line with a shaded obstruction below it, never colour
     alone: a text summary names the highest and lowest obstruction and their
     directions.
-  - A sticky toolbar holds Draw / Overhang / Align photo, Undo, Redo, Clear and
+  - A sticky toolbar holds Draw / Overhang, Undo, Redo, Clear and
     the save status; zoom controls sit on the canvas. On phones cap the toolbar at 40%
     of the viewport height (at most 240px) with internal scrolling.
   - Draw: click adds a point, dragging a point moves it between its
@@ -109,19 +112,51 @@ The local exposure catalog has its own design document in Nightseam-catalog.
     above that edge is shaded as blocked, with a dashed edge so it reads apart
     from the skyline. Points drag, arrow keys and Delete work as in Draw; the
     points form adds a flat overhang.
-  - Align photo: drag the photo; partial photos also get two round level
-    handles. A full panorama is never rolled. The Photo panel shows width,
-    north, tilt and roll as numbers, *Set north from a landmark*, *Set north
-    from the Sun*, *Detect skyline* and *Remove photo*; the skyline and
-    overhangs always move with the photo.
-  - Phone compass: Start, a live direction readout, *Add point here*, *Start
-    / Finish tracing* and a landmark correction. Say plainly that phone
-    compasses are rough and that a correction comes first.
-  - After a new photo, show a short three-step guide (width, north, skyline)
-    that can be dismissed; never a wizard. A partial photo opens zoomed to
-    itself.
+  - Phone capture: one button opens a full-screen camera view laid out
+    mobile first, for one hand on a phone held upright:
+    - An opaque bar above the camera: *✕ Done* on the left and the
+      crosshair's direction in large monospace digits on one line, always
+      with one decimal and padded so digits do not jump (*152.0° SSE · alt
+      -12.3°*), changing at most every 120 ms (or, before there is one, what
+      the capture waits for); below them a full-width north button
+      saying where north comes from in a few words (*North: compass, ±3°*,
+      *North: the Moon*), which opens the north panel; then a site warning
+      in the warning colour when the phone is far from the site, and the
+      status line.
+    - The camera fills the middle with the crosshair at its centre. Over the
+      video, what is recorded is drawn where it belongs, as lines only so the
+      scene stays visible: the dashed level horizon with N/E/S/W marks, the
+      skyline, overhang edges dashed, the recorded points as small dots on
+      them, and the trace in progress in the warning colour.
+    - An opaque bar below: the overview strip of the whole circle; a row
+      with *Skyline / Overhang* as one segmented control and, where the
+      camera allows manual exposure, a *Sharper motion* toggle; and the thumb
+      row: *Undo*, the large brass *Start tracing / Stop tracing* toggle in
+      the middle, *Add point*.
+    - Every control is at least 44 px (48 px for buttons, 64 px for the
+      trace toggle). The bars stay within 35% and 45% of the screen and
+      never cover the crosshair: it is what the user aims with. On short
+      screens (a phone held sideways) the strip is dropped.
+    - The north panel (*Moon is in the cross*, disabled with the reason
+      when below 2 deg or above 60 deg; a bearing field with *Landmark is in
+      the cross*;
+      *Compass again*; *Close*) and the full-turn question (*Yes, close the
+      loop* / *No, keep as traced*) take the place of the strip and the
+      controls; nothing else can be pressed while the question waits. The
+      north panel also gives the full account of north: which reference and
+      when, how far the compass was off, and while the compass settles, that
+      the phone should be held still; a monospace status line underneath says
+      what the compass itself is doing (readings a second, settling,
+      restarts), so a user can report why north is missing.
+    - The view opens with focus on *Start tracing*, or on *Done* while
+      tracing is not possible yet; Escape and *Done* close it and return
+      focus to the button.
+  - Share link: beside *Export file* in the editor head. On phones it opens
+    the system share sheet; elsewhere it copies the link or shows it to copy.
+    Opening a link asks in-page before adding the horizon and says what it
+    holds; it never adds silently.
   - Edits save at once and the status says "Saved"; a failed save says so and
-    keeps the edit. Clear, Delete and Remove photo confirm in-page.
+    keeps the edit. Clear and Delete confirm in-page.
 
 Across Tonight, Catalog, and Sky View, keep one selected target and one inspector.
 Keep tables native: rows and cells expose table semantics, with named target

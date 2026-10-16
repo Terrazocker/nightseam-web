@@ -29,19 +29,68 @@ const sunTrueAlt = (jd, lat, lon) => {
   return altaz(ra, dec, jd, lat, lon, false)[0];
 };
 
+/** A dip across the threshold and back (or a rise across and back) between
+ *  three samples on the same side, spaced `h` days from `a`: the dark spell
+ *  of a grazing night can be shorter than one step. The parabola through the
+ *  samples screens out the usual case; near the threshold the true extremum
+ *  is found by golden-section search and both crossings by bisection.
+ *  Returns [firstJd, secondJd] or null. */
+function briefCrossings(f, a, y0, y1, y2, h) {
+  const curve = y0 - 2 * y1 + y2;
+  if (curve === 0) return null;
+  const vertex = y1 - (y0 - y2) ** 2 / (8 * curve);
+  if (Math.sign(vertex) === Math.sign(y1) && Math.abs(vertex) > 0.02) return null;
+  const s = Math.sign(curve); // +1: a minimum, -1: a maximum
+  const g = (Math.sqrt(5) - 1) / 2;
+  let lo = a, hi = a + 2 * h;
+  let x1 = hi - g * (hi - lo), x2 = lo + g * (hi - lo), f1 = s * f(x1), f2 = s * f(x2);
+  for (let k = 0; k < 40; k++) {
+    if (f1 < f2) { hi = x2; x2 = x1; f2 = f1; x1 = hi - g * (hi - lo); f1 = s * f(x1); }
+    else { lo = x1; x1 = x2; f1 = f2; x2 = lo + g * (hi - lo); f2 = s * f(x2); }
+  }
+  const ext = (lo + hi) / 2;
+  if (Math.sign(f(ext)) !== -Math.sign(y1)) return null;
+  const root = (l, r) => {
+    const sl = Math.sign(f(l));
+    for (let k = 0; k < 30; k++) {
+      const m = (l + r) / 2;
+      if (Math.sign(f(m)) === sl) l = m; else r = m;
+    }
+    return (l + r) / 2;
+  };
+  return [root(a, ext), root(ext, a + 2 * h)];
+}
+
 /** Sunset/sunrise crossings for one threshold on a noon-anchored 30 h scan.
  *  `altitude` defaults to the apparent altitude (the twilight levels).
  *  Returns { evening: Date|null, morning: Date|null } (evening = descending). */
 export function sunCrossings(scanStartUTC, lat, lon, thresholdDeg, altitude = sunAlt) {
   const jd0 = julianDay(scanStartUTC);
   const N = 180; // 10-min steps over 30 h
-  let prev = altitude(jd0, lat, lon) - thresholdDeg;
+  const at = (jd) => altitude(jd, lat, lon) - thresholdDeg;
+  let prev = at(jd0);
   let prevSign = Math.sign(prev);
+  let prev2 = null;
   let evening = null, morning = null;
   for (let i = 1; i <= N; i++) {
     const jd = jd0 + i / 144; // 10 minutes = 1/144 day
-    const v = altitude(jd, lat, lon) - thresholdDeg;
+    const v = at(jd);
     const sign = Math.sign(v);
+    if (sign !== 0 && sign === prevSign && prev2 !== null && Math.sign(prev2) === sign
+        && (prev - prev2) * (v - prev) < 0) {
+      // The samples turn at i-1 without changing side: check for a brief spell.
+      const pair = briefCrossings(at, jd0 + (i - 2) / 144, prev2, prev, v, 1 / 144);
+      if (pair) {
+        // Same pairing as below. A dip from above is an evening then a morning
+        // (samples above the threshold mean no evening has been found yet). A
+        // brief rise is the morning once an evening exists; before that it is
+        // ignored and its descent is the evening.
+        const [first, second] = pair.map(dateFromJD);
+        if (sign > 0) { evening = first; morning = second; break; }
+        if (evening) { morning = first; break; }
+        evening = second;
+      }
+    }
     if (sign !== prevSign && prevSign !== 0) {
       // crossing between step i-1 and i
       const f = prev / (prev - v); // fraction from i-1 to i
@@ -53,7 +102,7 @@ export function sunCrossings(scanStartUTC, lat, lon, thresholdDeg, altitude = su
       if (sign < 0) { if (!evening) evening = dt; }
       else if (evening) { morning = dt; break; }
     }
-    prev = v; prevSign = sign;
+    prev2 = prev; prev = v; prevSign = sign;
   }
   return { evening, morning };
 }
@@ -117,9 +166,11 @@ export function pickDarkWindow(info, dayDate, localNoon, fallback) {
     : (info.nauticalDusk && info.nauticalDawn) ? "nautical"
       : (info.civilDusk && info.civilDawn) ? "civil"
         : null;
-  const dusk = info.astroDusk || info.nauticalDusk || info.civilDusk || null;
-  const dawn = info.astroDawn || info.nauticalDawn || info.civilDawn || null;
-  if (dusk && dawn) return { dusk, dawn, level: level || "fallback" };
+  // Dusk and dawn come from the SAME level: picking each one separately paired
+  // an astronomical dusk with a nautical dawn on a transition night above
+  // about 84.5 deg latitude.
+  const key = { astronomical: "astro", nautical: "nautical", civil: "civil" }[level];
+  if (key) return { dusk: info[key + "Dusk"], dawn: info[key + "Dawn"], level };
 
   const anchor = (localNoon instanceof Date && !isNaN(localNoon))
     ? localNoon

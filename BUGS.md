@@ -8,9 +8,11 @@ entry here when it is fixed and record the fix in RELEASES.md.
 
 ## Needs the owner
 
-- **Horizon real-photo acceptance.** Real panoramas and phone photos with
-  known directions, touch/pen input and physical devices for the rebuilt
-  editor: [docs/acceptance/HORIZON_ACCEPTANCE.md](docs/acceptance/HORIZON_ACCEPTANCE.md).
+- **Horizon device acceptance.** Touch/pen and keyboard checks of the
+  editor on real devices:
+  [HORIZON_ACCEPTANCE.md](docs/acceptance/HORIZON_ACCEPTANCE.md). The phone
+  capture gets its own checklist in phase 5 of the
+  [sensor capture plan](docs/horizon/HORIZON_SENSOR_CAPTURE_PLAN.md).
 - **Legal pages: deferred by the owner (2026-10-11).** Not release work and
   not to be raised again unless the owner asks. For reference only: the
   Impressum names a pseudonym without a postal address, and the privacy page
@@ -35,16 +37,16 @@ entry here when it is fixed and record the fix in RELEASES.md.
 - **Horizon model.** One open interval per direction (above the skyline,
   below any overhang edge): sky seen through gaps above an obstruction, such
   as between branches, cannot be recorded.
-- **Phone compass.** Readings are only as good as the phone's compass (often
-  5-10 deg off near metal or buildings); the landmark correction lasts until
-  the page reloads.
-- **Photo mapping.** Pixels are treated as square degrees. That is exact for
-  equirectangular panoramas and approximate for ordinary photos, increasingly
-  towards their edges (about 1 deg at the edge of a 60 deg photo). No fisheye
-  or lens correction; full panoramas cannot be rolled, so a tilted 360 deg
-  panorama must be levelled in the panorama app.
-- **Skyline detection** needs a daylight photo with clear sky. Bright walls,
-  clouds, wires and thin branches can pull the line; it is a draft to correct.
+- **North in the phone capture.** Without a reference, north comes from
+  the phone's compass, averaged once it settles: only as good as that compass
+  (5-10 deg off near metal or buildings, measured on a Pixel 7a). *North…*
+  sets it from the Moon, the Sun or a landmark instead. The Moon and Sun need
+  the observing site to be where the phone is.
+- **AR overlay lag (owner, Pixel 7a, 2026-10-15): fix awaiting the owner's
+  check.** Measured: the camera image trails the gyroscope by about 210 ms and
+  is scaled differently per axis. The capture now aims with the orientation
+  the image shows and calibrates delay and scale per device; remove this
+  entry once the owner confirms it on the phone.
 - **Near-tangent twilight.** When the Sun turns within about 0.01 deg of a
   twilight level, the Sun model and the published tables can disagree on
   whether a spell of a few minutes happens at all (Tromso 2026-09-16: USNO

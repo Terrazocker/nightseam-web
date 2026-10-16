@@ -10,14 +10,14 @@
  * the circle: everything above them is blocked. They derive `profileTop`, the
  * lowest overhang edge per bin, where OPEN_TOP means nothing overhead.
  *
- * A photo is only a tracing aid placed on the same grid: pixels are treated
- * as square in degrees, so a placement is its horizontal angle (`width`), the
- * azimuth/altitude of its centre (`heading`/`tilt`) and its rotation (`roll`).
+ * Skylines are drawn by hand, typed, imported or measured with a phone's
+ * orientation sensors; there is no photo model. Records saved by builds that
+ * had one keep their points and overhangs and drop the photo fields.
  *
  * This module must stay pure: no DOM, storage, network or build tokens.
  */
 
-import { altaz, sunRaDec } from './astro.js';
+import { altaz, sunRaDec, moonAltAz } from './astro.js';
 
 export const NO_BLOCK = -90;
 export const BINS = 720;
@@ -26,8 +26,6 @@ export const ALT_MIN = -10;
 export const ALT_MAX = 90;
 export const MAX_POINTS = 1440;
 export const NAME_MAX = 80;
-export const PHOTO_MAX_PIXELS = 32000000;
-export const PHOTO_WIDTH_MIN = 1;
 export const OPEN_TOP = 90.5;
 export const MAX_OVERHANGS = 20;
 
@@ -72,41 +70,20 @@ export function normalizePoints(value, strict = false) {
     .map(([az, alt]) => ({ az, alt }));
 }
 
-/** Photo placement, or null. Width is 1..360 deg; 360 is a full panorama,
- *  whose roll is always 0. */
-export function normalizePhotoPlacement(value, strict = false) {
-  if (value == null) return null;
-  const fail = (msg) => { if (strict) throw new Error(msg); return null; };
-  if (typeof value !== 'object' || Array.isArray(value)) return fail('photo placement must be an object');
-  const { width, heading, tilt, roll } = value;
-  if (![width, heading, tilt, roll].every(isNum)) return fail('photo placement needs numeric width, heading, tilt and roll');
-  if (width < PHOTO_WIDTH_MIN || width > 360) return fail('photo width must be 1-360 degrees');
-  if (Math.abs(tilt) > 90) return fail('photo tilt must be -90 to 90 degrees');
-  return {
-    width: round2(width),
-    heading: round2(wrapAz(heading)),
-    tilt: round2(tilt),
-    // A full panorama is never rolled: its tilt would be a wave, not a rotation.
-    roll: width >= 360 ? 0 : round2(azDelta(roll, 0)),
-  };
-}
-
 /** One canonical horizon record. Returns null (or throws when `strict`) for
- *  an unusable id. `hasPhoto` says whether photo bytes are stored for it. */
+ *  an unusable id. Fields of older builds (a photo placement, `hasPhoto`, an
+ *  embedded image) are not part of the record and are dropped, never checked. */
 export function normalizeHorizon(value, strict = false) {
   const fail = (msg) => { if (strict) throw new Error(msg); return null; };
   if (!value || typeof value !== 'object') return fail('horizon must be an object');
   if (typeof value.id !== 'string' || !ID_RE.test(value.id)) return fail('horizon has an invalid id');
   const name = typeof value.name === 'string' && value.name.trim()
     ? value.name.trim().slice(0, NAME_MAX) : 'Horizon';
-  const photo = normalizePhotoPlacement(value.photo, strict);
   return {
     id: value.id,
     name,
     points: normalizePoints(value.points, strict),
     overhangs: normalizeOverhangs(value.overhangs, strict),
-    photo,
-    hasPhoto: !!(photo && value.hasPhoto),
   };
 }
 
@@ -330,257 +307,6 @@ export function flatOverhang(fromAz, toAz, alt) {
   return splitAtNorth([{ az: a, alt }, { az: b, alt }]);
 }
 
-/* ----------------------------- skyline detection ----------------------------- */
-
-/** Find the sky/ground boundary in a daylight photo, column by column.
- *  `image` is RGBA pixel data ({ width, height, data }), ideally downscaled to
- *  a few hundred pixels wide. Sky is bright and not redder than it is blue;
- *  a two-class (Otsu) threshold over that "skyness" separates it from ground,
- *  and the boundary is the first run of `run` ground pixels below the top.
- *  Returns one row per column (fractional y of the boundary), or null where a
- *  column shows no ground. A median filter removes single-column noise
- *  (wires, birds). The result is a first draft for the user to correct. */
-export function detectSkylineRows(image, { run = 3, smooth = 5 } = {}) {
-  const { width: w, height: h, data } = image || {};
-  if (!(w > 0) || !(h > 1) || !data || data.length < w * h * 4) throw new Error('detectSkylineRows needs RGBA pixel data');
-  const sky = new Float32Array(w * h);
-  const hist = new Uint32Array(256);
-  for (let i = 0, j = 0; i < w * h; i++, j += 4) {
-    const r = data[j], g = data[j + 1], b = data[j + 2];
-    const y = 0.299 * r + 0.587 * g + 0.114 * b;
-    const s = Math.min(255, (y + Math.max(0, b - r)) * 0.8);
-    sky[i] = s;
-    hist[s | 0]++;
-  }
-  const threshold = otsu(hist, w * h);
-  const rows = new Array(w).fill(null);
-  for (let x = 0; x < w; x++) {
-    let ground = 0;
-    for (let y = 0; y < h; y++) {
-      if (sky[y * w + x] < threshold) {
-        if (++ground >= run) { rows[x] = y - run + 1; break; }
-      } else ground = 0;
-    }
-  }
-  return medianRows(rows, smooth);
-}
-
-function otsu(hist, total) {
-  let sum = 0;
-  for (let i = 0; i < 256; i++) sum += i * hist[i];
-  let sumB = 0, wB = 0, best = -1, threshold = 128;
-  for (let t = 0; t < 256; t++) {
-    wB += hist[t];
-    if (!wB) continue;
-    const wF = total - wB;
-    if (!wF) break;
-    sumB += t * hist[t];
-    const mB = sumB / wB, mF = (sum - sumB) / wF;
-    const between = wB * wF * (mB - mF) ** 2;
-    if (between > best) { best = between; threshold = t + 0.5; }
-  }
-  return threshold;
-}
-
-function medianRows(rows, size) {
-  if (size < 2) return rows;
-  const half = Math.floor(size / 2);
-  return rows.map((v, x) => {
-    if (v == null) return null;
-    const win = [];
-    for (let k = x - half; k <= x + half; k++) if (rows[k] != null) win.push(rows[k]);
-    win.sort((a, b) => a - b);
-    return win[Math.floor(win.length / 2)];
-  });
-}
-
-/* ------------------------------ photo placement ------------------------------ */
-
-/** Degrees per photo pixel for a placement and image width. */
-export function photoScale(photo, imgW) {
-  return photo.width / imgW;
-}
-
-/** Photo pixel (x right, y down, origin top-left) -> world {az, alt}. */
-export function photoToWorld(photo, imgW, imgH, x, y) {
-  const s = photoScale(photo, imgW);
-  const u = (x - imgW / 2) * s, v = (imgH / 2 - y) * s;
-  const r = photo.roll * Math.PI / 180, c = Math.cos(r), sn = Math.sin(r);
-  return { az: wrapAz(photo.heading + u * c - v * sn), alt: photo.tilt + u * sn + v * c };
-}
-
-/** World {az, alt} -> photo pixel. A full panorama wraps x into [0, imgW). */
-export function worldToPhoto(photo, imgW, imgH, az, alt) {
-  const s = photoScale(photo, imgW);
-  const dv = alt - photo.tilt;
-  const r = photo.roll * Math.PI / 180, c = Math.cos(r), sn = Math.sin(r);
-  const at = (du) => {
-    const u = du * c + dv * sn, v = -du * sn + dv * c;
-    return { x: imgW / 2 + u / s, y: imgH / 2 - v / s };
-  };
-  const du = azDelta(az, photo.heading);
-  if (photo.width < 360) return at(du);
-  // A rolled full panorama: the same direction can sit one turn to either
-  // side; take the branch that lands inside the image, then wrap.
-  const out = [du, du - 360, du + 360].map(at).find((p) => p.x >= 0 && p.x < imgW) || at(du);
-  return { x: ((out.x % imgW) + imgW) % imgW, y: out.y };
-}
-
-/** Move skyline points with the photo when its placement changes, so a trace
- *  stays on the features it was drawn over. */
-export function reprojectPoints(points, imgW, imgH, from, to) {
-  if (!from || !to) return normalizePoints(points);
-  return normalizePoints(points.map((p) => {
-    const px = worldToPhoto(from, imgW, imgH, p.az, p.alt);
-    return photoToWorld(to, imgW, imgH, px.x, px.y);
-  }));
-}
-
-/** Move overhang edges with the photo, splitting an edge that now crosses north. */
-export function reprojectOverhangs(overhangs, imgW, imgH, from, to) {
-  const kept = normalizeOverhangs(overhangs);
-  if (!from || !to) return kept;
-  const out = [];
-  for (const line of kept) {
-    let prev = null;
-    const moved = line.map((p) => {
-      const px = worldToPhoto(from, imgW, imgH, p.az, p.alt);
-      const w = photoToWorld(to, imgW, imgH, px.x, px.y);
-      const az = prev == null ? w.az : prev + azDelta(w.az, prev);
-      prev = az;
-      return { az, alt: w.alt };
-    });
-    out.push(...splitAtNorth(moved));
-  }
-  return out.slice(0, MAX_OVERHANGS);
-}
-
-/** Heading that puts photo pixel (x, y) on azimuth `az`, keeping tilt/roll. */
-export function headingForLandmark(photo, imgW, imgH, x, y, az) {
-  const at = photoToWorld({ ...photo, heading: 0 }, imgW, imgH, x, y);
-  return wrapAz(az - at.az);
-}
-
-/** A sensible first placement for a photo: 2:1 images are full panoramas,
- *  anything else gets `width` (default 60 deg, a typical phone photo). */
-export function defaultPhotoPlacement(imgW, imgH, width = null) {
-  const full = imgH > 0 && Math.abs(imgW / imgH - 2) < 0.05;
-  const w = width ?? (full ? 360 : 60);
-  return normalizePhotoPlacement({ width: w, heading: 180, tilt: 0, roll: 0 });
-}
-
-/** Image dimensions from PNG or JPEG header bytes (EXIF rotation applied).
- *  Throws for anything else or above PHOTO_MAX_PIXELS, so the shell can refuse
- *  a decompression bomb before decoding it. The headers must lie within the
- *  bytes passed in. */
-export function photoFileDimensions(bytes) {
-  const b = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
-  const view = new DataView(b.buffer, b.byteOffset, b.byteLength);
-  let width, height, orientation = 1;
-  const png = [137, 80, 78, 71, 13, 10, 26, 10];
-  if (b.length >= 24 && png.every((v, i) => b[i] === v)
-      && b[12] === 73 && b[13] === 72 && b[14] === 68 && b[15] === 82) {
-    width = view.getUint32(16);
-    height = view.getUint32(20);
-  } else if (b[0] === 255 && b[1] === 216) {
-    let i = 2;
-    while (i + 4 <= b.length) {
-      if (b[i++] !== 255) break;
-      while (b[i] === 255) i++;
-      const marker = b[i++];
-      if (marker === 217 || marker === 218) break;
-      if (marker === 1 || (marker >= 208 && marker <= 215)) continue;
-      if (i + 2 > b.length) break;
-      const length = view.getUint16(i);
-      if (length < 2 || i + length > b.length) break;
-      if (marker === 225 && length >= 16 && [69, 120, 105, 102, 0, 0].every((v, k) => b[i + 2 + k] === v)) {
-        orientation = readExif(b, view, i + 8, i + length).orientation ?? orientation;
-      }
-      if (marker >= 192 && marker <= 207 && ![196, 200, 204].includes(marker) && length >= 7) {
-        height = view.getUint16(i + 3);
-        width = view.getUint16(i + 5);
-      }
-      i += length;
-    }
-  }
-  if ([5, 6, 7, 8].includes(orientation)) [width, height] = [height, width];
-  if (!Number.isInteger(width) || !Number.isInteger(height) || width < 2 || height < 2
-      || width * height > PHOTO_MAX_PIXELS) {
-    throw new Error('Use a JPEG or PNG with valid dimensions up to 32 million pixels.');
-  }
-  return { width, height };
-}
-
-/** The EXIF tags NightSeam reads from a TIFF block at `base`: orientation
- *  (274), DateTime (306), DateTimeOriginal (36867) and OffsetTimeOriginal
- *  (36881). Bounded and defensive: a malformed block yields nulls. */
-function readExif(b, view, base, end) {
-  const out = { orientation: null, dateTime: null, original: null, offset: null };
-  const le = b[base] === 73 && b[base + 1] === 73;
-  if (!(le || (b[base] === 77 && b[base + 1] === 77)) || base + 8 > end || view.getUint16(base + 2, le) !== 42) return out;
-  const ascii = (at, count) => {
-    const from = count > 4 ? base + view.getUint32(at + 8, le) : at + 8;
-    if (from < base || from + count > end) return null;
-    return String.fromCharCode(...b.subarray(from, from + count)).replace(/\0+$/, '');
-  };
-  const walk = (ifd, visit) => {
-    if (ifd < base || ifd + 2 > end) return;
-    const count = view.getUint16(ifd, le);
-    for (let n = 0; n < Math.min(count, 256); n++) {
-      const at = ifd + 2 + n * 12;
-      if (at + 12 > end) break;
-      visit(view.getUint16(at, le), view.getUint16(at + 2, le), view.getUint32(at + 4, le), at);
-    }
-  };
-  let exifIfd = null;
-  walk(base + view.getUint32(base + 4, le), (tag, type, count, at) => {
-    if (tag === 274 && type === 3 && count === 1) out.orientation = view.getUint16(at + 8, le);
-    if (tag === 306 && type === 2) out.dateTime = ascii(at, count);
-    if (tag === 34665 && type === 4) exifIfd = base + view.getUint32(at + 8, le);
-  });
-  if (exifIfd != null) {
-    walk(exifIfd, (tag, type, count, at) => {
-      if (tag === 36867 && type === 2) out.original = ascii(at, count);
-      if (tag === 36881 && type === 2) out.offset = ascii(at, count);
-    });
-  }
-  return out;
-}
-
-/** When a JPEG says it was taken: `wall` is the camera's clock as a UTC-based
- *  millisecond value of its calendar fields, `offsetMin` the stated UTC offset
- *  (minutes east) or null when the photo does not say. Null without a date. */
-export function photoCaptureTime(bytes) {
-  const b = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
-  if (!(b[0] === 255 && b[1] === 216)) return null;
-  const view = new DataView(b.buffer, b.byteOffset, b.byteLength);
-  let i = 2;
-  while (i + 4 <= b.length) {
-    if (b[i++] !== 255) return null;
-    while (b[i] === 255) i++;
-    const marker = b[i++];
-    if (marker === 217 || marker === 218) return null;
-    if (marker === 1 || (marker >= 208 && marker <= 215)) continue;
-    if (i + 2 > b.length) return null;
-    const length = view.getUint16(i);
-    if (length < 2 || i + length > b.length) return null;
-    if (marker === 225 && length >= 16 && [69, 120, 105, 102, 0, 0].every((v, k) => b[i + 2 + k] === v)) {
-      const exif = readExif(b, view, i + 8, i + length);
-      const m = /^(\d{4}):(\d{2}):(\d{2})[ T](\d{2}):(\d{2}):(\d{2})/.exec(exif.original || exif.dateTime || '');
-      if (!m) return null;
-      const [Y, Mo, D, h, mi, sec] = m.slice(1).map(Number);
-      if (Mo < 1 || Mo > 12 || D < 1 || D > 31 || h > 23 || mi > 59 || sec > 60) return null;
-      const off = /^([+-])(\d{2}):(\d{2})$/.exec(exif.original ? exif.offset || '' : '');
-      return {
-        wall: Date.UTC(Y, Mo - 1, D, h, mi, sec),
-        offsetMin: off ? (off[1] === '-' ? -1 : 1) * (Number(off[2]) * 60 + Number(off[3])) : null,
-      };
-    }
-    i += length;
-  }
-  return null;
-}
-
 /* ------------------------------ sun and compass ------------------------------ */
 
 /** The Sun's apparent direction from a site at a Julian Day. */
@@ -590,11 +316,60 @@ export function sunDirection(jd, latDeg, lonDeg) {
   return { az: wrapAz(az), alt };
 }
 
-/** A placement that puts photo pixel (x, y) at a known direction (az, alt),
- *  keeping the photo's width and roll: it sets both north and tilt. */
-export function placementFromKnownDirection(photo, imgW, imgH, x, y, az, alt) {
-  const at = photoToWorld({ ...photo, heading: 0, tilt: 0 }, imgW, imgH, x, y);
-  return normalizePhotoPlacement({ ...photo, heading: az - at.az, tilt: Math.max(-90, Math.min(90, alt - at.alt)) });
+/** The Moon's apparent topocentric direction from a site at a Julian Day. */
+export function moonDirection(jd, latDeg, lonDeg) {
+  const [alt, az] = moonAltAz(jd, latDeg, lonDeg);
+  return { az: wrapAz(az), alt };
+}
+
+/** Whether a sky reference can set north: it must be up (at least 2 deg, so
+ *  it clears most horizons) and not so high that azimuth means little. */
+export function referenceUsable(dir, maxAlt = 60) {
+  if (!dir || !isNum(dir.alt) || !isNum(dir.az)) return { ok: false, why: 'unknown' };
+  if (dir.alt < 2) return { ok: false, why: 'below' };
+  if (dir.alt > maxAlt) return { ok: false, why: 'high' };
+  return { ok: true, why: '' };
+}
+
+/** North from a reference in the crosshair: the offset that turns the
+ *  relative azimuth the phone reads into the reference's true azimuth, and
+ *  how far the measured altitude is off (a check on the aim and the sensor). */
+export function referenceOffset(measured, reference) {
+  return { offset: wrapAz(reference.az - measured.az), altError: measured.alt - reference.alt };
+}
+
+/** Close a traced loop whose last sample points where the first did. The
+ *  closing error (turned angle minus whole turns) is drift; it is removed in
+ *  proportion to the angle turned so far, not to time (phase 0: drift comes
+ *  with turning). Returns { samples, error } or null for less than about a
+ *  full turn. */
+export function closeLoop(samples) {
+  const src = (Array.isArray(samples) ? samples : []).filter((p) => p && isNum(p.az) && isNum(p.alt));
+  if (src.length < 3) return null;
+  const unwrapped = [src[0].az];
+  const turned = [0];
+  for (let i = 1; i < src.length; i++) {
+    const d = azDelta(src[i].az, src[i - 1].az);
+    unwrapped.push(unwrapped[i - 1] + d);
+    turned.push(turned[i - 1] + Math.abs(d));
+  }
+  const net = unwrapped[unwrapped.length - 1] - unwrapped[0];
+  if (Math.abs(net) < 300) return null;   // not a full turn: nothing to close
+  const turns = Math.round(net / 360);
+  const error = net - 360 * turns;
+  const total = turned[turned.length - 1] || 1;
+  return {
+    error,
+    samples: src.map((p, i) => ({ az: wrapAz(unwrapped[i] - error * turned[i] / total), alt: p.alt })),
+  };
+}
+
+/** Ground distance in metres between two latitude/longitude points (haversine). */
+export function siteDistanceM(lat1, lon1, lat2, lon2) {
+  const r = Math.PI / 180;
+  const a = Math.sin((lat2 - lat1) * r / 2) ** 2
+    + Math.cos(lat1 * r) * Math.cos(lat2 * r) * Math.sin((lon2 - lon1) * r / 2) ** 2;
+  return 2 * 6371008.8 * Math.asin(Math.min(1, Math.sqrt(a)));
 }
 
 /** Where a phone's back camera points, from W3C device orientation angles in
@@ -611,6 +386,269 @@ export function devicePointing(alpha, beta, gamma) {
   const y = -sG * sA + cG * sB * cA;
   const z = -cG * cB;
   return { az: wrapAz(Math.atan2(x, y) / r), alt: Math.asin(Math.max(-1, Math.min(1, z))) / r };
+}
+
+/** Where a phone's back camera points, from an orientation quaternion
+ *  [x, y, z, w] that turns device coordinates into the world frame (x east,
+ *  y north, z up), as the Generic Sensor OrientationSensor reports it. The
+ *  relative sensor's "north" is arbitrary; the caller adds an offset. */
+export function quaternionPointing(q) {
+  const [x, y, z, w] = q;
+  // third column of the rotation matrix, negated: the back-camera axis (0, 0, -1)
+  const dx = -2 * (x * z + w * y), dy = -2 * (y * z - w * x), dz = -(1 - 2 * (x * x + y * y));
+  return { az: wrapAz(Math.atan2(dx, dy) * 180 / Math.PI), alt: Math.asin(Math.max(-1, Math.min(1, dz))) * 180 / Math.PI };
+}
+
+/** The orientation quaternion [x, y, z, w] of W3C device orientation angles
+ *  (degrees, applied Z-X'-Y''), the rotation devicePointing uses, so both
+ *  sensor APIs feed the same quaternion path. */
+export function orientationQuaternion(alpha, beta, gamma) {
+  const h = Math.PI / 360;
+  const [sa, ca] = [Math.sin(alpha * h), Math.cos(alpha * h)];
+  const [sb, cb] = [Math.sin(beta * h), Math.cos(beta * h)];
+  const [sg, cg] = [Math.sin(gamma * h), Math.cos(gamma * h)];
+  // qz(alpha) * qx(beta) * qy(gamma)
+  return [
+    ca * sb * cg - sa * cb * sg,
+    ca * cb * sg + sa * sb * cg,
+    sa * cb * cg + ca * sb * sg,
+    ca * cb * cg - sa * sb * sg,
+  ];
+}
+
+/** Where a world direction (true azimuth `az`, altitude `alt`, degrees) shows
+ *  in the camera of a device with orientation quaternion `q` (see
+ *  quaternionPointing), whose quaternion azimuths read `offset` deg less than
+ *  true ones. Returns {x, y} as tangents of the angles off the camera axis:
+ *  x towards the device's right edge, y towards its top edge (portrait). Null
+ *  when the direction is more than `maxAngle` deg off the axis or behind. */
+export function cameraProject(q, offset, az, alt, maxAngle = 80) {
+  const [x, y, z, w] = q;
+  const a = (az - offset) * Math.PI / 180, h = alt * Math.PI / 180;
+  const vx = Math.sin(a) * Math.cos(h), vy = Math.cos(a) * Math.cos(h), vz = Math.sin(h);
+  // world -> device: the transposed rotation matrix of q
+  const dx = (1 - 2 * (y * y + z * z)) * vx + 2 * (x * y + w * z) * vy + 2 * (x * z - w * y) * vz;
+  const dy = 2 * (x * y - w * z) * vx + (1 - 2 * (x * x + z * z)) * vy + 2 * (y * z + w * x) * vz;
+  const dz = 2 * (x * z + w * y) * vx + 2 * (y * z - w * x) * vy + (1 - 2 * (x * x + y * y)) * vz;
+  const forward = -dz;   // the back camera looks along -z
+  if (!(forward > Math.cos(maxAngle * Math.PI / 180))) return null;
+  return { x: dx / forward, y: dy / forward };
+}
+
+/** Angular velocity (rad/s, about the device's own x, y, z axes) between two
+ *  orientation quaternions taken `dt` seconds apart. */
+export function angularVelocity(q0, q1, dt) {
+  if (!(dt > 0)) return [0, 0, 0];
+  const [ax, ay, az, aw] = [-q0[0], -q0[1], -q0[2], q0[3]];   // q0 inverse
+  const [bx, by, bz, bw] = q1;
+  let x = aw * bx + ax * bw + ay * bz - az * by;
+  let y = aw * by - ax * bz + ay * bw + az * bx;
+  let z = aw * bz + ax * by - ay * bx + az * bw;
+  let w = aw * bw - ax * bx - ay * by - az * bz;
+  if (w < 0) { x = -x; y = -y; z = -z; w = -w; }
+  const s = Math.hypot(x, y, z);
+  if (s < 1e-12) return [0, 0, 0];
+  const k = 2 * Math.atan2(s, w) / s / dt;
+  return [x * k, y * k, z * k];
+}
+
+/** The orientation at time t (ms) averaged over a window centred on t:
+ *  `history` holds {t, q} readings in time order. The window is `halfMs`
+ *  either side, narrowed to the readings that exist on both sides, so it
+ *  stays centred and adds no lag even when t is close to the newest reading
+ *  (a camera that trails the gyroscope only a little). Returns a unit
+ *  quaternion, or null when fewer than two readings fall in the window. */
+export function smoothOrientation(history, t, halfMs) {
+  const h = Array.isArray(history) ? history : [];
+  if (h.length < 2 || !isNum(t) || !(halfMs > 0)) return null;
+  const half = Math.min(halfMs, h[h.length - 1].t - t, t - h[0].t);
+  if (!(half > 0)) return null;
+  const near = h.filter((e) => Math.abs(e.t - t) <= half);
+  if (near.length < 2) return null;
+  const ref = near[0].q, sum = [0, 0, 0, 0];
+  for (const { q } of near) {
+    const sign = q[0] * ref[0] + q[1] * ref[1] + q[2] * ref[2] + q[3] * ref[3] < 0 ? -1 : 1;
+    for (let k = 0; k < 4; k++) sum[k] += sign * q[k];
+  }
+  const n = Math.hypot(...sum);
+  return n > 0 ? sum.map((v) => v / n) : null;
+}
+
+/** How the camera image's motion follows the gyroscope. `rates` are
+ *  {t, w}: angular rate (rad/s) about one device axis at time t (ms);
+ *  `shifts` are {t0, t1, d}: how far the image moved (pixels) along the
+ *  matching image axis between two frames. Returns the delay (ms) by which
+ *  the image follows the gyroscope and the image shift per radian, with their
+ *  correlation, or null with too little data. The best delay is the one at
+ *  which the two motions agree most. */
+export function matchMotion(rates, shifts, { maxLag = 400, step = 5, minPairs = 60 } = {}) {
+  const r = (Array.isArray(rates) ? rates : []).filter((p) => isNum(p.t) && isNum(p.w));
+  if (r.length < 2) return null;
+  const at = (t) => {
+    let lo = 0, hi = r.length - 1;
+    if (t < r[0].t || t > r[hi].t) return null;
+    while (hi - lo > 1) { const mid = (lo + hi) >> 1; if (r[mid].t <= t) lo = mid; else hi = mid; }
+    const f = r[hi].t === r[lo].t ? 0 : (t - r[lo].t) / (r[hi].t - r[lo].t);
+    return r[lo].w + (r[hi].w - r[lo].w) * f;
+  };
+  const rows = (Array.isArray(shifts) ? shifts : [])
+    .filter((s) => isNum(s.t0) && isNum(s.t1) && isNum(s.d) && s.t1 > s.t0)
+    .map((s) => ({ t: (s.t0 + s.t1) / 2, v: s.d / ((s.t1 - s.t0) / 1000) }));
+  let best = null;
+  for (let lag = 0; lag <= maxLag; lag += step) {
+    let n = 0, sx = 0, sy = 0, sxx = 0, syy = 0, sxy = 0;
+    for (const row of rows) {
+      const w = at(row.t - lag);
+      if (w == null) continue;
+      n++; sx += w; sy += row.v; sxx += w * w; syy += row.v * row.v; sxy += w * row.v;
+    }
+    if (n < minPairs) continue;
+    const cov = sxy - sx * sy / n, vx = sxx - sx * sx / n, vy = syy - sy * sy / n;
+    if (!(vx > 0) || !(vy > 0)) continue;
+    const corr = cov / Math.sqrt(vx * vy);
+    if (!best || Math.abs(corr) > Math.abs(best.corr)) best = { lagMs: lag, slope: cov / vx, corr, n };
+  }
+  return best;
+}
+
+/** Circular mean of angles in degrees and their spread (circular standard
+ *  deviation, degrees), or null without angles. */
+export function circularMean(angles) {
+  const list = (Array.isArray(angles) ? angles : []).filter(isNum);
+  if (!list.length) return null;
+  let s = 0, c = 0;
+  for (const a of list) { s += Math.sin(a * Math.PI / 180); c += Math.cos(a * Math.PI / 180); }
+  const r = Math.min(1, Math.hypot(s, c) / list.length);
+  return {
+    mean: wrapAz(Math.atan2(s, c) * 180 / Math.PI),
+    spread: r > 0 ? Math.min(180, Math.sqrt(-2 * Math.log(r)) * 180 / Math.PI) : 180,
+  };
+}
+
+/** A traced sweep (directions in time order) as one skyline line: azimuths
+ *  run on continuously (past north if the sweep does), the latest sample per
+ *  0.25 deg wins so going back over a stretch redraws it, and the result is
+ *  sorted and simplified. Altitudes are clamped. Steps stay at most 90 deg
+ *  (a flat stretch gets intermediate points), as replacePointsInRange needs.
+ *  Empty for fewer than two usable samples or a sweep narrower than 0.5 deg. */
+export function sweepLine(samples, tolerance = 0.3) {
+  const src = (Array.isArray(samples) ? samples : []).filter((p) => p && isNum(p.az) && isNum(p.alt));
+  if (src.length < 2) return [];
+  const buckets = new Map();
+  let az = src[0].az;
+  for (let i = 0; i < src.length; i++) {
+    if (i) az += azDelta(src[i].az, src[i - 1].az);
+    buckets.set(Math.round(az * 4), { az, alt: clampAlt(src[i].alt) });
+  }
+  const line = [...buckets.values()].sort((a, b) => a.az - b.az);
+  if (line[line.length - 1].az - line[0].az < 0.5) return [];
+  const simple = simplifyLine(line, tolerance);
+  const out = [simple[0]];
+  for (let i = 1; i < simple.length; i++) {
+    const a = simple[i - 1], b = simple[i], n = Math.ceil((b.az - a.az) / 90);
+    for (let k = 1; k < n; k++) out.push({ az: a.az + (b.az - a.az) * k / n, alt: a.alt + (b.alt - a.alt) * k / n });
+    out.push(b);
+  }
+  return out;
+}
+
+/* -------------------------------- share links -------------------------------- */
+
+export const LINK_VERSION = 1;
+export const LINK_MAX_CHARS = 60000;
+const B64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
+
+/** A horizon as compact text for a share link (URL-safe base64 of version 1:
+ *  the name as UTF-8, then the skyline points and the overhang edges, each
+ *  azimuth and altitude in 0.01 deg stored as the change from the point before
+ *  as a variable-length number). Exact: decodeHorizonLink gives back the same
+ *  normalized name, points and overhangs. */
+export function encodeHorizonLink(h) {
+  const bytes = [LINK_VERSION];
+  const uint = (v) => { do { let b = v & 127; v = Math.floor(v / 128); if (v) b |= 128; bytes.push(b); } while (v); };
+  const sint = (v) => uint(v >= 0 ? v * 2 : -v * 2 - 1);
+  const line = (pts) => {
+    uint(pts.length);
+    let az = 0, alt = 0;
+    for (const p of pts) {
+      const a = Math.round(p.az * 100), b = Math.round(p.alt * 100);
+      sint(a - az); sint(b - alt);
+      az = a; alt = b;
+    }
+  };
+  const name = new TextEncoder().encode(String(h?.name || 'Horizon').trim().slice(0, NAME_MAX) || 'Horizon');
+  uint(name.length);
+  for (const b of name) bytes.push(b);
+  line(normalizePoints(h?.points));
+  const overhangs = normalizeOverhangs(h?.overhangs);
+  uint(overhangs.length);
+  for (const edge of overhangs) line(edge);
+  let out = '';
+  for (let i = 0; i < bytes.length; i += 3) {
+    const n = (bytes[i] << 16) | ((bytes[i + 1] || 0) << 8) | (bytes[i + 2] || 0);
+    out += B64[n >> 18] + B64[(n >> 12) & 63]
+      + (i + 1 < bytes.length ? B64[(n >> 6) & 63] : '') + (i + 2 < bytes.length ? B64[n & 63] : '');
+  }
+  return out;
+}
+
+/** Read share-link text back into { name, points, overhangs }. Throws with a
+ *  plain message for anything damaged, truncated, too large or out of range,
+ *  so nothing half-read is ever saved. */
+export function decodeHorizonLink(text) {
+  if (typeof text !== 'string' || !text || text.length > LINK_MAX_CHARS || !/^[A-Za-z0-9_-]+$/.test(text) || text.length % 4 === 1) {
+    throw new Error('the link is damaged or incomplete');
+  }
+  const bytes = [];
+  for (let i = 0; i < text.length; i += 4) {
+    const n = [0, 1, 2, 3].reduce((acc, k) => acc * 64 + (i + k < text.length ? B64.indexOf(text[i + k]) : 0), 0);
+    bytes.push(n >> 16 & 255);
+    if (i + 2 < text.length) bytes.push(n >> 8 & 255);
+    if (i + 3 < text.length) bytes.push(n & 255);
+  }
+  let at = 0;
+  const fail = (msg = 'the link is damaged or incomplete') => { throw new Error(msg); };
+  const uint = () => {
+    let v = 0, scale = 1;
+    for (let k = 0; k < 5; k++) {
+      if (at >= bytes.length) fail();
+      const b = bytes[at++];
+      v += (b & 127) * scale;
+      if (!(b & 128)) return v;
+      scale *= 128;
+    }
+    return fail();
+  };
+  const sint = () => { const v = uint(); return v % 2 ? -(v + 1) / 2 : v / 2; };
+  if (bytes[at++] !== LINK_VERSION) fail('the link comes from a newer NightSeam or is damaged');
+  const nameLen = uint();
+  if (nameLen > NAME_MAX * 4 || at + nameLen > bytes.length) fail();
+  const name = new TextDecoder('utf-8', { fatal: true }).decode(new Uint8Array(bytes.slice(at, at + nameLen)));
+  at += nameLen;
+  const line = (maxAz) => {
+    const n = uint();
+    if (n > MAX_POINTS) fail('the link holds more points than a horizon can');
+    const out = [];
+    let az = 0, alt = 0;
+    for (let i = 0; i < n; i++) {
+      az += sint(); alt += sint();
+      if (az < 0 || az > maxAz || alt < ALT_MIN * 100 || alt > ALT_MAX * 100) fail();
+      out.push({ az: az / 100, alt: alt / 100 });
+    }
+    return out;
+  };
+  const points = line(35999);
+  const count = uint();
+  if (count > MAX_OVERHANGS) fail('the link holds more overhangs than a horizon can');
+  const overhangs = Array.from({ length: count }, () => line(36000));
+  if (at !== bytes.length) fail();
+  try {
+    return {
+      name: name.trim().slice(0, NAME_MAX) || 'Horizon',
+      points: normalizePoints(points, true),
+      overhangs: normalizeOverhangs(overhangs, true),
+    };
+  } catch { return fail(); }
 }
 
 /* ------------------------------- horizon files ------------------------------- */

@@ -19,7 +19,8 @@ Library, SQLite, desktop CSP) are history only.
   only as a tracing aid; the profile is derived, edits save automatically, and
   0.1.x horizons are not converted (2026-10-11, "Rebuild the horizon editor",
   supersedes every earlier horizon entry); overhangs, phone-compass capture
-  and north from the Sun follow it (2026-10-12).
+  and north from the Sun follow it (2026-10-12); photos are to be replaced by
+  phone-sensor capture and share links (2026-10-15, planned).
 - **Data and privacy:** transactional, staged backups with rollback; Wikipedia
   is the only object-photo source (2026-10-06); popularity is never visible
   (2026-10-06); the CSP is delivered in the document (0.6.33) and, for the
@@ -31,6 +32,161 @@ Library, SQLite, desktop CSP) are history only.
   releases continue at 0.7.0 above inherited tags (2026-10-11).
 - **Documentation:** see "Documentation layout" (2026-10-11), which updates the
   older "Docs policy".
+
+## 2026-10-15 — No Sun reference; a calmer readout
+
+- **The Sun is no longer a capture reference.** The owner asked to remove it;
+  the Moon and a landmark bearing remain, and it also removes the need to
+  warn against aiming at the Sun by eye. The core keeps
+  `sunDirection` for planning; the capture no longer offers it.
+- **Smooth what is shown, not what is recorded.** The readout flickered and
+  its width jumped. The readout and overlay now average the orientation over
+  60 ms either side of the moment the image shows (the image delay leaves
+  readings after it, so the average adds no lag), and the readout is one
+  fixed-width line with one decimal, updated at most every 120 ms. Recorded
+  directions stay unaveraged: averaging them moved a sharply traced peak by
+  1 deg in the loop check.
+- **The smoothing window stays centred on every phone.** The camera delay is
+  measured per device (5-400 ms; 210 ms is only the start value), so the
+  window narrows to what exists on both sides of the shown moment rather than
+  assuming the Pixel's delay. A one-sided window on a phone 10 ms behind
+  would read about 25 ms late; the centred one is off by at most half a
+  reading interval.
+- **The overlay shows the recorded points** as dots on their lines, so the
+  user sees what was actually stored.
+
+## 2026-10-15 — Warm the compass before the capture
+
+The owner still saw north fail to appear on some first opens until pressing
+*Compass again*. A compass that has just started swings for about 10 s
+(measured), and the capture waits for it to settle; a second start gets
+settled readings because the browser shares one warm compass. So the editor
+runs the compass at 10 Hz while the *Phone capture* panel is open (open by
+default on phones) and stops it when the panel closes or the tab is left.
+The north panel gained a status line so a remaining failure can be described
+without a debugging session.
+
+## 2026-10-15 — Mobile-first capture view; OIS stays on
+
+- **OIS cannot be avoided from the web.** Sharper motion helped the owner,
+  but the lens stabilisation stays. The Pixel 7a's ultrawide camera has no
+  OIS, but Chrome lists only one back camera ("camera 0, facing back",
+  zoom from 1x), so a web page cannot choose it.
+- **Mobile first.** The capture view was rebuilt for one hand on a phone:
+  opaque bars (the design guide allows no translucent panels), the direction
+  large at the top with a short north button that opens the full account, and
+  a thumb row at the bottom with the brass Start/Stop tracing in the middle.
+  Targets are at least 44 px; the crosshair is never covered, upright or
+  sideways (a browser check measures both).
+
+## 2026-10-15 — No stabilisation button; Sharper motion instead
+
+The owner asked for a button to turn off OIS. Browsers expose no
+stabilisation control (the Pixel 7a's camera capabilities in Chrome list
+none), so it cannot be built. The same readout showed 60 ms exposures in dim
+light, which drop the frame rate to about 16 and smear and delay motion; the
+camera does offer manual exposure and ISO. *Sharper motion* sets 1/60 s and
+raises ISO by the same factor; it is off by default because the picture gets
+grainier, and only shown where the camera supports it.
+
+## 2026-10-15 — The capture aims with what the camera shows
+
+Measured on the Pixel 7a by comparing the camera image's frame-to-frame
+motion with the gyroscope while panning (correlation 0.92 sideways, 0.86
+up-down): the image trails the gyroscope by about 210 ms, and its scale is a
+long-side field of view of 60 deg sideways and 67 deg up-down (probably the
+phone's video stabilisation; the reason is not known). The overlay followed
+the gyroscope at once and so ran ahead of the image while panning, which
+read as lag; drawing itself took 1-2 ms.
+
+- Everything the user aims with uses the orientation from the image's delay
+  ago, so what is under the crosshair on screen is what is recorded. Holding
+  still, nothing changes.
+- The overlay uses a focal length per axis, as measured, not one assumed
+  field of view.
+- Each device refines its own delay and scale while the user pans: frames
+  are shrunk and compared in a worker, in memory, and closed at once; only
+  the motion numbers leave it. The camera promise stands: nothing of the
+  video is recorded, stored or sent. The values are a per-device convenience
+  in localStorage, not backed up.
+
+## 2026-10-15 — North references and loop closure (sensor capture phase 3)
+
+- **References replace the compass.** The Moon, the Sun (removed the same
+  day, see "No Sun reference") or a landmark in the
+  crosshair sets north for the rest of the capture; the compass only reports
+  how far it was off. Moon and Sun use the observing site and the current
+  time (not the planner's selected time), apparent and topocentric, and only
+  between 2 and 60 deg altitude: lower they hide behind the horizon, higher
+  azimuth means little. The Sun is aimed on the screen only.
+- **Loop closure asks first.** Only the user knows whether the crosshair is
+  back on the starting point, so a full turn (300 deg net or more) asks. Up to
+  3 deg the closing error is drift and is removed by angle turned (phase 0:
+  drift comes with turning, clean turns closed within 1.3 deg); more is a
+  missed aim and the trace is kept as traced.
+- **Site check never prompts.** The distance warning runs only where
+  location access is already granted, so the capture adds no permission
+  prompt.
+
+## 2026-10-15 — Share links, not server shortcodes; north waits for the compass
+
+- **Transfer.** Asked for "shortcodes for importing on a desktop", the owner
+  was offered server-stored codes (a script on nightseam.de holding the
+  points for a while, new privacy text, PHP on the host unconfirmed) and
+  chose the share link only. NightSeam keeps storing nothing on its server;
+  the points travel in the link's fragment through whatever app the user
+  shares with. Opening a link only offers the horizon.
+- **North.** Measured over USB debugging on the Pixel 7a: a freshly started
+  compass swings towards its heading for about 10 s, and the first capture
+  locked north 44 deg off. North now locks only once compass minus
+  gyroscope is steady over 3 s (halves within 1 deg, spread within 4 deg),
+  with a 20 s fallback that says north may be off.
+- **Capture controls.** Owner request: tracing starts and stops with one
+  button instead of being held, and the AR overlay draws lines only (no
+  shading), so the scene stays visible.
+
+## 2026-10-15 — Horizon photos removed; backups stay format 11
+
+Phase 1 of the sensor capture plan. Photo placement, Align mode, skyline
+detection, the landmark and Sun north tools, the EXIF reader and the
+`nightseam-horizon-photos` database are gone; the database is deleted on
+load. Records and backups of builds with photos keep their skylines and
+overhangs, and their photo fields (`photo`, `hasPhoto`, `image`) are dropped
+without being checked, so a malformed old photo can no longer refuse a
+restore. The plan named a backup format 12, but dropping optional fields is
+compatible (a format 11 reader already accepts records without a photo), so
+the format stays 11. `sunDirection` stays in the core for the capture's north
+reference.
+
+## 2026-10-15 — Capture horizons with the phone's sensors, not photos
+
+Owner decision after testing the photo editor on a Pixel 7a: placing photos
+was too fiddly (width, tilt and roll by trial and error before north means
+anything), and the map-landmark calibration (pull request #7, closed) did not
+work well. A scratch comparison with a pinhole camera model put the linear
+photo mapping 2.4 deg off for a level phone photo and up to 12.6 deg for one
+tilted up 30 deg; fixing that needs camera models and fitting, the complexity
+the 2026-10-11 rebuild removed.
+
+- **Capture.** The phone measures directions directly: a live camera view with
+  a crosshair, altitude from gravity, the sweep's shape from the gyroscope
+  (relative orientation), and north set once from a reference (Moon or Sun,
+  a landmark bearing, or the averaged compass), with loop closure removing
+  gyroscope drift.
+- **Photos removed.** Photo placement, Align mode, skyline detection and the
+  landmark and Sun north tools go; only azimuth/altitude points (and
+  overhangs) are stored, as in a N.I.N.A. horizon file.
+- **Transfer.** A share link carries the points in its fragment, so no server
+  storage is needed and the data never reaches the server. A short typed code
+  would need a server-side store, a hosting review and new privacy text; it is
+  reconsidered only if links prove clumsy.
+- **Gate.** A sensor probe on the Pixel 7a comes first; if relative yaw drifts
+  more than about 2 deg per sweep after loop closure, the plan is revisited.
+
+Plan: [HORIZON_SENSOR_CAPTURE_PLAN.md](docs/horizon/HORIZON_SENSOR_CAPTURE_PLAN.md).
+This supersedes the photo parts of the 2026-10-11 rebuild entry and the
+photo-compass parts of the 2026-10-12 entry once phase 1 lands; until then the
+shipped behaviour is unchanged.
 
 ## 2026-10-13 — Hosting headers, compression and the accessibility pass
 

@@ -26,7 +26,9 @@ Web modules import only `./core.js?v=<token>`, never `web/core/<hash>/`.
 | `app.js` | Shell state (`S`), Tonight, Catalog, Sky View, the detail card, weather and Wikipedia photos |
 | `astro.js` | Thin wrapper over core astronomy and planning |
 | `nightrank.js`, `format.js` | Re-exports of core scoring and formatting |
-| `horizon.js` | Horizon editor, horizon and photo storage, preferences |
+| `horizon.js` | Horizon editor, horizon storage, preferences |
+| `capture.js` | Phone capture: camera view, crosshair, orientation sensors, tracing |
+| `capturemotion.js` | Worker measuring the camera image's motion for the capture's calibration |
 | `webstore.js` | IndexedDB records, preferences, timezones and backup/restore |
 | `viztheme.js` | Canvas colors read from `themes.css` |
 | `imagecredits.js` | Exact-file photo credits |
@@ -65,13 +67,17 @@ Popularity only breaks ties and is never shown.
 ## Horizon model
 
 Design and reasons: [DECISIONS.md](DECISIONS.md) ("Rebuild the horizon
-editor"); plan: [docs/horizon/HORIZON_REBUILD_PLAN.md](docs/horizon/HORIZON_REBUILD_PLAN.md).
+editor", "Capture horizons with the phone's sensors"); plans:
+[docs/horizon/HORIZON_REBUILD_PLAN.md](docs/horizon/HORIZON_REBUILD_PLAN.md),
+[docs/horizon/HORIZON_SENSOR_CAPTURE_PLAN.md](docs/horizon/HORIZON_SENSOR_CAPTURE_PLAN.md).
 
-- **Record.** `{ id, name, points, overhangs, photo, hasPhoto }`. `points`
+- **Record.** `{ id, name, points, overhangs }`. `points`
   are world azimuth/altitude pairs (altitude -10 to 90), sorted, one per
   0.01 deg of azimuth, at most 1440. `overhangs` are up to 20 edge lines with
   azimuths within 0-360 (an edge crossing north is split there).
-  `core/horizon.js` normalizes every record.
+  `core/horizon.js` normalizes every record; the photo fields of older
+  builds (`photo`, `hasPhoto`, an embedded `image`) are dropped, never
+  checked.
 - **Profile.** Points are joined by straight lines around the circle; no
   points blocks nothing, one point is a flat skyline. `skylineProfile` turns
   them into 720 world-azimuth bins (0.5 deg) holding the highest altitude in
@@ -79,54 +85,135 @@ editor"); plan: [docs/horizon/HORIZON_REBUILD_PLAN.md](docs/horizon/HORIZON_REBU
   touches, the lowest edge altitude in it, else 90.5 (open). `withProfile`
   attaches both in memory; `ceilFor` returns them as `ceil`/`ceilTop` and the
   scorer reads the same arrays. They are never stored or backed up.
-- **Photo placement.** `{ width, heading, tilt, roll }`: the horizontal angle
-  (360 = full panorama, which wraps and is never rolled), the azimuth and
-  altitude of the photo centre and its rotation, with square pixels in
-  degrees. `photoToWorld`/`worldToPhoto` map between them; `reprojectPoints`
-  moves the skyline when the placement changes; `headingForLandmark` sets
-  north from one known direction. Ordinary photos use the same linear mapping,
-  an approximation that grows towards their edges.
-- **Detection.** `detectSkylineRows` finds the sky/ground boundary per column
-  of a downscaled daylight photo (Otsu threshold on brightness plus blueness,
-  a run of three ground pixels, a 5-column median); the editor maps the rows
-  through the placement and simplifies them (0.25 deg).
 - **Files.** `parseHorizonFile` reads `azimuth altitude` lines (Stellarium,
   N.I.N.A., plain lists); `formatHorizonFile` writes them. Overhangs have no
   place in those formats and stay in NightSeam and its backups.
-- **Phone compass.** `devicePointing(alpha, beta, gamma)` gives the back
-  camera's direction from W3C device orientation. The editor prefers absolute
-  (`deviceorientationabsolute`, or iOS `webkitCompassHeading`) readings and
-  adds a session-only correction set from one landmark, which covers compass
-  error and magnetic declination. `requestPermission` is raced against 1.5 s,
-  because some browsers expose it without ever settling it.
-- **North from the Sun.** `sunDirection(jd, lat, lon)` is the apparent Sun;
-  `placementFromKnownDirection` sets heading and tilt so a marked pixel lands
-  on it. `photoCaptureTime` reads DateTimeOriginal and OffsetTimeOriginal
-  from JPEG EXIF; without an offset the camera clock is read as site time.
+- **Phone capture** (`web/capture.js`). A full-screen view over the page:
+  the rear camera (`getUserMedia`, only shown, never recorded or stored;
+  closing stops its tracks), a crosshair, an overview strip of the whole
+  circle and Start/Stop tracing / Add point / Undo / North… / Done. The
+  shape comes from the relative orientation (`RelativeOrientationSensor`,
+  falling back to `deviceorientation` through `orientationQuaternion`; both
+  as quaternions), which does not jump near metal. North is set once the
+  compass has settled: the circular mean (`circularMean`) of compass minus
+  relative azimuth over 3 s of readings taken while the phone points within
+  60 deg of level, locked only when the older and newer halves of that
+  window agree within 1 deg and scatter no more than 4 deg (after 20 s an
+  unsettled value is taken and the view says north may be off). A freshly
+  started compass swings towards its heading for about 10 s on a Pixel 7a,
+  and locking earlier set north 44 deg off (measured over USB debugging).
+  North is then kept for the session unless re-read. The compass sources
+  (`AbsoluteOrientationSensor`, `deviceorientationabsolute`) restart every
+  2.5 s, up to 40 times, while north is missing and no usable compass
+  reading has paired for 1.5 s, and again when a motion permission is
+  granted. Without a relative source for a second the compass gives the
+  shape too. While the editor's *Phone capture* panel is open,
+  `warmCompass` keeps an `AbsoluteOrientationSensor` running at 10 Hz (the
+  browser shares one compass between its users), so a capture usually opens
+  on a settled compass; it stops when the panel closes or, within 2 s, when
+  another tab replaces the editor. The north panel's status line
+  (`compassDiag`) says how many compass readings arrive, whether it is
+  settling and by how much, and how often it was restarted.
+- **North references.** *North…* opens a panel: put the crosshair on the
+  Moon or the Sun (topocentric apparent position for the observing site and
+  the current time, `moonDirection` / `sunDirection`; usable from 2 to 60 deg
+  altitude, `referenceUsable`) or on a landmark with a typed true bearing,
+  and tap it. `referenceOffset` turns the relative azimuth into the true one;
+  a reference replaces the compass for the rest of the capture and works
+  without any compass. The view says which reference set north and when, how
+  far the compass was off, and (Moon/Sun) whether the aim read high or low.
+  *Read the compass again* returns to the compass.
+- **Loop closure.** A skyline trace with at least 300 deg of net turn asks
+  whether the crosshair is back where it started. Yes: `closeLoop` removes
+  the closing error in proportion to the angle turned so far; above 3 deg it
+  is a missed aim, not drift, and the trace is kept as traced with a note.
+  No, or closing the view: kept as traced.
+- **Site check.** Where location access is already granted, the view warns
+  when the phone is further than 75 m (or twice the GPS accuracy) from the
+  observing site (`siteDistanceM`); it never asks for location itself.
+- **What the camera shows.** The camera image trails the gyroscope (about
+  210 ms on a Pixel 7a, measured), so the readout, the overlay, traced
+  samples, *Add point* and the references all use the orientation from that
+  long ago (`qAt`/`pointingAt` blend a 2 s history), and whatever is under
+  the crosshair on screen is what is recorded. The readout and the overlay
+  (only these) average the orientation over up to 60 ms either side of that
+  moment (`qAt(t, true)`, core `smoothOrientation`), which calms the sensor's
+  jitter without lag. The window narrows to the readings that exist on both
+  sides, so on a phone whose camera trails the gyroscope by less than 60 ms
+  it stays centred instead of leaning on the past; with no reading after
+  that moment it falls back to the plain orientation. recorded
+  directions are not averaged, so a peak traced quickly keeps its place. The
+  readout is one fixed-width line (`fmtDir`, one decimal: `152.0° SSE · alt
+  -12.3°`) and changes at most every 120 ms. The overlay draws the recorded
+  points as dots on their lines. The overlay's scale is this
+  camera's focal length per axis (`kx`, `ky`, as fractions of the video's long
+  side). `capturemotion.js` runs as a module worker
+  (`MediaStreamTrackProcessor`): it shrinks each frame to 108 px wide in
+  memory, closes it, and reports only how far the picture moved; every 2 s
+  `matchMotion` compares that with the gyroscope's rate over the last 8 s
+  and, where they agree (correlation 0.85 or better, upright phone), updates
+  the delay and scale. They are kept per device in localStorage
+  `nightseam_capture_cal_v1` (not in backups); the Pixel 7a's measurement
+  (210 ms, 0.864, 0.752) is the starting value. Browsers without the frame
+  API keep the stored or starting values.
+- **Sharper motion.** Browsers expose no stabilisation (OIS/EIS) control;
+  the Pixel 7a's camera offers manual exposure and ISO. Where a camera allows
+  manual exposure, a *Sharper motion* toggle sets 1/60 s and raises the ISO
+  by the same factor (the same light), since in dim light the automatic
+  exposure reached 60 ms a frame, which smears motion, drops the frame rate
+  and adds delay. Off gives the exposure back to the camera.
+- **AR overlay.** A canvas over the video draws lines only: the level
+  horizon with compass marks, the skyline, overhang edges and the trace in
+  progress, each projected with `cameraProject` from the orientation the
+  image shows and north, for directions within reach of the camera axis
+  only, at most 1.5x pixel density (about 1-2 ms a frame on a Pixel 7a). The
+  focal lengths are the calibration's, scaled the way `object-fit: cover`
+  shows the video; device axes turn with `screen.orientation.angle`. A trace (one tap
+  starts it, another stops it) becomes one line through
+  `sweepLine` (continuous azimuths, latest sample per 0.25 deg, simplified,
+  steps of at most 90 deg) and replaces that stretch of skyline, or becomes
+  overhang edges split at north. Where the browser offers
+  `DeviceOrientationEvent.requestPermission`, it is asked inside the tap and
+  nothing waits on it: a later grant restarts the compass.
+- **Share links.** *Share link* encodes the horizon (`encodeHorizonLink`:
+  version byte, UTF-8 name, points and overhang edges in 0.01 deg as
+  zigzag variable-length deltas, URL-safe base64; exact round trip, a
+  720-point skyline is under 4,000 characters) into
+  `/astro/#horizon=<code>`. The fragment is never sent to a server. It goes
+  to the system share sheet (`navigator.share`), else the clipboard, else a
+  dialog with the link to copy. Opening such an address routes to Horizon,
+  replaces the address with `#horizon` at once (`history.replaceState`), and
+  `offerHorizonLink` decodes the code completely (`decodeHorizonLink`
+  refuses anything damaged, truncated, over 60,000 characters or out of
+  range) and asks before adding it as a new horizon; cancelling or a bad
+  link saves nothing.
+- **The Sun's direction.** `sunDirection(jd, lat, lon)` is the apparent Sun,
+  kept for the sensor capture's north reference (plan phase 3).
 - **Editor.** One canvas: azimuth 0-360 across, altitude -10 to 80 up, with a
-  zoom of 1-12x. Draw mode adds, drags, sketches and deletes points; Align
-  photo drags the photo (and rolls partial photos); Overhang mode draws and
-  edits overhang edges. Each finished gesture is one history entry
-  (`core/horizonhistory.js`, 100 entries, covering points, overhangs and the
-  placement) and saves at once.
+  zoom of 1-12x. Draw mode adds, drags, sketches and deletes points;
+  Overhang mode draws and edits overhang edges. Each finished gesture is one
+  history entry (`core/horizonhistory.js`, 100 entries, covering points and
+  overhangs) and saves at once.
   Re-rendering the same horizon keeps its history.
-- **Limits.** 50 horizons; uploads are JPEG or PNG up to 25 MB and 32 MP
-  (checked from the header before decoding); imported files up to 1 MB.
+- **Limits.** 50 horizons; imported files up to 1 MB (Import file or a file
+  dropped on the editor; a dropped photo is explained, not opened).
 
 ## Storage and backups
 
 | Where | What |
 |---|---|
 | localStorage `nightseam_prefs_v1` | Preferences |
-| localStorage `nightseam_horizons_v2` | Horizon records (without photos or profiles) |
+| localStorage `nightseam_horizons_v2` | Horizon records (without profiles) |
+| localStorage `nightseam_capture_cal_v1` | This device's camera delay and scale for the capture overlay (not backed up) |
 | localStorage `nightseam_site_v1`, `nightseam_theme` | Legacy site record, theme |
 | IndexedDB `nightseam-db-v1` | Sites, rigs, custom targets, safety snapshot |
-| IndexedDB `nightseam-horizon-photos` | Original horizon photos |
 | IndexedDB `nightseam-images` | Wikipedia thumbnail cache, at most 25 MiB: least recently viewed photos are removed first; a full disk trims it to a quarter and retries once |
 
 A backup is one JSON bundle (format 11; formats 1-10 still restore their
 sites, rigs, targets and settings but not their retired panoramas; newer
-formats are refused). The retired `nightseam_panos_v1` and `nightseam-panoimg`
+formats are refused). Format 11 backups with horizon photos restore their
+skylines and overhangs; the photos are dropped. The retired
+`nightseam_panos_v1`, `nightseam-panoimg` and `nightseam-horizon-photos`
 stores are deleted on load, not converted. Restore validates and stages the whole bundle, checks that the
 current data could itself be restored, then replaces the records and a safety
 snapshot in one transaction; any later failure rolls the whole app back.

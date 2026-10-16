@@ -5,6 +5,322 @@ Actual validation outcomes, newest first. Published releases: v0.1.1 (October 8,
 development awaiting the next release, 0.7.0. Upload success alone is never
 recorded as acceptance.
 
+## Sun removed, calmer readout, points in the AR view — October 15, 2026 (branch horizon-sensor-plan)
+
+Owner: remove the Sun reference; the readout flashed and jumped between one
+and two lines; show the recorded points. The north panel offers the Moon and
+a landmark only. The readout is one fixed-width line with one decimal
+(`152.0° SSE · alt -12.3°`), updated at most every 120 ms, and the readout and
+overlay average the orientation over ±60 ms; recorded directions are not
+averaged (averaging them moved a fast-traced peak 1 deg in the loop check).
+The overlay draws recorded points as dots. The smoothing window narrows to
+stay centred on phones whose camera trails the gyroscope by less than 60 ms
+(core `smoothOrientation`, with contracts in horizon_model.mjs: a steady turn
+reads where it is, and 10 ms from the newest reading the window narrows).
+
+Checks: phone-capture and references-and-loop read the new format and assert
+no Sun button and a drawn dot; mobile-layout asserts one unclipped line at
+412, 360 and 813 px wide. Capture checks 8/8.
+
+## Compass warm-up and status line — October 15, 2026 (branch horizon-sensor-plan)
+
+Owner: the mobile-first UI is better; the compass still sometimes needs
+*Compass again* on a first open. The editor now runs the compass at 10 Hz
+while the Phone capture panel is open, so a capture starts on a settled
+compass; the north panel shows the compass's readings a second, settling
+and restarts.
+
+New check web-horizon-capture-compass-prewarm (opening the panel starts a
+10 Hz compass, closing it stops it, leaving the tab stops it within 2 s and
+nothing restarts it); the settling and no-compass checks now also read the
+status line. Capture checks 8/8.
+
+## Mobile-first capture view — October 15, 2026 (branch horizon-sensor-plan)
+
+Owner: Sharper motion makes it smoother, but OIS still seems on; asked for a
+mobile-first capture UI. Read over USB debugging: Chrome on the Pixel 7a
+lists one back camera only ("camera 0, facing back", zoom 1-8x), so the
+ultrawide lens without OIS is out of reach and OIS stays.
+
+The capture view now has opaque bars (previously 84% opaque, against the
+design guide), the direction in large digits beside *✕ Done*, a short north
+button that opens the north panel (which now carries the full account), a
+segmented Skyline / Overhang control with Sharper motion beside it, and a
+thumb row (Undo, a 64 px brass Start/Stop tracing, Add point). Measured in
+the preview at 412x813: top bar 0-154 px, crosshair 371-443, bottom bar from
+626, smallest target 44 px; at 813x412 the strip hides and the bars end at
+141 and start at 273 around the crosshair at 170-242.
+
+New check web-horizon-capture-mobile-layout (upright and sideways: crosshair
+uncovered, every control at least 44 px, the thumb row in order at the
+bottom, opaque bars); against the previous layout it fails (no thumb row,
+translucent bars).
+
+## Sharper motion toggle; capture focus fix — October 15, 2026 (branch horizon-sensor-plan)
+
+Owner request: a button to turn off OIS. Read over USB debugging, the Pixel
+7a's camera in Chrome offers no stabilisation control (capabilities: aspect
+ratio, colour temperature, exposure compensation, exposure mode
+continuous/manual, exposure time 0.07 ms-16 s, focus, frame rate up to 60,
+ISO 45-8982, resize mode, torch, white balance, zoom 1-8x), but reported a
+60 ms exposure in the evening light. Added *Sharper motion* (1/60 s, ISO
+scaled to keep the light), shown only where manual exposure exists.
+
+Found by the new check: with no north yet (no sensors), Escape did not
+close the capture view, because the focused Start tracing button was then
+disabled and focus fell out of the view. Escape is now handled while the
+view is open wherever focus is, and the view opens on Done when tracing is
+not possible yet.
+
+New check web-horizon-capture-sharper-motion (no toggle without manual
+exposure; on a Pixel-like camera at 60 ms and ISO 100 it asks for 1/60 s at
+ISO 360; off returns to continuous; Escape closes the view). Capture checks
+6/6.
+
+## Overlay lag measured and fixed; acceptance checklist — October 15, 2026 (branch horizon-sensor-plan)
+
+Measured on the Pixel 7a with a throwaway probe (frames analysed in a worker
+via MediaStreamTrackProcessor, gyroscope at 60.1/s, frames at 27.9/s): the
+camera image's motion matches the gyroscope's with correlation 0.92
+sideways and 0.86 up-down, trailing it by 225 ms and 195 ms; scale 165.9 and
+144.4 analysis px/rad, a long-side field of view of 60.1 and 67.2 deg. A
+first probe that analysed frames on the main thread starved the sensors to
+14 readings a second and was discarded. The core matcher (matchMotion)
+reproduces these numbers from the same recording.
+
+Fix: the capture aims with the orientation from the image's delay ago
+(readout, overlay, trace, points, references); the overlay uses a focal
+length per axis; web/capturemotion.js (module worker) measures each device
+while panning and refines delay and scale (stored per device). Starting
+values: 210 ms, 0.864 and 0.752 of the long side. Core angularVelocity and
+matchMotion, core 01f2baba433b6810, token 74. Phase 5: the Phone capture
+checklist in docs/acceptance/HORIZON_ACCEPTANCE.md (ten checks with targets).
+
+New checks: horizon_model.mjs (angular velocity; a synthetic recording with
+a 200 ms delay and 165.5 px/rad is recovered within 10 ms and 3%);
+test_ui_invariants (the motion worker closes every frame, uses no storage or
+network and posts numbers only); browser
+web-horizon-capture-shows-what-the-camera-saw (with a 300 ms delay, a point
+added right after a swing lands where the screen still showed; the readout
+follows after the delay; the worker receives frames). Without the look-back
+that check fails (the point lands at 70 deg instead of 30).
+
+Local validation: pytest 358 passed / 1 skipped; real-Chrome suite 84/84;
+check_js, check_core, check_encoding OK; check_release 0 errors. Not yet
+checked on the Pixel.
+
+## North references and loop closure (sensor capture phase 3) — October 15, 2026 (branch horizon-sensor-plan)
+
+*North…* in the capture view sets north from the Moon, the Sun (topocentric
+apparent positions for the site and the current time, usable 2-60 deg) or a
+landmark bearing, replacing the compass for the capture and working without
+one; the view says which reference, when, how far the compass was off and
+whether the aim read high or low. A skyline trace of a full turn asks
+whether it ended where it began; closing removes up to 3 deg of drift by
+angle turned, a larger miss is kept as traced. A distance warning appears
+where location access is already granted (more than 75 m, or twice the GPS
+accuracy, from the site). Core 036d706559462354, token 73.
+
+Found while testing: closeLoop treated half a turn as one (195 deg rounded
+to a turn, error -165); it now needs at least 300 deg of net turn.
+
+New checks: horizon_model.mjs (moonDirection equals the topocentric
+moonAltAz; references usable only 2-60 deg; referenceOffset; a 2% fast
+gyroscope over a full turn closed back onto the truth sample by sample,
+clockwise and anticlockwise; half a turn is no loop; siteDistanceM);
+browser web-horizon-capture-references-and-loop (no compass: tracing
+blocked until a 120 deg landmark sets north; Moon and Sun buttons agree
+with the core for now; a turn with 2.4 deg of drift closes and puts a sharp
+skyline peak back at its true 300 deg; an 8 deg miss is kept as traced).
+
+Local validation: pytest 358 passed / 1 skipped; real-Chrome suite 83/83;
+check_js, check_core, check_encoding OK; check_release 0 errors.
+
+Owner test on the Pixel: the Set north panel covered the crosshair needed to
+aim at the Moon. A panel or question now replaces the controls and strip;
+the top area is capped at 35% and the bottom at 45% of the screen. The
+references check now runs at 412x789 (the Pixel's screen) and asserts the
+crosshair is uncovered with the panel and with the loop question open;
+against the old layout it fails (bottom area from 346 px over the crosshair
+at 359-431 px).
+
+## Settled north, start/stop tracing, line-only overlay, share links — October 15, 2026 (branch horizon-sensor-plan)
+
+Measured on the Pixel 7a over USB debugging (Chrome DevTools socket, a
+temporary hook, since removed). First open, compass minus locked north:
+9 deg at 2 s, 22 at 3 s, 31 at 4.5 s, 37 at 6 s, 40 at 8 s, 44 from 10 s on;
+the old 2 s lock had set north 44 deg off, which looked like "the compass
+needs initialising". Overlay frames took a median 0.3-1.6 ms (worst 5 ms)
+with the gyroscope at 60 Hz, so drawing is not the overlay's lag. A second
+first open, after the settle rule, locked at 3.3 s and matched the live
+compass for the whole session (52.1 deg, re-read 52.8). The owner felt the
+overlay lag was about the same; still open (BUGS.md).
+
+Changes: north locks once compass minus gyroscope is steady over 3 s
+(halves within 1 deg, spread within 4), 20 s fallback; tracing starts and
+stops with one button; the overlay draws lines only, for directions in
+reach of the camera axis, at 1.5x pixel density; share links (core
+encodeHorizonLink/decodeHorizonLink, *Share link* in the editor head,
+`#horizon=` addresses offered and confirmed before saving). The owner chose
+share links over server-stored shortcodes. Core eb83bc681e04897d, token 72.
+
+New checks: horizon_model.mjs (exact link round trips with a Unicode name,
+overhangs to 360 and a 720-point skyline under 4,000 characters; damaged,
+truncated, trailing, oversized, newer-version, out-of-range and over-limit
+links refused); test_ui_invariants (decode, then ask, then save; the address
+is cleared before the offer); browser web-horizon-capture-north-waits-for-compass
+(a compass swinging 74 to 30 deg: nothing traceable meanwhile, north 30
+after; fails against the old 2 s lock with "north is not set while the
+compass still moves"), web-horizon-share-link (share sheet, exact copy after
+confirming, address cleared, cancel and damaged links add nothing,
+clipboard fallback); web-horizon-phone-capture now starts and stops tracing
+with taps.
+
+Local validation: pytest 358 passed / 1 skipped; real-Chrome suite 82/82;
+check_js, check_core, check_encoding OK; check_release 0 errors. Owner test
+of this build on the Pixel 7a (tracing, overlay, share link to the
+desktop): "works as expected".
+
+## Capture AR overlay and compass restart — October 15, 2026 (branch horizon-sensor-plan)
+
+Owner test of phase 2 on the Pixel 7a: tracing "works pretty good"; the
+compass did not start on the first open, only after reopening the view.
+Changes: the compass sources (AbsoluteOrientationSensor and
+`deviceorientationabsolute`) restart while north is missing and no compass
+reading arrives, and when a motion permission is granted; the capture works
+on quaternions throughout (core orientationQuaternion). New AR overlay over
+the video: level horizon with compass marks, the skyline with the ground
+below it shaded, overhang edges with the sky above shaded, and the trace in
+progress, projected with core cameraProject (assumed 67 deg field of view
+along the video's long side). Core d60ae4f80540e013, token 71.
+
+New checks: horizon_model.mjs (orientationQuaternion equals the Euler path;
+cameraProject puts the pointed-at direction on the crosshair at three
+orientations, east right, up up, a sideways phone sideways, nothing behind);
+web-horizon-phone-capture now also checks the overlay (the traced skyline is
+drawn under the crosshair, nothing where nothing is recorded); new
+web-horizon-capture-compass-restarts (gyroscope first, compass later: north
+is found without reopening). With the restart disabled that check fails with
+"This device gives no compass direction"; with it, it passes.
+
+Local validation: pytest 357 passed / 1 skipped; real-Chrome suite 80/80;
+check_js, check_core, check_encoding OK; check_release 0 errors. Not yet
+tried on the Pixel: the compass fix is inferred from the symptom, and the
+assumed field of view is unverified.
+
+## Phone camera capture (sensor capture phase 2) — October 15, 2026 (branch horizon-sensor-plan)
+
+New web/capture.js: a full-screen camera view with a crosshair, a live
+direction readout and an overview strip; Hold to trace (the keyboard
+toggles), Skyline / Overhang, Add point, Undo, Re-read compass, Done. Shape
+from RelativeOrientationSensor (fallback `deviceorientation`), north from
+the compass averaged once over 2 s while the phone points within 60 deg of
+level. It replaces the old Phone compass panel. Core gains
+quaternionPointing, circularMean and sweepLine (core 2f72457b28a5e455, token
+70).
+
+Found and fixed while testing: a flat sweep simplified to two points 360 deg
+apart replaced nothing (sweepLine now keeps steps of at most 90 deg); the
+compass often reports before the gyroscope, and that first compass-only
+sample pulled north 2.1 deg off (the compass-only fallback now waits a
+second and north is re-read when the gyroscope appears); a sensor that has
+not measured yet reports a zero quaternion (ignored); the mode buttons
+changed their pressed state a frame late (now at once).
+
+New checks: horizon_model.mjs (quaternion path equals the Euler path at five
+orientations, circular mean, sweeps across north, back-and-forth redraws,
+flat full turns, overhangs split at north); test_ui_invariants (capture.js
+never records, grabs frames, stores or sends video and stops its tracks on
+close); browser check web-horizon-phone-capture with Chrome's virtual
+orientation sensors and a canvas camera stream (north 30 deg within 0.2,
+held trace 30-70 deg, Add point, keyboard overhang 180-200 deg, one undo
+step, tracks ended on close, focus returned). Chrome's virtual compass
+reports 29.95 deg for a set 30 deg (it round-trips through Euler angles).
+
+Local validation: pytest 357 passed / 1 skipped; real-Chrome suite 79/79;
+check_js, check_core, check_encoding OK; check_release 0 errors with the new
+files staged. Preview at 375 px: the view fills the screen, crosshair
+centred, no console errors. Not yet tried on a real phone.
+
+## Horizon photos removed (sensor capture phase 1) — October 15, 2026 (branch horizon-sensor-plan)
+
+Photo placement, Align mode, skyline detection, the landmark and Sun north
+tools, the EXIF reader and the horizon photo database are gone; the editor
+keeps drawing, overhangs, the points form, the phone compass and file import
+(now also by dropping a file; a dropped photo is explained). Records and
+format 11 backups with photos restore their skylines and overhangs and drop
+the photo fields; the old photo database is deleted on load. Core rebuilt
+(f5e6bc7405b26485, token 69) and cache tokens bumped.
+
+Tests replaced, not loosened: the photo placement, detection, align, Sun,
+photo restore and unreadable-photo checks went with their features. New:
+legacy photo fields dropped in strict and lenient normalization
+(horizon_model.mjs), on load and in stored records (horizon_ui.mjs), in
+backups and exports, plus a full-storage restore failure (web_backup.mjs);
+browser checks web-horizon-has-no-photo-tools, web-horizon-restore-durable
+and web-safety-retired-horizon-photos-are-dropped. The rollback, phase 4
+layout and file-chooser checks now use a drawn horizon and the Import file
+button.
+
+Local validation: pytest 356 passed / 1 skipped (no local the popularity source
+snapshot); check_js, check_core, check_encoding OK; check_release 0 errors
+with the new core staged. Real-Chrome suite 77/79 on the first run: the
+create-buttons check still expected the removed photo button, and the new
+no-photo check did not load the page first. Both test bugs fixed; each then
+passed alone (1/1). Preview: the Horizon tab shows Draw by hand and Import
+file, Draw and Overhang modes, no console errors.
+
+## Horizon sensor probe, phase 0 (first run) — October 15, 2026 (local development)
+
+Throwaway probe page (ignored logs/sensor-probe/, served to the phone over
+`adb reverse`), Pixel 7a, Chrome 155, portrait. Not product code.
+
+- **Available:** RelativeOrientationSensor, AbsoluteOrientationSensor,
+  Gyroscope and GravitySensor at a steady 60 Hz; `deviceorientation` and
+  `deviceorientationabsolute` (rate drops to 0-10 Hz when the phone is still);
+  rear camera via getUserMedia; Wake Lock. Magnetometer is not exposed.
+  The quaternion and Euler paths agree within 0.03 deg.
+- **At rest, 2 min:** relative orientation did not move upright (0.00 deg)
+  and stayed within 0.7 deg lying flat; gyroscope bias 0.04-0.13 deg/min.
+  Absolute (compass) orientation wandered 6.4 deg upright and 8.2 deg flat
+  with the phone untouched.
+- **Aiming, two features 62 deg apart, 5 alternations over 51 s:** relative
+  separation 62.1 deg, sd 0.13 deg, return to feature A within 0.4 deg;
+  altitude repeat within 0.15 deg. Absolute separation 59.1-60.9 deg
+  (sd 0.79) and drifting. A first practice run is not counted.
+- **Full turn:** one valid turn (26 s): relative loop error +3.95 deg,
+  absolute -5.27 deg; the two disagree by 9.2 deg over the same motion. The
+  end aim was off by 2.8 deg in altitude, so the end azimuth error is part of
+  both numbers. A second recorded "turn" covered only 15 deg and is
+  discarded.
+- **GPS, 30 s:** 4 fixes, best accuracy 20 m, one 490 m outlier, fixes
+  within 1.4 m of each other.
+
+First-run outcome: the compass is unusable for the shape of a sweep, as
+planned; the gyroscope is steady at rest and in back-and-forth aiming. One
+sloppy turn could not decide the 2 deg loop gate, so the probe gained a 3x
+aiming zoom and rejects partial turns.
+
+Second run, three full turns with the zoom (relative loop error, end-minus-start
+altitude as a check on the end aim, compass loop error):
+
+| Turn | Direction | Time | Gyroscope loop error | End altitude off | Compass loop error |
+|---|---|---|---|---|---|
+| 16:17 | clockwise | 38 s | +5.80 deg | 5.2 deg | +6.65 deg |
+| 16:18 | clockwise | 31 s | -1.22 deg | 0.05 deg | -1.31 deg |
+| 16:18 | anticlockwise | 25 s | -0.44 deg | 0.22 deg | -7.47 deg |
+
+The two turns that ended on the start feature (altitude within 0.22 deg)
+closed within 1.3 deg before any loop correction. The 16:17 turn ended 5 deg
+away from its start in altitude, and the compass saw the same +6 deg, so its
+error is the end aim, not drift. The three traces did not follow one common
+skyline (their altitude paths differ by up to 15 deg), so accuracy part-way
+round could not be measured here; it is covered by the landmark check in the
+plan's acceptance. Gate passed on this evidence (two clean turns, fast
+sweeps): relative orientation stays within 2 deg per sweep without
+correction. Chosen API: RelativeOrientationSensor, `deviceorientation` as
+fallback.
+
 ## Brief twilight spells and same-level dark windows — October 13, 2026 (local development)
 
 sunCrossings now checks each turn between three samples on one side of a

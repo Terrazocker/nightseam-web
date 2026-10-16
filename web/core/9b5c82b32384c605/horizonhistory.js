@@ -2,8 +2,8 @@
  * NightSeam core - horizon editor history (pure).
  *
  * Undo/redo/dirty state over JSON snapshots of a horizon's editable fields:
- * the skyline points, the overhang edges and the photo placement. One gesture (a drag, a sketch,
- * an alignment move) is one entry, committed when it ends. The saved baseline
+ * the skyline points and the overhang edges. One gesture (a drag, a sketch, a
+ * phone trace) is one entry, committed when it ends. The saved baseline
  * makes "is this edit saved?" a comparison, so undoing back to it is clean.
  * The name is not part of the history; renames save directly.
  */
@@ -15,7 +15,6 @@ export function snapshot(state) {
   return JSON.stringify({
     p: (state.points || []).map((pt) => [pt.az, pt.alt]),
     o: (state.overhangs || []).map((line) => line.map((pt) => [pt.az, pt.alt])),
-    f: state.photo ? { ...state.photo } : null,
   });
 }
 
@@ -24,7 +23,6 @@ export function applySnapshot(state, snap) {
   const o = JSON.parse(snap);
   state.points = o.p.map(([az, alt]) => ({ az, alt }));
   state.overhangs = (o.o || []).map((line) => line.map(([az, alt]) => ({ az, alt })));
-  state.photo = o.f;
   return state;
 }
 

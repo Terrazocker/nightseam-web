@@ -98,36 +98,44 @@ _VERIFIED_BASELINE_JSON = r"""
    "token": "5"
   },
   "app.js": {
-   "sha256": "9a3094a5492fbef8b569b29784f93395835a64740ab1db9094261d926bbedf1b",
-   "token": "226"
+   "sha256": "d7417d48979d062c0eccd9486009a90fcf27b926a2fff090bd78884db390d592",
+   "token": "248"
   },
   "astro.js": {
-   "sha256": "302b623dc990a95b90251c0df5853107ba23f40084d07d22fc7194c21d6d1955",
-   "token": "59"
+   "sha256": "9b0c68af655cf45bb97b101453a8c0009471571f4afbe6ad36d6da39907b596c",
+   "token": "67"
+  },
+  "capture.js": {
+   "sha256": "31a18ce5c6d89cc403b5b13ae8005ff98d825e3b69b7131bcc144724f66cbb32",
+   "token": "21"
+  },
+  "capturemotion.js": {
+   "sha256": "769de934e07e597b8ee57c3d08a7cfab1cfd580033708431d402580cc8d629ac",
+   "token": "1"
   },
   "core.js": {
-   "sha256": "89730746f4b8f630707110e042ea44b2dbbe12d9900ca294c7b788a781d0b004",
-   "token": "68"
+   "sha256": "536cc79ceb2a0853b00c5ab919f9c1a25bfa1f89d2167b4b62e04c5c2360614e",
+   "token": "76"
   },
   "format.js": {
-   "sha256": "47f387f190b63f78da40929c55bfa4630ceb1d3f2a32b25171072b0650d88b06",
-   "token": "65"
+   "sha256": "edec911f4a59941b40f58c22286cdcd7fcee120ad3135b09abec944825b472a0",
+   "token": "73"
   },
   "horizon.js": {
-   "sha256": "941a367f0bed857040937363cfaed3a2cc219f3197c268b6dcab9c509fed85b6",
-   "token": "131"
+   "sha256": "b5ac1fb14144212c1dc56f7d9b53ba3a5e08d7dcffdfd25c147f94ed3ca49dd4",
+   "token": "153"
   },
   "imagecredits.js": {
    "sha256": "8c8b650a0ad6ef6462eea251b67642103cb0eb9010c1f9dde09fce2ba7fa8952",
    "token": "2"
   },
   "nightrank.js": {
-   "sha256": "e56ba177d1e8551f900040e3b70b99d1b50e1f9ddc28e8900509fc09316ab0e0",
-   "token": "57"
+   "sha256": "adc171043b50cf0d46bff27e76c54f0b051bc84b390dcfd14b46284ab12fea5d",
+   "token": "65"
   },
   "style.css": {
-   "sha256": "0ce58ee1077d79e64cf515a0a552461d09aed760f0c92f5c990bdd79e65cbdb9",
-   "token": "65"
+   "sha256": "48f808e268be61af0df2cc86b3a5eb595107a02a858507069f71dc99ec92130f",
+   "token": "75"
   },
   "themes.css": {
    "sha256": "f8094c798dbe72b4e7f84faad3f41fc0cdbe896a03c0cb7413ee9d0d1bed2ff8",
@@ -138,8 +146,8 @@ _VERIFIED_BASELINE_JSON = r"""
    "token": "7"
   },
   "webstore.js": {
-   "sha256": "c54032eb73a1196650fa32b2d1626e3cd9c8dae63525a27cca946d5fc8ba53b9",
-   "token": "74"
+   "sha256": "ea2eb263b55245413fccb5e6c1220ba960a329158662059b49f1a7c58419ae0c",
+   "token": "82"
   }
  }
 }

@@ -91,17 +91,60 @@ def test_web_horizon_editor_switch_flush_and_beforeunload():
 
 def test_web_horizon_editor_controls_and_no_blocking_dialogs():
     """The horizon editor exposes its whole control set and never uses a
-    blocking browser alert/confirm (Clear, Delete and Remove photo use an
-    in-page dialog)."""
+    blocking browser alert/confirm (Clear and Delete use an in-page dialog).
+    Horizon photos are retired (2026-10-15): no upload, Align mode or photo
+    panel comes back."""
     js = _read("web", "horizon.js")
-    for cid in ("hz-mode-draw", "hz-mode-align", "ed-undo", "ed-redo", "hz-clear",
+    for cid in ("hz-mode-draw", "hz-mode-overhang", "ed-undo", "ed-redo", "hz-clear",
                 "ed-zoom-in", "ed-zoom-out", "ed-fit", "ed-status", "ed-pos",
-                "hz-export", "hz-name", "hz-new-draw", "hz-photo-file", "hz-import-file"):
+                "hz-export", "hz-name", "hz-new-draw", "hz-import-file", "hz-cap-start"):
         assert f'id="{cid}"' in js, f"missing editor control #{cid}"
+    for gone in ("hz-photo-file", "hz-mode-align", "hz-photo-panel", "hz-attach-file", "hz-detect"):
+        assert gone not in js, f"retired photo control #{gone} is back"
     assert "alert(" not in js and "window.confirm(" not in js and " confirm(" not in js
-    assert js.count("await confirmDialog(box,") >= 3, "Clear, Delete and Remove photo ask in-page"
+    assert js.count("await confirmDialog(box,") >= 2, "Clear and Delete ask in-page"
     for fn in ("horizonUnsaved", "flushHorizonEdits", "clampView", "describeHorizon"):
         assert f"export function {fn}" in js, fn
+
+
+def test_phone_capture_only_shows_the_camera():
+    """The capture view shows the camera and nothing else happens to the
+    video: no recording, frame grabs, storage or network use in capture.js,
+    and closing stops every track. The old compass panel is gone; the
+    capture's sensor code lives in capture.js only."""
+    js = _read("web", "capture.js")
+    for kept in ("MediaRecorder", "toBlob", "toDataURL", "getImageData", "drawImage",
+                 "fetch(", "XMLHttpRequest", "sendBeacon", "localStorage", "indexedDB"):
+        assert kept not in js, f"capture.js must not use {kept}"
+    assert "for (const t of stream.getTracks()) t.stop();" in js
+    assert "video.srcObject = null;" in js
+    worker = _read("web", "capturemotion.js")
+    for kept in ("MediaRecorder", "toBlob", "toDataURL", "convertToBlob", "fetch(", "XMLHttpRequest",
+                 "sendBeacon", "localStorage", "indexedDB", "caches."):
+        assert kept not in worker, f"capturemotion.js must not use {kept}"
+    assert "frame.close();" in worker, "every camera frame is closed at once"
+    posts = [line.strip() for line in worker.splitlines() if "postMessage(" in line]
+    assert posts == ["postMessage({ size: [frame.displayWidth, frame.displayHeight, W, h] });",
+                     "postMessage({ f: [prevT, t, dx, sx, dy, sy] });"], f"the worker reports numbers only: {posts}"
+    editor = _read("web", "horizon.js")
+    for gone in ("hz-cmp-", "deviceorientation", "devicePointing"):
+        assert gone not in editor, f"the old compass code is back: {gone}"
+
+
+def test_shared_horizon_link_asks_before_saving():
+    """A shared horizon link is only an offer: the user confirms before
+    anything is saved, and the router takes the points out of the address
+    (and history) before showing it. The points stay in the fragment, which
+    browsers never send to the server."""
+    js = _read("web", "horizon.js")
+    body = js[js.index("export async function offerHorizonLink"):]
+    body = body[:body.index("\n}\n")]
+    assert body.index("decodeHorizonLink(code)") < body.index("await confirmDialog(") < body.index("createHorizon(")
+    assert "#horizon=${encodeHorizonLink(h)}" in js, "the points ride in the fragment"
+    app = _read("web", "app.js")
+    route = app[app.index("function route() {"):]
+    assert route.index("history.replaceState(null, '', `${location.pathname}${location.search}#horizon`);") \
+        < route.index("Hor.offerHorizonLink(sharedHorizon")
 
 
 def _js_body(src: str, header: str) -> str:
@@ -195,8 +238,8 @@ def test_web_action_rows_are_not_full_width():
     assert ".action-row .btn { flex: 0 0 auto; }" in css, \
         "action-row buttons must be auto-width, not stretched"
     js = _read("web", "horizon.js")
-    assert 'class="btn primary" for="hz-photo-file"' in js, \
-        "the photo control must stay a label-button"
+    assert 'class="btn" for="hz-import-file"' in js, \
+        "the import control must stay a label-button"
     assert ".hz-new { display: grid;" in css, "the create buttons share one grid column"
 
 

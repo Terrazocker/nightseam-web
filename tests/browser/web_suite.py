@@ -113,11 +113,6 @@ def horizon_test_png(width: int, height: int) -> bytes:
         (80, 125, 230) if x >= width * 0.88 else (65, 145, 110)))
 
 
-def skyline_test_png(width: int, height: int, ground: float) -> bytes:
-    """Daylight sky over dark ground; the ground starts `ground` (0-1) down."""
-    return rgb_png(width, height, lambda _x, y: (120, 170, 235) if y < height * ground else (40, 60, 30))
-
-
 def search_catalog_row(c, object_id: str, search: str):
     """Wait for the debounced search render, not a stale pre-filtered row."""
     old_input = c.page.locator("#cat-q").element_handle()
@@ -321,16 +316,6 @@ def wait_status(c, text_value: str, timeout: int = 8000):
             f"redo-disabled={c.page.is_disabled('#ed-redo')}") from exc
 
 
-def upload_photo(c, name: str, data: bytes, selector: str = "#hz-photo-file"):
-    c.page.locator(selector).set_input_files({"name": name, "mimeType": "image/png", "buffer": data})
-    # Each photo opens a new horizon named after the file; wait for that one, or
-    # a second upload would read the previous photo's still-visible fields.
-    c.page.wait_for_function("(n) => document.querySelector('#hz-name')?.value === n",
-                             arg=name.rsplit(".", 1)[0], timeout=15000)
-    c.page.wait_for_selector("#hz-ph-width", state="visible", timeout=15000)
-    c.page.wait_for_function("() => !document.querySelector('#hz-mode-align').disabled", timeout=15000)
-
-
 # ---------------------------------------------------------------- checks
 
 @check("web-load-smoke", "web")
@@ -373,9 +358,10 @@ def web_cache_tokens(c):
 
 @check("web-horizon-create-buttons-consistent", "web")
 def web_horizon_create_buttons(c):
-    """ITEM B regression, current form: the three ways to start a horizon (two
-    label-buttons and a button) render at one shared width, so a label used as
-    a button can never stretch while its siblings do not. Rendered layout."""
+    """ITEM B regression, current form: the two ways to start a horizon (a
+    button and a label-button; horizon photos are retired) render at one
+    shared width, so a label used as a button can never stretch while its
+    sibling does not. Rendered layout."""
     boot(c)
     tab(c, "horizon")
     c.page.wait_for_selector(".hz-new", timeout=20000)
@@ -385,7 +371,7 @@ def web_horizon_create_buttons(c):
         widths = c.page.evaluate(
             """() => [...document.querySelectorAll('.hz-new > .btn')]
                  .map(e => Math.round(e.getBoundingClientRect().width))""")
-        c.expect(len(widths) == 3, f"three create controls expected, got {widths}")
+        c.expect(len(widths) == 2, f"two create controls expected, got {widths}")
         c.expect(max(widths) - min(widths) <= 2, f"create controls differ in width at {width}px: {widths}")
     c.page.set_viewport_size({"width": 1366, "height": 900})
     c.assert_clean()
@@ -495,87 +481,29 @@ def web_horizon_canvas_dpr_resize(c):
     c.assert_clean()
 
 
-@check("web-horizon-photo-placement", "web")
-def web_horizon_photo_placement(c):
-    """A 2:1 photo is a full panorama laid around the whole grid; any other
-    shape is a 60 deg partial photo; the photo is drawn where it belongs."""
+@check("web-horizon-has-no-photo-tools", "web")
+def web_horizon_has_no_photo_tools(c):
+    """Horizon photos are retired: the editor offers drawing, the phone
+    compass and file import; a dropped photo is explained instead of opened,
+    and a dropped horizon text file imports."""
     boot(c)
-    tab(c, "horizon")
-    upload_photo(c, "full.png", horizon_test_png(144, 72))
-    c.expect_eq(c.page.locator("#hz-ph-width").input_value(), "360", "a 2:1 photo is a full panorama")
-    c.expect(c.page.locator("#hz-ph-roll").is_disabled(), "a full panorama is not rolled")
-    c.page.locator('#hz-guide [data-guide="close"]').click()
-    colours = c.page.evaluate("""() => {
-      const cv = document.querySelector('#hz-canvas'), ctx = cv.getContext('2d');
-      const r = cv.getBoundingClientRect(), dpr = cv.width / r.width;
-      // grid margins 40/8 px, altitude -10..80 at zoom 1; sample 5 deg altitude
-      const x = (az) => (40 + az / 360 * (r.width - 48)) * dpr;
-      const y = (24 + (80 - 5) / 90 * (r.height - 32)) * dpr;
-      const at = (az) => [...ctx.getImageData(Math.round(x(az)), Math.round(y), 1, 1).data];
-      return { west: at(20), mid: at(180), east: at(340) };
-    }""")
-    c.expect(colours["west"][0] > colours["west"][2], f"the photo's left edge sits just east of north: {colours}")
-    c.expect(colours["east"][2] > colours["east"][0], f"the photo's right edge sits just west of north: {colours}")
-    c.expect(colours["mid"][1] > colours["mid"][0], f"the photo centre faces south: {colours}")
-    upload_photo(c, "partial.png", horizon_test_png(96, 72))
-    c.expect_eq(c.page.locator("#hz-ph-width").input_value(), "60", "an ordinary photo starts 60 deg wide")
-    c.expect(c.page.locator("#hz-ph-roll").is_enabled(), "a partial photo can be levelled")
-    c.expect("photo" in c.page.inner_text("#hz-list"), "the list marks horizons with a photo")
-    c.assert_clean()
-
-
-@check("web-horizon-detect-skyline", "web")
-def web_horizon_detect_skyline(c):
-    """Detect skyline turns a daylight photo into points at the right height:
-    ground from 40% down a 2:1 panorama is 18 deg above the level horizon."""
-    boot(c)
-    tab(c, "horizon")
-    upload_photo(c, "garden.png", skyline_test_png(360, 180, 0.40))
-    c.page.locator("#hz-detect").click()
-    c.page.wait_for_function("() => /Detected \\d+ skyline points/.test(document.querySelector('#hz-note').textContent)",
-                             timeout=10000)
-    pts = active_horizon(c)["points"]
-    c.expect(len(pts) >= 2, f"detection must store points: {pts}")
-    c.expect(all(abs(p["alt"] - 18) <= 1.5 for p in pts), f"detected skyline must sit at 18 deg: {pts[:6]}")
-    c.expect(min(p["az"] for p in pts) <= 5 and max(p["az"] for p in pts) >= 355,
-             "a full panorama is detected all the way round")
-    c.page.click("#ed-undo")
-    c.page.wait_for_timeout(200)
-    c.expect_eq(active_points(c), 0, "detection is one undoable step")
-    c.assert_clean()
-
-
-@check("web-horizon-align-moves-skyline", "web")
-def web_horizon_align_moves_skyline(c):
-    """Turning the photo moves the traced skyline with it, as one undo step;
-    Align mode drags the photo."""
-    boot(c)
-    tab(c, "horizon")
-    upload_photo(c, "partial.png", horizon_test_png(96, 72))
-    c.page.locator('#hz-guide [data-guide="close"]').click()
-    sketch(c, 0.35, 0.65, 0.5, 0.45)
-    before = active_horizon(c)
-    heading = c.page.locator("#hz-ph-heading")
-    heading.fill(str(before["photo"]["heading"] + 10))
-    heading.dispatch_event("change")
-    c.page.wait_for_timeout(200)
-    after = active_horizon(c)
-    c.expect_eq(after["photo"]["heading"], before["photo"]["heading"] + 10, "the typed north direction applies")
-    c.expect_eq([round(p["az"] - 10, 2) for p in after["points"]], [p["az"] for p in before["points"]],
-                "every skyline point turns with the photo")
-    c.page.click("#ed-undo")
-    c.page.wait_for_timeout(200)
-    c.expect_eq(active_horizon(c)["points"], before["points"], "the turn is one undo step")
-    c.page.click("#hz-mode-align")
-    c.expect_eq(c.page.get_attribute("#hz-mode-align", "aria-pressed"), "true", "Align mode is announced")
-    sx, sy = canvas_point(c, 0.5, 0.5)
-    c.page.mouse.move(sx, sy)
-    c.page.mouse.down()
-    c.page.mouse.move(sx + 40, sy, steps=6)
-    c.page.mouse.up()
-    c.page.wait_for_timeout(200)
-    c.expect(active_horizon(c)["photo"]["heading"] > before["photo"]["heading"],
-             "dragging the photo to the right turns it east")
+    open_editor(c)
+    for gone in ("#hz-photo-file", "#hz-mode-align", "#hz-photo-panel", "#hz-opacity", "#hz-guide"):
+        c.expect_eq(c.page.locator(gone).count(), 0, f"{gone} is gone")
+    drop = """([name, type, text]) => {
+      const dt = new DataTransfer();
+      dt.items.add(new File([text], name, { type }));
+      document.querySelector('#view').dispatchEvent(new DragEvent('drop', { dataTransfer: dt, bubbles: true, cancelable: true }));
+    }"""
+    count = len(horizon_state(c)["horizons"])
+    c.page.evaluate(drop, ["garden.png", "image/png", "not really a png"])
+    c.page.wait_for_function("() => /no longer used/.test(document.querySelector('#hz-note').textContent)",
+                             timeout=5000)
+    c.expect_eq(len(horizon_state(c)["horizons"]), count, "a dropped photo creates no horizon")
+    c.page.evaluate(drop, ["dropped.txt", "text/plain", "0 10\n90 20\n180 15\n"])
+    c.page.wait_for_function("() => /Imported 3 points from dropped.txt/.test(document.querySelector('#hz-note').textContent)",
+                             timeout=5000)
+    c.expect_eq(active_horizon(c)["name"], "dropped", "a dropped horizon file imports")
     c.assert_clean()
 
 
@@ -596,6 +524,69 @@ def web_horizon_blocks_planning(c):
     c.page.wait_for_timeout(600)
     c.expect_eq(c.page.locator(READY).count(), 0, "a horizon up to the zenith must leave nothing usable")
     c.expect("Horizon: wall" in c.page.inner_text("main"), "Tonight names the active horizon")
+    c.assert_clean()
+
+
+@check("web-horizon-share-link", "web")
+def web_horizon_share_link(c):
+    """A horizon travels to another device as a link: Share link hands it to
+    the system share sheet (else the clipboard); opening the link asks before
+    adding an exact copy and clears the points from the address; cancelling
+    or a damaged link adds nothing."""
+    boot(c)
+    tab(c, "horizon")
+    c.page.locator("#hz-import-file").set_input_files({
+        "name": "garden.hrz", "mimeType": "text/plain", "buffer": b"0 10\n90 20.5\n180 15\n270 12.25\n"})
+    c.page.wait_for_function("() => /Imported 4 points/.test(document.querySelector('#hz-note').textContent)")
+    c.page.locator("#hz-points-panel summary").click()
+    c.page.fill("#hz-oh-from", "100")
+    c.page.fill("#hz-oh-to", "130")
+    c.page.fill("#hz-oh-alt", "45")
+    c.page.click("#hz-oh-add")
+    c.page.wait_for_function("() => /Overhang added/.test(document.querySelector('#hz-note').textContent)")
+    original = active_horizon(c)
+    count = len(horizon_state(c)["horizons"])
+
+    c.page.evaluate("() => { window.__shared = null; navigator.share = async (d) => { window.__shared = d; }; }")
+    c.page.click("#hz-share")
+    c.page.wait_for_function("() => !!window.__shared", timeout=5000)
+    url = c.page.evaluate("() => window.__shared.url")
+    c.expect("#horizon=" in url and "garden" in c.page.evaluate("() => window.__shared.title"),
+             f"the share sheet gets a horizon link: {url}")
+
+    def open_link(link):
+        c.page.evaluate("(u) => { location.href = u; }", link)
+
+    open_link(url)
+    c.page.wait_for_selector(".ed-confirm [data-ok]", timeout=5000)
+    c.expect_eq(c.page.evaluate("() => location.hash"), "#horizon", "the points leave the address at once")
+    c.expect("Add the horizon" in c.page.inner_text(".ed-confirm") and "4 skyline points and 1 overhang" in c.page.inner_text(".ed-confirm"),
+             f"the offer says what it adds: {c.page.inner_text('.ed-confirm')!r}")
+    c.expect_eq(len(horizon_state(c)["horizons"]), count, "nothing is saved before the user agrees")
+    c.page.click(".ed-confirm [data-ok]")
+    c.page.wait_for_function("() => /Added/.test(document.querySelector('#hz-note').textContent)", timeout=5000)
+    added = active_horizon(c)
+    c.expect_eq(len(horizon_state(c)["horizons"]), count + 1, "the shared horizon is added")
+    c.expect_eq(added["points"], original["points"], "its skyline is an exact copy")
+    c.expect_eq(added["overhangs"], original["overhangs"], "and so are its overhangs")
+    c.expect(added["name"].startswith("garden") and added["id"] != original["id"], f"a new horizon named after the original: {added['name']}")
+
+    open_link(url)
+    c.page.wait_for_selector(".ed-confirm [data-cancel]", timeout=5000)
+    c.page.click(".ed-confirm [data-cancel]")
+    c.page.wait_for_function("() => /not added/.test(document.querySelector('#hz-note').textContent)", timeout=5000)
+    c.expect_eq(len(horizon_state(c)["horizons"]), count + 1, "cancelling adds nothing")
+
+    open_link(url.split("#")[0] + "#horizon=AAAA$$")
+    c.page.wait_for_function("() => /could not be read/.test(document.querySelector('#hz-note').textContent)", timeout=5000)
+    c.expect_eq(len(horizon_state(c)["horizons"]), count + 1, "a damaged link adds nothing")
+    c.expect_eq(c.page.locator(".ed-confirm").count(), 0, "and offers nothing")
+
+    c.page.evaluate("""() => { delete navigator.share; Object.defineProperty(navigator, 'share', { value: undefined, configurable: true });
+      window.__copied = null; navigator.clipboard.writeText = async (t) => { window.__copied = t; }; }""")
+    c.page.click("#hz-share")
+    c.page.wait_for_function("() => /Link copied/.test(document.querySelector('#hz-note').textContent)", timeout=5000)
+    c.expect("#horizon=" in c.page.evaluate("() => window.__copied"), "without a share sheet the link is copied")
     c.assert_clean()
 
 
@@ -633,85 +624,504 @@ def web_horizon_overhang_blocks_sky(c):
     c.assert_clean()
 
 
-@check("web-horizon-phone-compass", "web")
-def web_horizon_phone_compass(c):
-    """The phone compass turns device orientation into skyline points: a
-    landmark correction, a single point and a traced sweep (Chrome's
-    orientation override stands in for the sensor)."""
+def device_quaternion(az: float, alt: float) -> dict:
+    """An upright phone whose back camera points at compass azimuth `az`,
+    `alt` degrees up: q = qz(-az) qx(90 + alt), as {x, y, z, w}."""
+    import math
+    hz, hx = math.radians(-az) / 2, math.radians(90 + alt) / 2
+    z, w1 = math.sin(hz), math.cos(hz)
+    x, w2 = math.sin(hx), math.cos(hx)
+    # (0, 0, z, w1) * (x, 0, 0, w2)
+    return {"x": w1 * x, "y": z * x, "z": z * w2, "w": w1 * w2}
+
+
+CAMERA_STUB = """(delay) => {
+  const delayMs = typeof delay === 'number' ? delay : 0;   // Playwright passes null without an argument
+  // A moving pattern, so the motion worker gets frames; and a camera
+  // calibration for this "device" (0 ms: the overlay follows the sensors at once).
+  localStorage.setItem('nightseam_capture_cal_v1', JSON.stringify({ delayMs, kx: 0.755, ky: 0.755, measured: false }));
+  navigator.mediaDevices.getUserMedia = async () => {
+    const cv = document.createElement('canvas');
+    cv.width = 64; cv.height = 48;
+    const ctx = cv.getContext('2d');
+    let k = 0;
+    const paint = () => { k += 1; for (let x = 0; x < 64; x++) { const g = 100 + 60 * Math.sin((x + k) / 5); ctx.fillStyle = `rgb(${g},${g},${g})`; ctx.fillRect(x, 0, 1, 48); } };
+    paint();
+    setInterval(paint, 100);
+    return cv.captureStream(10);
+  };
+}"""
+
+
+@check("web-horizon-capture-compass-restarts", "web")
+def web_horizon_capture_compass_restarts(c):
+    """A compass that does not start with the capture (on a first open the
+    browser may still be deciding a permission) is started again while north
+    is missing, so north is found without closing and reopening the view."""
     boot(c)
     open_editor(c)
+    c.page.evaluate(CAMERA_STUB)
     cdp = c.page.context.new_cdp_session(c.page)
-    orient = lambda a, b: cdp.send("DeviceOrientation.setDeviceOrientationOverride",
-                                   {"alpha": a, "beta": b, "gamma": 0})
-    orient(0, 90)
-    c.page.locator("#hz-compass-panel summary").click()
-    c.page.click("#hz-cmp-start")
-    try:
-        c.page.wait_for_function("() => /Pointing 0/.test(document.querySelector('#hz-cmp-read').textContent)",
-                                 timeout=10000)
-    except Exception as exc:
-        raise AssertionError(f"no compass reading: {c.page.inner_text('#hz-cmp-read')!r} / "
-                             f"{c.page.inner_text('#hz-cmp-status')!r}") from exc
-    c.page.fill("#hz-cmp-true", "10")
-    c.page.click("#hz-cmp-correct")
-    c.expect("+10" in c.page.inner_text("#hz-cmp-status"), "the landmark sets a +10 deg correction")
-    c.page.wait_for_function("() => /Pointing 10/.test(document.querySelector('#hz-cmp-read').textContent)",
-                             timeout=10000)
-    c.page.click("#hz-cmp-add")
-    pts = active_horizon(c)["points"]
-    c.expect(len(pts) == 1 and abs(pts[0]["az"] - 10) < 0.6 and abs(pts[0]["alt"]) < 0.6,
-             f"an upright phone facing the landmark adds a level point at 10 deg: {pts}")
-    c.page.click("#hz-cmp-trace")
-    for alpha, beta in ((350, 95), (340, 100), (330, 98), (320, 92)):
-        orient(alpha, beta)
-        c.page.wait_for_timeout(150)
-    c.page.click("#hz-cmp-trace")
-    pts = active_horizon(c)["points"]
-    c.expect(any(abs(p["az"] - 30) < 1 and abs(p["alt"] - 10) < 1 for p in pts),
-             f"the sweep stores the 10 deg high point at 30 deg (alpha 340 + correction): {pts}")
-    c.expect(max(p["az"] for p in pts) >= 39, f"the trace reaches the end of the sweep: {pts}")
-    c.page.click("#hz-cmp-start")
-    c.expect("Not measuring" in c.page.inner_text("#hz-cmp-read"), "Stop ends measuring")
+    cdp.send("Emulation.setSensorOverrideEnabled", {"enabled": True, "type": "relative-orientation"})
+    cdp.send("Emulation.setSensorOverrideEnabled", {"enabled": False, "type": "absolute-orientation",
+             "metadata": {"available": False}})
+
+    def rel(wait: int = 80):
+        cdp.send("Emulation.setSensorOverrideReadings", {"type": "relative-orientation",
+                 "reading": {"quaternion": device_quaternion(0, 5)}})
+        c.page.wait_for_timeout(wait)
+
+    rel()
+    if not c.page.locator("#hz-capture-panel").evaluate("el => el.open"):
+        c.page.locator("#hz-capture-panel summary").click()
+    c.page.click("#hz-cap-start")
+    c.page.wait_for_selector(".cap", timeout=5000)
+    for _ in range(20):        # the gyroscope runs; the compass does not
+        rel()
+    c.expect(not c.page.locator("#cap-trace").is_enabled(), "without north nothing can be traced yet")
+    cdp.send("Emulation.setSensorOverrideEnabled", {"enabled": True, "type": "absolute-orientation"})
+    for _ in range(150):       # the compass becomes available later
+        cdp.send("Emulation.setSensorOverrideReadings", {"type": "absolute-orientation",
+                 "reading": {"quaternion": device_quaternion(30, 5)}})
+        rel(60)
+        if c.page.locator("#cap-trace").is_enabled():
+            break
+    c.expect(c.page.locator("#cap-trace").is_enabled(),
+             f"north is found once the compass reports: {c.page.inner_text('#cap-read')!r}")
+    c.expect("NNE" in c.page.inner_text("#cap-read"), f"pointing 30 deg: {c.page.inner_text('#cap-read')!r}")
+    c.page.keyboard.press("Escape")
     c.assert_clean()
 
 
-@check("web-horizon-sun-sets-north", "web")
-def web_horizon_sun_sets_north(c):
-    """Marking the Sun in a photo and its capture time sets north and tilt from
-    the Sun's computed position at the observing site."""
+@check("web-horizon-capture-shows-what-the-camera-saw", "web")
+def web_horizon_capture_shows_what_the_camera_saw(c):
+    """The camera image trails the gyroscope (about 210 ms on a Pixel 7a), so
+    the capture aims with the orientation the image shows: a point added
+    right after a quick swing lands where the screen still pointed, and the
+    readout follows after the delay. The camera-motion worker gets frames."""
     boot(c)
-    tab(c, "horizon")
-    upload_photo(c, "sunny.png", horizon_test_png(144, 72))
-    c.page.locator('#hz-guide [data-guide="close"]').click()
-    c.page.click("#hz-sun")
-    # Mark the grid point az 200, alt 20 of the default placement (heading
-    # 180, tilt 0): 20 deg right of and 20 deg above the photo centre.
-    box = c.page.locator("#hz-canvas").bounding_box()
-    c.page.mouse.click(box["x"] + 40 + 200 / 360 * (box["width"] - 48),
-                       box["y"] + 24 + (80 - 20) / 90 * (box["height"] - 32))
-    c.page.wait_for_selector("#hz-sun-form:not([hidden])", timeout=5000)
-    c.page.fill("#hz-sun-time", "2026-06-21T15:00")
-    c.page.click("#hz-sun-apply")
-    c.page.wait_for_function("() => /north and tilt are set/.test(document.querySelector('#hz-note').textContent)",
+    open_editor(c)
+    c.page.evaluate(CAMERA_STUB, 300)
+    cdp = c.page.context.new_cdp_session(c.page)
+    for kind in ("relative-orientation", "absolute-orientation"):
+        cdp.send("Emulation.setSensorOverrideEnabled", {"enabled": True, "type": kind})
+
+    def aim(rel_az: float, alt: float, wait: int = 60):
+        cdp.send("Emulation.setSensorOverrideReadings", {"type": "relative-orientation",
+                 "reading": {"quaternion": device_quaternion(rel_az, alt)}})
+        cdp.send("Emulation.setSensorOverrideReadings", {"type": "absolute-orientation",
+                 "reading": {"quaternion": device_quaternion(rel_az + 30, alt)}})
+        c.page.wait_for_timeout(wait)
+
+    aim(0, 5)
+    if not c.page.locator("#hz-capture-panel").evaluate("el => el.open"):
+        c.page.locator("#hz-capture-panel summary").click()
+    c.page.click("#hz-cap-start")
+    c.page.wait_for_selector(".cap", timeout=5000)
+    for _ in range(120):
+        aim(0, 5)
+        if c.page.locator("#cap-trace").is_enabled():
+            break
+    for _ in range(10):        # hold on A (true 30 deg) well past the delay
+        aim(0, 5)
+    aim(40, 5, 0)              # swing to B (true 70 deg) ...
+    c.page.click("#cap-point")  # ... and add a point at once
+    pts = active_horizon(c)["points"]
+    c.expect(len(pts) == 1 and abs(pts[0]["az"] - 30) < 1.5,
+             f"the point lands where the screen still showed, A at 30 deg: {pts}")
+    for _ in range(10):
+        aim(40, 5)
+    read = c.page.inner_text("#cap-read")
+    m = re.match(r"\s*([0-9.]+)°", read)
+    c.expect(m and abs(float(m.group(1)) - 70) <= 0.6, f"after the delay the readout shows B at 70 deg: {read!r}")
+    c.page.wait_for_selector(".cap[data-motion='on']", timeout=8000)
+    c.page.keyboard.press("Escape")
+    c.page.wait_for_selector(".cap", state="detached", timeout=5000)
+    c.assert_clean()
+
+
+@check("web-horizon-capture-mobile-layout", "web")
+def web_horizon_capture_mobile_layout(c):
+    """The capture view is laid out for one hand on a phone: opaque bars
+    above and below the camera that never cover the crosshair, every control
+    at least 44 px, and Start tracing in the middle of the bottom row, held
+    upright (412x813, the Pixel 7a) and sideways."""
+    boot(c)
+    open_editor(c)
+    c.page.evaluate(CAMERA_STUB)
+    if not c.page.locator("#hz-capture-panel").evaluate("el => el.open"):
+        c.page.locator("#hz-capture-panel summary").click()
+    measure = """() => {
+      const r = (s) => document.querySelector(s).getBoundingClientRect();
+      const cross = r('.cap-cross'), top = r('.cap-top'), bottom = r('.cap-bottom'), trace = r('#cap-trace');
+      const undo = r('#cap-undo'), point = r('#cap-point');
+      const buttons = [...document.querySelectorAll('.cap .btn, .cap input')].filter((b) => b.offsetParent);
+      const small = buttons.map((b) => [b.id, Math.round(b.getBoundingClientRect().height)]).filter(([, h]) => h < 44);
+      const bg = (s) => getComputedStyle(document.querySelector(s)).backgroundColor;
+      return { clear: top.bottom <= cross.top && bottom.top >= cross.bottom, small,
+        thumb: undo.right <= trace.left && trace.right <= point.left && Math.abs(trace.bottom - undo.bottom) < 1,
+        low: innerHeight - trace.bottom < 40, opaque: [bg('.cap-top'), bg('.cap-bottom')] }; }"""
+    cdp = c.page.context.new_cdp_session(c.page)
+    for kind in ("relative-orientation", "absolute-orientation"):
+        cdp.send("Emulation.setSensorOverrideEnabled", {"enabled": True, "type": kind})
+
+    def aim(az, alt):
+        cdp.send("Emulation.setSensorOverrideReadings", {"type": "relative-orientation",
+                 "reading": {"quaternion": device_quaternion(az, alt)}})
+        cdp.send("Emulation.setSensorOverrideReadings", {"type": "absolute-orientation",
+                 "reading": {"quaternion": device_quaternion(az + 30, alt)}})
+        c.page.wait_for_timeout(60)
+
+    for width, height in ((412, 813), (360, 740), (813, 412)):
+        c.page.set_viewport_size({"width": width, "height": height})
+        aim(152 - 30, -12.34)
+        c.page.click("#hz-cap-start")
+        c.page.wait_for_selector(".cap", timeout=5000)
+        for _ in range(120):    # until north: the readout shows a direction
+            aim(152 - 30, -12.34)
+            if not c.page.evaluate("() => document.querySelector('#cap-read').classList.contains('cap-read-msg')"):
+                break
+        read = c.page.evaluate("""() => { const el = document.querySelector('#cap-read'), cs = getComputedStyle(el);
+          return { text: el.textContent, height: el.getBoundingClientRect().height, font: parseFloat(cs.fontSize),
+                   clipped: el.scrollWidth > el.clientWidth + 1 }; }""")
+        m = re.match(r"\s*([0-9.]+)° SSE · alt\s+(-[0-9.]+)°$", read["text"])
+        c.expect(bool(m) and abs(float(m[1]) - 152) <= 0.2 and abs(float(m[2]) + 12.34) <= 0.2 and len(m[1].split(".")[1]) == 1
+                 and read["height"] < 2 * read["font"] and not read["clipped"],
+                 f"{width}x{height}: the direction reads with one decimal on one line: {read}")
+        m = c.page.evaluate(measure)
+        c.expect(m["clear"], f"{width}x{height}: the bars leave the crosshair free: {m}")
+        c.expect_eq(m["small"], [], f"{width}x{height}: every control is at least 44 px")
+        c.expect(m["thumb"] and m["low"], f"{width}x{height}: Undo, Start tracing, Add point share the bottom row: {m}")
+        c.expect(all(bg.startswith("rgb(") for bg in m["opaque"]),   # rgba(...) or color(... / a) is see-through
+                 f"{width}x{height}: the bars are opaque: {m['opaque']}")
+        c.page.click("#cap-done")
+        c.page.wait_for_selector(".cap", state="detached", timeout=5000)
+    c.page.set_viewport_size({"width": 1366, "height": 900})
+    c.assert_clean()
+
+
+@check("web-horizon-capture-sharper-motion", "web")
+def web_horizon_capture_sharper_motion(c):
+    """Sharper motion appears only where the camera allows manual exposure;
+    it asks for 1/60 s with the sensitivity raised by the same factor (the
+    same light), and turning it off gives the exposure back to the camera."""
+    boot(c)
+    open_editor(c)
+    c.page.evaluate(CAMERA_STUB)
+    if not c.page.locator("#hz-capture-panel").evaluate("el => el.open"):
+        c.page.locator("#hz-capture-panel summary").click()
+    c.page.click("#hz-cap-start")
+    c.page.wait_for_selector(".cap", timeout=5000)
+    c.page.wait_for_function("() => document.querySelector('#cap-video').srcObject", timeout=5000)
+    c.expect(c.page.locator("#cap-exposure").is_hidden(), "a camera without manual exposure gets no toggle")
+    c.page.keyboard.press("Escape")
+    c.page.wait_for_selector(".cap", state="detached", timeout=5000)
+
+    # a camera like the Pixel 7a's: 60 ms exposures at ISO 100 in this light
+    c.page.evaluate("""() => {
+      const stub = navigator.mediaDevices.getUserMedia;
+      window.__constraints = [];
+      navigator.mediaDevices.getUserMedia = async (c) => {
+        const s = await stub(c), t = s.getVideoTracks()[0];
+        let settings = { exposureMode: 'continuous', exposureTime: 600, iso: 100 };
+        t.getCapabilities = () => ({ exposureMode: ['continuous', 'manual'], exposureTime: { min: 0.7, max: 160000 }, iso: { min: 45, max: 8982 } });
+        t.getSettings = () => settings;
+        t.applyConstraints = async (c) => { window.__constraints.push(c); settings = { ...settings, ...c.advanced[0] }; };
+        return s;
+      };
+    }""")
+    c.page.click("#hz-cap-start")
+    c.page.wait_for_selector("#cap-exposure:not([hidden])", timeout=5000)
+    c.page.click("#cap-exposure")
+    c.page.wait_for_function("() => document.querySelector('#cap-exposure').getAttribute('aria-pressed') === 'true'", timeout=5000)
+    sent = c.page.evaluate("() => window.__constraints[0].advanced[0]")
+    c.expect(sent["exposureMode"] == "manual" and abs(sent["exposureTime"] - 166.67) < 0.1 and sent["iso"] == 360,
+             f"1/60 s at ISO 360 keeps the light of 60 ms at ISO 100: {sent}")
+    c.page.click("#cap-exposure")
+    c.page.wait_for_function("() => document.querySelector('#cap-exposure').getAttribute('aria-pressed') === 'false'", timeout=5000)
+    c.expect_eq(c.page.evaluate("() => window.__constraints[1].advanced[0]"), {"exposureMode": "continuous"},
+                "off gives the exposure back to the camera")
+    c.page.keyboard.press("Escape")
+    c.assert_clean()
+
+
+@check("web-horizon-capture-references-and-loop", "web")
+def web_horizon_capture_references_and_loop(c):
+    """Without any compass, north comes from a reference in the crosshair (a
+    landmark bearing here; the Moon button says whether the Moon is up).
+    A full turn asks whether it ended where it began; closing the loop
+    removes the gyroscope's drift in proportion to the angle turned, and a
+    miss larger than drift is kept as traced."""
+    boot(c)
+    open_editor(c)
+    c.page.evaluate(CAMERA_STUB)
+    cdp = c.page.context.new_cdp_session(c.page)
+    cdp.send("Emulation.setSensorOverrideEnabled", {"enabled": True, "type": "relative-orientation"})
+    cdp.send("Emulation.setSensorOverrideEnabled", {"enabled": False, "type": "absolute-orientation",
+             "metadata": {"available": False}})
+
+    def rel(az: float, alt: float, wait: int = 40):
+        cdp.send("Emulation.setSensorOverrideReadings", {"type": "relative-orientation",
+                 "reading": {"quaternion": device_quaternion(az, alt)}})
+        c.page.wait_for_timeout(wait)
+
+    rel(0, 5)
+    if not c.page.locator("#hz-capture-panel").evaluate("el => el.open"):
+        c.page.locator("#hz-capture-panel summary").click()
+    c.page.set_viewport_size({"width": 412, "height": 789})   # the Pixel 7a's screen in CSS pixels
+    c.page.click("#hz-cap-start")
+    c.page.wait_for_selector(".cap", timeout=5000)
+    cross_clear = """() => { const r = (s) => document.querySelector(s).getBoundingClientRect();
+      const cross = r('.cap-cross'), top = r('.cap-top'), bottom = r('.cap-bottom');
+      return { clear: top.bottom <= cross.top && bottom.top >= cross.bottom,
+               top: Math.round(top.bottom), cross: [Math.round(cross.top), Math.round(cross.bottom)], bottom: Math.round(bottom.top) }; }"""
+    for _ in range(90):
+        rel(0, 5)
+        if "no compass" in c.page.inner_text("#cap-read"):
+            break
+    c.expect("no compass" in c.page.inner_text("#cap-read"), f"without a compass north is missing: {c.page.inner_text('#cap-read')!r}")
+    c.expect(not c.page.locator("#cap-trace").is_enabled(), "and nothing can be traced yet")
+
+    c.page.click("#cap-north-btn")
+    c.expect(c.page.locator("#cap-ref").is_visible(), "North… opens the reference panel")
+    c.expect("no readings" in c.page.inner_text("#cap-compass-diag"),
+             f"the panel says the compass gives nothing: {c.page.inner_text('#cap-compass-diag')!r}")
+    clear = c.page.evaluate(cross_clear)
+    c.expect(clear["clear"], f"the reference panel leaves the crosshair free to aim with: {clear}")
+    sky = c.page.evaluate("""async () => {
+      const C = await import('./core.js');
+      const jd = C.julianDay(new Date());
+      const site = { lat: 52.52, lon: 13.4 };
+      return { moon: C.referenceUsable(C.moonDirection(jd, site.lat, site.lon)).ok };
+    }""")
+    c.expect_eq(c.page.locator("#cap-ref-moon").is_enabled(), sky["moon"], "the Moon button follows whether the Moon is usable now")
+    c.expect_eq(c.page.locator("#cap-ref-sun").count(), 0, "there is no Sun reference")
+    c.expect("Moon" in c.page.inner_text("#cap-ref-sky"), "the panel says where the Moon is")
+
+    c.page.fill("#cap-ref-az", "120")
+    rel(0, 5)
+    c.page.click("#cap-ref-landmark")
+    c.expect(not c.page.locator("#cap-ref").is_visible(), "setting north closes the panel")
+    rel(0, 5, 120)
+    c.expect(c.page.inner_text("#cap-read").strip().startswith("120.0° ESE"), f"the landmark sets north: {c.page.inner_text('#cap-read')!r}")
+    c.expect("landmark at 120°" in c.page.inner_text("#cap-north"), f"the view says where north comes from: {c.page.inner_text('#cap-north')!r}")
+
+    def full_turn(gain: float):
+        """Turn once around a skyline with one sharp peak half way (true 300
+        deg); the gyroscope reads `gain` times the true angle."""
+        c.page.click("#cap-trace")
+        for k in range(0, 181):
+            theta = k * 2
+            alt = 5 + 25 * max(0.0, 1 - abs(theta - 180) / 6)
+            rel(theta * gain, alt, 30)
+        c.page.click("#cap-trace")
+        c.page.wait_for_selector("#cap-loop:not([hidden])", timeout=5000)
+
+    full_turn(362.4 / 360)          # 2.4 deg of drift over the turn
+    c.expect("all the way round" in c.page.inner_text("#cap-loop"), "a full turn asks whether it ended where it began")
+    clear = c.page.evaluate(cross_clear)
+    c.expect(clear["clear"], f"so does the question, to check the cross is on the start: {clear}")
+    c.expect(not c.page.locator("#cap-trace").is_enabled(), "nothing else happens until it is answered")
+    c.page.click("#cap-loop-yes")
+    c.page.wait_for_function("() => /Loop closed: 2.4° of drift removed/.test(document.querySelector('#cap-status').textContent)",
                              timeout=5000)
-    source = (ROOT / "web/app.js").read_text(encoding="utf-8")
-    ws = re.search(r"\./webstore\.js\?v=\d+", source).group(0)
-    sun = c.page.evaluate("""async (ws) => {
-      const W = await import(ws), C = await import('./core.js');
-      const sites = await W.getSites();
-      const site = sites.find((s) => s.id === document.querySelector('#tb-site').value) || { lat: 52.52, lon: 13.4 };
-      return C.sunDirection(C.julianDay(W.wallFieldsToUtc(2026, 5, 21, 15, 0, 0)), site.lat, site.lon);
-    }""", ws)
-    photo = active_horizon(c)["photo"]
-    c.expect(abs(((photo["heading"] + 20 - sun["az"] + 180) % 360) - 180) < 1.0,
-             f"the marked pixel faces the Sun's azimuth: photo {photo}, sun {sun}")
-    c.expect(abs(photo["tilt"] + 20 - sun["alt"]) < 1.0,
-             f"the marked pixel sits at the Sun's altitude: photo {photo}, sun {sun}")
-    c.page.click("#hz-sun")
-    c.page.mouse.click(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
-    c.page.fill("#hz-sun-time", "2026-06-21T23:30")
-    c.page.click("#hz-sun-apply")
-    c.expect("below the horizon" in c.page.inner_text("#hz-note"), "a night-time capture is refused")
+    peak = max(active_horizon(c)["points"], key=lambda q: q["alt"])
+    c.expect(abs(peak["az"] - 300) <= 0.5, f"after closing the loop the peak is where it is, at 300 deg: {peak}")
+
+    full_turn(368 / 360)            # 8 deg: a missed aim, not drift
+    c.page.click("#cap-loop-yes")
+    c.page.wait_for_function("() => /more than drift/.test(document.querySelector('#cap-status').textContent)", timeout=5000)
+    peak = max(active_horizon(c)["points"], key=lambda q: q["alt"])
+    c.expect(abs(peak["az"] - 304) <= 0.6, f"a missed loop is kept as traced (peak at 120 + 184): {peak}")
+    c.page.keyboard.press("Escape")
+    c.page.wait_for_selector(".cap", state="detached", timeout=5000)
+    c.page.set_viewport_size({"width": 1366, "height": 900})
+    c.assert_clean()
+
+
+@check("web-horizon-capture-compass-prewarm", "web")
+def web_horizon_capture_compass_prewarm(c):
+    """A compass that has just started needs about 10 s to settle, so the
+    editor keeps it running at a low rate while the Phone capture panel is
+    open, and stops it when the panel closes or the Horizon tab is left."""
+    boot(c)
+    open_editor(c)
+    c.page.evaluate("""() => {
+      window.__warm = [];
+      window.AbsoluteOrientationSensor = class {
+        constructor(o) { __warm.push(`new ${o.frequency}`); }
+        addEventListener() {}
+        start() { __warm.push('start'); }
+        stop() { __warm.push('stop'); }
+      };
+    }""")
+    panel = c.page.locator("#hz-capture-panel")
+    if panel.evaluate("el => el.open"):
+        c.page.locator("#hz-capture-panel summary").click()   # start from a closed panel
+        c.page.wait_for_timeout(100)
+    c.page.evaluate("() => { window.__warm.length = 0; }")
+    c.page.locator("#hz-capture-panel summary").click()
+    c.page.wait_for_function("() => window.__warm.includes('start')", timeout=4000)
+    c.expect_eq(c.page.evaluate("() => window.__warm.slice(0, 2)"), ["new 10", "start"],
+                "opening the panel starts the compass at 10 readings a second")
+    c.page.locator("#hz-capture-panel summary").click()
+    c.page.wait_for_function("() => window.__warm.includes('stop')", timeout=4000)
+    c.page.locator("#hz-capture-panel summary").click()
+    c.page.wait_for_function("() => window.__warm.filter((x) => x === 'start').length === 2", timeout=4000)
+    tab(c, "tonight")
+    c.page.wait_for_function("() => window.__warm.filter((x) => x === 'stop').length === 2", timeout=5000)
+    c.page.wait_for_timeout(2500)
+    c.expect_eq(c.page.evaluate("() => window.__warm.filter((x) => x === 'start').length"), 2,
+                "and nothing starts it again once the editor is gone")
+    c.assert_clean()
+
+
+@check("web-horizon-capture-north-waits-for-compass", "web")
+def web_horizon_capture_north_waits_for_compass(c):
+    """A compass that has just started swings towards its heading for several
+    seconds (about 10 s on a Pixel 7a, where locking early set north 44 deg
+    off). North is set only once compass and gyroscope agree steadily, from
+    the settled value."""
+    boot(c)
+    open_editor(c)
+    c.page.evaluate(CAMERA_STUB)
+    cdp = c.page.context.new_cdp_session(c.page)
+    for kind in ("relative-orientation", "absolute-orientation"):
+        cdp.send("Emulation.setSensorOverrideEnabled", {"enabled": True, "type": kind})
+
+    def feed(compass_az: float, wait: int = 60):
+        cdp.send("Emulation.setSensorOverrideReadings", {"type": "relative-orientation",
+                 "reading": {"quaternion": device_quaternion(0, 5)}})
+        cdp.send("Emulation.setSensorOverrideReadings", {"type": "absolute-orientation",
+                 "reading": {"quaternion": device_quaternion(compass_az, 5)}})
+        c.page.wait_for_timeout(wait)
+
+    feed(74)
+    if not c.page.locator("#hz-capture-panel").evaluate("el => el.open"):
+        c.page.locator("#hz-capture-panel summary").click()
+    c.page.click("#hz-cap-start")
+    c.page.wait_for_selector(".cap", timeout=5000)
+    start = time.time()
+    while time.time() - start < 5:          # the compass swings from 74 to 30 deg
+        feed(74 - 44 * (time.time() - start) / 5)
+        c.expect(not c.page.locator("#cap-trace").is_enabled(), "north is not set while the compass still moves")
+    c.expect("settling" in c.page.inner_text("#cap-read"), f"the view says why: {c.page.inner_text('#cap-read')!r}")
+    c.page.click("#cap-north-btn")
+    diag = c.page.inner_text("#cap-compass-diag")
+    c.expect("readings a second" in diag and "settling" in diag, f"the north panel says what the compass does: {diag!r}")
+    c.page.click("#cap-ref-close")
+    for _ in range(120):                     # then holds steady
+        feed(30)
+        if c.page.locator("#cap-trace").is_enabled():
+            break
+    read = c.page.inner_text("#cap-read")
+    m = re.match(r"\s*([0-9.]+)°", read)
+    c.expect(m and abs(float(m.group(1)) - 30) <= 0.5, f"north comes from the settled compass, 30 deg: {read!r}")
+    c.page.keyboard.press("Escape")
+    c.assert_clean()
+
+
+@check("web-horizon-phone-capture", "web")
+def web_horizon_phone_capture(c):
+    """The camera capture turns the phone's orientation into skyline points:
+    north from the averaged compass, the shape from the gyroscope-based
+    relative sensor, a started and stopped trace, a single point and an overhang, each one
+    undo step; the video is shown and its tracks end on close. Chrome's
+    virtual sensors stand in for the phone and a canvas stream for the camera."""
+    boot(c)
+    open_editor(c)
+    c.page.evaluate(CAMERA_STUB)
+    cdp = c.page.context.new_cdp_session(c.page)
+    for kind in ("relative-orientation", "absolute-orientation"):
+        cdp.send("Emulation.setSensorOverrideEnabled", {"enabled": True, "type": kind})
+    north = 30   # the relative sensor's zero sits 30 deg west of true north
+
+    def aim(rel_az: float, alt: float, wait: int = 40):
+        cdp.send("Emulation.setSensorOverrideReadings", {"type": "relative-orientation",
+                 "reading": {"quaternion": device_quaternion(rel_az, alt)}})
+        cdp.send("Emulation.setSensorOverrideReadings", {"type": "absolute-orientation",
+                 "reading": {"quaternion": device_quaternion(rel_az + north, alt)}})
+        c.page.wait_for_timeout(wait)
+
+    aim(0, 5)
+    if not c.page.locator("#hz-capture-panel").evaluate("el => el.open"):
+        c.page.locator("#hz-capture-panel summary").click()
+    c.page.click("#hz-cap-start")
+    c.page.wait_for_selector(".cap", timeout=5000)
+    for _ in range(80):   # readings until the steady compass sets north (3 s window)
+        aim(0, 5, 80)
+        if c.page.locator("#cap-trace").is_enabled():
+            break
+    try:
+        # Chrome's virtual compass round-trips through Euler angles: 30 deg reads 29.95.
+        c.page.wait_for_function("""() => { const m = /^\\s*([0-9.]+)° NNE · alt\\s+5\\.0°/.exec(document.querySelector('#cap-read').textContent);
+                                       return !!m && Math.abs(Number(m[1]) - 30) <= 0.2; }""", timeout=5000)
+    except Exception as exc:
+        raise AssertionError(f"no capture reading: {c.page.inner_text('#cap-read')!r} / "
+                             f"{c.page.inner_text('#cap-status')!r}") from exc
+    c.expect("compass" in c.page.inner_text("#cap-north"), "the view says where north comes from")
+    c.expect(c.page.evaluate("() => document.querySelector('#cap-video').srcObject instanceof MediaStream"),
+             "the camera stream is shown")
+
+    c.expect_eq(c.page.inner_text("#cap-trace").strip(), "Start tracing", "one tap starts tracing")
+    c.page.click("#cap-trace")
+    c.expect_eq(c.page.get_attribute("#cap-trace", "aria-pressed"), "true", "tracing is announced")
+    for i in range(41):
+        aim(i, 5 + i / 8)
+    c.expect(c.page.inner_text("#cap-trace").startswith("Stop tracing"), "and another tap stops it")
+    c.page.click("#cap-trace")
+    c.page.wait_for_function("() => /Skyline traced/.test(document.querySelector('#cap-status').textContent)",
+                             timeout=5000)
+    pts = active_horizon(c)["points"]
+    c.expect(len(pts) >= 2 and abs(min(p["az"] for p in pts) - 30) < 0.6 and abs(max(p["az"] for p in pts) - 70) < 0.6,
+             f"the trace spans 30-70 deg, the relative sweep plus north: {pts}")
+    c.expect(all(abs(p["alt"] - (5 + (p["az"] - 30) / 8)) < 0.6 for p in pts), f"its altitudes follow the sweep: {pts}")
+
+    # The AR layer draws the recorded skyline over the video: aimed at the
+    # traced skyline (az 50, alt 7.5) the crosshair sits on its line; aimed
+    # well above it, nothing recorded is there.
+    ar_alpha = """() => { const cv = document.querySelector('#cap-ar'), x = cv.getContext('2d');
+      const d = x.getImageData(Math.round(cv.width / 2) - 6, Math.round(cv.height / 2) - 6, 13, 13).data;
+      let a = 0; for (let i = 3; i < d.length; i += 4) a = Math.max(a, d[i]); return a; }"""
+    aim(20, 7.5, 150)
+    c.expect(c.page.evaluate(ar_alpha) > 100, "the traced skyline is drawn under the crosshair")
+    aim(20, 40, 150)
+    c.expect_eq(c.page.evaluate(ar_alpha), 0, "nothing is drawn where nothing is recorded")
+
+    aim(100, 12)
+    c.page.click("#cap-point")
+    c.expect(any(abs(p["az"] - 130) < 0.6 and abs(p["alt"] - 12) < 0.6 for p in active_horizon(c)["points"]),
+             "Add point stores where the cross points")
+    aim(100, 12, 200)
+    dot = c.page.evaluate("""() => { const cv = document.querySelector('#cap-ar'), x = cv.getContext('2d');
+      const k = cv.width / cv.getBoundingClientRect().width;
+      return x.getImageData(Math.round(cv.width / 2), Math.round(cv.height / 2 - 3 * k), 1, 1).data[3]; }""")
+    c.expect(dot > 100, f"the recorded point is drawn as a dot, 3 px above its line too: alpha {dot}")
+
+    c.page.click("#cap-mode-overhang")
+    c.expect_eq(c.page.get_attribute("#cap-mode-overhang", "aria-pressed"), "true", "Overhang mode is announced")
+    aim(150, 45)                            # aim at the start of the edge first
+    c.page.focus("#cap-trace")
+    c.page.keyboard.press("Enter")          # the keyboard starts and stops it too
+    for i in range(21):
+        aim(150 + i, 45)
+    c.page.keyboard.press("Enter")
+    c.page.wait_for_function("() => /Overhang traced/.test(document.querySelector('#cap-status').textContent)",
+                             timeout=5000)
+    edges = active_horizon(c)["overhangs"]
+    c.expect(len(edges) == 1 and abs(edges[0][0]["az"] - 180) < 0.6 and abs(edges[0][-1]["az"] - 200) < 0.6,
+             f"the overhang edge spans 180-200 deg: {edges}")
+    c.page.click("#cap-undo")
+    c.expect_eq(active_horizon(c)["overhangs"], [], "the overhang is one undo step")
+
+    c.page.evaluate("() => { window.__capStream = document.querySelector('#cap-video').srcObject; }")
+    c.page.keyboard.press("Escape")
+    c.page.wait_for_selector(".cap", state="detached", timeout=5000)
+    c.expect(c.page.evaluate("() => window.__capStream.getTracks().every((t) => t.readyState === 'ended')"),
+             "closing the view stops the camera")
+    c.expect("Add point" not in c.page.inner_text("#hz-cap-status") and c.page.inner_text("#hz-cap-status").strip(),
+             "the editor shows the last capture message")
+    c.expect(c.page.evaluate("() => document.activeElement?.id") == "hz-cap-start", "focus returns to the capture button")
     c.assert_clean()
 
 
@@ -1912,80 +2322,32 @@ def web_interval_view_agreement(c):
     interval_view_agreement(c)
 
 
-# Photo restore must use the shipped CSP and real IndexedDB commit semantics.
 def horizon_module_url():
     return re.search(r"from '(\./horizon\.js\?v=\d+)'",
                      (ROOT / 'web/app.js').read_text(encoding='utf-8')).group(1)
 
 
-HORIZON_PHOTO_FIXTURE = """async ({url, color}) => {
-  const H = await import(url);
-  const canvas = document.createElement('canvas');
-  canvas.width = canvas.height = 4;
-  const ctx = canvas.getContext('2d');
-  ctx.fillStyle = color; ctx.fillRect(0, 0, 4, 4);
-  const image = canvas.toDataURL('image/png');
-  const snapshot = {activeId:'restore-photo',horizons:[{
-    id:'restore-photo',name:'Photo restore',points:[{az:90,alt:10}],
-    photo:{width:360,heading:180,tilt:0,roll:0},hasPhoto:true,image
-  }]};
-  return {image,snapshot};
-}"""
+HORIZON_RESTORE_FIXTURE = {'activeId': 'restored', 'horizons': [
+    {'id': 'restored', 'name': 'Restored', 'points': [{'az': 90, 'alt': 10}], 'overhangs': []}]}
 
 
-def restored_image(c, url):
-    return c.page.evaluate("""async url => {
-      const H=await import(url);const backup=await H.exportHorizonsWithPhotos();
-      return {image:backup.horizons[0]?.image,hasPhoto:backup.horizons[0]?.hasPhoto};
-    }""", url)
-
-
-@check('web-horizon-photo-restore-durable', 'web')
-def horizon_photo_restore_durable(c):
+@check("web-horizon-restore-durable", "web")
+def horizon_restore_durable(c):
+    """A horizon restore resolves only after its records are stored, survives
+    a reload, and a failed record write leaves the current horizons intact."""
     boot(c)
     url = horizon_module_url()
-    for color in ['#ff0000', '#0000ff']:
-        fixture = c.page.evaluate(HORIZON_PHOTO_FIXTURE, {'url': url, 'color': color})
-        committed = c.page.evaluate("""async ({url,snapshot}) =>
-          (await import(url)).applyHorizonsSnapshot(snapshot)""",
-          {'url': url, 'snapshot': fixture['snapshot']})
-        c.expect(committed, 'photo restore must wait for successful persistence')
-        c.expect_eq(restored_image(c, url)['image'], fixture['image'],
-                    'incoming photo bytes must win over an older photo with the same ID')
-        c.page.reload()
-        c.page.wait_for_selector(READY)
-        c.expect_eq(restored_image(c, url)['image'], fixture['image'],
-                    'the restored photo must survive reload under the shipped CSP')
-    c.assert_clean()
-
-
-@check('web-horizon-photo-restore-transaction-abort', 'web')
-def horizon_photo_restore_abort(c):
-    boot(c)
-    url = horizon_module_url()
-    fixture = c.page.evaluate(HORIZON_PHOTO_FIXTURE, {'url': url, 'color': '#ff0000'})
-    c.expect(c.page.evaluate("""async ({url,snapshot}) =>
-      (await import(url)).applyHorizonsSnapshot(snapshot)""",
-      {'url': url, 'snapshot': fixture['snapshot']}), 'initial photo must persist')
-    incoming = c.page.evaluate(HORIZON_PHOTO_FIXTURE, {'url': url, 'color': '#0000ff'})
-    result = c.page.evaluate("""async ({url,snapshot}) => {
-      const H=await import(url),before=localStorage.getItem('nightseam_horizons_v2');
-      const original=IDBObjectStore.prototype.put;
-      IDBObjectStore.prototype.put=function(...args){
-        const request=original.apply(this,args);
-        if(this.name==='photos')request.addEventListener('success',()=>this.transaction.abort(),{once:true});
-        return request;
-      };
-      let committed;
-      try {committed=await H.applyHorizonsSnapshot(snapshot);}
-      finally {IDBObjectStore.prototype.put=original;}
-      return {committed,unchanged:before===localStorage.getItem('nightseam_horizons_v2'),
-        memoryImage:(await H.exportHorizonsWithPhotos()).horizons[0]?.image};
-    }""", {'url': url, 'snapshot': incoming['snapshot']})
-    c.expect_eq(result['committed'], False, 'request success followed by abort must fail restore')
-    c.expect(result['unchanged'], 'a photo transaction abort must restore the horizon records')
-    c.expect_eq(result['memoryImage'], fixture['image'], 'an aborted restore must preserve live photos')
-    failed_records = c.page.evaluate("""async ({url,snapshot}) => {
+    committed = c.page.evaluate("""async ({url,snapshot}) => {
+      const H=await import(url);
+      return H.applyHorizonsSnapshot(H.normalizeHorizons(snapshot));
+    }""", {'url': url, 'snapshot': HORIZON_RESTORE_FIXTURE})
+    c.expect(committed, 'a restore reports successful persistence')
+    c.page.reload()
+    c.page.wait_for_selector(READY)
+    exported = c.page.evaluate('async url => (await import(url)).exportHorizons()', url)
+    c.expect_eq(exported, HORIZON_RESTORE_FIXTURE, 'the restored horizons survive a reload')
+    incoming = {'activeId': 'other', 'horizons': [{**HORIZON_RESTORE_FIXTURE['horizons'][0], 'id': 'other'}]}
+    failed = c.page.evaluate("""async ({url,snapshot}) => {
       const H=await import(url),before=localStorage.getItem('nightseam_horizons_v2');
       const original=Storage.prototype.setItem;
       Storage.prototype.setItem=function(key,value){
@@ -1993,52 +2355,14 @@ def horizon_photo_restore_abort(c):
         return original.call(this,key,value);
       };
       let committed;
-      try {committed=await H.applyHorizonsSnapshot(snapshot);}
+      try {committed=await H.applyHorizonsSnapshot(H.normalizeHorizons(snapshot));}
       finally {Storage.prototype.setItem=original;}
-      return {committed,unchanged:before===localStorage.getItem('nightseam_horizons_v2')};
-    }""", {'url': url, 'snapshot': incoming['snapshot']})
-    c.expect_eq(failed_records['committed'], False, 'a horizon record quota failure must abort restore')
-    c.expect(failed_records['unchanged'], 'a failed record write must leave horizon records intact')
-    c.page.reload()
-    c.page.wait_for_selector(READY)
-    c.expect_eq(restored_image(c, url)['image'], fixture['image'],
-                'an aborted restore must preserve the original cached photograph')
-    c.assert_clean()
-
-
-@check('web-horizon-backup-unreadable-photo', 'web')
-def horizon_backup_unreadable_photo(c):
-    boot(c)
-    url = horizon_module_url()
-    fixture = c.page.evaluate(HORIZON_PHOTO_FIXTURE, {'url': url, 'color': '#ff0000'})
-    c.expect(c.page.evaluate("""async ({url,snapshot}) =>
-      (await import(url)).applyHorizonsSnapshot(snapshot)""",
-      {'url': url, 'snapshot': fixture['snapshot']}), 'initial photo must persist')
-    c.page.reload()
-    c.page.wait_for_selector(READY)
-    result = c.page.evaluate("""async url => {
-      const H=await import(url),original=IDBObjectStore.prototype.get;
-      IDBObjectStore.prototype.get=function(...args){
-        const request=original.apply(this,args);
-        if(this.name==='photos')request.addEventListener('success',()=>this.transaction.abort(),{once:true});
-        return request;
-      };
-      let readRejected=false;
-      try {await H.exportHorizonsWithPhotos();}catch {readRejected=true;}
-      finally {IDBObjectStore.prototype.get=original;}
-      await new Promise((resolve,reject)=>{
-        const request=indexedDB.open('nightseam-horizon-photos',1);
-        request.onerror=()=>reject(request.error);
-        request.onsuccess=()=>{const db=request.result,tx=db.transaction('photos','readwrite');
-          tx.objectStore('photos').clear();tx.oncomplete=()=>{db.close();resolve();};
-          tx.onabort=()=>{db.close();reject(tx.error);};};
-      });
-      let missingRejected=false;
-      try {await H.exportHorizonsWithPhotos();}catch {missingRejected=true;}
-      return {readRejected,missingRejected};
-    }""", url)
-    c.expect(result['readRejected'], 'backup must reject an aborted photo read after request success')
-    c.expect(result['missingRejected'], 'backup must reject missing photo bytes instead of omitting them')
+      return {committed,unchanged:before===localStorage.getItem('nightseam_horizons_v2'),
+        live:H.exportHorizons()};
+    }""", {'url': url, 'snapshot': incoming})
+    c.expect_eq(failed['committed'], False, 'a horizon record quota failure fails the restore')
+    c.expect(failed['unchanged'], 'a failed record write leaves the stored horizons intact')
+    c.expect_eq(failed['live'], HORIZON_RESTORE_FIXTURE, 'and the live horizons too')
     c.assert_clean()
 
 
@@ -2087,7 +2411,7 @@ def horizon_editor_history_rollback(c):
     url = horizon_module_url()
     result = c.page.evaluate("""async url => {
       const H=await import(url),checkpoint=H.captureEditorHistory();
-      const safety=await H.exportHorizonsWithPhotos();
+      const safety=H.exportHorizons();
       if(!await H.applyHorizonsSnapshot({horizons:[],activeId:null}))throw new Error('forward snapshot failed');
       if(!await H.applyHorizonsSnapshot(H.normalizeHorizons(safety)))throw new Error('rollback snapshot failed');
       const restored=H.restoreEditorHistory(checkpoint);
