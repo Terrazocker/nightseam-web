@@ -31,6 +31,14 @@ version.json warnings) pass; browser web-landing-pages,
 web-landing-history-no-js, web-public-design-responsive and
 web-immutable-publication pass.
 
+CI on the pull request (run 39122557901): guards and pytest passed; the
+browser suite was 86/87. The phone overflow assertion in
+web-followup-smooth-scrub-and-horizon-scroll failed again (BROWSER-CI-002,
+now an open defect in BUGS.md) with planner code identical to a passing run.
+It passed 6/6 locally. The assertion now reports the elements past the
+viewport, checked against a page with a forced overflow, and passed 3/3
+locally after the change.
+
 ## Sun removed, calmer readout, points in the AR view — October 15, 2026 (branch horizon-sensor-plan)
 
 Owner: remove the Sun reference; the readout flashed and jumped between one

@@ -63,3 +63,11 @@ entry here when it is fixed and record the fix in RELEASES.md.
   web-followup-smooth-scrub-and-horizon-scroll and the file-chooser wait in
   web-phase4-responsive-planner. Not reproduced locally, with or without the
   Linux font substitution. If either fails again, treat it as a real defect.
+  **The overflow assertion failed again (2026-10-18, run 39122557901, pull
+  request #10), so it is now a real defect, cause unknown.** The planner
+  code was identical to a run that passed an hour earlier (39121001218). The
+  failure screenshot is 860 px wide although the visible layout is 360 px,
+  so something invisible reached about 500 px past the viewport after the
+  editor shrank from 1440 to 360 px. It passed 6/6 locally. The assertion
+  now names the non-fixed elements past the viewport and their widths, so
+  the next failure identifies the cause.
