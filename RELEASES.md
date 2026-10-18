@@ -5,6 +5,23 @@ Actual validation outcomes, newest first. Published releases: v0.1.1 (October 8,
 development awaiting the next release, 0.7.0. Upload success alone is never
 recorded as acceptance.
 
+## No pull-to-refresh while capturing; tracing hint — October 18, 2026 (branch horizon-edge-cases)
+
+During the Pixel session the planner tab reloaded once by itself, which
+throws away a capture in progress. Nothing stopped Chrome's pull-to-refresh
+under the full-screen capture view: while it is open, the root element now
+carries `cap-open` and `overscroll-behavior: none` (root and body), removed
+on close. The editor's *Phone capture* hint still said "turn while you hold
+Trace"; it now describes tap to start and stop, and that the Moon or a
+landmark gives a more exact north than the compass.
+
+Checks: web-horizon-phone-capture asserts `none` on root and body while the
+view is open and `auto` after it closes. pytest 359 passed, 1 skipped;
+check_js and check_js_tokens pass; browser web suite 88/88. On the Pixel
+(owner): repeated downward swipes on the camera image and both bars left
+the capture open, and the page kept the same load throughout (a marker set
+before the test was still there).
+
 ## Calibration routine for the overlay's scale — October 18, 2026 (branch horizon-edge-cases)
 
 The camera scale is no longer learned from motion. A routine measures it

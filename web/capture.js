@@ -457,6 +457,9 @@ export function openCapture({ horizon, onLine, onPoint, onUndo, canUndo, onClose
       </div>
     </div>`;
   document.body.appendChild(el);
+  // A downward swipe must not reach the page: Chrome's pull-to-refresh would
+  // reload it and lose a trace in progress.
+  document.documentElement.classList.add('cap-open');
   const $ = (id) => el.querySelector(id);
   const video = $('#cap-video'), strip = $('#cap-strip'), ar = $('#cap-ar');
   const status = (text) => { $('#cap-status').textContent = text; };
@@ -1263,6 +1266,7 @@ export function openCapture({ horizon, onLine, onPoint, onUndo, canUndo, onClose
     document.removeEventListener('visibilitychange', onVisibility);
     document.removeEventListener('keydown', onEscape);
     el.remove();
+    document.documentElement.classList.remove('cap-open');
     if (before && before.isConnected && typeof before.focus === 'function') before.focus();
     onClose(lastMessage);
   }

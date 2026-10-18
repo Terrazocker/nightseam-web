@@ -1197,6 +1197,8 @@ def web_horizon_phone_capture(c):
     c.expect("compass" in c.page.inner_text("#cap-north"), "the view says where north comes from")
     c.expect(c.page.evaluate("() => document.querySelector('#cap-video').srcObject instanceof MediaStream"),
              "the camera stream is shown")
+    c.expect_eq(c.page.evaluate("() => getComputedStyle(document.documentElement).overscrollBehaviorY + '/' + getComputedStyle(document.body).overscrollBehaviorY"), "none/none",
+                "no swipe reaches the page while capturing (pull-to-refresh would lose a trace)")
 
     c.page.evaluate("() => { window.__buzz = []; navigator.vibrate = (p) => { window.__buzz.push(p); return true; }; }")
     c.expect_eq(c.page.inner_text("#cap-trace").strip(), "Start tracing", "one tap starts tracing")
@@ -1274,6 +1276,7 @@ def web_horizon_phone_capture(c):
     c.page.wait_for_selector(".cap", state="detached", timeout=5000)
     c.expect(c.page.evaluate("() => window.__capStream.getTracks().every((t) => t.readyState === 'ended')"),
              "closing the view stops the camera")
+    c.expect_eq(c.page.evaluate("() => getComputedStyle(document.documentElement).overscrollBehaviorY + '/' + getComputedStyle(document.body).overscrollBehaviorY"), "auto/auto", "and the page scrolls as before")
     c.expect("Add point" not in c.page.inner_text("#hz-cap-status") and c.page.inner_text("#hz-cap-status").strip(),
              "the editor shows the last capture message")
     c.expect(c.page.evaluate("() => document.activeElement?.id") == "hz-cap-start", "focus returns to the capture button")

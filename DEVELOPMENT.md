@@ -213,7 +213,9 @@ editor", "Capture horizons with the phone's sensors"); plans:
   stopping a trace, adding a point and the too-fast hint with short,
   distinct patterns; the hint vibrates only the first time in a trace. Where the browser offers
   `DeviceOrientationEvent.requestPermission`, it is asked inside the tap and
-  nothing waits on it: a later grant restarts the compass.
+  nothing waits on it: a later grant restarts the compass. While the view is
+  open, `cap-open` on the root element sets `overscroll-behavior: none`, so a
+  downward swipe cannot trigger Chrome's pull-to-refresh and lose a trace.
 - **Share links.** *Share link* encodes the horizon (`encodeHorizonLink`:
   version byte, UTF-8 name, points and overhang edges in 0.01 deg as
   zigzag variable-length deltas, URL-safe base64; exact round trip, a

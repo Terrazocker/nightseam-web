@@ -856,6 +856,8 @@ input.night-scrub::-moz-range-thumb { width: 13px; height: 13px; border: 1px sol
 .ed-display > label { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 8px; color: var(--muted); }
 /* Phone capture (capture.js): a full-screen camera view with a crosshair.
    Panels above and below the video stay readable over any scene. */
+/* While the capture is open, no swipe scrolls or refreshes the page under it. */
+.cap-open, .cap-open body { overscroll-behavior: none; }
 .cap { position: fixed; inset: 0; z-index: 80; display: flex; flex-direction: column; justify-content: space-between; overflow: hidden; background: var(--bg); color: var(--txt); }
 .cap-video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
 .cap-no-video .cap-video { display: none; }

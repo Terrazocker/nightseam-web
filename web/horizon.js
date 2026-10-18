@@ -10,7 +10,7 @@
  * planner preferences.
  */
 import { vizTheme } from './viztheme.js?v=7';
-import { openCapture, captureAvailable, warmCompass } from './capture.js?v=29';
+import { openCapture, captureAvailable, warmCompass } from './capture.js?v=30';
 import { normalizeWebPrefs, WEB_PREF_DEFAULTS } from './webstore.js?v=83';
 import {
   NO_BLOCK, ALT_MIN, ALT_MAX, MAX_POINTS,
@@ -671,7 +671,7 @@ function editorHTML(h) {
       </details>
       <details class="hz-panel" id="hz-capture-panel">
         <summary>Phone capture</summary>
-        <p class="sub">On a phone or tablet: look through the camera, keep the cross on the skyline and turn while you hold Trace. The phone's motion sensors give the shape; north comes from its compass, which can be several degrees off near cars, railings and buildings.</p>
+        <p class="sub">On a phone or tablet: tap Start tracing, turn with the cross on the skyline, then tap Stop. The phone's motion sensors give the shape. North comes from its compass, which can be several degrees off near cars, railings and buildings; the Moon or a landmark is more exact.</p>
         <div class="btnrow">
           <button class="btn small primary" type="button" id="hz-cap-start">📱 Capture with the camera</button>
         </div>
