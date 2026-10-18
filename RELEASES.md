@@ -5,6 +5,36 @@ Actual validation outcomes, newest first. Published releases: v0.1.1 (October 8,
 development awaiting the next release, 0.7.0. Upload success alone is never
 recorded as acceptance.
 
+## File-chooser wait in the responsive planner check (BROWSER-CI-002) — October 18, 2026 (branch claude/angry-mayer-374852)
+
+web-phase4-responsive-planner timed out waiting for the file chooser after
+Enter on the Horizon import label at 360 px on Linux CI three times: runs
+38444781285 (passed on rerun), 38467786838 and 39129674772. Each failure
+took 32.8 s against about 9 s for a pass, so it stalled at the first
+chooser. The failure screenshots show the label still focused.
+
+Cause: the test, not the planner. `expect_file_chooser()` turns on
+Playwright's chooser interception with a message it does not wait for, and
+Chrome handles that message in the renderer behind queued page work. The
+Enter key reaches the page on the higher-priority input queue. On a busy
+page the keydown can be handled first: the label's handler runs
+`input.click()` with user activation, Chrome opens its own dialog (headless
+cancels it), and Playwright never sees a chooser. Reproduced locally with a
+probe that keeps the main thread busy for about 1.6 s before the press:
+30/30 Enter presses missed the chooser, each with the input clicked and then
+cancelled. With a `filechooser` listener registered beforehand, 0/30 missed.
+
+Fix: the check registers a `filechooser` listener right after boot, so
+interception is on long before the press. `expect_file_chooser()` and the
+Enter press are unchanged, so the check still needs a real chooser from the
+keyboard. With the same busy page added before the press as a scratch edit
+(not committed), the check passed 3/3 with the listener and failed 2/3
+without it, with the CI error. Planner code is unchanged, so there was no
+cache-token bump. DEVELOPMENT.md records the rule for file-chooser checks.
+
+Local validation: the unmodified check passed 15/15 before the fix; pytest
+358 passed, 1 skipped; browser web suite 87/87. Not yet confirmed on Linux CI.
+
 ## Horizon canvas overflow after a narrowing resize (BROWSER-CI-002) — October 18, 2026 (branch horizon-edge-cases)
 
 CI on pull request #11 (run 39125847030) failed the phone overflow

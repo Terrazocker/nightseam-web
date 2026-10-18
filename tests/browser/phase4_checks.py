@@ -595,6 +595,13 @@ def first_visit(c):
 @check('web-phase4-responsive-planner', 'web')
 def responsive_planner(c):
     boot(c)
+    # Arm file-chooser interception long before the Enter press below.
+    # expect_file_chooser() alone turns it on with a fire-and-forget message
+    # that Chrome handles in the renderer behind queued page work, while the
+    # key press takes the higher-priority input queue. On a busy CI runner the
+    # keydown could win: Chrome opened (and headless cancelled) its own dialog
+    # and the wait timed out with the label still focused (BROWSER-CI-002).
+    c.page.on('filechooser', lambda chooser: None)
     screenshots = ROOT / 'logs' / 'phase4' / 'screenshots'
     screenshots.mkdir(parents=True, exist_ok=True)
     for width in (360, 640, 900, 1240):

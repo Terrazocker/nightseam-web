@@ -58,9 +58,3 @@ entry here when it is fixed and record the fix in RELEASES.md.
 - **BROWSER-LOCAL-001.** The local test server's connection queue was raised
   from 5 to 64 after refused module loads; failures are recorded with server
   thread health and failed URLs, never retried or skipped.
-- **BROWSER-CI-002.** The file-chooser wait in
-  web-phase4-responsive-planner failed once at 360 px on Linux CI (run
-  38444781285) and passed on rerun. Not reproduced locally, with or without
-  the Linux font substitution. If it fails again, treat it as a real defect.
-  (The phone overflow failure reported with it was a real defect, found and
-  fixed on 2026-10-18; see RELEASES.md.)
