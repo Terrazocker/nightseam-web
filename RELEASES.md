@@ -5,6 +5,26 @@ Actual validation outcomes, newest first. Published releases: v0.1.1 (October 8,
 development awaiting the next release, 0.7.0. Upload success alone is never
 recorded as acceptance.
 
+## Capture calibration: capture-timed frames, readout and reset — October 18, 2026 (branch horizon-edge-cases)
+
+Reviewed the phone capture's camera calibration. The motion worker timed
+each frame pair by when the frames reached it, so a short gap in delivery
+read as fast motion: in a scratch simulation 5 ms of delivery jitter made
+the scale 4-10% too large while still passing the 0.85 correlation gate.
+Pairs now last as long as the camera's capture timestamps say
+(`captureGap`), ending when the later frame arrived, so stored delays stay
+comparable. The north panel now ends with a camera line (delay, the long
+side's field of view from sideways and from up-down motion, measured or
+starting values) and *Reset camera calibration*, below *Compass again /
+Close* so those stay in view at 375 x 812.
+
+New checks: horizon_model.mjs times frames with ±6 ms arrival jitter (scale
+within 3% by capture time, 0.1% here; 1.7% off by arrival time) and pins
+`captureGap`'s fallbacks; web-horizon-capture-shows-what-the-camera-saw
+reads the camera line and resets it. Not checked on a phone. pytest 358
+passed, 1 skipped; check_js and check_js_tokens pass; browser web suite
+87/87.
+
 ## Horizon canvas overflow after a narrowing resize (BROWSER-CI-002) — October 18, 2026 (branch horizon-edge-cases)
 
 CI on pull request #11 (run 39125847030) failed the phone overflow

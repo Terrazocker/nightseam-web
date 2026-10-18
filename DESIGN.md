@@ -147,7 +147,10 @@ The local exposure catalog has its own design document in Nightseam-catalog.
       when, how far the compass was off, and while the compass settles, that
       the phone should be held still; a monospace status line underneath says
       what the compass itself is doing (readings a second, settling,
-      restarts), so a user can report why north is missing.
+      restarts), so a user can report why north is missing. Below *Compass
+      again / Close*, a second monospace line says what the overlay assumes
+      about the camera (delay, field of view, measured or starting values),
+      with *Reset camera calibration* under it.
     - The view opens with focus on *Start tracing*, or on *Done* while
       tracing is not possible yet; Escape and *Done* close it and return
       focus to the button.

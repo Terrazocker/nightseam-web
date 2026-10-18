@@ -45,8 +45,12 @@ entry here when it is fixed and record the fix in RELEASES.md.
 - **AR overlay lag (owner, Pixel 7a, 2026-10-15): fix awaiting the owner's
   check.** Measured: the camera image trails the gyroscope by about 210 ms and
   is scaled differently per axis. The capture now aims with the orientation
-  the image shows and calibrates delay and scale per device; remove this
-  entry once the owner confirms it on the phone.
+  the image shows and calibrates delay and scale per device, timing frame
+  pairs by the camera's capture timestamps (October 18). The north panel
+  shows the values in use; the Pixel's starting values give the long side
+  60 deg from sideways motion but 67 deg from up-down motion, where one
+  camera should give one angle, so check that line after panning. Remove
+  this entry once the owner confirms it on the phone.
 - **Near-tangent twilight.** When the Sun turns within about 0.01 deg of a
   twilight level, the Sun model and the published tables can disagree on
   whether a spell of a few minutes happens at all (Tromso 2026-09-16: USNO

@@ -747,6 +747,21 @@ def web_horizon_capture_shows_what_the_camera_saw(c):
     m = re.match(r"\s*([0-9.]+)°", read)
     c.expect(m and abs(float(m.group(1)) - 70) <= 0.6, f"after the delay the readout shows B at 70 deg: {read!r}")
     c.page.wait_for_selector(".cap[data-motion='on']", timeout=8000)
+
+    # The north panel says what the overlay assumes about the camera, and
+    # Reset camera calibration forgets this device's values.
+    c.page.click("#cap-north-btn")
+    diag = c.page.inner_text("#cap-camera-diag")
+    c.expect("300 ms behind" in diag and "starting values" in diag,
+             f"the panel shows the stored delay and that it is not measured yet: {diag!r}")
+    c.page.click("#cap-cal-reset")
+    diag = c.page.inner_text("#cap-camera-diag")
+    c.expect("210 ms behind" in diag and "long side 60° (sideways), 67° (up-down)" in diag,
+             f"reset goes back to the starting values: {diag!r}")
+    c.expect("reset to the starting values" in c.page.inner_text("#cap-status"), "the status says so")
+    c.expect_eq(c.page.evaluate("() => localStorage.getItem('nightseam_capture_cal_v1')"), None,
+                "the stored calibration is forgotten")
+    c.expect(c.page.locator("#cap-ref").is_visible(), "the panel stays open to show the new values")
     c.page.keyboard.press("Escape")
     c.page.wait_for_selector(".cap", state="detached", timeout=5000)
     c.assert_clean()

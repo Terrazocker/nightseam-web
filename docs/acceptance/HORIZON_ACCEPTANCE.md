@@ -41,7 +41,12 @@ planner, so the first check really is a first open.
 7. **AR overlay.** Hold still with the recorded skyline in view. Target: it
    lies on the real skyline at the crosshair and still lies on it near the
    screen edges. Pan slowly and quickly. Note whether the lines trail behind
-   the image while moving and catch up when you stop.
+   the image while moving and catch up when you stop. Then open *North…*
+   and note the camera line at the bottom (scroll the panel): after half a
+   minute of slow panning and tilting it should say *measured on this
+   phone*, and its two angles (sideways, up-down) should agree within a few
+   degrees. If the overlay is off, *Reset camera calibration*, pan again and
+   note both lines.
 8. **Share to a desktop.** *Share link*, send it to yourself, open it on the
    desktop, *Add horizon*. Target: the same points and overhangs as on the
    phone; the desktop address bar ends in `#horizon`, without the code.

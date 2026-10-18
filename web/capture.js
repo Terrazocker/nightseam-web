@@ -9,7 +9,7 @@
  * editor, which owns the horizon record, its history and saving.
  */
 import { vizTheme } from './viztheme.js?v=7';
-import { MOTION_WORKER_URL } from './capturemotion.js?v=1';
+import { MOTION_WORKER_URL } from './capturemotion.js?v=2';
 import {
   wrapAz, azDelta, quaternionPointing, orientationQuaternion, cameraProject, circularMean,
   sweepLine, normalizePoints, closeLoop, moonDirection, referenceUsable,
@@ -320,7 +320,8 @@ function askMotionPermission(onAnswer) {
  *   site()              the observing site { lat, lon, label } or null, for
  *                       the Moon reference and the distance check
  *   calibration         this device's stored { delayMs, kx, ky } or null
- *   onCalibrated(cal)   store an improved calibration for this device
+ *   onCalibrated(cal)   store an improved calibration for this device;
+ *                       null forgets it (Reset camera calibration)
  * Returns { close }.
  */
 export function openCapture({ horizon, onLine, onPoint, onUndo, canUndo, onClose, site = () => null,
@@ -371,6 +372,10 @@ export function openCapture({ horizon, onLine, onPoint, onUndo, canUndo, onClose
           <button class="btn" type="button" id="cap-ref-compass">Compass again</button>
           <button class="btn" type="button" id="cap-ref-close">Close</button>
         </div>
+        <p class="cap-small mono" id="cap-camera-diag"></p>
+        <div class="cap-row cap-pair">
+          <button class="btn" type="button" id="cap-cal-reset">Reset camera calibration</button>
+        </div>
       </div>
       <canvas class="cap-strip" id="cap-strip" aria-hidden="true"></canvas>
       <div class="cap-main">
@@ -405,6 +410,7 @@ export function openCapture({ horizon, onLine, onPoint, onUndo, canUndo, onClose
   let lastMessage = '';
   let motion = null;         // { worker, track, frames, size }: the camera-motion worker
   let calTimer = null;
+  let calUpdatedAt = null;   // when this capture last improved the calibration
   const lastRead = { at: 0, dir: false };
   const started = now();
   // What the screen shows is the camera image, which trails the gyroscope:
@@ -456,6 +462,7 @@ export function openCapture({ horizon, onLine, onPoint, onUndo, canUndo, onClose
     $('#cap-north').textContent = northShort(st);
     $('#cap-north-detail').textContent = northText(st);
     $('#cap-compass-diag').textContent = compassDiag(st);
+    $('#cap-camera-diag').textContent = cameraDiag();
     const ready = !!p, busy = !!trace || !!pending;
     $('#cap-trace').disabled = (!ready && !trace) || !!pending;
     $('#cap-point').disabled = !ready || mode !== 'skyline' || busy;
@@ -495,6 +502,27 @@ export function openCapture({ horizon, onLine, onPoint, onUndo, canUndo, onClose
     } else if (st.source) text += ', not used (north from a reference)';
     else text += ', north set';
     if (st.compassStarts > 1) text += `; restarted ${st.compassStarts - 1} time${st.compassStarts === 2 ? '' : 's'}`;
+    return `${text}.`;
+  }
+
+  /** What the overlay assumes about this camera and where that comes from,
+   *  for the north panel: the delay, and the field of view across the
+   *  video's long side as the sideways and the up-down motion measure it
+   *  (one camera, so the two should agree). */
+  function cameraDiag() {
+    const fov = (k) => Math.round(2 * Math.atan(1 / (2 * k)) * 180 / Math.PI);
+    let text = `Camera: ${Math.round(cal.delayMs)} ms behind the sensors; long side ${fov(cal.kx)}° (sideways), ${fov(cal.ky)}° (up-down)`;
+    if (cal.measured) {
+      text += calUpdatedAt ? `; measured on this phone, updated ${clock(calUpdatedAt)}` : '; measured on this phone';
+    } else if (motion) {
+      const upright = ((typeof screen !== 'undefined' && screen.orientation && screen.orientation.angle) || 0) === 0;
+      text += upright ? '; starting values: pan slowly side to side and tilt up and down to measure'
+        : '; starting values: measured only while the phone is upright';
+    } else if (!stream) {
+      text += el.classList.contains('cap-no-video') ? '; starting values (no camera image)' : '; starting values';
+    } else {
+      text += '; starting values (this browser cannot measure the camera)';
+    }
     return `${text}.`;
   }
 
@@ -851,6 +879,15 @@ export function openCapture({ horizon, onLine, onPoint, onUndo, canUndo, onClose
     useReference({ az, alt: seen ? seen.alt : 0 }, { kind: 'landmark', label: `a landmark at ${fmt(az)}°` });
   });
   $('#cap-ref-close').addEventListener('click', closeReferences);
+  $('#cap-cal-reset').addEventListener('click', () => {
+    Object.assign(cal, { delayMs: DEFAULT_DELAY_MS, kx: DEFAULT_KX, ky: DEFAULT_KY, measured: false });
+    calUpdatedAt = null;
+    delete el.dataset.calibrated;
+    onCalibrated(null);
+    status(motion ? 'Camera calibration reset to the starting values. Pan the phone slowly to measure it again.'
+      : 'Camera calibration reset to the starting values.');
+    render();
+  });
   $('#cap-ref-compass').addEventListener('click', () => {
     sensors.rereadNorth();
     status('Hold still for a moment while the compass is read again.');
@@ -1010,6 +1047,7 @@ export function openCapture({ horizon, onLine, onPoint, onUndo, canUndo, onClose
     if (delays.length) { cal.delayMs = blend(cal.delayMs, delays.reduce((a, b) => a + b, 0) / delays.length); changed = true; }
     if (changed) {
       cal.measured = true;
+      calUpdatedAt = new Date();
       el.dataset.calibrated = 'yes';
       onCalibrated({ delayMs: Math.round(cal.delayMs), kx: +cal.kx.toFixed(4), ky: +cal.ky.toFixed(4), measured: true });
     }

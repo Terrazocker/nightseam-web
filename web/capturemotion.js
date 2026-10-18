@@ -17,6 +17,7 @@ export const MOTION_WORKER_URL = import.meta.url;
 
 const W = 108;          // analysis width; the height follows the frame's shape
 const MAX_SHIFT = 30;   // pixels between two analysed frames
+const MAX_GAP_MS = 1000; // capture timestamps further apart than this are not trusted
 
 /** Normalized cross-correlation of profile b shifted by k against a. */
 function score(a, b, k) {
@@ -27,6 +28,16 @@ function score(a, b, k) {
   let sab = 0, saa = 0, sbb = 0;
   for (let i = lo; i < hi; i++) { const x = a[i] - ma, y = b[i + k] - mb; sab += x * y; saa += x * x; sbb += y * y; }
   return sab / Math.sqrt(saa * sbb || 1);
+}
+
+/** Milliseconds between two frames for their motion: from the camera's own
+ *  capture timestamps (microseconds), since frames reach the worker unevenly
+ *  and a short gap in arrival would read as fast motion. Falls back to the
+ *  arrival gap where the timestamps give no plausible gap (missing, not
+ *  increasing, or a second or more). */
+export function captureGap(prevStamp, stamp, arrivedMs) {
+  const gap = (stamp - prevStamp) / 1000;
+  return Number.isFinite(gap) && gap > 0 && gap < MAX_GAP_MS ? gap : arrivedMs;
 }
 
 /** The shift (sub-pixel) that best lines profile b up with a, and how well. */
@@ -42,11 +53,12 @@ function shift(a, b) {
 
 async function run(readable) {
   const reader = readable.getReader();
-  let ctx = null, h = 0, prevCols = null, prevRows = null, prevT = 0;
+  let ctx = null, h = 0, prevCols = null, prevRows = null, prevAt = 0, prevStamp = NaN;
   for (;;) {
     const { value: frame, done } = await reader.read();
     if (done) return;
     const t = performance.timeOrigin + performance.now();
+    const stamp = frame.timestamp;   // capture time, microseconds
     try {
       if (!ctx) {
         h = Math.max(2, Math.round(W * frame.displayHeight / frame.displayWidth));
@@ -68,11 +80,15 @@ async function run(readable) {
     }
     if (prevCols) {
       const [dx, sx] = shift(prevCols, cols), [dy, sy] = shift(prevRows, rows);
+      // The pair ends when this frame arrived and lasts as long as the camera
+      // took between the two captures.
+      const prevT = t - captureGap(prevStamp, stamp, t - prevAt);
       postMessage({ f: [prevT, t, dx, sx, dy, sy] });
     }
     prevCols = cols;
     prevRows = rows;
-    prevT = t;
+    prevAt = t;
+    prevStamp = stamp;
   }
 }
 

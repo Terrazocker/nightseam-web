@@ -157,13 +157,23 @@ editor", "Capture horizons with the phone's sensors"); plans:
   camera's focal length per axis (`kx`, `ky`, as fractions of the video's long
   side). `capturemotion.js` runs as a module worker
   (`MediaStreamTrackProcessor`): it shrinks each frame to 108 px wide in
-  memory, closes it, and reports only how far the picture moved; every 2 s
+  memory, closes it, and reports only how far the picture moved. Each pair
+  of frames ends when the later frame reached the worker and lasts as long as
+  the camera's capture timestamps say (`captureGap`; the arrival gap only
+  where a frame has no plausible timestamp): frames arrive unevenly, and a
+  short arrival gap read as fast motion inflated the scale. Every 2 s
   `matchMotion` compares that with the gyroscope's rate over the last 8 s
   and, where they agree (correlation 0.85 or better, upright phone), updates
   the delay and scale. They are kept per device in localStorage
   `nightseam_capture_cal_v1` (not in backups); the Pixel 7a's measurement
   (210 ms, 0.864, 0.752) is the starting value. Browsers without the frame
-  API keep the stored or starting values.
+  API keep the stored or starting values. The north panel ends with a
+  monospace camera line (the delay, the long side's field of view from the
+  sideways and the up-down motion, which should agree, and whether the values
+  are measured on this phone or the starting ones) and *Reset camera
+  calibration*, which returns to the starting values and forgets the stored
+  ones; both sit below *Compass again / Close*, so the north controls do not
+  move.
 - **Sharper motion.** Browsers expose no stabilisation (OIS/EIS) control;
   the Pixel 7a's camera offers manual exposure and ISO. Where a camera allows
   manual exposure, a *Sharper motion* toggle sets 1/60 s and raises the ISO
