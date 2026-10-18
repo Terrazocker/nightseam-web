@@ -302,4 +302,4 @@ separate review. See [RELEASE_WORKFLOW.md](RELEASE_WORKFLOW.md) and
   and Chrome then opens its own dialog instead (BROWSER-CI-002).
 - **CI** (`.github/workflows/checks.yml`) runs the guards and pytest on
   Windows and the browser suite on Linux, for every pull request and every
-  push to `master`.
+  push to `main`.

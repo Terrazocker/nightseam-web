@@ -48,7 +48,7 @@ archive is read-only.
 
 Text files are UTF-8 without BOM. Scratch output goes under ignored `logs/`
 (disposable probes through `scripts/scratchspace.py`), never into a user
-profile or the repository root. Commits go on a branch, not on `master`.
+profile or the repository root. Commits go on a branch, not on `main`.
 
 ## Commands
 
@@ -64,7 +64,7 @@ python web/build_web.py version                # bake web/version.json
 
 CI (`.github/workflows/checks.yml`) runs the guards and pytest on Windows and
 the browser suite on Linux, for every pull request and every push to
-`master`; keep it aligned with these commands. A branch without a pull
+`main`; keep it aligned with these commands. A branch without a pull
 request gets no CI run unless started by hand (workflow_dispatch).
 Run pytest and the browser suite one after the other, not in parallel: some
 guard tests temporarily replace shipped files. ENVIRONMENT.md covers this

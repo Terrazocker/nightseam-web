@@ -1,5 +1,5 @@
 # Release gates from README.md/AGENTS.md for every pull request and every push
-# to master (a branch with an open pull request runs once, as the pull
+# to main (a branch with an open pull request runs once, as the pull
 # request). Source guards and pytest run on Windows like the development
 # environment (CRLF checkout); the browser suite runs on Linux, because
 # GitHub's Windows runners intermittently failed single local requests with
@@ -10,7 +10,7 @@ name: checks
 
 on:
   push:
-    branches: [master]
+    branches: [main]
   pull_request:
   workflow_dispatch:
 
