@@ -150,7 +150,17 @@ The local exposure catalog has its own design document in Nightseam-catalog.
       what the compass itself is doing (readings a second, settling,
       restarts), so a user can report why north is missing; a second one on
       what the overlay assumes about the camera (delay, field of view,
-      measured or starting values); and *Reset camera calibration*.
+      measured or starting values); *Line up the drawing*; and *Reset
+      camera values*.
+    - The calibration routine (*Line up the drawing*) takes the place of the
+      controls like the other panels: one numbered instruction (*Step 1 of
+      3: …*) in plain words (a pole or roof corner, the amber line) and a
+      pair of buttons (*Start* or *It's on the line* first, then *Not now*,
+      *Cancel* or *Skip*). Its
+      guide line is drawn over the video in the warning colour with a dark
+      outline, left of the cross and then above it. It is offered once, when
+      a phone's first capture shows a camera image, and never blocks
+      tracing for more than one tap.
     - Messages are short: one line where possible, the fact first, then
       what to do (*Compass settling (moved 2.1°): hold still.*). Detail that
       only helps a report goes behind *Details*, not into the status line.
@@ -159,7 +169,8 @@ The local exposure catalog has its own design document in Nightseam-catalog.
       (38°/s): turn slower.*; below 20 deg/s it returns to the tracing
       message. Where the browser can vibrate, starting and stopping a trace,
       adding a point and the too-fast hint each give a short, distinct
-      vibration, so the eyes can stay on the crosshair.
+      vibration, so the eyes can stay on the crosshair; the hint vibrates
+      only the first time in a trace.
     - The view opens with focus on *Start tracing*, or on *Done* while
       tracing is not possible yet; Escape and *Done* close it and return
       focus to the button.

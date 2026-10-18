@@ -154,8 +154,8 @@ editor", "Capture horizons with the phone's sensors"); plans:
   readout is one fixed-width line (`fmtDir`, one decimal: `152.0° SSE · alt
   -12.3°`) and changes at most every 120 ms. The overlay draws the recorded
   points as dots on their lines. The overlay's scale is this
-  camera's focal length per axis (`kx`, `ky`, as fractions of the video's long
-  side). `capturemotion.js` runs as a module worker
+  camera's focal length as a fraction of the video's long side (`k`), one
+  value for both axes (one lens, square pixels). `capturemotion.js` runs as a module worker
   (`MediaStreamTrackProcessor`): it shrinks each frame to 108 px wide in
   memory, closes it, and reports only how far the picture moved. Each pair
   of frames ends when the later frame reached the worker and lasts as long as
@@ -164,15 +164,32 @@ editor", "Capture horizons with the phone's sensors"); plans:
   short arrival gap read as fast motion inflated the scale. Every 2 s
   `matchMotion` compares that with the gyroscope's rate over the last 8 s
   and, where they agree (correlation 0.85 or better, upright phone), updates
-  the delay and scale. They are kept per device in localStorage
-  `nightseam_capture_cal_v1` (not in backups); the Pixel 7a's measurement
-  (210 ms, 0.864, 0.752) is the starting value. Browsers without the frame
-  API keep the stored or starting values. The north panel's *Details*
-  also hold a monospace camera line (the delay, the long side's field of view
-  from the sideways and the up-down motion, which should agree, and whether
-  the values are measured on this phone or the starting ones) and *Reset
-  camera calibration*, which returns to the starting values and forgets the
-  stored ones.
+  the delay (blended 0.6 old, 0.4 new). The scale is not learned from
+  motion: on a Pixel 7a the scale read from motion grew with turning speed
+  (0.87 slow, 1.05 at 30-60 deg/s; slow pans alone settled at 0.97) while a
+  still test put it at about 0.88.
+- **Calibration routine.** The scale is measured still, once per phone. The
+  first capture with a camera image offers it in the bottom panel (*Start* /
+  *Not now*); *North… › Details › Line up the drawing* starts it again.
+  *Start* keeps the orientation with the cross on a sharp feature; a guide
+  line is then drawn 36% of the view's width left of the cross, the user
+  turns until the feature sits on it and taps *It's on the line*; then a line
+  above the cross (75% of the room below the top bar, at most the same
+  distance) for tilting down. `guideScale` projects the marked direction
+  into the second orientation (`cameraProject`) and divides the guide's
+  offset by it; the phone must turn slower than 5 deg/s at each tap, upright
+  in portrait. Both steps agreeing within 8% keep their mean, else the
+  sideways one; the up-down step is skipped where there is no room or on
+  *Skip*. Results and *Not now* (`asked`) are kept per device in
+  localStorage `nightseam_capture_cal_v2` (`delayMs`, `k`, `measured`,
+  `scaleMeasured`, `asked`; not in backups); the per-axis version 1, learned
+  from any motion, is dropped on load. The starting values are the Pixel's:
+  210 ms and 0.88 (59 deg across the long side). Browsers without the frame
+  API keep the stored or starting delay. The north panel's *Details* also
+  hold a monospace camera line (the delay and the long side's field of
+  view, each measured, calibrated or the starting value) and *Reset camera
+  values*, which returns to the starting values, forgets the stored ones and
+  offers the routine again next time.
 - **Sharper motion.** Browsers expose no stabilisation (OIS/EIS) control;
   the Pixel 7a's camera offers manual exposure and ISO. Where a camera allows
   manual exposure, a *Sharper motion* toggle sets 1/60 s and raises the ISO
@@ -194,7 +211,7 @@ editor", "Capture horizons with the phone's sensors"); plans:
   slow down (status line and crosshair in the warning colour) until it falls
   below 20 deg/s. `navigator.vibrate`, where it exists, marks starting and
   stopping a trace, adding a point and the too-fast hint with short,
-  distinct patterns. Where the browser offers
+  distinct patterns; the hint vibrates only the first time in a trace. Where the browser offers
   `DeviceOrientationEvent.requestPermission`, it is asked inside the tap and
   nothing waits on it: a later grant restarts the compass.
 - **Share links.** *Share link* encodes the horizon (`encodeHorizonLink`:
@@ -228,7 +245,7 @@ editor", "Capture horizons with the phone's sensors"); plans:
 |---|---|
 | localStorage `nightseam_prefs_v1` | Preferences |
 | localStorage `nightseam_horizons_v2` | Horizon records (without profiles) |
-| localStorage `nightseam_capture_cal_v1` | This device's camera delay and scale for the capture overlay (not backed up) |
+| localStorage `nightseam_capture_cal_v2` | This device's camera delay and scale for the capture overlay (not backed up) |
 | localStorage `nightseam_site_v1`, `nightseam_theme` | Legacy site record, theme |
 | IndexedDB `nightseam-db-v1` | Sites, rigs, custom targets, safety snapshot |
 | IndexedDB `nightseam-images` | Wikipedia thumbnail cache, at most 25 MiB: least recently viewed photos are removed first; a full disk trims it to a quarter and retries once |

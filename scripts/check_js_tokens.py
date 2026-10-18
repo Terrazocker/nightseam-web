@@ -98,16 +98,16 @@ _VERIFIED_BASELINE_JSON = r"""
    "token": "5"
   },
   "app.js": {
-   "sha256": "fdb548764e5174d3a624eab53954b1c03d1daca76a8d685f29d2fe7dc1b2b3d2",
-   "token": "253"
+   "sha256": "86ad0683018f4a47ae098a6bf6cf541ac1fa276e59a38d2e102cf09cad1f2f22",
+   "token": "257"
   },
   "astro.js": {
    "sha256": "1eeffbd1ec6e217a248893d9d37cf87a7695e7722217d8c9ddf3cbc3db17397c",
    "token": "68"
   },
   "capture.js": {
-   "sha256": "25e9bae12a59949853aa916b5a0beb7ec0553ee3aafb693e4407a221d1d40ee0",
-   "token": "25"
+   "sha256": "c77e15f9beb7d2461575f41c263a61c6b63a4e2c2018f5c4c269085e558dfe48",
+   "token": "29"
   },
   "capturemotion.js": {
    "sha256": "bdfa835cc6cb573efcedf141f1ec06885a44d9939700e20531048de544089b26",
@@ -122,8 +122,8 @@ _VERIFIED_BASELINE_JSON = r"""
    "token": "74"
   },
   "horizon.js": {
-   "sha256": "679f3c7ed77237fe850303a38981ea027a8993c27bb01a058609f90ce67e0cd4",
-   "token": "158"
+   "sha256": "29668a08da8510f3ed26a28d9b9aa43ef6475e62f4ae985879b1ebba846ad935",
+   "token": "162"
   },
   "imagecredits.js": {
    "sha256": "8c8b650a0ad6ef6462eea251b67642103cb0eb9010c1f9dde09fce2ba7fa8952",

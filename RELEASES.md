@@ -5,6 +5,75 @@ Actual validation outcomes, newest first. Published releases: v0.1.1 (October 8,
 development awaiting the next release, 0.7.0. Upload success alone is never
 recorded as acceptance.
 
+## Calibration routine for the overlay's scale — October 18, 2026 (branch horizon-edge-cases)
+
+The camera scale is no longer learned from motion. A routine measures it
+still, once per phone: offered when the first capture shows a camera image
+(*Start* / *Not now*) and under *North… › Details › Line up the drawing*.
+Aim at a sharp feature, turn right until it sits on a guide line left of
+the cross, then tilt down until it sits on a line above; `guideScale` turns the
+measured rotation and the line's offset into the scale. Both steps within
+8% keep their mean, else the sideways one. `asked` remembers *Not now*.
+The delay is still learned from motion.
+
+Checks: capture_calibration.mjs now tests `guideScale` (exact on synthetic
+quaternions; refuses the wrong direction, a turn of about 1 deg and
+implausible scales); new web-horizon-capture-calibration-routine walks the
+offer, a refused wrong-side tap, both steps to a stored 0.80, no second
+offer, and *Not now* remembered. Layout checked at 375 x 812 in the preview
+(panel below the crosshair). pytest 359 passed, 1 skipped; check_js and
+check_js_tokens pass; browser web suite 88/88. On the Pixel (owner): it
+works and measured 58 deg (k 0.902), against 0.88-0.90 from the still A/B
+test; the owner found the first wording odd, so the steps now read *Step 1
+of 3* with *Start*, *It's on the line* and *Line up the drawing*.
+
+## Camera scale from slow pans only; one vibration per too-fast trace — October 18, 2026 (branch horizon-edge-cases)
+
+After the Pixel session: the capture uses one camera scale for both axes,
+starting at the still-measured 0.88, learned only from sideways windows
+panned at 15 deg/s or slower on average, as the median of the last nine
+(once there are three). The delay is still learned from every good window.
+Storage moved to `nightseam_capture_cal_v2`; the per-axis version 1, learned
+from any motion, is dropped on load. The too-fast hint vibrates once per
+trace; colour and words still show each time.
+
+Checks: new capture_calibration.mjs (`windowScale` refuses fast, weak or
+implausible windows; `learnedScale` medians the last nine, needs three);
+horizon_ui.mjs drops the version 1 key; web-horizon-phone-capture traces
+two too-fast bursts and expects one vibration; the camera-line check reads
+59 deg after a reset. pytest 359 passed, 1 skipped; check_js and
+check_js_tokens pass; browser web suite 87/87. On the Pixel the slow-pan
+learning settled at 0.97 (55 deg) and the owner saw a point's dot land
+beyond its pole at the screen edge, so it was replaced the same day by the
+calibration routine (next entry).
+
+## Pixel 7a session: haptics, speed hint, camera scale — October 18, 2026 (branch horizon-edge-cases)
+
+Owner on the Pixel 7a (Chrome 155, portrait, daylight), the planner served
+from this machine over `adb reverse` and watched through the DevTools socket
+with temporary probes (nothing added to the product).
+
+- **Haptics:** start, stop, *Add point* and the too-fast hint each fired
+  their pattern; the owner found them fine.
+- **Speed hint:** came on at 31-36 deg/s and cleared on slowing, but in two
+  fast traces it switched on 9 times (9 triple vibrations).
+- **Calibration learned from motion:** after a reset it never settled
+  (delay 83-295 ms; long side 48-73 deg sideways, 55-76 deg up-down). A
+  controlled run (slow, fast, slow pans; the phone's own rotation rate logged
+  beside each 2 s update, the blend undone to get each window's own value):
+  sideways scale median 0.87 under 15 deg/s (13 windows), 0.98 at 15-30
+  (13), 1.05 at 30-60 (10); slow again went back to 0.75-0.90. Offline, the
+  worker's shift estimate on synthetic 108 px profiles is within 1% from
+  0.5 px and at most 9% low at 0.1 px, so the speed dependence is not the
+  estimator: the camera stream (stabilisation) or the sensor fusion.
+- **Still test of the sideways scale** (learning switched off in the tab, a
+  point added on a pole, the pole then held near the left and right edge;
+  values not named to the owner): 0.75 drew the dot short of the pole, 1.05
+  beyond it by about as much, 0.90 very slightly beyond. True value about
+  0.88 (59 deg across the long side), close to the old Pixel default 0.864
+  and to the slow-pan windows. Up-down not tested. The phone was left at
+  0.88 for both axes with learning back on.
+
 ## Capture: speed hint, haptics, shorter copy — October 18, 2026 (branch horizon-edge-cases)
 
 While tracing, turning faster than 30 deg/s (gyroscope rate over 250 ms)

@@ -42,15 +42,17 @@ entry here when it is fixed and record the fix in RELEASES.md.
   (5-10 deg off near metal or buildings, measured on a Pixel 7a). *North…*
   sets it from the Moon or a landmark instead. The Moon needs the observing
   site to be where the phone is.
-- **AR overlay lag (owner, Pixel 7a, 2026-10-15): fix awaiting the owner's
-  check.** Measured: the camera image trails the gyroscope by about 210 ms and
-  is scaled differently per axis. The capture now aims with the orientation
-  the image shows and calibrates delay and scale per device, timing frame
-  pairs by the camera's capture timestamps (October 18). The north panel
-  shows the values in use; the Pixel's starting values give the long side
-  60 deg from sideways motion but 67 deg from up-down motion, where one
-  camera should give one angle, so check that line after panning. Remove
-  this entry once the owner confirms it on the phone.
+- **AR overlay calibration (owner, Pixel 7a, 2026-10-18): scale routine
+  awaiting the owner's check; delay open.** The scale read from motion grew
+  with turning speed (0.87 of the long side under 15 deg/s, 1.05 at
+  30-60 deg/s; slow pans alone settled at 0.97), while a still test put the
+  sideways value at about 0.88. The capture now measures the scale still,
+  with a once-per-phone calibration routine (mark a feature, turn it onto a
+  line left of the cross, tilt it onto a line above). Still open: the
+  learned delay varies (about 95-135 ms in daylight against 210 ms
+  measured earlier; it likely grows with exposure in dim light), with no
+  test yet of which delay is right. The crosshair and recorded points do not
+  depend on the scale; they do depend on the delay while turning.
 - **Near-tangent twilight.** When the Sun turns within about 0.01 deg of a
   twilight level, the Sun model and the published tables can disagree on
   whether a spell of a few minutes happens at all (Tromso 2026-09-16: USNO

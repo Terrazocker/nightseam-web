@@ -10,7 +10,7 @@
  * planner preferences.
  */
 import { vizTheme } from './viztheme.js?v=7';
-import { openCapture, captureAvailable, warmCompass } from './capture.js?v=25';
+import { openCapture, captureAvailable, warmCompass } from './capture.js?v=29';
 import { normalizeWebPrefs, WEB_PREF_DEFAULTS } from './webstore.js?v=83';
 import {
   NO_BLOCK, ALT_MIN, ALT_MAX, MAX_POINTS,
@@ -29,8 +29,10 @@ export { NO_BLOCK, ceilFor };
 const LS_KEY = 'nightseam_horizons_v2';
 const PREFS_KEY = 'nightseam_prefs_v1';
 // This device's camera calibration for the capture overlay (capture.js);
-// device-specific, so not part of backups.
-const CAPTURE_CAL_KEY = 'nightseam_capture_cal_v1';
+// device-specific, so not part of backups. Version 1 kept a scale per axis
+// learned from any motion, which grew with turning speed; it is dropped.
+const CAPTURE_CAL_KEY = 'nightseam_capture_cal_v2';
+const LEGACY_CAPTURE_CAL_KEY = 'nightseam_capture_cal_v1';
 // Storage of the retired panorama editor (records not converted) and the
 // retired horizon photos (deleted; the skylines traced over them stay).
 const LEGACY_LS_KEY = 'nightseam_panos_v1';
@@ -67,6 +69,7 @@ function announceHorizonChanged(h, cause = 'edit') {
 
 function removeLegacyStorage() {
   try { localStorage.removeItem(LEGACY_LS_KEY); } catch { /* ignore */ }
+  try { localStorage.removeItem(LEGACY_CAPTURE_CAL_KEY); } catch { /* ignore */ }
   for (const name of LEGACY_PHOTO_DBS) {
     try { if (typeof indexedDB !== 'undefined') indexedDB.deleteDatabase(name); } catch { /* ignore */ }
   }
@@ -440,8 +443,8 @@ function loadCaptureCalibration() {
     const v = JSON.parse(localStorage.getItem(CAPTURE_CAL_KEY) || 'null');
     if (!v || typeof v !== 'object') return null;
     const ok = (x, lo, hi) => typeof x === 'number' && Number.isFinite(x) && x >= lo && x <= hi;
-    if (!ok(v.delayMs, 0, 400) || !ok(v.kx, 0.5, 1.4) || !ok(v.ky, 0.5, 1.4)) return null;
-    return { delayMs: v.delayMs, kx: v.kx, ky: v.ky, measured: !!v.measured };
+    if (!ok(v.delayMs, 0, 400) || !ok(v.k, 0.5, 1.4)) return null;
+    return { delayMs: v.delayMs, k: v.k, measured: !!v.measured, scaleMeasured: !!v.scaleMeasured, asked: !!v.asked };
   } catch { return null; }
 }
 
