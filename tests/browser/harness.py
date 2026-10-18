@@ -91,10 +91,20 @@ def all_checks():
 # ---------------------------------------------------------------- helpers
 
 
+# Ports Chrome refuses to load (net::ERR_UNSAFE_PORT, Chromium's restricted
+# list above 1023). The OS can hand one out as a free port: 6000 did on
+# 2026-10-18 and failed a check before the page loaded.
+CHROME_UNSAFE_PORTS = frozenset({1719, 1720, 1723, 2049, 3659, 4045, 4190, 5060, 5061,
+                                 6000, 6566, 6665, 6666, 6667, 6668, 6669, 6679, 6697, 10080})
+
+
 def free_port() -> int:
-    with socket.socket() as s:
-        s.bind(("127.0.0.1", 0))
-        return s.getsockname()[1]
+    while True:
+        with socket.socket() as s:
+            s.bind(("127.0.0.1", 0))
+            port = s.getsockname()[1]
+        if port not in CHROME_UNSAFE_PORTS:
+            return port
 
 
 def _http(url: str, method: str = "GET", body: dict | None = None,
@@ -113,8 +123,12 @@ class StaticServer:
 
     def __init__(self, directory: Path, handler_class=None):
         handler = partial(handler_class or _QuietHandler, directory=str(directory))
-        self.httpd = BrowserHTTPServer(("127.0.0.1", 0), handler)
-        self.port = self.httpd.server_address[1]
+        while True:   # a port Chrome would refuse is given back and another taken
+            self.httpd = BrowserHTTPServer(("127.0.0.1", 0), handler)
+            self.port = self.httpd.server_address[1]
+            if self.port not in CHROME_UNSAFE_PORTS:
+                break
+            self.httpd.server_close()
         self._thread = threading.Thread(target=self.httpd.serve_forever, daemon=True)
 
     def start(self) -> str:

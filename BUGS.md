@@ -69,4 +69,14 @@ entry here when it is fixed and record the fix in RELEASES.md.
   38444781285) and passed on rerun. Not reproduced locally, with or without
   the Linux font substitution. If it fails again, treat it as a real defect.
   (The phone overflow failure reported with it was a real defect, found and
-  fixed on 2026-10-18; see RELEASES.md.)
+  fixed on 2026-10-18; see RELEASES.md.) **It failed again** on the master
+  push after pull request #11 (run 39129674772: `TimeoutError` waiting for
+  the "filechooser" event), so it is now a real defect; not yet investigated.
+- **BROWSER-CI-003.** web-docked-inspector-fit-and-tonight-key failed once
+  on Linux CI (pull request #12, run 39150513399; that change touches none
+  of the docked inspector's code or styles). After returning to the page top
+  the dock's `--detail-top` and the tab bar's bottom agreed (132 px), yet the
+  title's box was at 114.5 px, over the tab bar; a full-page screenshot taken
+  just after showed it in place. Not reproduced locally in five runs (one of
+  them failed earlier, on an unrelated harness port, fixed the same day). If
+  it fails again, treat it as a real defect.

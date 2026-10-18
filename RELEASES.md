@@ -5,6 +5,18 @@ Actual validation outcomes, newest first. Published releases: v0.1.1 (October 8,
 development awaiting the next release, 0.7.0. Upload success alone is never
 recorded as acceptance.
 
+## Browser harness: no Chrome-refused ports; CI flake recorded — October 18, 2026 (branch horizon-edge-cases)
+
+CI on pull request #12 (run 39150513399) failed one browser check outside
+this change, web-docked-inspector-fit-and-tonight-key (BUGS.md
+BROWSER-CI-003); guards and pytest passed. Repeating it locally, one of five
+runs failed before loading the page with `net::ERR_UNSAFE_PORT`: the OS had
+given the test server port 6000, which Chrome refuses. The harness now gives
+back any port on Chromium's restricted list and takes another; a new guard
+in test_browser_gate.py fails without it. The same review found
+BROWSER-CI-002 had recurred on master (run 39129674772); recorded as a real
+defect, not investigated here.
+
 ## No pull-to-refresh while capturing; tracing hint — October 18, 2026 (branch horizon-edge-cases)
 
 During the Pixel session the planner tab reloaded once by itself, which

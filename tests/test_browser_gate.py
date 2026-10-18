@@ -194,3 +194,27 @@ def test_browser_gate_registers_the_selection_checks():
     assert "detailOpen: false," in app
     assert "if (S.detailOpen && view !== S.view) closeDetail();" in app
     assert "S.detailId = null;" in app, "an invalid selection must be clearable"
+
+
+def test_static_server_never_takes_a_port_chrome_refuses(monkeypatch):
+    """An OS-assigned port can be one Chrome will not load (6000 failed a
+    check with net::ERR_UNSAFE_PORT on 2026-10-18): the server gives it back
+    and takes another."""
+    import sys
+    sys.path.insert(0, str(ROOT/'tests/browser'))
+    import harness
+    ports, closed = [6000, 6667, 41234], []
+
+    class FakeServer:
+        def __init__(self, address, handler):
+            self.server_address = ('127.0.0.1', ports.pop(0))
+        def server_close(self):
+            closed.append(self.server_address[1])
+        def serve_forever(self):
+            pass
+
+    monkeypatch.setattr(harness, 'BrowserHTTPServer', FakeServer)
+    server = harness.StaticServer(ROOT/'web')
+    assert server.port == 41234
+    assert closed == [6000, 6667]
+    assert 6000 in harness.CHROME_UNSAFE_PORTS and 8080 not in harness.CHROME_UNSAFE_PORTS
