@@ -296,7 +296,10 @@ separate review. See [RELEASE_WORKFLOW.md](RELEASE_WORKFLOW.md) and
   independent lunar model and USNO 2026 rise/set and twilight tables
   (`tests/fixtures/usno_2026/`). Frozen fixtures catch regressions only.
 - **Browser checks** (`tests/browser/*_checks.py`) run in real Chrome through
-  `scripts/check_browser.py --web`.
+  `scripts/check_browser.py --web`. A check that waits for a file chooser
+  first registers a `filechooser` listener, well before the key or click:
+  `expect_file_chooser()` alone arms interception too late on a busy page,
+  and Chrome then opens its own dialog instead (BROWSER-CI-002).
 - **CI** (`.github/workflows/checks.yml`) runs the guards and pytest on
   Windows and the browser suite on Linux, for every pull request and every
   push to `master`.
