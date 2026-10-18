@@ -650,8 +650,9 @@ def device_quaternion(az: float, alt: float) -> dict:
 CAMERA_STUB = """(delay) => {
   const delayMs = typeof delay === 'number' ? delay : 0;   // Playwright passes null without an argument
   // A moving pattern, so the motion worker gets frames; and a camera
-  // calibration for this "device" (0 ms: the overlay follows the sensors at once).
-  localStorage.setItem('nightseam_capture_cal_v1', JSON.stringify({ delayMs, kx: 0.755, ky: 0.755, measured: false }));
+  // calibration for this "device" (0 ms: the overlay follows the sensors at
+  // once) that has already answered the calibration routine's offer.
+  localStorage.setItem('nightseam_capture_cal_v2', JSON.stringify({ delayMs, k: 0.755, measured: false, scaleMeasured: false, asked: true }));
   navigator.mediaDevices.getUserMedia = async () => {
     const cv = document.createElement('canvas');
     cv.width = 64; cv.height = 48;
@@ -747,8 +748,117 @@ def web_horizon_capture_shows_what_the_camera_saw(c):
     m = re.match(r"\s*([0-9.]+)°", read)
     c.expect(m and abs(float(m.group(1)) - 70) <= 0.6, f"after the delay the readout shows B at 70 deg: {read!r}")
     c.page.wait_for_selector(".cap[data-motion='on']", timeout=8000)
+
+    # The north panel says what the overlay assumes about the camera, and
+    # Reset camera calibration forgets this device's values.
+    c.page.click("#cap-north-btn")
+    c.expect(not c.page.locator("#cap-camera-diag").is_visible(), "the diagnostics wait behind Details")
+    c.page.click("#cap-details summary")
+    diag = c.page.inner_text("#cap-camera-diag")
+    c.expect("300 ms behind (starting value)" in diag,
+             f"the panel shows the stored delay and that it is not measured yet: {diag!r}")
+    c.page.click("#cap-cal-reset")
+    diag = c.page.inner_text("#cap-camera-diag")
+    c.expect("210 ms behind (starting value)" in diag and "long side 59° (starting value)" in diag,
+             f"reset goes back to the starting values: {diag!r}")
+    c.expect("reset to the starting values" in c.page.inner_text("#cap-status"), "the status says so")
+    c.expect_eq(c.page.evaluate("() => localStorage.getItem('nightseam_capture_cal_v2')"), None,
+                "the stored calibration is forgotten")
+    c.expect(c.page.locator("#cap-ref").is_visible(), "the panel stays open to show the new values")
     c.page.keyboard.press("Escape")
     c.page.wait_for_selector(".cap", state="detached", timeout=5000)
+    c.assert_clean()
+
+
+@check("web-horizon-capture-calibration-routine", "web")
+def web_horizon_capture_calibration_routine(c):
+    """The overlay's scale is measured still, once per phone: the capture
+    offers a routine when the camera starts (mark a feature, turn it onto a
+    line left of the cross, tilt it onto a line above), keeps the measured
+    scale and does not ask again; "Not now" is remembered too. The camera's
+    scale read from motion grew with turning speed on a Pixel 7a."""
+    import math
+    boot(c)
+    open_editor(c)
+    c.page.evaluate(CAMERA_STUB)
+    c.page.evaluate("() => localStorage.removeItem('nightseam_capture_cal_v2')")   # a phone never calibrated
+    cdp = c.page.context.new_cdp_session(c.page)
+    cdp.send("Emulation.setSensorOverrideEnabled", {"enabled": True, "type": "relative-orientation"})
+    cdp.send("Emulation.setSensorOverrideEnabled", {"enabled": False, "type": "absolute-orientation",
+             "metadata": {"available": False}})
+
+    def hold(az: float, alt: float, n: int = 9):
+        for _ in range(n):           # still for over 250 ms
+            cdp.send("Emulation.setSensorOverrideReadings", {"type": "relative-orientation",
+                     "reading": {"quaternion": device_quaternion(az, alt)}})
+            c.page.wait_for_timeout(40)
+
+    def open_capture():
+        if not c.page.locator("#hz-capture-panel").evaluate("el => el.open"):
+            c.page.locator("#hz-capture-panel summary").click()
+        hold(0, 0, 2)
+        c.page.click("#hz-cap-start")
+        c.page.wait_for_selector(".cap", timeout=5000)
+        c.page.wait_for_function("() => document.querySelector('#cap-video').videoWidth > 0", timeout=5000)
+        hold(0, 0, 4)
+
+    def close_capture():
+        c.page.keyboard.press("Escape")
+        c.page.wait_for_selector(".cap", state="detached", timeout=5000)
+
+    stored = lambda: c.page.evaluate("() => JSON.parse(localStorage.getItem('nightseam_capture_cal_v2'))")
+    c.page.set_viewport_size({"width": 412, "height": 789})
+    open_capture()
+    c.page.wait_for_selector("#cap-calib:not([hidden])", timeout=5000)
+    c.expect("once per phone" in c.page.inner_text("#cap-calib-text") and "Step 1 of 3" in c.page.inner_text("#cap-calib-text"),
+             "the first capture offers the routine")
+    c.expect(not c.page.locator("#cap-trace").is_visible(), "its panel takes the place of the controls")
+
+    k_true = 0.80
+    shown = c.page.evaluate("""() => { const el = document.querySelector('.cap'), v = document.querySelector('#cap-video');
+      return Math.max(v.videoWidth, v.videoHeight) * Math.max(el.clientWidth / v.videoWidth, el.clientHeight / v.videoHeight); }""")
+    hold(0, 0)
+    c.page.click("#cap-calib-go")                       # Mark
+    axis, px = c.page.evaluate("() => document.querySelector('.cap').dataset.guide").split(":")
+    c.expect_eq(axis, "x", "then a line left of the cross")
+    side = math.degrees(math.atan(int(px) / (k_true * shown)))
+    hold(-side, 0)                                      # turned left: the feature is right of the cross
+    c.page.click("#cap-calib-go")
+    c.expect("does not fit" in c.page.inner_text("#cap-status"), "a feature on the wrong side is refused")
+    hold(side, 0)
+    c.page.click("#cap-calib-go")                       # on the line
+    axis, px = c.page.evaluate("() => document.querySelector('.cap').dataset.guide").split(":")
+    c.expect_eq(axis, "y", "then a line above the cross")
+    up = math.degrees(math.atan(int(px) / (k_true * shown)))
+    hold(0, -up)                                        # tilted down: the feature above the cross
+    c.page.click("#cap-calib-go")
+    c.page.wait_for_function("() => /Done: the drawing now matches this camera \\(64° wide\\)/.test(document.querySelector('#cap-status').textContent)",
+                             timeout=5000)
+    rec = stored()
+    c.expect(abs(rec["k"] - k_true) < 0.005 and rec["scaleMeasured"] and rec["asked"], f"the measured scale is kept: {rec}")
+    c.expect(c.page.locator("#cap-trace").is_visible(), "and the controls come back")
+    c.page.click("#cap-north-btn")
+    c.page.click("#cap-details summary")
+    c.expect("long side 64° (calibrated)" in c.page.inner_text("#cap-camera-diag"), "Details say it is calibrated")
+    close_capture()
+
+    open_capture()
+    c.page.wait_for_timeout(500)
+    c.expect(c.page.locator("#cap-calib").is_hidden(), "a calibrated phone is not asked again")
+    close_capture()
+
+    c.page.evaluate("() => localStorage.removeItem('nightseam_capture_cal_v2')")
+    open_capture()
+    c.page.wait_for_selector("#cap-calib:not([hidden])", timeout=5000)
+    c.page.click("#cap-calib-skip")                     # Not now
+    c.expect("later" in c.page.inner_text("#cap-status"), "Not now says where to find it")
+    c.expect(stored()["asked"] and not stored()["scaleMeasured"], f"and is remembered: {stored()}")
+    close_capture()
+    open_capture()
+    c.page.wait_for_timeout(500)
+    c.expect(c.page.locator("#cap-calib").is_hidden(), "so it is not offered again")
+    close_capture()
+    c.page.set_viewport_size({"width": 1366, "height": 900})
     c.assert_clean()
 
 
@@ -896,6 +1006,7 @@ def web_horizon_capture_references_and_loop(c):
 
     c.page.click("#cap-north-btn")
     c.expect(c.page.locator("#cap-ref").is_visible(), "North… opens the reference panel")
+    c.page.click("#cap-details summary")
     c.expect("no readings" in c.page.inner_text("#cap-compass-diag"),
              f"the panel says the compass gives nothing: {c.page.inner_text('#cap-compass-diag')!r}")
     clear = c.page.evaluate(cross_clear)
@@ -918,18 +1029,29 @@ def web_horizon_capture_references_and_loop(c):
     c.expect(c.page.inner_text("#cap-read").strip().startswith("120.0° ESE"), f"the landmark sets north: {c.page.inner_text('#cap-read')!r}")
     c.expect("landmark at 120°" in c.page.inner_text("#cap-north"), f"the view says where north comes from: {c.page.inner_text('#cap-north')!r}")
 
-    def full_turn(gain: float):
+    def full_turn(gain: float, check_speed: bool = False):
         """Turn once around a skyline with one sharp peak half way (true 300
-        deg); the gyroscope reads `gain` times the true angle."""
+        deg); the gyroscope reads `gain` times the true angle. 2 deg every
+        30 ms is far over the 30 deg/s at which the view asks to slow down."""
         c.page.click("#cap-trace")
         for k in range(0, 181):
             theta = k * 2
             alt = 5 + 25 * max(0.0, 1 - abs(theta - 180) / 6)
             rel(theta * gain, alt, 30)
+            if check_speed and k == 120:
+                c.expect("Too fast" in c.page.inner_text("#cap-status")
+                         and c.page.evaluate("() => document.querySelector('.cap').classList.contains('cap-fast')"),
+                         f"turning fast asks to slow down, in words and colour: {c.page.inner_text('#cap-status')!r}")
+        if check_speed:
+            for _ in range(10):              # hold still at the end
+                rel(360 * gain, 5, 40)
+            c.expect(c.page.inner_text("#cap-status").startswith("Tracing:")
+                     and not c.page.evaluate("() => document.querySelector('.cap').classList.contains('cap-fast')"),
+                     f"once slower the hint goes: {c.page.inner_text('#cap-status')!r}")
         c.page.click("#cap-trace")
         c.page.wait_for_selector("#cap-loop:not([hidden])", timeout=5000)
 
-    full_turn(362.4 / 360)          # 2.4 deg of drift over the turn
+    full_turn(362.4 / 360, True)    # 2.4 deg of drift over the turn
     c.expect("all the way round" in c.page.inner_text("#cap-loop"), "a full turn asks whether it ended where it began")
     clear = c.page.evaluate(cross_clear)
     c.expect(clear["clear"], f"so does the question, to check the cross is on the start: {clear}")
@@ -1019,6 +1141,7 @@ def web_horizon_capture_north_waits_for_compass(c):
         c.expect(not c.page.locator("#cap-trace").is_enabled(), "north is not set while the compass still moves")
     c.expect("settling" in c.page.inner_text("#cap-read"), f"the view says why: {c.page.inner_text('#cap-read')!r}")
     c.page.click("#cap-north-btn")
+    c.page.click("#cap-details summary")
     diag = c.page.inner_text("#cap-compass-diag")
     c.expect("readings a second" in diag and "settling" in diag, f"the north panel says what the compass does: {diag!r}")
     c.page.click("#cap-ref-close")
@@ -1074,7 +1197,10 @@ def web_horizon_phone_capture(c):
     c.expect("compass" in c.page.inner_text("#cap-north"), "the view says where north comes from")
     c.expect(c.page.evaluate("() => document.querySelector('#cap-video').srcObject instanceof MediaStream"),
              "the camera stream is shown")
+    c.expect_eq(c.page.evaluate("() => getComputedStyle(document.documentElement).overscrollBehaviorY + '/' + getComputedStyle(document.body).overscrollBehaviorY"), "none/none",
+                "no swipe reaches the page while capturing (pull-to-refresh would lose a trace)")
 
+    c.page.evaluate("() => { window.__buzz = []; navigator.vibrate = (p) => { window.__buzz.push(p); return true; }; }")
     c.expect_eq(c.page.inner_text("#cap-trace").strip(), "Start tracing", "one tap starts tracing")
     c.page.click("#cap-trace")
     c.expect_eq(c.page.get_attribute("#cap-trace", "aria-pressed"), "true", "tracing is announced")
@@ -1104,6 +1230,8 @@ def web_horizon_phone_capture(c):
     c.page.click("#cap-point")
     c.expect(any(abs(p["az"] - 130) < 0.6 and abs(p["alt"] - 12) < 0.6 for p in active_horizon(c)["points"]),
              "Add point stores where the cross points")
+    c.expect_eq(c.page.evaluate("() => window.__buzz"), [15, [15, 60, 15], 25],
+                "starting, stopping and adding a point each give a short, distinct vibration")
     aim(100, 12, 200)
     dot = c.page.evaluate("""() => { const cv = document.querySelector('#cap-ar'), x = cv.getContext('2d');
       const k = cv.width / cv.getBoundingClientRect().width;
@@ -1126,11 +1254,29 @@ def web_horizon_phone_capture(c):
     c.page.click("#cap-undo")
     c.expect_eq(active_horizon(c)["overhangs"], [], "the overhang is one undo step")
 
+    # Too fast twice in one trace: the hint shows both times, but only the
+    # first one vibrates.
+    marker = c.page.evaluate("() => window.__buzz.length")
+    aim(150, 45)
+    c.page.click("#cap-trace")
+    for burst in range(2):
+        for i in range(12):
+            aim(150 + 30 * burst + 3 * i, 45, 30)
+        c.expect("Too fast" in c.page.inner_text("#cap-status"), f"burst {burst + 1} asks to slow down")
+        for _ in range(12):
+            aim(150 + 30 * burst + 33, 45, 40)
+        c.expect(c.page.inner_text("#cap-status").startswith("Tracing:"), "and the hint clears when still")
+    c.page.click("#cap-trace")
+    fast = c.page.evaluate("(m) => window.__buzz.slice(m).filter((p) => Array.isArray(p) && p[0] === 40).length", marker)
+    c.expect_eq(fast, 1, "the too-fast vibration comes once per trace")
+    c.page.click("#cap-undo")
+
     c.page.evaluate("() => { window.__capStream = document.querySelector('#cap-video').srcObject; }")
     c.page.keyboard.press("Escape")
     c.page.wait_for_selector(".cap", state="detached", timeout=5000)
     c.expect(c.page.evaluate("() => window.__capStream.getTracks().every((t) => t.readyState === 'ended')"),
              "closing the view stops the camera")
+    c.expect_eq(c.page.evaluate("() => getComputedStyle(document.documentElement).overscrollBehaviorY + '/' + getComputedStyle(document.body).overscrollBehaviorY"), "auto/auto", "and the page scrolls as before")
     c.expect("Add point" not in c.page.inner_text("#hz-cap-status") and c.page.inner_text("#hz-cap-status").strip(),
              "the editor shows the last capture message")
     c.expect(c.page.evaluate("() => document.activeElement?.id") == "hz-cap-start", "focus returns to the capture button")

@@ -21,6 +21,9 @@ globalThis.indexedDB = { deleteDatabase(name) { deletedDbs.push(name); return {}
 // one unsafe id; plus the retired panorama editor's storage. The valid one
 // still carries the photo fields of the builds that placed horizon photos.
 store._m.nightseam_panos_v1 = JSON.stringify({ panos: [{ id: 'p1', strokes: [] }] });
+// The capture calibration of builds that learned a scale per axis from any
+// motion (it grew with turning speed): dropped on load.
+store._m.nightseam_capture_cal_v1 = JSON.stringify({ delayMs: 85, kx: 0.96, ky: 0.83, measured: true });
 store._m.nightseam_horizons_v2 = JSON.stringify({
   horizons: [
     { id: 'h1', name: 'Garden', points: [{ az: 90, alt: 20 }, { az: 270, alt: 5 }, { az: 'x', alt: 1 }],
@@ -42,6 +45,7 @@ const assert = (c, m) => { if (!c) fail(m); };
 
 /* loading -------------------------------------------------------------- */
 assert(store.getItem('nightseam_panos_v1') === null, 'the retired panorama storage is removed, not converted');
+assert(store.getItem('nightseam_capture_cal_v1') === null, 'the per-axis capture calibration is dropped');
 assert(['nightseam-panoimg', 'nightseam-horizon-photos'].every((name) => deletedDbs.includes(name)),
   `the retired photo databases are deleted (${deletedDbs.join(', ')})`);
 const loaded = H.allHorizons();

@@ -33,7 +33,145 @@ without it, with the CI error. Planner code is unchanged, so there was no
 cache-token bump. DEVELOPMENT.md records the rule for file-chooser checks.
 
 Local validation: the unmodified check passed 15/15 before the fix; pytest
-358 passed, 1 skipped; browser web suite 87/87. Not yet confirmed on Linux CI.
+358 passed, 1 skipped; browser web suite 87/87. After merging master (pull
+request #13): pytest 360 passed, 1 skipped; browser web suite 88/88. Not yet
+confirmed on Linux CI.
+
+## Browser harness: no Chrome-refused ports; CI flake recorded — October 18, 2026 (branch horizon-edge-cases)
+
+CI on pull request #12 (run 39150513399) failed one browser check outside
+this change, web-docked-inspector-fit-and-tonight-key (BUGS.md
+BROWSER-CI-003); guards and pytest passed. Repeating it locally, one of five
+runs failed before loading the page with `net::ERR_UNSAFE_PORT`: the OS had
+given the test server port 6000, which Chrome refuses. The harness now gives
+back any port on Chromium's restricted list and takes another; a new guard
+in test_browser_gate.py fails without it. The same review found
+BROWSER-CI-002 had recurred on master (run 39129674772); recorded as a real
+defect, not investigated here.
+
+## No pull-to-refresh while capturing; tracing hint — October 18, 2026 (branch horizon-edge-cases)
+
+During the Pixel session the planner tab reloaded once by itself, which
+throws away a capture in progress. Nothing stopped Chrome's pull-to-refresh
+under the full-screen capture view: while it is open, the root element now
+carries `cap-open` and `overscroll-behavior: none` (root and body), removed
+on close. The editor's *Phone capture* hint still said "turn while you hold
+Trace"; it now describes tap to start and stop, and that the Moon or a
+landmark gives a more exact north than the compass.
+
+Checks: web-horizon-phone-capture asserts `none` on root and body while the
+view is open and `auto` after it closes. pytest 359 passed, 1 skipped;
+check_js and check_js_tokens pass; browser web suite 88/88. On the Pixel
+(owner): repeated downward swipes on the camera image and both bars left
+the capture open, and the page kept the same load throughout (a marker set
+before the test was still there).
+
+## Calibration routine for the overlay's scale — October 18, 2026 (branch horizon-edge-cases)
+
+The camera scale is no longer learned from motion. A routine measures it
+still, once per phone: offered when the first capture shows a camera image
+(*Start* / *Not now*) and under *North… › Details › Line up the drawing*.
+Aim at a sharp feature, turn right until it sits on a guide line left of
+the cross, then tilt down until it sits on a line above; `guideScale` turns the
+measured rotation and the line's offset into the scale. Both steps within
+8% keep their mean, else the sideways one. `asked` remembers *Not now*.
+The delay is still learned from motion.
+
+Checks: capture_calibration.mjs now tests `guideScale` (exact on synthetic
+quaternions; refuses the wrong direction, a turn of about 1 deg and
+implausible scales); new web-horizon-capture-calibration-routine walks the
+offer, a refused wrong-side tap, both steps to a stored 0.80, no second
+offer, and *Not now* remembered. Layout checked at 375 x 812 in the preview
+(panel below the crosshair). pytest 359 passed, 1 skipped; check_js and
+check_js_tokens pass; browser web suite 88/88. On the Pixel (owner): it
+works and measured 58 deg (k 0.902), against 0.88-0.90 from the still A/B
+test; the owner found the first wording odd, so the steps now read *Step 1
+of 3* with *Start*, *It's on the line* and *Line up the drawing*.
+
+## Camera scale from slow pans only; one vibration per too-fast trace — October 18, 2026 (branch horizon-edge-cases)
+
+After the Pixel session: the capture uses one camera scale for both axes,
+starting at the still-measured 0.88, learned only from sideways windows
+panned at 15 deg/s or slower on average, as the median of the last nine
+(once there are three). The delay is still learned from every good window.
+Storage moved to `nightseam_capture_cal_v2`; the per-axis version 1, learned
+from any motion, is dropped on load. The too-fast hint vibrates once per
+trace; colour and words still show each time.
+
+Checks: new capture_calibration.mjs (`windowScale` refuses fast, weak or
+implausible windows; `learnedScale` medians the last nine, needs three);
+horizon_ui.mjs drops the version 1 key; web-horizon-phone-capture traces
+two too-fast bursts and expects one vibration; the camera-line check reads
+59 deg after a reset. pytest 359 passed, 1 skipped; check_js and
+check_js_tokens pass; browser web suite 87/87. On the Pixel the slow-pan
+learning settled at 0.97 (55 deg) and the owner saw a point's dot land
+beyond its pole at the screen edge, so it was replaced the same day by the
+calibration routine (next entry).
+
+## Pixel 7a session: haptics, speed hint, camera scale — October 18, 2026 (branch horizon-edge-cases)
+
+Owner on the Pixel 7a (Chrome 155, portrait, daylight), the planner served
+from this machine over `adb reverse` and watched through the DevTools socket
+with temporary probes (nothing added to the product).
+
+- **Haptics:** start, stop, *Add point* and the too-fast hint each fired
+  their pattern; the owner found them fine.
+- **Speed hint:** came on at 31-36 deg/s and cleared on slowing, but in two
+  fast traces it switched on 9 times (9 triple vibrations).
+- **Calibration learned from motion:** after a reset it never settled
+  (delay 83-295 ms; long side 48-73 deg sideways, 55-76 deg up-down). A
+  controlled run (slow, fast, slow pans; the phone's own rotation rate logged
+  beside each 2 s update, the blend undone to get each window's own value):
+  sideways scale median 0.87 under 15 deg/s (13 windows), 0.98 at 15-30
+  (13), 1.05 at 30-60 (10); slow again went back to 0.75-0.90. Offline, the
+  worker's shift estimate on synthetic 108 px profiles is within 1% from
+  0.5 px and at most 9% low at 0.1 px, so the speed dependence is not the
+  estimator: the camera stream (stabilisation) or the sensor fusion.
+- **Still test of the sideways scale** (learning switched off in the tab, a
+  point added on a pole, the pole then held near the left and right edge;
+  values not named to the owner): 0.75 drew the dot short of the pole, 1.05
+  beyond it by about as much, 0.90 very slightly beyond. True value about
+  0.88 (59 deg across the long side), close to the old Pixel default 0.864
+  and to the slow-pan windows. Up-down not tested. The phone was left at
+  0.88 for both axes with learning back on.
+
+## Capture: speed hint, haptics, shorter copy — October 18, 2026 (branch horizon-edge-cases)
+
+While tracing, turning faster than 30 deg/s (gyroscope rate over 250 ms)
+turns the crosshair and status line amber with *Too fast (N°/s): turn
+slower.*, clearing below 20 deg/s. Where the browser can vibrate, start,
+stop, *Add point* and the hint each give a short, distinct vibration. The
+capture's messages are shortened to one line where possible, and the
+north panel's compass and camera lines and *Reset camera calibration* moved
+behind a closed *Details*, so the panel fits a 375 x 812 screen without
+scrolling (311 of 364 px). The view's Tab loop now includes the summary.
+
+Checks: web-horizon-capture-references-and-loop asserts the hint during a
+67 deg/s turn and that it clears when the phone holds still;
+web-horizon-phone-capture records the vibration patterns for start, stop and
+point; the compass and camera line checks open *Details* first. Not checked
+on a phone. pytest 358 passed, 1 skipped; check_js and check_js_tokens pass;
+browser web suite 87/87.
+
+## Capture calibration: capture-timed frames, readout and reset — October 18, 2026 (branch horizon-edge-cases)
+
+Reviewed the phone capture's camera calibration. The motion worker timed
+each frame pair by when the frames reached it, so a short gap in delivery
+read as fast motion: in a scratch simulation 5 ms of delivery jitter made
+the scale 4-10% too large while still passing the 0.85 correlation gate.
+Pairs now last as long as the camera's capture timestamps say
+(`captureGap`), ending when the later frame arrived, so stored delays stay
+comparable. The north panel now ends with a camera line (delay, the long
+side's field of view from sideways and from up-down motion, measured or
+starting values) and *Reset camera calibration*, below *Compass again /
+Close* so those stay in view at 375 x 812.
+
+New checks: horizon_model.mjs times frames with ±6 ms arrival jitter (scale
+within 3% by capture time, 0.1% here; 1.7% off by arrival time) and pins
+`captureGap`'s fallbacks; web-horizon-capture-shows-what-the-camera-saw
+reads the camera line and resets it. Not checked on a phone. pytest 358
+passed, 1 skipped; check_js and check_js_tokens pass; browser web suite
+87/87.
 
 ## Horizon canvas overflow after a narrowing resize (BROWSER-CI-002) — October 18, 2026 (branch horizon-edge-cases)
 

@@ -32,7 +32,9 @@ planner, so the first check really is a first open.
 4. **Skyline, full turn, loop closed.** Start tracing on landmark A, turn once
    slowly along the skyline back to A, stop with the cross on A, *Yes, close
    the loop*. Target: "Loop closed" with 1.5° or less of drift. The skyline in
-   the editor follows the real one.
+   the editor follows the real one. Starting and stopping each give a short
+   vibration; turning quickly turns the crosshair amber with *Too fast*, and
+   it clears once you slow down.
 5. **Repeatability.** Do step 4 a second time into a new horizon. Target: the
    two skylines in the editor agree within 2° wherever the skyline is sharp
    (rooftops, masts).
@@ -41,7 +43,13 @@ planner, so the first check really is a first open.
 7. **AR overlay.** Hold still with the recorded skyline in view. Target: it
    lies on the real skyline at the crosshair and still lies on it near the
    screen edges. Pan slowly and quickly. Note whether the lines trail behind
-   the image while moving and catch up when you stop.
+   the image while moving and catch up when you stop. Before this check,
+   run the calibration routine (offered on the first capture, or *North… ›
+   Details › Line up the drawing*) and note its result. Still check of
+   the scale: *Add point* on a sharp feature, turn until it is near the left
+   or right edge and hold still. Target: the dot stays on the feature. Then
+   the same with a feature well above the horizon held near the top or
+   bottom edge (the up-down scale).
 8. **Share to a desktop.** *Share link*, send it to yourself, open it on the
    desktop, *Add horizon*. Target: the same points and overhangs as on the
    phone; the desktop address bar ends in `#horizon`, without the code.

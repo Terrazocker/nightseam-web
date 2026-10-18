@@ -9,7 +9,7 @@
  * editor, which owns the horizon record, its history and saving.
  */
 import { vizTheme } from './viztheme.js?v=7';
-import { MOTION_WORKER_URL } from './capturemotion.js?v=1';
+import { MOTION_WORKER_URL } from './capturemotion.js?v=2';
 import {
   wrapAz, azDelta, quaternionPointing, orientationQuaternion, cameraProject, circularMean,
   sweepLine, normalizePoints, closeLoop, moonDirection, referenceUsable,
@@ -26,15 +26,25 @@ const NORTH_MAX_ALT = 60;          // pointing steeper than this, azimuth is unr
 const COMPASS_STALE_MS = 1500;     // no usable compass reading for this long while north is missing
 const COMPASS_RETRY_MS = 2500;     // ... restarts the compass, at most this often
 const COMPASS_RETRIES = 40;
-// How the camera image relates to the gyroscope, measured on a Pixel 7a
-// (2026-10-15, frame motion against the gyroscope while panning): the image
-// trails the gyroscope by about 210 ms (225 sideways, 195 up-down), and its
-// focal length is 0.864 (sideways) and 0.752 (up-down) of the video's long
-// side, a long-side field of view of 60 and 67 deg. Each device refines its
-// own values while the user pans (calibrate()).
+// How the camera image relates to the gyroscope, on a Pixel 7a. The image
+// trails the gyroscope by about 210 ms (2026-10-15, frame motion against the
+// gyroscope while panning); each device refines the delay while the user
+// pans (calibrate()).
+// The scale is the camera's focal length as a fraction of the video's long
+// side, one value for both axes (one lens, square pixels). Read from motion
+// it grew with turning speed on a Pixel 7a (0.87 slow, 1.05 at 30-60 deg/s;
+// even slow pans alone settled at 0.97), while a still test put it at about
+// 0.88, a long-side field of view of 59 deg (2026-10-18). So it is measured
+// still, by the calibration routine (guideScale), once per phone; until
+// then it is the Pixel's 0.88.
 const DEFAULT_DELAY_MS = 210;
-const DEFAULT_KX = 0.864;
-const DEFAULT_KY = 0.752;
+const DEFAULT_K = 0.88;
+const SCALE_MIN = 0.5;             // plausible scales: a long-side field of view of 109 to 39 deg
+const SCALE_MAX = 1.4;
+const GUIDE_SIDE = 0.36;           // the guide line sits this fraction of the view's width from the cross
+const GUIDE_MIN_PX = 40;           // an up-down guide closer to the cross than this is skipped
+const CALIB_STILL = 5;             // deg/s: the phone turns slower than this at each calibration tap
+const CALIB_AGREE = 0.08;          // sideways and up-down within this fraction of each other agree
 const CAL_MIN_CORR = 0.85;         // image and gyroscope must agree this well to update the calibration
 const CAL_WINDOW_MS = 8000;        // motion compared each time
 const HISTORY_MS = 2000;           // orientation kept to look back by the image's delay
@@ -55,6 +65,16 @@ const AR_MAX_DPR = 1.5;            // overlay canvas pixel density cap
 const LOOP_MAX_DEG = 3;            // a larger closing error is a missed aim, not drift
 const SITE_NEAR_M = 75;            // further from the site than this (or twice the GPS accuracy) is worth a warning
 const TRACE_STEP = 0.2;            // degrees between stored trace samples
+// Turning speed while tracing. Faster turning smears the image and turns any
+// error in the camera's delay into a shift along the sweep (50 ms at 20 deg/s
+// is 1 deg), so above SPEED_FAST the view asks to slow down, until the speed
+// falls below SPEED_OK (the gap keeps the hint from flickering).
+const SPEED_FAST = 30;             // deg/s
+const SPEED_OK = 20;               // deg/s
+const SPEED_WINDOW_MS = 250;       // gyroscope rates averaged for the speed
+// Short vibrations, so the eyes can stay on the crosshair (ms; where the
+// browser can vibrate).
+const BUZZ = { start: 15, stop: [15, 60, 15], point: 25, fast: [40, 40, 40] };
 const STRIP_ALT = [-10, 60];
 
 const CARDINALS = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE',
@@ -297,6 +317,35 @@ function orientation(onChange) {
   };
 }
 
+/** A short vibration where the browser offers one; nothing otherwise. */
+function buzz(pattern) {
+  try {
+    if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') navigator.vibrate(pattern);
+  } catch { /* no vibration here */ }
+}
+
+/** The camera scale from the calibration routine. The cross was on a
+ *  feature at orientation q1, so the camera axis then is the feature's
+ *  direction; at q2 the feature sits on a guide line `offsetPx` CSS pixels
+ *  from the cross, to its left (axis 'x') or above it ('y'), with the
+ *  video's long side shown `shownPx` pixels long. Null when the feature
+ *  cannot be there: turned the wrong way, hardly at all (about 1 deg), or an
+ *  implausible scale. Quaternions as quaternionPointing takes them. */
+export function guideScale(q1, q2, offsetPx, shownPx, axis) {
+  if (!Array.isArray(q1) || !Array.isArray(q2) || !(offsetPx > 0) || !(shownPx > 0)) return null;
+  const d = quaternionPointing(q1);
+  const p = cameraProject(q2, 0, d.az, d.alt);
+  if (!p) return null;
+  const t = axis === 'y' ? p.y : -p.x;
+  if (!(t > 0.02)) return null;
+  const k = offsetPx / t / shownPx;
+  return k > SCALE_MIN && k < SCALE_MAX ? k : null;
+}
+
+/** The field of view (deg) across the video's long side for scale k. */
+const fovOf = (k) => Math.round(2 * Math.atan(1 / (2 * k)) * 180 / Math.PI);
+const screenAngle = () => (typeof screen !== 'undefined' && screen.orientation && screen.orientation.angle) || 0;
+
 /** Ask for motion access inside the user's tap where the browser offers the
  *  call (iOS, newer Chrome). Some browsers never settle it, so nothing waits on
  *  it: a later grant restarts the compass, a refusal is reported. */
@@ -319,8 +368,9 @@ function askMotionPermission(onAnswer) {
  *   onClose(message)    after the view closed
  *   site()              the observing site { lat, lon, label } or null, for
  *                       the Moon reference and the distance check
- *   calibration         this device's stored { delayMs, kx, ky } or null
- *   onCalibrated(cal)   store an improved calibration for this device
+ *   calibration         this device's stored { delayMs, k, measured, scaleMeasured, asked } or null
+ *   onCalibrated(cal)   store an improved calibration for this device;
+ *                       null forgets it (Reset camera calibration)
  * Returns { close }.
  */
 export function openCapture({ horizon, onLine, onPoint, onUndo, canUndo, onClose, site = () => null,
@@ -344,20 +394,26 @@ export function openCapture({ horizon, onLine, onPoint, onUndo, canUndo, onClose
       <button class="btn cap-north-btn" type="button" id="cap-north-btn" aria-expanded="false" aria-controls="cap-ref">
         <span id="cap-north">North: finding…</span><span aria-hidden="true">▾</span></button>
       <p class="cap-site" id="cap-site"></p>
-      <p class="cap-status" id="cap-status" role="status" aria-live="polite">Hold the phone upright and point the camera at the skyline.</p>
+      <p class="cap-status" id="cap-status" role="status" aria-live="polite">Hold the phone upright and aim the cross at the skyline.</p>
     </div>
     <div class="cap-bottom">
+      <div class="cap-panel" id="cap-calib" role="group" aria-labelledby="cap-calib-text" hidden>
+        <p id="cap-calib-text"></p>
+        <div class="cap-row cap-pair">
+          <button class="btn primary" type="button" id="cap-calib-go">Start</button>
+          <button class="btn" type="button" id="cap-calib-skip">Not now</button>
+        </div>
+      </div>
       <div class="cap-panel" id="cap-loop" role="group" aria-labelledby="cap-loop-text" hidden>
-        <p id="cap-loop-text">You turned all the way round. Is the cross back on the spot where you started?</p>
+        <p id="cap-loop-text">You went all the way round. Is the cross back where you started?</p>
         <div class="cap-row cap-pair">
           <button class="btn primary" type="button" id="cap-loop-yes">Yes, close the loop</button>
           <button class="btn" type="button" id="cap-loop-no">No, keep as traced</button>
         </div>
       </div>
       <div class="cap-panel" id="cap-ref" role="group" aria-labelledby="cap-ref-title" hidden>
-        <p id="cap-ref-title"><b>Set north</b>: put the cross on one of these, then tap it.</p>
+        <p id="cap-ref-title"><b>Set north</b>: aim the cross at one of these, then tap it.</p>
         <p class="cap-small" id="cap-north-detail"></p>
-        <p class="cap-small mono" id="cap-compass-diag"></p>
         <p class="cap-small" id="cap-ref-sky"></p>
         <div class="cap-row cap-pair">
           <button class="btn" type="button" id="cap-ref-moon">Moon is in the cross</button>
@@ -371,6 +427,17 @@ export function openCapture({ horizon, onLine, onPoint, onUndo, canUndo, onClose
           <button class="btn" type="button" id="cap-ref-compass">Compass again</button>
           <button class="btn" type="button" id="cap-ref-close">Close</button>
         </div>
+        <details class="cap-details" id="cap-details">
+          <summary>Details</summary>
+          <p class="cap-small mono" id="cap-compass-diag"></p>
+          <p class="cap-small mono" id="cap-camera-diag"></p>
+          <div class="cap-row cap-pair">
+            <button class="btn" type="button" id="cap-calib-start">Line up the drawing</button>
+          </div>
+          <div class="cap-row cap-pair">
+            <button class="btn" type="button" id="cap-cal-reset">Reset camera values</button>
+          </div>
+        </details>
       </div>
       <canvas class="cap-strip" id="cap-strip" aria-hidden="true"></canvas>
       <div class="cap-main">
@@ -390,6 +457,9 @@ export function openCapture({ horizon, onLine, onPoint, onUndo, canUndo, onClose
       </div>
     </div>`;
   document.body.appendChild(el);
+  // A downward swipe must not reach the page: Chrome's pull-to-refresh would
+  // reload it and lose a trace in progress.
+  document.documentElement.classList.add('cap-open');
   const $ = (id) => el.querySelector(id);
   const video = $('#cap-video'), strip = $('#cap-strip'), ar = $('#cap-ar');
   const status = (text) => { $('#cap-status').textContent = text; };
@@ -405,15 +475,22 @@ export function openCapture({ horizon, onLine, onPoint, onUndo, canUndo, onClose
   let lastMessage = '';
   let motion = null;         // { worker, track, frames, size }: the camera-motion worker
   let calTimer = null;
+  let calUpdatedAt = null;   // when this capture last improved the calibration
+  let tooFast = false;       // tracing faster than SPEED_FAST, until below SPEED_OK
+  let calib = null;          // the calibration routine: { step: 'mark' | 'side' | 'up', offered, q1, kSide }
   const lastRead = { at: 0, dir: false };
   const started = now();
   // What the screen shows is the camera image, which trails the gyroscope:
   // everything the user aims with (readout, overlay, trace, points,
   // references) uses the orientation from that long ago.
-  const cal = {
-    delayMs: DEFAULT_DELAY_MS, kx: DEFAULT_KX, ky: DEFAULT_KY, measured: false,
-    ...(calibration && typeof calibration === 'object' ? calibration : {}),
-  };
+  // measured: the delay, from motion; scaleMeasured: the scale, from the
+  // calibration routine; asked: the routine was offered and declined or done.
+  const startCal = { delayMs: DEFAULT_DELAY_MS, k: DEFAULT_K, measured: false, scaleMeasured: false, asked: false };
+  const cal = { ...startCal, ...(calibration && typeof calibration === 'object' ? calibration : {}) };
+  const saveCal = () => onCalibrated({
+    delayMs: Math.round(cal.delayMs), k: +cal.k.toFixed(4),
+    measured: cal.measured, scaleMeasured: cal.scaleMeasured, asked: cal.asked,
+  });
   const shownAt = () => epochNow() - cal.delayMs;
   const view = () => sensors.pointingAt(shownAt());
   const calmView = () => sensors.pointingAt(shownAt(), true);   // calmed, for display only
@@ -425,8 +502,36 @@ export function openCapture({ horizon, onLine, onPoint, onUndo, canUndo, onClose
         trace.samples.push(p);
       }
     }
+    if (trace) checkSpeed();
     schedule();
   });
+
+  /** How fast the phone turns now (deg/s), from the gyroscope's rates. */
+  function turnSpeed() {
+    const r = sensors.state.rates, t = epochNow();
+    let sum = 0, n = 0;
+    for (let i = r.length - 1; i >= 0 && t - r[i].t <= SPEED_WINDOW_MS; i--) { sum += Math.hypot(r[i].wx, r[i].wy); n++; }
+    return n ? sum / n * 180 / Math.PI : 0;
+  }
+
+  /** While tracing, ask to slow down when the phone turns too fast. */
+  function checkSpeed() {
+    const v = turnSpeed();
+    if (!tooFast && v > SPEED_FAST) {
+      tooFast = true;
+      // Vibrate the first time in a trace only; the colour and the words
+      // say it every time.
+      if (!trace.warned) { trace.warned = true; buzz(BUZZ.fast); }
+      status(`Too fast (${Math.round(v)}°/s): turn slower.`);
+    } else if (tooFast && v < SPEED_OK) {
+      tooFast = false;
+      status(tracingText());
+    }
+  }
+
+  const tracingText = () => (mode === 'overhang'
+    ? 'Tracing: follow the underside of the edge, then tap Stop.'
+    : 'Tracing: follow the skyline, then tap Stop.');
 
   function schedule() { if (frame == null && !closed) frame = requestAnimationFrame(render); }
 
@@ -437,13 +542,11 @@ export function openCapture({ horizon, onLine, onPoint, onUndo, canUndo, onClose
     let read;
     if (p) read = fmtDir(p);
     else if (st.rel && st.settle != null) {
-      read = `The compass is settling (it moved ${fmt(st.settle)}° in the last moment): hold the phone upright and still.`;
-    } else if (st.rel) read = 'Finding north from the compass… hold the phone upright and still.';
-    else read = age > SENSOR_WAIT_MS
-      ? 'No motion sensor readings: use a phone or tablet with a gyroscope and compass.'
-      : 'Starting the sensors…';
+      read = `Compass settling (moved ${fmt(st.settle)}°): hold still.`;
+    } else if (st.rel) read = 'Finding north: hold the phone upright and still.';
+    else read = age > SENSOR_WAIT_MS ? 'No motion sensors: use a phone or tablet.' : 'Starting the sensors…';
     if (st.rel && !st.abs && st.offset == null && age > SENSOR_WAIT_MS) {
-      read = 'This device gives no compass direction, so north cannot be set.';
+      read = 'This device has no compass: tap North below.';
     }
     // A direction changes at most every READOUT_MS, so the digits can be read.
     const t = now();
@@ -456,17 +559,21 @@ export function openCapture({ horizon, onLine, onPoint, onUndo, canUndo, onClose
     $('#cap-north').textContent = northShort(st);
     $('#cap-north-detail').textContent = northText(st);
     $('#cap-compass-diag').textContent = compassDiag(st);
-    const ready = !!p, busy = !!trace || !!pending;
-    $('#cap-trace').disabled = (!ready && !trace) || !!pending;
+    $('#cap-camera-diag').textContent = cameraDiag();
+    const ready = !!p, busy = !!trace || !!pending || !!calib;
+    $('#cap-trace').disabled = (!ready && !trace) || !!pending || !!calib;
     $('#cap-point').disabled = !ready || mode !== 'skyline' || busy;
     $('#cap-undo').disabled = !canUndo() || busy;
     $('#cap-north-btn').disabled = busy;
     $('#cap-north-btn').setAttribute('aria-expanded', String(refOpen));
     $('#cap-ref').hidden = !refOpen;
     $('#cap-loop').hidden = !pending;
+    $('#cap-calib').hidden = !calib;
+    if (calib) renderCalib();
     // A panel takes the place of the controls and the strip, so the bottom
     // area never grows over the crosshair in the middle of the screen.
-    el.classList.toggle('cap-asking', refOpen || !!pending);
+    el.classList.toggle('cap-asking', refOpen || !!pending || !!calib);
+    el.classList.toggle('cap-fast', tooFast);
     if (refOpen) renderReferences(st);
     $('#cap-trace').textContent = trace ? `Stop tracing (${trace.samples.length})` : 'Start tracing';
     $('#cap-trace').setAttribute('aria-pressed', String(!!trace));
@@ -490,7 +597,7 @@ export function openCapture({ horizon, onLine, onPoint, onUndo, canUndo, onClose
     let text = `Compass: ${rate} reading${rate === 1 ? '' : 's'} a second`;
     if (t - st.absAt > 1000) text += `, silent for ${fmt((t - st.absAt) / 1000)} s`;
     if (st.offset == null) {
-      text += st.settle != null ? `, settling (moved ${fmt(st.settle)}° within the last moments)` : ', collecting readings';
+      text += st.settle != null ? `, settling (moved ${fmt(st.settle)}°)` : ', collecting readings';
       if (Math.abs(st.abs.alt) >= NORTH_MAX_ALT) text += '; hold the phone more upright';
     } else if (st.source) text += ', not used (north from a reference)';
     else text += ', north set';
@@ -498,10 +605,87 @@ export function openCapture({ horizon, onLine, onPoint, onUndo, canUndo, onClose
     return `${text}.`;
   }
 
+  /** What the overlay assumes about this camera and where that comes from,
+   *  for the north panel: the delay and the field of view across the
+   *  video's long side, measured on this phone or the starting values. */
+  function cameraDiag() {
+    let text = `Camera: ${Math.round(cal.delayMs)} ms behind${cal.measured ? '' : ' (starting value)'}`
+      + `; long side ${fovOf(cal.k)}°${cal.scaleMeasured ? ' (calibrated)' : ' (starting value)'}`;
+    if (cal.measured) return `${text}${calUpdatedAt ? `; delay updated ${clock(calUpdatedAt)}` : ''}.`;
+    if (motion) text += screenAngle() === 0 ? '; pan to measure the delay' : '; the delay measures only upright';
+    else if (stream) text += '; this browser cannot measure the delay';
+    else if (el.classList.contains('cap-no-video')) text += '; no camera image';
+    return `${text}.`;
+  }
+
+  /* ---- the calibration routine: the overlay's scale, measured still ---- */
+
+  /** The video's long side in CSS pixels as shown (object-fit: cover). */
+  function shownLong() {
+    const W = el.clientWidth, Hh = el.clientHeight, vw = video.videoWidth, vh = video.videoHeight;
+    return vw && vh ? Math.max(vw, vh) * Math.max(W / vw, Hh / vh) : Math.max(W, Hh);
+  }
+
+  /** The current step's guide line: { axis, px } (left of the cross for
+   *  'x', above it for 'y'), or null. The up-down line stays below the top
+   *  bar. */
+  function guide() {
+    if (!calib || calib.step === 'mark') return null;
+    const W = el.clientWidth, Hh = el.clientHeight;
+    if (calib.step === 'side') return { axis: 'x', px: Math.round(W * GUIDE_SIDE) };
+    const top = $('.cap-top').getBoundingClientRect().bottom - el.getBoundingClientRect().top;
+    return { axis: 'y', px: Math.max(0, Math.round(Math.min(W * GUIDE_SIDE, (Hh / 2 - top) * 0.75))) };
+  }
+
+  function renderCalib() {
+    const upright = screenAngle() === 0;
+    const text = {
+      mark: `${calib.offered ? 'Line up the drawing with this camera, once per phone (about 20 s). ' : ''}`
+        + 'Step 1 of 3: aim the cross at a pole or roof corner far away, hold still and tap Start.',
+      side: 'Step 2 of 3: turn right until it sits on the amber line. Hold still and tap It’s on the line.',
+      up: 'Step 3 of 3: tilt the phone down until it sits on the amber line. Hold still and tap It’s on the line.',
+    }[calib.step];
+    $('#cap-calib-text').textContent = upright ? text : 'Hold the phone upright (portrait) for this.';
+    $('#cap-calib-go').textContent = calib.step === 'mark' ? 'Start' : 'It’s on the line';
+    $('#cap-calib-go').disabled = !upright || !sensors.state.relQ;
+    $('#cap-calib-skip').textContent = calib.step === 'up' ? 'Skip'
+      : calib.offered && calib.step === 'mark' ? 'Not now' : 'Cancel';
+    const g = guide();
+    el.dataset.guide = g ? `${g.axis}:${g.px}` : '';
+  }
+
+  function startCalib(offered) {
+    if (trace || pending || calib) return;
+    refOpen = false;
+    calib = { step: 'mark', offered };
+    render();
+    const go = $('#cap-calib-go');
+    (go.disabled ? $('#cap-calib-skip') : go).focus();
+  }
+
+  function endCalib(message) {
+    calib = null;
+    el.dataset.guide = '';
+    if (message) status(message);
+    render();
+    (traceBtn.disabled ? $('#cap-done') : traceBtn).focus();
+  }
+
+  /** Keep the measured scale: the mean of both steps where they agree (one
+   *  lens), else the sideways one. */
+  function finishCalib(kSide, kUp) {
+    const agree = kUp == null || Math.abs(kUp - kSide) / kSide <= CALIB_AGREE;
+    Object.assign(cal, { k: kUp != null && agree ? (kSide + kUp) / 2 : kSide, scaleMeasured: true, asked: true });
+    saveCal();
+    let message = `Done: the drawing now matches this camera (${fovOf(cal.k)}° wide).`;
+    if (!agree) message += ` Up and down read ${fovOf(kUp)}°, so the sideways value is used; run it again if the drawing is off up and down.`;
+    endCalib(message);
+  }
+
   /** Where north comes from, in a few words for the north button. */
   function northShort(st) {
     if (st.offset == null) {
-      if (st.rel && st.settle != null) return 'North: the compass is settling…';
+      if (st.rel && st.settle != null) return 'North: compass settling…';
       return st.rel && !st.abs && now() - started > SENSOR_WAIT_MS ? 'North: not set (no compass)' : 'North: finding…';
     }
     if (st.source) return `North: ${st.source.label}`;
@@ -513,16 +697,16 @@ export function openCapture({ horizon, onLine, onPoint, onUndo, canUndo, onClose
     if (st.offset == null) return '';
     const src = st.source;
     if (src) {
-      let text = `North from ${src.label}, aimed at ${clock(src.at)}.`;
+      let text = `North from ${src.label} at ${clock(src.at)}.`;
       if (src.compassDiff != null) text += ` The compass was ${fmt(Math.abs(src.compassDiff))}° off.`;
       if (src.kind !== 'landmark' && Math.abs(src.altError) >= 0.5) {
-        text += ` The aim read ${fmt(Math.abs(src.altError))}° ${src.altError > 0 ? 'high' : 'low'}, so check the cross was on its centre.`;
+        text += ` Aim read ${fmt(Math.abs(src.altError))}° ${src.altError > 0 ? 'high' : 'low'}: was the cross on its centre?`;
       }
       return text;
     }
-    return `North from the compass, within about ${fmt(Math.max(1, st.spread))}°. Compasses can be 5–10° off near cars, railings and buildings: North… sets it from the Moon or a landmark.`
-      + (st.northUnsteady ? ' The compass did not settle, so north may be further off.' : '')
-      + (st.compassOnly ? ' This device has no gyroscope reading, so the trace follows the compass.' : '');
+    return `Compass north, ±${fmt(Math.max(1, st.spread))}°. Metal and buildings can put it 5–10° off; the Moon or a landmark is better.`
+      + (st.northUnsteady ? ' It never settled.' : '')
+      + (st.compassOnly ? ' No gyroscope: the trace follows the compass.' : '');
   }
 
   /** The Moon as a reference now, from the observing site. */
@@ -540,7 +724,7 @@ export function openCapture({ horizon, onLine, onPoint, onUndo, canUndo, onClose
       if (use.ok) return `${name} ${fmt(dir.alt)}° high in the ${cardinal(dir.az)}`;
       return use.why === 'below' ? `${name} below the horizon` : `${name} too high to set north (${fmt(dir.alt)}°)`;
     };
-    $('#cap-ref-sky').textContent = !sky ? 'Set an observing site to use the Moon.' : `${say('Moon', sky.moon)}.`;
+    $('#cap-ref-sky').textContent = !sky ? 'Set a site to use the Moon.' : `${say('Moon', sky.moon)}.`;
     $('#cap-ref-moon').disabled = !st.rel || !sky || !referenceUsable(sky.moon).ok;
     $('#cap-ref-landmark').disabled = !st.rel;
     $('#cap-ref-compass').disabled = !st.abs;
@@ -607,7 +791,7 @@ export function openCapture({ horizon, onLine, onPoint, onUndo, canUndo, onClose
      horizon with compass marks, the skyline, overhang edges and the trace in
      progress, as lines only so the scene stays visible.
      The orientation is the one the camera image shows (cal.delayMs ago),
-     and the scale is this camera's (cal.kx, cal.ky); the crosshair itself is
+     and the scale is this camera's (cal.k); the crosshair itself is
      exact. */
   function drawAR() {
     const started = now();
@@ -624,25 +808,34 @@ export function openCapture({ horizon, onLine, onPoint, onUndo, canUndo, onClose
     if (!ctx) return;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, W, Hh);
+    const g = guide();
+    if (g) {   // the calibration's guide line, outlined so it shows on any scene
+      const VG = vizTheme();
+      for (const [colour, width] of [[VG.canvas, 5], [VG.warn, 2]]) {
+        ctx.strokeStyle = colour;
+        ctx.lineWidth = width;
+        ctx.beginPath();
+        if (g.axis === 'x') { ctx.moveTo(W / 2 - g.px, 0); ctx.lineTo(W / 2 - g.px, Hh); } else { ctx.moveTo(0, Hh / 2 - g.px); ctx.lineTo(W, Hh / 2 - g.px); }
+        ctx.stroke();
+      }
+    }
     const st = sensors.state, here = calmView(), q0 = sensors.qAt(shownAt(), true);
     if (!q0 || !here) return;
     // Focal length in CSS pixels: the video covers the view (object-fit: cover),
     // so its long side, scaled to cover, spans the camera's long-side angle.
-    const vw = video.videoWidth, vh = video.videoHeight;
-    const shown = vw && vh ? Math.max(vw, vh) * Math.max(W / vw, Hh / vh) : Math.max(W, Hh);
-    const fx = cal.kx * shown, fy = cal.ky * shown;
+    const f = cal.k * shownLong();
     // Device axes are portrait; turn them with the screen.
     const turn = ((typeof screen !== 'undefined' && screen.orientation && screen.orientation.angle) || 0) * Math.PI / 180;
     const c = Math.cos(turn), sn = Math.sin(turn);
     // Only directions within reach of the camera axis can be on screen; near
     // the zenith or nadir every azimuth can be.
-    const reach = Math.abs(here.alt) > 40 ? 180 : Math.atan(Math.hypot(W, Hh) / 2 / Math.min(fx, fy)) * 180 / Math.PI + 8;
+    const reach = Math.abs(here.alt) > 40 ? 180 : Math.atan(Math.hypot(W, Hh) / 2 / f) * 180 / Math.PI + 8;
     const near = (az) => Math.abs(azDelta(az, here.az)) <= reach;
     const at = (az, alt) => {
       if (!near(az)) return null;
       const q = cameraProject(q0, st.offset, az, alt);
       if (!q) return null;
-      const dx = q.x * fx, dy = q.y * fy;   // device axes, scaled as this camera shows them
+      const dx = q.x * f, dy = q.y * f;   // device axes, scaled as this camera shows them
       return { x: W / 2 + dx * c - dy * sn, y: Hh / 2 - (dx * sn + dy * c) };
     };
     // A line of directions as on-screen runs, broken where it leaves the view.
@@ -750,11 +943,11 @@ export function openCapture({ horizon, onLine, onPoint, onUndo, canUndo, onClose
 
   /* ---- tracing ---- */
   function startTrace() {
-    if (trace || !view()) return;
+    if (trace || calib || !view()) return;
     trace = { kind: mode, samples: [view()] };
-    status(mode === 'overhang'
-      ? 'Tracing an overhang: follow the underside of the balcony or roof edge, then press Stop tracing.'
-      : 'Tracing: keep the cross on the skyline while you turn, then press Stop tracing.');
+    tooFast = false;
+    buzz(BUZZ.start);
+    status(tracingText());
     render();   // the button says so at once, not a frame later
   }
 
@@ -762,6 +955,8 @@ export function openCapture({ horizon, onLine, onPoint, onUndo, canUndo, onClose
     if (!trace) return;
     const { kind, samples } = trace;
     trace = null;
+    tooFast = false;
+    buzz(BUZZ.stop);
     if (kind === 'skyline' && closeLoop(samples)) {
       // A full turn: ask whether it ended where it began before using it.
       pending = { kind, samples };
@@ -777,7 +972,7 @@ export function openCapture({ horizon, onLine, onPoint, onUndo, canUndo, onClose
   function commitTrace(kind, samples, note) {
     const line = sweepLine(samples);
     if (!line.length) {
-      status('Nothing traced: start tracing, then turn along the skyline before stopping.');
+      status('Nothing traced: turn along the skyline before stopping.');
       return;
     }
     lastMessage = `${onLine(line, kind) || ''}${note ? ` ${note}` : ''}`;
@@ -796,7 +991,7 @@ export function openCapture({ horizon, onLine, onPoint, onUndo, canUndo, onClose
       if (Math.abs(loop.error) <= LOOP_MAX_DEG) {
         commitTrace(kind, loop.samples, `Loop closed: ${fmt(Math.abs(loop.error))}° of drift removed.`);
       } else {
-        commitTrace(kind, samples, `The end was ${fmt(Math.abs(loop.error))}° from the start, more than drift, so it is kept as traced. Trace again if it looks wrong.`);
+        commitTrace(kind, samples, `Ends ${fmt(Math.abs(loop.error))}° from the start, more than drift: kept as traced.`);
       }
     }
     render();
@@ -812,6 +1007,7 @@ export function openCapture({ horizon, onLine, onPoint, onUndo, canUndo, onClose
     const p = view();
     if (!p || trace) return;
     lastMessage = onPoint(p) || '';
+    buzz(BUZZ.point);
     status(lastMessage);
     schedule();
   });
@@ -830,7 +1026,7 @@ export function openCapture({ horizon, onLine, onPoint, onUndo, canUndo, onClose
   const closeReferences = () => { refOpen = false; render(); northBtn.focus(); };
   const useReference = (dir, info) => {
     const src = sensors.setReference(dir, info, sensors.relAt(shownAt()));
-    if (!src) { status('No reading from the motion sensors yet.'); return; }
+    if (!src) { status('No motion readings yet.'); return; }
     status(`North set from ${info.label}.`);
     closeReferences();
   };
@@ -843,7 +1039,7 @@ export function openCapture({ horizon, onLine, onPoint, onUndo, canUndo, onClose
   $('#cap-ref-landmark').addEventListener('click', () => {
     const az = Number($('#cap-ref-az').value);
     if ($('#cap-ref-az').value === '' || !Number.isFinite(az) || az < 0 || az >= 360) {
-      status('Enter the landmark’s bearing from true north, 0 to 359.9°, then put the cross on it.');
+      status('Enter the landmark’s true bearing, 0–359.9°.');
       $('#cap-ref-az').focus();
       return;
     }
@@ -851,9 +1047,55 @@ export function openCapture({ horizon, onLine, onPoint, onUndo, canUndo, onClose
     useReference({ az, alt: seen ? seen.alt : 0 }, { kind: 'landmark', label: `a landmark at ${fmt(az)}°` });
   });
   $('#cap-ref-close').addEventListener('click', closeReferences);
+  $('#cap-calib-start').addEventListener('click', () => startCalib(false));
+  $('#cap-calib-go').addEventListener('click', () => {
+    if (!calib) return;
+    const q = sensors.qAt(shownAt(), true);
+    if (!q) { status('No motion readings yet.'); return; }
+    if (turnSpeed() > CALIB_STILL) { status('Hold still for a moment, then tap again.'); return; }
+    if (calib.step === 'mark') {
+      calib.q1 = q;
+      calib.step = 'side';
+      buzz(BUZZ.point);
+      render();
+      return;
+    }
+    const g = guide();
+    const k = guideScale(calib.q1, q, g.px, shownLong(), g.axis);
+    if (k == null) {
+      status(g.axis === 'x' ? 'That does not fit: turn right until it is on the amber line.'
+        : 'That does not fit: tilt down until it is on the amber line.');
+      return;
+    }
+    buzz(BUZZ.point);
+    if (calib.step === 'side') {
+      calib.kSide = k;
+      calib.step = 'up';
+      if (guide().px >= GUIDE_MIN_PX) { render(); return; }
+      finishCalib(k, null);   // no room above the cross for an up-down line
+      return;
+    }
+    finishCalib(calib.kSide, k);
+  });
+  $('#cap-calib-skip').addEventListener('click', () => {
+    if (!calib) return;
+    if (calib.step === 'up') { finishCalib(calib.kSide, null); return; }
+    const offered = calib.offered;
+    if (offered && !cal.asked) { cal.asked = true; saveCal(); }
+    endCalib(offered ? 'You can do this later: North… › Details › Line up the drawing.' : 'Cancelled.');
+  });
+  $('#cap-cal-reset').addEventListener('click', () => {
+    Object.assign(cal, startCal);
+    calUpdatedAt = null;
+    delete el.dataset.calibrated;
+    onCalibrated(null);
+    status(motion ? 'Camera reset to the starting values; pan slowly to measure again.'
+      : 'Camera reset to the starting values.');
+    render();
+  });
   $('#cap-ref-compass').addEventListener('click', () => {
     sensors.rereadNorth();
-    status('Hold still for a moment while the compass is read again.');
+    status('Hold still: reading the compass again.');
     closeReferences();
   });
   for (const m of ['skyline', 'overhang']) {
@@ -863,8 +1105,8 @@ export function openCapture({ horizon, onLine, onPoint, onUndo, canUndo, onClose
       // The pressed state changes at once, not on the next frame.
       for (const k of ['skyline', 'overhang']) $(`#cap-mode-${k}`).setAttribute('aria-pressed', String(k === m));
       status(m === 'overhang'
-        ? 'Overhang: trace the underside of a balcony, roof or branch. The sky above that edge is blocked.'
-        : 'Skyline: trace along the tops of trees and roofs.');
+        ? 'Overhang: trace the underside of a roof, balcony or branch.'
+        : 'Skyline: trace the tops of trees and roofs.');
       schedule();
     });
   }
@@ -875,7 +1117,7 @@ export function openCapture({ horizon, onLine, onPoint, onUndo, canUndo, onClose
   document.addEventListener('keydown', onEscape);
   el.addEventListener('keydown', (ev) => {
     if (ev.key === 'Tab') {   // keep focus inside the view
-      const buttons = [...el.querySelectorAll('button:not(:disabled), input:not(:disabled)')].filter((b) => b.offsetParent !== null);
+      const buttons = [...el.querySelectorAll('button:not(:disabled), input:not(:disabled), summary')].filter((b) => b.offsetParent !== null);
       if (!buttons.length) return;
       const i = buttons.indexOf(document.activeElement);
       ev.preventDefault();
@@ -901,7 +1143,7 @@ export function openCapture({ horizon, onLine, onPoint, onUndo, canUndo, onClose
       const near = Math.max(SITE_NEAR_M, 2 * (pos.coords.accuracy || 0));
       const far = d < 1000 ? `${Math.round(d)} m` : `${(d / 1000).toFixed(1)} km`;
       $('#cap-site').textContent = d <= near ? ''
-        : `You are about ${far} from the site${s.label ? ` “${s.label}”` : ''}. A horizon only holds where it was measured: check the site in the top bar.`;
+        : `${far} from the site${s.label ? ` “${s.label}”` : ''}: check the site in the top bar.`;
     }, () => {}, { maximumAge: 60000, timeout: 10000 });
   }
 
@@ -918,9 +1160,11 @@ export function openCapture({ horizon, onLine, onPoint, onUndo, canUndo, onClose
       video.srcObject = stream;
       startMotion();
       offerExposure();
+      // Offer the calibration routine once per phone, where there is an image.
+      if (!cal.scaleMeasured && !cal.asked && !refOpen) startCalib(true);
     } catch (error) {
       el.classList.add('cap-no-video');
-      status(`The camera is not available (${error && error.name ? error.name : 'unknown reason'}). You can still aim with the back of the phone.`);
+      status(`No camera (${error && error.name ? error.name : 'unknown reason'}): aim with the back of the phone.`);
     }
   }
 
@@ -944,14 +1188,14 @@ export function openCapture({ horizon, onLine, onPoint, onUndo, canUndo, onClose
           // the same light: exposure time and sensitivity trade one for one
           const iso = Math.round(clamp((now.iso || caps.iso.min) * (now.exposureTime || time) / time, caps.iso));
           await track.applyConstraints({ advanced: [{ exposureMode: 'manual', exposureTime: time, iso }] });
-          status('Sharper motion: each frame is exposed for 1/60 s. The video may look a little grainier.');
+          status('Sharper motion on: 1/60 s frames, a little grainier.');
         } else {
           await track.applyConstraints({ advanced: [{ exposureMode: 'continuous' }] });
-          status('The camera sets its exposure itself again.');
+          status('Sharper motion off.');
         }
         btn.setAttribute('aria-pressed', String(on));
       } catch (error) {
-        status(`The camera did not accept that (${error && error.name ? error.name : 'unknown reason'}).`);
+        status(`The camera refused that (${error && error.name ? error.name : 'unknown reason'}).`);
       } finally {
         btn.disabled = false;
       }
@@ -983,35 +1227,27 @@ export function openCapture({ horizon, onLine, onPoint, onUndo, canUndo, onClose
   }
 
   /** Compare the image's motion with the gyroscope's over the last seconds;
-   *  where they agree well, take this camera's delay and scale from them. */
+   *  where they agree well, take this camera's delay from them. The scale
+   *  comes from the calibration routine. */
   function calibrate() {
     if (!motion || !motion.size || closed) return;
     // The axes below are those of an upright phone.
     if (((typeof screen !== 'undefined' && screen.orientation && screen.orientation.angle) || 0) !== 0) return;
-    const [vw, vh, aw, ah] = motion.size, long = Math.max(vw, vh);
     const rates = sensors.state.rates;
     const pick = (shiftAt, scoreAt) => motion.frames.filter((f) => f[scoreAt] > 0.6).map((f) => ({ t0: f[0], t1: f[1], d: f[shiftAt] }));
     const h = matchMotion(rates.map((r) => ({ t: r.t, w: r.wy })), pick(2, 3));
     const v = matchMotion(rates.map((r) => ({ t: r.t, w: r.wx })), pick(4, 5));
     const good = (m) => m && Math.abs(m.corr) >= CAL_MIN_CORR && m.lagMs > 0 && m.lagMs < 400;
-    const blend = (old, x) => (cal.measured ? old * 0.6 + x * 0.4 : x);
     const delays = [];
-    let changed = false;
-    if (good(h)) {
-      const k = Math.abs(h.slope) * (vw / aw) / long;
-      if (k > 0.5 && k < 1.4) { cal.kx = blend(cal.kx, k); changed = true; }
-      delays.push(h.lagMs);
-    }
-    if (good(v)) {
-      const k = Math.abs(v.slope) * (vh / ah) / long;
-      if (k > 0.5 && k < 1.4) { cal.ky = blend(cal.ky, k); changed = true; }
-      delays.push(v.lagMs);
-    }
-    if (delays.length) { cal.delayMs = blend(cal.delayMs, delays.reduce((a, b) => a + b, 0) / delays.length); changed = true; }
-    if (changed) {
+    if (good(h)) delays.push(h.lagMs);
+    if (good(v)) delays.push(v.lagMs);
+    if (delays.length) {
+      const lag = delays.reduce((a, b) => a + b, 0) / delays.length;
+      cal.delayMs = cal.measured ? cal.delayMs * 0.6 + lag * 0.4 : lag;
       cal.measured = true;
+      calUpdatedAt = new Date();
       el.dataset.calibrated = 'yes';
-      onCalibrated({ delayMs: Math.round(cal.delayMs), kx: +cal.kx.toFixed(4), ky: +cal.ky.toFixed(4), measured: true });
+      saveCal();
     }
   }
 
@@ -1030,6 +1266,7 @@ export function openCapture({ horizon, onLine, onPoint, onUndo, canUndo, onClose
     document.removeEventListener('visibilitychange', onVisibility);
     document.removeEventListener('keydown', onEscape);
     el.remove();
+    document.documentElement.classList.remove('cap-open');
     if (before && before.isConnected && typeof before.focus === 'function') before.focus();
     onClose(lastMessage);
   }
@@ -1040,7 +1277,7 @@ export function openCapture({ horizon, onLine, onPoint, onUndo, canUndo, onClose
   askMotionPermission((answer) => {
     if (closed) return;
     if (answer === 'granted') sensors.restartCompass();
-    else if (answer === 'denied') status('Motion and orientation access was not allowed, so the capture cannot follow the phone.');
+    else if (answer === 'denied') status('Motion access was refused, so the capture cannot follow the phone.');
   });
   startCamera();
   keepAwake();

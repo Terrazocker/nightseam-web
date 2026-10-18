@@ -42,11 +42,17 @@ entry here when it is fixed and record the fix in RELEASES.md.
   (5-10 deg off near metal or buildings, measured on a Pixel 7a). *North…*
   sets it from the Moon or a landmark instead. The Moon needs the observing
   site to be where the phone is.
-- **AR overlay lag (owner, Pixel 7a, 2026-10-15): fix awaiting the owner's
-  check.** Measured: the camera image trails the gyroscope by about 210 ms and
-  is scaled differently per axis. The capture now aims with the orientation
-  the image shows and calibrates delay and scale per device; remove this
-  entry once the owner confirms it on the phone.
+- **AR overlay calibration (owner, Pixel 7a, 2026-10-18): scale routine
+  awaiting the owner's check; delay open.** The scale read from motion grew
+  with turning speed (0.87 of the long side under 15 deg/s, 1.05 at
+  30-60 deg/s; slow pans alone settled at 0.97), while a still test put the
+  sideways value at about 0.88. The capture now measures the scale still,
+  with a once-per-phone calibration routine (mark a feature, turn it onto a
+  line left of the cross, tilt it onto a line above). Still open: the
+  learned delay varies (about 95-135 ms in daylight against 210 ms
+  measured earlier; it likely grows with exposure in dim light), with no
+  test yet of which delay is right. The crosshair and recorded points do not
+  depend on the scale; they do depend on the delay while turning.
 - **Near-tangent twilight.** When the Sun turns within about 0.01 deg of a
   twilight level, the Sun model and the published tables can disagree on
   whether a spell of a few minutes happens at all (Tromso 2026-09-16: USNO
@@ -58,3 +64,11 @@ entry here when it is fixed and record the fix in RELEASES.md.
 - **BROWSER-LOCAL-001.** The local test server's connection queue was raised
   from 5 to 64 after refused module loads; failures are recorded with server
   thread health and failed URLs, never retried or skipped.
+- **BROWSER-CI-003.** web-docked-inspector-fit-and-tonight-key failed once
+  on Linux CI (pull request #12, run 39150513399; that change touches none
+  of the docked inspector's code or styles). After returning to the page top
+  the dock's `--detail-top` and the tab bar's bottom agreed (132 px), yet the
+  title's box was at 114.5 px, over the tab bar; a full-page screenshot taken
+  just after showed it in place. Not reproduced locally in five runs (one of
+  them failed earlier, on an unrelated harness port, fixed the same day). If
+  it fails again, treat it as a real defect.
