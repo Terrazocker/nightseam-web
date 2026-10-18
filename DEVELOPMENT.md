@@ -119,8 +119,8 @@ editor", "Capture horizons with the phone's sensors"); plans:
   `warmCompass` keeps an `AbsoluteOrientationSensor` running at 10 Hz (the
   browser shares one compass between its users), so a capture usually opens
   on a settled compass; it stops when the panel closes or, within 2 s, when
-  another tab replaces the editor. The north panel's status line
-  (`compassDiag`) says how many compass readings arrive, whether it is
+  another tab replaces the editor. The north panel's compass line under
+  *Details* (`compassDiag`) says how many compass readings arrive, whether it is
   settling and by how much, and how often it was restarted.
 - **North references.** *North…* opens a panel: put the crosshair on the
   Moon (topocentric apparent position for the observing site and the current
@@ -167,13 +167,12 @@ editor", "Capture horizons with the phone's sensors"); plans:
   the delay and scale. They are kept per device in localStorage
   `nightseam_capture_cal_v1` (not in backups); the Pixel 7a's measurement
   (210 ms, 0.864, 0.752) is the starting value. Browsers without the frame
-  API keep the stored or starting values. The north panel ends with a
-  monospace camera line (the delay, the long side's field of view from the
-  sideways and the up-down motion, which should agree, and whether the values
-  are measured on this phone or the starting ones) and *Reset camera
-  calibration*, which returns to the starting values and forgets the stored
-  ones; both sit below *Compass again / Close*, so the north controls do not
-  move.
+  API keep the stored or starting values. The north panel's *Details*
+  also hold a monospace camera line (the delay, the long side's field of view
+  from the sideways and the up-down motion, which should agree, and whether
+  the values are measured on this phone or the starting ones) and *Reset
+  camera calibration*, which returns to the starting values and forgets the
+  stored ones.
 - **Sharper motion.** Browsers expose no stabilisation (OIS/EIS) control;
   the Pixel 7a's camera offers manual exposure and ISO. Where a camera allows
   manual exposure, a *Sharper motion* toggle sets 1/60 s and raises the ISO
@@ -190,7 +189,12 @@ editor", "Capture horizons with the phone's sensors"); plans:
   starts it, another stops it) becomes one line through
   `sweepLine` (continuous azimuths, latest sample per 0.25 deg, simplified,
   steps of at most 90 deg) and replaces that stretch of skyline, or becomes
-  overhang edges split at north. Where the browser offers
+  overhang edges split at north. While tracing, the gyroscope's rate
+  averaged over 250 ms is the turning speed: above 30 deg/s the view asks to
+  slow down (status line and crosshair in the warning colour) until it falls
+  below 20 deg/s. `navigator.vibrate`, where it exists, marks starting and
+  stopping a trace, adding a point and the too-fast hint with short,
+  distinct patterns. Where the browser offers
   `DeviceOrientationEvent.requestPermission`, it is asked inside the tap and
   nothing waits on it: a later grant restarts the compass.
 - **Share links.** *Share link* encodes the horizon (`encodeHorizonLink`:

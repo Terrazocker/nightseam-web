@@ -10,7 +10,7 @@
  * planner preferences.
  */
 import { vizTheme } from './viztheme.js?v=7';
-import { openCapture, captureAvailable, warmCompass } from './capture.js?v=24';
+import { openCapture, captureAvailable, warmCompass } from './capture.js?v=25';
 import { normalizeWebPrefs, WEB_PREF_DEFAULTS } from './webstore.js?v=83';
 import {
   NO_BLOCK, ALT_MIN, ALT_MAX, MAX_POINTS,

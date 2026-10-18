@@ -751,6 +751,8 @@ def web_horizon_capture_shows_what_the_camera_saw(c):
     # The north panel says what the overlay assumes about the camera, and
     # Reset camera calibration forgets this device's values.
     c.page.click("#cap-north-btn")
+    c.expect(not c.page.locator("#cap-camera-diag").is_visible(), "the diagnostics wait behind Details")
+    c.page.click("#cap-details summary")
     diag = c.page.inner_text("#cap-camera-diag")
     c.expect("300 ms behind" in diag and "starting values" in diag,
              f"the panel shows the stored delay and that it is not measured yet: {diag!r}")
@@ -911,6 +913,7 @@ def web_horizon_capture_references_and_loop(c):
 
     c.page.click("#cap-north-btn")
     c.expect(c.page.locator("#cap-ref").is_visible(), "North… opens the reference panel")
+    c.page.click("#cap-details summary")
     c.expect("no readings" in c.page.inner_text("#cap-compass-diag"),
              f"the panel says the compass gives nothing: {c.page.inner_text('#cap-compass-diag')!r}")
     clear = c.page.evaluate(cross_clear)
@@ -933,18 +936,29 @@ def web_horizon_capture_references_and_loop(c):
     c.expect(c.page.inner_text("#cap-read").strip().startswith("120.0° ESE"), f"the landmark sets north: {c.page.inner_text('#cap-read')!r}")
     c.expect("landmark at 120°" in c.page.inner_text("#cap-north"), f"the view says where north comes from: {c.page.inner_text('#cap-north')!r}")
 
-    def full_turn(gain: float):
+    def full_turn(gain: float, check_speed: bool = False):
         """Turn once around a skyline with one sharp peak half way (true 300
-        deg); the gyroscope reads `gain` times the true angle."""
+        deg); the gyroscope reads `gain` times the true angle. 2 deg every
+        30 ms is far over the 30 deg/s at which the view asks to slow down."""
         c.page.click("#cap-trace")
         for k in range(0, 181):
             theta = k * 2
             alt = 5 + 25 * max(0.0, 1 - abs(theta - 180) / 6)
             rel(theta * gain, alt, 30)
+            if check_speed and k == 120:
+                c.expect("Too fast" in c.page.inner_text("#cap-status")
+                         and c.page.evaluate("() => document.querySelector('.cap').classList.contains('cap-fast')"),
+                         f"turning fast asks to slow down, in words and colour: {c.page.inner_text('#cap-status')!r}")
+        if check_speed:
+            for _ in range(10):              # hold still at the end
+                rel(360 * gain, 5, 40)
+            c.expect(c.page.inner_text("#cap-status").startswith("Tracing:")
+                     and not c.page.evaluate("() => document.querySelector('.cap').classList.contains('cap-fast')"),
+                     f"once slower the hint goes: {c.page.inner_text('#cap-status')!r}")
         c.page.click("#cap-trace")
         c.page.wait_for_selector("#cap-loop:not([hidden])", timeout=5000)
 
-    full_turn(362.4 / 360)          # 2.4 deg of drift over the turn
+    full_turn(362.4 / 360, True)    # 2.4 deg of drift over the turn
     c.expect("all the way round" in c.page.inner_text("#cap-loop"), "a full turn asks whether it ended where it began")
     clear = c.page.evaluate(cross_clear)
     c.expect(clear["clear"], f"so does the question, to check the cross is on the start: {clear}")
@@ -1034,6 +1048,7 @@ def web_horizon_capture_north_waits_for_compass(c):
         c.expect(not c.page.locator("#cap-trace").is_enabled(), "north is not set while the compass still moves")
     c.expect("settling" in c.page.inner_text("#cap-read"), f"the view says why: {c.page.inner_text('#cap-read')!r}")
     c.page.click("#cap-north-btn")
+    c.page.click("#cap-details summary")
     diag = c.page.inner_text("#cap-compass-diag")
     c.expect("readings a second" in diag and "settling" in diag, f"the north panel says what the compass does: {diag!r}")
     c.page.click("#cap-ref-close")
@@ -1090,6 +1105,7 @@ def web_horizon_phone_capture(c):
     c.expect(c.page.evaluate("() => document.querySelector('#cap-video').srcObject instanceof MediaStream"),
              "the camera stream is shown")
 
+    c.page.evaluate("() => { window.__buzz = []; navigator.vibrate = (p) => { window.__buzz.push(p); return true; }; }")
     c.expect_eq(c.page.inner_text("#cap-trace").strip(), "Start tracing", "one tap starts tracing")
     c.page.click("#cap-trace")
     c.expect_eq(c.page.get_attribute("#cap-trace", "aria-pressed"), "true", "tracing is announced")
@@ -1119,6 +1135,8 @@ def web_horizon_phone_capture(c):
     c.page.click("#cap-point")
     c.expect(any(abs(p["az"] - 130) < 0.6 and abs(p["alt"] - 12) < 0.6 for p in active_horizon(c)["points"]),
              "Add point stores where the cross points")
+    c.expect_eq(c.page.evaluate("() => window.__buzz"), [15, [15, 60, 15], 25],
+                "starting, stopping and adding a point each give a short, distinct vibration")
     aim(100, 12, 200)
     dot = c.page.evaluate("""() => { const cv = document.querySelector('#cap-ar'), x = cv.getContext('2d');
       const k = cv.width / cv.getBoundingClientRect().width;

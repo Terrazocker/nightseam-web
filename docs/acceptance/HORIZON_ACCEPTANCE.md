@@ -32,7 +32,9 @@ planner, so the first check really is a first open.
 4. **Skyline, full turn, loop closed.** Start tracing on landmark A, turn once
    slowly along the skyline back to A, stop with the cross on A, *Yes, close
    the loop*. Target: "Loop closed" with 1.5° or less of drift. The skyline in
-   the editor follows the real one.
+   the editor follows the real one. Starting and stopping each give a short
+   vibration; turning quickly turns the crosshair amber with *Too fast*, and
+   it clears once you slow down.
 5. **Repeatability.** Do step 4 a second time into a new horizon. Target: the
    two skylines in the editor agree within 2° wherever the skyline is sharp
    (rooftops, masts).
@@ -42,7 +44,7 @@ planner, so the first check really is a first open.
    lies on the real skyline at the crosshair and still lies on it near the
    screen edges. Pan slowly and quickly. Note whether the lines trail behind
    the image while moving and catch up when you stop. Then open *North…*
-   and note the camera line at the bottom (scroll the panel): after half a
+   and *Details*, and note the camera line: after half a
    minute of slow panning and tilting it should say *measured on this
    phone*, and its two angles (sideways, up-down) should agree within a few
    degrees. If the overlay is off, *Reset camera calibration*, pan again and

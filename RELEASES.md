@@ -5,6 +5,24 @@ Actual validation outcomes, newest first. Published releases: v0.1.1 (October 8,
 development awaiting the next release, 0.7.0. Upload success alone is never
 recorded as acceptance.
 
+## Capture: speed hint, haptics, shorter copy — October 18, 2026 (branch horizon-edge-cases)
+
+While tracing, turning faster than 30 deg/s (gyroscope rate over 250 ms)
+turns the crosshair and status line amber with *Too fast (N°/s): turn
+slower.*, clearing below 20 deg/s. Where the browser can vibrate, start,
+stop, *Add point* and the hint each give a short, distinct vibration. The
+capture's messages are shortened to one line where possible, and the
+north panel's compass and camera lines and *Reset camera calibration* moved
+behind a closed *Details*, so the panel fits a 375 x 812 screen without
+scrolling (311 of 364 px). The view's Tab loop now includes the summary.
+
+Checks: web-horizon-capture-references-and-loop asserts the hint during a
+67 deg/s turn and that it clears when the phone holds still;
+web-horizon-phone-capture records the vibration patterns for start, stop and
+point; the compass and camera line checks open *Details* first. Not checked
+on a phone. pytest 358 passed, 1 skipped; check_js and check_js_tokens pass;
+browser web suite 87/87.
+
 ## Capture calibration: capture-timed frames, readout and reset — October 18, 2026 (branch horizon-edge-cases)
 
 Reviewed the phone capture's camera calibration. The motion worker timed

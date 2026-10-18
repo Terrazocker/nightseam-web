@@ -145,12 +145,21 @@ The local exposure catalog has its own design document in Nightseam-catalog.
       controls; nothing else can be pressed while the question waits. The
       north panel also gives the full account of north: which reference and
       when, how far the compass was off, and while the compass settles, that
-      the phone should be held still; a monospace status line underneath says
+      the phone should be held still. Below *Compass again / Close*, a
+      closed *Details* disclosure holds the diagnostics: a monospace line on
       what the compass itself is doing (readings a second, settling,
-      restarts), so a user can report why north is missing. Below *Compass
-      again / Close*, a second monospace line says what the overlay assumes
-      about the camera (delay, field of view, measured or starting values),
-      with *Reset camera calibration* under it.
+      restarts), so a user can report why north is missing; a second one on
+      what the overlay assumes about the camera (delay, field of view,
+      measured or starting values); and *Reset camera calibration*.
+    - Messages are short: one line where possible, the fact first, then
+      what to do (*Compass settling (moved 2.1°): hold still.*). Detail that
+      only helps a report goes behind *Details*, not into the status line.
+    - While tracing, turning faster than 30 deg/s turns the crosshair and
+      the status line to the warning colour and the status says *Too fast
+      (38°/s): turn slower.*; below 20 deg/s it returns to the tracing
+      message. Where the browser can vibrate, starting and stopping a trace,
+      adding a point and the too-fast hint each give a short, distinct
+      vibration, so the eyes can stay on the crosshair.
     - The view opens with focus on *Start tracing*, or on *Done* while
       tracing is not possible yet; Escape and *Done* close it and return
       focus to the button.
