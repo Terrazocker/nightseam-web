@@ -19,7 +19,7 @@ Where NightSeam Web stands and what comes next. Open defects are in
 
 1. Owner acceptance of the phone capture: the *Phone capture* section of
    [HORIZON_ACCEPTANCE.md](docs/acceptance/HORIZON_ACCEPTANCE.md), including
-   the overlay-lag fix (BUGS.md). The sensor capture was merged before this
+   the overlay calibration (BUGS.md). The sensor capture was merged before this
    acceptance, so master no longer has the photo editor.
 2. Revise the drafted 0.7.0 summary (`CURATED` in scripts/build_changelog.py)
    and add its dated `PUBLIC_RELEASES` record, then follow
@@ -33,9 +33,11 @@ Where NightSeam Web stands and what comes next. Open defects are in
   placement, and move horizons between devices with a share link. Phase 0
   (sensor probe) passed; phases 1-4 (photos removed, camera capture with an
   AR overlay, north references and loop closure, share link) are merged
-  (pull request #8, October 16); the overlay lag is measured and fixed
-  (awaiting the owner's check) and the owner acceptance checklist (phase 5)
-  is written for the owner to run.
+  (pull request #8, October 16). The overlay aims with the orientation the
+  camera image shows; its scale is measured still by a once-per-phone
+  calibration routine (58 deg on the owner's Pixel 7a, October 18), and
+  which delay is right is still open (BUGS.md). The owner acceptance
+  checklist (phase 5) is written for the owner to run.
 - **Horizon rebuild** ([plan](docs/horizon/HORIZON_REBUILD_PLAN.md)): phases
   1-6 are merged (pull request #2). Its photo parts are replaced by the
   sensor capture; the skyline model, overhangs and file import/export stay.

@@ -90,3 +90,12 @@ def test_web_horizon_editor_shell():
     assert "horizon ui contract held" in out
 
 
+def test_capture_camera_scale():
+    """The phone capture's calibration routine (web/capture.js guideScale)
+    measures the camera scale still, from the turn between marking a feature
+    and placing it on a guide line: on a Pixel 7a the scale read from motion
+    grew with turning speed."""
+    out = run_node_harness("capture_calibration.mjs")
+    assert "capture calibration contract held" in out
+
+

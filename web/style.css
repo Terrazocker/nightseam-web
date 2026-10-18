@@ -856,6 +856,8 @@ input.night-scrub::-moz-range-thumb { width: 13px; height: 13px; border: 1px sol
 .ed-display > label { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 8px; color: var(--muted); }
 /* Phone capture (capture.js): a full-screen camera view with a crosshair.
    Panels above and below the video stay readable over any scene. */
+/* While the capture is open, no swipe scrolls or refreshes the page under it. */
+.cap-open, .cap-open body { overscroll-behavior: none; }
 .cap { position: fixed; inset: 0; z-index: 80; display: flex; flex-direction: column; justify-content: space-between; overflow: hidden; background: var(--bg); color: var(--txt); }
 .cap-video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
 .cap-no-video .cap-video { display: none; }
@@ -881,6 +883,10 @@ input.night-scrub::-moz-range-thumb { width: 13px; height: 13px; border: 1px sol
 .cap-site { color: var(--amber); }
 .cap-site:empty { display: none; }
 .cap-status { color: var(--muted); }
+/* Turning too fast while tracing: the crosshair and the status line (which
+   says so in words) take the warning colour. */
+.cap-fast .cap-cross::before, .cap-fast .cap-cross::after { background: var(--amber); }
+.cap-fast .cap-status { color: var(--amber); }
 .cap-strip { display: block; width: 100%; height: 40px; margin-bottom: 8px; border-radius: 4px; }
 .cap-main { display: grid; gap: 8px; }
 .cap-row { display: flex; align-items: center; gap: 8px; }
@@ -897,9 +903,13 @@ input.night-scrub::-moz-range-thumb { width: 13px; height: 13px; border: 1px sol
 .cap-panel { margin: 0 0 8px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 6px; background: var(--raised); }
 .cap-panel[hidden] { display: none; }
 .cap-panel p { margin: 0 0 8px; }
-.cap-panel .cap-row + .cap-row { margin-top: 8px; }
+.cap-panel .cap-row + .cap-row, .cap-panel .cap-row + p { margin-top: 8px; }
 .cap-small { font-size: 12.5px; color: var(--muted); }
 .cap-small:empty { display: none; }
+/* The north panel's diagnostics (compass, camera) wait behind Details. */
+.cap-details { margin-top: 8px; }
+.cap-details > summary { padding: 13px 0; font-size: 13px; line-height: 18px; color: var(--muted); cursor: pointer; }
+.cap-details[open] > summary { margin-bottom: 4px; }
 .cap-asking .cap-main, .cap-asking .cap-strip { display: none; }
 .cap-ref-az { flex: 0 1 110px; min-width: 0; min-height: 48px; box-sizing: border-box; }
 .cap-row > #cap-ref-landmark { flex: 1 1 auto; }

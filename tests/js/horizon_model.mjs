@@ -262,6 +262,30 @@ assert.equal(eave.length, 2, 'an overhang swept across north becomes two edges')
   assert.ok(m.corr > 0.98, `with a clear match: ${m.corr}`);
   assert.equal(H.matchMotion(rates, []), null, 'no image motion, no match');
   assert.equal(H.matchMotion([], shifts), null, 'no gyroscope, no match');
+
+  // The worker times each pair of frames by the camera's capture timestamps
+  // (web/capturemotion.js): frames reach it unevenly, here 15 ms after
+  // capture give or take 6 ms, and a short arrival gap read as fast motion
+  // made the scale come out too large.
+  const { captureGap } = await import('../../web/capturemotion.js');
+  assert.equal(captureGap(1_000_000, 1_033_000, 20), 33, 'capture timestamps are microseconds');
+  assert.equal(captureGap(NaN, 1_033_000, 20), 20, 'no timestamp: the arrival gap');
+  assert.equal(captureGap(1_033_000, 1_033_000, 20), 20, 'a repeated timestamp: the arrival gap');
+  assert.equal(captureGap(0, 5_000_000, 20), 20, 'a gap of seconds is not trusted');
+  let seed = 7;
+  const jitter = () => { seed = (seed * 16807) % 2147483647; return (seed / 2147483647 - 0.5) * 12; };
+  const frames = [];
+  for (let t = 300; t < 8000; t += 1000 / 28) frames.push({ cap: t, at: t + 15 + jitter() });
+  const timed = (gap) => frames.slice(1).map((f, i) => {
+    const prev = frames[i];
+    return { t0: f.at - gap(prev, f), t1: f.at, d: 165.5 * (angle(f.cap - 200) - angle(prev.cap - 200)) };
+  });
+  const byCapture = H.matchMotion(rates, timed((p, f) => captureGap(p.cap * 1000, f.cap * 1000, f.at - p.at)));
+  const byArrival = H.matchMotion(rates, timed((p, f) => f.at - p.at));
+  const err = (x) => Math.abs(x.slope - 165.5) / 165.5;
+  assert.ok(err(byCapture) < 0.03, `timed by capture, the scale holds: ${byCapture.slope} px/rad`);
+  assert.ok(Math.abs(byCapture.lagMs - 215) <= 10, `and the delay includes the arrival: ${byCapture.lagMs} ms`);
+  assert.ok(err(byArrival) > err(byCapture), `timed by arrival it was further off: ${byArrival.slope} px/rad`);
 }
 
 // --- north references and loop closure ------------------------------------------
