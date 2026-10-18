@@ -120,6 +120,18 @@ assert.deepEqual(H.replacePointsInRange(ring, [{ az: 340, alt: 9 }, { az: 20, al
   'a line crossing north replaces only the points it spans');
 assert.deepEqual(H.replacePointsInRange(ring, Array.from({ length: 37 }, (_, i) => ({ az: i * 10, alt: 2 }))).length, 36,
   'a full-circle line replaces everything');
+// Near the point limit a new line is thinned to the room left: before, the
+// result was cut at MAX_POINTS by azimuth, deleting points far from the edit.
+const full = H.normalizePoints(Array.from({ length: 1430 }, (_, i) => ({ az: i * 0.25, alt: 5 + (i % 7) })));
+const fine = Array.from({ length: 41 }, (_, i) => ({ az: 100 + i * 0.05, alt: 20 + (i % 3) }));
+const nearCap = H.replacePointsInRange(full, fine);
+assert.ok(nearCap.length <= H.MAX_POINTS, 'the limit holds');
+assert.deepEqual(nearCap.filter((p) => p.az < 100 || p.az > 102), full.filter((p) => p.az < 100 || p.az > 102),
+  'every point outside the edited span is kept');
+assert.ok(nearCap.some((p) => p.az === 100) && nearCap.some((p) => p.az === 102), 'the thinned line keeps its ends');
+const tooMany = H.normalizePoints(Array.from({ length: 2000 }, (_, i) => ({ az: i * 0.18, alt: 5 + (i % 5) })));
+assert.ok(tooMany.length <= H.MAX_POINTS && tooMany[0].az === 0 && tooMany.at(-1).az === 359.82,
+  'more points than the limit are thinned evenly, both ends kept');
 const line = Array.from({ length: 101 }, (_, i) => ({ az: i, alt: i < 50 ? 0 : 10 }));
 const simple = H.simplifyLine(line, 0.25);
 assert.ok(simple.length <= 5, `step simplifies to its corners, got ${simple.length}`);
@@ -308,6 +320,12 @@ assert.throws(() => H.decodeHorizonLink(onePoint(36500, 0)), /damaged/, 'an azim
 assert.throws(() => H.decodeHorizonLink(onePoint(100, 9500)), /damaged/, 'an altitude past 90 is refused');
 assert.throws(() => H.decodeHorizonLink(raw([1, 0, 0, 21])), /more overhangs/, 'too many overhangs are refused');
 assert.throws(() => H.decodeHorizonLink(raw([1, 0, ...varint(H.MAX_POINTS + 1)])), /more points/, 'too many points are refused');
+const emoji = 'a'.repeat(H.NAME_MAX - 1) + '\u{1F332}';   // the cut falls inside the emoji
+assert.equal(H.normalizeHorizon({ id: 'e1', name: emoji }).name, 'a'.repeat(H.NAME_MAX - 1), 'a name is never cut inside a character');
+assert.equal(H.decodeHorizonLink(H.encodeHorizonLink({ name: emoji, points: [] })).name, 'a'.repeat(H.NAME_MAX - 1));
+const jag = (n, a0, a1) => Array.from({ length: n }, (_, i) => ({ az: a0 + (a1 - a0) * i / (n - 1), alt: 30 + ((i * 37) % 500) / 10 }));
+const huge = { points: [], overhangs: H.normalizeOverhangs(Array.from({ length: H.MAX_OVERHANGS }, (_, k) => jag(H.MAX_POINTS, k * 18, k * 18 + 17.9))) };
+assert.throws(() => H.encodeHorizonLink(huge), /too large for a link/, 'no link is made that the reader would refuse');
 
 // --- horizon files ----------------------------------------------------------
 const parsed = H.parseHorizonFile([
@@ -322,6 +340,22 @@ assert.ok(text.startsWith('# NightSeam horizon: Back yard\n'));
 assert.deepEqual(H.parseHorizonFile(text).points, parsed.points, 'export reads back');
 const dense = Array.from({ length: 3000 }, (_, i) => `${(i * 0.12).toFixed(2)} 5`).join('\n');
 assert.ok(H.parseHorizonFile(dense).points.length <= H.MAX_POINTS, 'dense files are simplified to the cap');
+// A noisy treeline every 0.1 deg cannot be simplified under the limit at a
+// fixed tolerance; it used to keep only 0-144 deg. Thinning keeps the circle.
+let seed = 7;
+const noise = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+const treeline = H.parseHorizonFile(Array.from({ length: 3600 }, (_, i) => `${(i / 10).toFixed(1)} ${(8 + noise() * 12).toFixed(2)}`).join('\n'));
+assert.ok(treeline.points.length <= H.MAX_POINTS, 'the limit holds');
+assert.equal(treeline.points[0].az, 0);
+assert.equal(treeline.points.at(-1).az, 359.9, 'the whole circle survives');
+assert.equal(treeline.thinned, 3600 - treeline.points.length, 'the reader says how many points were thinned');
+assert.equal(H.parseHorizonFile('0 10\n90 20\n').thinned, 0);
+// Decimal commas where spaces, tabs or semicolons separate the fields
+assert.deepEqual(H.parseHorizonFile('0;10\n90;20,5\n180,25\t5,5\n270 7,25\n').points,
+  [{ az: 0, alt: 10 }, { az: 90, alt: 20.5 }, { az: 180.25, alt: 5.5 }, { az: 270, alt: 7.25 }],
+  'a decimal comma is read as a decimal, not as a field separator');
+assert.deepEqual(H.parseHorizonFile('0,10\n90, 20\n').points, [{ az: 0, alt: 10 }, { az: 90, alt: 20 }],
+  'a comma alone still separates the fields');
 
 // --- history ----------------------------------------------------------------
 const rec = { points: [{ az: 1, alt: 2 }], overhangs: [] };

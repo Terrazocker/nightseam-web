@@ -10,8 +10,8 @@
  * planner preferences.
  */
 import { vizTheme } from './viztheme.js?v=7';
-import { openCapture, captureAvailable, warmCompass } from './capture.js?v=21';
-import { normalizeWebPrefs, WEB_PREF_DEFAULTS } from './webstore.js?v=82';
+import { openCapture, captureAvailable, warmCompass } from './capture.js?v=22';
+import { normalizeWebPrefs, WEB_PREF_DEFAULTS } from './webstore.js?v=83';
 import {
   NO_BLOCK, ALT_MIN, ALT_MAX, MAX_POINTS,
   wrapAz, normalizePoints, normalizeHorizon,
@@ -22,7 +22,7 @@ import {
   newHistory, historyCommit, historyCanUndo, historyCanRedo, historyUndo,
   historyRedo, historyMarkSaved, historyDirty,
   PLANNER_CHANGE_EVENT, nextPlannerRevision, plannerChange, panoramaRevision,
-} from './core.js?v=76';
+} from './core.js?v=77';
 
 export { NO_BLOCK, ceilFor };
 
@@ -493,7 +493,11 @@ function linkDialog(box, url) {
 /** Send a horizon on: the system share sheet where there is one, else the
  *  clipboard, else a dialog with the link to copy. */
 async function shareHorizon(box, h) {
-  const url = horizonLinkUrl(h);
+  let url;
+  try { url = horizonLinkUrl(h); } catch (error) {
+    hzNote(box, `No link made: ${error.message}.`);
+    return;
+  }
   if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
     try {
       await navigator.share({ title: `NightSeam horizon: ${h.name}`, url });
@@ -733,7 +737,9 @@ function wireList(box, onChanged) {
     const name = String(f.name).replace(/\.[a-z0-9]+$/i, '').slice(0, 60) || 'Imported horizon';
     if (!created(createHorizon(name, { points: parsed.points }))) return;
     rerender();
-    note(`Imported ${parsed.points.length} points from ${f.name}${parsed.skipped ? ` (${parsed.skipped} other lines skipped)` : ''}.`);
+    const extra = [parsed.thinned ? `thinned from ${parsed.points.length + parsed.thinned} to fit the ${MAX_POINTS}-point limit` : '',
+      parsed.skipped ? `${parsed.skipped} other lines skipped` : ''].filter(Boolean).join('; ');
+    note(`Imported ${parsed.points.length} points from ${f.name}${extra ? ` (${extra})` : ''}.`);
   };
   $('#hz-import-file', box).addEventListener('change', (ev) => {
     const f = ev.target.files && ev.target.files[0];
@@ -811,7 +817,13 @@ function wireEditor(box, h, onChanged) {
   const X = (f, az) => f.x + (az - f.a0) * f.kx;
   const Y = (f, alt) => f.y + (f.alt1 - alt) * f.ky;
   const toWorld = (f, x, y) => ({ az: f.a0 + (x - f.x) / f.kx, alt: f.alt1 - (y - f.y) / f.ky });
-  const local = (ev) => { const r = cvs.getBoundingClientRect(); return { x: ev.clientX - r.left, y: ev.clientY - r.top }; };
+  // The canvas may show narrower than it draws (max-width: 100% until the
+  // resize observer catches up, or a box under the 280 px minimum), so a
+  // pointer position is scaled from the shown size to drawing coordinates.
+  const local = (ev) => {
+    const r = cvs.getBoundingClientRect();
+    return { x: (ev.clientX - r.left) * (r.width ? size.w / r.width : 1), y: (ev.clientY - r.top) * (r.height ? size.h / r.height : 1) };
+  };
   const clampAlt = (a) => Math.max(ALT_MIN, Math.min(ALT_MAX, a));
 
   function resize() {

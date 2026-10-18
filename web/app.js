@@ -8,17 +8,17 @@
  *   • Settings — sites, rigs, custom targets, backup/restore (webstore.js)
  * All sky math runs client-side (astro.js, Meeus algorithms).
  */
-import * as E from './astro.js?v=67';
-import * as Hor from './horizon.js?v=153';
-import * as WS from './webstore.js?v=82';
+import * as E from './astro.js?v=68';
+import * as Hor from './horizon.js?v=155';
+import * as WS from './webstore.js?v=83';
 import { fmtSize, sizeArcmin, framePct, magVisible, skyClampZoom,
-         skyViewMatrix, skyScreenToBase, skyClampFocus } from './format.js?v=73';
-import { nightStats, nightStatsBatch, sampleVisible } from './nightrank.js?v=65';
+         skyViewMatrix, skyScreenToBase, skyClampFocus } from './format.js?v=74';
+import { nightStats, nightStatsBatch, sampleVisible } from './nightrank.js?v=66';
 import { TYPE_LABELS, TYPE_COLORS, searchBlob as coreSearchBlob,
          TIER_ORDER, assignPopularityTiers, wikiTitles,
          inTonightPool, PLANNER_CHANGE_EVENT, panoramaRevision,
-         panoramaVisibilityReason } from './core.js?v=76';
-import { popularityFactor as corePopularityFactor } from './core.js?v=76';
+         panoramaVisibilityReason } from './core.js?v=77';
+import { popularityFactor as corePopularityFactor } from './core.js?v=77';
 import { vizTheme, drawMoonPhaseMarker } from './viztheme.js?v=7';
 import { wikimediaCredit, wikiImageCredit, renderImageCredit } from './imagecredits.js?v=2';
 

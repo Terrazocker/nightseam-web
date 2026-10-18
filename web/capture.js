@@ -14,7 +14,7 @@ import {
   wrapAz, azDelta, quaternionPointing, orientationQuaternion, cameraProject, circularMean,
   sweepLine, normalizePoints, closeLoop, moonDirection, referenceUsable,
   referenceOffset, siteDistanceM, julianDay, angularVelocity, smoothOrientation, matchMotion,
-} from './core.js?v=76';
+} from './core.js?v=77';
 
 const SENSOR_WAIT_MS = 3000;
 const NORTH_WINDOW_MS = 3000;      // compass readings averaged for north
