@@ -155,7 +155,7 @@ is written silently, and a bad link changes nothing.
 
 **Phase 5 — acceptance.** Written: the *Phone capture* section of
 [HORIZON_ACCEPTANCE.md](../acceptance/HORIZON_ACCEPTANCE.md), ten checks with
-targets (compass, landmark and Moon/Sun north, loop closure, repeatability,
+targets (compass, landmark and Moon north, loop closure, repeatability,
 overhang, overlay, share link, keyboard, wrong site). The owner runs it.
 
 ## Checks

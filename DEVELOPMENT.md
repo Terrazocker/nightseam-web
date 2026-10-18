@@ -115,13 +115,13 @@ editor", "Capture horizons with the phone's sensors"); plans:
   (`compassDiag`) says how many compass readings arrive, whether it is
   settling and by how much, and how often it was restarted.
 - **North references.** *North…* opens a panel: put the crosshair on the
-  Moon or the Sun (topocentric apparent position for the observing site and
-  the current time, `moonDirection` / `sunDirection`; usable from 2 to 60 deg
+  Moon (topocentric apparent position for the observing site and the current
+  time, `moonDirection`; usable from 2 to 60 deg
   altitude, `referenceUsable`) or on a landmark with a typed true bearing,
   and tap it. `referenceOffset` turns the relative azimuth into the true one;
   a reference replaces the compass for the rest of the capture and works
   without any compass. The view says which reference set north and when, how
-  far the compass was off, and (Moon/Sun) whether the aim read high or low.
+  far the compass was off, and (Moon) whether the aim read high or low.
   *Read the compass again* returns to the compass.
 - **Loop closure.** A skyline trace with at least 300 deg of net turn asks
   whether the crosshair is back where it started. Yes: `closeLoop` removes

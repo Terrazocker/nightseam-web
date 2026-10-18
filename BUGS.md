@@ -40,8 +40,8 @@ entry here when it is fixed and record the fix in RELEASES.md.
 - **North in the phone capture.** Without a reference, north comes from
   the phone's compass, averaged once it settles: only as good as that compass
   (5-10 deg off near metal or buildings, measured on a Pixel 7a). *North…*
-  sets it from the Moon, the Sun or a landmark instead. The Moon and Sun need
-  the observing site to be where the phone is.
+  sets it from the Moon or a landmark instead. The Moon needs the observing
+  site to be where the phone is.
 - **AR overlay lag (owner, Pixel 7a, 2026-10-15): fix awaiting the owner's
   check.** Measured: the camera image trails the gyroscope by about 210 ms and
   is scaled differently per axis. The capture now aims with the orientation

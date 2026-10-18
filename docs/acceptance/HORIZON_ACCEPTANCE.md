@@ -13,7 +13,7 @@ phone capture.
 ## Phone capture
 
 **Before you start.** Set the observing site in the top bar to where you
-stand (the Moon and Sun references are computed for it). From a map, note the
+stand (the Moon reference is computed for it). From a map, note the
 true bearing of two landmarks you can see from there, ideally 60° or more
 apart: a chimney, a mast, a church tower, a gap between trees. Reload the
 planner, so the first check really is a first open.

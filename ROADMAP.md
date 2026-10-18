@@ -11,7 +11,7 @@ Where NightSeam Web stands and what comes next. Open defects are in
 - **On master, unreleased:** the rebuilt horizon editor (skyline on a compass
   grid, overhangs, file import/export) with phone sensor capture instead of
   photos (pull request #8, merged October 16: camera view with an AR overlay,
-  north from the compass, Moon, Sun or a landmark, loop closure, share links),
+  north from the compass, the Moon or a landmark, loop closure, share links),
   the coming-night detail card, USNO-anchored twilight checks, timezone
   validation, the October review fixes and a CI workflow.
 
@@ -21,10 +21,7 @@ Where NightSeam Web stands and what comes next. Open defects are in
    [HORIZON_ACCEPTANCE.md](docs/acceptance/HORIZON_ACCEPTANCE.md), including
    the overlay-lag fix (BUGS.md). The sensor capture was merged before this
    acceptance, so master no longer has the photo editor.
-2. New landing copy: the landing pages still describe panoramas and photos
-   (features, privacy and about pages, `og:image:alt`), which master no
-   longer has.
-3. Revise the drafted 0.7.0 summary (`CURATED` in scripts/build_changelog.py)
+2. Revise the drafted 0.7.0 summary (`CURATED` in scripts/build_changelog.py)
    and add its dated `PUBLIC_RELEASES` record, then follow
    [RELEASE_WORKFLOW.md](RELEASE_WORKFLOW.md): pre-tag check, tag, clean stage,
    publication candidate and separately authorized deployment.
