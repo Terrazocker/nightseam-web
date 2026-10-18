@@ -73,7 +73,12 @@ editor", "Capture horizons with the phone's sensors"); plans:
 
 - **Record.** `{ id, name, points, overhangs }`. `points`
   are world azimuth/altitude pairs (altitude -10 to 90), sorted, one per
-  0.01 deg of azimuth, at most 1440. `overhangs` are up to 20 edge lines with
+  0.01 deg of azimuth, at most 1440: more are thinned evenly
+  (Douglas-Peucker at the smallest tolerance that fits), never cut off at
+  one end of the azimuth range. A sketch or traced line that would pass the
+  limit is thinned to the room left, so points outside its span stay.
+  Names are cut at 80 UTF-16 units without splitting a character.
+  `overhangs` are up to 20 edge lines with
   azimuths within 0-360 (an edge crossing north is split there).
   `core/horizon.js` normalizes every record; the photo fields of older
   builds (`photo`, `hasPhoto`, an embedded `image`) are dropped, never
@@ -86,7 +91,10 @@ editor", "Capture horizons with the phone's sensors"); plans:
   attaches both in memory; `ceilFor` returns them as `ceil`/`ceilTop` and the
   scorer reads the same arrays. They are never stored or backed up.
 - **Files.** `parseHorizonFile` reads `azimuth altitude` lines (Stellarium,
-  N.I.N.A., plain lists); `formatHorizonFile` writes them. Overhangs have no
+  N.I.N.A., plain lists); where spaces, tabs or semicolons separate the
+  fields, a comma between digits is a decimal comma (`90;20,5`). Files with
+  more than 1440 distinct points are thinned to the limit and the import note
+  says so (`thinned`). `formatHorizonFile` writes them. Overhangs have no
   place in those formats and stay in NightSeam and its backups.
 - **Phone capture** (`web/capture.js`). A full-screen view over the page:
   the rear camera (`getUserMedia`, only shown, never recorded or stored;
@@ -178,7 +186,9 @@ editor", "Capture horizons with the phone's sensors"); plans:
 - **Share links.** *Share link* encodes the horizon (`encodeHorizonLink`:
   version byte, UTF-8 name, points and overhang edges in 0.01 deg as
   zigzag variable-length deltas, URL-safe base64; exact round trip, a
-  720-point skyline is under 4,000 characters) into
+  720-point skyline is under 4,000 characters; a horizon whose code would
+  pass the reader's 60,000-character limit gets no link, and the note says
+  to export a file) into
   `/astro/#horizon=<code>`. The fragment is never sent to a server. It goes
   to the system share sheet (`navigator.share`), else the clipboard, else a
   dialog with the link to copy. Opening such an address routes to Horizon,

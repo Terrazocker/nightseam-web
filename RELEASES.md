@@ -5,6 +5,37 @@ Actual validation outcomes, newest first. Published releases: v0.1.1 (October 8,
 development awaiting the next release, 0.7.0. Upload success alone is never
 recorded as acceptance.
 
+## Horizon edge cases: point limit, decimal commas, names, link size — October 18, 2026 (branch horizon-edge-cases)
+
+Probed the horizon core with Node at its limits. Found and fixed:
+- **Point limit cut whole stretches.** The 1440-point limit was applied by
+  slicing the azimuth-sorted list, so the high azimuths went. A 3600-line
+  treeline file (0.1 deg steps, noisy) imported only 0-143.9 deg with
+  nothing reported. Retracing 2 deg near az 100 on a 1430-point horizon
+  deleted 22 points at 352-357 deg. Now points over the limit are thinned
+  evenly, a new line is thinned to the room left, and the import note says
+  how many points were thinned. The treeline keeps 0-359.9 deg (1353 points);
+  the retrace keeps every point outside its span.
+- **Decimal commas misread.** `90;20,5` read as alt 20 and `180,25<tab>5,5`
+  as az 180, alt 25, with nothing skipped. A comma between digits is now a
+  decimal where spaces, tabs or semicolons separate the fields; `0,10` still
+  reads as two fields.
+- **Names cut inside an emoji** stored half a character. Names are now cut
+  without splitting one.
+- **Oversized links.** The encoder could make a link longer than the reader
+  accepts (only with very dense overhangs). It now refuses, and the editor
+  says to export a file.
+
+Unchanged after measuring: profile derivation at the largest record (1440
+points, 20 overhangs of 1440 points) takes about 5 ms and runs once per
+committed edit, not per pointer move. Loop closure with a large closing
+error is refused by the capture (3 deg limit).
+
+Checks: horizon_model.mjs adds contracts for each case and fails on the
+previous core; pytest 358 passed, 1 skipped; check_js and check_js_tokens
+pass; browser web suite 87/87 (web-immutable-publication passes once the new
+baked core is staged).
+
 ## Landing copy for sensor-captured horizons — October 18, 2026 (branch landing-sensor-copy)
 
 The landing pages still described panoramas and horizon photos, which the

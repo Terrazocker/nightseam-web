@@ -46,11 +46,28 @@ export function azDelta(a, b) {
 const round2 = (v) => Math.round(v * 100) / 100;
 const clampAlt = (v) => Math.min(ALT_MAX, Math.max(ALT_MIN, v));
 const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
+/** A name cut to NAME_MAX UTF-16 units without leaving half of a character
+ *  (an emoji is two units). */
+const clipName = (s) => s.slice(0, NAME_MAX).replace(/[\uD800-\uDBFF]$/, '');
+
+/** Sorted points thinned to at most `max` (2 or more) by Douglas-Peucker at
+ *  the smallest tolerance that fits, so detail goes evenly and neither end of
+ *  the azimuth range is cut off. */
+function thinToFit(points, max) {
+  let out = points;
+  for (let tol = 0.05; out.length > max; tol *= 1.5) out = simplifyLine(points, tol);
+  return out;
+}
 
 /** Canonical skyline points: finite, wrapped, clamped, rounded to 0.01 deg,
  *  sorted by azimuth, one point per azimuth (the later one wins), at most
- *  MAX_POINTS. `strict` throws on a malformed entry instead of dropping it. */
+ *  MAX_POINTS (more are thinned evenly, never cut off at one end). `strict`
+ *  throws on a malformed entry instead of dropping it. */
 export function normalizePoints(value, strict = false) {
+  return thinToFit(canonicalPoints(value, strict), MAX_POINTS);
+}
+
+function canonicalPoints(value, strict) {
   if (value == null) return [];
   if (!Array.isArray(value)) {
     if (strict) throw new Error('horizon points must be a list');
@@ -66,8 +83,7 @@ export function normalizePoints(value, strict = false) {
     const az = round2(wrapAz(p.az));
     byAz.set(az >= 360 ? 0 : az, round2(clampAlt(p.alt)));
   }
-  return [...byAz].sort((a, b) => a[0] - b[0]).slice(0, MAX_POINTS)
-    .map(([az, alt]) => ({ az, alt }));
+  return [...byAz].sort((a, b) => a[0] - b[0]).map(([az, alt]) => ({ az, alt }));
 }
 
 /** One canonical horizon record. Returns null (or throws when `strict`) for
@@ -78,7 +94,7 @@ export function normalizeHorizon(value, strict = false) {
   if (!value || typeof value !== 'object') return fail('horizon must be an object');
   if (typeof value.id !== 'string' || !ID_RE.test(value.id)) return fail('horizon has an invalid id');
   const name = typeof value.name === 'string' && value.name.trim()
-    ? value.name.trim().slice(0, NAME_MAX) : 'Horizon';
+    ? clipName(value.name.trim()) : 'Horizon';
   return {
     id: value.id,
     name,
@@ -155,20 +171,25 @@ export function hasSkyline(h) {
 /** Replace the points inside the azimuth span of a new line with that line.
  *  `line` is a list of {az, alt} in drawing order, each step shorter than
  *  180 deg; it may cross north. A line spanning the full circle replaces
- *  everything. */
+ *  everything. When the result would pass MAX_POINTS the new line is thinned
+ *  to the room left, so points outside its span are kept. */
 export function replacePointsInRange(points, line) {
   const src = (Array.isArray(line) ? line : []).filter((p) => p && isNum(p.az) && isNum(p.alt));
   if (!src.length) return normalizePoints(points);
   let lo = src[0].az, hi = lo, cur = lo;
+  const run = [{ az: cur, alt: src[0].alt }];   // azimuths running on past north
   for (let i = 1; i < src.length; i++) {
     cur += azDelta(src[i].az, src[i - 1].az);
     lo = Math.min(lo, cur);
     hi = Math.max(hi, cur);
+    run.push({ az: cur, alt: src[i].alt });
   }
   const inside = (az) => hi - lo >= 360
     || [-360, 0, 360, 720].some((k) => az + k >= lo && az + k <= hi);
   const kept = normalizePoints(points).filter((p) => !inside(p.az));
-  return normalizePoints([...kept, ...src]);
+  const room = MAX_POINTS - kept.length;
+  const fresh = src.length > room && room >= 2 ? thinToFit(run.sort((a, b) => a.az - b.az), room) : src;
+  return normalizePoints([...kept, ...fresh]);
 }
 
 /** Douglas-Peucker simplification of an ordered polyline of {az, alt}
@@ -457,7 +478,7 @@ export function angularVelocity(q0, q1, dt) {
  *  either side, narrowed to the readings that exist on both sides, so it
  *  stays centred and adds no lag even when t is close to the newest reading
  *  (a camera that trails the gyroscope only a little). Returns a unit
- *  quaternion, or null when fewer than two readings fall in the window. */
+ *  quaternion, or null when fewer than two readings fall inside it. */
 export function smoothOrientation(history, t, halfMs) {
   const h = Array.isArray(history) ? history : [];
   if (h.length < 2 || !isNum(t) || !(halfMs > 0)) return null;
@@ -576,7 +597,7 @@ export function encodeHorizonLink(h) {
       az = a; alt = b;
     }
   };
-  const name = new TextEncoder().encode(String(h?.name || 'Horizon').trim().slice(0, NAME_MAX) || 'Horizon');
+  const name = new TextEncoder().encode(clipName(String(h?.name || 'Horizon').trim()) || 'Horizon');
   uint(name.length);
   for (const b of name) bytes.push(b);
   line(normalizePoints(h?.points));
@@ -589,6 +610,7 @@ export function encodeHorizonLink(h) {
     out += B64[n >> 18] + B64[(n >> 12) & 63]
       + (i + 1 < bytes.length ? B64[(n >> 6) & 63] : '') + (i + 2 < bytes.length ? B64[n & 63] : '');
   }
+  if (out.length > LINK_MAX_CHARS) throw new Error('this horizon is too large for a link; export it as a file instead');
   return out;
 }
 
@@ -644,7 +666,7 @@ export function decodeHorizonLink(text) {
   if (at !== bytes.length) fail();
   try {
     return {
-      name: name.trim().slice(0, NAME_MAX) || 'Horizon',
+      name: clipName(name.trim()) || 'Horizon',
       points: normalizePoints(points, true),
       overhangs: normalizeOverhangs(overhangs, true),
     };
@@ -654,17 +676,20 @@ export function decodeHorizonLink(text) {
 /* ------------------------------- horizon files ------------------------------- */
 
 /** Parse a horizon text file: one `azimuth altitude` pair per line, separated
- *  by spaces, tabs, commas or semicolons. `#` and `;` start comments; lines
- *  without two leading numbers are skipped. Reads Stellarium polygonal
- *  horizons, N.I.N.A. .hrz files and plain lists. Throws when nothing usable
- *  remains. */
+ *  by spaces, tabs, commas or semicolons. Where spaces, tabs or semicolons
+ *  separate the fields, a comma between digits is a decimal comma (`90;20,5`).
+ *  `#` and `;` start comments; lines without two leading numbers are skipped.
+ *  Reads Stellarium polygonal horizons, N.I.N.A. .hrz files and plain lists.
+ *  More than MAX_POINTS distinct points are thinned evenly (`thinned` says how
+ *  many went). Throws when nothing usable remains. */
 export function parseHorizonFile(text) {
   if (typeof text !== 'string') throw new Error('horizon file must be text');
   const raw = [];
   let skipped = 0;
   for (const line of text.split(/\r?\n/)) {
-    const body = line.replace(/^\s*[#;].*$/, '').replace(/\s#.*$/, '').trim();
+    let body = line.replace(/^\s*[#;].*$/, '').replace(/\s#.*$/, '').trim();
     if (!body) continue;
+    if (/[\s;]/.test(body)) body = body.replace(/(\d),(\d)/g, '$1.$2');
     const parts = body.split(/[\s,;]+/).filter(Boolean);
     const az = Number(parts[0]), alt = Number(parts[1]);
     if (parts.length < 2 || !Number.isFinite(az) || !Number.isFinite(alt)
@@ -673,11 +698,9 @@ export function parseHorizonFile(text) {
   }
   if (!raw.length) throw new Error('no "azimuth altitude" lines found');
   if (raw.length > MAX_POINTS * 4) throw new Error(`the file has more than ${MAX_POINTS * 4} points`);
-  let points = normalizePoints(raw);
-  if (points.length > MAX_POINTS) {
-    points = normalizePoints(simplifyLine(points, 0.1));
-  }
-  return { points: points.slice(0, MAX_POINTS), skipped };
+  const all = canonicalPoints(raw, false);
+  const points = thinToFit(all, MAX_POINTS);
+  return { points, skipped, thinned: all.length - points.length };
 }
 
 /** Plain `azimuth altitude` text for a horizon, readable by parseHorizonFile,

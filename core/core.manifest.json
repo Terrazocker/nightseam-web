@@ -1,12 +1,12 @@
 {
-  "hash": "9596baef04dcdc96",
-  "token": 76,
-  "previous": "9b5c82b32384c605",
+  "hash": "b552470be4e6a42d",
+  "token": 77,
+  "previous": "9596baef04dcdc96",
   "files": {
     "astro.js": "e654826a26a0c22c7b1ffb0de11d6f6b269d398b13000a1c1ebe7a35903500b4",
     "catalog.js": "6afcd78f5e7420d5e6ef72e46b695b90147438d5d5828b6dbb67848739819dd0",
     "format.js": "b04f2d369d22f497dd879a81f4f70453eb5fc740e4a8a47d3047786cfcb855fc",
-    "horizon.js": "c3c3e55907210a7bc847d42c8ee810a468a8757874a338518cda9c0861307332",
+    "horizon.js": "0cb6e68e48f30bbf9aa37368b645b91bd94ed385a50b1cf6a2eb973bdbabe14f",
     "horizonhistory.js": "7c6e38eaf39de6dace82f8076fd3adf598b1614978b25741e5de5b151ae5ad2a",
     "index.js": "32248b917f0806f33e71c0d83505748b15b4c223dae58ebd57428979f2f1dce6",
     "plannerstate.js": "320ec4fdcd7058f7cfee83bbefdc94fe0c6efe1b6d631fe30bbe3a1c5553b08c",
