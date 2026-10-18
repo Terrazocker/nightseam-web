@@ -58,16 +58,9 @@ entry here when it is fixed and record the fix in RELEASES.md.
 - **BROWSER-LOCAL-001.** The local test server's connection queue was raised
   from 5 to 64 after refused module loads; failures are recorded with server
   thread health and failed URLs, never retried or skipped.
-- **BROWSER-CI-002.** Two horizon checks at 360 px failed once on Linux CI
-  (run 38444781285) and passed on rerun: the phone overflow assertion in
-  web-followup-smooth-scrub-and-horizon-scroll and the file-chooser wait in
-  web-phase4-responsive-planner. Not reproduced locally, with or without the
-  Linux font substitution. If either fails again, treat it as a real defect.
-  **The overflow assertion failed again (2026-10-18, run 39122557901, pull
-  request #10), so it is now a real defect, cause unknown.** The planner
-  code was identical to a run that passed an hour earlier (39121001218). The
-  failure screenshot is 860 px wide although the visible layout is 360 px,
-  so something invisible reached about 500 px past the viewport after the
-  editor shrank from 1440 to 360 px. It passed 6/6 locally. The assertion
-  now names the non-fixed elements past the viewport and their widths, so
-  the next failure identifies the cause.
+- **BROWSER-CI-002.** The file-chooser wait in
+  web-phase4-responsive-planner failed once at 360 px on Linux CI (run
+  38444781285) and passed on rerun. Not reproduced locally, with or without
+  the Linux font substitution. If it fails again, treat it as a real defect.
+  (The phone overflow failure reported with it was a real defect, found and
+  fixed on 2026-10-18; see RELEASES.md.)

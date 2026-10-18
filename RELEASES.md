@@ -5,6 +5,26 @@ Actual validation outcomes, newest first. Published releases: v0.1.1 (October 8,
 development awaiting the next release, 0.7.0. Upload success alone is never
 recorded as acceptance.
 
+## Horizon canvas overflow after a narrowing resize (BROWSER-CI-002) — October 18, 2026 (branch horizon-edge-cases)
+
+CI on pull request #11 (run 39125847030) failed the phone overflow
+assertion a third time, and the diagnostic added for pull request #10 named
+the cause: `canvas#hz-canvas right=860 width=822` at a 360 px viewport. The
+editor's `resize()` gives the canvas a pixel width, which overrode the
+stylesheet's `width: 100%`. When the page narrowed, the canvas kept its old
+width and overflowed until the resize observer's next callback, so any
+layout read in between saw a page wider than the screen. The canvas now
+also has `max-width: 100%`, so it never shows wider than its box (a box
+under the 280 px minimum included). Pointer positions are scaled from the
+shown size to drawing coordinates, so taps land correctly while the two
+differ.
+
+New assertion in web-horizon-canvas-dpr-resize: narrow the box and measure
+in one step, before the observer can run. It failed without the fix
+(canvas edge 1032 against a box edge of 484) and passes with it. pytest 358
+passed, 1 skipped; check_js and check_js_tokens pass; browser web suite
+87/87.
+
 ## Horizon edge cases: point limit, decimal commas, names, link size — October 18, 2026 (branch horizon-edge-cases)
 
 Probed the horizon core with Node at its limits. Found and fixed:

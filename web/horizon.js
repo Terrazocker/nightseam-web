@@ -817,7 +817,13 @@ function wireEditor(box, h, onChanged) {
   const X = (f, az) => f.x + (az - f.a0) * f.kx;
   const Y = (f, alt) => f.y + (f.alt1 - alt) * f.ky;
   const toWorld = (f, x, y) => ({ az: f.a0 + (x - f.x) / f.kx, alt: f.alt1 - (y - f.y) / f.ky });
-  const local = (ev) => { const r = cvs.getBoundingClientRect(); return { x: ev.clientX - r.left, y: ev.clientY - r.top }; };
+  // The canvas may show narrower than it draws (max-width: 100% until the
+  // resize observer catches up, or a box under the 280 px minimum), so a
+  // pointer position is scaled from the shown size to drawing coordinates.
+  const local = (ev) => {
+    const r = cvs.getBoundingClientRect();
+    return { x: (ev.clientX - r.left) * (r.width ? size.w / r.width : 1), y: (ev.clientY - r.top) * (r.height ? size.h / r.height : 1) };
+  };
   const clampAlt = (a) => Math.max(ALT_MIN, Math.min(ALT_MAX, a));
 
   function resize() {

@@ -477,7 +477,19 @@ def web_horizon_canvas_dpr_resize(c):
         c.expect(abs(d["w"] - d["bw"] * d["dpr"]) <= 2,
                  f"canvas backing store {d['w']} != box width {d['bw']} * dpr {d['dpr']} at {width}px")
         c.expect(d["w"] > 0 and d["h"] > 0, "canvas must keep a backing store")
+    # BROWSER-CI-002: the box narrows and is measured in one step, before the
+    # resize observer can run. The canvas must already fit inside it.
     c.page.set_viewport_size({"width": 1366, "height": 900})
+    c.page.wait_for_timeout(400)
+    fit = c.page.evaluate("""() => {
+      const box = document.querySelector('#hz-box'), cv = document.querySelector('#hz-canvas');
+      box.style.setProperty('width', '200px', 'important');
+      const b = box.getBoundingClientRect(), r = cv.getBoundingClientRect();
+      const out = { box: Math.round(b.right), canvas: Math.round(r.right), width: Math.round(r.width) };
+      box.style.removeProperty('width');
+      return out;
+    }""")
+    c.expect(fit["canvas"] <= fit["box"], f"canvas stays inside its box before the observer runs: {fit}")
     c.assert_clean()
 
 
