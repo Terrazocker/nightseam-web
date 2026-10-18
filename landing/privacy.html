@@ -14,8 +14,8 @@
 <meta property="og:title" content="Privacy — NightSeam">
 <meta property="og:description" content="Local saved planning data, online weather and photos, and website hosting explained.">
 <meta property="og:url" content="https://nightseam.de/privacy.html">
-<meta property="og:image" content="https://nightseam.de/social-preview.png?v=1">
-<meta property="og:image:alt" content="NightSeam — know what you can see, with your panorama and calculated target visibility">
+<meta property="og:image" content="https://nightseam.de/social-preview.png?v=2">
+<meta property="og:image:alt" content="NightSeam — know what you can see, with your own skyline and calculated target visibility">
 <meta name="twitter:card" content="summary_large_image">
 <link rel="icon" type="image/png" href="app.png">
 <link rel="stylesheet" href="/astro/themes.css?v=23">
@@ -31,11 +31,11 @@
 <details class="mobile-menu"><summary aria-label="Navigation menu"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M3 6h18M3 12h18M3 18h18"/></svg></summary><nav aria-label="Mobile navigation"><a href="features.html">Features</a><a href="about.html">About</a><a href="download.html">Changes</a></nav></details>
 </div>
 </div></header>
-<main id="content" tabindex="-1" class="container"><section class="hero"><svg class="sky-map" aria-hidden="true" focusable="false" viewBox="0 0 960 760"><use href="sky-map.svg?v=1#sky-art"></use></svg><div class="hero-copy"><p class="eyebrow">Your data</p><h1>Privacy, explained.</h1><p class="hero-sub">Saved planning data stays in your browser.<br>Some online features contact external services.</p></div></section><section class="two-facts" aria-label="Privacy summary"><div><h2>On your device</h2><p>Sites, rigs and panoramas stay in browser storage; backups stay wherever you save them. Importing a panorama does not upload it to NightSeam.</p></div><div><h2>Online requests</h2><p>Weather sends your active site’s coordinates and timezone to Open-Meteo. New photos use Wikipedia and Wikimedia.</p></div></section><details class="disclosure"><summary>Browser storage and backups</summary><div class="disclosure-body"><p>The browser planner runs astronomy calculations on your device, without an
+<main id="content" tabindex="-1" class="container"><section class="hero"><svg class="sky-map" aria-hidden="true" focusable="false" viewBox="0 0 960 760"><use href="sky-map.svg?v=1#sky-art"></use></svg><div class="hero-copy"><p class="eyebrow">Your data</p><h1>Privacy, explained.</h1><p class="hero-sub">Saved planning data stays in your browser.<br>Some online features contact external services.</p></div></section><section class="two-facts" aria-label="Privacy summary"><div><h2>On your device</h2><p>Sites, rigs and horizons stay in browser storage; backups stay wherever you save them. The camera view for capturing a horizon is never recorded or uploaded.</p></div><div><h2>Online requests</h2><p>Weather sends your active site’s coordinates and timezone to Open-Meteo. New photos use Wikipedia and Wikimedia.</p></div></section><details class="disclosure"><summary>Browser storage and backups</summary><div class="disclosure-body"><p>The browser planner runs astronomy calculations on your device, without an
       account. It uses no analytics, tracking or cookies. Your saved sites, rigs,
-      custom targets, preferences, horizon profiles and panorama images stay in
-      your browser’s IndexedDB and localStorage. Importing a panorama or restoring
-      a backup does not upload that file to NightSeam.</p>
+      custom targets, preferences and horizons stay in your browser’s IndexedDB
+      and localStorage. Importing a horizon file or restoring a backup does not
+      upload that file to NightSeam.</p>
       <p>Local storage is specific to the browser and site address. Clearing it
       removes saved planning data. Export a JSON backup first if you want to keep
       a separate copy; exported files remain wherever you save them.</p></div></details><details class="disclosure"><summary>Weather, photos and location</summary><div class="disclosure-body"><h2>Weather and air quality</h2><p>Loading weather sends your active site’s latitude, longitude and selected
@@ -43,7 +43,7 @@
       <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a>.
       The requests also specify forecast variables and a four-day forecast period;
       your browser supplies normal connection information. Saved site names,
-      equipment, custom targets and panoramas are not included in these requests.</p>
+      equipment, custom targets and horizons are not included in these requests.</p>
       <p>Weather loads when requested, or on startup if you enable “Always load on
       startup.” After you have loaded weather, changing the active site can fetch
       a new forecast. Disable the startup setting in the weather panel to prevent
@@ -53,13 +53,26 @@
       <a href="https://en.wikipedia.org/" target="_blank" rel="noopener">Wikipedia</a>
       and a thumbnail from Wikimedia’s image service. Those services receive the
       requested article or image path and normal connection information; saved
-      observing coordinates, rigs and panoramas are not sent with photo requests.
+      observing coordinates, rigs and horizons are not sent with photo requests.
       Downloaded thumbnails are cached locally in IndexedDB. Each image retains
       its own license and credit requirements.</p><h2>Using your location</h2><p>The “use my location” button asks your browser for your position only when you
       press it, subject to the browser’s permission controls. The browser’s own
       location service may use network services. The resulting coordinates are
       stored locally as site data and can subsequently be sent to Open-Meteo if
-      you load weather for that site.</p></div></details><details class="disclosure"><summary>Website requests and hosting</summary><div class="disclosure-body"><h2>Website requests</h2><p>Opening the site or planner requests pages, scripts, catalog files and
+      you load weather for that site.</p>
+      <p>When you capture a horizon and your browser already allows location
+      access for this site, the capture compares your position with the observing
+      site to warn when you are far from it. It never asks for your location
+      itself, and that position is neither stored nor sent.</p></div></details><details class="disclosure"><summary>Horizon capture and share links</summary><div class="disclosure-body"><h2>Camera and motion sensors</h2><p>Capturing a horizon on a phone asks your browser for the camera and, where
+      the browser requires it, for the motion sensors. The camera image is shown
+      on screen and, where the browser supports it, measured on your device to keep
+      the overlay in step with your movement; it is never recorded, stored or
+      uploaded. Only the skyline points you trace are saved. Each phone keeps its
+      own overlay timing and scale in localStorage.</p><h2>Share links</h2><p>A share link carries a horizon’s name, skyline points and overhang edges
+      in the part of the address after “#”, which browsers do not send to the
+      website. Anyone you give the link to can read that horizon, and the app you
+      share it through handles it under its own terms. Opening a link asks before
+      the horizon is added.</p></div></details><details class="disclosure"><summary>Website requests and hosting</summary><div class="disclosure-body"><h2>Website requests</h2><p>Opening the site or planner requests pages, scripts, catalog files and
       site graphics from the website’s host. These requests expose technical
       connection information such as your IP address and browser request headers.
       The catalog and Standard selection are prepared in advance and served by

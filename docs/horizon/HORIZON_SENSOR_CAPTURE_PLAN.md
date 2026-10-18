@@ -15,8 +15,8 @@ gyroscope by about 210 ms) and fixed by aiming with what the camera shows,
 with per-device calibration; awaiting the owner's check. Phase 5: the
 checklist is in docs/acceptance/HORIZON_ACCEPTANCE.md, awaiting the owner. The owner was offered server-stored shortcodes
 and chose the share link only.
-Work stays on branch `horizon-sensor-plan` (pull request #8) until the
-capture works. Phase 0 on the
+Phases 0-4 were merged into master (pull request #8, October 16) before the
+owner acceptance; acceptance and any fixes continue on master. Phase 0 on the
 Pixel 7a the gyroscope-based relative orientation does not drift at rest,
 repeats 0.13 deg between two features and closed two carefully aimed full
 turns within 1.3 deg before any correction; the compass wanders 6-8 deg at
@@ -155,7 +155,7 @@ is written silently, and a bad link changes nothing.
 
 **Phase 5 — acceptance.** Written: the *Phone capture* section of
 [HORIZON_ACCEPTANCE.md](../acceptance/HORIZON_ACCEPTANCE.md), ten checks with
-targets (compass, landmark and Moon/Sun north, loop closure, repeatability,
+targets (compass, landmark and Moon north, loop closure, repeatability,
 overhang, overlay, share link, keyboard, wrong site). The owner runs it.
 
 ## Checks

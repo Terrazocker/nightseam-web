@@ -10,9 +10,9 @@ entry here when it is fixed and record the fix in RELEASES.md.
 
 - **Horizon device acceptance.** Touch/pen and keyboard checks of the
   editor on real devices:
-  [HORIZON_ACCEPTANCE.md](docs/acceptance/HORIZON_ACCEPTANCE.md). The phone
-  capture gets its own checklist in phase 5 of the
-  [sensor capture plan](docs/horizon/HORIZON_SENSOR_CAPTURE_PLAN.md).
+  [HORIZON_ACCEPTANCE.md](docs/acceptance/HORIZON_ACCEPTANCE.md), including
+  its *Phone capture* section (phase 5 of the
+  [sensor capture plan](docs/horizon/HORIZON_SENSOR_CAPTURE_PLAN.md)).
 - **Legal pages: deferred by the owner (2026-10-11).** Not release work and
   not to be raised again unless the owner asks. For reference only: the
   Impressum names a pseudonym without a postal address, and the privacy page
@@ -40,8 +40,8 @@ entry here when it is fixed and record the fix in RELEASES.md.
 - **North in the phone capture.** Without a reference, north comes from
   the phone's compass, averaged once it settles: only as good as that compass
   (5-10 deg off near metal or buildings, measured on a Pixel 7a). *North…*
-  sets it from the Moon, the Sun or a landmark instead. The Moon and Sun need
-  the observing site to be where the phone is.
+  sets it from the Moon or a landmark instead. The Moon needs the observing
+  site to be where the phone is.
 - **AR overlay lag (owner, Pixel 7a, 2026-10-15): fix awaiting the owner's
   check.** Measured: the camera image trails the gyroscope by about 210 ms and
   is scaled differently per axis. The capture now aims with the orientation
@@ -63,3 +63,11 @@ entry here when it is fixed and record the fix in RELEASES.md.
   web-followup-smooth-scrub-and-horizon-scroll and the file-chooser wait in
   web-phase4-responsive-planner. Not reproduced locally, with or without the
   Linux font substitution. If either fails again, treat it as a real defect.
+  **The overflow assertion failed again (2026-10-18, run 39122557901, pull
+  request #10), so it is now a real defect, cause unknown.** The planner
+  code was identical to a run that passed an hour earlier (39121001218). The
+  failure screenshot is 860 px wide although the visible layout is 360 px,
+  so something invisible reached about 500 px past the viewport after the
+  editor shrank from 1440 to 360 px. It passed 6/6 locally. The assertion
+  now names the non-fixed elements past the viewport and their widths, so
+  the next failure identifies the cause.

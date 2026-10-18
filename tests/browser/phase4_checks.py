@@ -177,7 +177,21 @@ def smooth_scrub_and_horizon_scroll(c):
     }""")
     c.expect(regions['stageTop'] >= regions['toolsBottom'],
              f'phone stacks the complete tools rail before the grid: {regions}')
-    c.expect(c.page.evaluate('document.documentElement.scrollWidth <= innerWidth'), 'phone has no horizontal overflow')
+    # BROWSER-CI-002: this failed twice on Linux CI only. On failure, name the
+    # non-fixed elements reaching past the viewport so the cause is in the log.
+    overflow = c.page.evaluate("""() => {
+      const w = innerWidth, sw = document.documentElement.scrollWidth;
+      if (sw <= w) return null;
+      const fixed = (e) => { for (let n = e; n; n = n.parentElement) if (getComputedStyle(n).position === 'fixed') return true; return false; };
+      const wide = [...document.querySelectorAll('body *')]
+        .map((e) => ({ e, r: e.getBoundingClientRect() }))
+        .filter(({ e, r }) => r.width > 0 && r.right > w + 0.5 && !fixed(e))
+        .sort((a, b) => b.r.right - a.r.right).slice(0, 6)
+        .map(({ e, r }) => `${e.tagName.toLowerCase()}${e.id ? '#' + e.id : ''}`
+          + `${e.classList.length ? '.' + [...e.classList].join('.') : ''} right=${Math.round(r.right)} width=${Math.round(r.width)}`);
+      return { scrollWidth: sw, innerWidth: w, wide };
+    }""")
+    c.expect(overflow is None, f'phone has no horizontal overflow: {overflow}')
     c.page.screenshot(path=str(c.artifacts / 'followup-horizon-360.png'))
     c.assert_clean()
 

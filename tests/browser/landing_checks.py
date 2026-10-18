@@ -169,7 +169,7 @@ def public_design(c):
                         'https://nightseam.de/' + path.lstrip('/'))
             c.expect_eq(c.page.request.get(c.url('/sky-map.svg?v=1')).status, 200)
             c.expect_eq(c.page.request.get(c.url('/astro/themes.css?v=16')).status, 200)
-            c.expect_eq(c.page.request.get(c.url('/social-preview.png?v=1')).status, 200)
+            c.expect_eq(c.page.request.get(c.url('/social-preview.png?v=2')).status, 200)
             ratios = c.page.evaluate("""() => {
               const channels = s => s.match(/[\\d.]+/g).slice(0,3).map(Number);
               const luminance = a => a.map(v => v/255).map(v => v <= .04045 ? v/12.92 : ((v+.055)/1.055)**2.4)

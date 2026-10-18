@@ -5,6 +5,40 @@ Actual validation outcomes, newest first. Published releases: v0.1.1 (October 8,
 development awaiting the next release, 0.7.0. Upload success alone is never
 recorded as acceptance.
 
+## Landing copy for sensor-captured horizons — October 18, 2026 (branch landing-sensor-copy)
+
+The landing pages still described panoramas and horizon photos, which the
+sensor capture (pull request #8) removed. Home, Features, About and Privacy
+now describe skylines captured with the phone, drawn by hand or imported;
+Features gains a *Horizons* section, and Privacy a *Horizon capture and
+share links* disclosure plus a note on the capture's site check. Each privacy
+claim was checked against web/capture.js, web/capturemotion.js and
+web/horizon.js: the camera image is only shown and measured in a worker,
+never stored or sent; the per-phone overlay calibration is in localStorage;
+location is read only where already granted and only compared with the
+site; a share link carries name, points and overhangs in the fragment and
+asks before adding. Object-photo text is unchanged, and the published 0.1.0
+summary keeps its wording. `og:image:alt` reads "your own skyline" on all six
+pages. The share preview was recaptured from the new Home at 1200x630 in
+system Chrome (dark), now `social-preview.png?v=2`. The drafted 0.7.0
+summary now describes the capture; north is the compass, the Moon or a
+landmark (the Sun was removed on October 15), which BUGS, DEVELOPMENT, the
+acceptance checklist and the plan also now say.
+
+Checks: pytest 358 passed, 1 skipped; check_js, check_js_tokens, check_encoding,
+build_changelog --check and check_release (no errors; the usual dirty and
+version.json warnings) pass; browser web-landing-pages,
+web-landing-history-no-js, web-public-design-responsive and
+web-immutable-publication pass.
+
+CI on the pull request (run 39122557901): guards and pytest passed; the
+browser suite was 86/87. The phone overflow assertion in
+web-followup-smooth-scrub-and-horizon-scroll failed again (BROWSER-CI-002,
+now an open defect in BUGS.md) with planner code identical to a passing run.
+It passed 6/6 locally. The assertion now reports the elements past the
+viewport, checked against a page with a forced overflow, and passed 3/3
+locally after the change.
+
 ## Sun removed, calmer readout, points in the AR view — October 15, 2026 (branch horizon-sensor-plan)
 
 Owner: remove the Sun reference; the readout flashed and jumped between one

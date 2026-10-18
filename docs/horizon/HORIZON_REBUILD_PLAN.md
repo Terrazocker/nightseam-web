@@ -8,8 +8,9 @@ accuracy research.
 
 Status: phases 1-6 are merged into master (pull request #2, October 12, 2026)
 and unreleased. On October 15 the owner decided to replace the photo parts
-with phone-sensor capture:
-[HORIZON_SENSOR_CAPTURE_PLAN.md](HORIZON_SENSOR_CAPTURE_PLAN.md). The skyline
+with phone-sensor capture
+([HORIZON_SENSOR_CAPTURE_PLAN.md](HORIZON_SENSOR_CAPTURE_PLAN.md)), merged
+into master in pull request #8 (October 16). The skyline
 model, overhangs, points form and file import/export described here stay.
 
 ## Owner decisions
