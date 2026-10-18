@@ -10,9 +10,9 @@ entry here when it is fixed and record the fix in RELEASES.md.
 
 - **Horizon device acceptance.** Touch/pen and keyboard checks of the
   editor on real devices:
-  [HORIZON_ACCEPTANCE.md](docs/acceptance/HORIZON_ACCEPTANCE.md). The phone
-  capture gets its own checklist in phase 5 of the
-  [sensor capture plan](docs/horizon/HORIZON_SENSOR_CAPTURE_PLAN.md).
+  [HORIZON_ACCEPTANCE.md](docs/acceptance/HORIZON_ACCEPTANCE.md), including
+  its *Phone capture* section (phase 5 of the
+  [sensor capture plan](docs/horizon/HORIZON_SENSOR_CAPTURE_PLAN.md)).
 - **Legal pages: deferred by the owner (2026-10-11).** Not release work and
   not to be raised again unless the owner asks. For reference only: the
   Impressum names a pseudonym without a postal address, and the privacy page
