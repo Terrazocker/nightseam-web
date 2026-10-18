@@ -10,8 +10,8 @@
  * planner preferences.
  */
 import { vizTheme } from './viztheme.js?v=7';
-import { openCapture, captureAvailable, warmCompass } from './capture.js?v=30';
-import { normalizeWebPrefs, WEB_PREF_DEFAULTS } from './webstore.js?v=83';
+import { openCapture, captureAvailable, warmCompass } from './capture.js?v=31';
+import { normalizeWebPrefs, WEB_PREF_DEFAULTS } from './webstore.js?v=84';
 import {
   NO_BLOCK, ALT_MIN, ALT_MAX, MAX_POINTS,
   wrapAz, normalizePoints, normalizeHorizon,
@@ -22,7 +22,7 @@ import {
   newHistory, historyCommit, historyCanUndo, historyCanRedo, historyUndo,
   historyRedo, historyMarkSaved, historyDirty,
   PLANNER_CHANGE_EVENT, nextPlannerRevision, plannerChange, panoramaRevision,
-} from './core.js?v=77';
+} from './core.js?v=78';
 
 export { NO_BLOCK, ceilFor };
 

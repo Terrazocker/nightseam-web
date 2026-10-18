@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Match the OpenNGC catalog (catalog_data/data/openned.csv) against the popularity source
+"""Match the OpenNGC catalog (catalog_data/data/openned.csv) against community
 popularity scores and write `catalog_data/popularity_data.py`.
 
 The scores are used for TWO things (see `catalog_data/__init__.py`): the silent
@@ -11,7 +11,7 @@ Usage:
   python scripts/match_popularity.py                 # OFFLINE: use the local snapshot
   python scripts/match_popularity.py --print         # print the dict instead of writing
 
-NightSeam NEVER fetches the popularity source. The snapshot at `data/popularity_snapshot.json`
+NightSeam NEVER fetches popularity data. The snapshot at `data/popularity_snapshot.json`
 was taken once, deliberately, and is the frozen source of truth; every build,
 matcher run and shipped artefact reads that file. There is no network code path
 in this script or anywhere else in the project - `tests/test_no_popularity_fetch.py`
@@ -33,10 +33,10 @@ OUTPUT_MODULE = ROOT / "catalog_data" / "popularity_data.py"
 
 
 def load_cached_snapshot():
-    """Try to load cached the popularity source data."""
+    """Try to load cached popularity data."""
     import os
     if os.path.exists(OUTPUT_JSON):
-        print(f"Loading cached the popularity source data from {OUTPUT_JSON}")
+        print(f"Loading cached popularity data from {OUTPUT_JSON}")
         with open(OUTPUT_JSON, "r", encoding="utf-8") as f:
             data = json.load(f)
         print(f"  Loaded {len(data)} entries from cache")
@@ -50,7 +50,7 @@ def normalize(s):
 
     The padding matters: the popularity source keys the Large Magellanic Cloud as
     'PGC 17223' while OpenNGC lists it as 'PGC 017223' - without this the LMC
-    (and ~1,259 other padded the popularity source keys) never matched, so the standard
+    (and ~1,259 other padded source keys) never matched, so the standard
     'most popular' list lost one of its most famous objects. Only zeros that
     START a number are dropped ('ngc7000' stays 'ngc7000')."""
     if not s:
@@ -62,7 +62,7 @@ def normalize(s):
 
 # Objects whose OpenNGC designation is NOT the name the popularity source keys them under.
 # Verified against data/popularity_snapshot.json - each target below exists there and
-# names the same object (The popularity source lists no Hyades entry at all, so that one
+# names the same object (the source lists no Hyades entry at all, so that one
 # simply has no score).
 POPULARITY_ALIASES = {
     "b33": "BARNARD 33",            # OpenNGC's short form of the Horsehead
@@ -149,8 +149,8 @@ def _index_winner(prev, score, name, order):
     return prev if prev[0] <= name else (name, score, order)
 
 
-def build_popularity_index(tel_data):
-    """Build the lookup index from a list of the popularity source entries.
+def build_popularity_index(snap_data):
+    """Build the lookup index from a list of popularity entries.
 
     `normalize(name) -> (original_name, score)`. Colliding normalized keys are
     resolved by `_index_winner` (highest score, then source order), never by
@@ -161,14 +161,14 @@ def build_popularity_index(tel_data):
     return index_from_name_score_pairs(
         (entry.get("name", ""),
          entry.get("popularity", entry.get("score", 0)))
-        for entry in tel_data)
+        for entry in snap_data)
 
 
 def index_from_name_score_pairs(pairs):
     """Build the lookup index from `(name, score)` pairs IN SOURCE ORDER.
 
     Used by the dict branch of `main()` (`{name: score}` / `{name: {score: X}}`
-    snapshots), where the old code did `tel_index[norm] = (k, score)` and let a
+    snapshots), where the old code did `snap_index[norm] = (k, score)` and let a
     later key overwrite an earlier one. The shipped snapshot has exactly one
     such pair - 'NGC 654 2' (115) and 'NGC 6542' (3) both normalize to
     `ngc6542` - so `ngc6542` shipped 3 instead of the documented highest-wins
@@ -188,8 +188,8 @@ def index_from_name_score_pairs(pairs):
     return {norm: (name, score) for norm, (name, score, _o) in index.items()}
 
 
-def match_objects(csv_rows, tel_index):
-    """Match CSV objects against the popularity source data - DETERMINISTICALLY.
+def match_objects(csv_rows, snap_index):
+    """Match CSV objects against the popularity data - DETERMINISTICALLY.
 
     An object carries several designations and the popularity source may know more than
     one of them with DIFFERENT scores (M27 = NGC 6853: "M 27" 73260 vs "NGC
@@ -211,7 +211,7 @@ def match_objects(csv_rows, tel_index):
         designations = sorted(extract_designations_from_csv_row(row))
         best = None                     # (score, key, original name)
         for desig in designations:
-            hit = tel_index.get(desig)
+            hit = snap_index.get(desig)
             if hit is None:
                 continue
             orig_name, score = hit
@@ -274,7 +274,7 @@ def read_csv():
 def write_module(matches) -> None:
     """Write `catalog_data/popularity_data.py` (sorted by id, with its provenance)."""
     lines = [
-        '"""The popularity source popularity scores for the OpenNGC catalog.',
+        '"""community popularity scores for the OpenNGC catalog.',
         "",
         "One entry per catalog id, used for TWO things:",
         "  * the SILENT ranking tiebreaker (visibility decides, popularity separates",
@@ -287,7 +287,7 @@ def write_module(matches) -> None:
         "    python scripts/match_popularity.py            # offline, from the frozen snapshot",
         "",
         "Every designation of every `catalog_data/data/openned.csv` row is matched against",
-        "the popularity source table and the HIGHEST score wins (`match_objects`), so the",
+        "the popularity table and the HIGHEST score wins (`match_objects`), so the",
         "result does not depend on set/hash order and the standard-mode selection is",
         "reproducible.",
         '"""',
@@ -309,7 +309,7 @@ def main():
         # NightSeam code may contact the popularity source again. Tell a stale caller
         # instead of silently ignoring the flag.
         print("ERROR: --live was removed on purpose - NightSeam never fetches "
-              "The popularity source any more.")
+              "the popularity source any more.")
         print(f"       The frozen snapshot is {OUTPUT_JSON}; this script reads it.")
         sys.exit(2)
 
@@ -320,8 +320,8 @@ def main():
 
     # 2. Load the frozen local snapshot - the ONLY source. There is no fallback
     #    and no fetch: if it is missing, say so and stop.
-    tel_data = load_cached_snapshot()
-    if tel_data is None:
+    snap_data = load_cached_snapshot()
+    if snap_data is None:
         print(f"ERROR: no local snapshot at {OUTPUT_JSON}.")
         print("       NightSeam is offline by design; restore that file from a")
         print("       backup. There is no download path any more.")
@@ -329,43 +329,43 @@ def main():
 
     # (the snapshot is NOT rewritten when reading it - no side effect)
     
-    # 3. Inspect the popularity source data structure
-    if tel_data:
-        sample = tel_data[0] if isinstance(tel_data, list) else list(tel_data.items())[:3]
+    # 3. Inspect the snapshot's data structure
+    if snap_data:
+        sample = snap_data[0] if isinstance(snap_data, list) else list(snap_data.items())[:3]
         print(f"  Sample entry: {json.dumps(sample, indent=2)[:500]}")
-        if isinstance(tel_data, dict):
-            print(f"  Keys sample: {list(tel_data.keys())[:10]}")
+        if isinstance(snap_data, dict):
+            print(f"  Keys sample: {list(snap_data.keys())[:10]}")
     
     # 4. Build index
-    if isinstance(tel_data, list):
-        tel_index = build_popularity_index(tel_data)
-    elif isinstance(tel_data, dict):
+    if isinstance(snap_data, list):
+        snap_index = build_popularity_index(snap_data)
+    elif isinstance(snap_data, dict):
         # Might be {name: score} or {name: {score: X}} etc. CD-05: built through
         # the shared deterministic rule - plain assignment let the LAST key in
         # file order win a normalize collision (shipped: 'NGC 654 2' 115 lost to
         # 'NGC 6542' 3).
         def _pairs():
-            for k, v in tel_data.items():
+            for k, v in snap_data.items():
                 if isinstance(v, bool) or not isinstance(v, (int, float)):
                     if not isinstance(v, dict):
                         continue
                     yield k, v.get("popularity", v.get("score", 0))
                 else:
                     yield k, v
-        tel_index = index_from_name_score_pairs(_pairs())
+        snap_index = index_from_name_score_pairs(_pairs())
     else:
-        print("ERROR: Unexpected the popularity source data format")
+        print("ERROR: Unexpected popularity data format")
         sys.exit(1)
     
-    print(f"  the popularity source index: {len(tel_index)} normalized entries")
+    print(f"  Popularity index: {len(snap_index)} normalized entries")
     
     # Show some sample keys
-    sample_keys = list(tel_index.keys())[:15]
+    sample_keys = list(snap_index.keys())[:15]
     print(f"  Sample normalized keys: {sample_keys}")
     
     # 5. Match
     print("\nMatching objects...")
-    matches, details = match_objects(csv_rows, tel_index)
+    matches, details = match_objects(csv_rows, snap_index)
     
     # 6. Report
     total = len(csv_rows)
@@ -381,8 +381,8 @@ def main():
     
     # Top 20 by score
     sorted_matches = sorted(details, key=lambda x: x["score"], reverse=True)[:20]
-    print(f"\nTop 20 matched objects by the popularity source popularity score:")
-    print(f"{'Rank':<5} {'CSV ID':<20} {'Primary Name':<20} {'The popularity source Name':<25} {'Score':<10} {'Matched Via'}")
+    print(f"\nTop 20 matched objects by community popularity score:")
+    print(f"{'Rank':<5} {'CSV ID':<20} {'Primary Name':<20} {'Source Name':<25} {'Score':<10} {'Matched Via'}")
     print("-" * 100)
     for i, m in enumerate(sorted_matches, 1):
         print(f"{i:<5} {m['csv_id']:<20} {m['primary_name']:<20} {m['source_name']:<25} {m['score']:<10} {m['matched_via']}")

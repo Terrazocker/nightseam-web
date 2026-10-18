@@ -1,4 +1,4 @@
-"""The popularity source popularity scores for the OpenNGC catalog.
+"""community popularity scores for the OpenNGC catalog.
 
 One entry per catalog id, used for TWO things:
   * the SILENT ranking tiebreaker (visibility decides, popularity separates
@@ -11,7 +11,7 @@ GENERATED - do not hand-edit. Re-run:
     python scripts/match_popularity.py            # offline, from the frozen snapshot
 
 Every designation of every `catalog_data/data/openned.csv` row is matched against
-the popularity source table and the HIGHEST score wins (`match_objects`), so the
+the popularity table and the HIGHEST score wins (`match_objects`), so the
 result does not depend on set/hash order and the standard-mode selection is
 reproducible.
 """

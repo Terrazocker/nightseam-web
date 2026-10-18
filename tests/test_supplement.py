@@ -165,7 +165,7 @@ def test_generator_reads_the_supplement_and_keeps_ids_unique():
 
 
 def test_supplement_objects_are_unscored_or_scored_like_any_other(tmp_path):
-    """They take part in the normal rules: a popularity-source score if the source has
+    """They take part in the normal rules: a popularity score if the source has
     one (then Standard mode may show them), nothing invented if it does not. The
     SCORES themselves are never pinned - a live refresh moves them (see
     `AGENTS.md`); the ranking identity is `tests/test_catalog.py`'s business."""

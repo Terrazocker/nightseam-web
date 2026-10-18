@@ -19,6 +19,7 @@ import tempfile
 import threading
 import time
 import traceback
+import urllib.parse
 import urllib.request
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -207,7 +208,7 @@ class Ctx:
     def assert_clean(self):
         """Every check that does not deliberately break something ends here:
         no console errors, no uncaught exceptions, no same-origin 4xx/5xx - and
-        no request to a third party (the popularity source tripwire)."""
+        no request to a third party (the popularity-source tripwire)."""
         attempts = getattr(self.page, "_ns_external_attempts", None) or []
         if attempts:
             raise AssertionError(
@@ -313,9 +314,21 @@ class Result:
     duration: float = 0.0
 
 
+# The popularity source's host as a SHA-256 digest, so the tripwire needs no
+# plain name; `tests/test_no_popularity_fetch.py` checks the same digest.
+POPULARITY_SOURCE_HOST_SHA256 = "dade7cc7d261ececacc223ee0d7f3289bce58fc2a9d5307114e8a20f0c24758d"
+
+
+def _is_popularity_source(url: str) -> bool:
+    """True for a request to the popularity source's host or a subdomain."""
+    labels = (urllib.parse.urlsplit(url).hostname or "").split(".")
+    return any(hashlib.sha256(".".join(labels[i:]).encode()).hexdigest()
+               == POPULARITY_SOURCE_HOST_SHA256 for i in range(len(labels) - 1))
+
+
 def _install_stubs(page):
     """The gate is offline + deterministic, and NightSeam must not contact a
-    third party at boot: the popularity source popularity snapshot is BAKED into the
+    third party at boot: the community popularity snapshot is BAKED into the
     catalog payload (`web/app.js::popularityOf` reads `o.popularity`), and the
     web app has no live fetch left. This route is therefore a TRIPWIRE, not a
     stub - any request to it is aborted and recorded, and `Ctx.assert_clean()`
@@ -334,7 +347,7 @@ def _install_stubs(page):
         except Exception:
             pass
 
-    page.route("https://popularity-source.invalid/", handler)
+    page.route(_is_popularity_source, handler)
     # Non-photo checks use an explicit no-thumbnail response. Dedicated photo
     # checks override this route with decoded images, metadata and failures.
     page.route("https://en.wikipedia.org/api/rest_v1/page/summary/**",

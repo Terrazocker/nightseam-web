@@ -515,7 +515,7 @@ and web-safety-retired-horizon-photos-are-dropped. The rollback, phase 4
 layout and file-chooser checks now use a drawn horizon and the Import file
 button.
 
-Local validation: pytest 356 passed / 1 skipped (no local the popularity source
+Local validation: pytest 356 passed / 1 skipped (no local popularity
 snapshot); check_js, check_core, check_encoding OK; check_release 0 errors
 with the new core staged. Real-Chrome suite 77/79 on the first run: the
 create-buttons check still expected the removed photo button, and the new
@@ -663,7 +663,7 @@ with the Linux font substitution. Recorded as BROWSER-CI-002.
 
 Horizon editor rebuilt around a skyline (phases 1-6 of
 [the plan](docs/horizon/HORIZON_REBUILD_PLAN.md)). Local validation on Windows:
-pytest 353 passed / 1 skipped (no local the popularity source snapshot); real-Chrome
+pytest 353 passed / 1 skipped (no local popularity snapshot); real-Chrome
 suite 83/83; check_release 0 errors; check_js OK. GitHub CI on e0a2c71 (run
 38204733786): source guards and pytest passed on Windows, real-browser suite
 83/83 on Linux. Owner real-photo and device acceptance is still open.
@@ -2165,7 +2165,7 @@ deployment was made.
 
 ## Unreleased — Public credits wording, October 6, 2026
 
-At the owner's request, removed the popularity source acknowledgement from About and
+At the owner's request, removed the popularity-source acknowledgement from About and
 NOTICE and its name from the Privacy catalog-request explanation. About now
 credits online photos through Wikipedia/Wikimedia and their original creators,
 with a simple Image credits link. Individual author/source/license information

@@ -7,7 +7,7 @@ the product, on any platform, and this module pins that so it cannot come back
 unnoticed.
 
 The same rule is enforced at runtime by the browser gate: `tests/browser/
-harness.py::_install_stubs` installs a TRIPWIRE route for the popularity source URL
+harness.py::_install_stubs` installs a TRIPWIRE route for the popularity source's host
 and `Ctx.assert_clean()` fails any check that requests it, on both shells.
 """
 
@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -29,7 +30,19 @@ SHIPPED_GLOBS = [
     "web/core/**/*.json",
     "core/**/*.js",
 ]
-DOMAIN = "popularity-source.invalid"
+# The popularity source's host, kept only as a SHA-256 digest so the guard can
+# recognise it without the repository naming the source. The browser gate's
+# tripwire (`tests/browser/harness.py`) uses the same digest.
+BLOCKED_HOST_SHA256 = "dade7cc7d261ececacc223ee0d7f3289bce58fc2a9d5307114e8a20f0c24758d"
+HOSTNAME = re.compile(r"[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+",
+                      re.IGNORECASE)
+
+
+def host_is_blocked(host: str) -> bool:
+    """True for the popularity source's host and any of its subdomains."""
+    labels = host.lower().strip(".").split(".")
+    return any(hashlib.sha256(".".join(labels[i:]).encode()).hexdigest()
+               == BLOCKED_HOST_SHA256 for i in range(len(labels) - 1))
 
 
 def shipped_files() -> list[Path]:
@@ -40,22 +53,24 @@ def shipped_files() -> list[Path]:
     return sorted(out)
 
 
-def test_no_shipped_file_reaches_popularity():
-    """The URL must not appear in any shipped runtime file.
-
-    Naming the source in a comment is fine and expected (attribution); a URL is
-    not, because a URL is what a fetch needs.
-    """
+def test_no_shipped_file_reaches_the_popularity_source():
+    """The source's host must not appear in any shipped runtime file, because a
+    host is what a fetch needs."""
     offenders = []
     for path in shipped_files():
         text = path.read_text(encoding="utf-8", errors="replace")
-        if DOMAIN in text:
-            for i, line in enumerate(text.splitlines(), 1):
-                if DOMAIN in line:
-                    offenders.append(f"{path.relative_to(ROOT)}:{i}: {line.strip()[:90]}")
+        for i, line in enumerate(text.splitlines(), 1):
+            if any(host_is_blocked(m.group(0)) for m in HOSTNAME.finditer(line)):
+                offenders.append(f"{path.relative_to(ROOT)}:{i}: {line.strip()[:90]}")
     assert not offenders, (
-        "a shipped file still references the popularity source URL - the popularity "
+        "a shipped file still references the popularity source's host - the popularity "
         "snapshot must be baked into the catalog instead:\n  " + "\n  ".join(offenders))
+
+
+def test_browser_tripwire_uses_the_same_host_digest():
+    harness = (ROOT / "tests" / "browser" / "harness.py").read_text(encoding="utf-8")
+    assert BLOCKED_HOST_SHA256 in harness, (
+        "tests/browser/harness.py must block the same host this module guards")
 
 
 def test_web_has_no_live_popularity_fetch():
@@ -93,14 +108,14 @@ def test_snapshot_provenance_is_recorded():
     snap = ROOT / "data" / "popularity_snapshot.json"
     meta = ROOT / "data" / "popularity_snapshot.meta.json"
     if not snap.is_file():
-        pytest.skip("no local the popularity source snapshot on this machine (data/ is gitignored)")
+        pytest.skip("no local popularity snapshot on this machine (data/ is gitignored)")
     data = json.loads(snap.read_text(encoding="utf-8"))
     assert len(data) > 1000, f"snapshot looks truncated: {len(data)} entries"
     if meta.is_file():
         recorded = json.loads(meta.read_text(encoding="utf-8"))
         digest = hashlib.sha256(snap.read_bytes()).hexdigest()
         assert recorded["sha256"] == digest, (
-            "the popularity source snapshot changed after its provenance was recorded. "
+            "the popularity snapshot changed after its provenance was recorded. "
             "There is NO download path any more: restore the frozen snapshot from "
             "a backup (or re-record the provenance deliberately if the change was "
             "intended) and refresh data/popularity_snapshot.meta.json")

@@ -39,7 +39,7 @@ def test_standard_mode_is_the_most_popular_objects():
     assert cutoff > 0, "an unscored object must never be standard"
     outside = [i for i in ids if i not in std]
     assert max(POPULARITY.get(i, 0) for i in outside) <= cutoff
-    # The classic showpieces lead the list. The NUMBER comes from the popularity source and
+    # The classic showpieces lead the list. The NUMBER comes from the popularity snapshot and
     # moves when the table is refreshed (`scripts/match_popularity.py`), so the
     # test pins the identity and the ORDER, not the score.
     ranked = sorted(POPULARITY, key=lambda i: (-POPULARITY[i], i))

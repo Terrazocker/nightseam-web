@@ -27,7 +27,7 @@ TYPE_LABELS = {
     "star_cloud": "Star cloud",
 }
 
-# Standard mode = this many objects, by the popularity source popularity. Advanced mode
+# Standard mode = this many objects, by community popularity. Advanced mode
 # adds every other OpenNGC object; the two tables are disjoint, so the catalog
 # is exactly `openned.csv` either way.
 STANDARD_TOP_N = 200

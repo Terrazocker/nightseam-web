@@ -904,7 +904,7 @@ def test_scrub_window_follows_the_planner_and_matches_between_apps():
 
 # ======================================== popularity TIERS (0.6.30, web table)
 def test_popularity_tiers_are_rank_bands_and_never_the_score():
-    """The catalog exposes a TIER letter (A-F) and never the popularity source score.
+    """The catalog exposes a TIER letter (A-F) and never the popularity score.
 
     The bands are RANK bands because the shipped score distribution is far too
     heavy-tailed for score cut-offs: measured on `web/catalog.json`, rank 1 =

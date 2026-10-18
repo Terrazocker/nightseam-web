@@ -8,4 +8,4 @@
  * (it passes its dusk..dawn scoring range); there is no second
  * aggregation on either side any more.
  */
-export { sampleVisible, nightStats, nightStatsBatch } from './core.js?v=77';
+export { sampleVisible, nightStats, nightStatsBatch } from './core.js?v=78';

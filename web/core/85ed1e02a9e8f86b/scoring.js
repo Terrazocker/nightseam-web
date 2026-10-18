@@ -55,7 +55,7 @@ export function bortleMoonFactor(bortle) {
   return 0.40 + 0.12 * (bortle - 3);
 }
 
-/* Hidden popularity tiebreaker (The popularity source engagement scores). Pure number
+/* Hidden popularity tiebreaker (community popularity scores). Pure number
    -> 0..1: log-scale normalization, M42 (165k) ~ 1.0, dim object (100) ~ 0.3.
    The shells resolve the live map/catalog field and pass the number. */
 export function popularityFactor(pop) {

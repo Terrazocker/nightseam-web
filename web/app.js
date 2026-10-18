@@ -8,17 +8,17 @@
  *   • Settings — sites, rigs, custom targets, backup/restore (webstore.js)
  * All sky math runs client-side (astro.js, Meeus algorithms).
  */
-import * as E from './astro.js?v=68';
-import * as Hor from './horizon.js?v=163';
-import * as WS from './webstore.js?v=83';
+import * as E from './astro.js?v=69';
+import * as Hor from './horizon.js?v=164';
+import * as WS from './webstore.js?v=84';
 import { fmtSize, sizeArcmin, framePct, magVisible, skyClampZoom,
-         skyViewMatrix, skyScreenToBase, skyClampFocus } from './format.js?v=74';
-import { nightStats, nightStatsBatch, sampleVisible } from './nightrank.js?v=66';
+         skyViewMatrix, skyScreenToBase, skyClampFocus } from './format.js?v=75';
+import { nightStats, nightStatsBatch, sampleVisible } from './nightrank.js?v=67';
 import { TYPE_LABELS, TYPE_COLORS, searchBlob as coreSearchBlob,
          TIER_ORDER, assignPopularityTiers, wikiTitles,
          inTonightPool, PLANNER_CHANGE_EVENT, panoramaRevision,
-         panoramaVisibilityReason } from './core.js?v=77';
-import { popularityFactor as corePopularityFactor } from './core.js?v=77';
+         panoramaVisibilityReason } from './core.js?v=78';
+import { popularityFactor as corePopularityFactor } from './core.js?v=78';
 import { vizTheme, drawMoonPhaseMarker } from './viztheme.js?v=7';
 import { wikimediaCredit, wikiImageCredit, renderImageCredit } from './imagecredits.js?v=2';
 
@@ -107,7 +107,7 @@ const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const typeColor = (o) => TYPE_COLORS[o.otype] || '#9fb4d8';
 
-/* Hidden popularity scoring - log-scale normalization of the popularity source
+/* Hidden popularity scoring - log-scale normalization of the community
    community scores BAKED into the catalog payload (`catalog_data/popularity_data.py` ->
    `web/catalog.json`). The web app makes NO request to the popularity source: that
    snapshot was fetched once (see `scripts/match_popularity.py`, which is
@@ -3999,7 +3999,7 @@ async function boot() {
   }
 
   // popularity ranks from the BAKED catalog field - no network request here
-  // (the popularity source snapshot is shipped; see popularityOf above)
+  // (the popularity snapshot is shipped; see popularityOf above)
 
   // ---- user data: sites (with first-run welcome), custom targets ----
   const saveInitialSite = async (site) => {

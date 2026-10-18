@@ -2,7 +2,7 @@
 
 The catalog retains popularity only as an internal scoring input, while its
 primary table follows the compact Direction B columns and never exposes tier
-letters or the underlying the popularity source number. These text assertions fail loudly
+letters or the underlying popularity number. These text assertions fail loudly
 if either shell reintroduces those fields into the visible UI.
 
 The same file also pins the `hidden` handling, because that broke once: an

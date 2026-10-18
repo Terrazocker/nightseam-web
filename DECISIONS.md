@@ -842,7 +842,7 @@ owner, not by an agent.
 At the owner's request, About credits online photos through Wikipedia/Wikimedia
 and their original creators, with an Image credits link and individual photo
 author/source/license details retained. Bundled photos keep their actual source
-terms; they are not relabeled as Wikipedia images. The popularity source acknowledgement
+terms; they are not relabeled as Wikipedia images. The popularity-source acknowledgement
 is removed from About and NOTICE; Privacy describes catalog requests without
 naming that source. Internal catalog provenance and selection data
 are unchanged; no permission grant or mandatory attribution condition was
@@ -1433,7 +1433,7 @@ popularity is not refreshed on a schedule or checked for staleness.
 
 **Why.** OpenNGC has no prose, and inventing a second prose source would
 re-introduce exactly the curated/OpenNGC split the 0.6.26 rebuild removed. The
-The popularity source ranking moves slowly (a live refresh shifted scores by ~0.5 % and no
+popularity ranking moves slowly (a live refresh shifted scores by ~0.5 % and no
 standard-mode member for score reasons), so a refresh is a deliberate act, not a
 chore.
 

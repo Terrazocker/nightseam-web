@@ -78,7 +78,7 @@ export function wikiTitles(o) {
 }
 
 /* ------------------------- popularity TIERS -------------------------------
- * The popularity source score stays a SILENT ranking input: its VALUE is never
+ * The popularity score stays a SILENT ranking input: its VALUE is never
  * rendered anywhere (owner rule). The catalog shows a TIER letter instead,
  * which carries the ordering without exposing the number.
  *
