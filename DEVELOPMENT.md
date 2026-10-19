@@ -23,7 +23,8 @@ Web modules import only `./core.js?v=<token>`, never `web/core/<hash>/`.
 
 | Module | Owns |
 |---|---|
-| `app.js` | Shell state (`S`), Tonight, Catalog, Sky View, the detail card, weather and Wikipedia photos |
+| `app.js` | Shell state (`S`), Tonight, Catalog, Sky View, the detail card and weather |
+| `wikiphotos.js` | Wikipedia object photos for the detail card and their IndexedDB cache |
 | `astro.js` | Thin wrapper over core astronomy and planning |
 | `nightrank.js`, `format.js` | Re-exports of core scoring and formatting |
 | `horizon.js` | Horizon editor, horizon storage, preferences |
@@ -250,7 +251,7 @@ editor", "Capture horizons with the phone's sensors"); plans:
 | localStorage `nightseam_capture_cal_v2` | This device's camera delay and scale for the capture overlay (not backed up) |
 | localStorage `nightseam_site_v1`, `nightseam_theme` | Legacy site record, theme |
 | IndexedDB `nightseam-db-v1` | Sites, rigs, custom targets, safety snapshot |
-| IndexedDB `nightseam-images` | Wikipedia thumbnail cache, at most 25 MiB: least recently viewed photos are removed first; a full disk trims it to a quarter and retries once |
+| IndexedDB `nightseam-images` | Wikipedia thumbnail cache (`wikiphotos.js`), at most 25 MiB: least recently viewed photos are removed first; a full disk trims it to a quarter and retries once |
 
 A backup is one JSON bundle (format 11; formats 1-10 still restore their
 sites, rigs, targets and settings but not their retired panoramas; newer

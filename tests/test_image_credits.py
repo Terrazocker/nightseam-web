@@ -20,9 +20,14 @@ def test_no_legacy_photo_assets_or_loader_dependencies():
     assert not list((ROOT / "web/img").glob("*.jpg"))
     assert not (ROOT / "web/image-attributions.json").exists()
     assert not (ROOT / "scripts/build_image_credits.py").exists()
-    source = (ROOT / "web/app.js").read_text(encoding="utf-8")
-    assert 'src="img/' not in source
-    assert "bundledImageCredit" not in source
+    # The photo loader lives in wikiphotos.js; app.js still renders the card.
+    for name in ("app.js", "wikiphotos.js"):
+        source = (ROOT / "web" / name).read_text(encoding="utf-8")
+        assert 'src="img/' not in source, name
+        assert "bundledImageCredit" not in source, name
+    photos = (ROOT / "web/wikiphotos.js").read_text(encoding="utf-8")
+    assert "export async function loadWikiThumb(" in photos
+    assert "from './imagecredits.js?v=" in photos
     assert "image-attributions.json" not in (ROOT / "web/imagecredits.js").read_text(encoding="utf-8")
 
 
