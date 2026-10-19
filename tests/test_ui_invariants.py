@@ -147,6 +147,26 @@ def test_shared_horizon_link_asks_before_saving():
         < route.index("Hor.offerHorizonLink(sharedHorizon")
 
 
+def test_pairing_key_leaves_the_address_before_anything_runs():
+    """A `#pair=` address carries the key to the desktop's box: boot takes it
+    out of the address and history first (the first-run welcome may follow),
+    the router does the same for a later hash change, and a phone's reply
+    goes through the same confirmation as a shared link on the desktop."""
+    app = _read("web", "app.js")
+    boot = app[app.index("async function boot() {"):]
+    assert boot.index("takePairAddress();") < boot.index("installDialogKeyboard();")
+    take = app[app.index("function takePairAddress() {"):]
+    take = take[:take.index("\n}\n")]
+    assert "history.replaceState(null, '', `${location.pathname}${location.search}#horizon`);" in take
+    route = app[app.index("function route() {"):]
+    assert route.index("takePairAddress();") < route.index("let h = location.hash")
+    js = _read("web", "horizon.js")
+    dialog = js[js.index("function pairDialog("):]
+    dialog = dialog[:dialog.index("\n}\n")]
+    assert "offerHorizonLink(result.link, box, onChanged, true)" in dialog, "nothing is saved before the user agrees"
+    assert "localStorage" not in _read("web", "pairing.js"), "the transport stores nothing"
+
+
 def _js_body(src: str, header: str) -> str:
     """Body of a top-level JS function, up to its first closing brace."""
     start = src.index(header)

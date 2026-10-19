@@ -9,7 +9,7 @@
  * All sky math runs client-side (astro.js, Meeus algorithms).
  */
 import * as E from './astro.js?v=69';
-import * as Hor from './horizon.js?v=164';
+import * as Hor from './horizon.js?v=165';
 import * as WS from './webstore.js?v=84';
 import { fmtSize, sizeArcmin, framePct, magVisible, skyClampZoom,
          skyViewMatrix, skyScreenToBase, skyClampFocus } from './format.js?v=75';
@@ -22,7 +22,7 @@ import { popularityFactor as corePopularityFactor } from './core.js?v=78';
 import { vizTheme, drawMoonPhaseMarker } from './viztheme.js?v=7';
 import { loadWikiThumb, releaseWikiThumb } from './wikiphotos.js?v=1';
 import { WX_STATE, initWeather, loadWeather, refreshWeatherForSite, weatherRequested,
-         wxRenderPanel } from './weather.js?v=1';
+         wxRenderPanel } from './weather.js?v=2';
 
 const announcePlannerChange = Hor.announcePlannerChange;
 
@@ -504,7 +504,20 @@ function bootFailure(title, detail) {
   if (b) b.addEventListener('click', () => location.reload());
 }
 
+/** A phone pairing address (#pair=<box>.<key>) holds the key to the
+ *  desktop's box: take it out of the address bar and history before anything
+ *  else runs (the first-run welcome may come first), and keep it for the
+ *  Horizon view. */
+let pendingPair = null;
+function takePairAddress() {
+  if (!location.hash.startsWith('#pair=')) return false;
+  pendingPair = location.hash;
+  history.replaceState(null, '', `${location.pathname}${location.search}#horizon`);
+  return true;
+}
+
 function route() {
+  takePairAddress();
   let h = location.hash || '#tonight';
   // A shared horizon link (#horizon=...): its points ride in the address, so
   // take them out of the address bar and history at once, then offer them.
@@ -542,6 +555,11 @@ function route() {
   else {
     renderHorizonView();
     if (sharedHorizon) Hor.offerHorizonLink(sharedHorizon, $('#view'), () => {});
+    if (pendingPair) {
+      const pair = pendingPair;
+      pendingPair = null;
+      Hor.openPhonePairing(pair, $('#view'), () => {});
+    }
   }
   announceStatus(`${view === 'sky' ? 'Sky View' : view.charAt(0).toUpperCase() + view.slice(1)} view. Selected time ${fmtClock(S.skyTime)}, site time.`);
 }
@@ -550,7 +568,9 @@ function renderHorizonView() {
   const box = $('#view');
   box.innerHTML = '';
   Hor.renderHorizon(box, () => { /* other views re-read H state at render time */ },
-    { site: () => S.site });
+    { site: () => S.site,
+      // the site offered to a phone when pairing: the stored record's name and elevation
+      pairSite: () => ({ ...S.site, ...(SITES.find((s) => s.id === S.site.id) || {}) }) });
 }
 
 /* ----------------------------- tonight ----------------------------- */
@@ -3426,6 +3446,7 @@ function welcomeFlow() {
 /* ------------------------------- boot ------------------------------ */
 
 async function boot() {
+  takePairAddress();
   installDialogKeyboard();
   WS.currentTheme(); // migrate any retired local theme value to Workbench
   // visible error reporting — never fail silently again

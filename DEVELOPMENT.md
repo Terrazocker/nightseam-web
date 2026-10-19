@@ -10,7 +10,9 @@ and dated implementation notes in
 The planner (`web/`, served under `/astro/`) and the public pages (`landing/`,
 served at `/`) are static files. There is no server-side application, npm or
 bundler: the browser loads plain ES modules whose URLs carry `?v=` cache tokens.
-Python is used only for build, guard, release and test tooling.
+The one exception is `web/relay.php`, a mailbox for phone pairing that only
+ever holds ciphertext (below). Python is used only for build, guard, release
+and test tooling.
 
 All astronomy, planning, scoring and horizon geometry lives in `core/`.
 `scripts/build_core.py` copies it, line-ending normalized, into a
@@ -232,6 +234,42 @@ editor", "Capture horizons with the phone's sensors"); plans:
   refuses anything damaged, truncated, over 60,000 characters or out of
   range) and asks before adding it as a new horizon; cancelling or a bad
   link saves nothing.
+- **Phone pairing** (docs/horizon/HORIZON_PAIRING_PLAN.md). *Get from phone*
+  in the horizon list (`pairDialog` in `web/horizon.js`) makes a box id (16
+  random bytes) and a key (32) with `web/pairing.js`, opens a box on the
+  relay with the active site as the encrypted offer (name, coordinates,
+  elevation, time zone) and shows `/astro/#pair=<id>.<key>` as a QR code
+  (`qrSvg`, drawn from the vendored `web/qrcode.js`), with the link behind
+  *Show the link*, a countdown and a status line. It polls every 2.5 s
+  (doubling up to 15 s after failures) and stops on Cancel, Escape, expiry or
+  when the view is replaced; Cancel and leaving delete the box. A reply is
+  the horizon's share-link text and goes through `offerHorizonLink(…, true)`:
+  nothing is saved before the user agrees. On the phone, `boot()` and
+  `route()` in `app.js` take `#pair=` out of the address at once
+  (`takePairAddress`, before the first-run welcome) and hand it to
+  `openPhonePairing`, which reads the offer and shows the *Pairing* banner
+  above the horizon list: the desktop's site, a countdown, *New horizon* when
+  there is none, *Send to desktop* (the active horizon, disabled while it is
+  empty) and *End pairing*. The offered site replaces the planner's site only
+  for the capture's Moon reference and site check; it is never saved.
+  - **Sealing.** Version byte 1, a 12-byte IV, then AES-GCM-256 ciphertext
+    and tag (WebCrypto). The additional data is
+    `nightseam-pair-v1:<box id>:offer|reply`, so a message cannot be moved to
+    another box or direction. Bodies are at most 64 KB.
+  - **Relay** (`web/relay.php`, PHP 8.3). `POST ?box=&op=open` with the offer
+    (201; 409 for an existing id), `GET op=offer` (200, marks the box
+    connected), `POST op=reply` (201 once; 409 after), `GET op=poll` (204 with
+    `X-Relay-State: open|connected` while waiting; 200 with the reply once,
+    then the box is deleted), `POST op=close` (204). Unknown or expired boxes
+    answer 404; every box answer carries `X-Relay-Remaining` in seconds.
+    Boxes live 10 minutes, one JSON file each (bodies base64), written by
+    temporary file and rename under one `flock`; each request sweeps up to
+    20 expired boxes. At most 200 live boxes and 30 opens or replies per
+    address per 10 minutes (salted address hashes in `rate.json`). The data
+    folder is `nightseam-relay/` next to the document root; the script
+    answers 503 if it is missing, not writable or inside the document root.
+    Responses send `Cache-Control: no-store`, `nosniff`, `default-src 'none'`
+    and no CORS headers; cross-site requests (`Sec-Fetch-Site`) get 403.
 - **The Sun's direction.** `sunDirection(jd, lat, lon)` is the apparent Sun,
   kept for the sensor capture's north reference (plan phase 3).
 - **Editor.** One canvas: azimuth 0-360 across, altitude -10 to 80 up, with a
@@ -275,7 +313,8 @@ payloads are paired with a token and a manifest. See [CATALOG.md](CATALOG.md).
 
 Only on use: Open-Meteo forecast and air quality (site coordinates and
 timezone), Wikipedia summaries and image metadata, and Wikimedia thumbnails.
-Geolocation runs only from the "use my location" button. The planner's content
+Geolocation runs only from the "use my location" button. Phone pairing talks
+to the planner's own origin (`/astro/relay.php`). The planner's content
 security policy is a `<meta>` tag in `web/index.html`, because the host serves
 HTML without applying `.htaccess` headers.
 
@@ -286,13 +325,18 @@ HTML without applying `.htaccess` headers.
 `web/ftps_deploy.py publish` uploads the trees with verified atomic renames,
 checks the whole graph, and only then switches each HTML page. Old releases
 stay for already open tabs. A changed server `.htaccess` is refused for
-separate review. See [RELEASE_WORKFLOW.md](RELEASE_WORKFLOW.md) and
+separate review. `web/relay.php` is the one file published at a stable path
+outside the release trees (`/astro/relay.php`, so every release uses the same
+relay); any other `.php`, `.phtml` or `.phar` file is refused by both
+`publication_assets.py` and `ftps_deploy.py`. See [RELEASE_WORKFLOW.md](RELEASE_WORKFLOW.md) and
 [HOSTING_CONFIGURATION.md](HOSTING_CONFIGURATION.md).
 
 ## Tests
 
 - **pytest** (`tests/test_*.py`) runs the Python guards and drives the Node
-  tests in `tests/js/*.mjs`.
+  tests in `tests/js/*.mjs`. `tests/test_relay.py` runs `web/relay.php` under
+  `php -S` (PHP 8.3 CLI required) and drives `tests/js/pairing_relay.mjs`
+  against it.
 - **Reference anchors** (`tests/js/reference_anchors.mjs`) are the correctness
   authority: IAU 2006 precession, Meeus examples, published Moon phases, an
   independent lunar model and USNO 2026 rise/set and twilight tables

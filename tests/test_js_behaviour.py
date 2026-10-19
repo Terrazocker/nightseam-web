@@ -99,3 +99,9 @@ def test_capture_camera_scale():
     assert "capture calibration contract held" in out
 
 
+def test_pairing_transport_contract():
+    """Phone pairing (web/pairing.js): ids, keys and the QR address; sealed
+    messages refuse a wrong key, another box, the other direction or a
+    changed byte; the reply is exactly the horizon's share-link text."""
+    out = run_node_harness("pairing.mjs")
+    assert "pairing transport contract held" in out

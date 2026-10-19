@@ -1,6 +1,13 @@
 # Horizon pairing plan
 
-Created October 19, 2026. Proposed, not started. The owner asked for ways to
+Created October 19, 2026. **Status (October 19):** the owner approved all
+phases; phases 1-4 and the documentation part of phase 5 are built and tested
+(relay, transport, desktop dialog, phone banner). Phase 0 (the hosting probe:
+`relay_probe.php` here and `scripts/relay_probe.py`) and the deployment part
+of phase 5 wait for the owner. DECISIONS.md, 2026-10-19, records the decision
+and settles the open questions below.
+
+The owner asked for ways to
 get a horizon captured on the phone onto the desktop, liked "the desktop
 starts it" and short codes, and checked the hosting before this plan was
 written. It extends phase 4 (share link) of the
@@ -8,9 +15,9 @@ written. It extends phase 4 (share link) of the
 import/export and backups all stay.
 
 It reverses one part of the 2026-10-15 decision (DECISIONS.md, "Share links,
-not server shortcodes"): nightseam.de would hold encrypted data for a few
-minutes. That needs a new DECISIONS.md entry, privacy text and a
-server-policy review before anything is deployed.
+not server shortcodes"): nightseam.de holds encrypted data for a few
+minutes. The DECISIONS.md entry and the privacy text are written; the
+server-policy review comes before anything is deployed.
 
 ## The flow
 
@@ -162,12 +169,29 @@ review.
 - Owner: Pixel 7a and the desktop, end to end, on nightseam.de; an expired
   QR code says so on both sides.
 
-## Open questions
+## Open questions (settled October 19)
 
-- PHP in CI and on this machine: is `php` available for the relay tests on
-  the Windows runner and locally, or does the relay test run only on Linux?
-- The offered site on the phone: use it only for this capture (Moon north,
-  site check), or offer to save it as a site.
-- Where the received horizon attaches on the desktop: the site that started
-  pairing, or the current selection, as the share link does today.
-- How long the host keeps access logs (for the privacy text).
+- PHP in CI and on this machine: PHP 8.3 CLI is required for the relay tests,
+  like Node; CI installs it on the Windows runner (`shivammathur/setup-php`).
+- The offered site on the phone: used only for this capture (Moon north,
+  site check), never saved.
+- Where the received horizon attaches on the desktop: as with a share link,
+  a new horizon that becomes the active one.
+- How long the host keeps access logs: the website's logs rotate daily and
+  are kept for about eight days (already on the privacy page).
+
+## As built (differences from the sketch above)
+
+- `poll` answers 204 with `X-Relay-State` while waiting, as planned; every
+  box answer also carries `X-Relay-Remaining` (seconds), which the countdowns
+  use. `close` answers 204 even for a box that is already gone.
+- The relay also refuses cross-site requests (`Sec-Fetch-Site`), keeps rate
+  limits as salted address hashes (30 opens or replies per address per 10
+  minutes) and allows 200 live boxes.
+- The QR encoder is Kazuhiko Arase's qrcode-generator 2.0.4, vendored
+  unchanged as `web/qrcode.js` (a `.js` name, so the cache-token and import
+  guards cover it; source and hashes in NOTICE).
+- The relay section of `web/.htaccess` also denies every other PHP file.
+- *Get from phone* sits with *Draw by hand* and *Import file* in the horizon
+  list, since it adds a horizon. On the phone, the *Pairing* section offers
+  *New horizon* when there is none yet.

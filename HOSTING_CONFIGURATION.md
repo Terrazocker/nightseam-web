@@ -34,6 +34,36 @@ content-addressed release namespaces while canonical entry HTML revalidates.
 Verify the candidate's actual paths and GET response headers after authorized
 publication; numeric-query rules alone do not establish that new policy.
 
+## Pairing relay (PHP) — prepared October 19, 2026, not deployed
+
+Phone pairing needs the one server script `web/relay.php`, published at
+`/astro/relay.php` (DECISIONS.md, 2026-10-19; plan in
+docs/horizon/HORIZON_PAIRING_PLAN.md). Checked by the owner on October 19:
+
+- PHP 8.3 as an FPM application on Plesk, running as the subscription's
+  system user, with up to 10 workers started on demand. Today it is "served
+  by nginx", which bypasses `.htaccess`. Switch to **FPM application served
+  by Apache** when the relay is deployed: nginx keeps serving static files and
+  passes `.php` to Apache, so the `relay.php` section of `web/.htaccess`
+  (`no-store`, an API CSP, every other PHP file denied) applies.
+- The data folder `nightseam-relay/` sits in the webspace root next to the
+  document root (`httpdocs/`), inside `open_basedir`, writable by the PHP
+  user, unreachable by URL. The script derives it from `DOCUMENT_ROOT` and
+  answers 503 if it is missing, not writable or inside the document root.
+  The vhost name stays out of the repository.
+- Imunify is active. Before deploying, run the phase 0 probe: upload
+  `docs/horizon/relay_probe.php` by hand to `httpdocs/astro/`, run
+  `python scripts/relay_probe.py https://nightseam.de/astro/relay_probe.php`
+  under each handler, record the output in RELEASES.md and delete the probe.
+  It checks writing, renaming, reading, locking and deleting in the data
+  folder and that 1 KB, 60 KB and 64 KB binary POST bodies arrive unchanged.
+- After deployment, check with GET and POST (never only `curl -I`): an
+  unknown box answers 404 with `Cache-Control: no-store` and the relay's
+  `Content-Security-Policy: default-src 'none'; frame-ancestors 'none'`, and
+  `/astro/anything.php` is refused.
+- How long the host keeps access logs, which record the request line with
+  the box id, is stated on the privacy page (Hosting).
+
 ## Observed after authorized deployment — October 7, 2026
 
 NightSeam Web v0.1.0 is deployed. Both entry routes and all 52 HTTP-readable
