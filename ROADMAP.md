@@ -55,6 +55,14 @@ any new external request, CSP entry or formula is added.
 - **Offline reopening.** Today a loaded tab keeps planning offline, but
   reopening offline is not guaranteed. Supporting it needs a service worker
   with an update policy, complete asset/catalog pairing and storage limits.
+- **Horizon pairing** ([plan](docs/horizon/HORIZON_PAIRING_PLAN.md)): the
+  desktop shows a QR code, the phone scans it, captures, and the horizon
+  arrives on the desktop through an end-to-end-encrypted relay on
+  nightseam.de that holds a box for at most 10 minutes. Short codes later on
+  the same relay. Hosting checked (PHP 8.3 FPM, a data folder outside the
+  document root); it reverses part of the 2026-10-15 share-link-only
+  decision, so it needs a DECISIONS.md entry, privacy text and a
+  server-policy review.
 
 ## History
 
