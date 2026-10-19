@@ -1,9 +1,45 @@
 # Independent website release record
 
-Actual validation outcomes, newest first. Published releases: v0.1.1 (October 8,
-2026) and v0.1.0 (October 7, 2026). Entries above the v0.1.1 record are local
-development awaiting the next release, 0.7.0. Upload success alone is never
-recorded as acceptance.
+Actual validation outcomes, newest first. Published releases: v0.7.0 (October
+19, 2026), v0.1.1 (October 8, 2026) and v0.1.0 (October 7, 2026). Upload
+success alone is never recorded as acceptance.
+
+## v0.7.0 — released and deployed, October 19, 2026
+
+Owner-authorized deployment of tag v0.7.0 (4245db3) to nightseam.de, the
+first publication in the immutable release layout (the live site still had
+the legacy mutable paths). Not pushed to GitHub yet.
+
+- Backup: a read-only FTPS download of the whole remote tree, 411 files /
+  572 MB, size-checked against the listing, before anything was written.
+- Connection: since the October 10 certificate check, FTPS verifies the
+  host name. The credential file named the server's IP, which the
+  certificate (plesk-amanda.zap.cloud) does not cover; the owner changed
+  FTP_HOST to that name.
+- Candidate: this checkout writes CRLF (core.autocrlf), while the live
+  /astro/.htaccess had LF, so the publisher would refuse the server policy
+  as changed. The 67-file candidate was built from an LF worktree of v0.7.0
+  (git -c core.autocrlf=false); its /astro/.htaccess then matched live
+  byte for byte.
+- Server policy: owner-authorized upload of landing/.htaccess to /.htaccess
+  (the October 13 landing security headers, never deployed before), by a
+  verified temporary upload and rename. As BUGS.md records, the headers
+  reach HEAD requests (checked) but not GET page loads.
+- Publish: `ftps_deploy.py publish`, two connection resets during the
+  immutable install (before any page switch), then a complete run: 67
+  files, graph verified before the entry pages switched. No remote file
+  was deleted; the retired-image cleanup list was not acted on.
+- Live check: all 65 public files and both entry routes match the
+  candidate's SHA-256 over HTTPS; /astro/version.json is v0.7.0. In the
+  built-in browser the planner loaded from releases/dd644868…, catalog
+  ready (12,176 objects), no console errors; Berlin example, night of
+  October 19: sunset 18:03, dark 19:56-05:46, 16 Tonight rows; Horizon tab
+  shows the new editor; footer and Changes page show 0.7.0.
+
+Evidence: logs/deployment-0.7.0-20261019/ (backup with inventory.json,
+publish.txt, https-check.txt, publication.manifest.json,
+deployment-receipt.json). Phone-capture acceptance remains open
+(ROADMAP.md).
 
 ## v0.7.0 release preparation — October 19, 2026 (branch release-0.7.0)
 

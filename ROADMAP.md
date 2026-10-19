@@ -5,8 +5,9 @@ Where NightSeam Web stands and what comes next. Open defects are in
 
 ## Status
 
-- **Published:** v0.1.1 (October 8, 2026), after v0.1.0 (October 7).
-- **Releasing: 0.7.0** (October 19, 2026): the rebuilt horizon editor
+- **Published:** v0.7.0 (October 19, 2026), after v0.1.1 (October 8) and
+  v0.1.0 (October 7). Next release names continue above 0.7.0.
+- **In 0.7.0:** the rebuilt horizon editor
   (skyline on a compass grid, overhangs, file import/export) with phone
   sensor capture instead of photos (camera view with an AR overlay, north
   from the compass, the Moon or a landmark, loop closure, share links), the
