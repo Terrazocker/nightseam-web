@@ -301,8 +301,9 @@ separate review. See [RELEASE_WORKFLOW.md](RELEASE_WORKFLOW.md) and
   `expect_file_chooser()` alone arms interception too late on a busy page,
   and Chrome then opens its own dialog instead (BROWSER-CI-002). A check
   that asserts geometry after a scroll waits for the element's own box, not
-  for the CSS variable or state that moves it: in the planner Chrome can lay
-  the fixed dock out one write behind until a frame renders (BROWSER-CI-003).
+  for the CSS variable or state that moves it (BROWSER-CI-003). The gate runs
+  with reduced motion and a fake clock, whose animation frames need not
+  advance the page's own animation ticks.
   A check that imports a planner module or fetches the catalog takes the URL
   from `harness.module_url()` / `catalog_url()`: the browser keys modules by
   URL, so any other cache token (or none) loads a second copy with its own

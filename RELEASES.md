@@ -5,6 +5,34 @@ Actual validation outcomes, newest first. Published releases: v0.1.1 (October 8,
 development awaiting the next release, 0.7.0. Upload success alone is never
 recorded as acceptance.
 
+## Reduced motion no longer turns every style change into a transition (BROWSER-CI-003 cause) — October 19, 2026 (branch ccr-9a404934-2ntdx7)
+
+The cause of BROWSER-CI-003 was the planner's own reduced-motion rule:
+`* { transition-duration: .01ms !important }`. With the default
+`transition-property: all`, every style change on every element became a
+0.01 ms transition, and until the next animation tick layout reported the
+old value. The browser gate runs with reduced motion, and its fake clock's
+animation frames sometimes left that tick unrun. Real users who ask for
+reduced motion got the same one-frame-stale reads wherever the planner
+writes a style and then measures.
+
+Found with a probe in the real planner. Writing the docked dock's `top` and
+reading its box straight back was stale 6 times in 6, every time. Emptying
+the panel, hiding `main`, unsticking the top bar, removing canvases, images
+or focus changed nothing. Turning transitions off made it 0 in 6.
+
+Fix: under reduced motion, transitions are switched off (`transition: none
+!important`) instead of shortened. Nothing in the planner listens for
+transition events, and the two real transitions (link colour, chip border)
+simply do not run. A new test in test_ui_invariants.py rejects the old
+rule (it fails against the previous style.css). Cache tokens bumped.
+
+Local validation: the probe reads 0 stale in 6. The docked-inspector check
+with its original wait (pull request #1's box wait temporarily removed)
+passed 30/30; it failed about 1 in 5 before. The box wait stays. BUGS.md no
+longer lists BROWSER-CI-003. Full-suite results are in the receipt for this
+branch's last commit.
+
 ## Dock geometry wait in the docked-inspector check (BROWSER-CI-003) — October 19, 2026 (branch ccr-9a404934-2ntdx7)
 
 web-docked-inspector-fit-and-tonight-key failed locally 11 times in 53 runs

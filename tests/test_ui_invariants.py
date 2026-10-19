@@ -314,6 +314,20 @@ def test_web_charts_expose_descriptions_and_accessibility_modes():
         assert rule in css
 
 
+def test_reduced_motion_removes_transitions_instead_of_shortening_them():
+    """BROWSER-CI-003: `* { transition-duration: .01ms !important }` under
+    reduced motion turned every style change on every element into a
+    transition (the default transition-property is `all`), so layout read the
+    old value until the next frame. Reduced motion must switch transitions
+    off, never give every element a short one."""
+    import re
+    css = _read("web", "style.css")
+    blocks = re.findall(r"@media \(prefers-reduced-motion: reduce\)\s*\{(.*?)\n\}", css, re.S)
+    assert blocks, "the planner keeps a reduced-motion rule"
+    for block in blocks:
+        assert "transition-duration" not in block and "transition: none !important" in block, block
+
+
 def test_web_panorama_changes_invalidate_visibility_caches():
     core = _read("core", "plannerstate.js")
     horizon = _read("web", "horizon.js")

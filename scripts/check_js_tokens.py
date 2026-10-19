@@ -134,8 +134,8 @@ _VERIFIED_BASELINE_JSON = r"""
    "token": "67"
   },
   "style.css": {
-   "sha256": "abb97c5171bb3ba00bd35c351d41e5a1d7f4eae0e9612b48223b682dfc680c84",
-   "token": "79"
+   "sha256": "fbfd3de370faf18e9c6f0ea82f52d22f2e107b385607302e08983034d6127add",
+   "token": "80"
   },
   "themes.css": {
    "sha256": "f8094c798dbe72b4e7f84faad3f41fc0cdbe896a03c0cb7413ee9d0d1bed2ff8",
