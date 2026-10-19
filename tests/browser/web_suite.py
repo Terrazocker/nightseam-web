@@ -1867,6 +1867,9 @@ def web_docked_inspector_fit_and_tonight_key(c):
         assert_dock_header_visible(f"{theme} {width}px deep Tonight row")
 
         c.page.evaluate("window.scrollTo(0, 0)")
+        # Wait for the dock's own box, not only --detail-top: Chrome can lay the
+        # fixed dock out one write behind until a frame renders, even two
+        # animation frames after the variable changed (BROWSER-CI-003).
         c.page.wait_for_function("""() => {
           const chrome = ['.topbar', '#tabs'].map((selector) => {
             const el = document.querySelector(selector);
@@ -1877,7 +1880,9 @@ def web_docked_inspector_fit_and_tonight_key(c):
           const expected = Math.ceil(Math.max(0, ...chrome));
           const actual = parseFloat(getComputedStyle(document.documentElement)
             .getPropertyValue('--detail-top'));
-          return Number.isFinite(actual) && Math.abs(actual - expected) <= 1;
+          const dock = document.querySelector('#modal.detail-docked');
+          return Number.isFinite(actual) && Math.abs(actual - expected) <= 1 &&
+            !!dock && Math.abs(dock.getBoundingClientRect().top - expected) <= 1;
         }""", timeout=10000)
         c.page.evaluate("() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))")
         assert_dock_header_visible(f"{theme} {width}px after returning to page top",

@@ -64,11 +64,31 @@ entry here when it is fixed and record the fix in RELEASES.md.
 - **BROWSER-LOCAL-001.** The local test server's connection queue was raised
   from 5 to 64 after refused module loads; failures are recorded with server
   thread health and failed URLs, never retried or skipped.
-- **BROWSER-CI-003.** web-docked-inspector-fit-and-tonight-key failed once
-  on Linux CI on October 18, in the earlier private repository, for a change
-  that touches none of the docked inspector's code or styles. After returning to the page top
-  the dock's `--detail-top` and the tab bar's bottom agreed (132 px), yet the
-  title's box was at 114.5 px, over the tab bar; a full-page screenshot taken
-  just after showed it in place. Not reproduced locally in five runs (one of
-  them failed earlier, on an unrelated harness port, fixed the same day). If
-  it fails again, treat it as a real defect.
+- **BROWSER-CI-003: a test-side fix is waiting for Linux CI.**
+  web-docked-inspector-fit-and-tonight-key failed once on Linux CI on
+  October 18, in the earlier private repository. After the check returns to
+  the page top, `--detail-top` and the tab bar's bottom agree, yet the dock
+  title's box sits over the tab bar.
+  - *Reproduced on October 19* in a Linux container (Playwright Chromium
+    141): 11 failures in 53 runs (some with diagnostic edits that did not
+    change it), with the CI geometry (dock top 133 px, title
+    at 114 px). Failing runs stop after 2.5 s at the first width (1672 px),
+    against about 7 s for a pass.
+  - *What the probes show.* At the failing read, the root's
+    `--detail-top`, the value `#modal` inherits and (in a scratch build) its
+    own inline `top` were all 133 px. Its computed `top` and box were still
+    93 px, the position the app had written while the page was scrolled down.
+    A log of the app's writes showed each forced read returning the
+    *previous* write (93 px read back 130 px, 133 px read back 93 px). Two
+    animation frames after the write, the box was still behind; one frame
+    later it was right.
+  - *Not the cause.* The app writes the correct value every time. Setting
+    the dock's own inline `top` instead of only the inherited variable did
+    not help (4 failures in 24 runs, reverted). A minimal page with the same
+    sticky bar and fixed dock never lags, so something in the planner page
+    triggers it; the engine-level cause is not identified. Whether a user
+    ever sees a stale frame is unknown.
+  - *Proposed fix (test).* After returning to the top, the check waits for
+    the dock's own box to reach the chrome bottom, not only for the variable;
+    the assertions are unchanged. It passed 30 times in 30 runs locally. Keep
+    this entry until it holds on Linux CI.

@@ -299,7 +299,10 @@ separate review. See [RELEASE_WORKFLOW.md](RELEASE_WORKFLOW.md) and
   `scripts/check_browser.py --web`. A check that waits for a file chooser
   first registers a `filechooser` listener, well before the key or click:
   `expect_file_chooser()` alone arms interception too late on a busy page,
-  and Chrome then opens its own dialog instead (BROWSER-CI-002).
+  and Chrome then opens its own dialog instead (BROWSER-CI-002). A check
+  that asserts geometry after a scroll waits for the element's own box, not
+  for the CSS variable or state that moves it: in the planner Chrome can lay
+  the fixed dock out one write behind until a frame renders (BROWSER-CI-003).
 - **CI** (`.github/workflows/checks.yml`) runs the guards and pytest on
   Windows and the browser suite on Linux, for every pull request and every
   push to `main`.
