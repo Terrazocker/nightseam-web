@@ -5,6 +5,22 @@ Actual validation outcomes, newest first. Published releases: v0.1.1 (October 8,
 development awaiting the next release, 0.7.0. Upload success alone is never
 recorded as acceptance.
 
+## Weather moves out of app.js — October 19, 2026 (branch ccr-9a404934-2ntdx7)
+
+The Open-Meteo weather section moved to `web/weather.js` (app.js 4,187 →
+3,855 lines). The code is unchanged apart from four `export` keywords.
+app.js hands over the shell state and helpers it reads (`S`, `activeSite`,
+`dateKey`, `nightWindow`, `resolvedZone`) once with `initWeather()`, and
+asks `weatherRequested()` where it used to read `_wxContext`. weather.js
+imports horizon.js and webstore.js under app.js's tokens, so both share
+one module copy; check_js_tokens rejects a mismatch, as a planted one
+showed.
+
+Local validation: pytest 366 passed, 1 skipped; browser web suite 88/88,
+including the three weather checks (missing values and retry, site and
+timezone ownership, well-formed provider times); check_js, check_release
+and build_changelog --check clean. Not yet run on CI.
+
 ## Tooling and structure follow-ups — October 19, 2026 (branch ccr-9a404934-2ntdx7)
 
 - **Browser checks import live module URLs.** Three checks imported
