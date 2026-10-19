@@ -5,6 +5,28 @@ Actual validation outcomes, newest first. Published releases: v0.1.1 (October 8,
 development awaiting the next release, 0.7.0. Upload success alone is never
 recorded as acceptance.
 
+## Dock geometry wait in the docked-inspector check (BROWSER-CI-003) — October 19, 2026 (branch ccr-9a404934-2ntdx7)
+
+web-docked-inspector-fit-and-tonight-key failed locally 11 times in 53 runs
+(Linux container, Playwright Chromium 141), with the same geometry as the
+October 18 CI failure. Probes showed the app writing the right dock offset
+every time, while Chrome laid the fixed dock out one write behind. The
+detailed evidence is in BUGS.md. Setting the dock's own inline `top` did
+not help (4 failures in 24 runs) and was reverted. A minimal page with the
+same layout did not reproduce it.
+
+Fix (test only): after returning to the page top, the check waits for the
+dock's own box to reach the chrome bottom as well as for `--detail-top`;
+the assertions are unchanged. DEVELOPMENT.md records the rule for geometry
+checks. Planner code is unchanged, so there was no cache-token bump.
+
+Local validation: the check passed 30/30 with the fix; pytest 361 passed,
+1 skipped; browser web suite 87/88. The one failure is web-load-smoke,
+because this clone has no version tags (the footer shows `NightSeam Web
+2d3b587`). The public repository has none yet, so CI fails the same check,
+and build_changelog.py --check also fails. Not yet confirmed on Linux CI;
+BUGS.md keeps the entry until it is.
+
 ## File-chooser wait in the responsive planner check (BROWSER-CI-002) — October 18, 2026 (branch claude/angry-mayer-374852)
 
 web-phase4-responsive-planner timed out waiting for the file chooser after
