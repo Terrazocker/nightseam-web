@@ -23,7 +23,8 @@ Web modules import only `./core.js?v=<token>`, never `web/core/<hash>/`.
 
 | Module | Owns |
 |---|---|
-| `app.js` | Shell state (`S`), Tonight, Catalog, Sky View, the detail card and weather |
+| `app.js` | Shell state (`S`), Tonight, Catalog, Sky View and the detail card |
+| `weather.js` | Open-Meteo observing weather: top-bar chip and weather panel; reads the shell state through `initWeather()` |
 | `wikiphotos.js` | Wikipedia object photos for the detail card and their IndexedDB cache |
 | `astro.js` | Thin wrapper over core astronomy and planning |
 | `nightrank.js`, `format.js` | Re-exports of core scoring and formatting |

@@ -5,6 +5,22 @@ Actual validation outcomes, newest first. Published releases: v0.1.1 (October 8,
 development awaiting the next release, 0.7.0. Upload success alone is never
 recorded as acceptance.
 
+## Weather moves out of app.js — October 19, 2026 (branch ccr-9a404934-2ntdx7)
+
+The Open-Meteo weather section moved to `web/weather.js` (app.js 4,187 →
+3,855 lines). The code is unchanged apart from four `export` keywords.
+app.js hands over the shell state and helpers it reads (`S`, `activeSite`,
+`dateKey`, `nightWindow`, `resolvedZone`) once with `initWeather()`, and
+asks `weatherRequested()` where it used to read `_wxContext`. weather.js
+imports horizon.js and webstore.js under app.js's tokens, so both share
+one module copy; check_js_tokens rejects a mismatch, as a planted one
+showed.
+
+Local validation: pytest 366 passed, 1 skipped; browser web suite 88/88,
+including the three weather checks (missing values and retry, site and
+timezone ownership, well-formed provider times); check_js, check_release
+and build_changelog --check clean. Not yet run on CI.
+
 ## Tooling and structure follow-ups — October 19, 2026 (branch ccr-9a404934-2ntdx7)
 
 - **Browser checks import live module URLs.** Three checks imported
@@ -26,7 +42,9 @@ Local validation on the final commit (Linux container, Playwright 1.64.0
 driving the preinstalled Chromium 141 via `--executable`): pytest 366
 passed, 1 skipped (local popularity snapshot absent); browser web suite
 88/88; check_js, check_core, build_changelog --check and check_release
-clean. Not yet run on CI.
+clean. CI on pull request #2 (run 39306204454) passed both jobs: guards
+and pytest on Windows, the browser suite on Linux with Playwright 1.64.0
+and the runner's Chrome. Merged October 19.
 
 ## Reduced motion no longer turns every style change into a transition (BROWSER-CI-003 cause) — October 19, 2026 (branch ccr-9a404934-2ntdx7)
 
@@ -75,8 +93,9 @@ Local validation: the check passed 30/30 with the fix; pytest 361 passed,
 1 skipped; browser web suite 87/88. The one failure is web-load-smoke,
 because this clone has no version tags (the footer shows `NightSeam Web
 2d3b587`). The public repository has none yet, so CI fails the same check,
-and build_changelog.py --check also fails. Not yet confirmed on Linux CI;
-BUGS.md keeps the entry until it is.
+and build_changelog.py --check also fails. CI on pull request #1 (run
+39298990798) then passed both jobs, the tags having been pushed; the cause
+was found the same day (receipt above) and BUGS.md no longer lists it.
 
 ## File-chooser wait in the responsive planner check (BROWSER-CI-002) — October 18, 2026 (branch claude/angry-mayer-374852)
 
