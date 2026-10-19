@@ -95,3 +95,27 @@ def test_dom_guard_reports_missing_module_entry(tmp_path):
     import pytest
     with pytest.raises(ValueError, match="module file missing"):
         mod.discover_modules(html)
+
+
+def test_defs_heuristic_reports_an_undefined_call_and_not_the_usual_bindings():
+    """check_js_defs printed 41 false candidates (parameters, destructured
+    options, setters, browser globals, text inside comments and templates)
+    with line numbers counted after stripping, so nobody could act on it.
+    It must stay quiet on those shapes and still name a real undefined call
+    at its real line."""
+    defs = _load("check_js_defs")
+    source = (
+        "import { a as b } from './x.js?v=1';\n"
+        "// the phone's compass: never call fake() from a comment\n"
+        "function wire(button, onOpen = () => {}, { onClose, site: where = null } = {}) {\n"
+        "  onOpen(); onClose(); where(); b();\n"
+        "  const [first, ...rest] = [1]; let x = 1, more = () => 0; more();\n"
+        "  return new Promise((resolve, reject) => { resolve(); reject(); });\n"
+        "}\n"
+        "const view = { set hidden(v) { this.h = v; }, stop() { cancelAnimationFrame(1); } };\n"
+        "const html = `<p>RA/Dec (J2000) ${view.stop() + `${wire(1)}`} Elevation (m)</p>`;\n"
+        "const re = /notACall\\(/g;\n"
+        "missing(re, html);\n"
+    )
+    assert defs.candidates(source) == [(11, "missing")]
+    assert defs.candidates((ROOT / "web" / "webstore.js").read_text(encoding="utf-8")) == []
