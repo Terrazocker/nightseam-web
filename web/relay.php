@@ -14,12 +14,15 @@
  *   GET  ?box=<id>&op=offer                 200 offer; marks the box connected
  *   POST ?box=<id>&op=reply   body: reply   201; 409 when already answered
  *   GET  ?box=<id>&op=poll                  204 + X-Relay-State while waiting,
- *                                           200 reply once, then deleted
+ *                                           200 reply (again until closed)
  *   POST ?box=<id>&op=close                 204; the box is deleted (also when gone)
  *
+ * The desktop closes the box once it has decrypted the reply, so a poll
+ * answer lost on the way does not lose the horizon; expiry removes the rest.
  * Unknown or expired boxes answer 404. Every box response carries
  * X-Relay-Remaining (seconds until it expires). No body, IP address or box id
- * is logged here; rate limits keep salted IP hashes for ten minutes.
+ * is logged here; rate limits keep salted IP hashes (IPv6 by /64) for ten
+ * minutes, and the salt is replaced daily.
  */
 declare(strict_types=1);
 
@@ -29,8 +32,11 @@ const MAX_BODY = 65536;         // bytes; a horizon link is at most 60,000 chara
 const MAX_BOXES = 200;          // live boxes at once
 const RATE_WINDOW = 600;        // seconds
 const RATE_LIMIT = 30;          // opens or replies per IP address per window
-const SWEEP_MAX = 20;           // expired boxes removed per request
+const SWEEP_MAX = 50;           // expired boxes removed per request
+const SALT_TTL = 86400;         // seconds before the rate-limit salt is replaced
 
+// A warning printed into a response would corrupt a binary body.
+ini_set('display_errors', '0');
 header('Cache-Control: no-store');
 header('X-Content-Type-Options: nosniff');
 header("Content-Security-Policy: default-src 'none'; frame-ancestors 'none'");
@@ -78,39 +84,58 @@ function read_box(string $path): ?array {
     return $box;
 }
 
+/** The file's modification time is the box's opening time, so the sweep
+ *  needs only a stat per box, never a read. */
 function write_box(string $path, array $box): void {
-    if (!write_atomic($path, json_encode($box))) fail(503, 'relay storage failed');
+    if (!write_atomic($path, json_encode($box)) || !@touch($path, (int)$box['opened'])) {
+        fail(503, 'relay storage failed');
+    }
 }
 
 function remaining(array $box, int $now): int {
     return (int)$box['opened'] + BOX_TTL - $now;
 }
 
-/** Remove a few expired boxes and stray temporary files; count the live ones. */
+/** Remove expired boxes, stray temporary files and stale rate data; count
+ *  the live boxes. Stats only: the cost does not grow with box sizes. */
 function sweep(string $dir, int $now): int {
     $live = 0;
     $removed = 0;
     foreach (glob($dir . DIRECTORY_SEPARATOR . '*.box') ?: [] as $path) {
-        $box = read_box($path);
-        if ($box !== null && remaining($box, $now) > 0) { $live++; continue; }
+        $opened = @filemtime($path);
+        if ($opened !== false && $opened + BOX_TTL > $now) { $live++; continue; }
         if ($removed < SWEEP_MAX) { @unlink($path); $removed++; }
     }
     foreach (glob($dir . DIRECTORY_SEPARATOR . '*.tmp') ?: [] as $path) {
         if ($removed < SWEEP_MAX && $now - (int)@filemtime($path) > 60) { @unlink($path); $removed++; }
     }
+    $rates = $dir . DIRECTORY_SEPARATOR . 'rate.json';
+    $changed = @filemtime($rates);
+    if ($changed !== false && $now - $changed >= RATE_WINDOW) @unlink($rates);
     return $live;
+}
+
+/** Who a request counts against: the IPv4 address, or the IPv6 /64 network
+ *  (one subscriber usually holds a whole /64). */
+function client_key(): string {
+    $addr = (string)($_SERVER['REMOTE_ADDR'] ?? '');
+    $bin = @inet_pton($addr);
+    if ($bin !== false && strlen($bin) === 16) return bin2hex(substr($bin, 0, 8)) . '::/64';
+    return $addr;
 }
 
 /** Count this request against its IP address; false when over the limit. */
 function rate_ok(string $dir, string $kind, int $now): bool {
     $saltPath = $dir . DIRECTORY_SEPARATOR . 'salt';
+    $path = $dir . DIRECTORY_SEPARATOR . 'rate.json';
     $salt = @file_get_contents($saltPath);
-    if ($salt === false || strlen($salt) !== 32) {
+    $made = @filemtime($saltPath);
+    if ($salt === false || strlen($salt) !== 32 || $made === false || $now - $made >= SALT_TTL) {
         $salt = bin2hex(random_bytes(16));
         write_atomic($saltPath, $salt);
+        @unlink($path);   // hashes under the old salt can no longer match
     }
-    $who = hash('sha256', $salt . '|' . (string)($_SERVER['REMOTE_ADDR'] ?? ''));
-    $path = $dir . DIRECTORY_SEPARATOR . 'rate.json';
+    $who = hash('sha256', $salt . '|' . client_key());
     $rates = json_decode((string)@file_get_contents($path), true);
     if (!is_array($rates)) $rates = [];
     $kept = [];
@@ -163,7 +188,7 @@ $id = (string)($_GET['box'] ?? '');
 $methods = ['open' => 'POST', 'offer' => 'GET', 'reply' => 'POST', 'poll' => 'GET', 'close' => 'POST'];
 if (!isset($methods[$op])) fail(400, 'unknown operation');
 if ($method !== $methods[$op]) { header('Allow: ' . $methods[$op]); fail(405, 'wrong method'); }
-if (!preg_match('/^[A-Za-z0-9_-]{22}$/', $id)) fail(400, 'bad box id');
+if (!preg_match('/^[A-Za-z0-9_-]{22}$/D', $id)) fail(400, 'bad box id');
 // Reject cross-site requests; the planner itself sends same-origin requests only.
 $site = (string)($_SERVER['HTTP_SEC_FETCH_SITE'] ?? '');
 if ($site !== '' && $site !== 'same-origin') fail(403, 'cross-site request');
@@ -206,7 +231,6 @@ if ($op === 'reply') {
 if ($op === 'poll') {
     if ($box['reply'] === null) send_empty(204, $left, (string)$box['state']);
     $reply = base64_decode((string)$box['reply'], true);
-    if (!@unlink($path)) fail(503, 'relay storage failed');
     if ($reply === false) fail(503, 'relay storage damaged');
     send_body(200, $reply, $left);
 }

@@ -185,9 +185,13 @@ review.
 - `poll` answers 204 with `X-Relay-State` while waiting, as planned; every
   box answer also carries `X-Relay-Remaining` (seconds), which the countdowns
   use. `close` answers 204 even for a box that is already gone.
+- `poll` hands out the reply on every poll until the desktop, having
+  decrypted it, closes the box: a poll answer lost on the way would otherwise
+  lose the horizon (review, October 19).
 - The relay also refuses cross-site requests (`Sec-Fetch-Site`), keeps rate
-  limits as salted address hashes (30 opens or replies per address per 10
-  minutes) and allows 200 live boxes.
+  limits as salted address hashes (30 opens or replies per address, IPv6 per
+  /64, per 10 minutes; the salt is replaced daily) and allows 200 live boxes.
+  A box's age is its file's modification time, so the sweep only stats files.
 - The QR encoder is Kazuhiko Arase's qrcode-generator 2.0.4, vendored
   unchanged as `web/qrcode.js` (a `.js` name, so the cache-token and import
   guards cover it; source and hashes in NOTICE).

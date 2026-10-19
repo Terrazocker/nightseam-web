@@ -38,7 +38,7 @@ Header set Cache-Control "no-store"
 </IfModule>
 </Files>
 <FilesMatch "\.(php|phtml|phar)$">
-<If "%{REQUEST_URI} !~ m#/astro/relay\.php$#">
+<If "%{REQUEST_URI} !~ m#^/astro/relay\.php$#">
 Require all denied
 </If>
 </FilesMatch>

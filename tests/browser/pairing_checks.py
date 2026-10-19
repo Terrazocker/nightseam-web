@@ -4,7 +4,7 @@ A desktop page and a phone page, each in its own browser context (own
 storage), talk through a stub of web/relay.php served by `page.route`; the
 static test server cannot run PHP, and tests/test_relay.py drives the real
 script. The stub keeps the relay's rules: one box per id, the offer readable
-until expiry, one reply, delivered once, then gone.
+until expiry, one reply, delivered until the desktop closes the box.
 """
 from __future__ import annotations
 
@@ -58,7 +58,6 @@ class StubRelay:
         if op == "poll":
             if rec["reply"] is None:
                 return empty(204, rec["state"])
-            del self.boxes[box]
             return data(rec["reply"])
         return route.fulfill(status=400, json={"error": "unknown operation"})
 
@@ -132,7 +131,9 @@ def web_pairing_phone_to_desktop(c):
     offer = c.page.inner_text(".ed-confirm")
     c.expect("From your phone" in offer and "4 skyline points" in offer, f"the desktop asks first: {offer!r}")
     c.expect_eq(len((horizon_state(c) or {}).get("horizons", [])), before, "nothing is saved before the user agrees")
-    c.expect(box not in relay.boxes, "the reply was collected once and the box is gone")
+    c.page.wait_for_timeout(300)
+    c.expect(box not in relay.boxes and ("close", box) in relay.ops,
+             "the desktop closes the box once it has decrypted the reply")
     c.page.click(".ed-confirm [data-ok]")
     c.page.wait_for_function("() => /from your phone/.test(document.querySelector('#hz-note').textContent)",
                              timeout=5000)
@@ -202,6 +203,7 @@ def web_pairing_cancel_refuse_expire(c):
         replies = sum(1 for op, _ in relay.ops if op == "reply")
         phone.click("#hz-pair-end")
         c.expect_eq(phone.locator("#hz-pair").is_hidden(), True, "Close removes the banner")
+        c.expect_eq(phone.evaluate("() => document.activeElement?.id"), "hz-pair-start", "and focus stays in the list")
         c.expect_eq(sum(1 for op, _ in relay.ops if op == "reply"), replies, "and sends nothing")
     finally:
         ctx.close()

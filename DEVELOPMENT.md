@@ -242,7 +242,8 @@ editor", "Capture horizons with the phone's sensors"); plans:
   (`qrSvg`, drawn from the vendored `web/qrcode.js`), with the link behind
   *Show the link*, a countdown and a status line. It polls every 2.5 s
   (doubling up to 15 s after failures) and stops on Cancel, Escape, expiry or
-  when the view is replaced; Cancel and leaving delete the box. A reply is
+  when the view is replaced; Cancel and leaving delete the box, and so does
+  a decrypted reply. A reply is
   the horizon's share-link text and goes through `offerHorizonLink(…, true)`:
   nothing is saved before the user agrees. On the phone, `boot()` and
   `route()` in `app.js` take `#pair=` out of the address at once
@@ -259,13 +260,17 @@ editor", "Capture horizons with the phone's sensors"); plans:
   - **Relay** (`web/relay.php`, PHP 8.3). `POST ?box=&op=open` with the offer
     (201; 409 for an existing id), `GET op=offer` (200, marks the box
     connected), `POST op=reply` (201 once; 409 after), `GET op=poll` (204 with
-    `X-Relay-State: open|connected` while waiting; 200 with the reply once,
-    then the box is deleted), `POST op=close` (204). Unknown or expired boxes
+    `X-Relay-State: open|connected` while waiting; 200 with the reply, again
+    on every poll until the desktop closes the box, so a lost answer is not a
+    lost horizon), `POST op=close` (204). Unknown or expired boxes
     answer 404; every box answer carries `X-Relay-Remaining` in seconds.
-    Boxes live 10 minutes, one JSON file each (bodies base64), written by
-    temporary file and rename under one `flock`; each request sweeps up to
-    20 expired boxes. At most 200 live boxes and 30 opens or replies per
-    address per 10 minutes (salted address hashes in `rate.json`). The data
+    Boxes live 10 minutes, one JSON file each (bodies base64) whose
+    modification time is its opening time, written by temporary file and
+    rename under one `flock`; each request removes up to 50 expired boxes by
+    `stat` alone and drops `rate.json` once it is 10 minutes old. At most 200
+    live boxes and 30 opens or replies per address (IPv6: per /64) per 10
+    minutes, kept as salted hashes in `rate.json`; the salt is replaced
+    daily. `display_errors` is off so no warning reaches a body. The data
     folder is `nightseam-relay/` next to the document root; the script
     answers 503 if it is missing, not writable or inside the document root.
     Responses send `Cache-Control: no-store`, `nosniff`, `default-src 'none'`

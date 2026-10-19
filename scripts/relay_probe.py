@@ -42,7 +42,8 @@ def main(argv):
     except ValueError:
         print('FAIL: the probe did not answer JSON (blocked or not executed as PHP)')
         return 1
-    for key in ('data_folder_found', 'data_folder_outside_document_root', 'write', 'rename', 'read_back', 'lock', 'delete'):
+    for key in ('data_folder_found', 'data_folder_outside_document_root', 'write', 'rename', 'read_back', 'lock', 'delete',
+                'remote_addr_is_public'):
         if info.get(key) is not True:
             print(f'FAIL: {key}')
             ok = False

@@ -20,6 +20,11 @@ $out = ['php' => PHP_VERSION, 'sapi' => PHP_SAPI,
         'server' => (string)($_SERVER['SERVER_SOFTWARE'] ?? ''),
         'open_basedir' => (string)ini_get('open_basedir'),
         'post_max_size' => (string)ini_get('post_max_size'),
+        // The relay's per-address limits need the visitor's address here, not
+        // nginx's or a proxy's (a private or loopback address would make the
+        // limit one shared by everybody).
+        'remote_addr_is_public' => filter_var((string)($_SERVER['REMOTE_ADDR'] ?? ''), FILTER_VALIDATE_IP,
+            FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE) !== false,
         'user' => function_exists('posix_geteuid') && function_exists('posix_getpwuid')
             ? (posix_getpwuid(posix_geteuid())['name'] ?? '?') : get_current_user()];
 

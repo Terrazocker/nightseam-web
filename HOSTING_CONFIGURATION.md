@@ -56,7 +56,9 @@ docs/horizon/HORIZON_PAIRING_PLAN.md). Checked by the owner on October 19:
   `python scripts/relay_probe.py https://nightseam.de/astro/relay_probe.php`
   under each handler, record the output in RELEASES.md and delete the probe.
   It checks writing, renaming, reading, locking and deleting in the data
-  folder and that 1 KB, 60 KB and 64 KB binary POST bodies arrive unchanged.
+  folder, that 1 KB, 60 KB and 64 KB binary POST bodies arrive unchanged, and
+  that PHP sees the visitor's public address (not nginx's), which the rate
+  limits need.
 - After deployment, check with GET and POST (never only `curl -I`): an
   unknown box answers 404 with `Cache-Control: no-store` and the relay's
   `Content-Security-Policy: default-src 'none'; frame-ancestors 'none'`, and

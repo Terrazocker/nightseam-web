@@ -11,7 +11,7 @@
  * the horizon from the phone to the desktop).
  */
 import { vizTheme } from './viztheme.js?v=7';
-import { openCapture, captureAvailable, warmCompass } from './capture.js?v=31';
+import { openCapture, captureAvailable, warmCompass } from './capture.js?v=32';
 import { normalizeWebPrefs, WEB_PREF_DEFAULTS } from './webstore.js?v=84';
 import {
   PAIR_TTL_S, pairingUrl, parsePairFragment, relayUrlFor, RelayError,
@@ -587,9 +587,10 @@ let pairSiteContext = () => siteContext();
 
 /**
  * Desktop: "Get from phone". Opens a box on the relay with the active site,
- * shows its address as a QR code, polls until the phone answers, then offers
- * the horizon like a shared link. Cancel, Escape, expiry or leaving the view
- * stop polling; Cancel and leaving also delete the box.
+ * shows its address as a QR code, polls until the phone answers, deletes the
+ * box once the answer is decrypted, then offers the horizon like a shared
+ * link. Cancel, Escape, expiry or leaving the view stop polling; Cancel and
+ * leaving also delete the box.
  */
 function pairDialog(box, onChanged) {
   const before = document.activeElement;
@@ -655,7 +656,11 @@ function pairDialog(box, onChanged) {
     } catch (error) {
       if (finished) return;
       if (error.status === 404) { expire('This code has expired or was cancelled. Close and start again.'); return; }
-      if (!(error instanceof RelayError)) { expire(`The horizon from the phone could not be read: ${error.message}. Nothing was added.`); return; }
+      if (!(error instanceof RelayError)) {
+        closePairing(relay, pairing);
+        expire(`The horizon from the phone could not be read: ${error.message}. Nothing was added.`);
+        return;
+      }
       failures++;
       if (failures >= 2) status(`No answer from the pairing service (${error.message}); trying again…`);
       timer = setTimeout(poll, nextPollDelay(failures));
@@ -663,6 +668,9 @@ function pairDialog(box, onChanged) {
     }
     if (finished) return;
     if (result.state === 'received') {
+      // The relay keeps the reply until this close, so a lost poll answer
+      // is simply fetched again; once it is decrypted the box can go.
+      closePairing(relay, pairing);
       stop();
       close(false);
       await offerHorizonLink(result.link, box, onChanged, true);
@@ -748,7 +756,7 @@ function stopPhoneTicker() {
 /** The site the desktop offered, for this capture only (never saved). */
 function pairedSite() {
   const s = phonePair && phonePair.state !== 'loading' ? phonePair.site : null;
-  return s ? { lat: s.lat, lon: s.lon, label: s.name, tz: s.tz } : null;
+  return s ? { lat: s.lat, lon: s.lon, label: s.name, tz: s.tz, paired: true } : null;
 }
 
 /** After an edit, name the horizon that *Send to desktop* would send, unless
@@ -761,19 +769,24 @@ function refreshPairBanner() {
   renderPairBanner(pair.box, pair.onChanged);
 }
 
+/** The Pairing section. Its heading and status line stay in place across
+ *  renders, so screen readers announce what changes (connected, sent,
+ *  expired); only the body and buttons are rebuilt. */
 function renderPairBanner(box, onChanged) {
   const el = $('#hz-pair', box);
   if (!el) return;
   const pair = phonePair;
   el.hidden = !pair;
-  if (!pair) { el.innerHTML = ''; return; }
+  const out = $('#hz-pair-body', el), live = $('#hz-pair-status', el);
+  const say = (text) => { if (live.textContent !== text) live.textContent = text; };
+  if (!pair) { out.innerHTML = ''; say(''); return; }
   Object.assign(pair, { box, onChanged });
   const h = activeHorizon();
   const siteText = pair.site
     ? ` for the site “${esc(pair.site.name)}” <span class="mono">(${pair.site.lat.toFixed(3)}, ${pair.site.lon.toFixed(3)})</span>`
     : '';
   let body;
-  if (pair.state === 'loading') body = '<p id="hz-pair-text">Connecting to the desktop…</p>';
+  if (pair.state === 'loading') body = '';
   else if (pair.state === 'ready' || pair.state === 'sending') {
     const empty = !h || (!h.points.length && !(h.overhangs || []).length);
     body = `<p id="hz-pair-text">Pairing with the desktop${siteText}. ${empty
@@ -785,16 +798,19 @@ function renderPairBanner(box, onChanged) {
         <button class="btn" type="button" id="hz-pair-end">End pairing</button>
       </div>`;
   } else {
-    body = `<p id="hz-pair-text">${esc(pair.message)}</p>
-      <div class="btnrow"><button class="btn" type="button" id="hz-pair-end">Close</button></div>`;
+    body = '<div class="btnrow"><button class="btn" type="button" id="hz-pair-end">Close</button></div>';
   }
-  el.innerHTML = `<h3 class="hz-pair-title">Pairing</h3>${body}<p class="sub" id="hz-pair-status" role="status" aria-live="polite">${esc(pair.note || '')}</p>`;
+  out.innerHTML = body;
+  say(pair.state === 'loading' ? 'Connecting to the desktop…'
+    : pair.state === 'ready' || pair.state === 'sending' ? (pair.note || 'Connected to the desktop.')
+    : pair.message);
   const end = $('#hz-pair-end', el);
   if (end) end.addEventListener('click', () => {
     stopPhoneTicker();
     phonePair = null;
     renderPairBanner(box, onChanged);
     hzNote(box, 'Pairing ended.');
+    $('#hz-pair-start', box)?.focus();
   });
   // A new horizon opens the editor; on a phone its Phone capture panel starts open.
   $('#hz-pair-new', el)?.addEventListener('click', () => $('#hz-new-draw', box)?.click());
@@ -879,7 +895,11 @@ export function renderHorizon(box, onChanged = () => {}, context = {}) {
       <button class="btn small" type="button" data-del="${esc(item.id)}" aria-label="Delete horizon ${esc(item.name)}">🗑</button>
     </li>`;
   box.innerHTML = `
-    <section class="hz-pair" id="hz-pair" aria-label="Pairing with a desktop" hidden></section>
+    <section class="hz-pair" id="hz-pair" aria-label="Pairing with a desktop" hidden>
+      <h3 class="hz-pair-title">Pairing</h3>
+      <div id="hz-pair-body"></div>
+      <p class="sub" id="hz-pair-status" role="status" aria-live="polite"></p>
+    </section>
     <div class="horizon-layout">
       <aside class="horizon-tools-rail" aria-label="Horizons">
         <div class="card">

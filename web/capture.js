@@ -366,8 +366,9 @@ function askMotionPermission(onAnswer) {
  *   onPoint(p)          a single skyline point; returns a sentence
  *   onUndo()            undo the last edit; canUndo() says whether one exists
  *   onClose(message)    after the view closed
- *   site()              the observing site { lat, lon, label } or null, for
- *                       the Moon reference and the distance check
+ *   site()              the observing site { lat, lon, label, paired } or null,
+ *                       for the Moon reference and the distance check;
+ *                       `paired` when it is the site a paired desktop offered
  *   calibration         this device's stored { delayMs, k, measured, scaleMeasured, asked } or null
  *   onCalibrated(cal)   store an improved calibration for this device;
  *                       null forgets it (Reset camera calibration)
@@ -1143,7 +1144,7 @@ export function openCapture({ horizon, onLine, onPoint, onUndo, canUndo, onClose
       const near = Math.max(SITE_NEAR_M, 2 * (pos.coords.accuracy || 0));
       const far = d < 1000 ? `${Math.round(d)} m` : `${(d / 1000).toFixed(1)} km`;
       $('#cap-site').textContent = d <= near ? ''
-        : `${far} from the site${s.label ? ` “${s.label}”` : ''}: check the site in the top bar.`;
+        : `${far} from the site${s.label ? ` “${s.label}”` : ''}: check the site ${s.paired ? 'on the desktop' : 'in the top bar'}.`;
     }, () => {}, { maximumAge: 60000, timeout: 10000 });
   }
 

@@ -2,7 +2,7 @@
  * The pairing transport (web/pairing.js) against the real relay
  * (web/relay.php under `php -S`), started by tests/test_relay.py, which passes
  * its address in NIGHTSEAM_RELAY_URL: desktop opens, phone reads the offer
- * and answers, desktop receives once, and the box is gone.
+ * and answers once, desktop receives and closes, and the box is gone.
  */
 import assert from 'node:assert/strict';
 import * as P from '../../web/pairing.js';
@@ -31,7 +31,9 @@ await assert.rejects(P.sendReply(relay, phone, link), (e) => e.status === 409, '
 const got = await P.pollPairing(relay, desktop);
 assert.equal(got.state, 'received');
 assert.deepEqual(H.decodeHorizonLink(got.link).points, horizon.points);
-await assert.rejects(P.pollPairing(relay, desktop), (e) => e.status === 404, 'delivered once, then gone');
+assert.equal((await P.pollPairing(relay, desktop)).link, got.link, 'kept until the desktop closes the box');
+await P.closePairing(relay, desktop);
+await assert.rejects(P.pollPairing(relay, desktop), (e) => e.status === 404, 'closed, then gone');
 
 // Cancel deletes the box for both sides.
 const other = await P.openPairing(relay, null);

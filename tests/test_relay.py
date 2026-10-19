@@ -87,6 +87,12 @@ class Relay:
         return self.data / f'{box}.box'
 
 
+def age(path: Path, seconds: int):
+    """Make a file look `seconds` old (the relay reads a box's age from its mtime)."""
+    t = time.time() - seconds
+    os.utime(path, (t, t))
+
+
 @pytest.fixture
 def relay(tmp_path):
     r = Relay(tmp_path)
@@ -94,7 +100,7 @@ def relay(tmp_path):
     r.stop()
 
 
-def test_open_offer_reply_poll_once_then_gone(relay):
+def test_open_offer_reply_poll_until_closed(relay):
     status, headers, _ = relay.call('open', body=BODY)
     assert status == 201 and headers['X-Relay-Remaining'] == '600'
     assert relay.call('open', body=BODY)[0] == 409, 'an existing id is refused'
@@ -114,7 +120,10 @@ def test_open_offer_reply_poll_once_then_gone(relay):
 
     status, _, body = relay.call('poll')
     assert status == 200 and body == reply
-    assert not relay.box_file().exists(), 'the box is deleted on delivery'
+    status, _, body = relay.call('poll')
+    assert status == 200 and body == reply, 'a lost poll answer can be fetched again'
+    assert relay.call('close')[0] == 204, 'the desktop closes the box once it has the horizon'
+    assert not relay.box_file().exists()
     assert relay.call('poll')[0] == 404
     assert relay.call('offer')[0] == 404
 
@@ -131,21 +140,37 @@ def test_expired_and_unknown_boxes_answer_404(relay):
     assert relay.call('poll')[0] == 404
     assert relay.call('reply', body=BODY)[0] == 404, 'no reply into a box nobody opened'
     relay.call('open', body=BODY)
-    box = json.loads(relay.box_file().read_text())
-    box['opened'] -= 601
-    relay.box_file().write_text(json.dumps(box))
+    age(relay.box_file(), 601)
     for op in ('offer', 'poll'):
         assert relay.call(op)[0] == 404
     assert relay.call('reply', body=BODY)[0] == 404
     assert not relay.box_file().exists(), 'an expired box is removed'
 
 
-def test_requests_sweep_expired_boxes(relay):
+def test_requests_sweep_expired_boxes_and_stale_rate_data(relay):
     old = {'opened': int(time.time()) - 700, 'state': 'open', 'offer': '', 'reply': None}
     for i in range(5):
-        (relay.data / f'{"B" * 21}{i}.box').write_text(json.dumps(old))
-    relay.call('poll')
-    assert not list(relay.data.glob('B*.box'))
+        path = relay.data / f'{"B" * 21}{i}.box'
+        path.write_text(json.dumps(old))
+        age(path, 700)
+    relay.call('open', body=BODY)
+    assert relay.box_file().exists()
+    rates = relay.data / 'rate.json'
+    assert rates.exists()
+    age(rates, 600)
+    relay.call('poll', box='Z' * 22)
+    assert not list(relay.data.glob('B*.box')), 'expired boxes go with any request'
+    assert not rates.exists(), 'address hashes older than ten minutes go with any request'
+    assert relay.box_file().exists(), 'a live box stays'
+
+
+def test_the_salt_is_replaced_daily(relay):
+    relay.call('open', body=BODY)
+    salt = relay.data / 'salt'
+    first = salt.read_text()
+    age(salt, 86400)
+    relay.call('open', box='Y' * 22, body=BODY)
+    assert salt.read_text() != first
 
 
 def test_refuses_bad_requests(relay):
@@ -153,6 +178,7 @@ def test_refuses_bad_requests(relay):
     assert relay.call('poll', box='short')[0] == 400
     assert relay.call('poll', box='A' * 21 + '%2F')[0] == 400, 'no path characters in an id'
     assert relay.call('poll', box='A' * 23)[0] == 400
+    assert relay.call('open', box=BOX + '%0A', body=BODY)[0] == 400, 'no trailing newline in an id'
     status, headers, _ = relay.call('open', method='GET')
     assert status == 405 and headers['Allow'] == 'POST'
     assert relay.call('offer', body=BODY)[0] == 405

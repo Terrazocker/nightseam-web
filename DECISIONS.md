@@ -57,9 +57,10 @@ import/export and backups stay as they are.
   directions are AES-GCM-256 with a random key that exists only in the QR
   code's fragment, which browsers never send; the additional data names the
   box and the direction. The relay sees ciphertext, box ids, sizes, times and
-  addresses. Boxes expire 10 minutes after opening, a reply is delivered once
-  and then deleted, at most 200 boxes live at once, and rate limits keep
-  only salted address hashes. No body is logged; the host's access logs still
+  addresses. Boxes expire 10 minutes after opening; a reply is kept until the
+  desktop has decrypted it and closes the box (a lost poll answer must not
+  lose the horizon); at most 200 boxes live at once, and rate limits keep
+  only salted address hashes, with a daily salt. No body is logged; the host's access logs still
   record the request line with the box id (privacy page).
 - **Why PHP and no CORS.** PHP is what the host runs; Node or a Cloudflare
   Worker would add a service or a `connect-src` origin. The planner calls its
