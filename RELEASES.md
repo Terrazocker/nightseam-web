@@ -1,9 +1,68 @@
 # Independent website release record
 
-Actual validation outcomes, newest first. Published releases: v0.1.1 (October 8,
-2026) and v0.1.0 (October 7, 2026). Entries above the v0.1.1 record are local
-development awaiting the next release, 0.7.0. Upload success alone is never
-recorded as acceptance.
+Actual validation outcomes, newest first. Published releases: v0.7.0 (October
+19, 2026), v0.1.1 (October 8, 2026) and v0.1.0 (October 7, 2026). Upload
+success alone is never recorded as acceptance.
+
+## v0.7.0 — released and deployed, October 19, 2026
+
+Owner-authorized deployment of tag v0.7.0 (4245db3) to nightseam.de, the
+first publication in the immutable release layout (the live site still had
+the legacy mutable paths). Not pushed to GitHub yet.
+
+- Backup: a read-only FTPS download of the whole remote tree, 411 files /
+  572 MB, size-checked against the listing, before anything was written.
+- Connection: since the October 10 certificate check, FTPS verifies the
+  host name. The credential file named the server's IP, which the
+  certificate (plesk-amanda.zap.cloud) does not cover; the owner changed
+  FTP_HOST to that name.
+- Candidate: this checkout writes CRLF (core.autocrlf), while the live
+  /astro/.htaccess had LF, so the publisher would refuse the server policy
+  as changed. The 67-file candidate was built from an LF worktree of v0.7.0
+  (git -c core.autocrlf=false); its /astro/.htaccess then matched live
+  byte for byte.
+- Server policy: owner-authorized upload of landing/.htaccess to /.htaccess
+  (the October 13 landing security headers, never deployed before), by a
+  verified temporary upload and rename. As BUGS.md records, the headers
+  reach HEAD requests (checked) but not GET page loads.
+- Publish: `ftps_deploy.py publish`, two connection resets during the
+  immutable install (before any page switch), then a complete run: 67
+  files, graph verified before the entry pages switched. No remote file
+  was deleted; the retired-image cleanup list was not acted on.
+- Live check: all 65 public files and both entry routes match the
+  candidate's SHA-256 over HTTPS; /astro/version.json is v0.7.0. In the
+  built-in browser the planner loaded from releases/dd644868…, catalog
+  ready (12,176 objects), no console errors; Berlin example, night of
+  October 19: sunset 18:03, dark 19:56-05:46, 16 Tonight rows; Horizon tab
+  shows the new editor; footer and Changes page show 0.7.0.
+
+Evidence: logs/deployment-0.7.0-20261019/ (backup with inventory.json,
+publish.txt, https-check.txt, publication.manifest.json,
+deployment-receipt.json). Phone-capture acceptance remains open
+(ROADMAP.md).
+
+## v0.7.0 release preparation — October 19, 2026 (branch release-0.7.0)
+
+Owner authorized releasing 0.7.0 and deploying it to nightseam.de, before
+the phone-capture acceptance (ROADMAP.md). Local main was fast-forwarded to
+origin/main c7e432f. Validation at c7e432f: pytest 366 passed / 1 skipped
+(139 s); check_js OK; check_release --allow-dirty --no-stage 0 errors. The
+first real-Chrome run failed 84/88 only because this fresh checkout had no
+generated web/version.json (every page load hit a 404); after
+`python web/build_web.py version` the suite passed 88/88. The dated 0.7.0
+PUBLIC_RELEASES record was added and the drafted summary kept, with one
+sentence added for the reduced-motion change. landing/changelog.json and
+download.html regenerated; no cache token changed. With owner approval the
+ledger pins in tests/test_landing_release_history.py and
+tests/browser/landing_checks.py now expect 0.7.0, 0.1.1, 0.1.0 (as the 0.1.1
+release commit did for 0.1.1). After these changes: pytest 366 passed /
+1 skipped; check_js OK; check_release 0 errors; pre_tag_check 0.7.0 OK;
+real-Chrome suite 88/88 with version.json baked at v0.7.0.
+test_the_real_tags_require_0_7_0_or_above asserted that 0.7.0 was still free,
+which creating the tag made false; with owner approval it now checks that
+every existing tag is refused and the next minor above the highest is free. The browser
+suite rebuilds dist/publication-preview as a `local-browser-review`
+candidate, so the publication candidate is prepared after it.
 
 ## Weather moves out of app.js — October 19, 2026 (branch ccr-9a404934-2ntdx7)
 

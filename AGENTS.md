@@ -111,8 +111,8 @@ machine's sandbox limits (Chrome named pipes, elevated runs).
 
 ## Releases
 
-- Public versions restarted at 0.1.0 (published: 0.1.0, 0.1.1). Inherited tags
-  occupy 0.1.5-0.6.36, so the next release is 0.7.0 or higher;
+- Public versions restarted at 0.1.0 (published: 0.1.0, 0.1.1, 0.7.0).
+  Inherited tags occupy 0.1.5-0.6.36, so release names continue above 0.7.0;
   `scripts/pre_tag_check.py` refuses reused or lower names and must pass before
   tagging. Never retag or delete inherited tags.
 - Curate the changelog (`scripts/build_changelog.py`) before the release

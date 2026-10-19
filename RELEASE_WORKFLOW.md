@@ -5,11 +5,10 @@ Current authority, October 11, 2026. The owner reset the public website series t
 Git tags and historical CURATED summaries remain evidence and do not restore old
 public entries. The catalog's source, tags and packages are independent.
 
-v0.1.1 is released and deployed (October 8, 2026), following the
-initial v0.1.0 release on October 7. RELEASES.md
-records exact acceptance and cleanup. Inherited tags occupy 0.1.5 through
-0.6.36, so the next release is 0.7.0 and later ones continue above every
-existing tag (owner decision, October 11, 2026); pre_tag_check.py refuses a
+v0.7.0 is released and deployed (October 19, 2026), after v0.1.1 (October 8)
+and the initial v0.1.0 (October 7). RELEASES.md records exact acceptance
+and cleanup. Inherited tags occupy 0.1.5 through 0.6.36, so release names
+continue above every existing tag (owner decision, October 11, 2026); pre_tag_check.py refuses a
 reused or lower name. Do not rerun the initial tag creation or move v0.1.0.
 Host compression and human AT acceptance remain open separately from
 publication (BUGS.md). CI runs the same checks for every pull request and every push to main.
@@ -66,6 +65,13 @@ Apply the prepared host policy only through supported provider controls; see
 HOSTING_CONFIGURATION.md for the nginx/Apache boundary and required live evidence.
 Publish the validated combined bundle with
 python web/ftps_deploy.py publish dist/publication-preview / --env <credential-path>.
+Build that bundle from an LF checkout (for example a worktree added with
+git -c core.autocrlf=false): a CRLF checkout changes the .htaccess bytes and
+the publisher refuses them. FTP_HOST must be the name on the server's
+certificate (plesk-amanda.zap.cloud), not its IP. From Git Bash set
+MSYS_NO_PATHCONV=1, or the remote root "/" becomes a Windows path. Connection
+resets during the install are safe to retry; the publisher skips verified
+files and switches no page until the whole graph is in place.
 For a planner-only clean release, use dist/web-release with the same remote root.
 The remote root is the FTP directory corresponding to the public document root;
 web files map beneath astro/ and landing files map directly beneath it.

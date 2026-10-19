@@ -71,7 +71,7 @@ with `python scripts/bump_web_tokens.py` (see [AGENTS.md](AGENTS.md)).
 
 ## Status
 
-v0.1.1 is published. The next release is 0.7.0; see [ROADMAP.md](ROADMAP.md).
+v0.7.0 is published (October 19, 2026); see [ROADMAP.md](ROADMAP.md).
 
 ## License
 
