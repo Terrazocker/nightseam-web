@@ -41,6 +41,32 @@ VIEWPORT = (1366, 900)
 _CREATE_NO_WINDOW = 0x08000000 if os.name == "nt" else 0
 
 
+def module_url(name: str) -> str:
+    """The URL web/app.js imports `name`.js under, cache token included.
+
+    A browser keys ES modules by URL, so importing a module with any other
+    token - or none - loads a second copy with its own state instead of the
+    planner's. Checks that reach into a module import it through this."""
+    source = (WEB_DIR / "app.js").read_text(encoding="utf-8")
+    m = re.search(r"\./" + re.escape(name) + r"\.js\?v=\d+", source)
+    if not m:
+        raise AssertionError(f"web/app.js does not import {name}.js with a cache token")
+    return m.group(0)
+
+
+def module_urls(*names: str) -> dict[str, str]:
+    return {name: module_url(name) for name in names}
+
+
+def catalog_url() -> str:
+    """The catalog URL the planner fetches, with its current CATALOG_TOKEN."""
+    source = (WEB_DIR / "app.js").read_text(encoding="utf-8")
+    m = re.search(r"const CATALOG_TOKEN = '(\d+)'", source)
+    if not m:
+        raise AssertionError("web/app.js has no CATALOG_TOKEN")
+    return f"catalog.json?v={m.group(1)}"
+
+
 def safe_print(*values, sep=' ', end='\n'):
     """Preserve gate outcomes when Windows stdout cannot encode diagnostics."""
     text = sep.join(str(v) for v in values) + end

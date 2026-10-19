@@ -218,3 +218,33 @@ def test_static_server_never_takes_a_port_chrome_refuses(monkeypatch):
     assert server.port == 41234
     assert closed == [6000, 6667]
     assert 6000 in harness.CHROME_UNSAFE_PORTS and 8080 not in harness.CHROME_UNSAFE_PORTS
+
+
+def test_browser_checks_import_planner_modules_by_their_live_urls():
+    """A browser keys ES modules by URL: a check that imports './horizon.js'
+    with a stale cache token, or with none, drives a second copy of the module
+    with its own state instead of the planner's (web_suite.py imported
+    webstore.js?v=41 and horizon.js?v=68 while the planner was at v=84/v=164).
+    Checks take module and catalog URLs from harness.module_url() and
+    catalog_url(), never from string literals."""
+    import re
+    import sys
+    sys.path.insert(0, str(ROOT/'tests/browser'))
+    import harness
+    literal = re.compile(r"""import\(\s*['"][^'"]+\.js(?:\?[^'"]*)?['"]\s*\)"""
+                         r"""|fetch\(\s*['"][^'"]*catalog\.json\?v=""")
+    for stale in ("import('./webstore.js?v=41')", 'import("/astro.js")',
+                  "import('./core.js')", "fetch('catalog.json?v=10')"):
+        assert literal.search(stale), stale
+    assert not literal.search("import(m.webstore)")
+    offenders = [f"{path.name}:{n}: {line.strip()}"
+                 for path in sorted((ROOT/'tests/browser').glob('*.py'))
+                 for n, line in enumerate(path.read_text(encoding='utf-8').splitlines(), 1)
+                 if literal.search(line)]
+    assert not offenders, "use harness.module_url()/catalog_url():\n" + "\n".join(offenders)
+    app = (ROOT/'web/app.js').read_text(encoding='utf-8')
+    for name in ('webstore', 'horizon', 'astro', 'core', 'viztheme'):
+        assert f"from '{harness.module_url(name)}'" in app, name
+    assert harness.catalog_url().startswith('catalog.json?v=')
+    with pytest.raises(AssertionError):
+        harness.module_url('no-such-module')

@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import json
 
-from harness import WEB_DIR, check
+from harness import WEB_DIR, check, module_urls
 from web_suite import READY, boot, click_sky_target, photo_routes, scrub_sky_to_wall, search_catalog_row, tab
 
 # Deterministic synthetic catalog (served in place of web/catalog.json): two
@@ -55,16 +55,16 @@ def synth_boot(c, targets=()):
     c.page.route("**/catalog.json?*", lambda route: route.fulfill(
         status=200, content_type="application/json", body=json.dumps(FIXTURE)))
     boot(c)
-    c.page.evaluate("""async (targets) => {
-      const WS = await import('./webstore.js');
-      const Hor = await import('./horizon.js');
+    c.page.evaluate("""async ({targets, m}) => {
+      const WS = await import(m.webstore);
+      const Hor = await import(m.horizon);
       await WS.saveSiteRec({ id: 'selection-check-berlin',
         name: 'Selection check Berlin', lat: 52.52, lon: 13.40, elev: 0,
         tz: null });
       for (const t of targets) await WS.saveTargetRec(t);
       Hor.setPrefs({ activeSiteId: 'selection-check-berlin', minAlt: 20,
         viewFullDay: false, moonAware: false, advMode: false });
-    }""", list(targets))
+    }""", {'targets': list(targets), 'm': module_urls('webstore', 'horizon')})
     c.page.reload(wait_until="domcontentloaded")
     c.page.wait_for_selector(READY, timeout=60000)
     c.page.wait_for_function("() => typeof window.__ns_scrub_range === 'function'")

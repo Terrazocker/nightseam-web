@@ -14,7 +14,7 @@ import time
 import zlib
 from pathlib import Path
 
-from harness import ROOT, WEB_DIR, check
+from harness import ROOT, WEB_DIR, catalog_url, check, module_url, module_urls
 
 # ---------------------------------------------------------------- helpers
 
@@ -51,8 +51,7 @@ def canvas_digest(c, selector: str) -> str:
 def scrub_sky_to_wall(c, wall_iso):
     """Choose a site-local minute through the real range control."""
     c.page.wait_for_selector('#sky-slider', state='visible')
-    source = (ROOT / 'web/app.js').read_text(encoding='utf-8')
-    ws = re.search(r'\./webstore\.js\?v=\d+', source).group(0)
+    ws = module_url('webstore')
     c.page.evaluate("""async ({ws,wall}) => {
       const W=await import(ws), r=window.__ns_scrub_range();
       const minutes=Math.ceil((W.wallToUtc(new Date(wall)).getTime()-r.start)/60000);
@@ -72,10 +71,8 @@ def click_sky_target(c, target):
     """Click the target's actual map position, using shared astronomy for the
     isolated test site/time. Test the canvas hit path rather than a removed list."""
     c.page.locator('#sky').scroll_into_view_if_needed()
-    source = (ROOT / 'web/app.js').read_text(encoding='utf-8')
-    ws = re.search(r'\./webstore\.js\?v=\d+', source).group(0)
-    point = c.page.evaluate('''async ({target,ws}) => {
-      const E=await import('./core.js'); const W=await import(ws);
+    point = c.page.evaluate('''async ({target,m}) => {
+      const E=await import(m.core); const W=await import(m.webstore);
       const sites=await W.getSites();
       const site=sites.find(s=>s.id===document.querySelector('#tb-site').value);
       const jd=E.julianDay(new Date(window.__ns_scrub_sel()));
@@ -83,7 +80,7 @@ def click_sky_target(c, target):
       const cv=document.querySelector('#sky'); const width=cv.clientWidth;
       const r=(width/2-22)*(1-alt/90), a=az*Math.PI/180;
       return {alt,x:width/2+r*Math.sin(a),y:width/2-r*Math.cos(a)};
-    }''', {'target':target,'ws':ws})
+    }''', {'target':target,'m':module_urls('core', 'webstore')})
     c.expect(point['alt'] > 0, 'test target is above the horizon for map picking')
     c.page.locator('#sky').click(position={'x':point['x'],'y':point['y']})
 
@@ -1011,12 +1008,12 @@ def web_horizon_capture_references_and_loop(c):
              f"the panel says the compass gives nothing: {c.page.inner_text('#cap-compass-diag')!r}")
     clear = c.page.evaluate(cross_clear)
     c.expect(clear["clear"], f"the reference panel leaves the crosshair free to aim with: {clear}")
-    sky = c.page.evaluate("""async () => {
-      const C = await import('./core.js');
+    sky = c.page.evaluate("""async (core) => {
+      const C = await import(core);
       const jd = C.julianDay(new Date());
       const site = { lat: 52.52, lon: 13.4 };
       return { moon: C.referenceUsable(C.moonDirection(jd, site.lat, site.lon)).ok };
-    }""")
+    }""", module_url('core'))
     c.expect_eq(c.page.locator("#cap-ref-moon").is_enabled(), sky["moon"], "the Moon button follows whether the Moon is usable now")
     c.expect_eq(c.page.locator("#cap-ref-sun").count(), 0, "there is no Sun reference")
     c.expect("Moon" in c.page.inner_text("#cap-ref-sky"), "the panel says where the Moon is")
@@ -1289,8 +1286,8 @@ def web_sun_moon_above_horizon(c):
     below at local midnight, above at local noon (never 'high all night')."""
     boot(c)
     res = c.page.evaluate(
-        """async () => {
-          const A = await import('/astro.js');
+        """async (astro) => {
+          const A = await import(astro);
           const lat = 52.52, lon = 13.4;
           const at = (h) => {
             const dt = new Date(Date.UTC(2026, 7, 12, h, 0, 0));
@@ -1301,7 +1298,7 @@ def web_sun_moon_above_horizon(c):
                      moon: m[0], moonVis: A.aboveHorizon(m[0]) };
           };
           return [0, 6, 12, 18].map(at);
-        }""")
+        }""", module_url('astro'))
     by_h = {r["h"]: r for r in res}
     c.expect(by_h[0]["sun"] < 0 and not by_h[0]["sunVis"],
              f"the Sun must be below the horizon at 00:00 UTC: {by_h[0]}")
@@ -1741,10 +1738,10 @@ def web_saved_targets_persist_and_prune(c):
     c.page.wait_for_function(
         """() => document.querySelector('.cat tbody [data-save-target="ngc224"]')
              ?.classList.contains('on')""")
-    stored = c.page.evaluate("""async () => {
-      const Hor = await import('./horizon.js');
+    stored = c.page.evaluate("""async (horizon) => {
+      const Hor = await import(horizon);
       return Hor.getPrefs().savedTargetIds;
-    }""")
+    }""", module_url('horizon'))
     c.expect(stored == ["ngc224"], f"the selected catalog ID was not saved: {stored!r}")
 
     c.page.locator("#cat-more summary").click()
@@ -1754,16 +1751,16 @@ def web_saved_targets_persist_and_prune(c):
     c.expect_eq(c.page.locator(".cat tbody tr[data-id]").get_attribute("data-id"),
                 "ngc224", "saved-only filtering must use the persisted catalog ID")
 
-    c.page.evaluate("""async () => {
-      const Hor = await import('./horizon.js');
+    c.page.evaluate("""async (horizon) => {
+      const Hor = await import(horizon);
       Hor.setPrefs({ savedTargetIds: ['ngc224', 'deleted-target'] });
-    }""")
+    }""", module_url('horizon'))
     c.page.reload(wait_until="domcontentloaded")
     boot(c)
-    cleaned = c.page.evaluate("""async () => {
-      const Hor = await import('./horizon.js');
+    cleaned = c.page.evaluate("""async (horizon) => {
+      const Hor = await import(horizon);
       return Hor.getPrefs().savedTargetIds;
-    }""")
+    }""", module_url('horizon'))
     c.expect(cleaned == ["ngc224"],
              f"an ID absent from the loaded catalog should be pruned: {cleaned!r}")
     c.assert_clean()
@@ -1780,14 +1777,14 @@ def web_docked_inspector_fit_and_tonight_key(c):
     # Use the same deterministic site and session as the visual matrix so M31
     # appears as a real Tonight pick rather than relying on the gate's August
     # clock and generic Berlin seed.
-    c.page.evaluate("""async () => {
-      const WS = await import('./webstore.js?v=41');
-      const Hor = await import('./horizon.js?v=68');
+    c.page.evaluate("""async (m) => {
+      const WS = await import(m.webstore);
+      const Hor = await import(m.horizon);
       await WS.saveSiteRec({ id: 'browser-direction-b-black-forest',
         name: 'Black Forest', lat: 48, lon: 8.2, elev: 900, tz: 'Europe/Berlin' });
       Hor.setPrefs({ activeSiteId: 'browser-direction-b-black-forest',
         minAlt: 25, viewFullDay: false });
-    }""")
+    }""", module_urls('webstore', 'horizon'))
     c.page.reload(wait_until="domcontentloaded")
     c.page.wait_for_selector(READY, timeout=60000)
     c.page.locator("#tb-date").fill("2026-09-26")
@@ -2308,15 +2305,15 @@ def web_tonight_pool_includes_unmagnituded_standard_rows(c):
         if pos > bounds["hi"]:
             break
     c.expect(ids, "the Tonight lists rendered nothing at all")
-    eligible = c.page.evaluate("""async () => {
-      const Core = await import('./core.js?v=44');
-      const catalog = await (await fetch('catalog.json?v=10')).json();
+    eligible = c.page.evaluate("""async ({core, catalogUrl}) => {
+      const Core = await import(core);
+      const catalog = await (await fetch(catalogUrl)).json();
       return ['ic1396', 'ngc1977', 'c14', 'pipe'].map(id => {
         const row = catalog.find(item => item.id === id);
         return { id, standard: !!row && !row._adv, magnitude: row?.vmag,
           included: !!row && Core.inTonightPool(row.vmag, !!row._adv, Core.ADV_TONIGHT_MAG_CAP) };
       });
-    }""")
+    }""", {'core': module_url('core'), 'catalogUrl': catalog_url()})
     c.expect(eligible and all(item["standard"] and item["magnitude"] is None and item["included"]
                               for item in eligible),
              f"unmagnituded standard targets must qualify for Tonight's shared pool: {eligible}")

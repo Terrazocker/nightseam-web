@@ -303,6 +303,10 @@ separate review. See [RELEASE_WORKFLOW.md](RELEASE_WORKFLOW.md) and
   that asserts geometry after a scroll waits for the element's own box, not
   for the CSS variable or state that moves it: in the planner Chrome can lay
   the fixed dock out one write behind until a frame renders (BROWSER-CI-003).
+  A check that imports a planner module or fetches the catalog takes the URL
+  from `harness.module_url()` / `catalog_url()`: the browser keys modules by
+  URL, so any other cache token (or none) loads a second copy with its own
+  state; test_browser_gate.py rejects literal URLs.
 - **CI** (`.github/workflows/checks.yml`) runs the guards and pytest on
   Windows and the browser suite on Linux, for every pull request and every
   push to `main`.
