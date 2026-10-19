@@ -23,14 +23,13 @@ PAGE = ROOT / "landing" / "download.html"
 START = "<!-- BEGIN GENERATED RELEASE HISTORY -->"
 END = "<!-- END GENERATED RELEASE HISTORY -->"
 # Explicit independent-product history, separate from inherited Git tags.
-PUBLIC_RELEASES = [{"version": "0.1.1", "date": "2026-10-08"},
+PUBLIC_RELEASES = [{"version": "0.7.0", "date": "2026-10-19"},
+                   {"version": "0.1.1", "date": "2026-10-08"},
                    {"version": "0.1.0", "date": "2026-10-07"}]
 
 CURATED = {
-    # Draft for the next release (2026-10-13; horizon part revised 2026-10-18
-    # for the sensor capture). Not public until a dated
-    # PUBLIC_RELEASES record is added at release time; revise it then.
-    "0.7.0": "A new horizon editor. Draw your skyline on a compass grid, or capture it with your phone: aim the camera along treetops and roofs while the phone's motion sensors record the line, with north from the compass, the Moon or a landmark. Mark balconies and roof edges that block the sky above, and send a horizon to another device with a share link. Horizons can be imported and exported as text files from Stellarium and N.I.N.A. Horizons saved by 0.1.x are not carried over, so redraw yours once; backups still restore sites, rigs, targets and settings. Sunset and sunrise now match the times weather apps show, and twilight is checked against published U.S. Naval Observatory tables, including the very short nights of high-latitude summers. An object's details describe the coming night. Unknown time zones are refused when you enter them, keyboard focus stays on the target you were reading when Tonight refreshes, and cached object photos stay under 25 MB.",
+    # Released 2026-10-19.
+    "0.7.0": "A new horizon editor. Draw your skyline on a compass grid, or capture it with your phone: aim the camera along treetops and roofs while the phone's motion sensors record the line, with north from the compass, the Moon or a landmark. Mark balconies and roof edges that block the sky above, and send a horizon to another device with a share link. Horizons can be imported and exported as text files from Stellarium and N.I.N.A. Horizons saved by 0.1.x are not carried over, so redraw yours once; backups still restore sites, rigs, targets and settings. Sunset and sunrise now match the times weather apps show, and twilight is checked against published U.S. Naval Observatory tables, including the very short nights of high-latitude summers. An object's details describe the coming night. Unknown time zones are refused when you enter them, keyboard focus stays on the target you were reading when Tonight refreshes, cached object photos stay under 25 MB, and with reduced motion turned on, transitions are switched off.",
     "0.1.1": "A clearer planning workspace: open the planner from any public page, edit Site and Rig directly from the top bar, and filter object types with simple checkboxes. The Catalog tab shows 50 objects per page with clearer visibility conditions. Sky View has a wider time slider, twilight colors and smoother one-minute scrubbing. Tonight is simpler, and Horizon tools stay readable while you scroll. Filter advice and precise horizon editing explain what each setting does.",
     "0.1.0": "NightSeam starts anew as an independent browser planner. Bring your own panorama and calculate when deep-sky targets clear your skyline, with planning data saved in your browser. NightSeam is now a browser-only planner with its own version history.",
     # Curate before tagging; a tag does not establish public deployment.

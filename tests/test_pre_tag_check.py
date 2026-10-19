@@ -117,7 +117,13 @@ def test_the_real_tags_require_0_7_0_or_above():
     real.loader.exec_module(mod)
     tags = mod.existing_tags()
     assert mod.version_problems("0.1.2", tags)
-    assert mod.version_problems("0.7.0", tags) == []
+    # Every existing tag is refused; the next minor above the highest tag (and
+    # never below the floor) is free, whichever releases this clone has.
+    known = [p for p in map(mod._parts, tags) if p]
+    for parts in known:
+        assert mod.version_problems(".".join(map(str, parts)), tags), parts
+    major, minor, _ = max([mod.RELEASE_FLOOR] + known)
+    assert mod.version_problems(f"{major}.{minor + 1}.0", tags) == []
 
 
 def test_the_floor_holds_without_the_inherited_tags():

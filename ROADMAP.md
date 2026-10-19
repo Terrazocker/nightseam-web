@@ -6,25 +6,19 @@ Where NightSeam Web stands and what comes next. Open defects are in
 ## Status
 
 - **Published:** v0.1.1 (October 8, 2026), after v0.1.0 (October 7).
-- **Next release: 0.7.0.** Release names continue above the inherited tags,
-  which occupy 0.1.5 through 0.6.36 ([DECISIONS.md](DECISIONS.md)).
-- **On main, unreleased:** the rebuilt horizon editor (skyline on a compass
-  grid, overhangs, file import/export) with phone sensor capture instead of
-  photos (merged October 16: camera view with an AR overlay,
-  north from the compass, the Moon or a landmark, loop closure, share links),
-  the coming-night detail card, USNO-anchored twilight checks, timezone
-  validation, the October review fixes and a CI workflow.
-
-## Before 0.7.0
-
-1. Owner acceptance of the phone capture: the *Phone capture* section of
-   [HORIZON_ACCEPTANCE.md](docs/acceptance/HORIZON_ACCEPTANCE.md), including
-   the overlay calibration (BUGS.md). The sensor capture was merged before this
-   acceptance, so main no longer has the photo editor.
-2. Revise the drafted 0.7.0 summary (`CURATED` in scripts/build_changelog.py)
-   and add its dated `PUBLIC_RELEASES` record, then follow
-   [RELEASE_WORKFLOW.md](RELEASE_WORKFLOW.md): pre-tag check, tag, clean stage,
-   publication candidate and separately authorized deployment.
+- **Releasing: 0.7.0** (October 19, 2026): the rebuilt horizon editor
+  (skyline on a compass grid, overhangs, file import/export) with phone
+  sensor capture instead of photos (camera view with an AR overlay, north
+  from the compass, the Moon or a landmark, loop closure, share links), the
+  coming-night detail card, USNO-anchored twilight checks, timezone
+  validation, the October review fixes and a CI workflow. Release names
+  continue above the inherited tags, which occupy 0.1.5 through 0.6.36
+  ([DECISIONS.md](DECISIONS.md)).
+- **Still open after 0.7.0:** owner acceptance of the phone capture, the
+  *Phone capture* section of
+  [HORIZON_ACCEPTANCE.md](docs/acceptance/HORIZON_ACCEPTANCE.md), including
+  the overlay calibration (BUGS.md). The owner chose to release 0.7.0 before
+  it (October 19).
 
 ## Open work
 
