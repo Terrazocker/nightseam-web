@@ -248,3 +248,28 @@ def test_browser_checks_import_planner_modules_by_their_live_urls():
     assert harness.catalog_url().startswith('catalog.json?v=')
     with pytest.raises(AssertionError):
         harness.module_url('no-such-module')
+
+
+def test_test_tooling_is_pinned_exactly():
+    """DECISIONS.md 2026-10-19: CI used to install the newest pytest and
+    Playwright on every run. Every requirement stays pinned with `==`."""
+    import re
+    lines = [line.split('#')[0].strip()
+             for line in (ROOT/'requirements-dev.txt').read_text(encoding='utf-8').splitlines()]
+    reqs = [line for line in lines if line]
+    assert {re.split(r'[=<>!~ ]', r)[0].lower() for r in reqs} >= {'pytest', 'playwright'}
+    loose = [r for r in reqs if not re.fullmatch(r'[A-Za-z0-9_.-]+==[0-9][\w.]*', r)]
+    assert not loose, f"pin these exactly: {loose}"
+
+
+def test_browser_gate_can_launch_an_explicit_executable():
+    """Cloud sessions launch the preinstalled Chromium by path; the gate takes
+    it from --executable or NIGHTSEAM_BROWSER_EXECUTABLE and still treats a
+    launch failure as infrastructure (exit 2), never a skip."""
+    import sys
+    sys.path.insert(0, str(ROOT/'scripts'))
+    sys.path.insert(0, str(ROOT/'tests/browser'))
+    import check_browser as gate
+    rc = gate.run_gate(targets=('web',), only='web-load-smoke', verbose=False,
+                       executable=str(ROOT/'logs'/'no-such-browser'))
+    assert rc == 2

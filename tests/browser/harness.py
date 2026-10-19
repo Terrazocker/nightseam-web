@@ -430,9 +430,11 @@ def _attach(ctx: Ctx):
 def run(channel: str = "chrome", targets=("web",),
         only: str | None = None,
         headed: bool = False, prod_url: str | None = None,
-        artifacts: Path = ARTIFACTS, verbose: bool = True) -> int:
+        artifacts: Path = ARTIFACTS, verbose: bool = True,
+        executable: str | None = None) -> int:
     """Run the registered checks. Returns 0 (pass), 1 (failures) or 2 (the
-    infrastructure could not start - browser or server)."""
+    infrastructure could not start - browser or server). `executable` launches
+    that Chromium binary instead of `channel`."""
     from playwright.sync_api import sync_playwright
 
     selected = [(n, t, f) for (n, t, f) in all_checks()
@@ -464,10 +466,13 @@ def run(channel: str = "chrome", targets=("web",),
     try:
         with sync_playwright() as p:
             try:
-                browser = p.chromium.launch(channel=channel, headless=not headed)
+                if executable:
+                    browser = p.chromium.launch(executable_path=executable, headless=not headed)
+                else:
+                    browser = p.chromium.launch(channel=channel, headless=not headed)
             except Exception as exc:
-                safe_print(f"check_browser FATAL: browser '{channel}' could not "
-                      f"launch ({exc}). Install it or pass --channel.")
+                safe_print(f"check_browser FATAL: browser '{executable or channel}' could not "
+                      f"launch ({exc}). Install it or pass --channel or --executable.")
                 return 2
             for name, target, fn in selected:
                 if not web_srv.health()['thread_alive']:

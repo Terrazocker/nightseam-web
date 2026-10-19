@@ -27,11 +27,29 @@ Library, SQLite, desktop CSP) are history only.
   landing pages too, as response headers (2026-10-13).
 - **Delivery:** cache tokens checked against a verified baseline (0.6.24/25);
   immutable release graphs with older releases retained (2026-10-10); CI runs
-  the browser suite on Linux and the rest on Windows (2026-10-11).
+  the browser suite on Linux and the rest on Windows (2026-10-11); test
+  tooling is pinned exactly (2026-10-19).
 - **Releases:** the public history restarted at 0.1.0 (2026-10-06); later
   releases continue at 0.7.0 above inherited tags (2026-10-11).
 - **Documentation:** see "Documentation layout" (2026-10-11), which updates the
   older "Docs policy".
+
+## 2026-10-19 — Pin the test tooling exactly
+
+- **What.** `requirements-dev.txt` pins pytest, Playwright and their
+  dependencies with `==`, at the versions of the first green CI run on the
+  public repository. It used to say `pytest>=8.0` and `playwright>=1.50`.
+- **Why.** CI installed whatever was newest on each run (Playwright 1.64 on
+  October 19), and machines drifted apart (pyee 13 locally, 14 on CI). A new
+  release could turn the gate red, or change what a check sees, with no
+  change in this repository and no record of why.
+- **How to upgrade.** Change the pins in one commit, run pytest and the
+  browser suite, and record the outcome in RELEASES.md. The CI runner image
+  and the system Chrome stay unpinned on purpose (2026-10-11): they follow
+  what visitors' browsers do.
+- **Cloud sessions** use the preinstalled Chromium through
+  `check_browser.py --executable` (or `NIGHTSEAM_BROWSER_EXECUTABLE`), not
+  a downloaded browser; a launch failure is still exit 2.
 
 ## 2026-10-15 — No Sun reference; a calmer readout
 

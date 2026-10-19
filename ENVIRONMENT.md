@@ -53,3 +53,13 @@ here, temporarily put `Verdana` first in the body font stacks
 (`web/themes.css`); their widths are close to DejaVu's. Run the failing check
 with `--only`, then restore the files. Never commit the substitution. The repository is public, so the
 GitHub-hosted runners cost no Actions minutes.
+
+## Claude Code cloud sessions
+
+Cloud sessions run in a Linux container with Playwright's Chromium at
+`/opt/pw-browsers/chromium` and no system Chrome. `.claude/hooks/session-start.sh`
+prepares each one: it fetches the version tags when the clone has none,
+installs the pinned `requirements-dev.txt`, bakes `web/version.json`, and sets
+`NIGHTSEAM_BROWSER_EXECUTABLE`, which `check_browser.py` takes as its
+`--executable` default. The commands in AGENTS.md then run unchanged. The
+hook does nothing outside cloud sessions.

@@ -1,2 +1,15 @@
-pytest>=8.0
-playwright>=1.50
+# Test tooling, pinned exactly (with its dependencies) so CI and every
+# machine run the same versions; a new Playwright or pytest release cannot
+# change results unannounced. To upgrade: change the pins in one commit, run
+# pytest and `python scripts/check_browser.py --web`, and record the outcome
+# in RELEASES.md. Versions are those of the last green CI run (2026-10-19).
+pytest==9.1.1
+playwright==1.64.0
+# dependencies
+greenlet==3.5.6
+iniconfig==2.3.1
+packaging==26.3
+pluggy==1.7.0
+pyee==14.0.0
+Pygments==2.21.0
+typing_extensions==4.16.0
