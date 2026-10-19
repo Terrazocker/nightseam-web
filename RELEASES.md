@@ -26,7 +26,9 @@ Local validation on the final commit (Linux container, Playwright 1.64.0
 driving the preinstalled Chromium 141 via `--executable`): pytest 366
 passed, 1 skipped (local popularity snapshot absent); browser web suite
 88/88; check_js, check_core, build_changelog --check and check_release
-clean. Not yet run on CI.
+clean. CI on pull request #2 (run 39306204454) passed both jobs: guards
+and pytest on Windows, the browser suite on Linux with Playwright 1.64.0
+and the runner's Chrome. Merged October 19.
 
 ## Reduced motion no longer turns every style change into a transition (BROWSER-CI-003 cause) — October 19, 2026 (branch ccr-9a404934-2ntdx7)
 
@@ -75,8 +77,9 @@ Local validation: the check passed 30/30 with the fix; pytest 361 passed,
 1 skipped; browser web suite 87/88. The one failure is web-load-smoke,
 because this clone has no version tags (the footer shows `NightSeam Web
 2d3b587`). The public repository has none yet, so CI fails the same check,
-and build_changelog.py --check also fails. Not yet confirmed on Linux CI;
-BUGS.md keeps the entry until it is.
+and build_changelog.py --check also fails. CI on pull request #1 (run
+39298990798) then passed both jobs, the tags having been pushed; the cause
+was found the same day (receipt above) and BUGS.md no longer lists it.
 
 ## File-chooser wait in the responsive planner check (BROWSER-CI-002) — October 18, 2026 (branch claude/angry-mayer-374852)
 
