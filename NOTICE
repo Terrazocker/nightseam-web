@@ -72,6 +72,6 @@ Development tooling dependencies remain separate from browser release files.
 
 Meteor shower display data — public domain/general reference sources.
 
-The project repository is currently private. Public help and feedback use
-the operator contact in the website's Imprint, linked from About. No public
-source repository or issue tracker is advertised.
+The source code is public at https://github.com/Terrazocker/nightseam-web.
+Help and feedback use the operator contact in the website's Imprint, linked
+from About.

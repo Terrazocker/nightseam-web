@@ -3,7 +3,7 @@
 Created October 15, 2026. The owner approved this direction in conversation
 after testing the photo editor on a Pixel 7a: calibrating photos was too
 fiddly (width, tilt and roll found by trial and error before north means
-anything), and the earlier map-landmark calibration (pull request #7) did not
+anything), and the earlier map-landmark calibration (October 13) did not
 work well. Instead of placing photos, the phone measures the skyline
 directly. It replaces the photo parts of the
 [rebuild plan](HORIZON_REBUILD_PLAN.md); the skyline model, overhangs, the
@@ -15,7 +15,7 @@ gyroscope by about 210 ms) and fixed by aiming with what the camera shows,
 with per-device calibration; awaiting the owner's check. Phase 5: the
 checklist is in docs/acceptance/HORIZON_ACCEPTANCE.md, awaiting the owner. The owner was offered server-stored shortcodes
 and chose the share link only.
-Phases 0-4 were merged into main (pull request #8, October 16) before the
+Phases 0-4 were merged into main (October 16) before the
 owner acceptance; acceptance and any fixes continue on main. Phase 0 on the
 Pixel 7a the gyroscope-based relative orientation does not drift at rest,
 repeats 0.13 deg between two features and closed two carefully aimed full

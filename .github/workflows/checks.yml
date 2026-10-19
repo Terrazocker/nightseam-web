@@ -4,8 +4,9 @@
 # environment (CRLF checkout); the browser suite runs on Linux, because
 # GitHub's Windows runners intermittently failed single local requests with
 # net::ERR_NO_BUFFER_SPACE (DECISIONS.md, 2026-10-11). Full history:
-# check_release needs tags, the latency gate a baseline. It never builds a
-# publication candidate, tags or deploys.
+# check_release, the changelog check and the version display need the tags,
+# the latency gate a baseline. It never builds a publication candidate, tags
+# or deploys.
 name: checks
 
 on:

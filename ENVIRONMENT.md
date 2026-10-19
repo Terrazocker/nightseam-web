@@ -51,5 +51,5 @@ wider than Segoe UI / Cascadia Mono. To reproduce a Linux-only layout failure
 here, temporarily put `Verdana` first in the body font stacks
 (`web/style.css`, `landing/style.css`) and `"Courier New"` first in `--mono`
 (`web/themes.css`); their widths are close to DejaVu's. Run the failing check
-with `--only`, then restore the files. Never commit the substitution. The repository is private, so CI time counts
-against the account's monthly Actions minutes (Windows minutes count double).
+with `--only`, then restore the files. Never commit the substitution. The repository is public, so the
+GitHub-hosted runners cost no Actions minutes.

@@ -18,8 +18,8 @@ DECISIONS.md.
 
 The Windows catalog is an independent sibling repository
 (`../Nightseam-catalog`). Do not read its files as build inputs, share
-databases or synchronize versions with it. The old `<archive>/Object-Astro`
-archive is read-only.
+databases or synchronize versions with it. The old Object-Astro
+archive (outside this repository) is read-only.
 
 ## Never, without the owner saying so in this conversation
 

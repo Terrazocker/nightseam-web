@@ -65,8 +65,8 @@ entry here when it is fixed and record the fix in RELEASES.md.
   from 5 to 64 after refused module loads; failures are recorded with server
   thread health and failed URLs, never retried or skipped.
 - **BROWSER-CI-003.** web-docked-inspector-fit-and-tonight-key failed once
-  on Linux CI (pull request #12, run 39150513399; that change touches none
-  of the docked inspector's code or styles). After returning to the page top
+  on Linux CI on October 18, in the earlier private repository, for a change
+  that touches none of the docked inspector's code or styles. After returning to the page top
   the dock's `--detail-top` and the tab bar's bottom agreed (132 px), yet the
   title's box was at 114.5 px, over the tab bar; a full-page screenshot taken
   just after showed it in place. Not reproduced locally in five runs (one of

@@ -7,9 +7,8 @@ usable from your site and date, above your own skyline. Astronomy and
 planning run in the browser; saved data stays in browser storage. Optional
 online features are Open-Meteo weather and Wikipedia/Wikimedia object photos.
 
-The Windows image catalog is a separate project
-(`<workspace>/Nightseam-catalog`) with its own
-versions; nothing here depends on it.
+The Windows image catalog is a separate project with its own versions;
+nothing here depends on it.
 
 ## Repository layout
 
@@ -28,7 +27,9 @@ payload rebuilt from `catalog_data/` (see [CATALOG.md](CATALOG.md)).
 
 ## Run and check
 
-Requires Python, Node.js and an installed Chrome.
+Requires Python, Node.js and an installed Chrome. Clone with the version tags
+(a normal `git clone` fetches them): the release checks, the changelog check
+and the planner's version display read `git describe`, and fail without tags.
 
 ```powershell
 python -m pip install -r requirements-dev.txt

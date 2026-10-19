@@ -10,7 +10,7 @@ Where NightSeam Web stands and what comes next. Open defects are in
   which occupy 0.1.5 through 0.6.36 ([DECISIONS.md](DECISIONS.md)).
 - **On main, unreleased:** the rebuilt horizon editor (skyline on a compass
   grid, overhangs, file import/export) with phone sensor capture instead of
-  photos (pull request #8, merged October 16: camera view with an AR overlay,
+  photos (merged October 16: camera view with an AR overlay,
   north from the compass, the Moon or a landmark, loop closure, share links),
   the coming-night detail card, USNO-anchored twilight checks, timezone
   validation, the October review fixes and a CI workflow.
@@ -33,13 +33,13 @@ Where NightSeam Web stands and what comes next. Open defects are in
   placement, and move horizons between devices with a share link. Phase 0
   (sensor probe) passed; phases 1-4 (photos removed, camera capture with an
   AR overlay, north references and loop closure, share link) are merged
-  (pull request #8, October 16). The overlay aims with the orientation the
+  (October 16). The overlay aims with the orientation the
   camera image shows; its scale is measured still by a once-per-phone
   calibration routine (58 deg on the owner's Pixel 7a, October 18), and
   which delay is right is still open (BUGS.md). The owner acceptance
   checklist (phase 5) is written for the owner to run.
 - **Horizon rebuild** ([plan](docs/horizon/HORIZON_REBUILD_PLAN.md)): phases
-  1-6 are merged (pull request #2). Its photo parts are replaced by the
+  1-6 are merged (October 12). Its photo parts are replaced by the
   sensor capture; the skyline model, overhangs and file import/export stay.
   Possible later: several openings per direction. The earlier P3-P7 plan is
   retired ([history](docs/history/HORIZON_GEOGRAPHIC_CALIBRATION_PLAN.md)).

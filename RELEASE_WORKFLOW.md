@@ -5,7 +5,7 @@ Current authority, October 11, 2026. The owner reset the public website series t
 Git tags and historical CURATED summaries remain evidence and do not restore old
 public entries. The catalog's source, tags and packages are independent.
 
-v0.1.1 is released on GitHub and deployed (October 8, 2026), following the
+v0.1.1 is released and deployed (October 8, 2026), following the
 initial v0.1.0 release on October 7. RELEASES.md
 records exact acceptance and cleanup. Inherited tags occupy 0.1.5 through
 0.6.36, so the next release is 0.7.0 and later ones continue above every
