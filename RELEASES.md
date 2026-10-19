@@ -5,6 +5,29 @@ Actual validation outcomes, newest first. Published releases: v0.1.1 (October 8,
 development awaiting the next release, 0.7.0. Upload success alone is never
 recorded as acceptance.
 
+## Tooling and structure follow-ups — October 19, 2026 (branch ccr-9a404934-2ntdx7)
+
+- **Browser checks import live module URLs.** Three checks imported
+  webstore/horizon/core under stale tokens and ten more without one, driving
+  second module copies; `harness.module_url()` / `catalog_url()` replace
+  them and test_browser_gate.py rejects literal URLs.
+- **check_js_defs is quiet and accurate.** Its 41 false candidates are gone
+  (lexer-based blanking, parameters and destructuring understood, real line
+  numbers); a test still requires it to report a planted undefined call.
+- **Test tooling pinned exactly** (pytest 9.1.1, Playwright 1.64.0 and their
+  dependencies; DECISIONS.md 2026-10-19).
+- **Cloud sessions:** a SessionStart hook fetches tags, installs the pinned
+  tooling, bakes version.json and points `check_browser.py --executable`
+  (new) at the container's Chromium.
+- **app.js split, first step:** the Wikipedia photo loader moved to
+  `web/wikiphotos.js` (app.js 4,364 → 4,187 lines), behaviour unchanged.
+
+Local validation on the final commit (Linux container, Playwright 1.64.0
+driving the preinstalled Chromium 141 via `--executable`): pytest 366
+passed, 1 skipped (local popularity snapshot absent); browser web suite
+88/88; check_js, check_core, build_changelog --check and check_release
+clean. Not yet run on CI.
+
 ## Reduced motion no longer turns every style change into a transition (BROWSER-CI-003 cause) — October 19, 2026 (branch ccr-9a404934-2ntdx7)
 
 The cause of BROWSER-CI-003 was the planner's own reduced-motion rule:
@@ -31,7 +54,7 @@ Local validation: the probe reads 0 stale in 6. The docked-inspector check
 with its original wait (pull request #1's box wait temporarily removed)
 passed 30/30; it failed about 1 in 5 before. The box wait stays. BUGS.md no
 longer lists BROWSER-CI-003. Full-suite results are in the receipt for this
-branch's last commit.
+batch's receipt above.
 
 ## Dock geometry wait in the docked-inspector check (BROWSER-CI-003) — October 19, 2026 (branch ccr-9a404934-2ntdx7)
 
