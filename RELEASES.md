@@ -53,8 +53,8 @@ rule (it fails against the previous style.css). Cache tokens bumped.
 Local validation: the probe reads 0 stale in 6. The docked-inspector check
 with its original wait (pull request #1's box wait temporarily removed)
 passed 30/30; it failed about 1 in 5 before. The box wait stays. BUGS.md no
-longer lists BROWSER-CI-003. Full-suite results are in the receipt for this
-batch's receipt above.
+longer lists BROWSER-CI-003. Full-suite results are in the batch receipt
+above.
 
 ## Dock geometry wait in the docked-inspector check (BROWSER-CI-003) — October 19, 2026 (branch ccr-9a404934-2ntdx7)
 
