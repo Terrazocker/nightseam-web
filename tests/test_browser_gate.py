@@ -218,3 +218,58 @@ def test_static_server_never_takes_a_port_chrome_refuses(monkeypatch):
     assert server.port == 41234
     assert closed == [6000, 6667]
     assert 6000 in harness.CHROME_UNSAFE_PORTS and 8080 not in harness.CHROME_UNSAFE_PORTS
+
+
+def test_browser_checks_import_planner_modules_by_their_live_urls():
+    """A browser keys ES modules by URL: a check that imports './horizon.js'
+    with a stale cache token, or with none, drives a second copy of the module
+    with its own state instead of the planner's (web_suite.py imported
+    webstore.js?v=41 and horizon.js?v=68 while the planner was at v=84/v=164).
+    Checks take module and catalog URLs from harness.module_url() and
+    catalog_url(), never from string literals."""
+    import re
+    import sys
+    sys.path.insert(0, str(ROOT/'tests/browser'))
+    import harness
+    literal = re.compile(r"""import\(\s*['"][^'"]+\.js(?:\?[^'"]*)?['"]\s*\)"""
+                         r"""|fetch\(\s*['"][^'"]*catalog\.json\?v=""")
+    for stale in ("import('./webstore.js?v=41')", 'import("/astro.js")',
+                  "import('./core.js')", "fetch('catalog.json?v=10')"):
+        assert literal.search(stale), stale
+    assert not literal.search("import(m.webstore)")
+    offenders = [f"{path.name}:{n}: {line.strip()}"
+                 for path in sorted((ROOT/'tests/browser').glob('*.py'))
+                 for n, line in enumerate(path.read_text(encoding='utf-8').splitlines(), 1)
+                 if literal.search(line)]
+    assert not offenders, "use harness.module_url()/catalog_url():\n" + "\n".join(offenders)
+    app = (ROOT/'web/app.js').read_text(encoding='utf-8')
+    for name in ('webstore', 'horizon', 'astro', 'core', 'viztheme'):
+        assert f"from '{harness.module_url(name)}'" in app, name
+    assert harness.catalog_url().startswith('catalog.json?v=')
+    with pytest.raises(AssertionError):
+        harness.module_url('no-such-module')
+
+
+def test_test_tooling_is_pinned_exactly():
+    """DECISIONS.md 2026-10-19: CI used to install the newest pytest and
+    Playwright on every run. Every requirement stays pinned with `==`."""
+    import re
+    lines = [line.split('#')[0].strip()
+             for line in (ROOT/'requirements-dev.txt').read_text(encoding='utf-8').splitlines()]
+    reqs = [line for line in lines if line]
+    assert {re.split(r'[=<>!~ ]', r)[0].lower() for r in reqs} >= {'pytest', 'playwright'}
+    loose = [r for r in reqs if not re.fullmatch(r'[A-Za-z0-9_.-]+==[0-9][\w.]*', r)]
+    assert not loose, f"pin these exactly: {loose}"
+
+
+def test_browser_gate_can_launch_an_explicit_executable():
+    """Cloud sessions launch the preinstalled Chromium by path; the gate takes
+    it from --executable or NIGHTSEAM_BROWSER_EXECUTABLE and still treats a
+    launch failure as infrastructure (exit 2), never a skip."""
+    import sys
+    sys.path.insert(0, str(ROOT/'scripts'))
+    sys.path.insert(0, str(ROOT/'tests/browser'))
+    import check_browser as gate
+    rc = gate.run_gate(targets=('web',), only='web-load-smoke', verbose=False,
+                       executable=str(ROOT/'logs'/'no-such-browser'))
+    assert rc == 2

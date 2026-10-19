@@ -41,6 +41,32 @@ VIEWPORT = (1366, 900)
 _CREATE_NO_WINDOW = 0x08000000 if os.name == "nt" else 0
 
 
+def module_url(name: str) -> str:
+    """The URL web/app.js imports `name`.js under, cache token included.
+
+    A browser keys ES modules by URL, so importing a module with any other
+    token - or none - loads a second copy with its own state instead of the
+    planner's. Checks that reach into a module import it through this."""
+    source = (WEB_DIR / "app.js").read_text(encoding="utf-8")
+    m = re.search(r"\./" + re.escape(name) + r"\.js\?v=\d+", source)
+    if not m:
+        raise AssertionError(f"web/app.js does not import {name}.js with a cache token")
+    return m.group(0)
+
+
+def module_urls(*names: str) -> dict[str, str]:
+    return {name: module_url(name) for name in names}
+
+
+def catalog_url() -> str:
+    """The catalog URL the planner fetches, with its current CATALOG_TOKEN."""
+    source = (WEB_DIR / "app.js").read_text(encoding="utf-8")
+    m = re.search(r"const CATALOG_TOKEN = '(\d+)'", source)
+    if not m:
+        raise AssertionError("web/app.js has no CATALOG_TOKEN")
+    return f"catalog.json?v={m.group(1)}"
+
+
 def safe_print(*values, sep=' ', end='\n'):
     """Preserve gate outcomes when Windows stdout cannot encode diagnostics."""
     text = sep.join(str(v) for v in values) + end
@@ -404,9 +430,11 @@ def _attach(ctx: Ctx):
 def run(channel: str = "chrome", targets=("web",),
         only: str | None = None,
         headed: bool = False, prod_url: str | None = None,
-        artifacts: Path = ARTIFACTS, verbose: bool = True) -> int:
+        artifacts: Path = ARTIFACTS, verbose: bool = True,
+        executable: str | None = None) -> int:
     """Run the registered checks. Returns 0 (pass), 1 (failures) or 2 (the
-    infrastructure could not start - browser or server)."""
+    infrastructure could not start - browser or server). `executable` launches
+    that Chromium binary instead of `channel`."""
     from playwright.sync_api import sync_playwright
 
     selected = [(n, t, f) for (n, t, f) in all_checks()
@@ -438,10 +466,13 @@ def run(channel: str = "chrome", targets=("web",),
     try:
         with sync_playwright() as p:
             try:
-                browser = p.chromium.launch(channel=channel, headless=not headed)
+                if executable:
+                    browser = p.chromium.launch(executable_path=executable, headless=not headed)
+                else:
+                    browser = p.chromium.launch(channel=channel, headless=not headed)
             except Exception as exc:
-                safe_print(f"check_browser FATAL: browser '{channel}' could not "
-                      f"launch ({exc}). Install it or pass --channel.")
+                safe_print(f"check_browser FATAL: browser '{executable or channel}' could not "
+                      f"launch ({exc}). Install it or pass --channel or --executable.")
                 return 2
             for name, target, fn in selected:
                 if not web_srv.health()['thread_alive']:

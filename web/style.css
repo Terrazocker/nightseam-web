@@ -645,9 +645,12 @@ td.pct { font-family: var(--mono); color: var(--green); white-space: nowrap; }
   .busy-slot { width: 0; overflow: visible; }
 }
 
+/* No transitions at all, not short ones: with the default `transition-property:
+   all`, a .01ms duration made every style change on every element a transition,
+   so layout read the old value until the next frame (BROWSER-CI-003). */
 @media (prefers-reduced-motion: reduce) {
   * { animation-duration: .01ms !important; animation-iteration-count: 1 !important;
-      transition-duration: .01ms !important; scroll-behavior: auto !important; }
+      transition: none !important; scroll-behavior: auto !important; }
 }
 
 @media (prefers-contrast: more) {

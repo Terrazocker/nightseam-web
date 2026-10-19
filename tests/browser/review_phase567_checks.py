@@ -2,7 +2,7 @@
 import json
 from datetime import datetime, timedelta
 
-from harness import check
+from harness import check, module_url
 from web_suite import boot, tab, search_catalog_row
 from phase3_astronomy_checks import seed, date, modules
 from phase1_app_checks import setup
@@ -51,7 +51,7 @@ def catalog_context(c):
     idle_catalog(c)
     expected = c.page.evaluate('''async ({m,rows})=>{
       const E=await import(m.astro),H=await import(m.horizon),W=await import(m.webstore);
-      const core=await import('./core.js');
+      const core=await import(m.core);
       const d=new Date(2026,9,9,12), noon=W.wallFieldsToUtc(2026,9,9,12);
       const info=E.nightInfo(d,52.52,13.4,noon);
       const w=E.pickDarkWindow(info,d,noon,{dusk:W.wallFieldsToUtc(2026,9,9,20),dawn:W.wallFieldsToUtc(2026,9,10,4)});
@@ -59,7 +59,7 @@ def catalog_context(c):
         alt:core.nightStats(o,E.julianDay(w.dusk),E.julianDay(w.dawn),6/1440,H.effectiveMinAlt(),null,52.52,13.4).maxAlt}));
       const order=direction=>[...stats].sort((a,b)=>direction*(a.alt-b.alt)||a.name.localeCompare(b.name)||a.id.localeCompare(b.id)).map(o=>o.id);
       return {up:order(1),down:order(-1)};
-    }''', {'m': modules(), 'rows': rows})
+    }''', {'m': {**modules(), 'core': module_url('core')}, 'rows': rows})
     ids = lambda: c.page.locator('tr[data-id]').evaluate_all('els=>els.map(e=>e.dataset.id)')
     c.expect_eq(ids(), expected['up'][:50], 'maximum-altitude ascending uses shared statistics and stable ties')
     c.page.locator('#cat-reverse').click(); idle_catalog(c)
@@ -122,7 +122,7 @@ def search_and_chart(c):
     row.locator('.target-open').click()
     c.page.wait_for_selector('#graph')
     c.page.wait_for_timeout(150)
-    palette = c.page.evaluate("async()=> (await import('./viztheme.js')).vizTheme()")
+    palette = c.page.evaluate("async url => (await import(url)).vizTheme()", module_url('viztheme'))
     strokes = c.page.evaluate('window.__reviewStrokes')
     c.expect(palette['warn'].lower() in strokes, f'below-minimum target paints warning segments: {strokes}, expected {palette["warn"]}')
     c.expect(palette['bad'].lower() not in strokes, 'no invented horizon obstruction')

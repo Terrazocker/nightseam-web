@@ -10,6 +10,7 @@ or user library is required.
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from pathlib import Path
 
@@ -55,6 +56,10 @@ def main() -> int:
     ap.add_argument("--channel", default="chrome",
                     help="Playwright browser channel (default: chrome; 'chromium' "
                          "uses the bundled engine)")
+    ap.add_argument("--executable", default=os.environ.get("NIGHTSEAM_BROWSER_EXECUTABLE") or None,
+                    help="launch this Chromium binary instead of --channel (default: "
+                         "$NIGHTSEAM_BROWSER_EXECUTABLE; cloud sessions set it to the "
+                         "preinstalled Chromium)")
     ap.add_argument("--only", default=None,
                     help="run only checks whose name contains this substring")
     ap.add_argument("--headed", action="store_true", help="show the browser")
@@ -74,6 +79,7 @@ def main() -> int:
     return run_gate(
         channel=args.channel, targets=targets,
         only=args.only, headed=args.headed, prod_url=args.prod_url,
+        executable=args.executable,
     )
 
 
