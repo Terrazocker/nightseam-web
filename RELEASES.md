@@ -4,6 +4,25 @@ Actual validation outcomes, newest first. Published releases: v0.7.0 (October
 19, 2026), v0.1.1 (October 8, 2026) and v0.1.0 (October 7, 2026). Upload
 success alone is never recorded as acceptance.
 
+## Offline check fixed after CI failure — October 20, 2026 (branch ccr-9a647bfc-wzanov)
+
+CI's browser suite failed `web-offline-reopen` on 6a53a67 (Tonight never
+rendered offline). Reproduced locally in about 1 run in 4. Cause, in the
+check: `wait_for_function` took the async predicate's Promise as truthy and
+did not wait for the cache, and the harness's fake clock replaces
+`performance`, so the first-visit file list the page sends the worker was
+empty there; the check went offline before the stylesheets were kept and the
+page came back unstyled. The check now reloads once online under the worker,
+records every same-origin request and polls (awaited) until all are cached.
+The worker caches the first-visit list in parallel, and the page adds the
+document's `<link>`/`<script>` files to it, so the list no longer depends on
+the performance API alone.
+
+Local validation: the offline check 10/10 in a loop; pytest 367 passed, 1
+skipped; browser suite 88/89 then 89/89 (the one failure,
+`web-review-phase7-native-tables-focus-and-sort` timing out while waiting for
+the details dialog, did not recur in 5 single runs or the full rerun).
+
 ## Offline reopening, Sky View now-panel, wide Tonight — October 20, 2026 (branch ccr-9a647bfc-wzanov)
 
 `web/sw.js` makes the planner reopen without a network after one visit

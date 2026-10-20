@@ -90,12 +90,14 @@ self.addEventListener('message', (event) => {
   if (data.type !== 'cache-urls' || !Array.isArray(data.urls)) return;
   event.waitUntil((async () => {
     const cache = await caches.open(CACHE);
-    for (const href of data.urls.slice(0, 300)) {
+    // in parallel: a module missing from the cache stops the app from starting
+    // offline, so the window in which only part of it is kept stays short
+    await Promise.all(data.urls.slice(0, 300).map(async (href) => {
       let url;
-      try { url = new URL(href); } catch { continue; }
-      if (url.origin !== self.location.origin || await cache.match(url.href)) continue;
+      try { url = new URL(href); } catch { return; }
+      if (url.origin !== self.location.origin || await cache.match(url.href)) return;
       try { await store(new Request(url.href), await fetch(url.href, { cache: 'force-cache' })); } catch { /* next */ }
-    }
+    }));
   })());
 });
 

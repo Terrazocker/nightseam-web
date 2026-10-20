@@ -3868,7 +3868,8 @@ async function boot() {
         // This visit's files loaded before the worker could see them: hand it
         // the list, so the first visit is already enough to reopen offline.
         const urls = [location.href.split('#')[0],
-          ...performance.getEntriesByType('resource').map((entry) => entry.name)]
+          ...[...document.querySelectorAll('link[href], script[src]')].map((el) => el.href || el.src),
+          ...(performance.getEntriesByType?.('resource') || []).map((entry) => entry.name)]
           .filter((url) => url.startsWith(location.origin + '/'));
         reg.active?.postMessage({ type: 'cache-urls', urls });
       })

@@ -725,12 +725,27 @@ def offline_reopen(c):
     planning works. A reachable server still wins (network first for pages)."""
     boot(c)
     c.page.wait_for_function('() => navigator.serviceWorker.controller !== null', timeout=20000)
-    # The first visit hands the worker its loaded files; wait until they are kept.
-    c.page.wait_for_function("""async () => {
-      const cache = await caches.open('nightseam-offline-v1');
-      const keys = (await cache.keys()).map((r) => new URL(r.url).pathname);
-      return keys.some((k) => k.endsWith('/catalog.json')) && keys.some((k) => k.endsWith('/app.js'));
-    }""", timeout=20000)
+    # Reload once online with the worker in control and record what the page
+    # asks for: the worker must keep every one of those files (one missing
+    # module would stop the app offline). The harness's fake clock replaces
+    # `performance`, so the first-visit file list the page hands the worker is
+    # empty here; this path, the one every later visit takes, is the one tested.
+    origin = c.page.evaluate('() => location.origin')
+    requested = set()
+    c.page.on('request', lambda r: requested.add(r.url.split('#')[0]) if r.url.startswith(origin + '/') else None)
+    c.page.reload(wait_until='load')
+    c.page.wait_for_selector(READY, timeout=30000)
+    c.page.wait_for_timeout(500)
+    missing = None
+    for _ in range(120):
+        # evaluate awaits the cache lookup (wait_for_function would take the
+        # returned Promise itself as truthy and not wait)
+        kept = set(c.page.evaluate("""async () => (await (await caches.open('nightseam-offline-v1')).keys()).map((r) => r.url)"""))
+        missing = sorted(u for u in requested if u not in kept and not u.endswith('/sw.js'))
+        if requested and not missing:
+            break
+        c.page.wait_for_timeout(250)
+    c.expect(bool(requested) and not missing, f'the worker keeps every file the page loads: missing {missing}')
     c.allow_console_errors('offline on purpose: requests that need the network (version check, weather) fail')
     c.page.context.set_offline(True)
     try:
