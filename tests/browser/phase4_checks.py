@@ -59,6 +59,9 @@ def simpler_overviews_and_direct_settings(c):
     c.page.screenshot(path=str(c.artifacts / 'simplified-sky-1894.png'))
     c.page.set_viewport_size({'width':360,'height':900})
     c.page.keyboard.press('Tab')
+    # Phone layout (DESIGN.md): the settings words live in the observing-setup
+    # sheet; Escape from a dialog opened there leaves the sheet open.
+    c.page.locator('#ctxSummary').focus(); c.page.keyboard.press('Enter')
     for key in ('site','rig'):
         button=c.page.locator(f'#{key}-settings')
         button.focus()
@@ -69,12 +72,17 @@ def simpler_overviews_and_direct_settings(c):
         c.page.keyboard.press('Space')
         c.page.wait_for_selector(f'#set-tab-{key}s[aria-selected="true"]')
         c.page.keyboard.press('Escape')
+        c.expect_eq(c.page.locator('#ctxSummary').get_attribute('aria-expanded'), 'true',
+                    'Escape closes the settings dialog, not the setup sheet under it')
+    c.page.keyboard.press('Escape')
+    c.expect_eq(c.page.locator('#ctxSummary').get_attribute('aria-expanded'), 'false', 'a second Escape closes the sheet')
     c.expect(c.page.evaluate('document.documentElement.scrollWidth <= innerWidth'), 'direct entries fit phone width')
     c.page.screenshot(path=str(c.artifacts / 'simplified-sky-360.png'))
     c.page.locator('#btnMenu').click()
     c.page.locator('#fltHa').check()
     c.page.keyboard.press('Escape')
     tab(c, 'catalog')
+    c.page.locator('#cat-filters-toggle').click()   # phone filters open from their button
     c.page.locator('#cat-type-galaxy').check()
     c.page.wait_for_selector('.cat-results .f-own[title*="broadband"]')
     c.expect(c.page.locator('.cat-results .f-own').evaluate_all("els => els.every(el=>el.textContent==='BB')"),
@@ -433,7 +441,11 @@ def annotated_controls(c):
         c.page.set_viewport_size({'width':width, 'height':900})
         c.expect(c.page.evaluate('document.documentElement.scrollWidth <= innerWidth + 1'),
                  'the top chart time controls must fit a narrow viewport')
-        c.expect(c.page.locator('#sky-slider').is_visible(), 'the phase slider stays visible on narrow screens')
+        # Phone layout (DESIGN.md): the pinned time slider above the tab bar
+        # sets the time; the rail keeps the selected time and its phase.
+        c.expect(c.page.locator('#tb-scrub').is_visible(), 'the pinned time slider stays visible on narrow screens')
+        c.expect(c.page.locator('#sky-sout').is_visible() and c.page.locator('#sky-phase').is_visible(),
+                 'the selected time and its phase stay in the Sky View rail on narrow screens')
         c.page.screenshot(path=str(c.artifacts / f'annotations-sky-{width}.png'))
     c.page.set_viewport_size({'width':1894, 'height':1244})
     # A polar summer must show daylight on the fallback span, rather than

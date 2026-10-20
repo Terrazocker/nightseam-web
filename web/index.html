@@ -25,7 +25,7 @@
 <link rel="apple-touch-icon" href="app.png">
 <link rel="manifest" href="manifest.json?v=1">
 <meta name="theme-color" content="#0B1115">
-<link rel="stylesheet" href="style.css?v=82">
+<link rel="stylesheet" href="style.css?v=84">
 <link rel="stylesheet" href="themes.css?v=23">
 <script src="nightmode.js?v=1"></script>
 </head>
@@ -109,6 +109,10 @@
         </svg>
       </button>
       <div id="menuPanel" class="popover menu-panel hidden" role="region" aria-label="Planner options">
+        <div class="menu-section">
+          <h4>Data</h4>
+          <button id="btn-settings" class="ghost" title="Locations &amp; equipment — sites, rigs, custom targets, backup">Setup&hellip; (sites, rigs, targets, backup)</button>
+        </div>
         <div class="menu-section">
           <h4>Display</h4>
           <label class="inline" for="edgeSpace">Free space per side <span id="edgeSpaceVal" class="mono">16&nbsp;px</span></label>
@@ -196,10 +200,6 @@
           <p class="hint">These describe your filters and mark matching recommendations. With Moon-aware ranking on, Hα/OIII also change Tonight's Moon penalty; OIII takes priority over Hα, otherwise broadband is assumed. They do not change visibility or usable times.</p>
         </div>
         <div class="menu-section">
-          <h4>Data</h4>
-          <button id="btn-settings" class="ghost" title="Locations &amp; equipment — sites, rigs, custom targets, backup">Setup&hellip; (sites, rigs, targets, backup)</button>
-        </div>
-        <div class="menu-section">
           <h4>About</h4>
           <p class="hint">NightSeam <span id="aboutVersion" class="mono">…</span> &mdash; deep-sky night planning.<br>
           MIT licensed. Astronomy calculations run on this device; planning data is saved in this browser.<br>
@@ -243,6 +243,6 @@
 <div class="modal-wrap" id="modal" hidden></div>
 <div class="tooltip" id="tooltip" hidden></div>
 
-  <script type="module" src="app.js?v=263"></script>
+  <script type="module" src="app.js?v=266"></script>
 </body>
 </html>

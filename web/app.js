@@ -2031,11 +2031,17 @@ function wireContextSheet() {
   button.addEventListener('click', () => setOpen(!top.classList.contains('ctx-open')));
   $('#ctxDone')?.addEventListener('click', () => setOpen(false, true));
   document.addEventListener('keydown', (ev) => {
-    if (ev.key !== 'Escape' || !top.classList.contains('ctx-open')) return;
+    // Escape closes the top layer only: a dialog opened from the sheet first.
+    if (ev.key !== 'Escape' || ev.defaultPrevented || !top.classList.contains('ctx-open')
+      || $('#modal:not([hidden])')) return;
     ev.preventDefault(); setOpen(false, true);
   });
   document.addEventListener('click', (ev) => {
-    if (top.classList.contains('ctx-open') && !sheet.contains(ev.target) && !button.contains(ev.target)) setOpen(false);
+    // A dialog opened from the sheet may already be gone by the time its
+    // click arrives here, so ask the event's own path, not the live tree.
+    const path = ev.composedPath();
+    if (top.classList.contains('ctx-open') && !path.includes(sheet) && !path.includes(button)
+      && !path.includes($('#modal'))) setOpen(false);
   });
   sheet.addEventListener('input', syncContextSummary);
   sheet.addEventListener('change', syncContextSummary);

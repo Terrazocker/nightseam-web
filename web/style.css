@@ -1185,6 +1185,7 @@ html[data-theme] .sky-zoom .btn {
   html[data-theme] .topbar {
     position: relative; display: grid; grid-template-columns: minmax(0, 1fr) auto;
     gap: 8px; padding: max(8px, env(safe-area-inset-top)) 16px 10px;
+    z-index: 60; /* its menus and the setup sheet open over the bottom bars */
   }
   .brand { grid-column: 1; grid-row: 1; }
   .brand h1 { font-size: 18px; }
@@ -1256,6 +1257,10 @@ html[data-theme] .sky-zoom .btn {
   .cap-open .tabs, .cap-open .scrub { display: none !important; }
 
   html[data-theme] main { padding: 14px 16px 24px; }
+  /* menus end above the bottom bars instead of running under them */
+  html[data-theme] :is(#menuPanel.menu-panel, #weatherPanel.weather-panel) {
+    max-height: calc(100dvh - 64px - var(--tabbar-h) - var(--timebar-h) - env(safe-area-inset-bottom));
+  }
 
   /* touch targets, form text, minimum text size */
   html[data-theme] :is(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), select, textarea) {

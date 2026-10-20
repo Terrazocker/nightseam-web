@@ -62,6 +62,8 @@ Site and Rig words are open settings buttons beside independent active-record
 selectors. They turn brass yellow on hover/keyboard focus. Site opens the active
 site editor; Rig opens the active rig editor, or Rigs setup when none is selected.
 The header's eye button switches night vision on and off.
+The menu starts with *Data → Setup* (sites, rigs, targets, backups), then display and
+advanced options; on phones menus end above the bottom bars.
 
 ## Phone layout — approved October 20, 2026
 

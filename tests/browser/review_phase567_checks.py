@@ -172,7 +172,15 @@ def keyboard_catalog(c):
     c.page.wait_for_timeout(250)
     c.expect_eq(search.evaluate('e=>[e.selectionStart,e.selectionEnd,e.selectionDirection]'), [1,4,'backward'])
     c.page.set_viewport_size({'width':360,'height':800})
+    # Phone layout (DESIGN.md): the filter rail opens from its Filters button.
+    toggle = c.page.locator('#cat-filters-toggle')
+    c.expect(toggle.is_visible() and not c.page.locator('#cat-reverse').is_visible(),
+             'phone Catalog folds its filters behind a button')
+    toggle.focus(); c.page.keyboard.press('Enter')
+    c.expect_eq(toggle.get_attribute('aria-expanded'), 'true', 'the Filters button opens the rail')
+    c.expect(c.page.locator('#cat-reverse').is_visible(), 'opened filters reach the sort controls')
     c.page.locator('#cat-reverse').focus(); c.page.keyboard.press('Enter')
+    c.expect_eq(toggle.get_attribute('aria-expanded'), 'true', 'filters stay open across a re-render')
     c.expect_eq(c.page.evaluate('document.activeElement.id'), 'cat-reverse')
     c.expect(c.page.evaluate('document.documentElement.scrollWidth<=innerWidth'), 'phone page has no overflow')
     c.page.screenshot(path=str(c.artifacts/'review-phase567-catalog-phone.png'), full_page=True)

@@ -4,6 +4,33 @@ Actual validation outcomes, newest first. Published releases: v0.7.0 (October
 19, 2026), v0.1.1 (October 8, 2026) and v0.1.0 (October 7, 2026). Upload
 success alone is never recorded as acceptance.
 
+## Phone layout and night vision — October 20, 2026 (branch ccr-9a647bfc-wzanov)
+
+Owner-approved phone redesign (DESIGN.md, "Phone layout"; DECISIONS.md
+2026-10-20): summary line and observing-setup sheet, bottom tab bar with a
+pinned time slider, two-line Tonight and Catalog rows, catalog filters behind
+a button, bottom-sheet details, Sky View pinch zoom and − + buttons, *Capture
+with phone* first on touch devices, 44px controls, 16px form text, 12px
+minimum text; red night vision; web app manifest; Setup first in the menu.
+
+Measured in headless Chromium at 360×740, 390×664, 412×839 and 844×390
+(touch): no sideways page scroll; no form field under 16px; no control under
+44px apart from the horizon list's radio buttons, whose labels span the row;
+no visible text under 12px. On an iPhone-sized screen the header and bars
+take about 113px at the top and 110px at the bottom instead of 301px of
+controls, and the first ranked target shows on the first screen. Wide
+screens unchanged apart from the night-vision button and the zoom buttons.
+
+Browser checks updated for the new design, not weakened: the responsive
+check reaches the setup controls through the sheet and now also asserts
+44px controls and 16px form text on phones; the Sky View check asserts the
+pinned slider and the rail's time and phase; the catalog focus check opens
+the phone filters first; the settings check asserts Escape closes a dialog
+before the sheet under it (a bug it found, fixed).
+
+Local validation: pytest 366 passed, 1 skipped; browser web suite 88/88;
+check_js clean. Not yet run on CI or on a real phone.
+
 ## Design review fixes: catalog designations, chart time labels, twilight row — October 20, 2026 (branch ccr-9a647bfc-wzanov)
 
 From a desktop and phone walkthrough. Catalog designations with two names
