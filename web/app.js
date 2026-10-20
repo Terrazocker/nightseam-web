@@ -416,8 +416,11 @@ function selectedVisibility(o, grid) {
   return { alt, reason, visible: reason === 'visible', night };
 }
 function catalogCondition(reason) {
+  // Outside the dark window, say which side of it the selected time is on.
+  const outside = reason === 'outside_selected_window'
+    ? (S.skyTime < cachedNightWindow().startT ? 'Before dark' : 'After dark') : '';
   return ({ visible: 'Usable now', blocked_by_horizon: 'Horizon blocked',
-    below_minimum_altitude: 'Below altitude limit', outside_selected_window: 'Outside planning window',
+    below_minimum_altitude: 'Below altitude limit', outside_selected_window: outside,
     below_horizon: 'Below horizon', never_rises: 'Below horizon' })[reason] || 'Not usable now';
 }
 function catalogBestWindow(night) {
@@ -769,7 +772,8 @@ function renderTonight(silent, immediate = false) {
     // scrubbed time still ranks if it clears later tonight; one that never
     // clears all night must not top the list - the desktop's "Best targets"
     // applies the same night-window criterion (statusOf == vis).
-    const top = rows.filter((r) => r.visN > 0).slice(0, 16);
+    const usable = rows.filter((r) => r.visN > 0);
+    const top = usable.slice(0, 16);
 
     // The "Dark time" card shows the SAME window the ranking and % visibility
     // are computed on (win = the picked twilight level) - never a different
@@ -812,7 +816,9 @@ function renderTonight(silent, immediate = false) {
         </div>
       </section>
       <section class="tonight-ranked" aria-labelledby="tonightRankHeading">
-        <header class="panel-heading"><h2 id="tonightRankHeading">Best targets tonight</h2><span class="sub">${top.length} targets with usable dark-window visibility</span></header>
+        <header class="panel-heading"><h2 id="tonightRankHeading">Best targets tonight</h2><span class="sub">${usable.length > top.length
+          ? `Top ${top.length} of ${usable.length} targets usable in the dark window · <a href="#catalog">all in Catalog</a>`
+          : `${top.length} target${top.length === 1 ? '' : 's'} usable in the dark window`}</span></header>
         <div class="tablewrap" tabindex="0" role="region" aria-label="Best targets table; scroll horizontally for all columns"><table id="tonight-rank-table">
           <thead><tr><th>#</th><th>Target</th><th class="num">Relative score</th><th class="num">Max altitude</th><th>Best usable interval</th></tr></thead>
           <tbody>${rankRows || '<tr><td colspan="5" class="sub">No targets have a clear window tonight.</td></tr>'}</tbody>
@@ -1004,6 +1010,9 @@ function renderSky() {
     for (const alt of [20, 40, 60]) {
       ctx.beginPath(); ctx.arc(cx, cy, R * (1 - alt / 90), 0, Math.PI * 2); ctx.stroke();
     }
+    // Chart-coordinate boxes target labels must not cover: the min-altitude
+    // label, the Sun, the Moon and every labelled object's dot.
+    const labelObstacles = [];
     // min-altitude ring (planning prefs)
     const minRing = Hor.effectiveMinAlt();
     ctx.strokeStyle = C.minStroke;
@@ -1014,7 +1023,9 @@ function renderSky() {
     ctx.fillStyle = C.minLabel;
     ctx.font = '10.5px system-ui, sans-serif';
     ctx.textAlign = 'left';
-    ctx.fillText(`min ${minRing.toFixed(0)}°`, cx + (R * (1 - minRing / 90)) + 6, cy + 3);
+    const minText = `min ${minRing.toFixed(0)}°`, minX = cx + (R * (1 - minRing / 90)) + 6;
+    ctx.fillText(minText, minX, cy + 3);
+    labelObstacles.push({ x: minX - 2, y: cy - 9, w: ctx.measureText(minText).width + 4, h: 14 });
     ctx.strokeStyle = C.gridSub;
     for (let az = 0; az < 360; az += 30) {
       const a = E.D2R * az;
@@ -1117,6 +1128,7 @@ function renderSky() {
       ctx.beginPath(); ctx.arc(x, y, 9, 0, Math.PI * 2); ctx.fill();
       ctx.shadowBlur = 0;
       skyItems.push({ x, y, id: 'SUN', label: 'Sun' });
+      labelObstacles.push({ x: x - 10, y: y - 10, w: 20, h: 20 });
     });
     plotAltAz(moonAlt, moonAz, (x, y) => {
       ctx.shadowColor = C.moon; ctx.shadowBlur = C.moonBlur;
@@ -1124,6 +1136,7 @@ function renderSky() {
       ctx.beginPath(); ctx.arc(x, y, 7, 0, Math.PI * 2); ctx.fill();
       ctx.shadowBlur = 0;
       skyItems.push({ x, y, id: 'MOON', label: 'Moon' });
+      labelObstacles.push({ x: x - 8, y: y - 8, w: 16, h: 16 });
     });
 
     // catalog objects
@@ -1138,6 +1151,7 @@ function renderSky() {
         ctx.globalAlpha = 1;
         if (!o._adv && o.vmag != null && o.vmag < 8.5) {
           labelCands.push({ x, y, text: o.messier || o.primary_name, prio: o.vmag });
+          labelObstacles.push({ x: x - rad - 1, y: y - rad - 1, w: 2 * rad + 2, h: 2 * rad + 2 });
         }
       });
       if (hit) skyItems.push({ x: hit.x, y: hit.y, id: o.id, label: o.primary_name, o });
@@ -1152,6 +1166,11 @@ function renderSky() {
       ctx.font = 'bold 10.5px system-ui, sans-serif';
       ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
       const placed = [];
+      // obstacles in screen pixels; a label never covers one
+      const blocked = labelObstacles.map((b) => ({ x: matrix.a * b.x + matrix.e, y: matrix.d * b.y + matrix.f,
+        w: matrix.a * b.w, h: matrix.d * b.h }));
+      const hits = (tx, ty, w, h) => blocked.some((b) =>
+        tx < b.x + b.w && b.x < tx + w - 8 && ty - h + 3 < b.y + b.h && b.y < ty + 3);
       labelCands.sort((a, b) => a.prio - b.prio);
       for (const c of labelCands) {
         const x = Math.round(matrix.a * c.x + matrix.e);
@@ -1161,7 +1180,7 @@ function renderSky() {
         const position = [[x + 6, y - 6], [x - w - 6, y - 6],
           [x + 6, y + h + 3], [x - w - 6, y + h + 3]]
           .find(([tx, ty]) => tx >= 3 && tx + w <= W - 3 &&
-            ty - h >= 3 && ty <= W - 3 && !placed.some((p) =>
+            ty - h >= 3 && ty <= W - 3 && !hits(tx, ty, w, h) && !placed.some((p) =>
               Math.abs(tx + w / 2 - p.x) < (w + p.w) / 2 && Math.abs(ty - p.y) < h));
         if (!position) continue;
         const [tx, ty] = position;
@@ -2276,7 +2295,10 @@ function openDetail(id, opener = null, { refresh = false } = {}) {
     return `<dt>${label}</dt><dd><span style="color:${col}">${a}°</span><span class="tags">from Moon${note}</span></dd>`;
   };
 
-  const tags = [o.messier, o.ngcic, o.other].filter(Boolean).map(esc).join(' · ');
+  // `other` is the catalog's comma list ("C 013,MWSC 0114"): one separator for
+  // every designation, and Caldwell numbers unpadded as elsewhere ("C 13").
+  const others = String(o.other || '').split(',').map((d) => d.trim().replace(/^C 0+(?=\d)/, 'C ')).filter(Boolean);
+  const tags = [o.messier, o.ngcic, ...others].filter(Boolean).map(esc).join(' · ');
   // the article that actually documents this object - NOT the bare display name,
   // which is a disambiguation page for a Messier row without a common name
   const wiki = wikiTitles(o)[0] || o.primary_name;

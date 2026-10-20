@@ -4,6 +4,24 @@ Actual validation outcomes, newest first. Published releases: v0.7.0 (October
 19, 2026), v0.1.1 (October 8, 2026) and v0.1.0 (October 7, 2026). Upload
 success alone is never recorded as acceptance.
 
+## Phone layout follow-ups — October 20, 2026 (branch ccr-9a647bfc-wzanov)
+
+Touch screens of any width get the 44px control and 16px form-text sizes
+(checked on a coarse-pointer 810px tablet: no control under 44px); catalog
+filters fold behind their button on phones and touch tablets up to 900px; the
+Tonight heading says "Top 16 of N" and links to Catalog; Catalog says *Before
+dark* / *After dark* on one line outside the dark window (19 rows on a
+1440×900 screen instead of 13) and its sortable headers match the others;
+detail designations use one separator and unpadded Caldwell numbers ("C 13");
+Sky View labels keep off the min-altitude label, the Sun, the Moon and other
+dots; 192/512px plain and maskable install icons; a phone acceptance
+checklist (docs/acceptance/PHONE_ACCEPTANCE.md).
+
+Local validation: pytest 366 passed, 1 skipped; browser web suite 88/88;
+check_js clean. An earlier run showed folding the filters for every window up
+to 900px hid the search box of narrowed desktop windows; the fold is limited
+to phones and touch screens.
+
 ## Phone layout and night vision — October 20, 2026 (branch ccr-9a647bfc-wzanov)
 
 Owner-approved phone redesign (DESIGN.md, "Phone layout"; DECISIONS.md

@@ -28,7 +28,8 @@ Where NightSeam Web stands and what comes next. Open defects are in
   rows, bottom-sheet details, pinch zoom) and the red night-vision display
   (DESIGN.md, "Phone layout"). Checked in headless Chrome at phone sizes;
   still to be tried by the owner on a real phone, at night, including
-  installing it to the home screen.
+  installing it to the home screen:
+  [PHONE_ACCEPTANCE.md](docs/acceptance/PHONE_ACCEPTANCE.md).
 
 - **Horizon sensor capture** ([plan](docs/horizon/HORIZON_SENSOR_CAPTURE_PLAN.md)):
   capture the skyline with the phone's camera view and sensors, remove photo

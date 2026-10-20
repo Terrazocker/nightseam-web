@@ -98,10 +98,12 @@ the answer comes first, the most-used controls sit where the thumb reaches.
   not clicks, wheels or keys.
 - **Sizes.** Every control is at least 44px in both directions, form fields
   use 16px text (smaller makes iOS zoom the page on focus), no text is below
-  12px, and a page never scrolls sideways.
+  12px, and a page never scrolls sideways. Touch screens of any width
+  (tablets) get the same control and form-text sizes.
 
-The planner is installable: `web/manifest.json` (standalone, Workbench colours)
-and a `theme-color`. Offline reopening is still a proposal (ROADMAP.md).
+The planner is installable: `web/manifest.json` (standalone, Workbench colours),
+192 and 512px icons in plain and maskable versions (drawn by
+`scripts/make_app_icons.py`) and a `theme-color`. Offline reopening is still a proposal (ROADMAP.md).
 
 The local exposure catalog has its own design document in Nightseam-catalog.
 
@@ -112,9 +114,12 @@ The local exposure catalog has its own design document in Nightseam-catalog.
   do not repeat them in a Tonight overview. Use the common top-bar time control;
   do not duplicate it between the brief and ranking.
   Keep five overview columns: rank, target, relative score, maximum altitude and
-  best usable interval (phones: see Phone layout). Visibility explanations
-  remain in target details.
-- **Catalog:** a narrow filter rail, a dense results table, and one selected-target
+  best usable interval (phones: see Phone layout). The list heading says how
+  many of the night's usable targets it shows ("Top 16 of N") and links to
+  Catalog for the rest. Visibility explanations remain in target details.
+- **Catalog:** a narrow filter rail (on phones, and on touch screens up to
+  900px, it folds behind a *Filters* button that counts the active filters),
+  a dense results table, and one selected-target
   inspector shared with Tonight and Sky View. Keep live altitude, visibility,
   and best-window facts in the primary columns; put provenance and secondary
   catalog fields behind disclosure. Show 50 rows per page, in a named scrollable
@@ -122,7 +127,8 @@ The local exposure catalog has its own design document in Nightseam-catalog.
   checkbox list: checked types are combined; none checked means all types.
   Avoid duplicate type-category shortcuts and explain these selection rules.
   Selected-time status names the actual condition, rather than calling the
-  beginning of a best usable interval an object's rise time.
+  beginning of a best usable interval an object's rise time; outside the dark
+  window it says *Before dark* or *After dark*, on one line.
   Fetch optional source details when that disclosure opens. Show a quiet loading
   message or a reachable Retry action inside it; keep planning usable. Elevation
   entry states its metadata-only role rather than implying a visibility correction.
@@ -130,7 +136,9 @@ The local exposure catalog has its own design document in Nightseam-catalog.
   it; date editing stays in the common top bar. Stack the twilight legend on
   the left of the wider slider, with Now/Reset on the right, avoiding a second
   help/legend row. Zoom buttons (− +) follow Now and Reset view, so the map
-  zooms without a mouse wheel; on phones see Phone layout. Both time sliders use the same site/time gradient. Give the large slider range endpoints,
+  zooms without a mouse wheel; on phones see Phone layout. Target labels never
+  cover the minimum-altitude label, the Sun, the Moon or a labelled target's
+  dot; a label that finds no free place is left out until the map is zoomed. Both time sliders use the same site/time gradient. Give the large slider range endpoints,
   phase text and a quiet color legend. Show actual polar/daylight conditions
   instead of inventing a dark band for a fallback window. Start the right rail
   with a closed-by-default chart controls/legend tray,
