@@ -1,0 +1,14 @@
+{
+  "name": "NightSeam Web",
+  "short_name": "NightSeam",
+  "description": "Deep-sky night planning around your own skyline, computed in your browser.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0B1115",
+  "theme_color": "#0B1115",
+  "icons": [
+    { "src": "app.png", "sizes": "256x256", "type": "image/png", "purpose": "any" }
+  ]
+}

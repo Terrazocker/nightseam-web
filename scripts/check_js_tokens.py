@@ -98,8 +98,8 @@ _VERIFIED_BASELINE_JSON = r"""
    "token": "5"
   },
   "app.js": {
-   "sha256": "057492ce87b26c7f88219937d141635c3004cbc8d2c4e93738db3791d65ce830",
-   "token": "262"
+   "sha256": "128a12076729d2f6ddf8aa1340e07febe871a4479d35a5abf03869dc4a7af22b",
+   "token": "263"
   },
   "astro.js": {
    "sha256": "0c267139e2c1d4307a291b44e46e3a4c045af16edc48b879082f45e245b1807d",
@@ -122,20 +122,24 @@ _VERIFIED_BASELINE_JSON = r"""
    "token": "75"
   },
   "horizon.js": {
-   "sha256": "ca54747dacfd2b6d6668ffded89a377fea9905c734fc9b204bd81e88a3f5f95d",
-   "token": "164"
+   "sha256": "2642f2444fa3af257b2f1054b67860c4642fb4845b03e94d9a3438d20fdbc528",
+   "token": "165"
   },
   "imagecredits.js": {
    "sha256": "8c8b650a0ad6ef6462eea251b67642103cb0eb9010c1f9dde09fce2ba7fa8952",
    "token": "2"
+  },
+  "nightmode.js": {
+   "sha256": "645a778c7d38243462330e092b3225595de962fbf913898647d96fe70d4d55cf",
+   "token": "1"
   },
   "nightrank.js": {
    "sha256": "70e7f13bc4c8c21b3b721f9565190e9da5fe71b64f623de1a5f3c094824649be",
    "token": "67"
   },
   "style.css": {
-   "sha256": "9bde65ed1f6946b8f02571406ac580ef8fbdbe4a5de278209c64e7fe50cd113c",
-   "token": "81"
+   "sha256": "9da2412e91485b68b5bbda605b85165a01010f5fbb8d0074b7deccf5bef30d14",
+   "token": "82"
   },
   "themes.css": {
    "sha256": "f8094c798dbe72b4e7f84faad3f41fc0cdbe896a03c0cb7413ee9d0d1bed2ff8",
@@ -146,8 +150,8 @@ _VERIFIED_BASELINE_JSON = r"""
    "token": "7"
   },
   "weather.js": {
-   "sha256": "a575117732248d1f9a7a626460e43dd515ce4b36f5ae2ff912b2f53f7ede1845",
-   "token": "1"
+   "sha256": "0dcc9a43ac50a773f15741164832d1cb7fba354355365b3684d6d20e531382d1",
+   "token": "2"
   },
   "webstore.js": {
    "sha256": "e1eaa312db496c643fe211c262d5247f51fa907233abbd0d1aae28449b1dfe2a",

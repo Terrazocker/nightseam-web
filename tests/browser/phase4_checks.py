@@ -615,10 +615,36 @@ def responsive_planner(c):
                 const el = document.getElementById(id), r = el.getBoundingClientRect();
                 return {id, x:r.x, right:r.right, width:r.width, size:parseFloat(getComputedStyle(el).fontSize)}; })})""")
             c.expect(box['page'] <= box['width'] + 1, f'{view} page fits {width}px: {box}')
-            c.expect(box['clock'] != 'none', f'{view} selected clock remains visible at {width}px')
+            if not (width <= 640 and view == 'horizon'):
+                c.expect(box['clock'] != 'none', f'{view} selected clock remains visible at {width}px')
+            phone = width <= 640
+            if phone:
+                # Phone layout (DESIGN.md): the setup controls live in a sheet
+                # the header's summary line opens; reach them through it.
+                summary = c.page.locator('#ctxSummary')
+                c.expect(summary.is_visible(), f'{view} phone summary line is shown at {width}px')
+                summary.click()
+                c.page.wait_for_function("() => getComputedStyle(document.getElementById('tb-site')).visibility === 'visible'")
+                box['controls'] = c.page.evaluate("""() => ['tb-site','rigSelect','tb-minalt','tb-date','btnMenu','btnWeather'].map(id => {
+                  const el = document.getElementById(id), r = el.getBoundingClientRect();
+                  return {id, x:r.x, right:r.right, width:r.width, bottom:r.bottom, hidden:getComputedStyle(el).visibility === 'hidden'}; })""")
             for control in box['controls']:
-                c.expect(control['x'] >= -1 and control['right'] <= width + 1 and control['width'] > 0,
-                         f'{control["id"]} reachable at {width}px: {control}')
+                c.expect(control['x'] >= -1 and control['right'] <= width + 1 and control['width'] > 0
+                         and not control.get('hidden'), f'{control["id"]} reachable at {width}px: {control}')
+            if phone:
+                c.page.locator('#ctxDone').click()
+                c.page.wait_for_function("() => getComputedStyle(document.getElementById('tb-site')).visibility === 'hidden'")
+                c.expect_eq(active_id(c), 'ctxSummary', 'closing the setup sheet returns focus to the summary line')
+                small = c.page.evaluate("""() => [...document.querySelectorAll('button, select, input:not([type=hidden]), #tabs a')]
+                  .filter(el => { const r = el.getBoundingClientRect(), cs = getComputedStyle(el);
+                    return r.width > 0 && r.height > 0 && cs.visibility !== 'hidden' && !el.closest('td, .hidden, [hidden], #modal, details:not([open]) > :not(summary)')
+                      && el.type !== 'checkbox' && el.type !== 'radio'
+                      && (r.width < 44 || r.height < 44); })
+                  .map(el => `${el.id || el.textContent.trim().slice(0, 20)} ${Math.round(el.getBoundingClientRect().width)}x${Math.round(el.getBoundingClientRect().height)}`)""")
+                c.expect(not small, f'{view} phone controls are at least 44px at {width}px: {small}')
+                fields = c.page.evaluate("""() => [...document.querySelectorAll('input:not([type=checkbox]):not([type=radio]):not([type=range]), select, textarea')]
+                  .filter(el => el.getBoundingClientRect().width > 0 && parseFloat(getComputedStyle(el).fontSize) < 16).map(el => el.id)""")
+                c.expect(not fields, f'{view} phone form fields use 16px text (no iOS focus zoom): {fields}')
             c.expect(c.page.locator('#tb-date').evaluate('(el) => parseFloat(getComputedStyle(el).fontSize)') >= 14,
                      'header does not solve crowding by shrinking the date text')
             for canvas in c.page.locator('#view canvas:visible').all():
@@ -627,10 +653,13 @@ def responsive_planner(c):
             if width in (360, 1240):
                 c.page.screenshot(path=str(screenshots / f'{view}-{width}.png'), full_page=True)
             if width == 360 and view == 'tonight':
-                region = c.page.get_by_role('region', name='Best targets table; scroll horizontally for all columns')
-                region.focus()
-                c.page.keyboard.press('ArrowRight')
-                c.page.wait_for_function("() => document.querySelector('.tablewrap').scrollLeft > 0")
+                # Phones show the best interval under each target instead of a
+                # table that scrolls sideways.
+                row = c.page.evaluate("""() => { const wrap = document.querySelector('.tablewrap'),
+                  meta = document.querySelector('#tonight-rank-table tbody .row-meta');
+                  return {fits: wrap.scrollWidth <= wrap.clientWidth + 1, meta: meta && meta.offsetWidth > 0 ? meta.textContent : ''}; }""")
+                c.expect(row['fits'], 'phone Tonight table does not scroll sideways')
+                c.expect(':' in row['meta'] and 'max' in row['meta'], f'phone Tonight row names its best interval: {row}')
             if width == 360 and view == 'horizon':
                 tools = c.page.locator('.horizon-tools-rail').bounding_box()
                 stage = c.page.locator('.horizon-stage').bounding_box()
