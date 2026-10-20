@@ -716,3 +716,31 @@ def map_labels(c):
         c.expect(label['x'] >= 0 and label['x'] + label['width'] <= label['viewport'] and
                  label['y'] >= 14 and label['y'] <= label['viewport'], 'target label stays inside map edges')
     c.expect('site time' in c.page.locator('#skyChartSummary').inner_text(), 'map alternative uses site clock')
+
+
+@check('web-offline-reopen', 'web')
+def offline_reopen(c):
+    """After one normal visit, the planner reopens without a network (web/sw.js):
+    the page, its modules and the catalog come from the worker's cache, and
+    planning works. A reachable server still wins (network first for pages)."""
+    boot(c)
+    c.page.wait_for_function('() => navigator.serviceWorker.controller !== null', timeout=20000)
+    # The first visit hands the worker its loaded files; wait until they are kept.
+    c.page.wait_for_function("""async () => {
+      const cache = await caches.open('nightseam-offline-v1');
+      const keys = (await cache.keys()).map((r) => new URL(r.url).pathname);
+      return keys.some((k) => k.endsWith('/catalog.json')) && keys.some((k) => k.endsWith('/app.js'));
+    }""", timeout=20000)
+    c.allow_console_errors('offline on purpose: requests that need the network (version check, weather) fail')
+    c.page.context.set_offline(True)
+    try:
+        c.page.reload(wait_until='load')
+        c.page.wait_for_selector(READY, timeout=30000)
+        c.expect(c.page.locator('#tonight-rank-table tbody tr').count() > 0, 'Tonight ranks targets offline')
+        tab(c, 'catalog')
+        c.page.wait_for_selector('.cat-results tbody tr[data-id]', timeout=20000)
+    finally:
+        c.page.context.set_offline(False)
+
+
+offline_reopen.service_workers = 'allow'   # the one check about the worker

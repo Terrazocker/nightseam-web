@@ -36,6 +36,27 @@ Library, SQLite, desktop CSP) are history only.
 - **Documentation:** see "Documentation layout" (2026-10-11), which updates the
   older "Docs policy".
 
+## 2026-10-20 — Offline reopening
+
+- **What.** `web/sw.js` is a service worker: pages, `version.json` and other
+  unversioned files are network first with the last good copy when offline;
+  immutable files (a `?v=N` token, `/releases/<id>/`, `/core/<hash>/`) are
+  cache first; other origins are never touched. The first visit hands the
+  worker the files it loaded, so one visit is enough. Files of the two newest
+  releases are kept; older ones are dropped when a third release is cached.
+- **Publication.** A service worker controls only pages at or below its own
+  folder, so `web/sw.js` is published at `/astro/sw.js` as well as in its
+  release, like `version.json` (`ROOT_ENTRIES` in
+  `scripts/publication_assets.py`; `load_bundle` in `web/ftps_deploy.py`
+  accepts exactly these root files). It switches with the entry pages after
+  the immutable graph is verified. No server policy changes.
+- **Why.** The planner is used at dark sites, often without signal; the
+  ROADMAP proposal asked for an update policy (a reachable server always
+  wins), complete asset/catalog pairing (both come from one release) and
+  storage limits (two releases). The owner asked for it on October 20.
+- **Checks.** `web-offline-reopen` reloads the planner offline after one
+  visit; a publication test pins `/astro/sw.js` in the bundle.
+
 ## 2026-10-20 — A phone layout of its own; night vision
 
 - **What.** Up to 640px wide, and on touch screens held sideways, the planner

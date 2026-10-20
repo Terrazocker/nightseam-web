@@ -106,7 +106,8 @@ the answer comes first, the most-used controls sit where the thumb reaches.
 
 The planner is installable: `web/manifest.json` (standalone, Workbench colours),
 192 and 512px icons in plain and maskable versions (drawn by
-`scripts/make_app_icons.py`) and a `theme-color`. Offline reopening is still a proposal (ROADMAP.md).
+`scripts/make_app_icons.py`) and a `theme-color`. After one visit it reopens
+without a network (`web/sw.js`; DECISIONS.md 2026-10-20, "Offline reopening").
 
 The local exposure catalog has its own design document in Nightseam-catalog.
 
@@ -117,7 +118,9 @@ The local exposure catalog has its own design document in Nightseam-catalog.
   do not repeat them in a Tonight overview. Use the common top-bar time control;
   do not duplicate it between the brief and ranking.
   Keep five overview columns: rank, target, relative score, maximum altitude and
-  best usable interval (phones: see Phone layout). The list heading says how
+  best usable interval (phones: see Phone layout). From 1600px, with no
+  inspector open, the night brief becomes a column beside the list, so the
+  list starts at the top of the page. The list heading says how
   many of the night's usable targets it shows ("Top 16 of N") and links to
   Catalog for the rest. On wide screens the brief and list keep a reading
   width of 1080px, so a target's numbers stay near its name. Visibility
@@ -147,7 +150,12 @@ The local exposure catalog has its own design document in Nightseam-catalog.
   phase text and a quiet color legend. Show actual polar/daylight conditions
   instead of inventing a dark band for a fallback window. Start the right rail
   with a closed-by-default chart controls/legend tray,
-  followed by the shared full target inspector. Do not repeat a visible-now list.
+  followed by the shared full target inspector. Without an open target the
+  rail answers "what can I look at now": *At 22:07* names where the Moon is,
+  how many plotted targets are usable at that time, and the six highest of
+  them by altitude (a measured value; popularity plays no part), each opening
+  its details (owner-approved October 20, 2026, superseding "do not repeat a
+  visible-now list").
   Use one altitude chart and one set of target facts. The inspector is inline
   and complementary at every width; on phones the rail stacks below the map.
   Closing it preserves the selected target with a small reopen action.

@@ -1409,3 +1409,28 @@ html[data-theme] .hz-new.hz-start { display: grid; grid-template-columns: repeat
 html[data-theme] .hz-start .btn { display: grid; place-items: center; min-height: 44px; padding: 0 16px; border: 1px solid var(--line); border-radius: 6px; }
 html[data-theme] .hz-start .btn.primary { border-color: var(--accent); }
 html[data-theme] .tonight-ranked .sub a { color: var(--accent); }
+/* Sky View rail without an open target: what the selected time offers. */
+.sky-now { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line-soft); }
+.sky-now h3 { margin: 0 0 4px; font-size: 13px; color: var(--txt); }
+.sky-now h4 { margin: 12px 0 4px; color: var(--muted); font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; }
+.sky-now-list { list-style: none; margin: 0; padding: 0; }
+.sky-now-list li { border-bottom: 1px solid var(--line-soft); }
+.sky-now-list .pick-target { justify-content: space-between; min-height: 36px; padding: 4px 0; }
+.sky-now-list .pick-target:hover { color: var(--accent); }
+/* Very wide screens, no inspector open: the night brief becomes a column
+   beside the ranked list, so the list starts at the top of the page and the
+   width beside the reading column is used. */
+@media (min-width: 1600px) {
+  html[data-theme] body[data-primary-view="tonight"]:not(.detail-open) #view:has(> .night-brief) {
+    display: grid; grid-template-columns: minmax(0, 1080px) minmax(280px, 360px);
+    column-gap: 48px; justify-content: start; align-items: start;
+  }
+  body[data-primary-view="tonight"]:not(.detail-open) #view > .tonight-ranked { grid-column: 1; grid-row: 1; }
+  body[data-primary-view="tonight"]:not(.detail-open) #view > .tonight-footnote { grid-column: 1; }
+  html[data-theme] body[data-primary-view="tonight"]:not(.detail-open) #view > .night-brief {
+    grid-column: 2; grid-row: 1 / span 2; grid-template-columns: minmax(0, 1fr); gap: 14px;
+    margin: 0; padding: 0 0 0 24px; border-bottom: 0; border-left: 1px solid var(--line-soft);
+  }
+  body[data-primary-view="tonight"]:not(.detail-open) .night-brief-facts { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+  body[data-primary-view="tonight"]:not(.detail-open) .night-brief-times { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}

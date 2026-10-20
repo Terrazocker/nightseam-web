@@ -287,7 +287,7 @@ def load_bundle(directory):
         else:
             snapshot = prefix+'releases/'+namespace+'/'+rel
             expected.add(snapshot)
-            if rel.endswith('.html') or name == 'web/version.json':
+            if rel.endswith('.html') or name in ('web/version.json', 'web/sw.js'):
                 expected.add(prefix+rel)
             if not rel.endswith('.html') and hashlib.sha256(payload.get(snapshot, b'')).hexdigest() != digest:
                 raise ValueError('Publication snapshot differs from source inventory: '+name)
@@ -307,7 +307,7 @@ def load_bundle(directory):
         if not re.fullmatch('[0-9a-f]{64}', namespace):
             raise ValueError('Invalid immutable namespace')
         if not (rel.startswith('releases/'+namespace+'/') or rel.endswith('.html')
-                or rel == '.htaccess' or (tree == 'web' and rel == 'version.json')):
+                or rel == '.htaccess' or (tree == 'web' and rel in ('version.json', 'sw.js'))):
             raise ValueError('Mutable asset in publication: ' + name)
         mapped[('astro/' if tree == 'web' else '') + rel] = data
     return mapped

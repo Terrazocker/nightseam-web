@@ -33,6 +33,7 @@ Web modules import only `./core.js?v=<token>`, never `web/core/<hash>/`.
 | `capturemotion.js` | Worker measuring the camera image's motion for the capture's calibration |
 | `webstore.js` | IndexedDB records, preferences, timezones and backup/restore |
 | `viztheme.js` | Canvas colors read from `themes.css` |
+| `sw.js` | Service worker for offline reopening; published at `/astro/sw.js` beside the entry page |
 | `nightmode.js` | Classic `<head>` script: applies the stored night-vision choice before the first paint |
 | `imagecredits.js` | Exact-file photo credits |
 

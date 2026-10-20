@@ -57,6 +57,11 @@ first open. Turn the screen brightness down as you would at the telescope.
 12. **Gloves or cold hands** (if relevant). Repeat step 3. Target: still no
     missed taps.
 
-Known limits: the browser's own status and address bars are outside the
-page and do not turn red; offline reopening is not supported yet
-(ROADMAP.md).
+13. **Offline.** After using the planner once, switch on airplane mode and
+    open it again (from the home-screen icon if installed). Target: it opens
+    on Tonight with your site and targets; weather and photos say they are
+    unavailable. Switch the network back on and reload: still the same
+    version, no error.
+
+Known limit: the browser's own status and address bars are outside the
+page and do not turn red.

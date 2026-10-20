@@ -4,6 +4,25 @@ Actual validation outcomes, newest first. Published releases: v0.7.0 (October
 19, 2026), v0.1.1 (October 8, 2026) and v0.1.0 (October 7, 2026). Upload
 success alone is never recorded as acceptance.
 
+## Offline reopening, Sky View now-panel, wide Tonight — October 20, 2026 (branch ccr-9a647bfc-wzanov)
+
+`web/sw.js` makes the planner reopen without a network after one visit
+(DECISIONS.md, "Offline reopening"); publication places it at `/astro/sw.js`
+beside the entry page. Measured in headless Chromium: after one visit, 31
+files cached (page, modules, core, catalog); with the network cut, a reload
+rendered Tonight, Sky View and Catalog. Sky View's empty rail shows *At HH:MM*
+(Moon position, usable count, six highest usable targets). From 1600px
+Tonight's night brief sits beside the list.
+
+The browser suite now runs without service workers except in the new
+`web-offline-reopen` check: with the worker active, its requests bypassed the
+page routes that serve fixtures, and 11 checks failed in the first run. A
+publication test pins `/astro/sw.js` in the bundle.
+
+Local validation: pytest 367 passed, 1 skipped; browser web suite 89/89;
+check_js and check_release (allow-dirty) clean. Not yet tried on a real phone
+(PHONE_ACCEPTANCE.md step 13).
+
 ## Desktop layout pass — October 20, 2026 (branch ccr-9a647bfc-wzanov)
 
 Audited at 1920×1080, 1440×900 and 1280×720. The desktop header's control

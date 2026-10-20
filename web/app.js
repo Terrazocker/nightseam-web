@@ -2140,10 +2140,47 @@ function syncSkyDetailPlaceholder() {
   const plotNote = $('#m-plot-note');
   if (plotNote) { plotNote.hidden = !unplotted; plotNote.textContent = unplotted ? note : ''; }
   if (S.detailOpen) return;
-  empty.innerHTML = target
+  const html = (target
     ? `<button type="button" class="btn small" id="sky-selected-detail">Open ${esc(target.primary_name)} details</button>${unplotted ? `<p class="sub">${note}</p>` : ''}`
-    : '<p class="sub">Select a target on the chart to open its details.</p>';
+    : '<p class="sub">Select a target on the chart to open its details.</p>') + skyNowPanel();
+  // the chart redraws every frame while the time moves: rebuild only on change
+  if (empty.dataset.html === html) return;
+  empty.dataset.html = html;
+  empty.innerHTML = html;
   $('#sky-selected-detail')?.addEventListener('click', ev => openDetail(target.id, ev.currentTarget));
+  empty.querySelectorAll('[data-now-id]').forEach((b) => b.addEventListener('click', (ev) => {
+    selectTarget(b.dataset.nowId);
+    openDetail(b.dataset.nowId, ev.currentTarget);
+  }));
+}
+
+const DIRS16 = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW'];
+const azName = (az) => DIRS16[Math.round((((az % 360) + 360) % 360) / 22.5) % 16];
+
+/** "At 22:07": the Moon, how many plotted targets are usable now, and the
+ *  highest of them, so an empty rail answers "what can I look at now". The
+ *  order is altitude, a measured value; popularity plays no part. */
+function skyNowPanel() {
+  const jd = E.julianDay(S.skyTime);
+  const { lat, lon } = S.site;
+  const [mAlt, mAz] = E.moonAltAz(jd, lat, lon);
+  const moon = E.aboveHorizon(mAlt)
+    ? `Moon ${mAlt.toFixed(0)}° ${azName(mAz)}`
+    : 'Moon below the horizon';
+  const usable = [];
+  for (const item of skyItems) {
+    if (!item.o) continue;
+    const v = selectedVisibility(item.o);
+    if (v.visible) usable.push({ o: item.o, alt: v.alt });
+  }
+  usable.sort((a, b) => b.alt - a.alt);
+  const rows = usable.slice(0, 6).map(({ o, alt }) =>
+    `<li><button type="button" class="pick-target" data-now-id="${esc(o.id)}"><span>${esc(o.primary_name)}</span><span class="mono">${alt.toFixed(0)}°</span></button></li>`).join('');
+  return `<section class="sky-now" aria-label="At the selected time">
+    <h3>At ${fmtClock(S.skyTime)}</h3>
+    <p class="sub">${moon} · ${usable.length} plotted target${usable.length === 1 ? '' : 's'} usable now</p>
+    ${rows ? `<h4>Highest usable now</h4><ul class="sky-now-list">${rows}</ul>` : ''}
+  </section>`;
 }
 
 function updateDetailSelectedTime() {
@@ -3822,6 +3859,21 @@ async function boot() {
   wirePopover(menuBtn, menuPanel);
   wireContextSheet();
   wireNightVision();
+  // Offline reopening (web/sw.js, published beside this page). The planner
+  // works the same without it; a refused registration changes nothing.
+  if ('serviceWorker' in navigator && window.isSecureContext) {
+    navigator.serviceWorker.register('sw.js')
+      .then(() => navigator.serviceWorker.ready)
+      .then((reg) => {
+        // This visit's files loaded before the worker could see them: hand it
+        // the list, so the first visit is already enough to reopen offline.
+        const urls = [location.href.split('#')[0],
+          ...performance.getEntriesByType('resource').map((entry) => entry.name)]
+          .filter((url) => url.startsWith(location.origin + '/'));
+        reg.active?.postMessage({ type: 'cache-urls', urls });
+      })
+      .catch(() => {});
+  }
 
   const p = Hor.getPrefs();
   $('#edgeSpace').addEventListener('input', (ev) => {
