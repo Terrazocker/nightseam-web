@@ -4,6 +4,19 @@ Actual validation outcomes, newest first. Published releases: v0.7.0 (October
 19, 2026), v0.1.1 (October 8, 2026) and v0.1.0 (October 7, 2026). Upload
 success alone is never recorded as acceptance.
 
+## Design review fixes: catalog designations, chart time labels, twilight row — October 20, 2026 (branch ccr-9a647bfc-wzanov)
+
+From a desktop and phone walkthrough. Catalog designations with two names
+(M31 · NGC 224) showed only "…" at 1240px and on phones: the span left 22px
+for the 25.7px save star, so the cell's ellipsis swallowed it; it now
+reserves 28px. The target altitude chart labels whole site-clock hours,
+spaced to fit, instead of ten fixed labels that ran together. The Tonight
+twilight row keeps each time beside its own label. Checked in screenshots
+at 1440, 1240 and 412px.
+
+Local validation: pytest 366 passed, 1 skipped; browser web suite 88/88;
+check_js clean. Not yet run on CI.
+
 ## v0.7.0 — released and deployed, October 19, 2026
 
 Owner-authorized deployment of tag v0.7.0 (4245db3) to nightseam.de, the
