@@ -56,8 +56,11 @@ The browser planner uses Tonight, Catalog, Sky View and Horizon. On wide
 screens keep Site, Rig, date and minimum altitude visible in the top bar; setup
 and advanced options use the hamburger menu. Respect stored edge-space
 preferences. Use a compact brand/action row, then readable groups for observing
-setup and planned night/time. Groups wrap without shrinking text. Use 14–16px
-gutters and a roughly 40px tab row.
+setup and planned night/time. Groups wrap as whole groups without shrinking
+text, never squeezed into two rows each. The time slider, the control used
+most, takes the free width of its row (about 140–520px); the moon/dark summary
+stays on one line. Use 14–16px gutters and a roughly 40px tab row. Short views
+keep the footer at the bottom of the window.
 Site and Rig words are open settings buttons beside independent active-record
 selectors. They turn brass yellow on hover/keyboard focus. Site opens the active
 site editor; Rig opens the active rig editor, or Rigs setup when none is selected.
@@ -116,7 +119,9 @@ The local exposure catalog has its own design document in Nightseam-catalog.
   Keep five overview columns: rank, target, relative score, maximum altitude and
   best usable interval (phones: see Phone layout). The list heading says how
   many of the night's usable targets it shows ("Top 16 of N") and links to
-  Catalog for the rest. Visibility explanations remain in target details.
+  Catalog for the rest. On wide screens the brief and list keep a reading
+  width of 1080px, so a target's numbers stay near its name. Visibility
+  explanations remain in target details.
 - **Catalog:** a narrow filter rail (on phones, and on touch screens up to
   900px, it folds behind a *Filters* button that counts the active filters),
   a dense results table, and one selected-target
@@ -150,7 +155,8 @@ The local exposure catalog has its own design document in Nightseam-catalog.
   Three rails: the horizon list with *Draw by hand* (primary) and *Import
   file* (on touch devices *Capture with phone* comes first and is primary); the stage; and a settings rail with closed *Points by numbers*,
   *Phone capture* and *Display* disclosures (*Phone capture* starts open on
-  touch devices). Keep about 20 controls visible
+  touch devices). With no horizon yet, the empty stage repeats the start
+  actions as its call to action. Keep about 20 controls visible
   at first glance and about 40 including the disclosures. There are no
   horizon photos: a dropped photo gets a one-line explanation, a dropped
   horizon file imports.
@@ -267,7 +273,9 @@ surface. Underlines, focus rings and quiet state indicators provide feedback.
 Options and Weather expose expanded state and their controlled regions; Escape
 returns focus to their trigger. Modal dialogs isolate background controls and
 wrap Tab through actual reachable controls, excluding closed disclosure content.
-Wide inspectors remain complementary regions. Planner and Setup tabs support
+Wide inspectors remain complementary regions. The docked inspector is
+340–420px wide (26% of the window) on Tonight and Sky View; its photo sits
+above the facts so values never break inside a word. Planner and Setup tabs support
 arrow/Home/End navigation without triggering global time shortcuts. Dense tables
 scroll inside named keyboard-accessible regions instead of truncating headings.
 
@@ -294,7 +302,8 @@ opaque and flat; no photographic starfield, glow, blur or gradients.
 Use a compact plain wordmark, open typography and quiet separators. Every public
 page has a compact brass Open planner action aligned with the wordmark and desktop
 navigation. On phones it stays visible beside the native menu, including when the
-menu is closed. Home and Features retain their hero action. Your own skyline
+menu is closed. On phones the headline starts near the top; the map motif sits
+higher and fainter so it does not push the call to action down. Home and Features retain their hero action. Your own skyline
 and calculated target visibility lead. Detailed
 features, first-night guidance, sources and privacy information remain accessible through native disclosures.
 Changes contains the independent public release ledger starting at 0.1.0. No-JavaScript phone

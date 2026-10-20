@@ -938,7 +938,7 @@ input.night-scrub::-moz-range-thumb { width: 13px; height: 13px; border: 1px sol
   padding: 18px; overflow: auto; border-width: 0 0 0 1px; border-radius: 0;
   pointer-events: auto;
 }
-body.detail-open { --detail-width: min(22vw, 360px); }
+body.detail-open { --detail-width: clamp(340px, 26vw, 420px); }
 body.detail-open[data-primary-view="catalog"] { --detail-width: min(34vw, 560px); }
 body.detail-open main { max-width: none; margin-left: var(--edge, 16px); margin-right: var(--detail-width); }
 #m-selected-position, #m-selected-separation { font-family: var(--mono); }
@@ -1371,3 +1371,41 @@ html[data-theme] .sky-zoom .btn {
   html[data-theme] .tabs a { flex-direction: row; gap: 8px; font-size: 13px; }
   .sky-canvas-box { max-width: calc(100dvh - var(--tabbar-h) - var(--timebar-h) - 16px); margin-inline: auto; }
 }
+
+/* ---------- desktop layout ----------
+   Header: the control groups wrap as whole groups, never squeezed into two
+   rows each; the time slider, the control used most, takes the free width
+   (a 13-hour night on 120 px was about 7 minutes per pixel); the moon summary
+   stays on one line instead of breaking inside a time. */
+@media (min-width: 1001px), (min-width: 901px) and (min-height: 501px) {
+  html[data-theme] .planner-controls { flex-wrap: wrap; }
+  html[data-theme] .context-controls { flex: 0 1 auto; flex-wrap: wrap; min-width: 0; }
+  html[data-theme] .time-controls { flex: 1 1 460px; flex-wrap: wrap; min-width: 0; }
+  html[data-theme] .time-controls .scrub { flex: 1 1 auto; min-width: 0; }
+  html[data-theme] .time-controls .scrub input[type="range"] { flex: 1 1 auto; width: auto; min-width: 140px; max-width: 520px; }
+  html[data-theme] .nightinfo {
+    flex: 0 0 auto; max-width: none; overflow: visible; padding: 0; border: 0;
+    background: none; font-size: 12px; white-space: nowrap;
+  }
+  /* Tonight reads as a list: on wide screens it keeps a reading width, so a
+     target's numbers stay near its name instead of 800 px away. */
+  html[data-theme] :is(.night-brief, .tonight-ranked) { max-width: 1080px; }
+  /* short views (an empty Horizon) keep the footer at the bottom of the window */
+  html[data-theme] main { min-height: calc(100dvh - 260px); }
+  #tonight-rank-table th:nth-child(1) { width: 56px; }
+  #tonight-rank-table th:nth-child(3), #tonight-rank-table th:nth-child(4) { width: 130px; }
+  #tonight-rank-table th:nth-child(5) { width: 230px; }
+  /* Docked details: the photo sits above the facts, so the facts get the
+     rail's full width and values never break inside a word. */
+  #modal.detail-docked .detail-hero { grid-template-columns: minmax(0, 1fr); }
+  #modal.detail-docked .objimg { height: 150px; }
+  #modal.detail-docked .objimg-ph { height: auto; min-height: 0; padding: 6px 8px; font-size: 12px; }
+  #modal.detail-docked :is(.detail-hero-facts, .detail-visibility-facts) { grid-template-columns: 112px minmax(0, 1fr); font-size: 12px; }
+}
+/* Empty Horizon editor: the start actions sit in the stage, as the call to
+   action, not only in the narrow list rail. */
+/* one shared width, so the label used as a button matches its siblings */
+html[data-theme] .hz-new.hz-start { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 220px)); gap: 10px; margin-top: 18px; }
+html[data-theme] .hz-start .btn { display: grid; place-items: center; min-height: 44px; padding: 0 16px; border: 1px solid var(--line); border-radius: 6px; }
+html[data-theme] .hz-start .btn.primary { border-color: var(--accent); }
+html[data-theme] .tonight-ranked .sub a { color: var(--accent); }

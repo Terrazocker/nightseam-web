@@ -592,11 +592,7 @@ export function renderHorizon(box, onChanged = () => {}, context = {}) {
           <h3>Your horizons</h3>
           <ul class="pick" id="hz-list" aria-label="Horizon used for planning">${db.horizons.length
             ? db.horizons.map(row).join('') : '<li class="hz-empty">No horizon yet. Without one, only the minimum altitude limits the sky.</li>'}</ul>
-          <div class="hz-new">
-            ${touchFirst() ? '<button class="btn primary" type="button" id="hz-new-capture">📱 Capture with phone</button>' : ''}
-            <button class="btn${touchFirst() ? '' : ' primary'}" type="button" id="hz-new-draw">✏ Draw by hand</button>
-            <label class="btn" for="hz-import-file" role="button" tabindex="0">⬆ Import file</label>
-          </div>
+          ${db.horizons.length ? startActions('hz-new') : ''}
           <input type="file" id="hz-import-file" accept=".txt,.hrz,.csv,text/plain" class="vhidden" hidden tabindex="-1">
           <p class="sub" id="hz-note" role="status" aria-live="polite">Horizons stay in this browser. Changes save automatically.</p>
         </div>
@@ -604,6 +600,7 @@ export function renderHorizon(box, onChanged = () => {}, context = {}) {
       ${h ? editorHTML(h) : `<section class="horizon-stage" aria-label="Horizon editor">
         <h3 class="horizon-editor-title">Horizon editor</h3>
         <p class="sub">A horizon is the skyline your trees and roofs make. Draw it on a compass grid, trace it with a phone, or import a Stellarium or N.I.N.A. horizon file.</p>
+        ${startActions('hz-new hz-start')}
       </section>`}
     </div>`;
   const sp = $('.splash', box);
@@ -611,6 +608,16 @@ export function renderHorizon(box, onChanged = () => {}, context = {}) {
   wireList(box, onChanged);
   if (h) wireEditor(box, h, onChanged);
   else if (activeSession) { activeSession.disconnect?.(); activeSession = null; }
+}
+
+/** The actions that start a horizon. Rendered once: in the empty editor, as
+ *  its call to action, until a horizon exists; then under the list. */
+function startActions(cls) {
+  return `<div class="${cls}" role="group" aria-label="Start a horizon">
+            ${touchFirst() ? '<button class="btn primary" type="button" id="hz-new-capture">📱 Capture with phone</button>' : ''}
+            <button class="btn${touchFirst() ? '' : ' primary'}" type="button" id="hz-new-draw">✏ Draw by hand</button>
+            <label class="btn" for="hz-import-file" role="button" tabindex="0">⬆ Import file</label>
+          </div>`;
 }
 
 function editorHTML(h) {

@@ -4,6 +4,25 @@ Actual validation outcomes, newest first. Published releases: v0.7.0 (October
 19, 2026), v0.1.1 (October 8, 2026) and v0.1.0 (October 7, 2026). Upload
 success alone is never recorded as acceptance.
 
+## Desktop layout pass — October 20, 2026 (branch ccr-9a647bfc-wzanov)
+
+Audited at 1920×1080, 1440×900 and 1280×720. The desktop header's control
+groups wrap as whole groups (1400-1599px used to squeeze each into two rows)
+and the time slider takes the free width: 247-520px at 1240-1920px instead of
+78-120px; the moon summary no longer breaks inside a time. Tonight keeps a
+1080px reading width (at 1920px a target's numbers were ~800px from its
+name). The docked inspector is 340-420px with the photo above the facts (at
+1280px its values broke per character: "Ope / n clust / er"). The empty
+Horizon editor puts the start actions in the stage, rendered once; short views
+keep the footer at the window's bottom; the "all in Catalog" link uses the
+accent colour. Landing pages on phones start the headline near the top with a
+fainter motif.
+
+Local validation: pytest 366 passed, 1 skipped; browser web suite 88/88. Two
+intermediate runs caught real regressions, both fixed: duplicate "Import file"
+controls (the start actions are now rendered once) and a 200% enlarged layout
+overflowing (header groups may wrap inside).
+
 ## Phone layout follow-ups — October 20, 2026 (branch ccr-9a647bfc-wzanov)
 
 Touch screens of any width get the 44px control and 16px form-text sizes
