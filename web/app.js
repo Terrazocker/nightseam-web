@@ -2415,10 +2415,19 @@ function openDetail(id, opener = null, { refresh = false } = {}) {
     gCtx.textAlign = 'right';
     for (const alt of [0, 20, 40, 60, 80]) gCtx.fillText(`${alt}°`, padL - 6, yOf(alt) + 3);
     gCtx.textAlign = 'center';
-    const ticks = 10;
-    for (let i = 0; i <= ticks; i++) {
-      const ms = (i / ticks) * durMs;
-      gCtx.fillText(fmtClock(new Date(tStart.getTime() + ms)), xOf(ms), H - 6);
+    // whole-hour ticks, as many as fit without the labels touching
+    const textW = gCtx.measureText('00:00').width;
+    const labelW = textW + 12;
+    const pxPerHour = (W - padL - padR) / (durMs / 3600000);
+    const stepH = [1, 2, 3, 4, 6, 12].find((h) => h * pxPerHour >= labelW) || 24;
+    const wall0 = WS.utcToWall(tStart);
+    const toHourMs = ((60 - wall0.getMinutes()) % 60) * 60000 - wall0.getSeconds() * 1000 - wall0.getMilliseconds();
+    for (let ms = toHourMs < 0 ? toHourMs + 3600000 : toHourMs; ms <= durMs; ms += 3600000) {
+      const d = new Date(tStart.getTime() + ms);
+      if (WS.utcToWall(d).getHours() % stepH) continue;
+      const x = xOf(ms);
+      if (x - textW / 2 < 0 || x + textW / 2 > W) continue;
+      gCtx.fillText(fmtClock(d), x, H - 6);
     }
     // best window highlight
     if (hasBest) {
