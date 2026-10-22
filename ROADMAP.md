@@ -48,12 +48,13 @@ Where NightSeam Web stands and what comes next. Open defects are in
   relay on nightseam.de (`web/relay.php`) that holds a box for at most 10
   minutes (DECISIONS.md, 2026-10-19). Built and tested on branch
   `horizon-pairing-plan` (October 19): relay, transport, desktop dialog,
-  phone banner, publication rule, docs and privacy text. Not deployed. Next:
-  phase 0 on the host (`docs/horizon/relay_probe.php` under nginx and
-  Apache, with Imunify), the owner's server-policy review of the
-  `web/.htaccess` relay section, the handler switch, deployment and the
-  *Pairing* acceptance checks. Short codes and a live mirror are later,
-  separate decisions.
+  phone banner, publication rule, docs and privacy text. On October 22,
+  merged with `main` (PR 5), the hosting probe passed under "served by
+  Apache", the owner reviewed the `web/.htaccess` relay section, and the
+  branch was published to the test site dev.nightseam.de (RELEASES.md). Not
+  on the live site. Next: the *Pairing* acceptance checks with a real phone
+  on dev.nightseam.de, then merging PR 5, the live handler switch and a
+  release. Short codes and a live mirror are later, separate decisions.
 - **Horizon rebuild** ([plan](docs/horizon/HORIZON_REBUILD_PLAN.md)): phases
   1-6 are merged (October 12). Its photo parts are replaced by the
   sensor capture; the skyline model, overhangs and file import/export stay.
