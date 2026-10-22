@@ -22,6 +22,14 @@ approved a data gradient specifically for time sliders: warm sunset/sunrise,
 civil/nautical/astronomical twilight and night, using the shared Sun altitude.
 This encodes the active site's actual times, with accompanying phase text.
 
+**Night vision** (owner-approved October 20, 2026) is not a theme: it is a
+display filter over Workbench for use at the telescope. A header toggle maps
+every pixel, charts and photos included, to its brightness in red only
+(`html.night-red`, an SVG colour matrix on the root element), so the observer's
+eyes stay dark-adapted. The choice belongs to the device, is stored in
+`localStorage` (`nightseam_night_red`), is applied before the first paint by
+`web/nightmode.js`, and is not part of backups.
+
 | Role | Color |
 | --- | --- |
 | Page and chart | `#0B1115` |
@@ -44,15 +52,62 @@ interface theme tokens.
 
 ## Web shell
 
-The browser planner uses Tonight, Catalog, Sky View and Horizon. Keep Site,
-Rig, date and minimum altitude visible; setup and advanced options use the
-hamburger menu. Respect stored edge-space preferences. Use a compact brand/action
-row, then readable groups for observing setup and planned night/time. Groups wrap
-without shrinking text; the selected clock stays visible on phones. Use 14–16px
-gutters and a roughly 40px tab row. The phone header scrolls with the page.
+The browser planner uses Tonight, Catalog, Sky View and Horizon. On wide
+screens keep Site, Rig, date and minimum altitude visible in the top bar; setup
+and advanced options use the hamburger menu. Respect stored edge-space
+preferences. Use a compact brand/action row, then readable groups for observing
+setup and planned night/time. Groups wrap as whole groups without shrinking
+text, never squeezed into two rows each. The time slider, the control used
+most, takes the free width of its row (about 140–520px); the moon/dark summary
+stays on one line. Use 14–16px gutters and a roughly 40px tab row. Short views
+keep the footer at the bottom of the window.
 Site and Rig words are open settings buttons beside independent active-record
 selectors. They turn brass yellow on hover/keyboard focus. Site opens the active
 site editor; Rig opens the active rig editor, or Rigs setup when none is selected.
+The header's eye button switches night vision on and off.
+The menu starts with *Data → Setup* (sites, rigs, targets, backups), then display and
+advanced options; on phones menus end above the bottom bars.
+
+## Phone layout — approved October 20, 2026
+
+Phones get a layout of their own, not the desktop one stacked. It applies up to
+640px wide, and to touch screens held sideways (at most 500px high and 1000px
+wide). The rules follow the platform guidelines (Apple HIG, Material, WCAG 2.2):
+the answer comes first, the most-used controls sit where the thumb reaches.
+
+- **Header.** The brand row (night vision, weather, menu), then one full-width
+  summary line: "Berlin · min 25° · Tue, 20 Oct" (site, rig when one is set,
+  minimum altitude, night). It opens the *Observing setup* sheet from the
+  bottom, which holds the very same Site, Rig, minimum altitude and date
+  controls plus the moon/dark summary; *Done*, Escape or a tap outside closes
+  it. Sideways, the summary sits beside the brand. The header scrolls away.
+- **Navigation.** The four views are a bottom tab bar (icon and label, about
+  58px, safe-area aware). Above it a pinned time slider keeps the selected time
+  in reach on every view except Horizon, which does not use it.
+- **Lists.** Tonight shows rank and target; under the name, the best usable
+  interval with its maximum altitude. Catalog shows rank, save star and name,
+  with designation, type, current altitude and best window underneath. Neither
+  scrolls sideways. Catalog filters sit behind a *Filters* button that counts
+  the active ones; sorting is in *More filters*.
+- **Sky View.** The map's own slider gives way to the pinned one; the rail
+  keeps the selected time and phase, the legend, *Now*, *Reset view* and the
+  zoom buttons. The map pinch-zooms with two fingers; one finger scrolls the
+  page until the map is zoomed, then pans it.
+- **Details and dialogs.** Target details and dialogs open as a sheet from the
+  bottom, with their head (name, save star, close) pinned while the body
+  scrolls.
+- **Horizon.** On touch devices *Capture with phone* leads the empty state and
+  starts a new horizon straight in the camera view; editor hints name taps,
+  not clicks, wheels or keys.
+- **Sizes.** Every control is at least 44px in both directions, form fields
+  use 16px text (smaller makes iOS zoom the page on focus), no text is below
+  12px, and a page never scrolls sideways. Touch screens of any width
+  (tablets) get the same control and form-text sizes.
+
+The planner is installable: `web/manifest.json` (standalone, Workbench colours),
+192 and 512px icons in plain and maskable versions (drawn by
+`scripts/make_app_icons.py`) and a `theme-color`. After one visit it reopens
+without a network (`web/sw.js`; DECISIONS.md 2026-10-20, "Offline reopening").
 
 The local exposure catalog has its own design document in Nightseam-catalog.
 
@@ -63,8 +118,16 @@ The local exposure catalog has its own design document in Nightseam-catalog.
   do not repeat them in a Tonight overview. Use the common top-bar time control;
   do not duplicate it between the brief and ranking.
   Keep five overview columns: rank, target, relative score, maximum altitude and
-  best usable interval. Visibility explanations remain in target details.
-- **Catalog:** a narrow filter rail, a dense results table, and one selected-target
+  best usable interval (phones: see Phone layout). From 1600px, with no
+  inspector open, the night brief becomes a column beside the list, so the
+  list starts at the top of the page. The list heading says how
+  many of the night's usable targets it shows ("Top 16 of N") and links to
+  Catalog for the rest. On wide screens the brief and list keep a reading
+  width of 1080px, so a target's numbers stay near its name. Visibility
+  explanations remain in target details.
+- **Catalog:** a narrow filter rail (on phones, and on touch screens up to
+  900px, it folds behind a *Filters* button that counts the active filters),
+  a dense results table, and one selected-target
   inspector shared with Tonight and Sky View. Keep live altitude, visibility,
   and best-window facts in the primary columns; put provenance and secondary
   catalog fields behind disclosure. Show 50 rows per page, in a named scrollable
@@ -72,27 +135,37 @@ The local exposure catalog has its own design document in Nightseam-catalog.
   checkbox list: checked types are combined; none checked means all types.
   Avoid duplicate type-category shortcuts and explain these selection rules.
   Selected-time status names the actual condition, rather than calling the
-  beginning of a best usable interval an object's rise time.
+  beginning of a best usable interval an object's rise time; outside the dark
+  window it says *Before dark* or *After dark*, on one line.
   Fetch optional source details when that disclosure opens. Show a quiet loading
   message or a reachable Retry action inside it; keep planning usable. Elevation
   entry states its metadata-only role rather than implying a visibility correction.
 - **Sky View:** give the polar chart most of the width. Keep the time rail above
   it; date editing stays in the common top bar. Stack the twilight legend on
   the left of the wider slider, with Now/Reset on the right, avoiding a second
-  help/legend row. On phones the slider spans the full width above the compact
-  legend and actions. Both time sliders use the same site/time gradient. Give the large slider range endpoints,
+  help/legend row. Zoom buttons (− +) follow Now and Reset view, so the map
+  zooms without a mouse wheel; on phones see Phone layout. Target labels never
+  cover the minimum-altitude label, the Sun, the Moon or a labelled target's
+  dot; a label that finds no free place is left out until the map is zoomed. Both time sliders use the same site/time gradient. Give the large slider range endpoints,
   phase text and a quiet color legend. Show actual polar/daylight conditions
   instead of inventing a dark band for a fallback window. Start the right rail
   with a closed-by-default chart controls/legend tray,
-  followed by the shared full target inspector. Do not repeat a visible-now list.
+  followed by the shared full target inspector. Without an open target the
+  rail answers "what can I look at now": *At 22:07* names where the Moon is,
+  how many plotted targets are usable at that time, and the six highest of
+  them by altitude (a measured value; popularity plays no part), each opening
+  its details (owner-approved October 20, 2026, superseding "do not repeat a
+  visible-now list").
   Use one altitude chart and one set of target facts. The inspector is inline
   and complementary at every width; on phones the rail stacks below the map.
   Closing it preserves the selected target with a small reopen action.
 - **Horizon:** the job is "where is my sky blocked"; keep the editor to that.
   Three rails: the horizon list with *Draw by hand* (primary), *Import
-  file* and *Get from phone*; the stage; and a settings rail with closed *Points by numbers*,
+  file* and *Get from phone* (on touch devices *Capture with phone* comes
+  first and is primary); the stage; and a settings rail with closed *Points by numbers*,
   *Phone capture* and *Display* disclosures (*Phone capture* starts open on
-  touch devices). Keep about 20 controls visible
+  touch devices). With no horizon yet, the empty stage repeats the start
+  actions as its call to action. Keep about 20 controls visible
   at first glance and about 40 including the disclosures. There are no
   horizon photos: a dropped photo gets a one-line explanation, a dropped
   horizon file imports.
@@ -225,13 +298,15 @@ surface. Underlines, focus rings and quiet state indicators provide feedback.
 Options and Weather expose expanded state and their controlled regions; Escape
 returns focus to their trigger. Modal dialogs isolate background controls and
 wrap Tab through actual reachable controls, excluding closed disclosure content.
-Wide inspectors remain complementary regions. Planner and Setup tabs support
+Wide inspectors remain complementary regions. The docked inspector is
+340–420px wide (26% of the window) on Tonight and Sky View; its photo sits
+above the facts so values never break inside a word. Planner and Setup tabs support
 arrow/Home/End navigation without triggering global time shortcuts. Dense tables
 scroll inside named keyboard-accessible regions instead of truncating headings.
 
 At 1240×900 and 900×800, controls and primary screen regions remain usable.
 Web layouts must work at
-640px and 360px without horizontal page overflow. Use scrolling inside dense
+640px and 360px without horizontal page overflow (phones: Phone layout). Use scrolling inside dense
 table regions where needed. Keep controls reachable when rails stack, and do
 not scale charts below a size that makes their labels unclear.
 
@@ -252,7 +327,8 @@ opaque and flat; no photographic starfield, glow, blur or gradients.
 Use a compact plain wordmark, open typography and quiet separators. Every public
 page has a compact brass Open planner action aligned with the wordmark and desktop
 navigation. On phones it stays visible beside the native menu, including when the
-menu is closed. Home and Features retain their hero action. Your own skyline
+menu is closed. On phones the headline starts near the top; the map motif sits
+higher and fainter so it does not push the call to action down. Home and Features retain their hero action. Your own skyline
 and calculated target visibility lead. Detailed
 features, first-night guidance, sources and privacy information remain accessible through native disclosures.
 Changes contains the independent public release ledger starting at 0.1.0. No-JavaScript phone

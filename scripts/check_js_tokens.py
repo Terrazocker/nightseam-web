@@ -94,12 +94,12 @@ _VERIFIED_BASELINE_JSON = r"""
 {
  "modules": {
   "../landing/style.css": {
-   "sha256": "08321185b2b35606cdfc10abca71e1e3e31d7d3dd6c163e1d45650ad2c71916b",
-   "token": "5"
+   "sha256": "7d3a8753314dfde4bb9be35f2702d993f5c00d01357e708bbe65f7efe0ea9a50",
+   "token": "6"
   },
   "app.js": {
-   "sha256": "d16537850577ad3e6462d30c28827520165829329bebf098e8def04d764bc181",
-   "token": "263"
+   "sha256": "33667c882f182b92923023444d3f7f392a439569b2e54d7135ab9bd73f2fd0ef",
+   "token": "274"
   },
   "astro.js": {
    "sha256": "0c267139e2c1d4307a291b44e46e3a4c045af16edc48b879082f45e245b1807d",
@@ -122,12 +122,16 @@ _VERIFIED_BASELINE_JSON = r"""
    "token": "75"
   },
   "horizon.js": {
-   "sha256": "7536a47752c583c359d93efe7a45b14fefe45aed30c2358321d50263549e0f35",
-   "token": "166"
+   "sha256": "98ebbdb1e3357e51cd82e1749e299114ed929f55489faf68d22d726b8af43f58",
+   "token": "168"
   },
   "imagecredits.js": {
    "sha256": "8c8b650a0ad6ef6462eea251b67642103cb0eb9010c1f9dde09fce2ba7fa8952",
    "token": "2"
+  },
+  "nightmode.js": {
+   "sha256": "645a778c7d38243462330e092b3225595de962fbf913898647d96fe70d4d55cf",
+   "token": "1"
   },
   "nightrank.js": {
    "sha256": "70e7f13bc4c8c21b3b721f9565190e9da5fe71b64f623de1a5f3c094824649be",
@@ -142,8 +146,8 @@ _VERIFIED_BASELINE_JSON = r"""
    "token": "1"
   },
   "style.css": {
-   "sha256": "79d0ee35df6f0e50a736ff649d5c78705f76e15e8f2c2c6be1808279e3769f5b",
-   "token": "81"
+   "sha256": "96439576d69e8b0a77a13e3fb31aada3b3a6462d3bd635ba3f1d2084c4ce7b6c",
+   "token": "93"
   },
   "themes.css": {
    "sha256": "f8094c798dbe72b4e7f84faad3f41fc0cdbe896a03c0cb7413ee9d0d1bed2ff8",
@@ -154,8 +158,8 @@ _VERIFIED_BASELINE_JSON = r"""
    "token": "7"
   },
   "weather.js": {
-   "sha256": "0f54aa57f20e098654037ad2eeeef04c0d11c8db2274c3d9c5acbcb41609d10b",
-   "token": "3"
+   "sha256": "80ac164154a675b41ca5250b8c93463a05cf34b2582232a676700a3fad55511a",
+   "token": "5"
   },
   "webstore.js": {
    "sha256": "e1eaa312db496c643fe211c262d5247f51fa907233abbd0d1aae28449b1dfe2a",

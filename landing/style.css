@@ -92,11 +92,12 @@ html[data-theme="workbench"] .public-site main {
   .public-site .mobile-menu nav { position: absolute; right: 0; top: 52px; width: 215px; padding: 12px 18px; border: 1px solid var(--line); border-radius: 5px; background: var(--panel); display: grid; gap: 2px; }
   .public-site .mobile-menu a { padding: 9px 0; min-height: 44px; text-decoration: none; color: var(--txt); }
   .public-site .mobile-menu a[aria-current="page"] { color: var(--accent); }
-  .public-site .hero, .public-site .hero-home { padding: 140px 0 38px; }
+  /* the headline and Open planner lead; the map motif stays a quiet backdrop */
+  .public-site .hero, .public-site .hero-home { padding: 56px 0 38px; }
   .public-site h1, .public-site .hero-home h1 { font-size: clamp(35px, 8.8vw, 46px); line-height: 1.16; }
   .public-site .eyebrow { font-size: 11px; letter-spacing: .16em; margin-bottom: 17px; }
   .public-site .hero-sub { font-size: 19px; line-height: 1.55; margin-top: 20px; }
-  .public-site .sky-map, .public-site .hero-home .sky-map { width: 630px; height: 500px; top: -165px; right: -120px; opacity: .35; }
+  .public-site .sky-map, .public-site .hero-home .sky-map { width: 630px; height: 500px; top: -250px; right: -230px; opacity: .25; }
   .public-site .cta { font-size: 17px; margin-top: 26px; }
   .public-site .two-facts { grid-template-columns: 1fr; gap: 26px; padding: 28px 0; }
   .public-site .two-facts > div + div { border-left: 0; border-top: 1px solid var(--line); padding: 26px 0 0; }

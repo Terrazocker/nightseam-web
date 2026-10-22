@@ -13,6 +13,11 @@ entry here when it is fixed and record the fix in RELEASES.md.
   [HORIZON_ACCEPTANCE.md](docs/acceptance/HORIZON_ACCEPTANCE.md), including
   its *Phone capture* section (phase 5 of the
   [sensor capture plan](docs/horizon/HORIZON_SENSOR_CAPTURE_PLAN.md)).
+- **Phone layout on real devices.** The phone layout and night vision are
+  checked in headless Chrome only:
+  [PHONE_ACCEPTANCE.md](docs/acceptance/PHONE_ACCEPTANCE.md). Night vision
+  filters the whole page; Safari's handling of a filter on the root element
+  is untested.
 - **Legal pages: deferred by the owner (2026-10-11).** Not release work and
   not to be raised again unless the owner asks. For reference only: the
   Impressum names a pseudonym without a postal address, and the privacy page

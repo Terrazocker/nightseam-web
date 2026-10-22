@@ -361,13 +361,16 @@ const ZOOM_MAX = 12;
 const MARGIN = { l: 40, t: 24, r: 8, b: 8 };
 const HIT_PX = 9;
 
+/** Phones and tablets: touch is the main input, so the camera capture leads. */
+const touchFirst = () => typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
+
 /** Presentation state that survives re-rendering the same horizon. */
 const ui = {
   id: null, mode: 'draw', zoom: 1, fx: 180, fy: 30, selected: -1, ohSel: null,
   grid: true,
   // The capture panel starts open on phones and tablets, where it is the quickest way in.
   openPanels: { points: false, display: false,
-    capture: typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches },
+    capture: touchFirst() },
 };
 
 /** Clamp the view focus so the visible window stays inside the grid. */
@@ -906,11 +909,7 @@ export function renderHorizon(box, onChanged = () => {}, context = {}) {
           <h3>Your horizons</h3>
           <ul class="pick" id="hz-list" aria-label="Horizon used for planning">${db.horizons.length
             ? db.horizons.map(row).join('') : '<li class="hz-empty">No horizon yet. Without one, only the minimum altitude limits the sky.</li>'}</ul>
-          <div class="hz-new">
-            <button class="btn primary" type="button" id="hz-new-draw">✏ Draw by hand</button>
-            <label class="btn" for="hz-import-file" role="button" tabindex="0">⬆ Import file</label>
-            <button class="btn" type="button" id="hz-pair-start" title="Show a QR code to scan with the phone; the horizon captured there comes back here">📱 Get from phone</button>
-          </div>
+          ${db.horizons.length ? startActions('hz-new') : ''}
           <input type="file" id="hz-import-file" accept=".txt,.hrz,.csv,text/plain" class="vhidden" hidden tabindex="-1">
           <p class="sub" id="hz-note" role="status" aria-live="polite">Horizons stay in this browser. Changes save automatically.</p>
         </div>
@@ -918,6 +917,7 @@ export function renderHorizon(box, onChanged = () => {}, context = {}) {
       ${h ? editorHTML(h) : `<section class="horizon-stage" aria-label="Horizon editor">
         <h3 class="horizon-editor-title">Horizon editor</h3>
         <p class="sub">A horizon is the skyline your trees and roofs make. Draw it on a compass grid, trace it with a phone, or import a Stellarium or N.I.N.A. horizon file.</p>
+        ${startActions('hz-new hz-start')}
       </section>`}
     </div>`;
   const sp = $('.splash', box);
@@ -926,6 +926,17 @@ export function renderHorizon(box, onChanged = () => {}, context = {}) {
   renderPairBanner(box, onChanged);
   if (h) wireEditor(box, h, onChanged);
   else if (activeSession) { activeSession.disconnect?.(); activeSession = null; }
+}
+
+/** The actions that start a horizon. Rendered once: in the empty editor, as
+ *  its call to action, until a horizon exists; then under the list. */
+function startActions(cls) {
+  return `<div class="${cls}" role="group" aria-label="Start a horizon">
+            ${touchFirst() ? '<button class="btn primary" type="button" id="hz-new-capture">📱 Capture with phone</button>' : ''}
+            <button class="btn${touchFirst() ? '' : ' primary'}" type="button" id="hz-new-draw">✏ Draw by hand</button>
+            <label class="btn" for="hz-import-file" role="button" tabindex="0">⬆ Import file</label>
+            <button class="btn" type="button" id="hz-pair-start" title="Show a QR code to scan with the phone; the horizon captured there comes back here">📱 Get from phone</button>
+          </div>`;
 }
 
 function editorHTML(h) {
@@ -1055,6 +1066,18 @@ function wireList(box, onChanged) {
     if (tooMany()) return;
     flushHorizonEdits();
     if (created(createHorizon('Horizon'))) rerender();
+  });
+  // Touch devices start a new horizon straight in the camera view. The editor
+  // renders synchronously, so its Start button is pressed within this tap
+  // (a browser grants sensor and camera access only to a user gesture).
+  $('#hz-new-capture', box)?.addEventListener('click', () => {
+    if (tooMany()) return;
+    flushHorizonEdits();
+    if (!created(createHorizon('Horizon'))) return;
+    rerender();
+    const panel = $('#hz-capture-panel', box);
+    if (panel) panel.open = true;
+    $('#hz-cap-start', box)?.click();
   });
 
   const importFile = async (f) => {
@@ -1365,7 +1388,9 @@ function wireEditor(box, h, onChanged) {
     cvs.dataset.mode = ui.mode;
     $('#hz-help', box).textContent = ui.mode === 'overhang'
       ? 'Drag along the underside of a balcony, roof or branch: the sky above that edge is blocked · drag a point = move · Delete = remove'
-      : 'Click = add point · drag a point = move · drag across the grid = sketch the skyline · Delete = remove · wheel = zoom · Space+drag = pan';
+      : touchFirst()
+        ? 'Tap = add point · drag a point = move · drag across the grid = sketch the skyline · − / + = zoom'
+        : 'Click = add point · drag a point = move · drag across the grid = sketch the skyline · Delete = remove · wheel = zoom · Space+drag = pan';
     $('#ed-zoom-label', box).textContent = `${ui.zoom.toFixed(1)}×`;
   }
 

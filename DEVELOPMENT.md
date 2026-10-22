@@ -35,6 +35,8 @@ Web modules import only `./core.js?v=<token>`, never `web/core/<hash>/`.
 | `capturemotion.js` | Worker measuring the camera image's motion for the capture's calibration |
 | `webstore.js` | IndexedDB records, preferences, timezones and backup/restore |
 | `viztheme.js` | Canvas colors read from `themes.css` |
+| `sw.js` | Service worker for offline reopening; published at `/astro/sw.js` beside the entry page |
+| `nightmode.js` | Classic `<head>` script: applies the stored night-vision choice before the first paint |
 | `imagecredits.js` | Exact-file photo credits |
 
 ## Time and the planning night
@@ -285,6 +287,30 @@ editor", "Capture horizons with the phone's sensors"); plans:
   Re-rendering the same horizon keeps its history.
 - **Limits.** 50 horizons; imported files up to 1 MB (Import file or a file
   dropped on the editor; a dropped photo is explained, not opened).
+
+## Phone layout and night vision
+
+- **One set of controls.** The phone layout is CSS only, in the last blocks of
+  `web/style.css`, under one media query: `(max-width: 640px)`, or a coarse
+  pointer at most 500px high and 1000px wide. The top-bar Site, Rig, minimum
+  altitude and date controls are the same elements on every width: on phones
+  `#plannerControls` becomes a fixed bottom sheet (`visibility` toggled by
+  `.topbar.ctx-open`), `.scrub` is pinned above the tab bar and `#tabs` is
+  the bottom bar. `syncContextSummary()` writes the summary line from those
+  controls whenever they change or are set from code; `wireContextSheet()`
+  opens and closes the sheet.
+- **Rows.** Tonight and Catalog render a `.row-meta` line inside the name cell
+  that only phones show; they hide the other columns with `display: none`,
+  which keeps native table semantics for the cells that remain.
+- **Catalog filters.** `catFiltersOpen` keeps the phone *Filters* disclosure
+  open across re-renders; `activeFilterCount()` labels the button.
+- **Sky map zoom.** `zoomAt()` serves the wheel, the − + buttons and the
+  two-finger pinch. The canvas has `touch-action: pan-y` until it is zoomed,
+  then `none`, so one finger scrolls the page or pans the zoomed map.
+- **Night vision.** `web/nightmode.js` sets `html.night-red` from
+  `localStorage` before the first paint; the header button (`wireNightVision()`)
+  toggles it. The class applies the `#ns-night-red` SVG colour matrix in
+  `index.html` to the root element.
 
 ## Storage and backups
 

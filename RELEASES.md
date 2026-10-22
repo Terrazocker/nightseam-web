@@ -4,6 +4,121 @@ Actual validation outcomes, newest first. Published releases: v0.7.0 (October
 19, 2026), v0.1.1 (October 8, 2026) and v0.1.0 (October 7, 2026). Upload
 success alone is never recorded as acceptance.
 
+## Offline check fixed after CI failure — October 20, 2026 (branch ccr-9a647bfc-wzanov)
+
+CI's browser suite failed `web-offline-reopen` on 6a53a67 (Tonight never
+rendered offline). Reproduced locally in about 1 run in 4. Cause, in the
+check: `wait_for_function` took the async predicate's Promise as truthy and
+did not wait for the cache, and the harness's fake clock replaces
+`performance`, so the first-visit file list the page sends the worker was
+empty there; the check went offline before the stylesheets were kept and the
+page came back unstyled. The check now reloads once online under the worker,
+records every same-origin request and polls (awaited) until all are cached.
+The worker caches the first-visit list in parallel, and the page adds the
+document's `<link>`/`<script>` files to it, so the list no longer depends on
+the performance API alone.
+
+Local validation: the offline check 10/10 in a loop; pytest 367 passed, 1
+skipped; browser suite 88/89 then 89/89 (the one failure,
+`web-review-phase7-native-tables-focus-and-sort` timing out while waiting for
+the details dialog, did not recur in 5 single runs or the full rerun).
+
+## Offline reopening, Sky View now-panel, wide Tonight — October 20, 2026 (branch ccr-9a647bfc-wzanov)
+
+`web/sw.js` makes the planner reopen without a network after one visit
+(DECISIONS.md, "Offline reopening"); publication places it at `/astro/sw.js`
+beside the entry page. Measured in headless Chromium: after one visit, 31
+files cached (page, modules, core, catalog); with the network cut, a reload
+rendered Tonight, Sky View and Catalog. Sky View's empty rail shows *At HH:MM*
+(Moon position, usable count, six highest usable targets). From 1600px
+Tonight's night brief sits beside the list.
+
+The browser suite now runs without service workers except in the new
+`web-offline-reopen` check: with the worker active, its requests bypassed the
+page routes that serve fixtures, and 11 checks failed in the first run. A
+publication test pins `/astro/sw.js` in the bundle.
+
+Local validation: pytest 367 passed, 1 skipped; browser web suite 89/89;
+check_js and check_release (allow-dirty) clean. Not yet tried on a real phone
+(PHONE_ACCEPTANCE.md step 13).
+
+## Desktop layout pass — October 20, 2026 (branch ccr-9a647bfc-wzanov)
+
+Audited at 1920×1080, 1440×900 and 1280×720. The desktop header's control
+groups wrap as whole groups (1400-1599px used to squeeze each into two rows)
+and the time slider takes the free width: 247-520px at 1240-1920px instead of
+78-120px; the moon summary no longer breaks inside a time. Tonight keeps a
+1080px reading width (at 1920px a target's numbers were ~800px from its
+name). The docked inspector is 340-420px with the photo above the facts (at
+1280px its values broke per character: "Ope / n clust / er"). The empty
+Horizon editor puts the start actions in the stage, rendered once; short views
+keep the footer at the window's bottom; the "all in Catalog" link uses the
+accent colour. Landing pages on phones start the headline near the top with a
+fainter motif.
+
+Local validation: pytest 366 passed, 1 skipped; browser web suite 88/88. Two
+intermediate runs caught real regressions, both fixed: duplicate "Import file"
+controls (the start actions are now rendered once) and a 200% enlarged layout
+overflowing (header groups may wrap inside).
+
+## Phone layout follow-ups — October 20, 2026 (branch ccr-9a647bfc-wzanov)
+
+Touch screens of any width get the 44px control and 16px form-text sizes
+(checked on a coarse-pointer 810px tablet: no control under 44px); catalog
+filters fold behind their button on phones and touch tablets up to 900px; the
+Tonight heading says "Top 16 of N" and links to Catalog; Catalog says *Before
+dark* / *After dark* on one line outside the dark window (19 rows on a
+1440×900 screen instead of 13) and its sortable headers match the others;
+detail designations use one separator and unpadded Caldwell numbers ("C 13");
+Sky View labels keep off the min-altitude label, the Sun, the Moon and other
+dots; 192/512px plain and maskable install icons; a phone acceptance
+checklist (docs/acceptance/PHONE_ACCEPTANCE.md).
+
+Local validation: pytest 366 passed, 1 skipped; browser web suite 88/88;
+check_js clean. An earlier run showed folding the filters for every window up
+to 900px hid the search box of narrowed desktop windows; the fold is limited
+to phones and touch screens.
+
+## Phone layout and night vision — October 20, 2026 (branch ccr-9a647bfc-wzanov)
+
+Owner-approved phone redesign (DESIGN.md, "Phone layout"; DECISIONS.md
+2026-10-20): summary line and observing-setup sheet, bottom tab bar with a
+pinned time slider, two-line Tonight and Catalog rows, catalog filters behind
+a button, bottom-sheet details, Sky View pinch zoom and − + buttons, *Capture
+with phone* first on touch devices, 44px controls, 16px form text, 12px
+minimum text; red night vision; web app manifest; Setup first in the menu.
+
+Measured in headless Chromium at 360×740, 390×664, 412×839 and 844×390
+(touch): no sideways page scroll; no form field under 16px; no control under
+44px apart from the horizon list's radio buttons, whose labels span the row;
+no visible text under 12px. On an iPhone-sized screen the header and bars
+take about 113px at the top and 110px at the bottom instead of 301px of
+controls, and the first ranked target shows on the first screen. Wide
+screens unchanged apart from the night-vision button and the zoom buttons.
+
+Browser checks updated for the new design, not weakened: the responsive
+check reaches the setup controls through the sheet and now also asserts
+44px controls and 16px form text on phones; the Sky View check asserts the
+pinned slider and the rail's time and phase; the catalog focus check opens
+the phone filters first; the settings check asserts Escape closes a dialog
+before the sheet under it (a bug it found, fixed).
+
+Local validation: pytest 366 passed, 1 skipped; browser web suite 88/88;
+check_js clean. Not yet run on CI or on a real phone.
+
+## Design review fixes: catalog designations, chart time labels, twilight row — October 20, 2026 (branch ccr-9a647bfc-wzanov)
+
+From a desktop and phone walkthrough. Catalog designations with two names
+(M31 · NGC 224) showed only "…" at 1240px and on phones: the span left 22px
+for the 25.7px save star, so the cell's ellipsis swallowed it; it now
+reserves 28px. The target altitude chart labels whole site-clock hours,
+spaced to fit, instead of ten fixed labels that ran together. The Tonight
+twilight row keeps each time beside its own label. Checked in screenshots
+at 1440, 1240 and 412px.
+
+Local validation: pytest 366 passed, 1 skipped; browser web suite 88/88;
+check_js clean. Not yet run on CI.
+
 ## v0.7.0 — released and deployed, October 19, 2026
 
 Owner-authorized deployment of tag v0.7.0 (4245db3) to nightseam.de, the

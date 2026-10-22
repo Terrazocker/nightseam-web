@@ -12,6 +12,8 @@ except ImportError:
 EXCLUDED = {'.gitignore', 'build_web.py', 'ftps_deploy.py', 'whale', 'dev',
             'node_modules', '__pycache__', '.git', '.env'}
 GENERATED = {'web/version.json'}
+# Non-HTML files that are also published at their tree root, beside the pages.
+ROOT_ENTRIES = ('web/version.json', 'web/sw.js')
 FORMAT = 'nightseam-immutable-v1'
 # The one server script (docs/horizon/HORIZON_PAIRING_PLAN.md): the pairing
 # relay keeps a stable path, /astro/relay.php, so every release talks to the
@@ -121,8 +123,10 @@ def immutable_payload(root, trees=('web', 'landing')):
                 return m.group(1)+m.group(2)+url+m.group(2)
             result[name] = META_ASSET.sub(rewrite_meta, text).encode('utf-8')
             result[f'{tree}/releases/{web_id if tree == "web" else landing_id}/{rel}'] = result[name]
-        elif name == 'web/version.json':
-            # Public status endpoint; application fetches its pinned snapshot.
+        elif name in ROOT_ENTRIES:
+            # version.json: public status endpoint; the application fetches its
+            # pinned snapshot. sw.js: a service worker controls only pages at or
+            # below its own folder, so it must sit beside the /astro/ entry page.
             result[name] = data
     return result, {'format': FORMAT, 'web_namespace': web_id,
                     'landing_namespace': landing_id, 'source_files': hashes(source)}

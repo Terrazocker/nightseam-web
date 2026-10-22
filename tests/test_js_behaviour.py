@@ -105,3 +105,11 @@ def test_pairing_transport_contract():
     changed byte; the reply is exactly the horizon's share-link text."""
     out = run_node_harness("pairing.mjs")
     assert "pairing transport contract held" in out
+
+
+def test_offline_worker_never_handles_the_pairing_relay():
+    """web/sw.js answers same-origin requests from its cache, but relay.php
+    answers are one-shot ciphertext: the worker neither answers them nor
+    stores a copy, including from the first-visit file list."""
+    out = run_node_harness("sw_relay.mjs")
+    assert "offline worker skips the relay" in out

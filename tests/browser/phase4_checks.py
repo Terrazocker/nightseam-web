@@ -59,6 +59,9 @@ def simpler_overviews_and_direct_settings(c):
     c.page.screenshot(path=str(c.artifacts / 'simplified-sky-1894.png'))
     c.page.set_viewport_size({'width':360,'height':900})
     c.page.keyboard.press('Tab')
+    # Phone layout (DESIGN.md): the settings words live in the observing-setup
+    # sheet; Escape from a dialog opened there leaves the sheet open.
+    c.page.locator('#ctxSummary').focus(); c.page.keyboard.press('Enter')
     for key in ('site','rig'):
         button=c.page.locator(f'#{key}-settings')
         button.focus()
@@ -69,12 +72,17 @@ def simpler_overviews_and_direct_settings(c):
         c.page.keyboard.press('Space')
         c.page.wait_for_selector(f'#set-tab-{key}s[aria-selected="true"]')
         c.page.keyboard.press('Escape')
+        c.expect_eq(c.page.locator('#ctxSummary').get_attribute('aria-expanded'), 'true',
+                    'Escape closes the settings dialog, not the setup sheet under it')
+    c.page.keyboard.press('Escape')
+    c.expect_eq(c.page.locator('#ctxSummary').get_attribute('aria-expanded'), 'false', 'a second Escape closes the sheet')
     c.expect(c.page.evaluate('document.documentElement.scrollWidth <= innerWidth'), 'direct entries fit phone width')
     c.page.screenshot(path=str(c.artifacts / 'simplified-sky-360.png'))
     c.page.locator('#btnMenu').click()
     c.page.locator('#fltHa').check()
     c.page.keyboard.press('Escape')
     tab(c, 'catalog')
+    c.page.locator('#cat-filters-toggle').click()   # phone filters open from their button
     c.page.locator('#cat-type-galaxy').check()
     c.page.wait_for_selector('.cat-results .f-own[title*="broadband"]')
     c.expect(c.page.locator('.cat-results .f-own').evaluate_all("els => els.every(el=>el.textContent==='BB')"),
@@ -433,7 +441,11 @@ def annotated_controls(c):
         c.page.set_viewport_size({'width':width, 'height':900})
         c.expect(c.page.evaluate('document.documentElement.scrollWidth <= innerWidth + 1'),
                  'the top chart time controls must fit a narrow viewport')
-        c.expect(c.page.locator('#sky-slider').is_visible(), 'the phase slider stays visible on narrow screens')
+        # Phone layout (DESIGN.md): the pinned time slider above the tab bar
+        # sets the time; the rail keeps the selected time and its phase.
+        c.expect(c.page.locator('#tb-scrub').is_visible(), 'the pinned time slider stays visible on narrow screens')
+        c.expect(c.page.locator('#sky-sout').is_visible() and c.page.locator('#sky-phase').is_visible(),
+                 'the selected time and its phase stay in the Sky View rail on narrow screens')
         c.page.screenshot(path=str(c.artifacts / f'annotations-sky-{width}.png'))
     c.page.set_viewport_size({'width':1894, 'height':1244})
     # A polar summer must show daylight on the fallback span, rather than
@@ -615,10 +627,36 @@ def responsive_planner(c):
                 const el = document.getElementById(id), r = el.getBoundingClientRect();
                 return {id, x:r.x, right:r.right, width:r.width, size:parseFloat(getComputedStyle(el).fontSize)}; })})""")
             c.expect(box['page'] <= box['width'] + 1, f'{view} page fits {width}px: {box}')
-            c.expect(box['clock'] != 'none', f'{view} selected clock remains visible at {width}px')
+            if not (width <= 640 and view == 'horizon'):
+                c.expect(box['clock'] != 'none', f'{view} selected clock remains visible at {width}px')
+            phone = width <= 640
+            if phone:
+                # Phone layout (DESIGN.md): the setup controls live in a sheet
+                # the header's summary line opens; reach them through it.
+                summary = c.page.locator('#ctxSummary')
+                c.expect(summary.is_visible(), f'{view} phone summary line is shown at {width}px')
+                summary.click()
+                c.page.wait_for_function("() => getComputedStyle(document.getElementById('tb-site')).visibility === 'visible'")
+                box['controls'] = c.page.evaluate("""() => ['tb-site','rigSelect','tb-minalt','tb-date','btnMenu','btnWeather'].map(id => {
+                  const el = document.getElementById(id), r = el.getBoundingClientRect();
+                  return {id, x:r.x, right:r.right, width:r.width, bottom:r.bottom, hidden:getComputedStyle(el).visibility === 'hidden'}; })""")
             for control in box['controls']:
-                c.expect(control['x'] >= -1 and control['right'] <= width + 1 and control['width'] > 0,
-                         f'{control["id"]} reachable at {width}px: {control}')
+                c.expect(control['x'] >= -1 and control['right'] <= width + 1 and control['width'] > 0
+                         and not control.get('hidden'), f'{control["id"]} reachable at {width}px: {control}')
+            if phone:
+                c.page.locator('#ctxDone').click()
+                c.page.wait_for_function("() => getComputedStyle(document.getElementById('tb-site')).visibility === 'hidden'")
+                c.expect_eq(active_id(c), 'ctxSummary', 'closing the setup sheet returns focus to the summary line')
+                small = c.page.evaluate("""() => [...document.querySelectorAll('button, select, input:not([type=hidden]), #tabs a')]
+                  .filter(el => { const r = el.getBoundingClientRect(), cs = getComputedStyle(el);
+                    return r.width > 0 && r.height > 0 && cs.visibility !== 'hidden' && !el.closest('td, .hidden, [hidden], #modal, details:not([open]) > :not(summary)')
+                      && el.type !== 'checkbox' && el.type !== 'radio'
+                      && (r.width < 44 || r.height < 44); })
+                  .map(el => `${el.id || el.textContent.trim().slice(0, 20)} ${Math.round(el.getBoundingClientRect().width)}x${Math.round(el.getBoundingClientRect().height)}`)""")
+                c.expect(not small, f'{view} phone controls are at least 44px at {width}px: {small}')
+                fields = c.page.evaluate("""() => [...document.querySelectorAll('input:not([type=checkbox]):not([type=radio]):not([type=range]), select, textarea')]
+                  .filter(el => el.getBoundingClientRect().width > 0 && parseFloat(getComputedStyle(el).fontSize) < 16).map(el => el.id)""")
+                c.expect(not fields, f'{view} phone form fields use 16px text (no iOS focus zoom): {fields}')
             c.expect(c.page.locator('#tb-date').evaluate('(el) => parseFloat(getComputedStyle(el).fontSize)') >= 14,
                      'header does not solve crowding by shrinking the date text')
             for canvas in c.page.locator('#view canvas:visible').all():
@@ -627,10 +665,13 @@ def responsive_planner(c):
             if width in (360, 1240):
                 c.page.screenshot(path=str(screenshots / f'{view}-{width}.png'), full_page=True)
             if width == 360 and view == 'tonight':
-                region = c.page.get_by_role('region', name='Best targets table; scroll horizontally for all columns')
-                region.focus()
-                c.page.keyboard.press('ArrowRight')
-                c.page.wait_for_function("() => document.querySelector('.tablewrap').scrollLeft > 0")
+                # Phones show the best interval under each target instead of a
+                # table that scrolls sideways.
+                row = c.page.evaluate("""() => { const wrap = document.querySelector('.tablewrap'),
+                  meta = document.querySelector('#tonight-rank-table tbody .row-meta');
+                  return {fits: wrap.scrollWidth <= wrap.clientWidth + 1, meta: meta && meta.offsetWidth > 0 ? meta.textContent : ''}; }""")
+                c.expect(row['fits'], 'phone Tonight table does not scroll sideways')
+                c.expect(':' in row['meta'] and 'max' in row['meta'], f'phone Tonight row names its best interval: {row}')
             if width == 360 and view == 'horizon':
                 tools = c.page.locator('.horizon-tools-rail').bounding_box()
                 stage = c.page.locator('.horizon-stage').bounding_box()
@@ -675,3 +716,46 @@ def map_labels(c):
         c.expect(label['x'] >= 0 and label['x'] + label['width'] <= label['viewport'] and
                  label['y'] >= 14 and label['y'] <= label['viewport'], 'target label stays inside map edges')
     c.expect('site time' in c.page.locator('#skyChartSummary').inner_text(), 'map alternative uses site clock')
+
+
+@check('web-offline-reopen', 'web')
+def offline_reopen(c):
+    """After one normal visit, the planner reopens without a network (web/sw.js):
+    the page, its modules and the catalog come from the worker's cache, and
+    planning works. A reachable server still wins (network first for pages)."""
+    boot(c)
+    c.page.wait_for_function('() => navigator.serviceWorker.controller !== null', timeout=20000)
+    # Reload once online with the worker in control and record what the page
+    # asks for: the worker must keep every one of those files (one missing
+    # module would stop the app offline). The harness's fake clock replaces
+    # `performance`, so the first-visit file list the page hands the worker is
+    # empty here; this path, the one every later visit takes, is the one tested.
+    origin = c.page.evaluate('() => location.origin')
+    requested = set()
+    c.page.on('request', lambda r: requested.add(r.url.split('#')[0]) if r.url.startswith(origin + '/') else None)
+    c.page.reload(wait_until='load')
+    c.page.wait_for_selector(READY, timeout=30000)
+    c.page.wait_for_timeout(500)
+    missing = None
+    for _ in range(120):
+        # evaluate awaits the cache lookup (wait_for_function would take the
+        # returned Promise itself as truthy and not wait)
+        kept = set(c.page.evaluate("""async () => (await (await caches.open('nightseam-offline-v1')).keys()).map((r) => r.url)"""))
+        missing = sorted(u for u in requested if u not in kept and not u.endswith('/sw.js'))
+        if requested and not missing:
+            break
+        c.page.wait_for_timeout(250)
+    c.expect(bool(requested) and not missing, f'the worker keeps every file the page loads: missing {missing}')
+    c.allow_console_errors('offline on purpose: requests that need the network (version check, weather) fail')
+    c.page.context.set_offline(True)
+    try:
+        c.page.reload(wait_until='load')
+        c.page.wait_for_selector(READY, timeout=30000)
+        c.expect(c.page.locator('#tonight-rank-table tbody tr').count() > 0, 'Tonight ranks targets offline')
+        tab(c, 'catalog')
+        c.page.wait_for_selector('.cat-results tbody tr[data-id]', timeout=20000)
+    finally:
+        c.page.context.set_offline(False)
+
+
+offline_reopen.service_workers = 'allow'   # the one check about the worker

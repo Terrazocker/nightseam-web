@@ -31,6 +31,9 @@ publication (BUGS.md). CI runs the same checks for every pull request and every 
    cleanup list from scripts/publication_cleanup.json, which survives committing
    the deletions. It never reads/uploads credential files, commits, tags or deploys.
    python scripts/prepare_publication.py --verify detects source/stage drift.
+   web/version.json and web/sw.js are also published at /astro/ itself (a
+   service worker controls only pages at or below its folder); like the HTML
+   entries they switch after the immutable graph is verified.
    All served artifacts must be Git-tracked, except generated web/version.json;
    staging refuses symlinks and untracked content of every file type.
 5. This dirty candidate is a local review snapshot, not a clean public release.
