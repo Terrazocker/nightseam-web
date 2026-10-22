@@ -9,7 +9,7 @@
  * All sky math runs client-side (astro.js, Meeus algorithms).
  */
 import * as E from './astro.js?v=69';
-import * as Hor from './horizon.js?v=164';
+import * as Hor from './horizon.js?v=167';
 import * as WS from './webstore.js?v=84';
 import { fmtSize, sizeArcmin, framePct, magVisible, skyClampZoom,
          skyViewMatrix, skyScreenToBase, skyClampFocus } from './format.js?v=75';
@@ -22,7 +22,7 @@ import { popularityFactor as corePopularityFactor } from './core.js?v=78';
 import { vizTheme, drawMoonPhaseMarker } from './viztheme.js?v=7';
 import { loadWikiThumb, releaseWikiThumb } from './wikiphotos.js?v=1';
 import { WX_STATE, initWeather, loadWeather, refreshWeatherForSite, weatherRequested,
-         wxRenderPanel } from './weather.js?v=1';
+         wxRenderPanel } from './weather.js?v=4';
 
 const announcePlannerChange = Hor.announcePlannerChange;
 
@@ -75,6 +75,7 @@ function applyActiveSite(site, options) {
     sel.innerHTML = SITES.map((s) => `<option value="${esc(s.id)}"${s.id === site.id ? ' selected' : ''}>${esc(s.name)}</option>`).join('');
     sel.value = site.id;
   }
+  syncContextSummary();
   if (weatherRequested()) refreshWeatherForSite();
 }
 
@@ -415,8 +416,11 @@ function selectedVisibility(o, grid) {
   return { alt, reason, visible: reason === 'visible', night };
 }
 function catalogCondition(reason) {
+  // Outside the dark window, say which side of it the selected time is on.
+  const outside = reason === 'outside_selected_window'
+    ? (S.skyTime < cachedNightWindow().startT ? 'Before dark' : 'After dark') : '';
   return ({ visible: 'Usable now', blocked_by_horizon: 'Horizon blocked',
-    below_minimum_altitude: 'Below altitude limit', outside_selected_window: 'Outside planning window',
+    below_minimum_altitude: 'Below altitude limit', outside_selected_window: outside,
     below_horizon: 'Below horizon', never_rises: 'Below horizon' })[reason] || 'Not usable now';
 }
 function catalogBestWindow(night) {
@@ -768,7 +772,8 @@ function renderTonight(silent, immediate = false) {
     // scrubbed time still ranks if it clears later tonight; one that never
     // clears all night must not top the list - the desktop's "Best targets"
     // applies the same night-window criterion (statusOf == vis).
-    const top = rows.filter((r) => r.visN > 0).slice(0, 16);
+    const usable = rows.filter((r) => r.visN > 0);
+    const top = usable.slice(0, 16);
 
     // The "Dark time" card shows the SAME window the ranking and % visibility
     // are computed on (win = the picked twilight level) - never a different
@@ -791,7 +796,7 @@ function renderTonight(silent, immediate = false) {
       const relative = topMaxScore > 0 && r.score > 0 ? Math.round(100 * r.score / topMaxScore) : null;
       return `<tr data-tonight-id="${esc(r.o.id)}">
         <td class="mono rank">${String(i + 1).padStart(2, '0')}</td>
-        <td><button type="button" class="target-open" aria-label="Open details for ${esc(r.o.primary_name)}"><strong>${esc(r.o.primary_name)}</strong></button><small>${esc(tags || r.o.ngcic || '')}</small></td>
+        <td><button type="button" class="target-open" aria-label="Open details for ${esc(r.o.primary_name)}"><strong>${esc(r.o.primary_name)}</strong></button><small>${esc(tags || r.o.ngcic || '')}</small><span class="row-meta mono">max ${r.maxAlt.toFixed(0)}° · ${esc(best)}</span></td>
         <td class="mono num">${relative == null ? '—' : relative}</td>
         <td class="mono num">${r.maxAlt.toFixed(0)}°</td>
         <td class="mono">${esc(best)}</td>
@@ -811,7 +816,9 @@ function renderTonight(silent, immediate = false) {
         </div>
       </section>
       <section class="tonight-ranked" aria-labelledby="tonightRankHeading">
-        <header class="panel-heading"><h2 id="tonightRankHeading">Best targets tonight</h2><span class="sub">${top.length} targets with usable dark-window visibility</span></header>
+        <header class="panel-heading"><h2 id="tonightRankHeading">Best targets tonight</h2><span class="sub">${usable.length > top.length
+          ? `Top ${top.length} of ${usable.length} targets usable in the dark window · <a href="#catalog">all in Catalog</a>`
+          : `${top.length} target${top.length === 1 ? '' : 's'} usable in the dark window`}</span></header>
         <div class="tablewrap" tabindex="0" role="region" aria-label="Best targets table; scroll horizontally for all columns"><table id="tonight-rank-table">
           <thead><tr><th>#</th><th>Target</th><th class="num">Relative score</th><th class="num">Max altitude</th><th>Best usable interval</th></tr></thead>
           <tbody>${rankRows || '<tr><td colspan="5" class="sub">No targets have a clear window tonight.</td></tr>'}</tbody>
@@ -912,6 +919,7 @@ function renderSky() {
           <div class="btnrow">
             <button class="btn primary" id="sky-now">Now</button>
             <button class="btn" id="sky-reset" title="double-click the chart also resets">↺ Reset view</button>
+            <span class="sky-zoom" role="group" aria-label="Map zoom"><button class="btn" type="button" id="sky-zoom-out" aria-label="Zoom out">−</button><button class="btn" type="button" id="sky-zoom-in" aria-label="Zoom in">+</button></span>
           </div>
           <p class="visually-hidden" id="sky-range-caption">${rangeLabel()}</p>
       </div>
@@ -932,7 +940,7 @@ function renderSky() {
             ${Hor.activeHorizon() ? `<li><span class="dot" style="background:${V.obstacleStroke}"></span>blocked by horizon</li>` : ''}
             ${Object.entries(TYPE_COLORS).map(([t, c]) => `<li><span class="dot" style="background:${V.types[t] || c}"></span>${TYPE_LABELS[t]}</li>`).join('')}
           </ul>
-          <p class="sub sky-chart-hint">All-sky polar chart: center is zenith, rim is horizon, north is at top. Scroll to zoom, drag to pan, and double-click to reset.</p>
+          <p class="sub sky-chart-hint">All-sky polar chart: center is zenith, rim is horizon, north is at top. Zoom with + and −, the mouse wheel or two fingers; drag to pan; double-click or Reset view to reset.</p>
         </details>
         <div id="sky-detail-host"></div>
         <section id="sky-detail-empty" class="card" aria-label="Selected target"></section>
@@ -1002,6 +1010,9 @@ function renderSky() {
     for (const alt of [20, 40, 60]) {
       ctx.beginPath(); ctx.arc(cx, cy, R * (1 - alt / 90), 0, Math.PI * 2); ctx.stroke();
     }
+    // Chart-coordinate boxes target labels must not cover: the min-altitude
+    // label, the Sun, the Moon and every labelled object's dot.
+    const labelObstacles = [];
     // min-altitude ring (planning prefs)
     const minRing = Hor.effectiveMinAlt();
     ctx.strokeStyle = C.minStroke;
@@ -1012,7 +1023,9 @@ function renderSky() {
     ctx.fillStyle = C.minLabel;
     ctx.font = '10.5px system-ui, sans-serif';
     ctx.textAlign = 'left';
-    ctx.fillText(`min ${minRing.toFixed(0)}°`, cx + (R * (1 - minRing / 90)) + 6, cy + 3);
+    const minText = `min ${minRing.toFixed(0)}°`, minX = cx + (R * (1 - minRing / 90)) + 6;
+    ctx.fillText(minText, minX, cy + 3);
+    labelObstacles.push({ x: minX - 2, y: cy - 9, w: ctx.measureText(minText).width + 4, h: 14 });
     ctx.strokeStyle = C.gridSub;
     for (let az = 0; az < 360; az += 30) {
       const a = E.D2R * az;
@@ -1115,6 +1128,7 @@ function renderSky() {
       ctx.beginPath(); ctx.arc(x, y, 9, 0, Math.PI * 2); ctx.fill();
       ctx.shadowBlur = 0;
       skyItems.push({ x, y, id: 'SUN', label: 'Sun' });
+      labelObstacles.push({ x: x - 10, y: y - 10, w: 20, h: 20 });
     });
     plotAltAz(moonAlt, moonAz, (x, y) => {
       ctx.shadowColor = C.moon; ctx.shadowBlur = C.moonBlur;
@@ -1122,6 +1136,7 @@ function renderSky() {
       ctx.beginPath(); ctx.arc(x, y, 7, 0, Math.PI * 2); ctx.fill();
       ctx.shadowBlur = 0;
       skyItems.push({ x, y, id: 'MOON', label: 'Moon' });
+      labelObstacles.push({ x: x - 8, y: y - 8, w: 16, h: 16 });
     });
 
     // catalog objects
@@ -1136,6 +1151,7 @@ function renderSky() {
         ctx.globalAlpha = 1;
         if (!o._adv && o.vmag != null && o.vmag < 8.5) {
           labelCands.push({ x, y, text: o.messier || o.primary_name, prio: o.vmag });
+          labelObstacles.push({ x: x - rad - 1, y: y - rad - 1, w: 2 * rad + 2, h: 2 * rad + 2 });
         }
       });
       if (hit) skyItems.push({ x: hit.x, y: hit.y, id: o.id, label: o.primary_name, o });
@@ -1150,6 +1166,11 @@ function renderSky() {
       ctx.font = 'bold 10.5px system-ui, sans-serif';
       ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
       const placed = [];
+      // obstacles in screen pixels; a label never covers one
+      const blocked = labelObstacles.map((b) => ({ x: matrix.a * b.x + matrix.e, y: matrix.d * b.y + matrix.f,
+        w: matrix.a * b.w, h: matrix.d * b.h }));
+      const hits = (tx, ty, w, h) => blocked.some((b) =>
+        tx < b.x + b.w && b.x < tx + w - 8 && ty - h + 3 < b.y + b.h && b.y < ty + 3);
       labelCands.sort((a, b) => a.prio - b.prio);
       for (const c of labelCands) {
         const x = Math.round(matrix.a * c.x + matrix.e);
@@ -1159,7 +1180,7 @@ function renderSky() {
         const position = [[x + 6, y - 6], [x - w - 6, y - 6],
           [x + 6, y + h + 3], [x - w - 6, y + h + 3]]
           .find(([tx, ty]) => tx >= 3 && tx + w <= W - 3 &&
-            ty - h >= 3 && ty <= W - 3 && !placed.some((p) =>
+            ty - h >= 3 && ty <= W - 3 && !hits(tx, ty, w, h) && !placed.some((p) =>
               Math.abs(tx + w / 2 - p.x) < (w + p.w) / 2 && Math.abs(ty - p.y) < h));
         if (!position) continue;
         const [tx, ty] = position;
@@ -1231,27 +1252,50 @@ function renderSky() {
 
   // ---- rectangular viewport zoom: wheel = zoom-to-cursor, drag = pan,
   //      double-click = reset (uranometria-style) ----
-  SKYV.onReset = () => { if (S.view === 'sky') { const w = cvs.clientWidth; sizeCanvas(); draw(); } };
-  cvs.addEventListener('wheel', (ev) => {
-    if (S.view !== 'sky') return;
-    ev.preventDefault();
+  // Touch: one finger scrolls the page until the map is zoomed, then pans it;
+  // two fingers pinch-zoom the map, never the page.
+  const syncTouchAction = () => { cvs.style.touchAction = SKYV.zoom > 1 ? 'none' : 'pan-y'; };
+  SKYV.onReset = () => { if (S.view === 'sky') { syncTouchAction(); sizeCanvas(); draw(); } };
+  const zoomAt = (sx, sy, factor) => {
     const W = cvs.clientWidth || 1;
-    const [sx, sy] = posEl(ev);
     const [bx, by] = skyBase(W, sx, sy);
-    const factor = ev.deltaY < 0 ? 1.25 : 0.8;
     const nz = skyClampZoom(SKYV.zoom * factor);
     if (nz === SKYV.zoom) return;
     SKYV.zoom = nz;
     if (SKYV.zoom > 1) {
-      // keep the point under the cursor fixed while zooming
+      // keep the point under the cursor (or between the fingers) fixed while zooming
       SKYV.fx = bx - (sx - W / 2) / SKYV.zoom;
       SKYV.fy = by - (sy - W / 2) / SKYV.zoom;
       skyClamp(W);
     } else { SKYV.fx = null; SKYV.fy = null; }
+    syncTouchAction();
     draw();
+  };
+  syncTouchAction();
+  cvs.addEventListener('wheel', (ev) => {
+    if (S.view !== 'sky') return;
+    ev.preventDefault();
+    const [sx, sy] = posEl(ev);
+    zoomAt(sx, sy, ev.deltaY < 0 ? 1.25 : 0.8);
   }, { passive: false });
+  const zoomCentre = (factor) => { const W = cvs.clientWidth || 1; zoomAt(W / 2, W / 2, factor); };
+  $('#sky-zoom-in')?.addEventListener('click', () => zoomCentre(1.5));
+  $('#sky-zoom-out')?.addEventListener('click', () => zoomCentre(1 / 1.5));
+  const fingers = new Map();
+  let pinch = null;
+  const fingerGap = () => { const [a, b] = [...fingers.values()]; return Math.hypot(a[0] - b[0], a[1] - b[1]); };
+  const liftFinger = (ev) => {
+    fingers.delete(ev.pointerId);
+    if (pinch && fingers.size < 2) { pinch = null; SKYV.suppressClick = true; setTimeout(() => { SKYV.suppressClick = false; }, 0); }
+  };
+  cvs.addEventListener('pointerup', liftFinger);
+  cvs.addEventListener('pointercancel', (ev) => { liftFinger(ev); SKYV.drag = null; });
   cvs.addEventListener('pointerdown', (ev) => {
-    if (ev.button !== 0) return;
+    if (ev.pointerType === 'touch') {
+      fingers.set(ev.pointerId, [ev.clientX, ev.clientY]);
+      if (fingers.size === 2) { pinch = { gap: fingerGap() }; SKYV.drag = null; tip.hidden = true; return; }
+    }
+    if (ev.button !== 0 || pinch) return;
     const rect = cvs.getBoundingClientRect();
     SKYV.drag = {
       sx: ev.clientX, sy: ev.clientY,
@@ -1261,6 +1305,17 @@ function renderSky() {
     };
   });
   cvs.addEventListener('pointermove', (ev) => {
+    if (fingers.has(ev.pointerId)) fingers.set(ev.pointerId, [ev.clientX, ev.clientY]);
+    if (pinch && fingers.size === 2) {
+      const gap = fingerGap();
+      if (gap > 0 && pinch.gap > 0) {
+        const rect = cvs.getBoundingClientRect();
+        const [a, b] = [...fingers.values()];
+        zoomAt((a[0] + b[0]) / 2 - rect.left, (a[1] + b[1]) / 2 - rect.top, gap / pinch.gap);
+        pinch.gap = gap;
+      }
+      return;
+    }
     if (SKYV.drag && (ev.buttons & 1)) {
       if (SKYV.zoom <= 1) return;
       const rect = cvs.getBoundingClientRect();
@@ -1388,6 +1443,13 @@ function minVis() {
   return Number.isFinite(v) ? Math.min(100, Math.max(0, Math.round(v))) : 1;
 }
 let hiddenNotVisible = 0;      // rows the list dropped for being below the threshold
+// Phones fold the filter rail behind a "Filters" button; wider screens always show it.
+let catFiltersOpen = false;
+function activeFilterCount() {
+  const c = S.cat;
+  return [c.q.trim(), c.chip !== 'all', c.con, c.types.length, c.visibility !== 'all',
+    c.clearOnly, c.savedOnly, c.fitsRig].filter(Boolean).length;
+}
 
 function filteredCatalog(pctG) {
   const f = S.cat;
@@ -1487,8 +1549,9 @@ function renderCatalog() {
     ? document.activeElement.id : null;
   const moreFiltersOpen = !!$('#cat-more')?.open;
   box.innerHTML = `
-    <div class="catalog-layout">
-    <aside class="cat-filter-rail" aria-label="Catalog filters">
+    <div class="catalog-layout${catFiltersOpen ? ' filters-open' : ''}">
+    <button class="btn cat-filters-toggle" id="cat-filters-toggle" type="button" aria-expanded="${catFiltersOpen}" aria-controls="cat-filter-rail">Filters${activeFilterCount() ? ` · ${activeFilterCount()} on` : ''}</button>
+    <aside class="cat-filter-rail" id="cat-filter-rail" aria-label="Catalog filters">
       <h2>Filters</h2>
     <div class="cat-bar">
       <input type="search" id="cat-q" aria-label="Search the catalog" placeholder="Search: name, M 31, NGC 7000, galaxy, Cyg…" value="${esc(S.cat.q)}">
@@ -1545,7 +1608,7 @@ function renderCatalog() {
             return `<tr data-id="${esc(o.id)}">
               <td class="rank-cell mono">${S.cat.page * perPage + index + 1}</td>
               <td class="designation-cell mono" title="${esc(designation)}"><button class="cat-save${saved.has(o.id) ? ' on' : ''}" type="button" data-save-target="${esc(o.id)}" aria-label="${saved.has(o.id) ? 'Remove' : 'Save'} ${esc(o.primary_name)}">${saved.has(o.id) ? '★' : '☆'}</button><span>${esc(designation)}</span></td>
-              <td class="common-cell" title="${esc(o.primary_name)}"><button type="button" class="target-open tname" aria-label="Open details for ${esc(o.primary_name)}">${esc(o.primary_name)}</button>${fOwn}</td>
+              <td class="common-cell" title="${esc(o.primary_name)}"><button type="button" class="target-open tname" aria-label="Open details for ${esc(o.primary_name)}">${esc(o.primary_name)}</button>${fOwn}<span class="row-meta">${esc([designation, TYPE_LABELS[o.otype] || o.otype || '', `${current.alt.toFixed(0)}° now`, best].filter(Boolean).join(' · '))}</span></td>
               <td class="type-cell" title="${esc(TYPE_LABELS[o.otype] || o.otype || '')}"><span class="tag-dot" style="color:${typeColor(o)}">●</span> ${esc(TYPE_LABELS[o.otype] || o.otype || '')}</td>
               <td class="num">${o.vmag != null ? o.vmag.toFixed(1) : '—'}</td>
               <td class="num mono">${current.alt.toFixed(0)}°</td>
@@ -1586,6 +1649,11 @@ function renderCatalog() {
       if (ev.target.closest('[data-save-target]')) return;
       open();
     });
+  });
+  $('#cat-filters-toggle').addEventListener('click', () => {
+    catFiltersOpen = !catFiltersOpen;
+    box.querySelector('.catalog-layout').classList.toggle('filters-open', catFiltersOpen);
+    $('#cat-filters-toggle').setAttribute('aria-expanded', String(catFiltersOpen));
   });
   $('#pg-prev').addEventListener('click', () => { if (S.cat.page > 0) { S.cat.page--; renderCatalog(); } });
   $('#pg-next').addEventListener('click', () => { if (S.cat.page < pages - 1) { S.cat.page++; renderCatalog(); } });
@@ -1950,6 +2018,70 @@ function wirePopover(button, panel, onOpen = () => {}) {
   });
 }
 
+/* ---- phone header: one summary line that opens the observing setup ----
+ * On phones the Site/Rig/minimum altitude/date controls live in a sheet the
+ * summary button opens; on wider screens the button is not displayed and the
+ * controls sit in the top bar as before. The same elements serve both. */
+function syncContextSummary() {
+  const text = $('#ctxSummaryText');
+  if (!text) return;
+  const site = $('#tb-site')?.selectedOptions?.[0]?.textContent || S.site.label || '';
+  const rigSel = $('#rigSelect');
+  const rig = rigSel && rigSel.value ? rigSel.selectedOptions?.[0]?.textContent || '' : '';
+  const alt = $('#tb-minalt-val')?.textContent || '';
+  const iso = $('#tb-date')?.value || '';
+  let day = '';
+  if (/^\d{4}-\d{2}-\d{2}$/.test(iso)) {
+    const [y, m, d] = iso.split('-').map(Number);
+    day = new Date(y, m - 1, d, 12).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
+  }
+  text.textContent = [site, rig, alt && `min ${alt}`, day].filter(Boolean).join(' · ');
+}
+
+function wireContextSheet() {
+  const button = $('#ctxSummary'), sheet = $('#plannerControls'), top = $('.topbar');
+  if (!button || !sheet || !top) return;
+  const setOpen = (open, returnFocus = false) => {
+    top.classList.toggle('ctx-open', open);
+    button.setAttribute('aria-expanded', String(open));
+    if (open) $('#ctxSheetTitle')?.focus();
+    else if (returnFocus) button.focus();
+  };
+  button.addEventListener('click', () => setOpen(!top.classList.contains('ctx-open')));
+  $('#ctxDone')?.addEventListener('click', () => setOpen(false, true));
+  document.addEventListener('keydown', (ev) => {
+    // Escape closes the top layer only: a dialog opened from the sheet first.
+    if (ev.key !== 'Escape' || ev.defaultPrevented || !top.classList.contains('ctx-open')
+      || $('#modal:not([hidden])')) return;
+    ev.preventDefault(); setOpen(false, true);
+  });
+  document.addEventListener('click', (ev) => {
+    // A dialog opened from the sheet may already be gone by the time its
+    // click arrives here, so ask the event's own path, not the live tree.
+    const path = ev.composedPath();
+    if (top.classList.contains('ctx-open') && !path.includes(sheet) && !path.includes(button)
+      && !path.includes($('#modal'))) setOpen(false);
+  });
+  sheet.addEventListener('input', syncContextSummary);
+  sheet.addEventListener('change', syncContextSummary);
+  syncContextSummary();
+}
+
+/* Night vision: the red display nightmode.js applies before the first paint. */
+function wireNightVision() {
+  const button = $('#btnRed');
+  if (!button) return;
+  const sync = () => button.setAttribute('aria-pressed',
+    String(document.documentElement.classList.contains('night-red')));
+  button.addEventListener('click', () => {
+    const on = document.documentElement.classList.toggle('night-red');
+    try { localStorage.setItem('nightseam_night_red', on ? '1' : '0'); } catch { /* this visit only */ }
+    sync();
+    announceStatus(on ? 'Night vision on: red display.' : 'Night vision off.');
+  });
+  sync();
+}
+
 /* ---- WEB-REV-003 selection/inspector state contract ----------------------
  * `S.detailId` is the ONE authoritative selected-target identity shared by
  * Tonight, Catalog and Sky View; `S.detailOpen` is the ONLY evidence that the
@@ -2008,10 +2140,47 @@ function syncSkyDetailPlaceholder() {
   const plotNote = $('#m-plot-note');
   if (plotNote) { plotNote.hidden = !unplotted; plotNote.textContent = unplotted ? note : ''; }
   if (S.detailOpen) return;
-  empty.innerHTML = target
+  const html = (target
     ? `<button type="button" class="btn small" id="sky-selected-detail">Open ${esc(target.primary_name)} details</button>${unplotted ? `<p class="sub">${note}</p>` : ''}`
-    : '<p class="sub">Select a target on the chart to open its details.</p>';
+    : '<p class="sub">Select a target on the chart to open its details.</p>') + skyNowPanel();
+  // the chart redraws every frame while the time moves: rebuild only on change
+  if (empty.dataset.html === html) return;
+  empty.dataset.html = html;
+  empty.innerHTML = html;
   $('#sky-selected-detail')?.addEventListener('click', ev => openDetail(target.id, ev.currentTarget));
+  empty.querySelectorAll('[data-now-id]').forEach((b) => b.addEventListener('click', (ev) => {
+    selectTarget(b.dataset.nowId);
+    openDetail(b.dataset.nowId, ev.currentTarget);
+  }));
+}
+
+const DIRS16 = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW'];
+const azName = (az) => DIRS16[Math.round((((az % 360) + 360) % 360) / 22.5) % 16];
+
+/** "At 22:07": the Moon, how many plotted targets are usable now, and the
+ *  highest of them, so an empty rail answers "what can I look at now". The
+ *  order is altitude, a measured value; popularity plays no part. */
+function skyNowPanel() {
+  const jd = E.julianDay(S.skyTime);
+  const { lat, lon } = S.site;
+  const [mAlt, mAz] = E.moonAltAz(jd, lat, lon);
+  const moon = E.aboveHorizon(mAlt)
+    ? `Moon ${mAlt.toFixed(0)}° ${azName(mAz)}`
+    : 'Moon below the horizon';
+  const usable = [];
+  for (const item of skyItems) {
+    if (!item.o) continue;
+    const v = selectedVisibility(item.o);
+    if (v.visible) usable.push({ o: item.o, alt: v.alt });
+  }
+  usable.sort((a, b) => b.alt - a.alt);
+  const rows = usable.slice(0, 6).map(({ o, alt }) =>
+    `<li><button type="button" class="pick-target" data-now-id="${esc(o.id)}"><span>${esc(o.primary_name)}</span><span class="mono">${alt.toFixed(0)}°</span></button></li>`).join('');
+  return `<section class="sky-now" aria-label="At the selected time">
+    <h3>At ${fmtClock(S.skyTime)}</h3>
+    <p class="sub">${moon} · ${usable.length} plotted target${usable.length === 1 ? '' : 's'} usable now</p>
+    ${rows ? `<h4>Highest usable now</h4><ul class="sky-now-list">${rows}</ul>` : ''}
+  </section>`;
 }
 
 function updateDetailSelectedTime() {
@@ -2163,7 +2332,10 @@ function openDetail(id, opener = null, { refresh = false } = {}) {
     return `<dt>${label}</dt><dd><span style="color:${col}">${a}°</span><span class="tags">from Moon${note}</span></dd>`;
   };
 
-  const tags = [o.messier, o.ngcic, o.other].filter(Boolean).map(esc).join(' · ');
+  // `other` is the catalog's comma list ("C 013,MWSC 0114"): one separator for
+  // every designation, and Caldwell numbers unpadded as elsewhere ("C 13").
+  const others = String(o.other || '').split(',').map((d) => d.trim().replace(/^C 0+(?=\d)/, 'C ')).filter(Boolean);
+  const tags = [o.messier, o.ngcic, ...others].filter(Boolean).map(esc).join(' · ');
   // the article that actually documents this object - NOT the bare display name,
   // which is a disambiguation page for a Messier row without a common name
   const wiki = wikiTitles(o)[0] || o.primary_name;
@@ -2415,10 +2587,19 @@ function openDetail(id, opener = null, { refresh = false } = {}) {
     gCtx.textAlign = 'right';
     for (const alt of [0, 20, 40, 60, 80]) gCtx.fillText(`${alt}°`, padL - 6, yOf(alt) + 3);
     gCtx.textAlign = 'center';
-    const ticks = 10;
-    for (let i = 0; i <= ticks; i++) {
-      const ms = (i / ticks) * durMs;
-      gCtx.fillText(fmtClock(new Date(tStart.getTime() + ms)), xOf(ms), H - 6);
+    // whole-hour ticks, as many as fit without the labels touching
+    const textW = gCtx.measureText('00:00').width;
+    const labelW = textW + 12;
+    const pxPerHour = (W - padL - padR) / (durMs / 3600000);
+    const stepH = [1, 2, 3, 4, 6, 12].find((h) => h * pxPerHour >= labelW) || 24;
+    const wall0 = WS.utcToWall(tStart);
+    const toHourMs = ((60 - wall0.getMinutes()) % 60) * 60000 - wall0.getSeconds() * 1000 - wall0.getMilliseconds();
+    for (let ms = toHourMs < 0 ? toHourMs + 3600000 : toHourMs; ms <= durMs; ms += 3600000) {
+      const d = new Date(tStart.getTime() + ms);
+      if (WS.utcToWall(d).getHours() % stepH) continue;
+      const x = xOf(ms);
+      if (x - textW / 2 < 0 || x + textW / 2 > W) continue;
+      gCtx.fillText(fmtClock(d), x, H - 6);
     }
     // best window highlight
     if (hasBest) {
@@ -2638,6 +2819,7 @@ function syncTopPrefs() {
   if (mua) mua.setAttribute('aria-valuetext', `${eff} degrees`);
   if (muaV) muaV.textContent = eff + '°';
   if (note) note.textContent = p.minAlt == null ? 'auto (bortle)' : 'explicit';
+  syncContextSummary();
 }
 
 function refreshMenuUI() {
@@ -2659,6 +2841,7 @@ function refreshMenuUI() {
   const su = $('#sizeUnit'); if (su) su.value = prefs.sizeUnit || 'arcmin';
   const rs = $('#rigSelect'); if (rs) rs.value = prefs.activeRigId || '';
   const wx = $('#wxAuto'); if (wx) wx.checked = !!prefs.weatherAuto;
+  syncContextSummary();
 }
 
 function savePreferencePatch(patch) {
@@ -2784,6 +2967,7 @@ async function reloadRigs(options) {
       throw new Error('could not save the restored rig preference');
     }
   }
+  syncContextSummary();
 }
 
 async function renderSettings() {
@@ -2847,7 +3031,7 @@ async function renderSettings() {
             <label>Longitude <input type="text" inputmode="decimal" id="sf-quick-lon"></label>
             <div class="btnrow">
               <button class="btn primary" id="sf-quick-save">Update active site</button>
-              <button class="btn" id="sf-quick-locate">use my location</button>
+              <button class="btn" id="sf-quick-locate">Use my location</button>
               <span class="sub" id="sf-quick-note" role="status" style="align-self:center"></span>
             </div>
           </div>
@@ -3384,7 +3568,7 @@ function welcomeFlow() {
           <label>Timezone <input type="text" id="w-tz" list="tz-list" placeholder="browser default">${TZ_DATALIST}</label>
           <div class="btnrow" style="margin-top:12px">
             <button class="btn primary" id="w-save">Save my site</button>
-            <button class="btn" id="w-geo">use my location</button>
+            <button class="btn" id="w-geo">Use my location</button>
             <button class="btn" id="w-skip">Use Berlin example</button>
           </div>
         </div>
@@ -3673,6 +3857,24 @@ async function boot() {
   // — hamburger menu (desktop parity) —
   const menuBtn = $('#btnMenu'), menuPanel = $('#menuPanel');
   wirePopover(menuBtn, menuPanel);
+  wireContextSheet();
+  wireNightVision();
+  // Offline reopening (web/sw.js, published beside this page). The planner
+  // works the same without it; a refused registration changes nothing.
+  if ('serviceWorker' in navigator && window.isSecureContext) {
+    navigator.serviceWorker.register('sw.js')
+      .then(() => navigator.serviceWorker.ready)
+      .then((reg) => {
+        // This visit's files loaded before the worker could see them: hand it
+        // the list, so the first visit is already enough to reopen offline.
+        const urls = [location.href.split('#')[0],
+          ...[...document.querySelectorAll('link[href], script[src]')].map((el) => el.href || el.src),
+          ...(performance.getEntriesByType?.('resource') || []).map((entry) => entry.name)]
+          .filter((url) => url.startsWith(location.origin + '/'));
+        reg.active?.postMessage({ type: 'cache-urls', urls });
+      })
+      .catch(() => {});
+  }
 
   const p = Hor.getPrefs();
   $('#edgeSpace').addEventListener('input', (ev) => {

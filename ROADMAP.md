@@ -23,6 +23,15 @@ Where NightSeam Web stands and what comes next. Open defects are in
 
 ## Open work
 
+- **Phone layout and night vision** (October 20, unreleased): the planner's
+  own phone layout (bottom tab bar, pinned time slider, setup sheet, two-line
+  rows, bottom-sheet details, pinch zoom) and the red night-vision display
+  (DESIGN.md, "Phone layout"). Checked in headless Chrome at phone sizes;
+  still to be tried by the owner on a real phone, at night, including
+  installing it to the home screen and reopening it offline (`web/sw.js`,
+  DECISIONS.md 2026-10-20):
+  [PHONE_ACCEPTANCE.md](docs/acceptance/PHONE_ACCEPTANCE.md).
+
 - **Horizon sensor capture** ([plan](docs/horizon/HORIZON_SENSOR_CAPTURE_PLAN.md)):
   capture the skyline with the phone's camera view and sensors, remove photo
   placement, and move horizons between devices with a share link. Phase 0
@@ -52,9 +61,6 @@ any new external request, CSP entry or formula is added.
 - **Seeing.** Cloud, wind and humidity are weather, not seeing. A seeing
   forecast needs a named provider with a supported API, terms and stated
   accuracy; it would stay opt-in and never block planning.
-- **Offline reopening.** Today a loaded tab keeps planning offline, but
-  reopening offline is not guaranteed. Supporting it needs a service worker
-  with an update policy, complete asset/catalog pairing and storage limits.
 
 ## History
 

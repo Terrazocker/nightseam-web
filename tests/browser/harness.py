@@ -382,12 +382,16 @@ def _install_stubs(page):
                    json={"type": "standard"}))
 
 
-def _new_context(browser, dpr: int = 1):
+def _new_context(browser, dpr: int = 1, service_workers: str = "block"):
+    # The planner registers a service worker (web/sw.js) for offline reopening.
+    # Requests a service worker makes do not pass the page-level routes these
+    # checks use to serve fixtures and fail third parties, so a check runs
+    # without it unless it is about the worker (fn.service_workers = "allow").
     ctx = browser.new_context(
         timezone_id=TZ, locale="en-US",
         viewport={"width": VIEWPORT[0], "height": VIEWPORT[1]},
         color_scheme="dark", device_scale_factor=dpr,
-        reduced_motion="reduce",
+        reduced_motion="reduce", service_workers=service_workers,
     )
     page = ctx.new_page()
     try:
@@ -477,7 +481,7 @@ def run(channel: str = "chrome", targets=("web",),
             for name, target, fn in selected:
                 if not web_srv.health()['thread_alive']:
                     raise BrowserInfrastructureError(f'Local test server stopped: {web_srv.health()}')
-                ctx_b, page = _new_context(browser)
+                ctx_b, page = _new_context(browser, service_workers=getattr(fn, "service_workers", "block"))
                 c = Ctx(page, bases[target], target, artifacts)
                 c.server_health = web_srv.health
                 _attach(c)

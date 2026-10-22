@@ -104,8 +104,12 @@ machine's sandbox limits (Chrome named pipes, elevated runs).
 **UI**
 - Workbench is the only theme; colors come from the role tokens in
   `web/themes.css`.
-- Site, Rig and minimum altitude stay in the top bar; advanced options live in
-  the hamburger menu with quiet defaults.
+- Site, Rig and minimum altitude stay in the top bar (on phones: in the
+  observing-setup sheet behind the header's summary line); advanced options
+  live in the hamburger menu with quiet defaults.
+- Phones keep their own layout (DESIGN.md, "Phone layout"): bottom tab bar with
+  the pinned time slider, 44px controls, 16px form text, 12px minimum text, no
+  sideways page scroll.
 - Keep keyboard access, focus order, accessible names, reduced motion and
   summaries that do not rely on color alone.
 

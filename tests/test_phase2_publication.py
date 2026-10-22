@@ -181,3 +181,19 @@ def test_raw_website_cli_refuses_before_credentials_or_connection(monkeypatch,tm
     monkeypatch.setattr(deploy,'load_env',lambda path:pytest.fail('must refuse before credentials'))
     monkeypatch.setattr(deploy,'connect',lambda env:pytest.fail('must refuse before network'))
     with pytest.raises(ValueError,match='Mutable'): deploy.main()
+
+
+def test_service_worker_is_published_beside_the_entry_page(tmp_path):
+    """A service worker controls only pages at or below its own folder, so
+    web/sw.js must reach /astro/sw.js as well as its release snapshot, and the
+    bundle check must accept exactly that root file (not any other)."""
+    tracked_fixture(tmp_path)
+    (tmp_path/'web/sw.js').write_text("self.addEventListener('fetch', () => {});")
+    subprocess.run(['git', 'add', 'web/sw.js'], cwd=tmp_path, check=True)
+    payload, meta = immutable_payload(tmp_path)
+    assert payload['web/sw.js'] == (tmp_path/'web/sw.js').read_bytes()
+    assert payload[f'web/releases/{meta["web_namespace"]}/sw.js'] == payload['web/sw.js']
+    assert 'web/dep.js' not in payload, 'other modules stay in the immutable release only'
+    candidate = prepare(tmp_path, 'test')
+    mapped = load_bundle(candidate)
+    assert 'astro/sw.js' in mapped and 'astro/dep.js' not in mapped

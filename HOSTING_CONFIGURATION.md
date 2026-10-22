@@ -68,8 +68,9 @@ Use Plesk's supported compression/cache controls, or ask host support to apply
 the equivalent policy at the nginx layer if those controls are unavailable:
 
 - Compress HTML, CSS, JavaScript, JSON and SVG with gzip; set Vary: Accept-Encoding.
-- Revalidate entry HTML, version.json and catalog manifests (max-age=0,
-  must-revalidate). Do not cache HTML as immutable.
+- Revalidate entry HTML, version.json, /astro/sw.js and catalog manifests
+  (max-age=0, must-revalidate). Do not cache HTML as immutable. Serve sw.js as
+  JavaScript (browsers refuse other types for a service worker).
 - For static assets with a numeric v query token, allow public max-age=31536000,
   immutable. Reuse a token only for identical bytes. Unversioned assets revalidate.
 - Content-addressed core directories can also be immutable; preserve existing

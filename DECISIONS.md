@@ -7,7 +7,9 @@ Library, SQLite, desktop CSP) are history only.
 ## Rules still in force (index)
 
 - **Scope and authority:** one JS core for astronomy and planning (0.6.20);
-  published reference anchors over fixtures; Workbench is the only theme;
+  published reference anchors over fixtures; Workbench is the only theme, with
+  night vision as a display filter over it and a phone layout of its own
+  (2026-10-20);
   global catalog IDs (0.6.12); the website and the Windows catalog are
   independent projects (2026-10-01 split).
 - **Time and planning:** site-zoned noon anchoring and calendar dates
@@ -33,6 +35,57 @@ Library, SQLite, desktop CSP) are history only.
   releases continue at 0.7.0 above inherited tags (2026-10-11).
 - **Documentation:** see "Documentation layout" (2026-10-11), which updates the
   older "Docs policy".
+
+## 2026-10-20 — Offline reopening
+
+- **What.** `web/sw.js` is a service worker: pages, `version.json` and other
+  unversioned files are network first with the last good copy when offline;
+  immutable files (a `?v=N` token, `/releases/<id>/`, `/core/<hash>/`) are
+  cache first; other origins are never touched. The first visit hands the
+  worker the files it loaded, so one visit is enough. Files of the two newest
+  releases are kept; older ones are dropped when a third release is cached.
+- **Publication.** A service worker controls only pages at or below its own
+  folder, so `web/sw.js` is published at `/astro/sw.js` as well as in its
+  release, like `version.json` (`ROOT_ENTRIES` in
+  `scripts/publication_assets.py`; `load_bundle` in `web/ftps_deploy.py`
+  accepts exactly these root files). It switches with the entry pages after
+  the immutable graph is verified. No server policy changes.
+- **Why.** The planner is used at dark sites, often without signal; the
+  ROADMAP proposal asked for an update policy (a reachable server always
+  wins), complete asset/catalog pairing (both come from one release) and
+  storage limits (two releases). The owner asked for it on October 20.
+- **Checks.** `web-offline-reopen` reloads the planner offline after one
+  visit; a publication test pins `/astro/sw.js` in the bundle.
+
+## 2026-10-20 — A phone layout of its own; night vision
+
+- **What.** Up to 640px wide, and on touch screens held sideways, the planner
+  uses a phone layout (DESIGN.md, "Phone layout"): a one-line summary of site,
+  rig, minimum altitude and night that opens the observing setup as a bottom
+  sheet; a bottom tab bar with a pinned time slider; two-line rows instead of
+  sideways-scrolling tables; catalog filters behind a button; details as a
+  bottom sheet; pinch zoom and zoom buttons on the sky map; *Capture with
+  phone* first in an empty Horizon on touch devices. Controls are at least
+  44px, form text 16px, other text at least 12px. A header toggle turns on
+  night vision, a red-only display. The planner gains a web app manifest.
+- **Why.** An owner review of the site on PC and phone (October 20) found the
+  phone layout was the desktop one stacked: seven controls and the tabs took
+  36-45% of an upright screen (53% sideways) before any result, nearly every
+  control was under 44px, form text under 16px made iOS zoom, tables hid the
+  "when" off to the side, and the sky map could only zoom with a mouse wheel.
+  The planner is used at the telescope, where thumbs, cold hands and dark
+  adaptation matter. The owner set DESIGN.md aside for this change and asked
+  for the layout to follow mobile guidelines and best practice.
+- **Supersedes.** The phone parts of the Web shell rules ("the phone header
+  scrolls with the page" with every control in it, Site/Rig/minimum altitude
+  always visible in the top bar, the Sky View slider row on phones) and the
+  sideways-scrolling Tonight table on phones. Wide screens are unchanged
+  apart from the night-vision button and the Sky View zoom buttons.
+- **Night vision, not a theme.** It is a filter on the root element (the root
+  is the one element whose filter does not capture fixed-position content),
+  so every chart, photo and the camera view turn red without per-colour work,
+  and Workbench stays the only theme. It is a device choice in
+  `localStorage`, applied before the first paint, and stays out of backups.
 
 ## 2026-10-19 — Pin the test tooling exactly
 

@@ -94,12 +94,12 @@ _VERIFIED_BASELINE_JSON = r"""
 {
  "modules": {
   "../landing/style.css": {
-   "sha256": "08321185b2b35606cdfc10abca71e1e3e31d7d3dd6c163e1d45650ad2c71916b",
-   "token": "5"
+   "sha256": "7d3a8753314dfde4bb9be35f2702d993f5c00d01357e708bbe65f7efe0ea9a50",
+   "token": "6"
   },
   "app.js": {
-   "sha256": "5115d2fe0c02d9fb674596319c7d5b24e3f2c186ec148bd0af83ef75c0f72337",
-   "token": "261"
+   "sha256": "dc01f1ac396fe4f26347bb8c9c1e87b07bbfb2edff4e157b90dc7ab85f0d09ca",
+   "token": "273"
   },
   "astro.js": {
    "sha256": "0c267139e2c1d4307a291b44e46e3a4c045af16edc48b879082f45e245b1807d",
@@ -122,20 +122,24 @@ _VERIFIED_BASELINE_JSON = r"""
    "token": "75"
   },
   "horizon.js": {
-   "sha256": "ca54747dacfd2b6d6668ffded89a377fea9905c734fc9b204bd81e88a3f5f95d",
-   "token": "164"
+   "sha256": "b8706e31c142223b1016c945cd0f60bc14be9815ebeab97263c0e2031b452e9b",
+   "token": "167"
   },
   "imagecredits.js": {
    "sha256": "8c8b650a0ad6ef6462eea251b67642103cb0eb9010c1f9dde09fce2ba7fa8952",
    "token": "2"
+  },
+  "nightmode.js": {
+   "sha256": "645a778c7d38243462330e092b3225595de962fbf913898647d96fe70d4d55cf",
+   "token": "1"
   },
   "nightrank.js": {
    "sha256": "70e7f13bc4c8c21b3b721f9565190e9da5fe71b64f623de1a5f3c094824649be",
    "token": "67"
   },
   "style.css": {
-   "sha256": "fbfd3de370faf18e9c6f0ea82f52d22f2e107b385607302e08983034d6127add",
-   "token": "80"
+   "sha256": "7df0ec40178b9a7b70ae0a19bf39e37689719d9ded61b3a1e9f34409226ea572",
+   "token": "92"
   },
   "themes.css": {
    "sha256": "f8094c798dbe72b4e7f84faad3f41fc0cdbe896a03c0cb7413ee9d0d1bed2ff8",
@@ -146,8 +150,8 @@ _VERIFIED_BASELINE_JSON = r"""
    "token": "7"
   },
   "weather.js": {
-   "sha256": "a575117732248d1f9a7a626460e43dd515ce4b36f5ae2ff912b2f53f7ede1845",
-   "token": "1"
+   "sha256": "29c8c96dde952158fb94919b8c1d098ba2ea94e2384caa6ff3f5486de23f61cf",
+   "token": "4"
   },
   "webstore.js": {
    "sha256": "e1eaa312db496c643fe211c262d5247f51fa907233abbd0d1aae28449b1dfe2a",
