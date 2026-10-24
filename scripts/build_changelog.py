@@ -23,12 +23,20 @@ PAGE = ROOT / "landing" / "download.html"
 START = "<!-- BEGIN GENERATED RELEASE HISTORY -->"
 END = "<!-- END GENERATED RELEASE HISTORY -->"
 # Explicit independent-product history, separate from inherited Git tags.
-PUBLIC_RELEASES = [{"version": "0.8.0", "date": "2026-10-24"},
+PUBLIC_RELEASES = [{"version": "0.8.1", "date": "2026-10-24"},
+                   {"version": "0.8.0", "date": "2026-10-24"},
                    {"version": "0.7.0", "date": "2026-10-19"},
                    {"version": "0.1.1", "date": "2026-10-08"},
                    {"version": "0.1.0", "date": "2026-10-07"}]
 
 CURATED = {
+    # Released 2026-10-24.
+    "0.8.1": [
+        'Shorter public pages, with release notes as bullet points.',
+        'A new Catalog page for NightSeam Catalog, the desktop app for organizing your exposures.',
+        'Resizing the window on the Horizon tab no longer shows a ResizeObserver warning.',
+        'The delete-horizon button shows a proper trash can on Windows.',
+    ],
     # Released 2026-10-24.
     "0.8.0": [
         'Phone layout: bottom tabs, a pinned time slider, a setup sheet and target details as a bottom sheet.',

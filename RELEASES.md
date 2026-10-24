@@ -4,6 +4,21 @@ Actual validation outcomes, newest first. Published releases: v0.8.0 (October
 24, 2026), v0.7.0 (October 19, 2026), v0.1.1 (October 8, 2026) and v0.1.0
 (October 7, 2026). Upload success alone is never recorded as acceptance.
 
+## v0.8.1 release preparation — October 24, 2026 (branch release-0.8.1)
+
+Owner asked to check PRs 10 and 11 and release them to nightseam.de as
+0.8.1. PR 10's browser job failed twice on Linux CI and was fixed on the
+branch (the header overflowed at 200% zoom with four links, then the phone
+header wrapped at 320 px; both reproduced here with Verdana). PR 11 was
+merged with PR 10's branch to resolve the RELEASES.md conflict. CI passed on
+c19085d (PR 10) and b3fd3e6 (PR 11); both merged into main (f17f447).
+
+- The dated 0.8.1 PUBLIC_RELEASES record and its bullets added, landing
+  history regenerated, ledger pins extended to 0.8.1.
+- pytest 372 passed / 1 skipped, the 15 `tests/test_relay.py` cases failing
+  only because PHP is not installed here; real-Chrome suite 93/93; check_js
+  OK; check_release --allow-dirty --no-stage 0 errors; pre_tag_check 0.8.1 OK.
+
 ## Horizon resize error and trash icon — October 24, 2026 (branch planner-resize-trash)
 
 Owner reported a "ResizeObserver loop completed with undelivered notifications"
