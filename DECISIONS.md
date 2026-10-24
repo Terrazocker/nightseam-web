@@ -37,8 +37,38 @@ Library, SQLite, desktop CSP) are history only.
   tooling is pinned exactly (2026-10-19).
 - **Releases:** the public history restarted at 0.1.0 (2026-10-06); later
   releases continue at 0.7.0 above inherited tags (2026-10-11).
+- **Public pages:** short pages with nothing folded away, release notes as
+  bullet lists, and a Catalog page for the desktop app (2026-10-24, supersedes
+  the 2026-10-06 public design and its "no catalog offer" rule).
 - **Documentation:** see "Documentation layout" (2026-10-11), which updates the
   older "Docs policy".
+
+## 2026-10-24 — Shorter public pages and a Catalog page
+
+The owner found the public pages overexplained, the release notes too long
+and the native disclosures used mostly to hide text, released the earlier
+public design standards and asked for usual design practice, plus a tab for
+the desktop catalog app (github.com/Terrazocker/nightseam-library).
+
+- Navigation is Planner, Catalog, Changes, About, with *Open planner* in the
+  header. Home introduces the two apps side by side; the map motif stays on
+  Home only.
+- Page content is never folded away. A fact that matters is shown as a short
+  line or bullet; one that does not is cut. The phone menu stays a native
+  disclosure, since the pages run no script.
+- Public release notes are bullet lists (CURATED values may be lists of
+  strings; the old ones were rewritten as bullets).
+- The Catalog page describes the app and links its GitHub *latest release*
+  and source. It names no version, so the website never tracks the app's
+  versions (the projects stay independent, 2026-10-01). This supersedes the
+  2026-10-06 rule that no catalog download is offered.
+- Privacy keeps every disclosed fact, as a summary table plus short sections.
+  Offline reopening (2026-10-20) is now stated rather than disclaimed.
+
+Supersedes "Public design approval and implementation — October 6, 2026" and
+the disclosure and catalog parts of "Honest browser-product copy and static
+release history" (2026-10-06).
+
 
 ## 2026-10-24 — One weather rating number, named nights
 

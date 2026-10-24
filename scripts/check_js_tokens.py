@@ -94,8 +94,8 @@ _VERIFIED_BASELINE_JSON = r"""
 {
  "modules": {
   "../landing/style.css": {
-   "sha256": "7d3a8753314dfde4bb9be35f2702d993f5c00d01357e708bbe65f7efe0ea9a50",
-   "token": "6"
+   "sha256": "c5140bd96a544eb8bd42464e14071c14ad156898b0661dfa69c2b60fa63d21df",
+   "token": "7"
   },
   "app.js": {
    "sha256": "51d6227971c997d20c289bf2a0cbf12c0ee5e136bd4dcd0015e9df59f2141197",

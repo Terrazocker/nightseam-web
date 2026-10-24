@@ -8,115 +8,72 @@
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
 <meta name="referrer" content="strict-origin-when-cross-origin">
 <title>Privacy — NightSeam</title>
-<meta name="description" content="Local saved planning data, online weather and photos, and website hosting explained.">
+<meta name="description" content="What the NightSeam planner keeps in your browser and what it sends online.">
 <link rel="canonical" href="https://nightseam.de/privacy.html">
 <meta property="og:type" content="website">
 <meta property="og:title" content="Privacy — NightSeam">
-<meta property="og:description" content="Local saved planning data, online weather and photos, and website hosting explained.">
+<meta property="og:description" content="What the NightSeam planner keeps in your browser and what it sends online.">
 <meta property="og:url" content="https://nightseam.de/privacy.html">
 <meta property="og:image" content="https://nightseam.de/social-preview.png?v=2">
 <meta property="og:image:alt" content="NightSeam — know what you can see, with your own skyline and calculated target visibility">
 <meta name="twitter:card" content="summary_large_image">
 <link rel="icon" type="image/png" href="app.png">
 <link rel="stylesheet" href="/astro/themes.css?v=23">
-<link rel="stylesheet" href="style.css?v=6">
+<link rel="stylesheet" href="style.css?v=7">
 </head>
 <body class="public-site">
 <a class="skip-link" href="#content">Skip to content</a>
 <header class="site-header"><div class="container navrow">
 <a class="brand" href="/" aria-label="NightSeam home">NightSeam</a>
 <div class="header-actions">
-<div class="desktop-nav"><nav aria-label="Main navigation"><a href="features.html">Features</a><a href="about.html">About</a><a href="download.html">Changes</a></nav></div>
+<div class="desktop-nav"><nav aria-label="Main navigation"><a href="features.html">Planner</a><a href="catalog.html">Catalog</a><a href="download.html">Changes</a><a href="about.html">About</a></nav></div>
 <a class="header-cta" href="/astro/">Open planner</a>
-<details class="mobile-menu"><summary aria-label="Navigation menu"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M3 6h18M3 12h18M3 18h18"/></svg></summary><nav aria-label="Mobile navigation"><a href="features.html">Features</a><a href="about.html">About</a><a href="download.html">Changes</a></nav></details>
+<details class="mobile-menu"><summary aria-label="Navigation menu"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M3 6h18M3 12h18M3 18h18"/></svg></summary><nav aria-label="Mobile navigation"><a href="features.html">Planner</a><a href="catalog.html">Catalog</a><a href="download.html">Changes</a><a href="about.html">About</a></nav></details>
 </div>
 </div></header>
-<main id="content" tabindex="-1" class="container"><section class="hero"><svg class="sky-map" aria-hidden="true" focusable="false" viewBox="0 0 960 760"><use href="sky-map.svg?v=1#sky-art"></use></svg><div class="hero-copy"><p class="eyebrow">Your data</p><h1>Privacy, explained.</h1><p class="hero-sub">Saved planning data stays in your browser.<br>Some online features contact external services.</p></div></section><section class="two-facts" aria-label="Privacy summary"><div><h2>On your device</h2><p>Sites, rigs and horizons stay in browser storage; backups stay wherever you save them. The camera view for capturing a horizon is never recorded or uploaded.</p></div><div><h2>Online requests</h2><p>Weather sends your active site’s coordinates and timezone to Open-Meteo. New photos use Wikipedia and Wikimedia.</p></div></section><details class="disclosure"><summary>Browser storage and backups</summary><div class="disclosure-body"><p>The browser planner runs astronomy calculations on your device, without an
-      account. It uses no analytics, tracking or cookies. Your saved sites, rigs,
-      custom targets, preferences and horizons stay in your browser’s IndexedDB
-      and localStorage. Importing a horizon file or restoring a backup does not
-      upload that file to NightSeam.</p>
-      <p>Local storage is specific to the browser and site address. Clearing it
-      removes saved planning data. Export a JSON backup first if you want to keep
-      a separate copy; exported files remain wherever you save them.</p></div></details><details class="disclosure"><summary>Weather, photos and location</summary><div class="disclosure-body"><h2>Weather and air quality</h2><p>Loading weather sends your active site’s latitude, longitude and selected
-      timezone to the forecast and air-quality services at
-      <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a>.
-      The requests also specify forecast variables and a four-day forecast period;
-      your browser supplies normal connection information. Saved site names,
-      equipment, custom targets and horizons are not included in these requests.</p>
-      <p>Weather loads when requested, or on startup if you enable “Always load on
-      startup.” After you have loaded weather, changing the active site can fetch
-      a new forecast. Disable the startup setting in the weather panel to prevent
-      that automatic startup request. Weather data &copy; Open-Meteo.com.</p><h2>Object photos</h2><p>Object details show available author, source and license credits.
-      Opening an object without a cached photo can
-      request an article summary and image credit metadata from
-      <a href="https://en.wikipedia.org/" target="_blank" rel="noopener">Wikipedia</a>
-      and a thumbnail from Wikimedia’s image service. Those services receive the
-      requested article or image path and normal connection information; saved
-      observing coordinates, rigs and horizons are not sent with photo requests.
-      Downloaded thumbnails are cached locally in IndexedDB. Each image retains
-      its own license and credit requirements.</p><h2>Using your location</h2><p>The “use my location” button asks your browser for your position only when you
-      press it, subject to the browser’s permission controls. The browser’s own
-      location service may use network services. The resulting coordinates are
-      stored locally as site data and can subsequently be sent to Open-Meteo if
-      you load weather for that site.</p>
-      <p>When you capture a horizon and your browser already allows location
-      access for this site, the capture compares your position with the observing
-      site to warn when you are far from it. It never asks for your location
-      itself, and that position is neither stored nor sent.</p></div></details><details class="disclosure"><summary>Horizon capture, share links and pairing</summary><div class="disclosure-body"><h2>Camera and motion sensors</h2><p>Capturing a horizon on a phone asks your browser for the camera and, where
-      the browser requires it, for the motion sensors. The camera image is shown
-      on screen and, where the browser supports it, measured on your device to keep
-      the overlay in step with your movement; it is never recorded, stored or
-      uploaded. Only the skyline points you trace are saved. Each phone keeps its
-      own overlay timing and scale in localStorage.</p><h2>Share links</h2><p>A share link carries a horizon’s name, skyline points and overhang edges
-      in the part of the address after “#”, which browsers do not send to the
-      website. Anyone you give the link to can read that horizon, and the app you
-      share it through handles it under its own terms. Opening a link asks before
-      the horizon is added.</p><h2>Getting a horizon from your phone</h2><p>“Get from phone” shows a QR code on the desktop. While it is open, the
-      desktop and the phone exchange two messages through a short-lived mailbox
-      on this website: the desktop’s active site (name, coordinates, elevation and
-      timezone) and, after you tap “Send to desktop”, the horizon’s name, skyline
-      points and overhang edges. Both are encrypted in your browsers with a key
-      that only the QR code carries, after the “#” in its address, so it is never
-      sent to the website; the website stores only data it cannot read. A mailbox
-      is deleted as soon as the desktop has collected the horizon or you cancel.
-      After ten minutes it expires and is deleted with the next pairing request.</p>
-      <p>The website’s access logs record these requests like any other, with the
-      mailbox’s random number in the requested URL (see Hosting). To limit misuse,
-      the mailbox service keeps a salted hash of your IP address for ten minutes;
-      it is deleted with the next pairing request after that, and the salt is
-      replaced daily. The
-      desktop asks before adding a horizon from the phone, and the phone never
-      saves the desktop’s site.</p>
-      <p>A horizon you draw, capture or import is also kept on this website for
-      24 hours under a short code shown beside its name, so another device can
-      fetch it by typing the code into “Get from phone”. What is kept is the
-      horizon’s name, skyline points and overhang edges, no site or location,
-      encrypted with a key made from the code. That keeps the stored file from
-      being readable at a glance, but the code is short: anyone who has the
-      file and tries every code could read it, so this is weaker protection
-      than the QR code. Edits you make within the 24 hours replace the stored
-      copy. After 24 hours it is deleted with the next pairing request; deleting
-      the horizon, or “Delete from the server”, deletes it at once. A new code
-      for another 24 hours is made only when you ask for one. Looking up codes
-      is limited per IP address in the same way as above.</p></div></details><details class="disclosure"><summary>Website requests and hosting</summary><div class="disclosure-body"><h2>Website requests</h2><p>Opening the site or planner requests pages, scripts, catalog files and
-      site graphics from the website’s host. These requests expose technical
-      connection information such as your IP address and browser request headers.
-      The catalog and Standard selection are prepared in advance and served by
-      this website; browsing them does not contact a separate catalog provider.
-      </p><h2>Hosting</h2><p>This site is hosted by
-      <a href="https://zap-hosting.com/en/webhosting-rent-a-webspace/" target="_blank" rel="noopener">ZAP-Hosting GmbH</a>,
-      without a content delivery network (CDN). The host and external services may
-      process technical request data to deliver their responses.</p>
-      <p>Website access and error logs can contain your IP address, the time of
-      the request, the requested URL, response status and transferred data size.
-      The website’s own logs rotate daily and are kept for about eight days
-      (the current log plus up to seven archived ones). IP addresses are not
-      anonymized in this configuration. This describes the website’s logs, not
-      any separate records maintained by the hosting provider.</p></div></details><details class="disclosure"><summary>Connection requirements</summary><div class="disclosure-body"><p>Open the planner online and let the catalog finish loading. Planning can
-      then continue in that open tab while disconnected. Offline reopening or
-      reloading is not guaranteed. Weather and uncached external photos need an
-      internet connection.</p></div></details><details class="disclosure"><summary>Questions and contact</summary><div class="disclosure-body"><p>For questions about request logs, retention or saved planning data, <a href="impressum.html">contact the operator →</a>.</p></div></details><p class="back-link"><a href="/">← Home</a></p></main>
-<footer class="site-footer container"><div class="foot-inner"><span>NightSeam · Browser night planner</span><nav aria-label="Footer navigation"><a href="/astro/">Planner</a><a href="features.html">Features</a><a href="about.html">About</a><a href="download.html">Changes</a><a href="privacy.html" aria-current="page">Privacy</a><a href="impressum.html">Imprint</a></nav></div></footer>
+<main id="content" tabindex="-1" class="container">
+<section class="hero"><div class="hero-copy"><h1>Privacy</h1><p class="hero-sub">Your planning data stays in your browser. This page lists everything that goes online.</p></div></section>
+<section class="section"><h2>At a glance</h2><div class="table-wrap"><table>
+<thead><tr><th scope="col">Feature</th><th scope="col">What is sent</th><th scope="col">To</th><th scope="col">When</th></tr></thead>
+<tbody>
+<tr><th scope="row">Weather</th><td data-label="Sent">Your site’s latitude, longitude and timezone</td><td data-label="To">Open-Meteo</td><td data-label="When">When you load weather</td></tr>
+<tr><th scope="row">Object photos</th><td data-label="Sent">The article or image name</td><td data-label="To">Wikipedia, Wikimedia</td><td data-label="When">When you open an object without a cached photo</td></tr>
+<tr><th scope="row">Phone pairing</th><td data-label="Sent">Your site and horizon, encrypted</td><td data-label="To">This website, for at most 10 minutes</td><td data-label="When">When you use Get from phone</td></tr>
+<tr><th scope="row">Horizon codes</th><td data-label="Sent">The horizon, encrypted, without a location</td><td data-label="To">This website, for 24 hours</td><td data-label="When">When you draw, capture or import a horizon</td></tr>
+<tr><th scope="row">Page requests</th><td data-label="Sent">IP address and browser headers</td><td data-label="To">ZAP-Hosting GmbH, this site’s host</td><td data-label="When">On every visit</td></tr>
+</tbody></table></div></section>
+<section class="section"><h2>In your browser</h2><ul class="list">
+<li>No account, analytics, tracking or cookies.</li>
+<li>Sites, rigs, custom targets, preferences and horizons are kept in IndexedDB and localStorage. Clearing browser storage deletes them; export a JSON backup first if you want a copy.</li>
+<li>The planner’s own files are kept in the browser’s cache so it can reopen offline.</li>
+<li>Importing a horizon file or restoring a backup does not upload it.</li>
+</ul></section>
+<section class="section"><h2>Weather and air quality</h2><ul class="list">
+<li>Loading weather sends your active site’s latitude, longitude and selected timezone to the forecast and air-quality services at <a href="https://open-meteo.com/" rel="noopener">Open-Meteo</a>, with the forecast variables and a four-day period. Site names, equipment, targets and horizons are not sent.</li>
+<li>Weather loads when you ask, or on startup if you turn on “Always load on startup” in the weather panel. Once loaded, switching sites can fetch a new forecast. Weather data &copy; Open-Meteo.com.</li>
+</ul></section>
+<section class="section"><h2>Object photos</h2><ul class="list">
+<li>Opening an object without a cached photo requests an article summary and image credits from <a href="https://en.wikipedia.org/" rel="noopener">Wikipedia</a> and a thumbnail from Wikimedia’s image service. They receive the article or image name, never your coordinates, rigs or horizons.</li>
+<li>Thumbnails are cached in IndexedDB. Each keeps its own license, and its credits are shown with it.</li>
+</ul></section>
+<section class="section"><h2>Location, camera and sensors</h2><ul class="list">
+<li>“Use my location” asks your browser for your position only when you press it. The coordinates are saved as site data and go to Open-Meteo if you load weather for that site. The browser’s location service may itself use network services.</li>
+<li>During a horizon capture, if location access is already allowed, your position is compared with the site to warn you when you are far away. It is never requested, stored or sent.</li>
+<li>Capturing a horizon asks for the camera and, where the browser requires it, the motion sensors. The camera image is shown and measured on your device only; it is never recorded, stored or uploaded. Only the skyline you trace is saved. Each phone keeps its overlay timing and scale in localStorage.</li>
+</ul></section>
+<section class="section"><h2>Share links, pairing and horizon codes</h2><ul class="list">
+<li><strong>Share links</strong> carry the horizon (name, skyline points, overhang edges) after the “#” in the address, which browsers do not send to the website. Anyone with the link can read it, and the app you share it through handles it under its own terms. Opening a link asks before the horizon is added.</li>
+<li><strong>Get from phone</strong> passes the desktop’s active site (name, coordinates, elevation, timezone) and, after “Send to desktop”, the horizon through a short-lived mailbox on this website. Both are encrypted in your browsers with a key that only the QR code carries after its “#”, so the website stores only data it cannot read. The mailbox is deleted once the desktop has the horizon or you cancel; otherwise it expires after ten minutes and is deleted with the next pairing request. The desktop asks before adding the horizon, and the phone never saves the desktop’s site.</li>
+<li><strong>Horizon codes:</strong> a horizon you draw, capture or import is kept on this website for 24 hours under the code shown beside its name: its name, skyline points and overhang edges, no site or location, encrypted with a key made from the code. The code is short, so someone with the stored file who tries every code could read it; that is weaker than the QR code. Edits replace the stored copy. It is deleted after 24 hours with the next pairing request, or at once when you delete the horizon or choose “Delete from the server”. A new code is made only when you ask for one.</li>
+<li>To limit misuse, the mailbox service keeps a salted hash of your IP address for ten minutes; it is deleted with the next request after that, and the salt is replaced daily. Code lookups are limited per IP address the same way. The access logs record these requests like any other, including the mailbox’s random number in the URL.</li>
+</ul></section>
+<section class="section"><h2>Hosting and logs</h2><ul class="list">
+<li>Pages, scripts, catalog files and graphics come from this website, hosted by <a href="https://zap-hosting.com/en/webhosting-rent-a-webspace/" rel="noopener">ZAP-Hosting GmbH</a> without a content delivery network (CDN). The catalog is served from here; no separate catalog provider is contacted.</li>
+<li>Requests expose technical connection information such as your IP address and browser headers. The host and external services may process it to deliver their responses.</li>
+<li>Access and error logs can contain your IP address, the time, the requested URL, the response status and the size. They rotate daily and are kept for about eight days (the current log plus up to seven archived ones). IP addresses are not anonymized. This describes the website’s own logs, not separate records the host may keep.</li>
+</ul></section>
+<section class="section"><h2>Questions</h2><p>About logs, retention or your data: <a href="impressum.html">contact the operator</a>.</p></section>
+</main>
+<footer class="site-footer container"><div class="foot-inner"><span>NightSeam · Deep-sky planning and image cataloging</span><nav aria-label="Footer navigation"><a href="/astro/">Open planner</a><a href="features.html">Planner</a><a href="catalog.html">Catalog</a><a href="download.html">Changes</a><a href="about.html">About</a><a href="privacy.html" aria-current="page">Privacy</a><a href="impressum.html">Imprint</a></nav></div></footer>
 </body>
 </html>

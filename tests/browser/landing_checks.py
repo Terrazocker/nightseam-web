@@ -32,7 +32,9 @@ def assert_history(c):
     c.expect_eq(page.locator(".release-archive").count(), 0,
                 "the owner removed the old public archive")
     c.expect_in("v" + records[0]["version"], page.locator(".release-heading").first.inner_text())
-    c.expect_eq(page.locator(".cl-sum").all_text_contents(), [r["summary"] for r in records])
+    shown = [entry.locator(".cl-notes li").all_text_contents()
+             for entry in page.locator("#clList article.release-entry").all()]
+    c.expect_eq(shown, [r["summary"] for r in records], "each release is its bullet list")
     text = page.locator("main").inner_text()
     c.expect("0.6." not in text and "Latest tagged" not in text,
              "old version history and invented tag status must not remain")
@@ -56,14 +58,16 @@ def public_pages(c):
 
     c.page.on("request", on_request)
     with landing_server(c):
-        for path in ("/", "/features.html", "/about.html", "/download.html",
+        for path in ("/", "/features.html", "/catalog.html", "/about.html", "/download.html",
                      "/privacy.html", "/impressum.html"):
             c.goto(path)
             c.page.wait_for_load_state("load")
             c.expect_eq(c.page.locator("h1").count(), 1, "each public page needs a main heading")
             nav = c.page.locator(".desktop-nav nav")
-            c.expect_eq(nav.locator('a[href="download.html"]').inner_text(), "Changes",
-                        "all public navigation must use Changes")
+            c.expect_eq(nav.locator("a").all_text_contents(), ["Planner", "Catalog", "Changes", "About"],
+                        "the same four sections on every page")
+            c.expect_eq(c.page.locator("main details").count(), 0,
+                        "page content is shown, not folded away")
             c.expect_eq(nav.get_by_role("link", name="Download", exact=True).count(), 0,
                         "no current desktop download promotion belongs in navigation")
             c.expect(c.page.locator('a[href="/astro/"]').count() > 0, "planner must remain reachable")
@@ -80,16 +84,23 @@ def public_pages(c):
                     c.expect(claim not in text, "misleading product claim remains: " + claim)
         c.goto("/")
         c.expect_eq(c.page.locator("h1").inner_text(), "Know what you can see.")
-        c.expect_eq(c.page.locator(".two-facts h2").count(), 2, "Home must stay concise")
+        c.expect_eq(c.page.locator(".app-card h2").all_text_contents(), ["Planner", "Catalog"],
+                    "Home introduces the two apps")
         c.expect_eq(c.page.locator(".cta").count(), 1, "Home has one primary action")
+        c.expect_eq(c.page.locator('.app-card a[href="catalog.html"]').count(), 1)
         c.goto("/features.html")
-        c.page.locator(".disclosure > summary").click()
         features = c.page.locator("main").inner_text()
-        for fact in ("air-quality", "Always load on startup", "coordinates and timezone",
-                     "Reopening or reloading offline is not guaranteed"):
+        for fact in ("air quality", "Open-Meteo", "Stellarium", "reopens offline after one visit"):
             c.expect_in(fact, features)
+        c.goto("/catalog.html")
+        c.expect_eq(c.page.locator("h1").inner_text(), "NightSeam Catalog")
+        c.expect_eq(c.page.locator(".cta").get_attribute("href"),
+                    "https://github.com/Terrazocker/nightseam-library/releases/latest",
+                    "the download follows the Catalog's own latest release, not a pinned version")
+        c.expect(c.page.locator('a[href="https://github.com/Terrazocker/nightseam-library"]').is_visible(),
+                 "the Catalog's source must be linked")
         c.goto("/about.html")
-        c.expect(c.page.get_by_role("heading", name="Questions or feedback?").is_visible(),
+        c.expect(c.page.get_by_role("heading", name="Contact").is_visible(),
                  "a verified help route must be available")
         c.expect(c.page.locator('main a[href="impressum.html"]').is_visible(),
                  "help must use the established local contact route")
@@ -97,8 +108,6 @@ def public_pages(c):
         c.expect_eq(c.page.locator('a[href="mailto:terraza@proton.me"]').inner_text(),
                     "terraza@proton.me", "established owner contact must be preserved")
         c.goto("/privacy.html")
-        for summary in c.page.locator(".disclosure > summary").all():
-            summary.click()
         privacy = c.page.locator("main").inner_text()
         for fact in ("latitude, longitude and selected", "timezone", "air-quality",
                      "Always load on", "Wikipedia", "Wikimedia", "ZAP-Hosting GmbH",
@@ -154,8 +163,8 @@ def static_history(c):
 
 @check("web-public-design-responsive", "web")
 def public_design(c):
-    """Public pages stay usable with open disclosures, zoom and no JavaScript."""
-    pages = ("/", "/features.html", "/about.html", "/download.html",
+    """Public pages stay usable at phone widths, with zoom and without JavaScript."""
+    pages = ("/", "/features.html", "/catalog.html", "/about.html", "/download.html",
              "/privacy.html", "/impressum.html")
     with landing_server(c):
         for path in pages:
@@ -163,8 +172,11 @@ def public_design(c):
             c.goto(path)
             c.page.wait_for_load_state("load")
             c.expect_eq(c.page.locator('html').get_attribute('data-theme'), 'workbench')
-            c.expect_eq(c.page.locator('.sky-map').get_attribute('aria-hidden'), 'true',
-                        'decorative map must not become assistive content')
+            c.expect_eq(c.page.locator('.sky-map').count(), 1 if path == '/' else 0,
+                        'the map motif belongs to the Home hero only')
+            if path == '/':
+                c.expect_eq(c.page.locator('.sky-map').get_attribute('aria-hidden'), 'true',
+                            'decorative map must not become assistive content')
             c.expect_eq(c.page.locator('link[rel="canonical"]').get_attribute('href'),
                         'https://nightseam.de/' + path.lstrip('/'))
             c.expect_eq(c.page.request.get(c.url('/sky-map.svg?v=1')).status, 200)
@@ -211,12 +223,8 @@ def public_design(c):
                 c.page.keyboard.press('Enter')
                 c.expect(not c.page.locator('.mobile-menu').evaluate('e => e.open'),
                          'phone navigation must close with keyboard')
-                for summary in c.page.locator('main > .disclosure > summary').all():
-                    if not summary.locator('..').evaluate('e => e.open'):
-                        summary.focus()
-                        c.page.keyboard.press('Enter')
                 c.expect(c.page.evaluate('document.documentElement.scrollWidth <= innerWidth + 1'),
-                         path + ': expanded phone content overflows')
+                         path + ': phone content overflows')
             c.assert_clean()
         # The public phone menu is a native disclosure; it needs no script.
         context = c.page.context.browser.new_context(java_script_enabled=False,
@@ -226,10 +234,11 @@ def public_design(c):
             page.goto(c.url('/features.html'), wait_until='load')
             c.expect(page.locator('.header-cta').is_visible(),
                      'planner must remain directly reachable without JavaScript or opening a menu')
+            c.expect(page.get_by_role('heading', name='Good to know').is_visible(),
+                     'the page content must show without JavaScript')
             page.locator('.mobile-menu > summary').focus()
             page.keyboard.press('Enter')
-            page.locator('.disclosure > summary').click()
-            c.expect(page.get_by_role('heading', name='Your first night').is_visible(),
-                     'optional first-night guidance must work without JavaScript')
+            c.expect(page.locator('.mobile-menu nav a[href="catalog.html"]').is_visible(),
+                     'phone navigation must open without JavaScript')
         finally:
             context.close()

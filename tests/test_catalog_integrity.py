@@ -167,8 +167,7 @@ def test_web_catalog_standard_split_matches_the_rule(tmp_path):
 # while a SECOND claim in a registered file changed the total instead of being
 # value-checked. Every file now carries its own expected claim count, so a new
 # or edited claim fails where the value is checked; registering a file is the
-# way to cover a new surface. `landing/features.html`'s "12,000 objects" is a
-# deliberate rounding (a feature blurb, not a catalogue count) and is not pinned.
+# way to cover a new surface.
 ADVERTISED_SIZE = [
     ("web/index.html", 2, [r"Catalog: OpenNGC \+ supplement \(([\d,]+) objects\)",
                            r"supplement OpenNGC\s+cannot carry \(([\d,]+)\s+objects"]),

@@ -5,7 +5,7 @@ from urllib.parse import urljoin, urlsplit, unquote
 import struct
 
 ROOT = Path(__file__).resolve().parents[1]
-PAGES = ('index.html', 'features.html', 'about.html', 'download.html',
+PAGES = ('index.html', 'features.html', 'catalog.html', 'about.html', 'download.html',
          'privacy.html', 'impressum.html')
 
 
@@ -17,6 +17,7 @@ class Page(HTMLParser):
         self.headings = 0
         self.canonical = []
         self.script_count = 0
+        self.inline_styles = 0
 
     def handle_starttag(self, tag, attributes):
         attrs = dict(attributes)
@@ -26,6 +27,8 @@ class Page(HTMLParser):
             self.headings += 1
         if tag == 'script':
             self.script_count += 1
+        if 'style' in attrs or tag == 'style':
+            self.inline_styles += 1
         if tag == 'link' and attrs.get('rel') == 'canonical':
             self.canonical.append(attrs['href'])
         for attribute in ('src', 'href'):
@@ -56,6 +59,7 @@ def test_public_links_assets_and_canonical_routes_are_deployable():
         assert page.canonical == [address]
         assert 'content' in page.ids
         assert page.script_count == 0, 'public navigation and disclosure must be native'
+        assert page.inline_styles == 0, 'the page CSP blocks inline style attributes'
         for reference in page.references:
             resolved = urlsplit(urljoin(address, reference))
             if resolved.scheme != 'https' or resolved.netloc != 'nightseam.de':
