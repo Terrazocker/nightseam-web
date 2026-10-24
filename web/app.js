@@ -22,7 +22,7 @@ import { popularityFactor as corePopularityFactor } from './core.js?v=78';
 import { vizTheme, drawMoonPhaseMarker } from './viztheme.js?v=7';
 import { loadWikiThumb, releaseWikiThumb } from './wikiphotos.js?v=1';
 import { WX_STATE, initWeather, loadWeather, refreshWeatherForSite, weatherRequested,
-         wxRenderPanel } from './weather.js?v=12';
+         wxRenderPanel } from './weather.js?v=13';
 
 const announcePlannerChange = Hor.announcePlannerChange;
 

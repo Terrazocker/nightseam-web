@@ -2,7 +2,7 @@
 import json
 from datetime import datetime, timedelta
 
-from harness import check, module_url
+from harness import check, module_url, PINNED_DATE
 from web_suite import boot, tab, search_catalog_row
 from phase3_astronomy_checks import seed, date, modules
 from phase1_app_checks import setup
@@ -188,8 +188,8 @@ def keyboard_catalog(c):
     c.assert_clean()
 
 
-def forecast(cloud=0):
-    times = [(datetime(2026,10,9) + timedelta(hours=i)).isoformat(timespec='minutes') for i in range(48)]
+def forecast(cloud=0, day=datetime(2026,10,9)):
+    times = [(day + timedelta(hours=i)).isoformat(timespec='minutes') for i in range(48)]
     return {'hourly': {'time':times, **{k:[v]*48 for k,v in {
         'cloud_cover':cloud, 'precipitation_probability':0, 'precipitation':0,
         'temperature_2m':4, 'dew_point_2m':0, 'visibility':20000,
@@ -271,4 +271,51 @@ def weather_ownership(c):
     complete_weather(c,4,forecast(),forecast_fail=True)
     c.page.wait_for_timeout(60)
     c.expect_in('Good', c.page.locator('#wxChip').inner_text(), 'obsolete failures cannot poison current request')
+    c.assert_clean()
+
+
+@check('web-weather-night-label-rating-and-range', 'web')
+def weather_display(c):
+    """The chip names the selected night, the rating and score come from one
+    number, rain colour follows rain only, and nights outside the forecast say so."""
+    start(c, FIXTURE); deferred_weather(c)
+    chip = lambda: c.page.locator('#wxChip').inner_text()
+    def body():
+        # Using the date field moves focus away and closes the popover; reopen it.
+        if c.page.locator('#weatherPanel').is_hidden():
+            c.page.locator('#btnWeather').click()
+        return c.page.locator('#wxBody').inner_text()
+    c.page.locator('#btnWeather').click()
+    light = forecast()
+    light['hourly']['cloud_cover'][22] = 25   # one lightly clouded dark hour
+    complete_weather(c, 0, light, air_fail=True)
+    c.page.wait_for_function("() => document.querySelector('#wxChip').textContent.includes('/100')")
+    c.expect_eq(chip(), 'Fair · Fri 9 Oct · 79/100', 'another night is named by date; the worst hour caps the score')
+    c.expect_in('Fair night', body(), 'the panel rating agrees with the chip')
+    # Nights outside or across the forecast range (Review A's nights span two UTC days).
+    date(c, '2026-10-20')
+    c.expect_eq(chip(), 'Weather · no forecast for Tue 20 Oct')
+    c.expect_in('outside the forecast, which covers Fri 9 Oct to Sat 10 Oct', body())
+    date(c, '2026-10-10')
+    c.expect_eq(chip(), 'Weather · partial forecast for Sat 10 Oct')
+    c.expect_in('The forecast ends at 23:00 on Sat 10 Oct', body())
+    date(c, '2026-10-08')
+    c.expect_in('The forecast starts at 00:00 on Fri 9 Oct', body())
+    # Overcast but dry: Poor overall, yet the rain cell stays green.
+    date(c, '2026-10-09')
+    c.page.locator('#tb-site').select_option('review-b')
+    complete_weather(c, 2, forecast(90), air_fail=True)
+    c.page.wait_for_function("() => document.querySelector('#wxChip').textContent.includes('Poor')")
+    c.expect_in('49/100', chip(), 'a red hour keeps the score in the Poor band')
+    rain = c.page.locator('#wxBody .wx-grid > div', has_text='Rain warning').locator('b')
+    c.expect_eq(rain.inner_text(), '0% max')
+    c.expect_in('wx-good', rain.get_attribute('class'), 'dry night keeps a green rain cell')
+    c.expect_in('Very cloudy outlook', body())
+    # The site's current night under the pinned clock is "tonight" (both sites use UTC).
+    today = datetime.fromisoformat(PINNED_DATE)
+    c.page.locator('#tb-site').select_option('review-a')
+    date(c, today.strftime('%Y-%m-%d'))
+    complete_weather(c, 4, forecast(day=today), air_fail=True)
+    c.page.wait_for_function("() => document.querySelector('#wxChip').textContent.includes('tonight')")
+    c.expect_eq(chip(), 'Good tonight · 100/100')
     c.assert_clean()

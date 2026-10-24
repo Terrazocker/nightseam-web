@@ -62,6 +62,19 @@ function wxWallTimeKey(date) {
 function wxSelectedDateKey() {
   return dateKey(S.date instanceof Date && !isNaN(S.date) ? S.date : new Date());
 }
+function wxDayLabel(key) {
+  const [y, m, d] = String(key).split('-').map(Number);
+  return new Date(y, m - 1, d, 12).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
+}
+/** "tonight" for the site's current night, otherwise the selected night's date. */
+function wxNightLabel() {
+  const key = wxSelectedDateKey();
+  return key === dateKey(WS.effToday()) ? 'tonight' : wxDayLabel(key);
+}
+function wxPrevHour(key) {
+  // Provider hours are wall-clock labels; step them as naive UTC times.
+  return new Date(Date.parse(`${key}:00Z`) - 3600000).toISOString().slice(0, 16);
+}
 function wxTimezone() {
   // Provider "auto" uses geographic timezone, while planning falls back to
   // the browser zone. Request the exact resolved planning zone for wall hours.
@@ -128,14 +141,22 @@ function wxRows(data) {
     };
   }).filter((row) => typeof row.time === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(row.time));
 }
-function wxRowsForNight(data) {
-  const rows = wxRows(data);
+/** The selected night's rows, plus whether the provider's forecast range
+ *  covers the whole night ('full'), only part of it ('partial') or none. */
+function wxNight(data) {
+  const all = wxRows(data);
   const { start, end } = wxNightBounds();
   const startHour = `${start.slice(0, 13)}:00`;
   const endHour = `${end.slice(0, 13)}:00`;
   const endInclusive = end.slice(14, 16) !== '00';
-  return rows.filter((row) => row.time >= startHour &&
+  const rows = all.filter((row) => row.time >= startHour &&
     (endInclusive ? row.time <= endHour : row.time < endHour));
+  const times = all.map((row) => row.time.slice(0, 16)).sort();
+  const first = times[0] || null, last = times[times.length - 1] || null;
+  const lastNeeded = endInclusive ? endHour : wxPrevHour(endHour);
+  const startsLate = !!first && first > startHour;
+  const coverage = !rows.length ? 'none' : startsLate || last < lastNeeded ? 'partial' : 'full';
+  return { rows, coverage, first, last, startsLate };
 }
 function wxDewRisk(row) {
   if (row.dewSpread == null) return { label: '—', cls: 'unknown' };
@@ -187,7 +208,8 @@ function wxRowScore(row) {
   else if (clarity.cls === 'warn') score -= 5;
   return Math.max(0, Math.min(100, Math.round(score)));
 }
-function wxForecastSummary(rows) {
+function wxForecastSummary(night) {
+  const { rows, coverage } = night;
   const clouds = rows.map((r) => r.cloudTotal).filter((v) => v != null);
   const rain = rows.map((r) => r.rainProbability).filter((v) => v != null);
   const dewHigh = rows.find((r) => wxDewRisk(r).cls === 'bad');
@@ -199,28 +221,44 @@ function wxForecastSummary(rows) {
   const poorClarity = clarity.some((r) => r.cls === 'bad');
   const fairClarity = clarity.some((r) => r.cls === 'warn');
   const scores = rows.map(wxRowScore);
-  const complete = rows.length > 0 && scores.every((value) => value != null);
-  const score = complete ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : null;
+  const complete = coverage === 'full' && scores.every((value) => value != null);
   const clarityKnown = rows.length > 0 && clarity.every((r) => r.cls !== 'unknown');
   const dewKnown = rows.length > 0 && rows.every((r) => r.dewSpread != null);
-  const red = wet || (maxRain != null && maxRain >= 55) || (maxCloud != null && maxCloud >= 85);
+  const veryCloudy = maxCloud != null && maxCloud >= 85;
+  const red = wet || (maxRain != null && maxRain >= 55) || veryCloudy;
   const warn = !red && ((maxRain != null && maxRain >= 20) || (maxCloud != null && maxCloud >= 20) ||
     !!dewHigh || !!dewWarn || poorClarity || fairClarity);
-  const status = !complete ? { label: 'Incomplete', cls: 'unknown' } : red ? { label: 'Poor', cls: 'bad' } :
-    warn ? { label: 'Fair', cls: 'warn' } :
-      rows.length ? { label: 'Good', cls: 'good' } : { label: 'Unknown', cls: 'unknown' };
+  // One number drives the rating: the hourly average, capped by the night's
+  // worst hour (a red hour keeps it Poor, a warning keeps it below Good).
+  const mean = complete ? scores.reduce((a, b) => a + b, 0) / scores.length : null;
+  const score = mean == null ? null : Math.min(red ? 49 : warn ? 79 : 100, Math.round(mean));
+  const status = coverage === 'none' ? { label: 'No forecast', cls: 'unknown' } :
+    score == null ? { label: 'Incomplete', cls: 'unknown' } :
+      score >= 80 ? { label: 'Good', cls: 'good' } :
+        score >= 50 ? { label: 'Fair', cls: 'warn' } : { label: 'Poor', cls: 'bad' };
   const firstTime = (row) => row ? row.time.slice(11, 16) : '';
+  const rainRisk = wet || (maxRain != null && maxRain >= 55);
+  const range = night.first && night.last
+    ? `${wxDayLabel(night.first.slice(0, 10))} to ${wxDayLabel(night.last.slice(0, 10))}` : '';
+  const edge = night.startsLate ? night.first : night.last;
+  const cut = edge ? `${night.startsLate ? 'starts' : 'ends'} at ${edge.slice(11, 16)} on ${wxDayLabel(edge.slice(0, 10))}` : '';
   return {
     cloud: clouds.length ? `${Math.min(...clouds)}–${Math.max(...clouds)}%` : '—',
     rain: wet ? (maxRain == null ? 'Rain or storm risk' : `${Math.round(maxRain)}% · rain risk`) : maxRain == null ? '—' :
       maxRain >= 35 ? `${Math.round(maxRain)}% possible` : `${Math.round(maxRain)}% max`,
+    rainCls: rainRisk ? 'bad' : maxRain == null ? 'unknown' : maxRain >= 20 ? 'warn' : 'good',
     clarity: poorClarity ? 'Poor' : fairClarity ? 'Fair' : clarityKnown ? 'Good' : 'Unknown',
     clarityCls: poorClarity ? 'bad' : fairClarity ? 'warn' : clarityKnown ? 'good' : 'unknown',
     dew: dewHigh ? `High after ${firstTime(dewHigh)}` : dewWarn ? `Moderate after ${firstTime(dewWarn)}` : dewKnown ? 'Low' : 'Unknown',
     dewCls: dewHigh ? 'bad' : dewWarn ? 'warn' : dewKnown ? 'good' : 'unknown',
     status, score,
-    detail: !complete ? (rows.length ? `Insufficient data for a night rating${wet ? ' · Rain or storm risk' : ''}` : 'No night forecast available') : red ? (wet ? 'Rain or storm risk' : 'Very cloudy outlook') :
-      warn ? 'Some cloud, dew, or haze possible' : rows.length ? 'Clear and dry outlook' : 'No night forecast available',
+    detail: coverage === 'none'
+      ? (range ? `This night is outside the forecast, which covers ${range}.` : 'No night forecast available')
+      : coverage === 'partial' ? `The forecast ${cut} and covers only part of this night.${wet ? ' Rain or storm risk.' : ''}`
+        : !complete ? `Insufficient data for a night rating${wet ? ' · Rain or storm risk' : ''}`
+          : wet ? 'Rain or storm risk' : red ? (veryCloudy ? 'Very cloudy outlook' : 'High rain risk')
+            : status.cls === 'bad' ? 'Cloud, rain risk, dew or haze through much of the night'
+              : warn ? 'Some cloud, dew, or haze possible' : 'Clear and dry outlook',
   };
 }
 function wxHourlyMarkup(rows) {
@@ -280,24 +318,33 @@ function wxChipText() {
   if (WX_STATE.loading) return '⏳ loading weather…';
   if (WX_STATE.error) return '⚠️ weather unavailable — click to retry';
   if (!WX_STATE.data) return '☁️ Weather';
-  const summary = wxForecastSummary(wxRowsForNight(WX_STATE.data));
-  return summary.score == null ? 'Weather · insufficient night data' : `${summary.status.label} tonight · ${summary.score}/100`;
+  const night = wxNight(WX_STATE.data);
+  const summary = wxForecastSummary(night);
+  const label = wxNightLabel();
+  const tonight = label === 'tonight';
+  const lacking = night.coverage === 'none' ? 'no forecast' : night.coverage === 'partial' ? 'partial forecast'
+    : summary.score == null ? 'insufficient data' : null;
+  if (lacking) return `Weather · ${lacking} ${tonight ? 'tonight' : `for ${label}`}`;
+  return `${summary.status.label}${tonight ? ' tonight' : ` · ${label}`} · ${summary.score}/100`;
 }
 
 function wxRenderChip() {
   const chip = $('#wxChip');
   if (chip) chip.textContent = wxChipText();
   const dot = $('#wxStatusDot'), btn = $('#btnWeather');
-  const summary = WX_STATE.data ? wxForecastSummary(wxRowsForNight(WX_STATE.data)) : null;
+  const summary = WX_STATE.data ? wxForecastSummary(wxNight(WX_STATE.data)) : null;
   const status = WX_STATE.error ? { label: 'Unavailable', cls: 'bad' } :
     summary ? summary.status : { label: 'Weather', cls: 'unknown' };
   if (dot) {
     dot.className = `wx-status-dot wx-${status.cls}`;
     dot.textContent = status.cls === 'unknown' ? '○' : '●';
   }
+  const label = wxNightLabel();
+  const when = label === 'tonight' ? 'tonight' : `for the night of ${label}`;
   if (btn) btn.title = summary && summary.score != null
-    ? `${status.label} observing conditions tonight, score ${summary.score} of 100 — click for details`
-    : 'Observing weather for the selected night — click to load';
+    ? `${status.label} observing conditions ${when}, score ${summary.score} of 100 — click for details`
+    : summary ? `${summary.detail} — click for details`
+      : 'Observing weather for the selected night — click to load';
 }
 
 /** Re-fetch weather when the active site changed, but only if the user has
@@ -334,17 +381,18 @@ export function wxRenderPanel() {
     return;
   }
   const d = WX_STATE.data;
-  const rows = wxRowsForNight(d);
-  const summary = wxForecastSummary(rows);
+  const night = wxNight(d);
+  const { rows } = night;
+  const summary = wxForecastSummary(night);
   const bounds = wxNightBounds();
   body.innerHTML = `
     <div class="wx-rating wx-rating-${summary.status.cls}">
-      <div class="wx-rating-head"><span class="wx-status-dot wx-${summary.status.cls}">${summary.status.cls === 'unknown' ? '○' : '●'}</span><strong>${summary.status.label} night</strong><b>${summary.score == null ? '—' : summary.score}/100</b></div>
+      <div class="wx-rating-head"><span class="wx-status-dot wx-${summary.status.cls}">${summary.status.cls === 'unknown' ? '○' : '●'}</span><strong>${summary.status.label}${summary.score == null ? '' : ' night'}</strong><b>${summary.score == null ? '—' : summary.score}/100</b></div>
       <div class="wx-rating-detail">${summary.detail}</div>
     </div>
     <div class="wx-grid">
       <div><span>Cloud cover</span><b>${summary.cloud}</b></div>
-      <div><span>Rain warning</span><b class="wx-${summary.rain === '—' ? 'unknown' : /risk/i.test(summary.rain) || summary.status.cls === 'bad' ? 'bad' : summary.rain.includes('possible') ? 'warn' : 'good'}">${summary.rain}</b></div>
+      <div><span>Rain warning</span><b class="wx-${summary.rainCls}">${summary.rain}</b></div>
       <div><span title="Haze proxy, not an astronomical transparency measurement">Sky clarity</span><b class="wx-${summary.clarityCls}">${summary.clarity}</b></div>
       <div><span>Dew risk</span><b class="wx-${summary.dewCls}">${summary.dew}</b></div>
     </div>
