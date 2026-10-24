@@ -1,8 +1,52 @@
 # Independent website release record
 
-Actual validation outcomes, newest first. Published releases: v0.7.0 (October
-19, 2026), v0.1.1 (October 8, 2026) and v0.1.0 (October 7, 2026). Upload
-success alone is never recorded as acceptance.
+Actual validation outcomes, newest first. Published releases: v0.8.0 (October
+24, 2026), v0.7.0 (October 19, 2026), v0.1.1 (October 8, 2026) and v0.1.0
+(October 7, 2026). Upload success alone is never recorded as acceptance.
+
+## v0.8.0 — released and deployed, October 24, 2026
+
+Owner-authorized deployment of tag v0.8.0 (af732ea) to nightseam.de, with the
+pairing relay going live. The owner had switched the live site's PHP to "FPM
+application served by Apache" beforehand and authorized installing the new
+`/astro/.htaccess` over FTPS. Not pushed to GitHub at the time of deployment.
+
+- Backup: read-only FTPS inventory of `/nightseam.de` (467 files) against the
+  October 19 inventory: none gone, the 56 added are exactly v0.7.0's web and
+  landing release graphs. Every file outside those immutable graphs and
+  every file new since then (333 files, 558 MB) downloaded, size-checked.
+- Candidate: 78 files from an LF worktree of v0.8.0; make_release.py,
+  check_release.py (0 errors) and prepare_publication.py `--verify` passed;
+  web/version.json is v0.8.0. Web namespace c672a755…, landing 0e6fc070….
+- Server policy: `/.htaccess` already matched landing/.htaccess.
+  `/astro/.htaccess` (v0.7.0 bytes, b02913c0…) replaced by web/.htaccess
+  with the reviewed relay section (718e2bbb…), by a verified temporary upload
+  and rename; the planner still answered 200 afterwards.
+- Publish: `ftps_deploy.py publish … /nightseam.de` succeeded on the fifth
+  attempt, 90 s apart (four connection resets before any page switched):
+  78 files, older releases retained. No remote file was deleted; the cleanup
+  list was not acted on.
+- HTTPS: all 75 HTTP-readable files and both entry routes match the
+  candidate's bytes; `.htaccess` and other PHP files answer 403.
+- Relay on `www.nightseam.de` (the bare domain answers 301 to `www`, which
+  turns a POST into a GET): unknown box and unknown code 404 with `no-store`
+  and `default-src 'none'; frame-ancestors 'none'`; open 201 with 600 s
+  left; offer 200 with the same bytes; reply 201, a second reply 409; close
+  204, then 404; a code put 201 with 86400 s left, get 200 with the same
+  bytes, drop with another token 403, drop 204, then 404; cross-site 403.
+  `Cache-Control` arrives as `no-store, no-store` (PHP and `.htaccess` both
+  set it).
+- Built-in browser on `www.nightseam.de/astro/`: loaded from releases/
+  c672a755…, version.json v0.8.0, catalog ready (12,176 objects), no console
+  errors; Berlin example, night of October 24: sunset 17:52, dark
+  19:46-04:54, 16 Tonight rows. `/astro/sw.js` is served (200,
+  JavaScript) and registers with scope `/astro/`; the planner's own
+  registration was not seen in this pane before a manual one, so offline
+  reopening stays for the phone acceptance.
+
+Evidence: logs/deployment-0.8.0-20261024/ (backup with inventory.json,
+policy.txt, publish.txt, https-check.txt). *Pairing* and phone-layout
+acceptance on a real phone remain open (ROADMAP.md).
 
 ## v0.8.0 release preparation — October 24, 2026 (branch release-0.8.0)
 

@@ -5,8 +5,15 @@ Where NightSeam Web stands and what comes next. Open defects are in
 
 ## Status
 
-- **Published:** v0.7.0 (October 19, 2026), after v0.1.1 (October 8) and
-  v0.1.0 (October 7). Next release names continue above 0.7.0.
+- **Published:** v0.8.0 (October 24, 2026), after v0.7.0 (October 19),
+  v0.1.1 (October 8) and v0.1.0 (October 7). Next release names continue
+  above 0.8.0.
+- **In 0.8.0:** the phone layout and night vision, offline reopening, horizon
+  pairing through the encrypted relay (now live at
+  `www.nightseam.de/astro/relay.php`, PHP served by Apache), horizon codes,
+  the leaner horizon editor, the Sky View now-panel, centred Tonight and the
+  weather rating fixes. The owner chose to release it before the *Pairing*
+  and phone-layout acceptance on a real phone (October 24).
 - **In 0.7.0:** the rebuilt horizon editor
   (skyline on a compass grid, overhangs, file import/export) with phone
   sensor capture instead of photos (camera view with an AR overlay, north
@@ -51,10 +58,10 @@ Where NightSeam Web stands and what comes next. Open defects are in
   phone banner, publication rule, docs and privacy text. On October 22,
   merged with `main` (PR 5), the hosting probe passed under "served by
   Apache", the owner reviewed the `web/.htaccess` relay section, and the
-  branch was published to the test site dev.nightseam.de (RELEASES.md). Not
-  on the live site. PR 5 was merged into `main` on October 24. Next: the
-  *Pairing* acceptance checks with a real phone on dev.nightseam.de, then the
-  live handler switch and a release. Horizon codes (a horizon made in the planner is kept for 24 hours
+  branch was published to the test site dev.nightseam.de (RELEASES.md). PR 5
+  was merged into `main` on October 24 and released in 0.8.0 the same day,
+  with the live site's PHP served by Apache. Next: the *Pairing* acceptance
+  checks with a real phone. Horizon codes (a horizon made in the planner is kept for 24 hours
   under a code like `K7Q-4MX` that the desktop types; DECISIONS.md
   2026-10-24) are built on the branch (October 24) and join those
   acceptance checks. Also on the branch since October 24: Tonight centred on
