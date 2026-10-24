@@ -5,7 +5,9 @@ phases; phases 1-4 and the documentation part of phase 5 are built and tested
 (relay, transport, desktop dialog, phone banner). Phase 0 (the hosting probe:
 `relay_probe.php` here and `scripts/relay_probe.py`) and the deployment part
 of phase 5 wait for the owner. DECISIONS.md, 2026-10-19, records the decision
-and settles the open questions below.
+and settles the open questions below. **October 24:** horizon codes are built: a
+horizon is kept on the relay for 24 hours under a short code (see "Horizon
+codes (as built)" at the end; DECISIONS.md, 2026-10-24).
 
 The owner asked for ways to
 get a horizon captured on the phone onto the desktop, liked "the desktop
@@ -197,5 +199,43 @@ review.
   guards cover it; source and hashes in NOTICE).
 - The relay section of `web/.htaccess` also denies every other PHP file.
 - *Get from phone* sits with *Draw by hand* and *Import file* in the horizon
-  list, since it adds a horizon. On the phone, the *Pairing* section offers
-  *New horizon* when there is none yet.
+  list, since it adds a horizon; phones and tablets do not show it (October
+  24). On the phone, the *Pairing* section offers *New horizon* when there is
+  none yet, which opens the camera view.
+
+## Horizon codes (as built, October 24)
+
+The owner asked for a code assigned after creation that lasts 24 hours. A
+horizon made in the planner (*Draw by hand*, *Capture with phone*, *Import
+file*) is stored on the relay once it has a point, under a code like
+`K7Q-4MX` (6 characters from `23456789ABCDEFGHJKMNPQRSTUVWXYZ`) shown beside
+its name in the editor head. The desktop types the code into the field under
+the QR code in *Get from phone*, at any time within the 24 hours, without the
+phone.
+
+| Request | From | Does |
+|---|---|---|
+| `POST ?box=<id>&op=put` + horizon, `X-Share-Token` | the device with the horizon | 201 stores it for 24 h; 204 replaces it (same token); 409 the code is taken |
+| `GET ?box=<id>&op=get` | the desktop | 200 the sealed horizon, `X-Relay-Remaining`; 404 |
+| `POST ?box=<id>&op=drop`, `X-Share-Token` | the device with the horizon | 204 deletes it; 403 another token |
+
+- The box id is the first 16 bytes of SHA-256 of `nightseam-share-v1:id:<code>`;
+  the AES key is PBKDF2-SHA-256 of the code (salt `nightseam-share-v1:key:<code>`,
+  100,000 rounds). The body is the share-link text sealed as usual (purpose
+  `share`). The code itself never reaches the relay.
+- The making device keeps `{ code, token, expires }` per horizon in
+  `localStorage` `nightseam_share_codes_v1` (not in backups). Edits and
+  renames are sent 1.5 s after the last one; the expiry stays. After 24 hours
+  the button reads *Get a code (24 h)*: a new code, never an extension.
+  Deleting the horizon or *Delete from the server* drops it at once.
+- Relay limits: 1,000 live codes, 30 new codes and 60 lookups (found or not)
+  per address per 10 minutes, 64 KB each. Files are `<id>.share` beside the
+  boxes, swept by modification time (the making time; edits keep it).
+- What the relay could do: the stretched key keeps its files from being
+  readable at a glance, but someone holding them could try every code. That
+  is weaker than the QR path, whose key never reaches the server.
+- Checks: `tests/js/pairing.mjs` (codes, keys, put/get/replace/drop against a
+  stub), `tests/js/pairing_relay.mjs` and `tests/test_relay.py` (the real
+  relay: expiry, tokens, limits), `web-pairing-short-code` in
+  `tests/browser/pairing_checks.py` (automatic code, lookup, rename, renewal,
+  deletion).

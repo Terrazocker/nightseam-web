@@ -19,7 +19,8 @@ true bearing of two landmarks you can see from there, ideally 60° or more
 apart: a chimney, a mast, a church tower, a gap between trees. Reload the
 planner, so the first check really is a first open.
 
-1. **First open, compass north.** Open *Capture with the camera* and hold the
+1. **First open, compass north.** Open *Capture with phone* (or *Capture* in
+   an open horizon's editor) and hold the
    phone upright and still. It should say the compass is settling, then show
    a direction within about 15 s, without *Re-read*. Put the cross on landmark
    A and note the reading. Target: within 10° of its map bearing (phone
@@ -56,11 +57,22 @@ planner, so the first check really is a first open.
    phone; the desktop address bar ends in `#horizon`, without the code.
 9. **Keyboard and closing.** With a keyboard (or a desktop): Tab reaches every
    control, Enter starts and stops tracing, Escape closes the view, and focus
-   returns to *Capture with the camera*. The camera stops (its indicator goes
+   returns to *Capture*. The camera stops (its indicator goes
    out) as the view closes.
 10. **Wrong site.** With location access allowed, open the capture somewhere
     more than about 100 m from the selected site. Target: the view warns
     that a horizon only holds where it was measured.
+11. **First start.** Clear the site's data (or use a fresh browser profile),
+    open the capture and answer the camera prompt. Target: the readout
+    finds north without reopening the view; if the sensors stay silent for
+    3 s, the sensor panel shows its three steps, and *Start the sensors*
+    with the phone held still brings the readings. Once north is set, the
+    drawing's calibration follows at once (*North is set. Next, …*).
+12. **Calibration guide.** Run *Line up the drawing*. Target: step 1 rings
+    the cross; step 2 shows *Turn right* with an arrow, a dashed arrow
+    towards the amber line and *Stop when your object is on this line*;
+    turning left instead says *Other way*; step 3 does the same with *Tilt
+    down*.
 
 ## Pairing
 
@@ -88,7 +100,21 @@ Pixel 7a and the desktop. The desktop's site is the one you stand at.
    are unchanged afterwards.
 6. **Keyboard.** On the desktop, open *Get from phone* with the keyboard.
    Target: focus starts on *Cancel*, Tab stays in the dialog (*Show the
-   link*, Cancel), Escape closes it and focus returns to *Get from phone*.
+   link*, the code field, *Get*, Cancel), Escape closes it and focus returns
+   to *Get from phone*.
+7. **Horizon code.** On the phone, *New horizon* and capture a stretch of
+   skyline. Target: once it has a point, a code like `K7Q-4MX · 23 h`
+   appears beside its name. On the desktop: *Get from phone*, type the code
+   in lower case. Target: the desktop asks before adding the same points and
+   overhangs.
+8. **Edit, wrong code, delete.** Rename the horizon on the phone, wait a few
+   seconds and fetch the code again on the desktop. Target: the new name. A
+   code with one character changed says no horizon has it. *Delete from the
+   server* on the phone. Target: the desktop no longer finds the code; the
+   phone offers *Get a code (24 h)*.
+9. **After 24 hours.** The next day, open the horizon on the phone. Target:
+   *Get a code (24 h)* instead of the code, the old code is not found on the
+   desktop, and the button makes a new code that works.
 
 ## Devices and accessibility
 
@@ -96,7 +122,10 @@ On the intended touch or pen device, sketch slowly and quickly, drag a point,
 interrupt a drag, zoom and pan, and draw an overhang edge. Each gesture should
 be one undo step.
 
+On a phone the grid is view-only: dragging pans, tapping adds nothing, and
+*Capture* in the editor head is the way to add to the skyline.
+
 With keyboard and the intended screen reader: create a horizon, add points
-through *Points by numbers*, select and move them with the arrow keys, delete
+with Insert, select and move them with the arrow keys, delete
 one, undo and redo. Check that focus, the save status and the skyline summary
 are announced and understandable.

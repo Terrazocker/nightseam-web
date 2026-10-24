@@ -296,11 +296,16 @@ function orientation(onChange) {
     }
   }
 
-  sensor('RelativeOrientationSensor', relative, relStops);
-  if (listen) {
-    addEventListener('deviceorientation', onRelEvent);
-    relStops.push(() => removeEventListener('deviceorientation', onRelEvent));
+  function startRelative() {
+    for (const fn of relStops.splice(0)) fn();
+    sensor('RelativeOrientationSensor', relative, relStops);
+    if (listen) {
+      addEventListener('deviceorientation', onRelEvent);
+      relStops.push(() => removeEventListener('deviceorientation', onRelEvent));
+    }
   }
+
+  startRelative();
   startCompass();
 
   return {
@@ -313,6 +318,14 @@ function orientation(onChange) {
     setReference,
     /** Start the compass again, keeping north (after a permission arrives). */
     restartCompass() { if (st.offset == null) { st.compassStarts = 0; startCompass(); } },
+    /** Start every source again: on a first open a sensor started while the
+     *  browser's camera or motion prompt was up can stay silent for good. */
+    restart() {
+      st.startedAt = now();
+      st.compassStarts = 0;
+      startRelative();
+      startCompass();
+    },
     stop() { for (const fn of [...relStops.splice(0), ...compassStops.splice(0)]) fn(); },
   };
 }
@@ -385,6 +398,7 @@ export function openCapture({ horizon, onLine, onPoint, onUndo, canUndo, onClose
   el.innerHTML = `
     <video class="cap-video" id="cap-video" autoplay playsinline muted aria-hidden="true"></video>
     <canvas class="cap-ar" id="cap-ar" aria-hidden="true"></canvas>
+    <svg class="cap-guide" id="cap-guide" aria-hidden="true"></svg>
     <div class="cap-cross" aria-hidden="true"></div>
     <div class="cap-top">
       <h3 id="cap-title" class="visually-hidden">Capture the horizon with the camera</h3>
@@ -398,6 +412,19 @@ export function openCapture({ horizon, onLine, onPoint, onUndo, canUndo, onClose
       <p class="cap-status" id="cap-status" role="status" aria-live="polite">Hold the phone upright and aim the cross at the skyline.</p>
     </div>
     <div class="cap-bottom">
+      <div class="cap-panel" id="cap-wake" role="group" aria-labelledby="cap-wake-title" hidden>
+        <p id="cap-wake-title"><b>The motion sensors have not started.</b></p>
+        <ol class="cap-steps">
+          <li>If the browser asks for camera or motion access, allow it.</li>
+          <li>Hold the phone upright and tap <b>Start the sensors</b>.</li>
+          <li>Keep it still for a few seconds while the compass settles.</li>
+        </ol>
+        <p class="cap-small" id="cap-wake-more">Still nothing after that? Tap Done and open the capture again.</p>
+        <div class="cap-row cap-pair">
+          <button class="btn primary" type="button" id="cap-wake-go">Start the sensors</button>
+          <button class="btn" type="button" id="cap-wake-skip">Not now</button>
+        </div>
+      </div>
       <div class="cap-panel" id="cap-calib" role="group" aria-labelledby="cap-calib-text" hidden>
         <p id="cap-calib-text"></p>
         <div class="cap-row cap-pair">
@@ -479,8 +506,13 @@ export function openCapture({ horizon, onLine, onPoint, onUndo, canUndo, onClose
   let calUpdatedAt = null;   // when this capture last improved the calibration
   let tooFast = false;       // tracing faster than SPEED_FAST, until below SPEED_OK
   let calib = null;          // the calibration routine: { step: 'mark' | 'side' | 'up', offered, q1, kSide }
+  let calWrongWay = false;   // the calibration's object moved away from its line
+  let calOffered = false;    // the routine was offered in this capture
   const lastRead = { at: 0, dir: false };
   const started = now();
+  // The sensor panel: shown when the sensors give nothing for a while; each
+  // Start the sensors tap waits afresh. `shown` moves focus to it once.
+  const sensorWait = { at: started, taps: 0, dismissed: false, shown: false };
   // What the screen shows is the camera image, which trails the gyroscope:
   // everything the user aims with (readout, overlay, trace, points,
   // references) uses the orientation from that long ago.
@@ -536,10 +568,18 @@ export function openCapture({ horizon, onLine, onPoint, onUndo, canUndo, onClose
 
   function schedule() { if (frame == null && !closed) frame = requestAnimationFrame(render); }
 
+  /** The sensors gave nothing usable since the last start: no motion at all,
+   *  or (later) no compass while north is still missing. */
+  function stalled(st, age) {
+    if (sensorWait.dismissed) return false;
+    if (!st.rel) return age > SENSOR_WAIT_MS;
+    return !st.abs && st.offset == null && age > 2 * SENSOR_WAIT_MS;
+  }
+
   function render() {
     frame = null;
     if (closed) return;
-    const st = sensors.state, p = calmView(), age = now() - started;
+    const st = sensors.state, p = calmView(), age = now() - sensorWait.at;
     let read;
     if (p) read = fmtDir(p);
     else if (st.rel && st.settle != null) {
@@ -561,19 +601,24 @@ export function openCapture({ horizon, onLine, onPoint, onUndo, canUndo, onClose
     $('#cap-north-detail').textContent = northText(st);
     $('#cap-compass-diag').textContent = compassDiag(st);
     $('#cap-camera-diag').textContent = cameraDiag();
+    const waking = stalled(st, age);
     const ready = !!p, busy = !!trace || !!pending || !!calib;
     $('#cap-trace').disabled = (!ready && !trace) || !!pending || !!calib;
     $('#cap-point').disabled = !ready || mode !== 'skyline' || busy;
     $('#cap-undo').disabled = !canUndo() || busy;
     $('#cap-north-btn').disabled = busy;
     $('#cap-north-btn').setAttribute('aria-expanded', String(refOpen));
-    $('#cap-ref').hidden = !refOpen;
+    // The sensor panel comes first: nothing else works without readings.
+    $('#cap-wake').hidden = !waking;
+    $('#cap-ref').hidden = !refOpen || waking;
     $('#cap-loop').hidden = !pending;
-    $('#cap-calib').hidden = !calib;
+    $('#cap-calib').hidden = !calib || waking;
     if (calib) renderCalib();
+    if (waking) renderWake(st);
+    else sensorWait.shown = false;
     // A panel takes the place of the controls and the strip, so the bottom
     // area never grows over the crosshair in the middle of the screen.
-    el.classList.toggle('cap-asking', refOpen || !!pending || !!calib);
+    el.classList.toggle('cap-asking', refOpen || !!pending || !!calib || waking);
     el.classList.toggle('cap-fast', tooFast);
     if (refOpen) renderReferences(st);
     $('#cap-trace').textContent = trace ? `Stop tracing (${trace.samples.length})` : 'Start tracing';
@@ -583,8 +628,38 @@ export function openCapture({ horizon, onLine, onPoint, onUndo, canUndo, onClose
     for (const b of el.querySelectorAll('.cap-modes .btn')) b.disabled = busy;
     drawStrip(p);
     drawAR();
+    renderGuide();
+    // First use: once north is set, the drawing is lined up with the camera
+    // next, before anything else is traced.
+    if (!calOffered && stream && !cal.scaleMeasured && !cal.asked && !calib && !trace && !pending
+        && !refOpen && !waking && st.offset != null) {
+      calOffered = true;
+      queueMicrotask(() => { if (!closed) startCalib(true); });
+    }
     // Keep the "no readings" messages coming without a reading to trigger them.
-    if (!p && age < SENSOR_WAIT_MS + 500) setTimeout(schedule, 250);
+    if (!p && age < 2 * SENSOR_WAIT_MS + 500) setTimeout(schedule, 250);
+  }
+
+  /** The sensor panel's words; focus moves to it when it first appears. */
+  function renderWake(st) {
+    $('#cap-wake-title').innerHTML = !st.rel
+      ? `<b>${sensorWait.taps ? 'Still no motion readings.' : 'The motion sensors have not started.'}</b>`
+      : `<b>${sensorWait.taps ? 'Still no compass readings.' : 'The compass has not started.'}</b>`;
+    if (!sensorWait.shown) {
+      sensorWait.shown = true;
+      status(!st.rel ? 'The sensors have not started: follow the steps below.'
+        : 'The compass has not started: follow the steps below.');
+      if (!el.contains(document.activeElement) || document.activeElement === traceBtn
+          || document.activeElement === $('#cap-done')) $('#cap-wake-go').focus();
+    }
+  }
+
+  /** After a permission prompt: start again whatever has given nothing yet. */
+  function wakeSensors() {
+    if (closed) return;
+    const st = sensors.state;
+    if (!st.rel) { sensorWait.at = now(); sensors.restart(); } else if (!st.abs) sensors.restartCompass();
+    schedule();
   }
 
   const clock = (d) => d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -638,13 +713,31 @@ export function openCapture({ horizon, onLine, onPoint, onUndo, canUndo, onClose
     return { axis: 'y', px: Math.max(0, Math.round(Math.min(W * GUIDE_SIDE, (Hh / 2 - top) * 0.75))) };
   }
 
+  /** Where the marked object is now, from the gyroscope alone: along the
+   *  current step's axis, positive towards its guide line (left of the cross
+   *  or above it, in the camera's normalised units), or null. */
+  function calibOffset() {
+    if (!calib || !calib.q1 || calib.step === 'mark') return null;
+    const q = sensors.qAt(shownAt(), true);
+    const d = quaternionPointing(calib.q1);
+    const pr = q && cameraProject(q, 0, d.az, d.alt);
+    return pr ? (calib.step === 'up' ? pr.y : -pr.x) : null;
+  }
+
   function renderCalib() {
     const upright = screenAngle() === 0;
+    const off = calibOffset();
+    // Turned the other way by about a degree: the object moves away from the line.
+    calWrongWay = off != null && off < -0.02;
     const text = {
-      mark: `${calib.offered ? 'Line up the drawing with this camera, once per phone (about 20 s). ' : ''}`
+      mark: `${calib.offered ? 'North is set. Next, line up the drawing with this camera, once per phone (about 20 s). ' : ''}`
         + 'Step 1 of 3: aim the cross at a pole or roof corner far away, hold still and tap Start.',
-      side: 'Step 2 of 3: turn right until it sits on the amber line. Hold still and tap It’s on the line.',
-      up: 'Step 3 of 3: tilt the phone down until it sits on the amber line. Hold still and tap It’s on the line.',
+      side: calWrongWay
+        ? 'Step 2 of 3: other way. Turn right, so the object you marked moves left towards the amber line.'
+        : 'Step 2 of 3: turn right until the object you marked sits on the amber line. Hold still and tap It’s on the line.',
+      up: calWrongWay
+        ? 'Step 3 of 3: other way. Tilt the phone down, so the object moves up towards the amber line.'
+        : 'Step 3 of 3: tilt the phone down until the object sits on the amber line. Hold still and tap It’s on the line.',
     }[calib.step];
     $('#cap-calib-text').textContent = upright ? text : 'Hold the phone upright (portrait) for this.';
     $('#cap-calib-go').textContent = calib.step === 'mark' ? 'Start' : 'It’s on the line';
@@ -809,17 +902,6 @@ export function openCapture({ horizon, onLine, onPoint, onUndo, canUndo, onClose
     if (!ctx) return;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, W, Hh);
-    const g = guide();
-    if (g) {   // the calibration's guide line, outlined so it shows on any scene
-      const VG = vizTheme();
-      for (const [colour, width] of [[VG.canvas, 5], [VG.warn, 2]]) {
-        ctx.strokeStyle = colour;
-        ctx.lineWidth = width;
-        ctx.beginPath();
-        if (g.axis === 'x') { ctx.moveTo(W / 2 - g.px, 0); ctx.lineTo(W / 2 - g.px, Hh); } else { ctx.moveTo(0, Hh / 2 - g.px); ctx.lineTo(W, Hh / 2 - g.px); }
-        ctx.stroke();
-      }
-    }
     const st = sensors.state, here = calmView(), q0 = sensors.qAt(shownAt(), true);
     if (!q0 || !here) return;
     // Focal length in CSS pixels: the video covers the view (object-fit: cover),
@@ -942,6 +1024,63 @@ export function openCapture({ horizon, onLine, onPoint, onUndo, canUndo, onClose
     }
   }
 
+  /* ---- the calibration's guide, drawn as SVG so lines and words stay sharp
+     on high-density screens (the overlay canvas is capped at 1.5x) ---- */
+  let guideKey = '';
+
+  /** Words over the video, outlined so they read on any scene. */
+  const svgLabel = (text, x, y, anchor, colour, VG) => `<text x="${x}" y="${y}" text-anchor="${anchor}" `
+    + `dominant-baseline="middle" fill="${colour}" stroke="${VG.canvas}" stroke-width="4" stroke-linejoin="round" `
+    + `paint-order="stroke">${text}</text>`;
+
+  /** An outlined arrow from (x1, y1) to (x2, y2); `dash` for a dashed shaft. */
+  function svgArrow(x1, y1, x2, y2, colour, VG, dash = false) {
+    const a = Math.atan2(y2 - y1, x2 - x1), head = 12;
+    const hx = (d) => (x2 - head * Math.cos(a + d)).toFixed(1), hy = (d) => (y2 - head * Math.sin(a + d)).toFixed(1);
+    const shaft = `M${x1} ${y1}L${x2} ${y2}`, tip = `M${hx(-0.5)} ${hy(-0.5)}L${x2} ${y2}L${hx(0.5)} ${hy(0.5)}`;
+    return `<path d="${shaft}${tip}" stroke="${VG.canvas}" stroke-width="6"/>`
+      + `<path d="${shaft}" stroke="${colour}" stroke-width="3"${dash ? ' stroke-dasharray="7 6"' : ''}/>`
+      + `<path d="${tip}" stroke="${colour}" stroke-width="3"/>`;
+  }
+
+  /** Step 1 rings the cross; steps 2 and 3 draw the amber line, which way to
+   *  move the phone (a solid arrow), where the marked object travels on the
+   *  screen (a dashed arrow from the cross to the line) and what to do at the
+   *  line. Rebuilt only when something in it changes. */
+  function renderGuide() {
+    const svg = $('#cap-guide');
+    const W = el.clientWidth, Hh = el.clientHeight, g = guide();
+    const key = calib ? `${calib.step}:${W}:${Hh}:${g ? g.px : ''}:${calWrongWay}` : '';
+    if (key === guideKey) return;
+    guideKey = key;
+    if (!calib || !W || !Hh) { svg.innerHTML = ''; return; }
+    const VG = vizTheme(), cx = W / 2, cy = Hh / 2, turn = calWrongWay ? VG.warn : VG.text;
+    let out = '';
+    if (!g) {
+      out = `<circle cx="${cx}" cy="${cy}" r="26" stroke="${VG.canvas}" stroke-width="5"/>`
+        + `<circle cx="${cx}" cy="${cy}" r="26" stroke="${VG.warn}" stroke-width="2"/>`
+        + svgLabel('Put a far pole or corner here', cx, cy + 48, 'middle', VG.text, VG);
+    } else if (g.axis === 'x') {
+      const lx = cx - g.px, reach = Math.min(g.px, W / 2 - 24);
+      out = `<path d="M${lx} 0V${Hh}" stroke="${VG.canvas}" stroke-width="5"/><path d="M${lx} 0V${Hh}" stroke="${VG.warn}" stroke-width="2"/>`
+        + svgArrow(cx - 18, cy, lx + 10, cy, VG.warn, VG, true)
+        + svgArrow(cx + 22, cy + 34, cx + reach, cy + 34, turn, VG)
+        + svgLabel(calWrongWay ? 'Other way: turn right' : 'Turn right', cx + 22, cy + 60, 'start', turn, VG)
+        + svgLabel('Stop when your', lx + 8, cy - 72, 'start', VG.warn, VG)
+        + svgLabel('object is on this line', lx + 8, cy - 52, 'start', VG.warn, VG);
+    } else {
+      // short: the bottom panel covers the lower part of the view
+      const ly = cy - g.px, reach = Math.min(g.px, 90);
+      out = `<path d="M0 ${ly}H${W}" stroke="${VG.canvas}" stroke-width="5"/><path d="M0 ${ly}H${W}" stroke="${VG.warn}" stroke-width="2"/>`
+        + svgArrow(cx, cy - 18, cx, ly + 10, VG.warn, VG, true)
+        + svgArrow(cx + 34, cy + 22, cx + 34, cy + reach, turn, VG)
+        + svgLabel(calWrongWay ? 'Other way: tilt down' : 'Tilt down', cx + 48, cy + 22 + reach / 2, 'start', turn, VG)
+        + svgLabel('Stop when your object is on this line', cx, ly - 18, 'middle', VG.warn, VG);
+    }
+    svg.setAttribute('viewBox', `0 0 ${W} ${Hh}`);
+    svg.innerHTML = out;
+  }
+
   /* ---- tracing ---- */
   function startTrace() {
     if (trace || calib || !view()) return;
@@ -1049,6 +1188,29 @@ export function openCapture({ horizon, onLine, onPoint, onUndo, canUndo, onClose
   });
   $('#cap-ref-close').addEventListener('click', closeReferences);
   $('#cap-calib-start').addEventListener('click', () => startCalib(false));
+  // Inside the tap: the browser may now ask for motion access, and every
+  // sensor starts afresh.
+  $('#cap-wake-go').addEventListener('click', () => {
+    sensorWait.taps += 1;
+    sensorWait.at = now();
+    sensorWait.shown = false;
+    askMotionPermission((answer) => {
+      if (closed) return;
+      if (answer === 'granted') sensors.restartCompass();
+      // some browsers answer 'denied' while the readings arrive anyway
+      else if (answer === 'denied' && !sensors.state.rel) status('Motion access was refused, so the capture cannot follow the phone.');
+    });
+    sensors.restart();
+    status('Starting the sensors: hold the phone upright and still.');
+    render();
+    (traceBtn.disabled ? $('#cap-done') : traceBtn).focus();
+  });
+  $('#cap-wake-skip').addEventListener('click', () => {
+    sensorWait.dismissed = true;
+    status('Without sensor readings the cross cannot follow the phone.');
+    render();
+    (traceBtn.disabled ? $('#cap-done') : traceBtn).focus();
+  });
   $('#cap-calib-go').addEventListener('click', () => {
     if (!calib) return;
     const q = sensors.qAt(shownAt(), true);
@@ -1125,7 +1287,11 @@ export function openCapture({ horizon, onLine, onPoint, onUndo, canUndo, onClose
       buttons[(i + (ev.shiftKey ? buttons.length - 1 : 1) + buttons.length) % buttons.length].focus();
     }
   });
-  const onVisibility = () => { if (document.visibilityState === 'visible' && !closed) keepAwake(); };
+  const onVisibility = () => {
+    if (document.visibilityState !== 'visible' || closed) return;
+    keepAwake();
+    wakeSensors();
+  };
   document.addEventListener('visibilitychange', onVisibility);
 
   /** Warn when the phone is far from the observing site: a horizon only holds
@@ -1159,13 +1325,14 @@ export function openCapture({ horizon, onLine, onPoint, onUndo, canUndo, onClose
       });
       if (closed) { for (const t of stream.getTracks()) t.stop(); return; }
       video.srcObject = stream;
+      wakeSensors();   // sensors started under the camera prompt may be silent
       startMotion();
       offerExposure();
-      // Offer the calibration routine once per phone, where there is an image.
-      if (!cal.scaleMeasured && !cal.asked && !refOpen) startCalib(true);
+      // The calibration routine is offered once north is set (render()).
     } catch (error) {
       el.classList.add('cap-no-video');
       status(`No camera (${error && error.name ? error.name : 'unknown reason'}): aim with the back of the phone.`);
+      wakeSensors();
     }
   }
 

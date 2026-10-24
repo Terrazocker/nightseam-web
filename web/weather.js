@@ -5,7 +5,7 @@
  * chip, the weather panel and site changes then call loadWeather(),
  * wxRenderPanel() and refreshWeatherForSite().
  */
-import * as Hor from './horizon.js?v=168';
+import * as Hor from './horizon.js?v=175';
 import * as WS from './webstore.js?v=84';
 
 const $ = (s) => document.querySelector(s);

@@ -97,8 +97,9 @@ the answer comes first, the most-used controls sit where the thumb reaches.
   bottom, with their head (name, save star, close) pinned while the body
   scrolls.
 - **Horizon.** On touch devices *Capture with phone* leads the empty state and
-  starts a new horizon straight in the camera view; editor hints name taps,
-  not clicks, wheels or keys.
+  starts a new horizon straight in the camera view. The grid is view-only
+  (a finger pans, − / + zoom); *Capture* in the editor head adds to the
+  open horizon, and the hint under the grid says so.
 - **Sizes.** Every control is at least 44px in both directions, form fields
   use 16px text (smaller makes iOS zoom the page on focus), no text is below
   12px, and a page never scrolls sideways. Touch screens of any width
@@ -123,7 +124,8 @@ The local exposure catalog has its own design document in Nightseam-catalog.
   list starts at the top of the page. The list heading says how
   many of the night's usable targets it shows ("Top 16 of N") and links to
   Catalog for the rest. On wide screens the brief and list keep a reading
-  width of 1080px, so a target's numbers stay near its name. Visibility
+  width of 1080px, so a target's numbers stay near its name, centred in the
+  page (from 1600px the list and the brief column are centred as a pair). Visibility
   explanations remain in target details.
 - **Catalog:** a narrow filter rail (on phones, and on touch screens up to
   900px, it folds behind a *Filters* button that counts the active filters),
@@ -160,13 +162,17 @@ The local exposure catalog has its own design document in Nightseam-catalog.
   and complementary at every width; on phones the rail stacks below the map.
   Closing it preserves the selected target with a small reopen action.
 - **Horizon:** the job is "where is my sky blocked"; keep the editor to that.
-  Three rails: the horizon list with *Draw by hand* (primary), *Import
-  file* and *Get from phone* (on touch devices *Capture with phone* comes
-  first and is primary); the stage; and a settings rail with closed *Points by numbers*,
-  *Phone capture* and *Display* disclosures (*Phone capture* starts open on
-  touch devices). With no horizon yet, the empty stage repeats the start
-  actions as its call to action. Keep about 20 controls visible
-  at first glance and about 40 including the disclosures. There are no
+  Two areas: the horizon list with *Draw by hand* (primary), *Import file*
+  and *Get from phone* (on phones and tablets: *Capture with phone*, primary,
+  and *Import file*; no *Draw by hand* and no *Get from phone*); and the
+  stage, whose grid always shows. There are no settings disclosures
+  (owner decision, October 24, 2026). With no horizon yet, the empty stage
+  repeats the start actions as its call to action. Keep about 20 controls
+  visible.
+  - On phones and tablets the grid is view-only: a finger pans and the − / +
+    buttons zoom; *Draw* and *Overhang* are not shown, and a brass
+    *Capture* button in the editor head traces into the open horizon. Undo,
+    Redo and Clear stay. The hint under the grid says it is view-only. There are no
   horizon photos: a dropped photo gets a one-line explanation, a dropped
   horizon file imports.
   - The stage is one compass grid (azimuth across, altitude up, N/E/S/W on the
@@ -231,9 +237,24 @@ The local exposure catalog has its own design document in Nightseam-catalog.
       pair of buttons (*Start* or *It's on the line* first, then *Not now*,
       *Cancel* or *Skip*). Its
       guide line is drawn over the video in the warning colour with a dark
-      outline, left of the cross and then above it. It is offered once, when
-      a phone's first capture shows a camera image, and never blocks
-      tracing for more than one tap.
+      outline, left of the cross and then above it. It is offered once per
+      phone, straight after north is set in a capture with a camera image
+      (*North is set. Next, line up the drawing…*), and never blocks
+      tracing for more than one tap. Over the video it shows what to do:
+      a ring round the cross in step 1; in steps 2 and 3 a solid arrow in
+      the main-text colour for the way to move the phone (*Turn right*,
+      *Tilt down*), a dashed amber arrow from the cross to the line for the
+      way the object travels, and *Stop when your object is on this line*
+      beside the line. The guide is SVG, so it stays sharp at any pixel
+      density; its words are 15 px semibold with a dark outline. Turning the wrong way turns the solid arrow amber and says
+      *Other way* there and in the instruction.
+    - The sensor panel takes the place of the controls (before any other
+      panel) when the motion sensors give nothing for 3 s or the compass
+      for 6 s: a bold line saying which has not started, three numbered
+      steps (allow access; hold upright and tap *Start the sensors*; keep
+      still while the compass settles), a small line on what to do if that
+      fails, and the
+      pair *Start the sensors* (brass, gets focus) / *Not now*.
     - Messages are short: one line where possible, the fact first, then
       what to do (*Compass settling (moved 2.1°): hold still.*). Detail that
       only helps a report goes behind *Details*, not into the status line.
@@ -260,9 +281,25 @@ The local exposure catalog has its own design document in Nightseam-catalog.
     at most 240 px, so phone cameras read it. Escape and Cancel close it and
     return focus to the button. An expired code removes the QR code and says
     so. A received horizon asks like a shared link (*From your phone: …*).
+    Below the QR code, under a quiet rule, a labelled field takes a
+    horizon's code (monospace, spaced, uppercase as typed, *K7Q-4MX* as
+    placeholder) with *Get*; it works while the QR code waits and after it
+    expired. A wrong or malformed code says so in the status line and keeps
+    the QR code; a found horizon closes the dialog and asks (*From its
+    code: …*).
+  - Horizon code: in the editor head beside *Share link*, one small button
+    whose words follow the state: *Code after the first point* and *Making a
+    code…* (disabled), *🔢 K7Q-4MX · 23 h* (the code in monospace; opens the
+    code dialog), *Get a code (24 h)* after expiry, *Code failed: try again*
+    when the relay could not be reached. The code dialog has the confirm
+    style: the title names the horizon, one line on where to type it and
+    until when (weekday and time), the code in 40 px monospace with wide
+    letter spacing (read out one character at a time), *Delete from the
+    server* and *Close*, which has focus.
   - On the phone, an opened pairing shows a *Pairing* section above the
     horizon list, separated by a quiet rule: which desktop site waits (name
-    and coordinates), the time left, *New horizon* when there is none yet,
+    and coordinates), the time left, *New horizon* when there is none yet
+    (it opens the camera view),
     the brass *Send to desktop* (disabled while the horizon is empty) and
     *End pairing*; buttons at least 44 px. After sending it says that the
     desktop asks before adding; an expired pairing says so and offers only

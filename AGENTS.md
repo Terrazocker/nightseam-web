@@ -87,7 +87,7 @@ machine's sandbox limits (Chrome named pipes, elevated runs).
 **Horizons**
 - Skyline points and overhang edges are the only source of truth. The
   planner's world-azimuth profiles are derived from them and never stored.
-- Skylines come from drawing, typed points, imported files or the phone's
+- Skylines come from drawing (mouse or keyboard), imported files or the phone's
   sensors; there are no horizon photos (2026-10-15). Records and backups of
   older builds keep their points and overhangs and drop their photo fields.
 - Editor history stays safe: edits save at once, undo/redo keep working, and

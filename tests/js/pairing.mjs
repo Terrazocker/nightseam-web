@@ -123,6 +123,85 @@ await assert.rejects(P.sendReply(relay, a, link), /already received/);
 answer = () => { throw new TypeError('offline'); };
 await assert.rejects(P.readOffer(relay, a), (e) => e.status === 0 && /no connection/.test(e.message));
 
+// --- horizon codes -------------------------------------------------------------------
+for (let i = 0; i < 200; i++) {
+  const code = P.newShortCode();
+  assert.equal(code.length, P.CODE_LENGTH);
+  for (const c of code) assert.ok(P.CODE_ALPHABET.includes(c), `${c} is in the alphabet`);
+}
+assert.ok(!/[01ILO]/.test(P.CODE_ALPHABET), 'no characters that read alike');
+assert.equal(P.formatShortCode('K7Q4MX'), 'K7Q-4MX');
+for (const typed of ['K7Q-4MX', 'k7q4mx', ' K7Q 4MX ', 'k7q--4mx']) assert.equal(P.parseShortCode(typed), 'K7Q4MX', typed);
+for (const bad of ['', 'K7Q-4M', 'K7Q-4MXX', 'K7Q-4M0', 'K7Q-4MI', 'K7Q.4MX', null]) assert.equal(P.parseShortCode(bad), null, String(bad));
+const sp = await P.sharePairing('K7Q4MX');
+assert.match(sp.id, /^[A-Za-z0-9_-]{22}$/, 'a box id the relay accepts');
+assert.match(sp.key, /^[A-Za-z0-9_-]{43}$/, 'a 256-bit key');
+assert.deepEqual(await P.sharePairing('K7Q4MX'), sp, 'the same code, the same box and key');
+assert.notEqual((await P.sharePairing('K7Q4MY')).id, sp.id);
+
+// An in-memory relay with relay.php's rules for codes: put creates (201) or
+// replaces with the same token (204), another token is refused (409); get
+// returns the body; drop needs the token.
+const stored = new Map();
+answer = (u, init) => {
+  const q = new URL(u).searchParams, id = q.get('box'), op = q.get('op'), rec = stored.get(id);
+  const token = init.headers['X-Share-Token'];
+  const left = { 'X-Relay-Remaining': '86400' };
+  if (op === 'get') return rec ? response(200, rec.body, left) : response(404);
+  if (op === 'drop') {
+    if (rec && rec.token !== token) return response(403);
+    stored.delete(id);
+    return response(204);
+  }
+  if (rec && rec.token !== token) return response(409);
+  stored.set(id, { token, body: new Uint8Array(init.body) });
+  return response(rec ? 204 : 201, null, left);
+};
+const t0 = Date.now();
+const share = await P.createShare(relay, link);
+assert.match(share.code, new RegExp(`^[${P.CODE_ALPHABET}]{6}$`));
+assert.match(share.token, /^[A-Za-z0-9_-]{22}$/, 'a 16-byte token');
+assert.ok(share.expires >= t0 + 86400 * 1000 && share.expires <= Date.now() + 86400 * 1000, 'expires in 24 hours');
+const put = calls.at(-1);
+assert.equal(put.u, `${relay}?box=${(await P.sharePairing(share.code)).id}&op=put`);
+assert.equal(put.init.headers['X-Share-Token'], share.token);
+assert.ok(!new TextDecoder('latin1').decode(put.init.body).includes(link.slice(0, 12)), 'the horizon travels sealed');
+assert.ok(!put.u.includes(share.code), 'the code itself never reaches the relay');
+
+const typed = P.parseShortCode(P.formatShortCode(share.code).toLowerCase());
+assert.deepEqual(await P.fetchShare(relay, typed), { link, remaining: 86400 }, 'the typed code gets the horizon');
+assert.equal(calls.at(-1).init.method, 'GET');
+assert.equal(calls.at(-1).init.headers['X-Share-Token'], undefined, 'looking up needs no token');
+
+const renamed = H.encodeHorizonLink({ ...horizon, name: 'Balkon — Nord' });
+await P.updateShare(relay, share, renamed);
+assert.equal((await P.fetchShare(relay, share.code)).link, renamed, 'an edit replaces the stored horizon');
+await assert.rejects(P.updateShare(relay, { ...share, token: P.newPairing().id }, link), (e) => e.status === 409,
+  'only the maker may change it');
+
+const wrongCode = (share.code[0] === '2' ? '3' : '2') + share.code.slice(1);
+await assert.rejects(P.fetchShare(relay, wrongCode), (e) => e.status === 404 && /no horizon has this code/.test(e.message));
+
+// a taken code is replaced by a new one
+let takenOnce = true;
+const plain = answer;
+answer = (u, init) => {
+  if (takenOnce && new URL(u).searchParams.get('op') === 'put') { takenOnce = false; return response(409); }
+  return plain(u, init);
+};
+const second = await P.createShare(relay, link);
+assert.notEqual(second.code, share.code);
+answer = plain;
+
+// another key cannot read it; delete needs the token
+const sealedBody = stored.get((await P.sharePairing(share.code)).id).body;
+await assert.rejects(P.unseal(await P.sharePairing(wrongCode), 'share', sealedBody), /could not be decrypted/);
+await P.deleteShare(relay, { ...share, token: second.token });
+assert.ok(stored.has((await P.sharePairing(share.code)).id), 'another token cannot delete it');
+await P.deleteShare(relay, share);
+assert.equal(calls.at(-1).init.method, 'POST');
+await assert.rejects(P.fetchShare(relay, share.code), (e) => e.status === 404, 'deleted before it expires');
+
 // --- polling backoff ---------------------------------------------------------------
 assert.equal(P.nextPollDelay(0), P.POLL_MS);
 assert.equal(P.nextPollDelay(1), 2 * P.POLL_MS);

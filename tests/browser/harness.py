@@ -380,6 +380,17 @@ def _install_stubs(page):
                lambda route: route.fulfill(status=200,
                    headers={"Access-Control-Allow-Origin": "*"},
                    json={"type": "standard"}))
+    # The static test server runs no PHP, and every horizon made in a check
+    # stores itself under a horizon code (web/relay.php op=put). This stand-in
+    # accepts that and deletions; the pairing checks route the relay to a
+    # stub with the full rules, which takes precedence.
+    def relay(route):
+        op = urllib.parse.parse_qs(urllib.parse.urlsplit(route.request.url).query).get("op", [""])[0]
+        if op in ("put", "drop"):
+            return route.fulfill(status=201 if op == "put" else 204, body=b"",
+                                 headers={"Cache-Control": "no-store", "X-Relay-Remaining": "86400"})
+        return route.fulfill(status=503, json={"error": "relay unavailable"})
+    page.route("**/relay.php?*", relay)
 
 
 def _new_context(browser, dpr: int = 1, service_workers: str = "block"):

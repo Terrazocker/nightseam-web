@@ -11,12 +11,13 @@
  * the horizon from the phone to the desktop).
  */
 import { vizTheme } from './viztheme.js?v=7';
-import { openCapture, captureAvailable, warmCompass } from './capture.js?v=32';
+import { openCapture, captureAvailable, warmCompass } from './capture.js?v=35';
 import { normalizeWebPrefs, WEB_PREF_DEFAULTS } from './webstore.js?v=84';
 import {
   PAIR_TTL_S, pairingUrl, parsePairFragment, relayUrlFor, RelayError,
   openPairing, pollPairing, closePairing, readOffer, sendReply, nextPollDelay,
-} from './pairing.js?v=1';
+  formatShortCode, parseShortCode, createShare, updateShare, deleteShare, fetchShare,
+} from './pairing.js?v=3';
 import qrcode from './qrcode.js?v=1';
 import {
   NO_BLOCK, ALT_MIN, ALT_MAX, MAX_POINTS,
@@ -38,6 +39,10 @@ const PREFS_KEY = 'nightseam_prefs_v1';
 // device-specific, so not part of backups. Version 1 kept a scale per axis
 // learned from any motion, which grew with turning speed; it is dropped.
 const CAPTURE_CAL_KEY = 'nightseam_capture_cal_v2';
+// This device's horizon codes (pairing.js): { [horizon id]: { code, token,
+// expires } or { pending: true } }. The token alone may change or delete a
+// stored horizon, so the codes stay on the device and out of backups.
+const SHARE_KEY = 'nightseam_share_codes_v1';
 const LEGACY_CAPTURE_CAL_KEY = 'nightseam_capture_cal_v1';
 // Storage of the retired panorama editor (records not converted) and the
 // retired horizon photos (deleted; the skylines traced over them stay).
@@ -70,6 +75,7 @@ function announceHorizonChanged(h, cause = 'edit') {
     horizonRevision: panoramaRevision(h),
   });
   refreshPairBanner();
+  if (h && cause !== 'activate' && cause !== 'restore') scheduleShareSync(h.id);
 }
 
 /* ------------------------------ horizon records ------------------------------ */
@@ -140,8 +146,9 @@ function uniqueName(base) {
 }
 
 /** Create a horizon, make it active and save. Returns it, or null when the
- *  limit is reached or storage fails. */
-function createHorizon(name, fields = {}) {
+ *  limit is reached or storage fails. `code`: it gets a horizon code once it
+ *  has points (horizons made here; not one that arrived from elsewhere). */
+function createHorizon(name, fields = {}, code = false) {
   if (db.horizons.length >= MAX_HORIZONS) return null;
   const h = withProfile(normalizeHorizon({ id: newId(), name: uniqueName(name), ...fields }));
   const previous = db.activeId;
@@ -152,6 +159,7 @@ function createHorizon(name, fields = {}) {
     db.activeId = previous;
     return null;
   }
+  if (code) setShare(h.id, { pending: true });
   announceHorizonChanged(h, 'create');
   return h;
 }
@@ -163,6 +171,7 @@ function setActive(id) {
 }
 
 function deleteHorizon(id) {
+  dropShare(id);
   db.horizons = db.horizons.filter((h) => h.id !== id);
   if (db.activeId === id) db.activeId = db.horizons.length ? db.horizons[0].id : null;
   const ok = save();
@@ -224,6 +233,114 @@ function replaceAll(candidate) {
   if (activeSession && activeSession.disconnect) activeSession.disconnect();
   activeSession = null;
   announceHorizonChanged(activeHorizon(), 'restore');
+}
+
+/* ------------------------------ horizon codes ------------------------------ */
+
+function loadShares() {
+  try {
+    const v = JSON.parse(localStorage.getItem(SHARE_KEY) || '{}');
+    return v && typeof v === 'object' && !Array.isArray(v) ? v : {};
+  } catch { return {}; }
+}
+
+let shares = loadShares();
+const shareSent = new Map();     // horizon id -> the link text the relay holds now
+const shareTimers = new Map();   // horizon id -> pending sync
+const shareBusy = new Set();     // horizon ids being made or sent
+const shareFailed = new Set();   // horizon ids whose code could not be made
+const SHARE_SYNC_MS = 1500;      // edits are sent this long after the last one
+
+function setShare(id, entry) {
+  if (entry) shares[id] = entry; else delete shares[id];
+  try { localStorage.setItem(SHARE_KEY, JSON.stringify(shares)); } catch { /* the code then lasts this session */ }
+}
+
+/** This horizon's live code { code, token, expires }, or null. */
+function liveShare(id) {
+  const e = shares[id];
+  return e && e.code && e.expires > Date.now() ? e : null;
+}
+
+const hasContent = (h) => !!h && (h.points.length > 0 || (h.overhangs || []).length > 0);
+
+function scheduleShareSync(id) {
+  clearTimeout(shareTimers.get(id));
+  shareTimers.set(id, setTimeout(() => { shareTimers.delete(id); syncShare(id); }, SHARE_SYNC_MS));
+}
+
+/** Make the code a horizon waits for, or send the relay its latest edit. An
+ *  expired code is left alone: a new one only on request (*Get a code*). */
+async function syncShare(id) {
+  const h = db.horizons.find((x) => x.id === id), e = shares[id];
+  if (!h || !e || !hasContent(h) || shareBusy.has(id)) return;
+  if (!e.pending && !liveShare(id)) { refreshCodeSlot(); return; }
+  let link;
+  try { link = encodeHorizonLink(h); } catch { return; }
+  if (!e.pending && shareSent.get(id) === link) return;
+  shareBusy.add(id);
+  shareFailed.delete(id);
+  refreshCodeSlot();
+  const relay = relayUrlFor(location.href);
+  try {
+    if (e.pending) {
+      const made = await createShare(relay, link);
+      if (shares[id] !== e) { deleteShare(relay, made); return; }   // deleted meanwhile
+      setShare(id, made);
+    } else {
+      await updateShare(relay, e, link);
+    }
+    shareSent.set(id, link);
+  } catch {
+    if (e.pending) shareFailed.add(id);   // an edit that did not arrive goes with the next one
+  } finally {
+    shareBusy.delete(id);
+    refreshCodeSlot();
+  }
+  // an edit made while this one travelled
+  const now = db.horizons.find((x) => x.id === id);
+  if (now && liveShare(id)) { try { if (encodeHorizonLink(now) !== link) scheduleShareSync(id); } catch { /* unsendable */ } }
+}
+
+/** Forget a horizon's code and delete its stored copy (deleting the horizon,
+ *  or *Delete from the server*). */
+function dropShare(id) {
+  const e = liveShare(id);
+  if (e) deleteShare(relayUrlFor(location.href), e);
+  clearTimeout(shareTimers.get(id));
+  shareSent.delete(id);
+  shareFailed.delete(id);
+  if (shares[id]) setShare(id, null);
+}
+
+const hoursLeft = (ms) => (ms >= 3600000 ? `${Math.floor(ms / 3600000)} h` : `${Math.max(1, Math.ceil(ms / 60000))} min`);
+/** When a code expires: the time, with the weekday once it is not today. */
+const clockAt = (t) => new Date(t).toLocaleString([], {
+  ...(new Date(t).toDateString() === new Date().toDateString() ? {} : { weekday: 'short' }),
+  hour: '2-digit', minute: '2-digit',
+});
+
+/** The code button in the editor head, for the horizon open there. */
+let codeSlotTimer = null;
+function refreshCodeSlot() {
+  if (typeof document === 'undefined') return;
+  const slot = document.getElementById('hz-code-slot');
+  if (!slot) { clearInterval(codeSlotTimer); codeSlotTimer = null; return; }
+  const id = slot.dataset.horizon, h = db.horizons.find((x) => x.id === id), e = shares[id], live = liveShare(id);
+  let html;
+  if (live) {
+    html = `<button class="btn small hz-code-btn" type="button" id="hz-code" title="Type this code into Get from phone on the desktop; valid until ${clockAt(live.expires)}">`
+      + `🔢 <span class="mono">${formatShortCode(live.code)}</span> · ${hoursLeft(live.expires - Date.now())}</button>`;
+  } else if (e && e.pending && (!hasContent(h) || shareBusy.has(id)) && !shareFailed.has(id)) {
+    html = `<button class="btn small" type="button" id="hz-code" disabled title="A code for Get from phone on the desktop">🔢 ${hasContent(h) ? 'Making a code…' : 'Code after the first point'}</button>`;
+  } else {
+    html = `<button class="btn small" type="button" id="hz-code" title="Keep this horizon on nightseam.de for 24 hours under a short code to type into Get from phone">🔢 ${shareFailed.has(id) ? 'Code failed: try again' : 'Get a code (24 h)'}</button>`;
+  }
+  if (slot.innerHTML === html) return;
+  const focused = slot.contains(document.activeElement);
+  slot.innerHTML = html;
+  if (focused) $('#hz-code', slot)?.focus();
+  if (!codeSlotTimer) codeSlotTimer = setInterval(refreshCodeSlot, 60000);
 }
 
 /* ------------------------------ editor session ------------------------------ */
@@ -361,17 +478,12 @@ const ZOOM_MAX = 12;
 const MARGIN = { l: 40, t: 24, r: 8, b: 8 };
 const HIT_PX = 9;
 
-/** Phones and tablets: touch is the main input, so the camera capture leads. */
+/** Phones and tablets: touch is the main input, so the camera capture leads
+ *  and the grid is view-only (a finger is too coarse to place points). */
 const touchFirst = () => typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
 
 /** Presentation state that survives re-rendering the same horizon. */
-const ui = {
-  id: null, mode: 'draw', zoom: 1, fx: 180, fy: 30, selected: -1, ohSel: null,
-  grid: true,
-  // The capture panel starts open on phones and tablets, where it is the quickest way in.
-  openPanels: { points: false, display: false,
-    capture: touchFirst() },
-};
+const ui = { id: null, mode: 'draw', zoom: 1, fx: 180, fy: 30, selected: -1, ohSel: null };
 
 /** Clamp the view focus so the visible window stays inside the grid. */
 export function clampView(zoom, fx, fy) {
@@ -536,7 +648,8 @@ async function shareHorizon(box, h) {
  *  agrees, and a damaged link changes nothing. Resolves true when added.
  *  `fromPhone` words it for a horizon that arrived through pairing. */
 export async function offerHorizonLink(code, box, onChanged = () => {}, fromPhone = false) {
-  const source = fromPhone ? 'your phone' : 'the shared link';
+  const byCode = fromPhone === 'code';
+  const source = byCode ? 'its code' : fromPhone ? 'your phone' : 'the shared link';
   let rec;
   try { rec = decodeHorizonLink(code); } catch (error) {
     hzNote(box, `This horizon ${fromPhone ? 'from the phone' : 'link'} could not be read (${error.message}). Nothing was added.`);
@@ -550,7 +663,7 @@ export async function offerHorizonLink(code, box, onChanged = () => {}, fromPhon
   if (rec.overhangs.length) what.push(`${rec.overhangs.length} overhang${rec.overhangs.length === 1 ? '' : 's'}`);
   const ok = await confirmDialog(box, {
     title: `Add the horizon “${rec.name}”?`,
-    body: `From ${fromPhone ? 'your phone' : 'a shared link'}: ${what.join(' and ')}. It is saved in this browser and used for planning.`,
+    body: `From ${byCode ? 'its code' : fromPhone ? 'your phone' : 'a shared link'}: ${what.join(' and ')}. It is saved in this browser and used for planning.`,
     ok: 'Add horizon',
   });
   if (!ok) { hzNote(box, `The ${fromPhone ? 'horizon from the phone' : 'shared horizon'} was not added.`); return false; }
@@ -615,6 +728,14 @@ function pairDialog(box, onChanged) {
         <summary>Show the link</summary>
         <textarea class="hz-link-text" id="pair-link" rows="3" readonly aria-label="Pairing link"></textarea>
       </details>
+      <form class="pair-type" id="pair-type" novalidate>
+        <label for="pair-code-in">Or type the horizon's code (shown beside its name in the phone's horizon editor)</label>
+        <div class="pair-type-row">
+          <input class="mono" id="pair-code-in" type="text" maxlength="9" autocomplete="off" autocapitalize="characters"
+            spellcheck="false" placeholder="K7Q-4MX" aria-describedby="pair-status">
+          <button class="btn" type="submit" id="pair-code-go">Get</button>
+        </div>
+      </form>
       <div class="btnrow"><button class="btn" type="button" data-cancel>Cancel</button></div>
     </div>`;
   const status = (text) => { $('#pair-status', el).textContent = text; };
@@ -683,18 +804,52 @@ function pairDialog(box, onChanged) {
     if (result.state === 'connected' && !announcedConnected) {
       announcedConnected = true;
       status('Phone connected. Capture the skyline there, then tap Send to desktop.');
-    } else if (failures === 0 && !announcedConnected) {
+    } else if (failures === 0 && !announcedConnected && !codeSaid) {
       status('Waiting for the phone…');
     }
     timer = setTimeout(poll, nextPollDelay(0));
   };
 
+  // A typed code: the horizon stored under it, asked about like a QR reply.
+  // It works whatever the QR code is doing, expired included.
+  let fetching = false;
+  let codeSaid = false;   // a code's answer stays in the status line until the phone connects
+  $('#pair-type', el).addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    if (fetching || !el.isConnected) return;
+    codeSaid = true;
+    const input = $('#pair-code-in', el);
+    const code = parseShortCode(input.value);
+    if (!code) {
+      status('That is not a code: 6 letters and digits, like K7Q-4MX.');
+      input.focus();
+      return;
+    }
+    fetching = true;
+    $('#pair-code-go', el).disabled = true;
+    status(`Getting the horizon with the code ${formatShortCode(code)}…`);
+    let got;
+    try {
+      got = await fetchShare(relay, code);
+    } catch (error) {
+      fetching = false;
+      if (!el.isConnected) return;
+      $('#pair-code-go', el).disabled = false;
+      status(`Not found: ${error.message}.`);
+      input.focus();
+      return;
+    }
+    if (!el.isConnected) return;
+    close();
+    await offerHorizonLink(got.link, box, onChanged, 'code');
+  });
+
   $('[data-cancel]', el).addEventListener('click', () => close());
   el.addEventListener('keydown', (ev) => {
     if (ev.key === 'Escape') { ev.preventDefault(); close(); }
     if (ev.key === 'Tab') {   // keep focus inside the dialog
-      const items = [...el.querySelectorAll('summary, textarea, button')]
-        .filter((x) => !x.closest('[hidden]') && (x.tagName !== 'TEXTAREA' || x.closest('details')?.open));
+      const items = [...el.querySelectorAll('summary, textarea, input, button')]
+        .filter((x) => !x.closest('[hidden]') && !x.disabled && (x.tagName !== 'TEXTAREA' || x.closest('details')?.open));
       ev.preventDefault();
       const i = items.indexOf(document.activeElement);
       items[(i + (ev.shiftKey ? items.length - 1 : 1)) % items.length].focus();
@@ -717,9 +872,52 @@ function pairDialog(box, onChanged) {
     timer = setTimeout(poll, nextPollDelay(0));
   }, (error) => {
     if (!el.isConnected || finished) return;
-    expire(`Pairing could not start: ${error.message}. Share link and file export still work.`);
+    status(`No QR code: ${error.message}. A horizon code, the share link and file export may still work.`);
   });
   return el;
+}
+
+/** A horizon's code, large, with what to do with it and *Delete from the
+ *  server*. */
+function codeDialog(box, h, onDeleted) {
+  const live = liveShare(h.id);
+  if (!live) return;
+  const before = document.activeElement;
+  const el = document.createElement('div');
+  el.className = 'ed-confirm';
+  el.setAttribute('role', 'dialog');
+  el.setAttribute('aria-modal', 'true');
+  el.setAttribute('aria-labelledby', 'code-title');
+  el.setAttribute('aria-describedby', 'code-how');
+  el.innerHTML = `
+    <div class="ed-confirm-box pair-box">
+      <h4 id="code-title">Code for “${esc(h.name)}”</h4>
+      <p id="code-how">On the desktop, open <b>Horizon › Get from phone</b> and type this code. It works until ${esc(clockAt(live.expires))}
+        (${esc(hoursLeft(live.expires - Date.now()))} left); edits you make here until then reach it too.</p>
+      <p class="pair-short mono" id="code-show" aria-label="Code: ${[...live.code].join(' ')}">${formatShortCode(live.code)}</p>
+      <div class="btnrow">
+        <button class="btn" type="button" data-drop>Delete from the server</button>
+        <button class="btn primary" type="button" data-ok>Close</button>
+      </div>
+    </div>`;
+  const done = () => { el.remove(); if (before && before.isConnected && typeof before.focus === 'function') before.focus(); };
+  $('[data-ok]', el).addEventListener('click', done);
+  $('[data-drop]', el).addEventListener('click', () => {
+    dropShare(h.id);
+    done();
+    onDeleted();
+  });
+  el.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Escape') { ev.preventDefault(); done(); }
+    if (ev.key === 'Tab') {   // keep focus inside the dialog
+      const items = [$('[data-drop]', el), $('[data-ok]', el)];
+      ev.preventDefault();
+      items[(items.indexOf(document.activeElement) + 1) % items.length].focus();
+    }
+  });
+  el.addEventListener('click', (ev) => { if (ev.target === el) done(); });
+  (box || document.body).appendChild(el);
+  $('[data-ok]', el).focus();
 }
 
 /** Phone: the pairing this page was opened with, or null. */
@@ -813,10 +1011,10 @@ function renderPairBanner(box, onChanged) {
     phonePair = null;
     renderPairBanner(box, onChanged);
     hzNote(box, 'Pairing ended.');
-    $('#hz-pair-start', box)?.focus();
+    ($('#hz-pair-start', box) || $('#hz-new-capture', box) || $('#hz-new-draw', box))?.focus();
   });
-  // A new horizon opens the editor; on a phone its Phone capture panel starts open.
-  $('#hz-pair-new', el)?.addEventListener('click', () => $('#hz-new-draw', box)?.click());
+  // A new horizon: straight into the camera on a phone, else the editor.
+  $('#hz-pair-new', el)?.addEventListener('click', () => ($('#hz-new-capture', box) || $('#hz-new-draw', box))?.click());
   const send = $('#hz-pair-send', el);
   if (send) send.addEventListener('click', () => sendToDesktop(box, onChanged));
   stopPhoneTicker();
@@ -931,11 +1129,12 @@ export function renderHorizon(box, onChanged = () => {}, context = {}) {
 /** The actions that start a horizon. Rendered once: in the empty editor, as
  *  its call to action, until a horizon exists; then under the list. */
 function startActions(cls) {
+  const phone = touchFirst();
   return `<div class="${cls}" role="group" aria-label="Start a horizon">
-            ${touchFirst() ? '<button class="btn primary" type="button" id="hz-new-capture">📱 Capture with phone</button>' : ''}
-            <button class="btn${touchFirst() ? '' : ' primary'}" type="button" id="hz-new-draw">✏ Draw by hand</button>
+            ${phone ? '<button class="btn primary" type="button" id="hz-new-capture">📱 Capture with phone</button>'
+              : '<button class="btn primary" type="button" id="hz-new-draw">✏ Draw by hand</button>'}
             <label class="btn" for="hz-import-file" role="button" tabindex="0">⬆ Import file</label>
-            <button class="btn" type="button" id="hz-pair-start" title="Show a QR code to scan with the phone; the horizon captured there comes back here">📱 Get from phone</button>
+            ${phone ? '' : '<button class="btn" type="button" id="hz-pair-start" title="Show a QR code to scan with the phone; the horizon captured there comes back here">📱 Get from phone</button>'}
           </div>`;
 }
 
@@ -945,13 +1144,15 @@ function editorHTML(h) {
       <div class="hz-head">
         <label class="hz-name">Name <input id="hz-name" type="text" maxlength="80" value="${esc(h.name)}"></label>
         <button class="btn small" type="button" id="hz-share" title="Send this horizon to another device as a link">🔗 Share link</button>
+        <span class="hz-code-slot" id="hz-code-slot" data-horizon="${esc(h.id)}"></span>
+        ${touchFirst() ? '<button class="btn small primary" type="button" id="hz-cap-start" title="Trace the skyline with the camera and the motion sensors">📱 Capture</button>' : ''}
         <button class="btn small" type="button" id="hz-export" title="Save as a plain azimuth/altitude text file">⬇ Export file</button>
       </div>
       <div class="ed-tools" role="toolbar" aria-label="Horizon editing">
-        <div class="ed-group hz-modes" role="group" aria-label="Mode">
+        ${touchFirst() ? '' : `<div class="ed-group hz-modes" role="group" aria-label="Mode">
           <button class="btn" type="button" id="hz-mode-draw" aria-pressed="true">✏ Draw</button>
           <button class="btn" type="button" id="hz-mode-overhang" aria-pressed="false" title="Draw the edge of a balcony, roof or branch: the sky above it is blocked">⌒ Overhang</button>
-        </div>
+        </div>`}
         <div class="ed-group ed-history">
           <button class="btn" type="button" id="ed-undo" title="Undo (Ctrl+Z)">↩ Undo</button>
           <button class="btn" type="button" id="ed-redo" title="Redo (Ctrl+Shift+Z)">↪ Redo</button>
@@ -973,45 +1174,8 @@ function editorHTML(h) {
         <span id="hz-help" class="ed-help"></span>
       </p>
       <p id="hz-summary" class="sub hz-summary" role="note"></p>
-      <p id="hz-keys" class="visually-hidden">Keyboard: in Draw mode the arrows work on skyline points, in Overhang mode on overhang edge points. Left and Right arrows select the previous or next point; with Shift they move it sideways. Up and Down arrows raise or lower it. Delete removes it. Use "Points by numbers" to add points and overhangs.</p>
-    </section>
-    <aside class="horizon-settings-rail" aria-label="Horizon settings">
-      <details class="hz-panel" id="hz-points-panel">
-        <summary>Points by numbers</summary>
-        <fieldset class="hz-fields" id="hz-selected">
-          <legend>Selected point</legend>
-          <label>Azimuth (°) <input id="hz-sel-az" type="number" min="0" max="359.99" step="0.5" disabled></label>
-          <label>Altitude (°) <input id="hz-sel-alt" type="number" min="${ALT_MIN}" max="${ALT_MAX}" step="0.5" disabled></label>
-          <button class="btn small" type="button" id="hz-sel-del" disabled>Delete point</button>
-        </fieldset>
-        <fieldset class="hz-fields">
-          <legend>Add a point</legend>
-          <label>Azimuth (°) <input id="hz-add-az" type="number" min="0" max="359.99" step="0.5"></label>
-          <label>Altitude (°) <input id="hz-add-alt" type="number" min="${ALT_MIN}" max="${ALT_MAX}" step="0.5"></label>
-          <button class="btn small" type="button" id="hz-add">Add point</button>
-        </fieldset>
-        <fieldset class="hz-fields">
-          <legend>Add an overhang (sky above it is blocked)</legend>
-          <label>From azimuth (°) <input id="hz-oh-from" type="number" min="0" max="359.99" step="0.5"></label>
-          <label>To azimuth (°) <input id="hz-oh-to" type="number" min="0" max="359.99" step="0.5"></label>
-          <label>Edge altitude (°) <input id="hz-oh-alt" type="number" min="${ALT_MIN}" max="${ALT_MAX}" step="0.5"></label>
-          <button class="btn small" type="button" id="hz-oh-add">Add overhang</button>
-        </fieldset>
-        <p class="sub">0° = north, 90° = east, 180° = south, 270° = west. Altitude is the angle above the level horizon.</p>
-      </details>
-      <details class="hz-panel" id="hz-capture-panel">
-        <summary>Phone capture</summary>
-        <p class="sub">On a phone or tablet: tap Start tracing, turn with the cross on the skyline, then tap Stop. The phone's motion sensors give the shape. North comes from its compass, which can be several degrees off near cars, railings and buildings; the Moon or a landmark is more exact.</p>
-        <div class="btnrow">
-          <button class="btn small primary" type="button" id="hz-cap-start">📱 Capture with the camera</button>
-        </div>
-        <p class="sub" id="hz-cap-status" role="status" aria-live="polite"></p>
-      </details>
-      <details class="hz-panel ed-display" id="hz-display-panel">
-        <summary>Display</summary>
-        <label><input id="hz-grid" type="checkbox" ${ui.grid ? 'checked' : ''}> Show grid</label>
-      </details>
-    </aside>`;
+      <p id="hz-keys" class="visually-hidden">Keyboard: in Draw mode the arrows work on skyline points, in Overhang mode on overhang edge points. Left and Right arrows select the previous or next point; with Shift they move it sideways. Up and Down arrows raise or lower it. Delete removes it. Insert or plus adds a point 5 degrees after the selected one (in Overhang mode, a 20-degree edge in the middle of the view).</p>
+    </section>`;
 }
 
 function wireList(box, onChanged) {
@@ -1056,16 +1220,16 @@ function wireList(box, onChanged) {
     return true;
   };
 
-  $('#hz-pair-start', box).addEventListener('click', () => {
+  $('#hz-pair-start', box)?.addEventListener('click', () => {
     if (tooMany()) return;
     flushHorizonEdits();
     pairDialog(box, onChanged);
   });
 
-  $('#hz-new-draw', box).addEventListener('click', () => {
+  $('#hz-new-draw', box)?.addEventListener('click', () => {
     if (tooMany()) return;
     flushHorizonEdits();
-    if (created(createHorizon('Horizon'))) rerender();
+    if (created(createHorizon('Horizon', {}, true))) rerender();
   });
   // Touch devices start a new horizon straight in the camera view. The editor
   // renders synchronously, so its Start button is pressed within this tap
@@ -1073,10 +1237,8 @@ function wireList(box, onChanged) {
   $('#hz-new-capture', box)?.addEventListener('click', () => {
     if (tooMany()) return;
     flushHorizonEdits();
-    if (!created(createHorizon('Horizon'))) return;
+    if (!created(createHorizon('Horizon', {}, true))) return;
     rerender();
-    const panel = $('#hz-capture-panel', box);
-    if (panel) panel.open = true;
     $('#hz-cap-start', box)?.click();
   });
 
@@ -1090,7 +1252,7 @@ function wireList(box, onChanged) {
     }
     flushHorizonEdits();
     const name = String(f.name).replace(/\.[a-z0-9]+$/i, '').slice(0, 60) || 'Imported horizon';
-    if (!created(createHorizon(name, { points: parsed.points }))) return;
+    if (!created(createHorizon(name, { points: parsed.points }, true))) return;
     rerender();
     const extra = [parsed.thinned ? `thinned from ${parsed.points.length + parsed.thinned} to fit the ${MAX_POINTS}-point limit` : '',
       parsed.skipped ? `${parsed.skipped} other lines skipped` : ''].filter(Boolean).join('; ');
@@ -1206,7 +1368,7 @@ function wireEditor(box, h, onChanged) {
     ctx.beginPath();
     ctx.rect(f.x, f.y, f.w, f.h);
     ctx.clip();
-    if (ui.grid) drawGrid(f, V);
+    drawGrid(f, V);
     drawMinAlt(f, V);
     drawSkyline(f, V);
     drawOverhangs(f, V);
@@ -1374,22 +1536,14 @@ function wireEditor(box, h, onChanged) {
     ? (ui.ohSel ? h.overhangs[ui.ohSel.i]?.[ui.ohSel.j] : undefined)
     : h.points[ui.selected]);
 
-  function renderSelection() {
-    const p = selectedPoint();
-    const az = $('#hz-sel-az', box), alt = $('#hz-sel-alt', box), del = $('#hz-sel-del', box);
-    for (const el of [az, alt, del]) el.disabled = !p;
-    az.value = p ? String(p.az) : '';
-    alt.value = p ? String(p.alt) : '';
-  }
-
   function renderMode() {
-    $('#hz-mode-draw', box).setAttribute('aria-pressed', String(ui.mode === 'draw'));
-    $('#hz-mode-overhang', box).setAttribute('aria-pressed', String(ui.mode === 'overhang'));
+    $('#hz-mode-draw', box)?.setAttribute('aria-pressed', String(ui.mode === 'draw'));
+    $('#hz-mode-overhang', box)?.setAttribute('aria-pressed', String(ui.mode === 'overhang'));
     cvs.dataset.mode = ui.mode;
-    $('#hz-help', box).textContent = ui.mode === 'overhang'
-      ? 'Drag along the underside of a balcony, roof or branch: the sky above that edge is blocked · drag a point = move · Delete = remove'
-      : touchFirst()
-        ? 'Tap = add point · drag a point = move · drag across the grid = sketch the skyline · − / + = zoom'
+    $('#hz-help', box).textContent = touchFirst()
+      ? 'View only on a phone: drag = pan · − / + = zoom · Capture adds to the skyline; edit points on a computer'
+      : ui.mode === 'overhang'
+        ? 'Drag along the underside of a balcony, roof or branch: the sky above that edge is blocked · drag a point = move · Delete = remove'
         : 'Click = add point · drag a point = move · drag across the grid = sketch the skyline · Delete = remove · wheel = zoom · Space+drag = pan';
     $('#ed-zoom-label', box).textContent = `${ui.zoom.toFixed(1)}×`;
   }
@@ -1401,7 +1555,7 @@ function wireEditor(box, h, onChanged) {
     announceHorizonChanged(h, cause);
     if (ui.selected >= h.points.length) ui.selected = -1;
     if (ui.ohSel && !h.overhangs[ui.ohSel.i]?.[ui.ohSel.j]) ui.ohSel = null;
-    renderStatus(); renderSummary(); renderSelection(); renderMode();
+    renderStatus(); renderSummary(); renderMode();
     draw();
     onChanged();
   }
@@ -1449,7 +1603,7 @@ function wireEditor(box, h, onChanged) {
     if (gesture) return;
     const f = frame(), { x, y } = local(ev), w = toWorld(f, x, y);
     cvs.focus({ preventScroll: true });
-    if (ev.button === 1 || (ev.button === 0 && spaceDown)) {
+    if (ev.button === 1 || (ev.button === 0 && (spaceDown || touchFirst()))) {
       gesture = { type: 'pan', x, y, fx: ui.fx, fy: ui.fy };
     } else if (ev.button !== 0) {
       return;
@@ -1458,7 +1612,6 @@ function wireEditor(box, h, onChanged) {
       if (hit) {
         ui.ohSel = hit;
         gesture = { type: 'ohpoint', ...hit, lines: h.overhangs.map((l) => l.map((p) => ({ ...p }))), moved: false };
-        renderSelection();
       } else {
         gesture = { type: 'sketch', x, y, far: false, samples: [{ az: Math.max(0, Math.min(360, w.az)), alt: clampAlt(w.alt) }] };
       }
@@ -1467,7 +1620,6 @@ function wireEditor(box, h, onChanged) {
       if (hit >= 0) {
         ui.selected = hit;
         gesture = { type: 'point', index: hit, points: h.points.map((p) => ({ ...p })), moved: false };
-        renderSelection();
       } else {
         gesture = { type: 'sketch', x, y, far: false, samples: [{ az: Math.max(0, Math.min(360, w.az)), alt: clampAlt(w.alt) }] };
       }
@@ -1578,9 +1730,10 @@ function wireEditor(box, h, onChanged) {
     if (ev.key === ' ') { spaceDown = true; ev.preventDefault(); return; }
     if (ev.key === 'Escape') {
       if (gesture) finishGesture(false);
-      else { ui.selected = -1; renderSelection(); draw(); }
+      else { ui.selected = -1; draw(); }
       return;
     }
+    if (ev.key === 'Insert' || ev.key === '+') { ev.preventDefault(); addByKey(); return; }
     if (ui.mode === 'overhang') { overhangKey(ev); return; }
     if (ui.mode !== 'draw' || !h.points.length) return;
     const n = h.points.length;
@@ -1591,7 +1744,7 @@ function wireEditor(box, h, onChanged) {
       ui.selected = i < 0 ? 0 : (i + (ev.key === 'ArrowRight' ? 1 : n - 1)) % n;
       const p = h.points[ui.selected];
       if (X(frame(), p.az) < MARGIN.l || X(frame(), p.az) > size.w - MARGIN.r) Object.assign(ui, clampView(ui.zoom, p.az, ui.fy));
-      renderSelection(); draw();
+      draw();
       $('#ed-pos', box).textContent = `point ${ui.selected + 1} of ${n}: az ${fmt(p.az)}° ${cardinal(p.az)} · alt ${fmt(p.alt)}°`;
       return;
     }
@@ -1618,6 +1771,31 @@ function wireEditor(box, h, onChanged) {
       $('#ed-pos', box).textContent = `az ${fmt(next.az)}° · alt ${fmt(next.alt)}°`;
     }
   });
+  /** Insert or +: in Draw mode a point 5 deg after the selected one (or in
+   *  the middle of the view), at its altitude; in Overhang mode a flat
+   *  20-deg edge in the middle of the view. The arrows then place it. */
+  function addByKey() {
+    const mid = { az: wrapAz(ui.fx), alt: clampAlt(Math.round(ui.fy)) };
+    if (ui.mode === 'overhang') {
+      let next = h.overhangs;
+      for (const piece of flatOverhang(mid.az - 10, mid.az + 10, mid.alt)) next = replaceOverhangsInRange(next, piece);
+      h.overhangs = next;
+      commit();
+      selectOverhangAt(Math.round(wrapAz(mid.az - 10) * 100) / 100, mid.alt);
+      draw();
+      $('#ed-pos', box).textContent = `overhang added from ${fmt(wrapAz(mid.az - 10))}° to ${fmt(wrapAz(mid.az + 10))}° at ${fmt(mid.alt)}°`;
+      return;
+    }
+    if (h.points.length >= MAX_POINTS) { note(`A horizon has at most ${MAX_POINTS} points.`); return; }
+    const from = h.points[ui.selected];
+    const p = from ? { az: wrapAz(from.az + 5), alt: from.alt } : mid;
+    if (h.points.some((q) => Math.abs(q.az - p.az) < 0.01)) return;
+    h.points = normalizePoints([...h.points, p]);
+    selectAz(Math.round(p.az * 100) / 100);
+    commit();
+    $('#ed-pos', box).textContent = `point added: az ${fmt(p.az)}° ${cardinal(p.az)} · alt ${fmt(p.alt)}°`;
+  }
+
   /** Arrow/Delete keys on overhang edge points (Overhang mode). */
   function overhangKey(ev) {
     const flat = [];
@@ -1629,7 +1807,7 @@ function wireEditor(box, h, onChanged) {
       ui.ohSel = flat[at < 0 ? 0 : (at + (ev.key === 'ArrowRight' ? 1 : flat.length - 1)) % flat.length];
       const p = selectedPoint();
       if (X(frame(), p.az) < MARGIN.l || X(frame(), p.az) > size.w - MARGIN.r) Object.assign(ui, clampView(ui.zoom, p.az, ui.fy));
-      renderSelection(); draw();
+      draw();
       $('#ed-pos', box).textContent = `overhang ${ui.ohSel.i + 1}, point ${ui.ohSel.j + 1}: az ${fmt(p.az)}° ${cardinal(p.az)} · alt ${fmt(p.alt)}°`;
       return;
     }
@@ -1684,14 +1862,15 @@ function wireEditor(box, h, onChanged) {
     commit();
   });
   const setMode = (mode) => { settle(); ui.mode = mode; renderMode(); draw(); };
-  $('#hz-mode-draw', box).addEventListener('click', () => setMode('draw'));
-  $('#hz-mode-overhang', box).addEventListener('click', () => setMode('overhang'));
+  $('#hz-mode-draw', box)?.addEventListener('click', () => setMode('draw'));
+  $('#hz-mode-overhang', box)?.addEventListener('click', () => setMode('overhang'));
 
   $('#hz-name', box).addEventListener('change', (ev) => {
     const name = ev.target.value.trim().slice(0, 80);
     if (!name) { ev.target.value = h.name; return; }
     h.name = name;
     if (!save()) note('Renaming failed: browser storage is full or blocked.');
+    else scheduleShareSync(h.id);
     const label = box.querySelector(`#hz-list li[data-id="${CSS.escape(h.id)}"] .p-name`);
     if (label) label.textContent = name;
     box.querySelector(`#hz-list li[data-id="${CSS.escape(h.id)}"] [data-del]`)?.setAttribute('aria-label', `Delete horizon ${name}`);
@@ -1700,91 +1879,48 @@ function wireEditor(box, h, onChanged) {
     if (!h.points.length && !h.overhangs.length) { note('There is nothing to share yet: the skyline has no points.'); return; }
     shareHorizon(box, h);
   });
+  // The code button is rebuilt as its state changes, so its clicks are
+  // handled on the slot.
+  refreshCodeSlot();
+  $('#hz-code-slot', box).addEventListener('click', async (ev) => {
+    const btn = ev.target.closest('#hz-code');
+    if (!btn || btn.disabled) return;
+    if (liveShare(h.id)) {
+      codeDialog(box, h, () => note('Deleted from the server: the code no longer works.'));
+      return;
+    }
+    if (!hasContent(h)) { note('There is nothing to keep yet: the skyline has no points.'); return; }
+    flushHorizonEdits();
+    setShare(h.id, { pending: true });
+    shareFailed.delete(h.id);
+    await syncShare(h.id);
+    if (liveShare(h.id)) {
+      note('This horizon has a code for 24 hours.');
+      codeDialog(box, h, () => note('Deleted from the server: the code no longer works.'));
+    } else {
+      note('No code: the pairing service could not be reached. Try again later; the share link and file export still work.');
+    }
+  });
   $('#hz-export', box).addEventListener('click', () => {
     if (!h.points.length) { note('There is nothing to export yet: the skyline has no points.'); return; }
     download(`${fileSlug(h.name)}-horizon.txt`, formatHorizonFile(h));
     if (h.overhangs.length) note('Exported the skyline. Horizon files have no overhangs, so those stay only in NightSeam and its backups.');
   });
 
-  /* ---- points by numbers ---- */
-  const field = (id) => num($(id, box).value);
-  $('#hz-sel-az', box).addEventListener('change', () => editSelected());
-  $('#hz-sel-alt', box).addEventListener('change', () => editSelected());
-  function editSelected() {
-    const az = field('#hz-sel-az'), alt = field('#hz-sel-alt');
-    if (!selectedPoint() || !Number.isFinite(az) || !Number.isFinite(alt)) { renderSelection(); return; }
-    if (ui.mode === 'overhang') {
-      const { i, j } = ui.ohSel;
-      const a = Math.max(0, Math.min(360, az));
-      h.overhangs = normalizeOverhangs(h.overhangs.map((l, k) => (k === i ? l.map((q, m) => (m === j ? { az: a, alt } : q)) : l)));
-      selectOverhangAt(Math.round(a * 100) / 100, Math.round(Math.max(ALT_MIN, Math.min(ALT_MAX, alt)) * 100) / 100);
-    } else {
-      h.points = normalizePoints([...h.points.filter((_, k) => k !== ui.selected), { az, alt }]);
-      selectAz(Math.round(wrapAz(az) * 100) / 100);
-    }
-    commit();
-  }
-  $('#hz-sel-del', box).addEventListener('click', () => {
-    if (!selectedPoint()) return;
-    if (ui.mode === 'overhang') {
-      const { i, j } = ui.ohSel;
-      h.overhangs = normalizeOverhangs(h.overhangs.map((l, k) => (k === i ? l.filter((_, m) => m !== j) : l)));
-      ui.ohSel = null;
-    } else {
-      h.points = h.points.filter((_, k) => k !== ui.selected);
-      ui.selected = -1;
-    }
-    commit();
-  });
-  $('#hz-oh-add', box).addEventListener('click', () => {
-    const from = field('#hz-oh-from'), to = field('#hz-oh-to'), alt = field('#hz-oh-alt');
-    if (![from, to, alt].every(Number.isFinite)) {
-      note('Enter where the overhang starts and ends (going east; the same direction twice means all the way round) and the altitude of its edge, in degrees.');
-      return;
-    }
-    let next = h.overhangs;
-    for (const piece of flatOverhang(from, to, alt)) next = replaceOverhangsInRange(next, piece);
-    h.overhangs = next;
-    if (ui.mode !== 'overhang') { ui.mode = 'overhang'; renderMode(); }
-    ui.ohSel = null;
-    commit();
-    note(wrapAz(from) === wrapAz(to)
-      ? `Overhang added: the sky above ${fmt(alt)}° is blocked all the way round.`
-      : `Overhang added: the sky above ${fmt(alt)}° is blocked from ${fmt(wrapAz(from))}° to ${fmt(wrapAz(to))}°.`);
-  });
-  $('#hz-add', box).addEventListener('click', () => {
-    const az = field('#hz-add-az'), alt = field('#hz-add-alt');
-    if (!Number.isFinite(az) || !Number.isFinite(alt)) { note('Enter an azimuth and an altitude in degrees.'); return; }
-    if (h.points.length >= MAX_POINTS) { note(`A horizon has at most ${MAX_POINTS} points.`); return; }
-    h.points = normalizePoints([...h.points, { az, alt }]);
-    selectAz(Math.round(wrapAz(az) * 100) / 100);
-    commit();
-  });
-  for (const [id, key] of [['#hz-points-panel', 'points'], ['#hz-display-panel', 'display'], ['#hz-capture-panel', 'capture']]) {
-    const el = $(id, box);
-    el.open = !!ui.openPanels[key];
-    el.addEventListener('toggle', () => { ui.openPanels[key] = el.open; });
-  }
-
-  /* ---- display ---- */
-  $('#hz-grid', box).addEventListener('change', (ev) => { ui.grid = ev.target.checked; draw(); });
-
   /* ---- phone capture ---- */
-  const capStatus = (text) => { const el = $('#hz-cap-status', box); if (el) el.textContent = text; };
-  // Warm the compass while the Phone capture panel is open, so north is ready
+  // Warm the compass while the editor is open on a phone, so north is ready
   // when the capture starts. Leaving the editor (another tab replaces it
   // without telling it) is noticed within 2 s.
   function syncWarm() {
-    const want = cvs.isConnected && $('#hz-capture-panel', box)?.open && captureAvailable();
+    const want = cvs.isConnected && !!$('#hz-cap-start', box) && captureAvailable();
     if (want && !warm) warm = warmCompass();
     if (!want) stopWarm();
   }
-  $('#hz-capture-panel', box).addEventListener('toggle', syncWarm);
   warmTimer = setInterval(syncWarm, 2000);
   syncWarm();
-  $('#hz-cap-start', box).addEventListener('click', () => {
+  $('#hz-cap-start', box)?.addEventListener('click', () => {
     if (capture) return;
-    if (!captureAvailable()) { capStatus('This browser has no camera or motion sensor access. Use a phone or tablet.'); return; }
+    if (!captureAvailable()) { note('This browser has no camera or motion sensor access. Use a phone or tablet.'); return; }
     settle();
     capture = openCapture({
       horizon: () => h,
@@ -1819,7 +1955,7 @@ function wireEditor(box, h, onChanged) {
       onClose: (message) => {
         capture = null;
         if (!cvs.isConnected) return;
-        capStatus(message);
+        if (message) note(message);
         renderPairBanner(box, onChanged);
         draw();
       },
@@ -1830,6 +1966,6 @@ function wireEditor(box, h, onChanged) {
   Object.assign(ui, clampView(ui.zoom, ui.fx, ui.fy));
   resize();
   observer?.observe($('#hz-box', box));
-  renderStatus(); renderSummary(); renderSelection(); renderMode();
+  renderStatus(); renderSummary(); renderMode();
   draw();
 }
