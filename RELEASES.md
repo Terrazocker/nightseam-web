@@ -4,6 +4,23 @@ Actual validation outcomes, newest first. Published releases: v0.8.0 (October
 24, 2026), v0.7.0 (October 19, 2026), v0.1.1 (October 8, 2026) and v0.1.0
 (October 7, 2026). Upload success alone is never recorded as acceptance.
 
+## Horizon resize error and trash icon — October 24, 2026 (branch planner-resize-trash)
+
+Owner reported a "ResizeObserver loop completed with undelivered notifications"
+banner while resizing, and a trash-can icon that showed as a rectangle.
+
+- Cause: the Horizon editor's ResizeObserver resized the canvas inside the
+  observed box, changing its height in the same frame; the planner shows
+  window errors in its banner. Reproduced headless: 12 errors over 13
+  window resizes on Horizon, none on Sky View. The resize now runs in the
+  next animation frame; the same probe then raised none.
+- web-horizon-canvas-dpr-resize now collects window errors: it fails on the
+  old code (four loop errors) and passes with the fix.
+- The delete-horizon button draws an SVG trash can instead of the 🗑 emoji,
+  which Windows renders as a thin outline glyph; accessible name unchanged.
+- pytest 372 passed / 1 skipped (the 15 `tests/test_relay.py` cases need
+  PHP, not installed here); real-Chrome suite 93/93; check_js OK;
+  check_release 0 errors.
 ## Shorter public pages on the test site — October 24, 2026 (dev.nightseam.de, 315667d)
 
 Owner-requested publication of `landing-trim` (PR 10) to the test site only;

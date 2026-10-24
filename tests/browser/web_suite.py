@@ -486,6 +486,10 @@ def web_horizon_storage_quota(c):
 @check("web-horizon-canvas-dpr-resize", "web")
 def web_horizon_canvas_dpr_resize(c):
     """The editor canvas is DPR-aware and follows a resize (ResizeObserver)."""
+    # A ResizeObserver loop reaches window.onerror (and the planner's error
+    # banner) without a console message, so assert_clean alone misses it.
+    c.page.add_init_script(
+        "window.__nsErrors = []; addEventListener('error', e => window.__nsErrors.push(String(e.message)));")
     boot(c)
     open_editor(c)
 
@@ -516,6 +520,8 @@ def web_horizon_canvas_dpr_resize(c):
       return out;
     }""")
     c.expect(fit["canvas"] <= fit["box"], f"canvas stays inside its box before the observer runs: {fit}")
+    c.expect_eq(c.page.evaluate("window.__nsErrors"), [],
+                "resizing the editor raises no window error (no ResizeObserver loop)")
     c.assert_clean()
 
 
