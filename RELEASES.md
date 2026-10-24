@@ -4,6 +4,19 @@ Actual validation outcomes, newest first. Published releases: v0.8.0 (October
 24, 2026), v0.7.0 (October 19, 2026), v0.1.1 (October 8, 2026) and v0.1.0
 (October 7, 2026). Upload success alone is never recorded as acceptance.
 
+## Shorter public pages on the test site — October 24, 2026 (dev.nightseam.de, 315667d)
+
+Owner-requested publication of `landing-trim` (PR 10) to the test site only;
+the live site was not touched. Both `.htaccess` files are unchanged.
+
+- Candidate: 80 files from an LF worktree, version baked as
+  v0.8.0-3-g315667d, `prepare_publication.py --verify` passed.
+- Publish to `/dev.nightseam.de` succeeded on the fifth attempt, 90 s apart
+  (a TLS `BAD_LENGTH`, then three connection resets, all before any page
+  switched).
+- HTTPS: all 77 HTTP-readable files and both entry routes match the
+  candidate's bytes.
+
 ## Shorter public pages and a Catalog page — October 24, 2026 (branch landing-trim)
 
 Owner asked for less text, bullet-point release notes, no folded-away content
