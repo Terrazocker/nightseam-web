@@ -4,6 +4,23 @@ Actual validation outcomes, newest first. Published releases: v0.7.0 (October
 19, 2026), v0.1.1 (October 8, 2026) and v0.1.0 (October 7, 2026). Upload
 success alone is never recorded as acceptance.
 
+## Centred Tonight on the test site — October 24, 2026 (dev.nightseam.de, 18a67b5)
+
+Owner-requested publication of 18a67b5 (v0.7.0-20-g18a67b5) to the test site
+only; the live site was not touched.
+
+- Candidate: 78 files from the LF worktree, version baked, `--verify` passed.
+  Publish to `/dev.nightseam.de` succeeded on the fourth attempt, with 90 s
+  between attempts; the first three failed exactly as before (a TLS
+  `BAD_LENGTH`, then two connection resets), so the resets do not come from
+  retrying too fast. The host did not block this machine this time.
+- HTTPS, two seconds apart: `index.html`, `version.json`, `sw.js` and both
+  release stylesheets match the candidate.
+- Built-in browser at 1636 px: Tonight's list and brief column run from 67
+  to 1555 px (centred; before, from the left edge); no sideways scroll.
+- The *Not found* fix from d6aff54, checked now: a wrong code's answer was
+  still shown 8.5 s later while the QR code kept polling.
+
 ## Horizon codes on the test site — October 24, 2026 (dev.nightseam.de, d6aff54)
 
 Owner-requested publication of `horizon-pairing-plan` to the test site only;
