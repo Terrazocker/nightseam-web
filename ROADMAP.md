@@ -5,9 +5,12 @@ Where NightSeam Web stands and what comes next. Open defects are in
 
 ## Status
 
-- **Published:** v0.8.0 (October 24, 2026), after v0.7.0 (October 19),
-  v0.1.1 (October 8) and v0.1.0 (October 7). Next release names continue
-  above 0.8.0.
+- **Published:** v0.8.1 (October 24, 2026), after v0.8.0 (the same day),
+  v0.7.0 (October 19), v0.1.1 (October 8) and v0.1.0 (October 7). Next
+  release names continue above 0.8.1.
+- **In 0.8.1:** shorter public pages with bullet-point release notes and a
+  Catalog page for the desktop app (DECISIONS.md 2026-10-24), the Horizon
+  editor's ResizeObserver fix and a drawn trash icon.
 - **In 0.8.0:** the phone layout and night vision, offline reopening, horizon
   pairing through the encrypted relay (now live at
   `www.nightseam.de/astro/relay.php`, PHP served by Apache), horizon codes,
@@ -30,10 +33,7 @@ Where NightSeam Web stands and what comes next. Open defects are in
 
 ## Open work
 
-- **Shorter public pages** (October 24, branch `landing-trim`, unreleased):
-  fewer words, no folded-away content, bullet-point release notes and a
-  Catalog page for the desktop app (DECISIONS.md 2026-10-24).
-- **Phone layout and night vision** (October 20, unreleased): the planner's
+- **Phone layout and night vision** (October 20, released in 0.8.0): the planner's
   own phone layout (bottom tab bar, pinned time slider, setup sheet, two-line
   rows, bottom-sheet details, pinch zoom) and the red night-vision display
   (DESIGN.md, "Phone layout"). Checked in headless Chrome at phone sizes;

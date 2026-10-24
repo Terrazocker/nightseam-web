@@ -1,8 +1,35 @@
 # Independent website release record
 
-Actual validation outcomes, newest first. Published releases: v0.8.0 (October
-24, 2026), v0.7.0 (October 19, 2026), v0.1.1 (October 8, 2026) and v0.1.0
-(October 7, 2026). Upload success alone is never recorded as acceptance.
+Actual validation outcomes, newest first. Published releases: v0.8.1 and
+v0.8.0 (October 24, 2026), v0.7.0 (October 19, 2026), v0.1.1 (October 8,
+2026) and v0.1.0 (October 7, 2026). Upload success alone is never recorded as
+acceptance.
+
+## v0.8.1 — released and deployed, October 24, 2026
+
+Owner-authorized deployment of tag v0.8.1 (8f321e5) to nightseam.de. Not
+pushed to GitHub at the time of deployment.
+
+- Backup: read-only FTPS inventory of `/nightseam.de` (537 files) against the
+  0.8.0 backup: none gone; new are v0.8.0's 55 web and 12 landing release
+  files, `/astro/relay.php`, `/astro/sw.js`, and a 0-byte
+  `/astro/index.html.upload-73d3…` left by a connection reset during the 0.8.0
+  publish (not referenced; not removed). 347 files downloaded, size-checked.
+- Candidate: 80 files from an LF worktree of v0.8.1; make_release.py,
+  check_release.py (0 errors) and prepare_publication.py `--verify` passed;
+  web/version.json is v0.8.1. Both `.htaccess` files already matched live.
+- Publish: `ftps_deploy.py publish … /nightseam.de` succeeded on the fifth
+  attempt, 90 s apart (four connection resets before any page switched): 80
+  files, older releases retained. Nothing deleted.
+- HTTPS on `www.nightseam.de`: all 77 HTTP-readable files and both entry routes
+  match the candidate's bytes; version.json v0.8.1. Relay: unknown box 404
+  with the API CSP; open 201, offer with the same bytes, close 204.
+- Headless Chrome on the live planner: 13 window resizes each on Sky View and
+  Horizon raised no window error (0.8.0 raised 12 on Horizon).
+
+Evidence: logs/deployment-0.8.1-20261024/ (backup with inventory.json,
+publish.txt, https-check.txt). *Pairing* and phone-layout acceptance on a real
+phone remain open (ROADMAP.md).
 
 ## v0.8.1 release preparation — October 24, 2026 (branch release-0.8.1)
 
