@@ -29,6 +29,7 @@ import planner_safety_checks  # noqa: E402,F401  (timezones, recovery copy, prov
 import detail_night_checks  # noqa: E402,F401  (detail card describes the coming night)
 import phase1_app_checks  # noqa: E402,F401  (save/delete failures and complete restore recovery)
 import review_phase567_checks  # noqa: E402,F401  (remaining Catalog, weather and accessibility findings)
+import pairing_checks  # noqa: E402,F401  (phone pairing through a stubbed relay)
 
 
 def run_gate(**kwargs) -> int:

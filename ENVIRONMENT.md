@@ -4,7 +4,10 @@ The current workspace is the website repository. Browser tests use Playwright
 with system Chrome, Node parses JavaScript, and Python runs build/test guards.
 Install development packages with `python -m pip install -r requirements-dev.txt`;
 the website's build/catalog tools use the standard library (requirements.txt).
-Use an installed Node.js and Chrome for the JavaScript and real-browser gates.
+Use an installed Node.js and Chrome for the JavaScript and real-browser gates,
+and PHP 8.3 CLI (`php` on PATH) for the pairing relay tests
+(`tests/test_relay.py`); without it those tests fail, like the Node tests do
+without Node.
 See README.md for the normal check sequence.
 
 Run the full Python suite separately from JavaScript, browser, release and

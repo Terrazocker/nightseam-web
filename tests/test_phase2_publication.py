@@ -1,5 +1,6 @@
 """Immutable graphs survive interruption and reject unknown served artifacts."""
 import copy
+import hashlib
 import json
 import re
 import subprocess
@@ -181,6 +182,46 @@ def test_raw_website_cli_refuses_before_credentials_or_connection(monkeypatch,tm
     monkeypatch.setattr(deploy,'load_env',lambda path:pytest.fail('must refuse before credentials'))
     monkeypatch.setattr(deploy,'connect',lambda env:pytest.fail('must refuse before network'))
     with pytest.raises(ValueError,match='Mutable'): deploy.main()
+
+
+def test_the_pairing_relay_keeps_one_stable_path_and_no_other_script_ships(tmp_path):
+    """web/relay.php is published only at /astro/relay.php, so every release
+    talks to the same relay; it never lands in a release namespace, and any
+    other server script is refused before a candidate is built."""
+    tracked_fixture(tmp_path)
+    (tmp_path/'web/relay.php').write_text('<?php echo 1;')
+    subprocess.run(['git','add','web/relay.php'],cwd=tmp_path,check=True)
+    payload, meta = immutable_payload(tmp_path)
+    assert payload['web/relay.php'] == b'<?php echo 1;'
+    assert not any(n.endswith('relay.php') and '/releases/' in n for n in payload)
+    files = bundle(tmp_path)
+    assert files['astro/relay.php'] == b'<?php echo 1;'
+    ftp = FTP()
+    publish_bundle(ftp, files)
+    assert ftp.files['/astro/relay.php'] == b'<?php echo 1;'
+
+    for name in ('web/tool.php', 'landing/x.phtml', 'web/releases/a.phar'):
+        p = tmp_path/name
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text('<?php')
+        subprocess.run(['git','add',name],cwd=tmp_path,check=True)
+        with pytest.raises(ValueError, match='Only web/relay.php may be a server script'):
+            immutable_payload(tmp_path)
+        subprocess.run(['git','rm','-q','-f',name],cwd=tmp_path,check=True)
+
+
+def test_a_bundle_cannot_smuggle_a_server_script(tmp_path):
+    tracked_fixture(tmp_path)
+    out = prepare(tmp_path, 'test-dirty')
+    manifest_path = out/'publication.manifest.json'
+    manifest = json.loads(manifest_path.read_text(encoding='utf-8'))
+    data = b'<?php system($_GET["c"]);'
+    (out/'web/shell.php').write_bytes(data)
+    manifest['files']['web/shell.php'] = hashlib.sha256(data).hexdigest()
+    manifest['publication']['source_files']['web/shell.php'] = hashlib.sha256(data).hexdigest()
+    manifest_path.write_text(json.dumps(manifest), encoding='utf-8')
+    with pytest.raises(ValueError, match='Only web/relay.php may be a server script'):
+        load_bundle(out)
 
 
 def test_service_worker_is_published_beside_the_entry_page(tmp_path):

@@ -75,6 +75,9 @@ def args_of(argv):
 # Never uploaded: repo tooling / dev leftovers (names at any depth).
 SKIP = {".gitignore", "build_web.py", "ftps_deploy.py", "whale", "dev",
         "node_modules", "__pycache__", ".git", ".env"}
+# The pairing relay: the one server script, published at its stable path
+# /astro/relay.php and never inside a release namespace.
+RELAY_SCRIPT = "web/relay.php"
 
 
 def skip(name):
@@ -280,10 +283,12 @@ def load_bundle(directory):
         if tree not in ('web', 'landing') or (not combined and tree != 'web'):
             raise ValueError('Unexpected publication source tree')
         prefix = tree+'/' if combined else ''
-        if rel == '.htaccess':
+        if rel.lower().endswith(('.php', '.phtml', '.phar')) and name != RELAY_SCRIPT:
+            raise ValueError('Only web/relay.php may be a server script: '+name)
+        if rel == '.htaccess' or name == RELAY_SCRIPT:
             expected.add(prefix+rel)
             if hashlib.sha256(payload.get(prefix+rel, b'')).hexdigest() != digest:
-                raise ValueError('Server policy differs from source inventory')
+                raise ValueError('Server file differs from source inventory: '+name)
         else:
             snapshot = prefix+'releases/'+namespace+'/'+rel
             expected.add(snapshot)
@@ -307,7 +312,7 @@ def load_bundle(directory):
         if not re.fullmatch('[0-9a-f]{64}', namespace):
             raise ValueError('Invalid immutable namespace')
         if not (rel.startswith('releases/'+namespace+'/') or rel.endswith('.html')
-                or rel == '.htaccess' or (tree == 'web' and rel in ('version.json', 'sw.js'))):
+                or rel == '.htaccess' or (tree == 'web' and rel in ('version.json', 'sw.js', 'relay.php'))):
             raise ValueError('Mutable asset in publication: ' + name)
         mapped[('astro/' if tree == 'web' else '') + rel] = data
     return mapped

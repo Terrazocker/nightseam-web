@@ -1,0 +1,131 @@
+/*
+ * Pairing transport contracts in web/pairing.js: ids and keys, the QR
+ * address, sealing (a wrong key, another box, the other direction or a
+ * changed byte is refused), offers, and that a reply carries exactly the
+ * share-link text. Relay calls run against a fetch stub here; the real
+ * relay is driven by tests/js/pairing_relay.mjs. Prints one marker line;
+ * tests/test_js_behaviour.py asserts it.
+ */
+import assert from 'node:assert/strict';
+import * as P from '../../web/pairing.js';
+import * as H from '../../core/horizon.js';
+
+// --- ids, keys and the address ---------------------------------------------
+const a = P.newPairing(), b = P.newPairing();
+assert.match(a.id, /^[A-Za-z0-9_-]{22}$/, '16 random bytes, base64url');
+assert.match(a.key, /^[A-Za-z0-9_-]{43}$/, '32 random bytes, base64url');
+assert.notEqual(a.id, b.id);
+assert.notEqual(a.key, b.key);
+
+const url = P.pairingUrl('https://nightseam.de/astro/?x=1#horizon', a);
+assert.equal(url, `https://nightseam.de/astro/#pair=${a.id}.${a.key}`, 'the key rides in the fragment only');
+assert.deepEqual(P.parsePairFragment(new URL(url).hash), { id: a.id, key: a.key });
+for (const bad of ['', '#pair=', '#horizon=AAAA', `#pair=${a.id}`, `#pair=${a.id}.short`,
+  `#pair=${a.id}x.${a.key}`, `#pair=${a.id}.${a.key}x`, `#pair=${a.id}.${a.key.slice(0, -1)}+`]) {
+  assert.equal(P.parsePairFragment(bad), null, `${bad} is not a pairing`);
+}
+
+assert.equal(P.relayUrlFor('https://nightseam.de/astro/'), 'https://nightseam.de/astro/relay.php');
+assert.equal(P.relayUrlFor('https://nightseam.de/astro/index.html'), 'https://nightseam.de/astro/relay.php');
+assert.equal(P.relayUrlFor(`https://nightseam.de/astro/releases/${'a1'.repeat(32)}/index.html`),
+  'https://nightseam.de/astro/relay.php', 'every release talks to the one stable relay');
+assert.equal(P.relayUrlFor('http://127.0.0.1:8080/#horizon'), 'http://127.0.0.1:8080/relay.php');
+
+// --- sealing ------------------------------------------------------------------
+const text = new TextEncoder().encode('a horizon');
+const sealed = await P.seal(a, 'reply', text);
+assert.equal(sealed[0], P.PAIR_VERSION);
+assert.equal(sealed.length, 1 + 12 + text.length + 16, 'version, IV, ciphertext and tag');
+assert.deepEqual(await P.unseal(a, 'reply', sealed), text, 'round trip');
+assert.notDeepEqual(await P.seal(a, 'reply', text), sealed, 'a fresh IV every time');
+await assert.rejects(P.unseal({ id: a.id, key: b.key }, 'reply', sealed), /could not be decrypted/, 'a wrong key is refused');
+await assert.rejects(P.unseal({ id: b.id, key: a.key }, 'reply', sealed), /could not be decrypted/, 'another box id is refused');
+await assert.rejects(P.unseal(a, 'offer', sealed), /could not be decrypted/, 'an offer is not a reply');
+for (const at of [1, 13, sealed.length - 1]) {
+  const t = sealed.slice();
+  t[at] ^= 1;
+  await assert.rejects(P.unseal(a, 'reply', t), /could not be decrypted/, `a changed byte at ${at} is refused`);
+}
+const v2 = sealed.slice(); v2[0] = 2;
+await assert.rejects(P.unseal(a, 'reply', v2), /newer version/);
+await assert.rejects(P.unseal(a, 'reply', sealed.slice(0, 20)), /damaged/, 'a cut message is refused');
+await assert.rejects(P.seal(a, 'reply', new Uint8Array(P.PAIR_MAX_BODY)), /too large/, 'nothing the relay would refuse is sent');
+
+// --- offers --------------------------------------------------------------------
+const site = { name: 'Garten am Hang', lat: 48.137, lon: 11.575, elev: 520, tz: 'Europe/Berlin', id: 's1', extra: 'x' };
+assert.deepEqual(P.decodeOffer(P.encodeOffer(site)),
+  { site: { name: 'Garten am Hang', lat: 48.137, lon: 11.575, elev: 520, tz: 'Europe/Berlin' } },
+  'only name, coordinates, elevation and time zone travel');
+assert.deepEqual(P.decodeOffer(P.encodeOffer(null)), { site: null });
+assert.deepEqual(P.decodeOffer(P.encodeOffer({ lat: 95, lon: 0 })), { site: null }, 'an impossible site is not offered');
+assert.equal(P.decodeOffer(P.encodeOffer({ label: 'x', lat: 1, lon: 2 })).site.tz, null);
+for (const [bad, why] of [['{"v":2,"site":null}', 'another version'], ['nope', 'not JSON'],
+  ['{"v":1,"site":{"lat":"1","lon":2}}', 'a text latitude'], ['{"v":1,"site":{"lat":1,"lon":200}}', 'a longitude past 180']]) {
+  assert.throws(() => P.decodeOffer(new TextEncoder().encode(bad)), Error, `${why} is refused`);
+}
+
+// --- the reply is the share link ---------------------------------------------------
+const horizon = { name: 'Balkon — Süd', points: [{ az: 10, alt: 12.5 }, { az: 180, alt: 30 }, { az: 300.25, alt: 4 }],
+  overhangs: [[{ az: 150, alt: 60 }, { az: 210, alt: 55 }]] };
+const link = H.encodeHorizonLink(horizon);
+assert.equal(H.decodeHorizonLink(link).overhangs.length, 1, 'the overhang travels too');
+const reply = await P.seal(a, 'reply', P.encodeReply(link));
+const back = P.decodeReply(await P.unseal(a, 'reply', reply));
+assert.equal(back, link);
+assert.deepEqual(H.decodeHorizonLink(back), H.decodeHorizonLink(link), 'the same points as the share link');
+
+// --- relay calls against a stub --------------------------------------------------
+const calls = [];
+let answer = null;
+globalThis.fetch = async (u, init) => {
+  calls.push({ u, init });
+  return answer(u, init);
+};
+const response = (status, body, headers = {}) => new Response(body ?? null, { status, headers });
+const relay = 'https://nightseam.de/astro/relay.php';
+
+answer = () => response(201, null, { 'X-Relay-Remaining': '600', 'X-Relay-State': 'open' });
+const opened = await P.openPairing(relay, site, a);
+assert.equal(opened.remaining, 600);
+assert.equal(calls[0].u, `${relay}?box=${a.id}&op=open`);
+assert.equal(calls[0].init.method, 'POST');
+assert.equal(calls[0].init.headers['Content-Type'], 'application/octet-stream');
+assert.equal(calls[0].init.credentials, 'omit');
+assert.deepEqual(P.decodeOffer(await P.unseal(a, 'offer', calls[0].init.body)).site.name, 'Garten am Hang',
+  'the offer goes out sealed');
+assert.ok(!new TextDecoder().decode(calls[0].init.body).includes('Garten'), 'no site name in the clear');
+
+answer = () => response(204, null, { 'X-Relay-Remaining': '540', 'X-Relay-State': 'connected' });
+assert.deepEqual(await P.pollPairing(relay, a), { state: 'connected', remaining: 540 });
+answer = () => response(200, reply, { 'X-Relay-Remaining': '500' });
+assert.deepEqual(await P.pollPairing(relay, a), { state: 'received', link });
+const foreign = await P.seal(b, 'reply', P.encodeReply(link));
+answer = () => response(200, foreign);
+await assert.rejects(P.pollPairing(relay, a), /could not be decrypted/, 'a reply for another key is refused');
+
+answer = () => response(404, '{"error":"no such box"}');
+await assert.rejects(P.pollPairing(relay, a), (e) => e instanceof P.RelayError && e.status === 404 && /expired/.test(e.message));
+await P.closePairing(relay, a);   // a failed close is ignored
+assert.equal(calls.at(-1).u, `${relay}?box=${a.id}&op=close`);
+assert.equal(calls.at(-1).init.method, 'POST');
+
+answer = async () => response(200, await P.seal(a, 'offer', P.encodeOffer(site)), { 'X-Relay-Remaining': '480' });
+const offer = await P.readOffer(relay, a);
+assert.equal(offer.site.name, 'Garten am Hang');
+assert.equal(offer.remaining, 480);
+assert.equal(calls.at(-1).init.method, 'GET');
+
+answer = () => response(201, null, { 'X-Relay-Remaining': '470' });
+assert.deepEqual(await P.sendReply(relay, a, link), { remaining: 470 });
+assert.equal(P.decodeReply(await P.unseal(a, 'reply', calls.at(-1).init.body)), link);
+answer = () => response(409, '{"error":"already answered"}');
+await assert.rejects(P.sendReply(relay, a, link), /already received/);
+answer = () => { throw new TypeError('offline'); };
+await assert.rejects(P.readOffer(relay, a), (e) => e.status === 0 && /no connection/.test(e.message));
+
+// --- polling backoff ---------------------------------------------------------------
+assert.equal(P.nextPollDelay(0), P.POLL_MS);
+assert.equal(P.nextPollDelay(1), 2 * P.POLL_MS);
+assert.equal(P.nextPollDelay(20), P.POLL_MAX_MS);
+
+console.log('pairing transport contract held');

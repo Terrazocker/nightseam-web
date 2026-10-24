@@ -160,8 +160,9 @@ The local exposure catalog has its own design document in Nightseam-catalog.
   and complementary at every width; on phones the rail stacks below the map.
   Closing it preserves the selected target with a small reopen action.
 - **Horizon:** the job is "where is my sky blocked"; keep the editor to that.
-  Three rails: the horizon list with *Draw by hand* (primary) and *Import
-  file* (on touch devices *Capture with phone* comes first and is primary); the stage; and a settings rail with closed *Points by numbers*,
+  Three rails: the horizon list with *Draw by hand* (primary), *Import
+  file* and *Get from phone* (on touch devices *Capture with phone* comes
+  first and is primary); the stage; and a settings rail with closed *Points by numbers*,
   *Phone capture* and *Display* disclosures (*Phone capture* starts open on
   touch devices). With no horizon yet, the empty stage repeats the start
   actions as its call to action. Keep about 20 controls visible
@@ -250,6 +251,22 @@ The local exposure catalog has its own design document in Nightseam-catalog.
     the system share sheet; elsewhere it copies the link or shows it to copy.
     Opening a link asks in-page before adding the horizon and says what it
     holds; it never adds silently.
+  - Get from phone (pairing): a modal dialog in the confirm style with the
+    title, one line on what to do, the QR code, a status line in words
+    (*Waiting for the phone…*, *Phone connected…*) with the time left in
+    monospace beside it, a closed *Show the link* disclosure and Cancel,
+    which has focus. The QR code is the one place with a light plate: dark
+    modules (page colour) on main-text colour with a four-module quiet zone,
+    at most 240 px, so phone cameras read it. Escape and Cancel close it and
+    return focus to the button. An expired code removes the QR code and says
+    so. A received horizon asks like a shared link (*From your phone: …*).
+  - On the phone, an opened pairing shows a *Pairing* section above the
+    horizon list, separated by a quiet rule: which desktop site waits (name
+    and coordinates), the time left, *New horizon* when there is none yet,
+    the brass *Send to desktop* (disabled while the horizon is empty) and
+    *End pairing*; buttons at least 44 px. After sending it says that the
+    desktop asks before adding; an expired pairing says so and offers only
+    *Close*.
   - Edits save at once and the status says "Saved"; a failed save says so and
     keeps the edit. Clear and Delete confirm in-page.
 

@@ -1,7 +1,8 @@
 # Horizon owner acceptance
 
-The horizon editor ([rebuild plan](../horizon/HORIZON_REBUILD_PLAN.md)) and
+The horizon editor ([rebuild plan](../horizon/HORIZON_REBUILD_PLAN.md)),
 the phone capture ([sensor capture plan](../horizon/HORIZON_SENSOR_CAPTURE_PLAN.md))
+and phone pairing ([pairing plan](../horizon/HORIZON_PAIRING_PLAN.md))
 have software checks in pytest and the browser suite. These real-world checks
 are the owner's. Record the device, browser, site, time and what you
 observed; actual outcomes go in RELEASES.md.
@@ -60,6 +61,34 @@ planner, so the first check really is a first open.
 10. **Wrong site.** With location access allowed, open the capture somewhere
     more than about 100 m from the selected site. Target: the view warns
     that a horizon only holds where it was measured.
+
+## Pairing
+
+Run these on nightseam.de once the relay is deployed (phase 5), with the
+Pixel 7a and the desktop. The desktop's site is the one you stand at.
+
+1. **End to end.** On the desktop: Horizon, *Get from phone*. Scan the code
+   with the phone's own camera app and open the link. Target: the phone's
+   address bar ends in `#horizon` (no code), and the *Pairing* section names
+   the desktop's site; the desktop says *Phone connected* within about 5 s.
+2. **Capture and send.** On the phone: *New horizon* (or pick one), capture a
+   stretch of skyline, *Send to desktop*. Target: the phone says it was sent;
+   within about 5 s the desktop asks *Add the horizon …? From your phone: …*;
+   *Add horizon* adds the same points and overhangs as on the phone.
+3. **Refuse.** Pair again, send, and press *Cancel* on the desktop's
+   question. Target: no horizon is added.
+4. **Cancel and expiry.** Pair again and press *Cancel* on the desktop before
+   scanning; then scan the old code. Target: the phone says the pairing has
+   expired or was cancelled. Pair once more and wait 10 minutes without
+   scanning. Target: the desktop says the code has expired and hides it; the
+   phone, opening it, says so too.
+5. **Moon on the phone.** While paired, open the capture's *North…* panel.
+   Target: the Moon's reference uses the desktop's site (its availability
+   matches what the desktop's Sky View shows), and the phone's own sites
+   are unchanged afterwards.
+6. **Keyboard.** On the desktop, open *Get from phone* with the keyboard.
+   Target: focus starts on *Cancel*, Tab stays in the dialog (*Show the
+   link*, Cancel), Escape closes it and focus returns to *Get from phone*.
 
 ## Devices and accessibility
 

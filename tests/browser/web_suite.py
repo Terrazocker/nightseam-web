@@ -355,10 +355,10 @@ def web_cache_tokens(c):
 
 @check("web-horizon-create-buttons-consistent", "web")
 def web_horizon_create_buttons(c):
-    """ITEM B regression, current form: the two ways to start a horizon (a
-    button and a label-button; horizon photos are retired) render at one
-    shared width, so a label used as a button can never stretch while its
-    sibling does not. Rendered layout."""
+    """ITEM B regression, current form: the three ways to start a horizon
+    (Draw by hand, the Import file label-button and Get from phone; horizon
+    photos are retired) render at one shared width, so a label used as a
+    button can never stretch while its siblings do not. Rendered layout."""
     boot(c)
     tab(c, "horizon")
     c.page.wait_for_selector(".hz-new", timeout=20000)
@@ -368,7 +368,7 @@ def web_horizon_create_buttons(c):
         widths = c.page.evaluate(
             """() => [...document.querySelectorAll('.hz-new > .btn')]
                  .map(e => Math.round(e.getBoundingClientRect().width))""")
-        c.expect(len(widths) == 2, f"two create controls expected, got {widths}")
+        c.expect(len(widths) == 3, f"three create controls expected, got {widths}")
         c.expect(max(widths) - min(widths) <= 2, f"create controls differ in width at {width}px: {widths}")
     c.page.set_viewport_size({"width": 1366, "height": 900})
     c.assert_clean()

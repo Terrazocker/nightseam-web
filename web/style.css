@@ -573,6 +573,23 @@ a.wiki { color: var(--accent); }
 .ed-confirm-box p { margin: 0 0 14px; font-size: 13px; color: var(--muted); }
 .ed-confirm-box .btnrow { justify-content: flex-end; }
 .ed-confirm-box .btn { flex: 0 0 auto; }
+/* Phone pairing: the QR code keeps dark modules on a light plate (main text
+   colour) so phone cameras read it on the dark page. */
+.pair-box { max-height: calc(100dvh - 32px); overflow-y: auto; box-sizing: border-box; }
+.pair-code { display: flex; justify-content: center; margin: 0 0 12px; }
+.pair-code:empty { display: none; }
+.pair-qr { display: block; width: min(240px, 70vw); height: auto; }
+.pair-qr-plate { fill: var(--txt); }
+.pair-qr-dark { fill: var(--bg); }
+.ed-confirm-box .pair-line { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 12px; color: var(--txt); }
+.pair-link { margin: 0 0 12px; font-size: 12px; color: var(--muted); }
+.pair-link summary { cursor: pointer; margin-bottom: 6px; }
+.hz-pair { margin: 0 0 16px; padding: 0 0 12px; border-bottom: 1px solid var(--line-soft); }
+.hz-pair[hidden] { display: none; }
+.hz-pair-title { margin: 0 0 6px; font-size: 14px; }
+.hz-pair p { margin: 0 0 8px; font-size: 13px; line-height: 1.5; }
+.hz-pair .btnrow { justify-content: flex-start; }
+.hz-pair .btn { flex: 0 0 auto; min-height: 44px; }
 .pref-row { display: flex; justify-content: space-between; align-items: center; font-size: 13px; color: var(--muted); padding: 5px 0; gap: 10px; }
 .pref-row input[type="checkbox"] { accent-color: var(--accent); }
 .p-blk { color: #ff8a8a; font-size: 11px; margin-left: 6px; }

@@ -11,6 +11,9 @@
  * - Immutable files (a ?v=N cache token, /releases/<id>/, /core/<hash>/):
  *   cache first. Their bytes never change under the same URL.
  * - Other origins (Wikipedia photos, Open-Meteo): never touched.
+ * - The pairing relay (relay.php): never touched. Its answers are one-shot
+ *   ciphertext; a cached copy would keep it on the device and replay a stale
+ *   box offline.
  * - Storage stays bounded: files of the two newest releases are kept, older
  *   releases are dropped as soon as a third one is cached.
  */
@@ -29,6 +32,7 @@ self.addEventListener('activate', (event) => {
   })());
 });
 
+const relay = (url) => url.pathname.endsWith('/relay.php');
 const releaseOf = (url) => (url.pathname.match(/\/releases\/([0-9a-f]{64})\//) || [])[1] || null;
 const immutable = (url) => /^\d+$/.test(url.searchParams.get('v') || '')
   || releaseOf(url) !== null || /\/core\/[0-9a-f]{16}\//.test(url.pathname);
@@ -95,7 +99,7 @@ self.addEventListener('message', (event) => {
     await Promise.all(data.urls.slice(0, 300).map(async (href) => {
       let url;
       try { url = new URL(href); } catch { return; }
-      if (url.origin !== self.location.origin || await cache.match(url.href)) return;
+      if (url.origin !== self.location.origin || relay(url) || await cache.match(url.href)) return;
       try { await store(new Request(url.href), await fetch(url.href, { cache: 'force-cache' })); } catch { /* next */ }
     }));
   })());
@@ -105,6 +109,6 @@ self.addEventListener('fetch', (event) => {
   const { request } = event;
   if (request.method !== 'GET') return;
   const url = new URL(request.url);
-  if (url.origin !== self.location.origin) return;
+  if (url.origin !== self.location.origin || relay(url)) return;
   event.respondWith(request.mode !== 'navigate' && immutable(url) ? cacheFirst(event) : networkFirst(event));
 });

@@ -64,9 +64,24 @@ formatted for the observing-site weather summary.
     https://creativecommons.org/licenses/by/4.0/
     https://open-meteo.com/en/terms
 
+QR code generator — qrcode-generator 2.0.4 (MIT)
+------------------------------------------------
+The pairing dialog draws its QR code with qrcode-generator by Kazuhiko Arase,
+vendored unchanged as web/qrcode.js (the package's dist/qrcode.mjs, npm
+tarball integrity sha512-mZSiP6RnbHl4xL2Ap5HfkjLnmxfKcPWpWe/c+5XxCuetEenqm
+NFf1FH/ftXPCtFG5/TDobjsjz6sSNL0Sr8Z9g==; file SHA-256
+ea91d7118a5395289170da848b7c6758b996163bfbccf312591ab65a4911b7c0).
+
+    Copyright (c) 2009 Kazuhiko Arase
+    https://github.com/kazuhikoarase/qrcode-generator
+    Licensed under the MIT license:
+    http://www.opensource.org/licenses/mit-license.php
+    The word 'QR Code' is registered trademark of DENSO WAVE INCORPORATED.
+
 Browser runtime
 ---------------
-The website is static HTML, CSS and native JavaScript modules. It does not
+The website is static HTML, CSS and native JavaScript modules, plus one PHP
+script (web/relay.php) that relays encrypted pairing messages. It does not
 ship a Windows executable or embedded Python/server/browser runtime.
 Development tooling dependencies remain separate from browser release files.
 

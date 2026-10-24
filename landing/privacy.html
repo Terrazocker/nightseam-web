@@ -63,7 +63,7 @@
       <p>When you capture a horizon and your browser already allows location
       access for this site, the capture compares your position with the observing
       site to warn when you are far from it. It never asks for your location
-      itself, and that position is neither stored nor sent.</p></div></details><details class="disclosure"><summary>Horizon capture and share links</summary><div class="disclosure-body"><h2>Camera and motion sensors</h2><p>Capturing a horizon on a phone asks your browser for the camera and, where
+      itself, and that position is neither stored nor sent.</p></div></details><details class="disclosure"><summary>Horizon capture, share links and pairing</summary><div class="disclosure-body"><h2>Camera and motion sensors</h2><p>Capturing a horizon on a phone asks your browser for the camera and, where
       the browser requires it, for the motion sensors. The camera image is shown
       on screen and, where the browser supports it, measured on your device to keep
       the overlay in step with your movement; it is never recorded, stored or
@@ -72,7 +72,22 @@
       in the part of the address after “#”, which browsers do not send to the
       website. Anyone you give the link to can read that horizon, and the app you
       share it through handles it under its own terms. Opening a link asks before
-      the horizon is added.</p></div></details><details class="disclosure"><summary>Website requests and hosting</summary><div class="disclosure-body"><h2>Website requests</h2><p>Opening the site or planner requests pages, scripts, catalog files and
+      the horizon is added.</p><h2>Getting a horizon from your phone</h2><p>“Get from phone” shows a QR code on the desktop. While it is open, the
+      desktop and the phone exchange two messages through a short-lived mailbox
+      on this website: the desktop’s active site (name, coordinates, elevation and
+      timezone) and, after you tap “Send to desktop”, the horizon’s name, skyline
+      points and overhang edges. Both are encrypted in your browsers with a key
+      that only the QR code carries, after the “#” in its address, so it is never
+      sent to the website; the website stores only data it cannot read. A mailbox
+      is deleted as soon as the desktop has collected the horizon or you cancel.
+      After ten minutes it expires and is deleted with the next pairing request.</p>
+      <p>The website’s access logs record these requests like any other, with the
+      mailbox’s random number in the requested URL (see Hosting). To limit misuse,
+      the mailbox service keeps a salted hash of your IP address for ten minutes;
+      it is deleted with the next pairing request after that, and the salt is
+      replaced daily. The
+      desktop asks before adding a horizon from the phone, and the phone never
+      saves the desktop’s site.</p></div></details><details class="disclosure"><summary>Website requests and hosting</summary><div class="disclosure-body"><h2>Website requests</h2><p>Opening the site or planner requests pages, scripts, catalog files and
       site graphics from the website’s host. These requests expose technical
       connection information such as your IP address and browser request headers.
       The catalog and Standard selection are prepared in advance and served by

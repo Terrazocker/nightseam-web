@@ -26,7 +26,9 @@ Library, SQLite, desktop CSP) are history only.
 - **Data and privacy:** transactional, staged backups with rollback; Wikipedia
   is the only object-photo source (2026-10-06); popularity is never visible
   (2026-10-06); the CSP is delivered in the document (0.6.33) and, for the
-  landing pages too, as response headers (2026-10-13).
+  landing pages too, as response headers (2026-10-13); phone pairing holds
+  only end-to-end-encrypted boxes for at most 10 minutes on nightseam.de
+  (2026-10-19, amends 2026-10-15 "Share links, not server shortcodes").
 - **Delivery:** cache tokens checked against a verified baseline (0.6.24/25);
   immutable release graphs with older releases retained (2026-10-10); CI runs
   the browser suite on Linux and the rest on Windows (2026-10-11); test
@@ -86,6 +88,56 @@ Library, SQLite, desktop CSP) are history only.
   so every chart, photo and the camera view turn red without per-colour work,
   and Workbench stays the only theme. It is a device choice in
   `localStorage`, applied before the first paint, and stays out of backups.
+
+## 2026-10-19 — Phone pairing through an encrypted relay
+
+Amends 2026-10-15 "Share links, not server shortcodes": NightSeam now stores
+something on its server, briefly and unreadably. Share links, file
+import/export and backups stay as they are.
+
+- **What.** *Get from phone* on the desktop shows a QR code for
+  `/astro/#pair=<box>.<key>`. The phone's own camera app opens it; the phone
+  captures and taps *Send to desktop*; the desktop asks before adding the
+  horizon. The relay is one PHP script, `web/relay.php`, at the stable path
+  `/astro/relay.php`, keeping one file per box in `nightseam-relay/` next to
+  the document root (docs/horizon/HORIZON_PAIRING_PLAN.md).
+- **Why a server after all.** The owner chose "the desktop starts it" from
+  a brainstorm of transfer options: a share link needs the user to pick an
+  app and open the link on the other device every time; with pairing the
+  desktop simply waits. The owner checked the hosting first (PHP 8.3 FPM,
+  data folder outside the web root).
+- **What the server can read: nothing of the horizon or the site.** Both
+  directions are AES-GCM-256 with a random key that exists only in the QR
+  code's fragment, which browsers never send; the additional data names the
+  box and the direction. The relay sees ciphertext, box ids, sizes, times and
+  addresses. Boxes expire 10 minutes after opening; a reply is kept until the
+  desktop has decrypted it and closes the box (a lost poll answer must not
+  lose the horizon); at most 200 boxes live at once, and rate limits keep
+  only salted address hashes, with a daily salt. No body is logged; the host's access logs still
+  record the request line with the box id (privacy page).
+- **Why PHP and no CORS.** PHP is what the host runs; Node or a Cloudflare
+  Worker would add a service or a `connect-src` origin. The planner calls its
+  own origin, which `connect-src 'self'` already allows; the relay refuses
+  cross-site requests (`Sec-Fetch-Site`).
+- **Open questions settled.** The offered site is used only for that capture
+  on the phone (Moon reference, site-distance check) and never saved there.
+  The received horizon is added like a shared link: a new horizon that
+  becomes the active one. PHP 8.3 CLI is required for the relay tests, like
+  Node for the JavaScript ones; CI installs it on the Windows runner.
+- **Server policy.** `web/.htaccess` gains a `relay.php` section (`no-store`,
+  an API CSP) and denies every other PHP file. It applies only once Plesk
+  serves PHP through Apache ("FPM application served by Apache"). The
+  publication tools publish `web/relay.php` at its stable path and refuse any
+  other server script. The `.htaccess` change and the handler switch need the
+  owner's separate server-policy review before deployment; phase 0 (the
+  hosting probe) comes first.
+- **Offline worker.** `web/sw.js` (2026-10-20, offline reopening) never
+  handles `relay.php`, neither as a request nor from the first-visit file
+  list: its answers are one-shot ciphertext, and a cached copy would stay on
+  the device and replay a stale box offline (`tests/js/sw_relay.mjs`).
+- **Third-party code.** The QR code comes from Kazuhiko Arase's
+  qrcode-generator 2.0.4 (MIT), vendored unchanged as `web/qrcode.js`
+  (NOTICE). It is the first third-party code in `web/`.
 
 ## 2026-10-19 — Pin the test tooling exactly
 

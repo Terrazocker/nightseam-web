@@ -124,7 +124,9 @@ machine's sandbox limits (Chrome named pipes, elevated runs).
   guessed clean version.
 - Publication: `python scripts/prepare_publication.py` builds an immutable
   candidate; deploy only a reviewed bundle with
-  `python web/ftps_deploy.py publish dist/publication-preview /`.
+  `python web/ftps_deploy.py publish dist/publication-preview /nightseam.de`
+  (the FTP login starts in the webspace root; the test site
+  dev.nightseam.de is `/dev.nightseam.de`).
   RELEASE_WORKFLOW.md has the details.
 
 ## Where things are recorded

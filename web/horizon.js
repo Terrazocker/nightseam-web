@@ -7,11 +7,17 @@
  * Records live in
  * localStorage. Every finished edit saves automatically; undo/redo and the
  * dirty state come from core/horizonhistory.js. This module also owns the
- * planner preferences.
+ * planner preferences and the screens of phone pairing (pairing.js carries
+ * the horizon from the phone to the desktop).
  */
 import { vizTheme } from './viztheme.js?v=7';
-import { openCapture, captureAvailable, warmCompass } from './capture.js?v=31';
+import { openCapture, captureAvailable, warmCompass } from './capture.js?v=32';
 import { normalizeWebPrefs, WEB_PREF_DEFAULTS } from './webstore.js?v=84';
+import {
+  PAIR_TTL_S, pairingUrl, parsePairFragment, relayUrlFor, RelayError,
+  openPairing, pollPairing, closePairing, readOffer, sendReply, nextPollDelay,
+} from './pairing.js?v=1';
+import qrcode from './qrcode.js?v=1';
 import {
   NO_BLOCK, ALT_MIN, ALT_MAX, MAX_POINTS,
   wrapAz, normalizePoints, normalizeHorizon,
@@ -63,6 +69,7 @@ function announceHorizonChanged(h, cause = 'edit') {
     horizonId: h ? h.id : null,
     horizonRevision: panoramaRevision(h),
   });
+  refreshPairBanner();
 }
 
 /* ------------------------------ horizon records ------------------------------ */
@@ -526,32 +533,336 @@ async function shareHorizon(box, h) {
 }
 
 /** Offer the horizon a shared link carries. Nothing is saved before the user
- *  agrees, and a damaged link changes nothing. Resolves true when added. */
-export async function offerHorizonLink(code, box, onChanged = () => {}) {
+ *  agrees, and a damaged link changes nothing. Resolves true when added.
+ *  `fromPhone` words it for a horizon that arrived through pairing. */
+export async function offerHorizonLink(code, box, onChanged = () => {}, fromPhone = false) {
+  const source = fromPhone ? 'your phone' : 'the shared link';
   let rec;
   try { rec = decodeHorizonLink(code); } catch (error) {
-    hzNote(box, `This horizon link could not be read (${error.message}). Nothing was added.`);
+    hzNote(box, `This horizon ${fromPhone ? 'from the phone' : 'link'} could not be read (${error.message}). Nothing was added.`);
     return false;
   }
   if (db.horizons.length >= MAX_HORIZONS) {
-    hzNote(box, `You already have ${MAX_HORIZONS} horizons. Delete one, then open the link again.`);
+    hzNote(box, `You already have ${MAX_HORIZONS} horizons. Delete one, then ${fromPhone ? 'pair again' : 'open the link again'}.`);
     return false;
   }
   const what = [`${rec.points.length} skyline point${rec.points.length === 1 ? '' : 's'}`];
   if (rec.overhangs.length) what.push(`${rec.overhangs.length} overhang${rec.overhangs.length === 1 ? '' : 's'}`);
   const ok = await confirmDialog(box, {
     title: `Add the horizon “${rec.name}”?`,
-    body: `From a shared link: ${what.join(' and ')}. It is saved in this browser and used for planning.`,
+    body: `From ${fromPhone ? 'your phone' : 'a shared link'}: ${what.join(' and ')}. It is saved in this browser and used for planning.`,
     ok: 'Add horizon',
   });
-  if (!ok) { hzNote(box, 'The shared horizon was not added.'); return false; }
+  if (!ok) { hzNote(box, `The ${fromPhone ? 'horizon from the phone' : 'shared horizon'} was not added.`); return false; }
   flushHorizonEdits();
   const h = createHorizon(rec.name, { points: rec.points, overhangs: rec.overhangs });
   if (!h) { hzNote(box, 'Could not add the horizon: browser storage is full or blocked.'); return false; }
   renderHorizon(box, onChanged);
   onChanged();
-  hzNote(box, `Added “${h.name}” from the shared link. It is now the horizon used for planning.`);
+  hzNote(box, `Added “${h.name}” from ${source}. It is now the horizon used for planning.`);
   return true;
+}
+
+/* ------------------------------ phone pairing ------------------------------ */
+
+/** The QR code for `text` as SVG: dark modules on a light plate with a quiet
+ *  zone, so phone cameras read it on the dark Workbench page. */
+export function qrSvg(text) {
+  const qr = qrcode(0, 'M');
+  qr.addData(text, 'Byte');
+  qr.make();
+  const n = qr.getModuleCount(), q = 4, size = n + 2 * q;
+  let d = '';
+  for (let r = 0; r < n; r++) {
+    for (let c = 0; c < n; c++) if (qr.isDark(r, c)) d += `M${c + q} ${r + q}h1v1h-1z`;
+  }
+  return `<svg class="pair-qr" viewBox="0 0 ${size} ${size}" role="img" aria-label="QR code with the pairing link" shape-rendering="crispEdges">`
+    + `<rect class="pair-qr-plate" width="${size}" height="${size}"/><path class="pair-qr-dark" d="${d}"/></svg>`;
+}
+
+const clockLeft = (ms) => {
+  const s = Math.max(0, Math.ceil(ms / 1000));
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+};
+
+/** Site of the planner offered to the phone (name, coordinates, elevation, tz). */
+let pairSiteContext = () => siteContext();
+
+/**
+ * Desktop: "Get from phone". Opens a box on the relay with the active site,
+ * shows its address as a QR code, polls until the phone answers, deletes the
+ * box once the answer is decrypted, then offers the horizon like a shared
+ * link. Cancel, Escape, expiry or leaving the view stop polling; Cancel and
+ * leaving also delete the box.
+ */
+function pairDialog(box, onChanged) {
+  const before = document.activeElement;
+  const relay = relayUrlFor(location.href);
+  const el = document.createElement('div');
+  el.className = 'ed-confirm';
+  el.setAttribute('role', 'dialog');
+  el.setAttribute('aria-modal', 'true');
+  el.setAttribute('aria-labelledby', 'pair-title');
+  el.setAttribute('aria-describedby', 'pair-how');
+  el.innerHTML = `
+    <div class="ed-confirm-box pair-box">
+      <h4 id="pair-title">Get a horizon from your phone</h4>
+      <p id="pair-how">Scan this code with the phone's camera. The planner opens there: capture the skyline, then tap <b>Send to desktop</b>.</p>
+      <div class="pair-code" id="pair-code"></div>
+      <p class="pair-line"><span id="pair-status" role="status" aria-live="polite">Starting the pairing…</span>
+        <span class="mono" id="pair-time"></span></p>
+      <details class="pair-link" id="pair-link-box" hidden>
+        <summary>Show the link</summary>
+        <textarea class="hz-link-text" id="pair-link" rows="3" readonly aria-label="Pairing link"></textarea>
+      </details>
+      <div class="btnrow"><button class="btn" type="button" data-cancel>Cancel</button></div>
+    </div>`;
+  const status = (text) => { $('#pair-status', el).textContent = text; };
+  let pairing = null, timer = null, ticker = null, deadline = 0, finished = false, failures = 0;
+  let announcedConnected = false;
+
+  const stop = () => {
+    finished = true;
+    clearTimeout(timer);
+    clearInterval(ticker);
+  };
+  const close = (deleteBox = true) => {
+    if (deleteBox && pairing && !finished) closePairing(relay, pairing);
+    stop();
+    el.remove();
+    if (before && before.isConnected && typeof before.focus === 'function') before.focus();
+  };
+  const expire = (text) => {
+    stop();
+    $('#pair-code', el).innerHTML = '';
+    $('#pair-link-box', el).hidden = true;
+    $('#pair-time', el).textContent = '';
+    status(text);
+    $('[data-cancel]', el).textContent = 'Close';
+  };
+  const tick = () => {
+    if (!el.isConnected) { close(); return; }
+    const left = deadline - Date.now();
+    $('#pair-time', el).textContent = `${clockLeft(left)} left`;
+    if (left <= 0) {
+      if (pairing) closePairing(relay, pairing);
+      expire('This code has expired. Close and start again.');
+    }
+  };
+  const poll = async () => {
+    if (finished) return;
+    if (!el.isConnected) { close(); return; }
+    let result;
+    try {
+      result = await pollPairing(relay, pairing);
+      failures = 0;
+    } catch (error) {
+      if (finished) return;
+      if (error.status === 404) { expire('This code has expired or was cancelled. Close and start again.'); return; }
+      if (!(error instanceof RelayError)) {
+        closePairing(relay, pairing);
+        expire(`The horizon from the phone could not be read: ${error.message}. Nothing was added.`);
+        return;
+      }
+      failures++;
+      if (failures >= 2) status(`No answer from the pairing service (${error.message}); trying again…`);
+      timer = setTimeout(poll, nextPollDelay(failures));
+      return;
+    }
+    if (finished) return;
+    if (result.state === 'received') {
+      // The relay keeps the reply until this close, so a lost poll answer
+      // is simply fetched again; once it is decrypted the box can go.
+      closePairing(relay, pairing);
+      stop();
+      close(false);
+      await offerHorizonLink(result.link, box, onChanged, true);
+      return;
+    }
+    if (result.remaining != null) deadline = Math.min(deadline, Date.now() + result.remaining * 1000);
+    if (result.state === 'connected' && !announcedConnected) {
+      announcedConnected = true;
+      status('Phone connected. Capture the skyline there, then tap Send to desktop.');
+    } else if (failures === 0 && !announcedConnected) {
+      status('Waiting for the phone…');
+    }
+    timer = setTimeout(poll, nextPollDelay(0));
+  };
+
+  $('[data-cancel]', el).addEventListener('click', () => close());
+  el.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Escape') { ev.preventDefault(); close(); }
+    if (ev.key === 'Tab') {   // keep focus inside the dialog
+      const items = [...el.querySelectorAll('summary, textarea, button')]
+        .filter((x) => !x.closest('[hidden]') && (x.tagName !== 'TEXTAREA' || x.closest('details')?.open));
+      ev.preventDefault();
+      const i = items.indexOf(document.activeElement);
+      items[(i + (ev.shiftKey ? items.length - 1 : 1)) % items.length].focus();
+    }
+  });
+  (box || document.body).appendChild(el);
+  $('[data-cancel]', el).focus();
+
+  openPairing(relay, pairSiteContext()).then((opened) => {
+    if (!el.isConnected || finished) { closePairing(relay, opened); return; }
+    pairing = opened;
+    deadline = Date.now() + opened.remaining * 1000;
+    const url = pairingUrl(location.href, opened);
+    $('#pair-code', el).innerHTML = qrSvg(url);
+    $('#pair-link', el).value = url;
+    $('#pair-link-box', el).hidden = false;
+    status('Waiting for the phone…');
+    tick();
+    ticker = setInterval(tick, 1000);
+    timer = setTimeout(poll, nextPollDelay(0));
+  }, (error) => {
+    if (!el.isConnected || finished) return;
+    expire(`Pairing could not start: ${error.message}. Share link and file export still work.`);
+  });
+  return el;
+}
+
+/** Phone: the pairing this page was opened with, or null. */
+let phonePair = null;
+
+/** Phone: start pairing from a `#pair=` address (app.js has already taken it
+ *  out of the address bar). Reads the desktop's offer, then the banner in the
+ *  Horizon view offers *Send to desktop*. */
+export async function openPhonePairing(hash, box, onChanged = () => {}) {
+  const pairing = parsePairFragment(hash);
+  if (phonePair) stopPhoneTicker();
+  phonePair = { pairing, relay: relayUrlFor(location.href), state: 'loading', site: null, deadline: 0, message: '' };
+  const pair = phonePair;
+  if (!pairing) {
+    Object.assign(pair, { state: 'failed', message: 'This pairing code is damaged. Scan the code on the desktop again.' });
+    renderPairBanner(box, onChanged);
+    return;
+  }
+  renderPairBanner(box, onChanged);
+  try {
+    const offer = await readOffer(pair.relay, pairing);
+    if (phonePair !== pair) return;
+    Object.assign(pair, { state: 'ready', site: offer.site, deadline: Date.now() + (offer.remaining ?? PAIR_TTL_S) * 1000 });
+  } catch (error) {
+    if (phonePair !== pair) return;
+    Object.assign(pair, error.status === 404
+      ? { state: 'expired', message: 'This pairing has expired or was cancelled. Start again on the desktop.' }
+      : { state: 'failed', message: `Could not reach the desktop: ${error.message}.` });
+  }
+  renderPairBanner(box, onChanged);
+}
+
+function stopPhoneTicker() {
+  if (phonePair && phonePair.ticker) { clearInterval(phonePair.ticker); phonePair.ticker = null; }
+}
+
+/** The site the desktop offered, for this capture only (never saved). */
+function pairedSite() {
+  const s = phonePair && phonePair.state !== 'loading' ? phonePair.site : null;
+  return s ? { lat: s.lat, lon: s.lon, label: s.name, tz: s.tz, paired: true } : null;
+}
+
+/** After an edit, name the horizon that *Send to desktop* would send, unless
+ *  the user is working in the banner itself. */
+function refreshPairBanner() {
+  const pair = phonePair;
+  if (!pair || !pair.box || typeof document === 'undefined') return;
+  const el = $('#hz-pair', pair.box);
+  if (!el || !el.isConnected || el.contains(document.activeElement)) return;
+  renderPairBanner(pair.box, pair.onChanged);
+}
+
+/** The Pairing section. Its heading and status line stay in place across
+ *  renders, so screen readers announce what changes (connected, sent,
+ *  expired); only the body and buttons are rebuilt. */
+function renderPairBanner(box, onChanged) {
+  const el = $('#hz-pair', box);
+  if (!el) return;
+  const pair = phonePair;
+  el.hidden = !pair;
+  const out = $('#hz-pair-body', el), live = $('#hz-pair-status', el);
+  const say = (text) => { if (live.textContent !== text) live.textContent = text; };
+  if (!pair) { out.innerHTML = ''; say(''); return; }
+  Object.assign(pair, { box, onChanged });
+  const h = activeHorizon();
+  const siteText = pair.site
+    ? ` for the site “${esc(pair.site.name)}” <span class="mono">(${pair.site.lat.toFixed(3)}, ${pair.site.lon.toFixed(3)})</span>`
+    : '';
+  let body;
+  if (pair.state === 'loading') body = '';
+  else if (pair.state === 'ready' || pair.state === 'sending') {
+    const empty = !h || (!h.points.length && !(h.overhangs || []).length);
+    body = `<p id="hz-pair-text">Pairing with the desktop${siteText}. ${empty
+      ? `${h ? 'Capture' : 'Start a new horizon, capture'} the skyline, then send it.`
+      : `Tap <b>Send to desktop</b> to send “${esc(h.name)}”.`} <span class="mono" id="hz-pair-time"></span></p>
+      <div class="btnrow">
+        ${h ? '' : '<button class="btn" type="button" id="hz-pair-new">✏ New horizon</button>'}
+        <button class="btn primary" type="button" id="hz-pair-send" ${empty || pair.state === 'sending' ? 'disabled' : ''}>📤 Send to desktop</button>
+        <button class="btn" type="button" id="hz-pair-end">End pairing</button>
+      </div>`;
+  } else {
+    body = '<div class="btnrow"><button class="btn" type="button" id="hz-pair-end">Close</button></div>';
+  }
+  out.innerHTML = body;
+  say(pair.state === 'loading' ? 'Connecting to the desktop…'
+    : pair.state === 'ready' || pair.state === 'sending' ? (pair.note || 'Connected to the desktop.')
+    : pair.message);
+  const end = $('#hz-pair-end', el);
+  if (end) end.addEventListener('click', () => {
+    stopPhoneTicker();
+    phonePair = null;
+    renderPairBanner(box, onChanged);
+    hzNote(box, 'Pairing ended.');
+    $('#hz-pair-start', box)?.focus();
+  });
+  // A new horizon opens the editor; on a phone its Phone capture panel starts open.
+  $('#hz-pair-new', el)?.addEventListener('click', () => $('#hz-new-draw', box)?.click());
+  const send = $('#hz-pair-send', el);
+  if (send) send.addEventListener('click', () => sendToDesktop(box, onChanged));
+  stopPhoneTicker();
+  if (pair.state === 'ready' || pair.state === 'sending') {
+    const tick = () => {
+      const t = $('#hz-pair-time', box);
+      if (!t || phonePair !== pair) { clearInterval(pair.ticker); pair.ticker = null; return; }
+      const left = pair.deadline - Date.now();
+      t.textContent = `${clockLeft(left)} left.`;
+      if (left <= 0) {
+        Object.assign(pair, { state: 'expired', message: 'This pairing has expired. Start again on the desktop.', note: '' });
+        renderPairBanner(box, onChanged);
+      }
+    };
+    pair.ticker = setInterval(tick, 1000);
+    tick();
+  }
+}
+
+async function sendToDesktop(box, onChanged) {
+  const pair = phonePair;
+  if (!pair || pair.state !== 'ready') return;
+  flushHorizonEdits();
+  const h = activeHorizon();
+  if (!h) return;
+  let link;
+  try { link = encodeHorizonLink(h); } catch (error) {
+    pair.note = `Not sent: ${error.message}.`;
+    renderPairBanner(box, onChanged);
+    return;
+  }
+  pair.state = 'sending';
+  pair.note = 'Sending…';
+  renderPairBanner(box, onChanged);
+  try {
+    await sendReply(pair.relay, pair.pairing, link);
+    if (phonePair !== pair) return;
+    Object.assign(pair, { state: 'sent', note: '', message: `Sent “${h.name}” to the desktop. Confirm it there to add it.` });
+  } catch (error) {
+    if (phonePair !== pair) return;
+    if (error.status === 404) Object.assign(pair, { state: 'expired', note: '', message: 'This pairing has expired. Start again on the desktop.' });
+    else if (error.status === 409) Object.assign(pair, { state: 'sent', note: '', message: 'The desktop already received a horizon from this pairing.' });
+    else Object.assign(pair, { state: 'ready', note: `Not sent: ${error.message}. Try again.` });
+  }
+  renderPairBanner(box, onChanged);
+  $('#hz-pair-end', box)?.focus();
 }
 
 function download(filename, text) {
@@ -574,6 +885,7 @@ const fileSlug = (name) => (String(name).toLowerCase().replace(/[^a-z0-9]+/g, '-
  */
 export function renderHorizon(box, onChanged = () => {}, context = {}) {
   if (typeof context.site === 'function') siteContext = context.site;
+  if (typeof context.pairSite === 'function') pairSiteContext = context.pairSite;
   const h = activeHorizon();
   if (!h || ui.id !== h.id) {
     Object.assign(ui, { id: h ? h.id : null, mode: 'draw', zoom: 1, fx: 180, fy: 30, selected: -1, ohSel: null });
@@ -586,6 +898,11 @@ export function renderHorizon(box, onChanged = () => {}, context = {}) {
       <button class="btn small" type="button" data-del="${esc(item.id)}" aria-label="Delete horizon ${esc(item.name)}">🗑</button>
     </li>`;
   box.innerHTML = `
+    <section class="hz-pair" id="hz-pair" aria-label="Pairing with a desktop" hidden>
+      <h3 class="hz-pair-title">Pairing</h3>
+      <div id="hz-pair-body"></div>
+      <p class="sub" id="hz-pair-status" role="status" aria-live="polite"></p>
+    </section>
     <div class="horizon-layout">
       <aside class="horizon-tools-rail" aria-label="Horizons">
         <div class="card">
@@ -606,6 +923,7 @@ export function renderHorizon(box, onChanged = () => {}, context = {}) {
   const sp = $('.splash', box);
   if (sp) sp.style.display = 'none';
   wireList(box, onChanged);
+  renderPairBanner(box, onChanged);
   if (h) wireEditor(box, h, onChanged);
   else if (activeSession) { activeSession.disconnect?.(); activeSession = null; }
 }
@@ -617,6 +935,7 @@ function startActions(cls) {
             ${touchFirst() ? '<button class="btn primary" type="button" id="hz-new-capture">📱 Capture with phone</button>' : ''}
             <button class="btn${touchFirst() ? '' : ' primary'}" type="button" id="hz-new-draw">✏ Draw by hand</button>
             <label class="btn" for="hz-import-file" role="button" tabindex="0">⬆ Import file</label>
+            <button class="btn" type="button" id="hz-pair-start" title="Show a QR code to scan with the phone; the horizon captured there comes back here">📱 Get from phone</button>
           </div>`;
 }
 
@@ -736,6 +1055,12 @@ function wireList(box, onChanged) {
     if (!h) { note('Could not create the horizon: browser storage is full or blocked.'); return false; }
     return true;
   };
+
+  $('#hz-pair-start', box).addEventListener('click', () => {
+    if (tooMany()) return;
+    flushHorizonEdits();
+    pairDialog(box, onChanged);
+  });
 
   $('#hz-new-draw', box).addEventListener('click', () => {
     if (tooMany()) return;
@@ -1488,13 +1813,14 @@ function wireEditor(box, h, onChanged) {
       },
       onUndo: undo,
       canUndo: () => historyCanUndo(hist),
-      site: () => siteContext(),
+      site: () => pairedSite() || siteContext(),
       calibration: loadCaptureCalibration(),
       onCalibrated: saveCaptureCalibration,
       onClose: (message) => {
         capture = null;
         if (!cvs.isConnected) return;
         capStatus(message);
+        renderPairBanner(box, onChanged);
         draw();
       },
     });

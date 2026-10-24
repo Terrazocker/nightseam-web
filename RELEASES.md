@@ -4,6 +4,59 @@ Actual validation outcomes, newest first. Published releases: v0.7.0 (October
 19, 2026), v0.1.1 (October 8, 2026) and v0.1.0 (October 7, 2026). Upload
 success alone is never recorded as acceptance.
 
+## PR 5 on the test site — October 22, 2026 (dev.nightseam.de, 09c486a)
+
+Owner-authorized publication of `horizon-pairing-plan` at 09c486a (v0.7.0-15-g09c486a)
+to the test site only; the live site was not touched. The owner reviewed the
+`web/.htaccess` relay section first.
+
+- Candidate: 78 files (54 immutable, then the entry files), built with
+  `prepare_publication.py` from an LF worktree and verified with `--verify`.
+- Publish: `ftps_deploy.py publish ... /dev.nightseam.de`; four connection
+  resets during the install or its verification, then a complete run that
+  verified the graph before the entry files switched.
+- HTTPS check: all 75 HTTP-readable files and both entry routes match the
+  candidate's bytes; `.htaccess` (403) and `relay.php` checked by behaviour.
+- Relay: an unknown box answers 404, a cross-site request 403, both with
+  `no-store` and `Content-Security-Policy: default-src 'none'; frame-ancestors
+  'none'`; another PHP file and `/astro/.htaccess` answer 403; HTTP redirects
+  to HTTPS. Pages carry no header CSP on GET (their meta CSP applies), as on
+  the live site.
+- Built-in browser (desktop): the planner loads from its release, no console
+  errors, Berlin example with 16 Tonight rows. *Get from phone* opens a box
+  (201), shows the QR code and polls (204); the offline worker took control
+  and left relay requests alone; Cancel removed the box from the server.
+- Not yet checked: the phone side (scan, capture, *Send to desktop*) and the
+  rest of the *Pairing* acceptance checklist.
+
+## Pairing relay hosting probe, phase 0 — October 22, 2026 (dev.nightseam.de)
+
+Phase 0 of docs/horizon/HORIZON_PAIRING_PLAN.md, run on the new test
+subdomain `dev.nightseam.de` (its own folder beside the live document root in
+the webspace root, its own certificate, PHP "FPM application served by
+Apache" on the subdomain only; the live site is unchanged and still serves PHP
+through nginx). `docs/horizon/relay_probe.php` was uploaded by hand to
+`/dev.nightseam.de/astro/`, run with `scripts/relay_probe.py`, then deleted
+(its URL answers 404; `nightseam-relay/` is empty again).
+
+- PHP 8.3.36, `fpm-fcgi`, served by Apache behind nginx; runs as the
+  subscription user; `open_basedir` is the webspace root and `/tmp/`;
+  `post_max_size` 256M; `REMOTE_ADDR` is the visitor's public address.
+- The data folder `nightseam-relay/` is found next to the document root and
+  outside it: write, rename, read back, lock and delete all succeed.
+- Binary POST bodies of 1 KB, 60 KB and 64 KB arrive unchanged (Imunify
+  active), each 200.
+- Response carries `Cache-Control: no-store` (set by the probe itself) and
+  `X-Powered-By` headers from PHP and Plesk.
+- Result: PASS under "served by Apache", the handler the plan chose. The
+  nginx-handler run was not repeated; the relay will not be served that way.
+
+Also on October 22, PR 5 (`horizon-pairing-plan`) was brought up to date with
+`main` (merge 09c486a). Local validation: pytest 372 passed, 1 skipped, the 12
+relay tests not run (no PHP on this machine); browser suite 91/91. CI on
+09c486a: guards and pytest 384 passed, 1 skipped (PHP 8.3 installed, relay
+tests included); browser suite passed.
+
 ## Offline check fixed after CI failure — October 20, 2026 (branch ccr-9a647bfc-wzanov)
 
 CI's browser suite failed `web-offline-reopen` on 6a53a67 (Tonight never

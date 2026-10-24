@@ -15,6 +15,11 @@ GENERATED = {'web/version.json'}
 # Non-HTML files that are also published at their tree root, beside the pages.
 ROOT_ENTRIES = ('web/version.json', 'web/sw.js')
 FORMAT = 'nightseam-immutable-v1'
+# The one server script (docs/horizon/HORIZON_PAIRING_PLAN.md): the pairing
+# relay keeps a stable path, /astro/relay.php, so every release talks to the
+# same relay. It is never copied into a release namespace, and no other PHP
+# file is published.
+SERVER_SCRIPTS = {'web/relay.php'}
 META_ASSET = re.compile(r'(<meta\b[^>]*\bcontent\s*=\s*)([\"\'])(https://(?:www\.)?nightseam\.de/[^\"\']+)\2', re.I)
 
 
@@ -59,9 +64,17 @@ def hashes(payload):
     return {name: digest(data) for name, data in sorted(payload.items())}
 
 
+def refuse_unknown_scripts(names):
+    scripts = sorted(n for n in names if n.lower().endswith(('.php', '.phtml', '.phar')) and n not in SERVER_SCRIPTS)
+    if scripts:
+        raise ValueError('Only web/relay.php may be a server script: ' + ', '.join(scripts))
+
+
 def source_payload(root, trees=('web', 'landing')):
     files = require_tracked(root, trees)
-    return {p.relative_to(root).as_posix(): p.read_bytes() for p in files}
+    payload = {p.relative_to(root).as_posix(): p.read_bytes() for p in files}
+    refuse_unknown_scripts(payload)
+    return payload
 
 
 def namespace(payload, dependency=''):
@@ -80,7 +93,7 @@ def immutable_payload(root, trees=('web', 'landing')):
     for name, data in source.items():
         tree, rel = name.split('/', 1)
         # Server policy belongs at the tree root; descendants inherit it.
-        if rel == '.htaccess':
+        if rel == '.htaccess' or name in SERVER_SCRIPTS:
             result[name] = data
             continue
         result[f'{tree}/releases/{web_id if tree == "web" else landing_id}/{rel}'] = data

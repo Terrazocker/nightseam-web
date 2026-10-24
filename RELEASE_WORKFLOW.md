@@ -67,12 +67,17 @@ older production core hashes may still be referenced by cached clients.
 Apply the prepared host policy only through supported provider controls; see
 HOSTING_CONFIGURATION.md for the nginx/Apache boundary and required live evidence.
 Publish the validated combined bundle with
-python web/ftps_deploy.py publish dist/publication-preview / --env <credential-path>.
+python web/ftps_deploy.py publish dist/publication-preview /nightseam.de --env <credential-path>.
+Since October 22 the FTP login starts in the webspace root, not in the
+document root: the remote root names the site's folder (`/nightseam.de` for
+the live site, `/dev.nightseam.de` for the test site), and "/" would put a
+release where no URL reaches it. Test a pull request on dev.nightseam.de
+first; it is a separate Plesk subdomain with its own folder.
 Build that bundle from an LF checkout (for example a worktree added with
 git -c core.autocrlf=false): a CRLF checkout changes the .htaccess bytes and
 the publisher refuses them. FTP_HOST must be the name on the server's
 certificate (plesk-amanda.zap.cloud), not its IP. From Git Bash set
-MSYS_NO_PATHCONV=1, or the remote root "/" becomes a Windows path. Connection
+MSYS_NO_PATHCONV=1, or the remote root becomes a Windows path. Connection
 resets during the install are safe to retry; the publisher skips verified
 files and switches no page until the whole graph is in place.
 For a planner-only clean release, use dist/web-release with the same remote root.
