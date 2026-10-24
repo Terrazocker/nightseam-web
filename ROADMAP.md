@@ -30,6 +30,9 @@ Where NightSeam Web stands and what comes next. Open defects are in
 
 ## Open work
 
+- **Shorter public pages** (October 24, branch `landing-trim`, unreleased):
+  fewer words, no folded-away content, bullet-point release notes and a
+  Catalog page for the desktop app (DECISIONS.md 2026-10-24).
 - **Phone layout and night vision** (October 20, unreleased): the planner's
   own phone layout (bottom tab bar, pinned time slider, setup sheet, two-line
   rows, bottom-sheet details, pinch zoom) and the red night-vision display

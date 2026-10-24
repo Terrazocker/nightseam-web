@@ -19,40 +19,76 @@
 <meta name="twitter:card" content="summary_large_image">
 <link rel="icon" type="image/png" href="app.png">
 <link rel="stylesheet" href="/astro/themes.css?v=23">
-<link rel="stylesheet" href="style.css?v=6">
+<link rel="stylesheet" href="style.css?v=9">
 </head>
 <body class="public-site">
 <a class="skip-link" href="#content">Skip to content</a>
 <header class="site-header"><div class="container navrow">
 <a class="brand" href="/" aria-label="NightSeam home">NightSeam</a>
 <div class="header-actions">
-<div class="desktop-nav"><nav aria-label="Main navigation"><a href="features.html">Features</a><a href="about.html">About</a><a href="download.html" aria-current="page">Changes</a></nav></div>
+<div class="desktop-nav"><nav aria-label="Main navigation"><a href="features.html">Planner</a><a href="catalog.html">Catalog</a><a href="download.html" aria-current="page">Changes</a><a href="about.html">About</a></nav></div>
 <a class="header-cta" href="/astro/">Open planner</a>
-<details class="mobile-menu"><summary aria-label="Navigation menu"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M3 6h18M3 12h18M3 18h18"/></svg></summary><nav aria-label="Mobile navigation"><a href="features.html">Features</a><a href="about.html">About</a><a href="download.html" aria-current="page">Changes</a></nav></details>
+<details class="mobile-menu"><summary aria-label="Navigation menu"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M3 6h18M3 12h18M3 18h18"/></svg></summary><nav aria-label="Mobile navigation"><a href="features.html">Planner</a><a href="catalog.html">Catalog</a><a href="download.html" aria-current="page">Changes</a><a href="about.html">About</a></nav></details>
 </div>
 </div></header>
-<main id="content" tabindex="-1" class="container"><section class="hero"><svg class="sky-map" aria-hidden="true" focusable="false" viewBox="0 0 960 760"><use href="sky-map.svg?v=1#sky-art"></use></svg><div class="hero-copy"><p class="eyebrow">Release history</p><h1>What’s changed.</h1><p class="hero-sub">Release notes for the browser planner.</p></div></section><!-- BEGIN GENERATED RELEASE HISTORY -->
+<main id="content" tabindex="-1" class="container">
+<section class="hero"><div class="hero-copy"><h1>What’s changed.</h1><p class="hero-sub">Release notes for the planner. Catalog releases are <a href="https://github.com/Terrazocker/nightseam-library/releases" rel="noopener">on GitHub</a>.</p></div></section>
+<!-- BEGIN GENERATED RELEASE HISTORY -->
 <section class="release-section" aria-label="Website releases">
   <div class="release-list" id="clList">
 <article class="release-entry">
-  <h3 class="release-heading">v0.8.0 <time datetime="2026-10-24" class="cl-date">2026-10-24</time></h3>
-  <p class="cl-sum">NightSeam has a layout of its own on phones: a bottom tab bar with the time slider pinned above it, your site, rig and minimum altitude in a setup sheet behind the header&#x27;s summary line, and target details that open as a bottom sheet. A red night-vision display keeps your eyes dark-adapted, and the planner can be added to the home screen and reopened offline after one visit. Horizons now move from phone to computer without a link: the computer shows a QR code, the phone captures the skyline and sends it back, encrypted in the browser so the server only ever holds data it cannot read, for ten minutes. A horizon made in the planner also gets a short code like K7Q-4MX for 24 hours, which another device can type in. The horizon editor is leaner: on phones it shows the skyline and captures it, on a computer Insert adds points from the keyboard, and the capture&#x27;s calibration guide is sharper and offered right after north is set. With no target open, Sky View lists what is up at the selected time; Tonight is centred on wide screens. The weather names the night it rates, gives one score that its Good, Fair or Poor label agrees with, colours the rain warning by rain alone and says when a night lies outside the forecast. Catalog designations, altitude-chart time labels and twilight times in the night brief no longer run together.</p>
+  <h2 class="release-heading">v0.8.0 <time datetime="2026-10-24" class="cl-date">2026-10-24</time></h2>
+  <ul class="cl-notes">
+    <li>Phone layout: bottom tabs, a pinned time slider, a setup sheet and target details as a bottom sheet.</li>
+    <li>Red night-vision mode.</li>
+    <li>Installs to the home screen and reopens offline after one visit.</li>
+    <li>Send a horizon from phone to computer with a QR code, end-to-end encrypted.</li>
+    <li>Horizon codes: type a short code on another device to fetch a horizon for 24 hours.</li>
+    <li>Leaner horizon editor; Insert adds points from the keyboard.</li>
+    <li>Sharper calibration guide, offered right after north is set.</li>
+    <li>Sky View lists what is up when no target is open.</li>
+    <li>Tonight is centred on wide screens.</li>
+    <li>Weather: one score that matches its Good, Fair or Poor label, named nights, and a rain warning coloured by rain alone.</li>
+    <li>Fixed: catalog designations, chart time labels and twilight times no longer run together.</li>
+  </ul>
 </article>
 <article class="release-entry">
-  <h3 class="release-heading">v0.7.0 <time datetime="2026-10-19" class="cl-date">2026-10-19</time></h3>
-  <p class="cl-sum">A new horizon editor. Draw your skyline on a compass grid, or capture it with your phone: aim the camera along treetops and roofs while the phone&#x27;s motion sensors record the line, with north from the compass, the Moon or a landmark. Mark balconies and roof edges that block the sky above, and send a horizon to another device with a share link. Horizons can be imported and exported as text files from Stellarium and N.I.N.A. Horizons saved by 0.1.x are not carried over, so redraw yours once; backups still restore sites, rigs, targets and settings. Sunset and sunrise now match the times weather apps show, and twilight is checked against published U.S. Naval Observatory tables, including the very short nights of high-latitude summers. An object&#x27;s details describe the coming night. Unknown time zones are refused when you enter them, keyboard focus stays on the target you were reading when Tonight refreshes, cached object photos stay under 25 MB, and with reduced motion turned on, transitions are switched off.</p>
+  <h2 class="release-heading">v0.7.0 <time datetime="2026-10-19" class="cl-date">2026-10-19</time></h2>
+  <ul class="cl-notes">
+    <li>New horizon editor: draw your skyline on a compass grid.</li>
+    <li>Capture your skyline with your phone’s camera and motion sensors, with north from the compass, the Moon or a landmark.</li>
+    <li>Mark balconies and roof edges that block the sky above.</li>
+    <li>Send a horizon to another device with a share link.</li>
+    <li>Import and export Stellarium and N.I.N.A. horizon files.</li>
+    <li>Sunset and sunrise match weather apps; twilight is checked against U.S. Naval Observatory tables.</li>
+    <li>Target details describe the coming night.</li>
+    <li>Horizons from 0.1.x are not carried over: redraw yours once. Backups still restore everything else.</li>
+    <li>Fixed: unknown time zones are refused, keyboard focus stays put when Tonight refreshes, the photo cache stays under 25 MB, and reduced motion switches transitions off.</li>
+  </ul>
 </article>
 <article class="release-entry">
-  <h3 class="release-heading">v0.1.1 <time datetime="2026-10-08" class="cl-date">2026-10-08</time></h3>
-  <p class="cl-sum">A clearer planning workspace: open the planner from any public page, edit Site and Rig directly from the top bar, and filter object types with simple checkboxes. The Catalog tab shows 50 objects per page with clearer visibility conditions. Sky View has a wider time slider, twilight colors and smoother one-minute scrubbing. Tonight is simpler, and Horizon tools stay readable while you scroll. Filter advice and precise horizon editing explain what each setting does.</p>
+  <h2 class="release-heading">v0.1.1 <time datetime="2026-10-08" class="cl-date">2026-10-08</time></h2>
+  <ul class="cl-notes">
+    <li>Open the planner from every public page.</li>
+    <li>Edit Site and Rig directly from the top bar.</li>
+    <li>Filter object types with checkboxes.</li>
+    <li>Catalog shows 50 objects per page with clearer visibility conditions.</li>
+    <li>Sky View: wider time slider, twilight colours and one-minute scrubbing.</li>
+    <li>Simpler Tonight; Horizon tools stay readable while you scroll.</li>
+  </ul>
 </article>
 <article class="release-entry">
-  <h3 class="release-heading">v0.1.0 <time datetime="2026-10-07" class="cl-date">2026-10-07</time></h3>
-  <p class="cl-sum">NightSeam starts anew as an independent browser planner. Bring your own panorama and calculate when deep-sky targets clear your skyline, with planning data saved in your browser. NightSeam is now a browser-only planner with its own version history.</p>
+  <h2 class="release-heading">v0.1.0 <time datetime="2026-10-07" class="cl-date">2026-10-07</time></h2>
+  <ul class="cl-notes">
+    <li>NightSeam restarts as an independent browser planner.</li>
+    <li>Plan deep-sky targets around your own skyline.</li>
+    <li>Planning data stays in your browser.</li>
+  </ul>
 </article>
   </div>
 </section>
-<!-- END GENERATED RELEASE HISTORY --></main>
-<footer class="site-footer container"><div class="foot-inner"><span>NightSeam · Browser night planner</span><nav aria-label="Footer navigation"><a href="/astro/">Planner</a><a href="features.html">Features</a><a href="about.html">About</a><a href="download.html" aria-current="page">Changes</a><a href="privacy.html">Privacy</a><a href="impressum.html">Imprint</a></nav></div></footer>
+<!-- END GENERATED RELEASE HISTORY -->
+</main>
+<footer class="site-footer container"><div class="foot-inner"><span>NightSeam · Deep-sky planning and image cataloging</span><nav aria-label="Footer navigation"><a href="/astro/">Open planner</a><a href="features.html">Planner</a><a href="catalog.html">Catalog</a><a href="download.html" aria-current="page">Changes</a><a href="about.html">About</a><a href="privacy.html">Privacy</a><a href="impressum.html">Imprint</a></nav></div></footer>
 </body>
 </html>
