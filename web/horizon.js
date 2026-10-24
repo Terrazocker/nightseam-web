@@ -809,7 +809,7 @@ function pairDialog(box, onChanged) {
     if (result.state === 'connected' && !announcedConnected) {
       announcedConnected = true;
       status('Phone connected. Capture the skyline there, then tap Send to desktop.');
-    } else if (failures === 0 && !announcedConnected) {
+    } else if (failures === 0 && !announcedConnected && !codeSaid) {
       status('Waiting for the phone…');
     }
     timer = setTimeout(poll, nextPollDelay(0));
@@ -818,9 +818,11 @@ function pairDialog(box, onChanged) {
   // A typed code: the horizon stored under it, asked about like a QR reply.
   // It works whatever the QR code is doing, expired included.
   let fetching = false;
+  let codeSaid = false;   // a code's answer stays in the status line until the phone connects
   $('#pair-type', el).addEventListener('submit', async (ev) => {
     ev.preventDefault();
     if (fetching || !el.isConnected) return;
+    codeSaid = true;
     const input = $('#pair-code-in', el);
     const code = parseShortCode(input.value);
     if (!code) {

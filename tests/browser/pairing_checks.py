@@ -284,6 +284,9 @@ def web_pairing_short_code(c):
         c.page.wait_for_function("() => /no horizon has this code/.test(document.querySelector('#pair-status').textContent)",
                                  timeout=10000)
         c.expect(c.page.is_visible(".pair-qr"), "a wrong code keeps the QR code")
+        c.page.wait_for_timeout(3000)
+        c.expect("no horizon has this code" in c.page.inner_text("#pair-status"),
+                 "the answer stays while the QR code keeps polling")
         c.page.fill("#pair-code-in", "K7Q-4M")
         c.page.click("#pair-code-go")
         c.expect("6 letters and digits" in c.page.inner_text("#pair-status"), "a short entry is refused before any request")

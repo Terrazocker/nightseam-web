@@ -9,7 +9,7 @@
  * All sky math runs client-side (astro.js, Meeus algorithms).
  */
 import * as E from './astro.js?v=69';
-import * as Hor from './horizon.js?v=173';
+import * as Hor from './horizon.js?v=174';
 import * as WS from './webstore.js?v=84';
 import { fmtSize, sizeArcmin, framePct, magVisible, skyClampZoom,
          skyViewMatrix, skyScreenToBase, skyClampFocus } from './format.js?v=75';
@@ -22,7 +22,7 @@ import { popularityFactor as corePopularityFactor } from './core.js?v=78';
 import { vizTheme, drawMoonPhaseMarker } from './viztheme.js?v=7';
 import { loadWikiThumb, releaseWikiThumb } from './wikiphotos.js?v=1';
 import { WX_STATE, initWeather, loadWeather, refreshWeatherForSite, weatherRequested,
-         wxRenderPanel } from './weather.js?v=10';
+         wxRenderPanel } from './weather.js?v=11';
 
 const announcePlannerChange = Hor.announcePlannerChange;
 
