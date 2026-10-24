@@ -40,6 +40,25 @@ Library, SQLite, desktop CSP) are history only.
 - **Documentation:** see "Documentation layout" (2026-10-11), which updates the
   older "Docs policy".
 
+## 2026-10-24 — One weather rating number, named nights
+
+- **What.** The night's weather score is the average of the hourly scores,
+  capped by the night's worst hour: any rain or storm, cloud of 85% or more,
+  or a rain chance of 55% or more caps it at 49; any lesser cloud, rain-chance,
+  dew or haze warning caps it at 79. Good, Fair and Poor are read from that
+  number (80 and up, 50 and up, below 50), so the label and the score can no
+  longer disagree ("Fair · 98/100" before).
+- **Night names.** The chip says "tonight" only for the site's current night;
+  other nights are named by date. A night outside the four-day forecast says
+  so and names the range covered; a night the forecast only partly covers is
+  not rated and says where the forecast starts or ends.
+- **Rain colour.** The rain-warning colour follows rain alone; a dry overcast
+  night no longer shows its 0% rain in red.
+- **Why.** The old label came from the worst hour and the number from the
+  average, so each told a different story; an out-of-range date read as a data
+  problem. Amends the 2026-10-10 weather entry, whose "complete inputs or no
+  rating" rule stands and now also covers forecast range.
+
 ## 2026-10-24 — Horizon codes for 24 hours; a sensor start button
 
 Reverses what remained of 2026-10-15 "Share links, not server shortcodes":
