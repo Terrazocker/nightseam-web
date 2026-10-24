@@ -4,6 +4,25 @@ Actual validation outcomes, newest first. Published releases: v0.7.0 (October
 19, 2026), v0.1.1 (October 8, 2026) and v0.1.0 (October 7, 2026). Upload
 success alone is never recorded as acceptance.
 
+## Leaner editor, view-only phones, sharper guide on the test site — October 24, 2026 (dev.nightseam.de, 3e029c0)
+
+Owner-requested publication of 3e029c0 (v0.7.0-22-g3e029c0) to the test site
+only; the live site was not touched.
+
+- Before: full pytest 372 passed (the PHP relay tests cannot run here),
+  browser suite 92/92, `check_js.py` OK.
+- Candidate: 78 files from the LF worktree, version baked, `--verify`
+  passed. Publish to `/dev.nightseam.de` succeeded on the fourth attempt,
+  90 s apart (a TLS `BAD_LENGTH`, a connect timeout, a connection reset).
+- HTTPS, two seconds apart: `index.html`, `version.json`, `sw.js`,
+  `capture.js`, both `horizon.js` and the stylesheets match the candidate.
+- Built-in browser on the test site: at phone size (touch) the start actions
+  are *Capture with phone* and *Import file*, with no *Get from phone* and
+  none of the removed panels, and no sideways scroll; at desktop size *Draw
+  by hand*, *Import file* and *Get from phone*, with no settings rail. The
+  view-only grid, the SVG guide and the calibration after north were
+  checked locally (preview and browser suite), not on a real phone.
+
 ## Centred Tonight on the test site — October 24, 2026 (dev.nightseam.de, 18a67b5)
 
 Owner-requested publication of 18a67b5 (v0.7.0-20-g18a67b5) to the test site
