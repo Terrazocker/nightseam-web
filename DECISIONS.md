@@ -81,7 +81,8 @@ nightseam.de now keeps horizons for a day.
   and when the page becomes visible, and when nothing arrives for 3 s (no
   compass for 6 s) a panel takes the place of the controls with three
   numbered steps (allow access, hold upright and tap *Start the sensors*,
-  move in a figure eight) and *Not now*. The tap is a user gesture, so the
+  keep still while the compass settles) and *Not now*. A figure eight was
+  dropped: it conflicts with holding still while north is read. The tap is a user gesture, so the
   browser may ask for motion access there.
 - **Calibration guide.** The *Line up the drawing* steps draw what to do
   over the video: a ring for the object in step 1; then a solid arrow for
@@ -89,7 +90,17 @@ nightseam.de now keeps horizons for a day.
   to the amber line for the way the object travels, and *Stop when your
   object is on this line* at the line. From the gyroscope alone (no scale
   needed) the routine sees when the phone turns the wrong way and says
-  *Other way* in the drawing and the instruction.
+  *Other way* in the drawing and the instruction. The guide is SVG (the
+  overlay canvas looked soft on phones), and the routine is offered straight
+  after north is set instead of when the camera starts.
+- **A leaner editor; phones view.** The owner asked to drop *Points by
+  numbers*, *Phone capture* and *Display* on every device (the grid always
+  shows), *Get from phone* on phones, and editing by finger: on a phone the
+  grid only pans and zooms, and *Capture* in the editor head and *Capture
+  with phone* are the ways in; editing points is for a mouse. Typed points go
+  with the panel; keyboard users add points and overhang edges with Insert
+  or + and place them with the arrows, so the editor stays usable without a
+  mouse.
 
 ## 2026-10-20 — Offline reopening
 

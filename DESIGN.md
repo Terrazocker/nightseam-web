@@ -161,13 +161,17 @@ The local exposure catalog has its own design document in Nightseam-catalog.
   and complementary at every width; on phones the rail stacks below the map.
   Closing it preserves the selected target with a small reopen action.
 - **Horizon:** the job is "where is my sky blocked"; keep the editor to that.
-  Three rails: the horizon list with *Draw by hand* (primary), *Import
-  file* and *Get from phone* (on touch devices *Capture with phone* comes
-  first and is primary); the stage; and a settings rail with closed *Points by numbers*,
-  *Phone capture* and *Display* disclosures (*Phone capture* starts open on
-  touch devices). With no horizon yet, the empty stage repeats the start
-  actions as its call to action. Keep about 20 controls visible
-  at first glance and about 40 including the disclosures. There are no
+  Two areas: the horizon list with *Draw by hand* (primary), *Import file*
+  and *Get from phone* (on phones and tablets: *Capture with phone*, primary,
+  and *Import file*; no *Draw by hand* and no *Get from phone*); and the
+  stage, whose grid always shows. There are no settings disclosures
+  (owner decision, October 24, 2026). With no horizon yet, the empty stage
+  repeats the start actions as its call to action. Keep about 20 controls
+  visible.
+  - On phones and tablets the grid is view-only: a finger pans and the − / +
+    buttons zoom; *Draw* and *Overhang* are not shown, and a brass
+    *Capture* button in the editor head traces into the open horizon. Undo,
+    Redo and Clear stay. The hint under the grid says it is view-only. There are no
   horizon photos: a dropped photo gets a one-line explanation, a dropped
   horizon file imports.
   - The stage is one compass grid (azimuth across, altitude up, N/E/S/W on the
@@ -232,21 +236,23 @@ The local exposure catalog has its own design document in Nightseam-catalog.
       pair of buttons (*Start* or *It's on the line* first, then *Not now*,
       *Cancel* or *Skip*). Its
       guide line is drawn over the video in the warning colour with a dark
-      outline, left of the cross and then above it. It is offered once, when
-      a phone's first capture shows a camera image, and never blocks
+      outline, left of the cross and then above it. It is offered once per
+      phone, straight after north is set in a capture with a camera image
+      (*North is set. Next, line up the drawing…*), and never blocks
       tracing for more than one tap. Over the video it shows what to do:
       a ring round the cross in step 1; in steps 2 and 3 a solid arrow in
       the main-text colour for the way to move the phone (*Turn right*,
       *Tilt down*), a dashed amber arrow from the cross to the line for the
       way the object travels, and *Stop when your object is on this line*
-      beside the line. Words on the video are 14 px semibold with a dark
-      outline. Turning the wrong way turns the solid arrow amber and says
+      beside the line. The guide is SVG, so it stays sharp at any pixel
+      density; its words are 15 px semibold with a dark outline. Turning the wrong way turns the solid arrow amber and says
       *Other way* there and in the instruction.
     - The sensor panel takes the place of the controls (before any other
       panel) when the motion sensors give nothing for 3 s or the compass
       for 6 s: a bold line saying which has not started, three numbered
-      steps (allow access; hold upright and tap *Start the sensors*; move in
-      a figure eight), a small line on what to do if that fails, and the
+      steps (allow access; hold upright and tap *Start the sensors*; keep
+      still while the compass settles), a small line on what to do if that
+      fails, and the
       pair *Start the sensors* (brass, gets focus) / *Not now*.
     - Messages are short: one line where possible, the fact first, then
       what to do (*Compass settling (moved 2.1°): hold still.*). Detail that

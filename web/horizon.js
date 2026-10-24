@@ -11,7 +11,7 @@
  * the horizon from the phone to the desktop).
  */
 import { vizTheme } from './viztheme.js?v=7';
-import { openCapture, captureAvailable, warmCompass } from './capture.js?v=34';
+import { openCapture, captureAvailable, warmCompass } from './capture.js?v=35';
 import { normalizeWebPrefs, WEB_PREF_DEFAULTS } from './webstore.js?v=84';
 import {
   PAIR_TTL_S, pairingUrl, parsePairFragment, relayUrlFor, RelayError,
@@ -478,17 +478,12 @@ const ZOOM_MAX = 12;
 const MARGIN = { l: 40, t: 24, r: 8, b: 8 };
 const HIT_PX = 9;
 
-/** Phones and tablets: touch is the main input, so the camera capture leads. */
+/** Phones and tablets: touch is the main input, so the camera capture leads
+ *  and the grid is view-only (a finger is too coarse to place points). */
 const touchFirst = () => typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
 
 /** Presentation state that survives re-rendering the same horizon. */
-const ui = {
-  id: null, mode: 'draw', zoom: 1, fx: 180, fy: 30, selected: -1, ohSel: null,
-  grid: true,
-  // The capture panel starts open on phones and tablets, where it is the quickest way in.
-  openPanels: { points: false, display: false,
-    capture: touchFirst() },
-};
+const ui = { id: null, mode: 'draw', zoom: 1, fx: 180, fy: 30, selected: -1, ohSel: null };
 
 /** Clamp the view focus so the visible window stays inside the grid. */
 export function clampView(zoom, fx, fy) {
@@ -1016,10 +1011,10 @@ function renderPairBanner(box, onChanged) {
     phonePair = null;
     renderPairBanner(box, onChanged);
     hzNote(box, 'Pairing ended.');
-    $('#hz-pair-start', box)?.focus();
+    ($('#hz-pair-start', box) || $('#hz-new-capture', box) || $('#hz-new-draw', box))?.focus();
   });
-  // A new horizon opens the editor; on a phone its Phone capture panel starts open.
-  $('#hz-pair-new', el)?.addEventListener('click', () => $('#hz-new-draw', box)?.click());
+  // A new horizon: straight into the camera on a phone, else the editor.
+  $('#hz-pair-new', el)?.addEventListener('click', () => ($('#hz-new-capture', box) || $('#hz-new-draw', box))?.click());
   const send = $('#hz-pair-send', el);
   if (send) send.addEventListener('click', () => sendToDesktop(box, onChanged));
   stopPhoneTicker();
@@ -1134,11 +1129,12 @@ export function renderHorizon(box, onChanged = () => {}, context = {}) {
 /** The actions that start a horizon. Rendered once: in the empty editor, as
  *  its call to action, until a horizon exists; then under the list. */
 function startActions(cls) {
+  const phone = touchFirst();
   return `<div class="${cls}" role="group" aria-label="Start a horizon">
-            ${touchFirst() ? '<button class="btn primary" type="button" id="hz-new-capture">📱 Capture with phone</button>' : ''}
-            <button class="btn${touchFirst() ? '' : ' primary'}" type="button" id="hz-new-draw">✏ Draw by hand</button>
+            ${phone ? '<button class="btn primary" type="button" id="hz-new-capture">📱 Capture with phone</button>'
+              : '<button class="btn primary" type="button" id="hz-new-draw">✏ Draw by hand</button>'}
             <label class="btn" for="hz-import-file" role="button" tabindex="0">⬆ Import file</label>
-            <button class="btn" type="button" id="hz-pair-start" title="Show a QR code to scan with the phone; the horizon captured there comes back here">📱 Get from phone</button>
+            ${phone ? '' : '<button class="btn" type="button" id="hz-pair-start" title="Show a QR code to scan with the phone; the horizon captured there comes back here">📱 Get from phone</button>'}
           </div>`;
 }
 
@@ -1149,13 +1145,14 @@ function editorHTML(h) {
         <label class="hz-name">Name <input id="hz-name" type="text" maxlength="80" value="${esc(h.name)}"></label>
         <button class="btn small" type="button" id="hz-share" title="Send this horizon to another device as a link">🔗 Share link</button>
         <span class="hz-code-slot" id="hz-code-slot" data-horizon="${esc(h.id)}"></span>
+        ${touchFirst() ? '<button class="btn small primary" type="button" id="hz-cap-start" title="Trace the skyline with the camera and the motion sensors">📱 Capture</button>' : ''}
         <button class="btn small" type="button" id="hz-export" title="Save as a plain azimuth/altitude text file">⬇ Export file</button>
       </div>
       <div class="ed-tools" role="toolbar" aria-label="Horizon editing">
-        <div class="ed-group hz-modes" role="group" aria-label="Mode">
+        ${touchFirst() ? '' : `<div class="ed-group hz-modes" role="group" aria-label="Mode">
           <button class="btn" type="button" id="hz-mode-draw" aria-pressed="true">✏ Draw</button>
           <button class="btn" type="button" id="hz-mode-overhang" aria-pressed="false" title="Draw the edge of a balcony, roof or branch: the sky above it is blocked">⌒ Overhang</button>
-        </div>
+        </div>`}
         <div class="ed-group ed-history">
           <button class="btn" type="button" id="ed-undo" title="Undo (Ctrl+Z)">↩ Undo</button>
           <button class="btn" type="button" id="ed-redo" title="Redo (Ctrl+Shift+Z)">↪ Redo</button>
@@ -1177,45 +1174,8 @@ function editorHTML(h) {
         <span id="hz-help" class="ed-help"></span>
       </p>
       <p id="hz-summary" class="sub hz-summary" role="note"></p>
-      <p id="hz-keys" class="visually-hidden">Keyboard: in Draw mode the arrows work on skyline points, in Overhang mode on overhang edge points. Left and Right arrows select the previous or next point; with Shift they move it sideways. Up and Down arrows raise or lower it. Delete removes it. Use "Points by numbers" to add points and overhangs.</p>
-    </section>
-    <aside class="horizon-settings-rail" aria-label="Horizon settings">
-      <details class="hz-panel" id="hz-points-panel">
-        <summary>Points by numbers</summary>
-        <fieldset class="hz-fields" id="hz-selected">
-          <legend>Selected point</legend>
-          <label>Azimuth (°) <input id="hz-sel-az" type="number" min="0" max="359.99" step="0.5" disabled></label>
-          <label>Altitude (°) <input id="hz-sel-alt" type="number" min="${ALT_MIN}" max="${ALT_MAX}" step="0.5" disabled></label>
-          <button class="btn small" type="button" id="hz-sel-del" disabled>Delete point</button>
-        </fieldset>
-        <fieldset class="hz-fields">
-          <legend>Add a point</legend>
-          <label>Azimuth (°) <input id="hz-add-az" type="number" min="0" max="359.99" step="0.5"></label>
-          <label>Altitude (°) <input id="hz-add-alt" type="number" min="${ALT_MIN}" max="${ALT_MAX}" step="0.5"></label>
-          <button class="btn small" type="button" id="hz-add">Add point</button>
-        </fieldset>
-        <fieldset class="hz-fields">
-          <legend>Add an overhang (sky above it is blocked)</legend>
-          <label>From azimuth (°) <input id="hz-oh-from" type="number" min="0" max="359.99" step="0.5"></label>
-          <label>To azimuth (°) <input id="hz-oh-to" type="number" min="0" max="359.99" step="0.5"></label>
-          <label>Edge altitude (°) <input id="hz-oh-alt" type="number" min="${ALT_MIN}" max="${ALT_MAX}" step="0.5"></label>
-          <button class="btn small" type="button" id="hz-oh-add">Add overhang</button>
-        </fieldset>
-        <p class="sub">0° = north, 90° = east, 180° = south, 270° = west. Altitude is the angle above the level horizon.</p>
-      </details>
-      <details class="hz-panel" id="hz-capture-panel">
-        <summary>Phone capture</summary>
-        <p class="sub">On a phone or tablet: tap Start tracing, turn with the cross on the skyline, then tap Stop. The phone's motion sensors give the shape. North comes from its compass, which can be several degrees off near cars, railings and buildings; the Moon or a landmark is more exact.</p>
-        <div class="btnrow">
-          <button class="btn small primary" type="button" id="hz-cap-start">📱 Capture with the camera</button>
-        </div>
-        <p class="sub" id="hz-cap-status" role="status" aria-live="polite"></p>
-      </details>
-      <details class="hz-panel ed-display" id="hz-display-panel">
-        <summary>Display</summary>
-        <label><input id="hz-grid" type="checkbox" ${ui.grid ? 'checked' : ''}> Show grid</label>
-      </details>
-    </aside>`;
+      <p id="hz-keys" class="visually-hidden">Keyboard: in Draw mode the arrows work on skyline points, in Overhang mode on overhang edge points. Left and Right arrows select the previous or next point; with Shift they move it sideways. Up and Down arrows raise or lower it. Delete removes it. Insert or plus adds a point 5 degrees after the selected one (in Overhang mode, a 20-degree edge in the middle of the view).</p>
+    </section>`;
 }
 
 function wireList(box, onChanged) {
@@ -1260,13 +1220,13 @@ function wireList(box, onChanged) {
     return true;
   };
 
-  $('#hz-pair-start', box).addEventListener('click', () => {
+  $('#hz-pair-start', box)?.addEventListener('click', () => {
     if (tooMany()) return;
     flushHorizonEdits();
     pairDialog(box, onChanged);
   });
 
-  $('#hz-new-draw', box).addEventListener('click', () => {
+  $('#hz-new-draw', box)?.addEventListener('click', () => {
     if (tooMany()) return;
     flushHorizonEdits();
     if (created(createHorizon('Horizon', {}, true))) rerender();
@@ -1279,8 +1239,6 @@ function wireList(box, onChanged) {
     flushHorizonEdits();
     if (!created(createHorizon('Horizon', {}, true))) return;
     rerender();
-    const panel = $('#hz-capture-panel', box);
-    if (panel) panel.open = true;
     $('#hz-cap-start', box)?.click();
   });
 
@@ -1410,7 +1368,7 @@ function wireEditor(box, h, onChanged) {
     ctx.beginPath();
     ctx.rect(f.x, f.y, f.w, f.h);
     ctx.clip();
-    if (ui.grid) drawGrid(f, V);
+    drawGrid(f, V);
     drawMinAlt(f, V);
     drawSkyline(f, V);
     drawOverhangs(f, V);
@@ -1578,22 +1536,14 @@ function wireEditor(box, h, onChanged) {
     ? (ui.ohSel ? h.overhangs[ui.ohSel.i]?.[ui.ohSel.j] : undefined)
     : h.points[ui.selected]);
 
-  function renderSelection() {
-    const p = selectedPoint();
-    const az = $('#hz-sel-az', box), alt = $('#hz-sel-alt', box), del = $('#hz-sel-del', box);
-    for (const el of [az, alt, del]) el.disabled = !p;
-    az.value = p ? String(p.az) : '';
-    alt.value = p ? String(p.alt) : '';
-  }
-
   function renderMode() {
-    $('#hz-mode-draw', box).setAttribute('aria-pressed', String(ui.mode === 'draw'));
-    $('#hz-mode-overhang', box).setAttribute('aria-pressed', String(ui.mode === 'overhang'));
+    $('#hz-mode-draw', box)?.setAttribute('aria-pressed', String(ui.mode === 'draw'));
+    $('#hz-mode-overhang', box)?.setAttribute('aria-pressed', String(ui.mode === 'overhang'));
     cvs.dataset.mode = ui.mode;
-    $('#hz-help', box).textContent = ui.mode === 'overhang'
-      ? 'Drag along the underside of a balcony, roof or branch: the sky above that edge is blocked · drag a point = move · Delete = remove'
-      : touchFirst()
-        ? 'Tap = add point · drag a point = move · drag across the grid = sketch the skyline · − / + = zoom'
+    $('#hz-help', box).textContent = touchFirst()
+      ? 'View only on a phone: drag = pan · − / + = zoom · Capture adds to the skyline; edit points on a computer'
+      : ui.mode === 'overhang'
+        ? 'Drag along the underside of a balcony, roof or branch: the sky above that edge is blocked · drag a point = move · Delete = remove'
         : 'Click = add point · drag a point = move · drag across the grid = sketch the skyline · Delete = remove · wheel = zoom · Space+drag = pan';
     $('#ed-zoom-label', box).textContent = `${ui.zoom.toFixed(1)}×`;
   }
@@ -1605,7 +1555,7 @@ function wireEditor(box, h, onChanged) {
     announceHorizonChanged(h, cause);
     if (ui.selected >= h.points.length) ui.selected = -1;
     if (ui.ohSel && !h.overhangs[ui.ohSel.i]?.[ui.ohSel.j]) ui.ohSel = null;
-    renderStatus(); renderSummary(); renderSelection(); renderMode();
+    renderStatus(); renderSummary(); renderMode();
     draw();
     onChanged();
   }
@@ -1653,7 +1603,7 @@ function wireEditor(box, h, onChanged) {
     if (gesture) return;
     const f = frame(), { x, y } = local(ev), w = toWorld(f, x, y);
     cvs.focus({ preventScroll: true });
-    if (ev.button === 1 || (ev.button === 0 && spaceDown)) {
+    if (ev.button === 1 || (ev.button === 0 && (spaceDown || touchFirst()))) {
       gesture = { type: 'pan', x, y, fx: ui.fx, fy: ui.fy };
     } else if (ev.button !== 0) {
       return;
@@ -1662,7 +1612,6 @@ function wireEditor(box, h, onChanged) {
       if (hit) {
         ui.ohSel = hit;
         gesture = { type: 'ohpoint', ...hit, lines: h.overhangs.map((l) => l.map((p) => ({ ...p }))), moved: false };
-        renderSelection();
       } else {
         gesture = { type: 'sketch', x, y, far: false, samples: [{ az: Math.max(0, Math.min(360, w.az)), alt: clampAlt(w.alt) }] };
       }
@@ -1671,7 +1620,6 @@ function wireEditor(box, h, onChanged) {
       if (hit >= 0) {
         ui.selected = hit;
         gesture = { type: 'point', index: hit, points: h.points.map((p) => ({ ...p })), moved: false };
-        renderSelection();
       } else {
         gesture = { type: 'sketch', x, y, far: false, samples: [{ az: Math.max(0, Math.min(360, w.az)), alt: clampAlt(w.alt) }] };
       }
@@ -1782,9 +1730,10 @@ function wireEditor(box, h, onChanged) {
     if (ev.key === ' ') { spaceDown = true; ev.preventDefault(); return; }
     if (ev.key === 'Escape') {
       if (gesture) finishGesture(false);
-      else { ui.selected = -1; renderSelection(); draw(); }
+      else { ui.selected = -1; draw(); }
       return;
     }
+    if (ev.key === 'Insert' || ev.key === '+') { ev.preventDefault(); addByKey(); return; }
     if (ui.mode === 'overhang') { overhangKey(ev); return; }
     if (ui.mode !== 'draw' || !h.points.length) return;
     const n = h.points.length;
@@ -1795,7 +1744,7 @@ function wireEditor(box, h, onChanged) {
       ui.selected = i < 0 ? 0 : (i + (ev.key === 'ArrowRight' ? 1 : n - 1)) % n;
       const p = h.points[ui.selected];
       if (X(frame(), p.az) < MARGIN.l || X(frame(), p.az) > size.w - MARGIN.r) Object.assign(ui, clampView(ui.zoom, p.az, ui.fy));
-      renderSelection(); draw();
+      draw();
       $('#ed-pos', box).textContent = `point ${ui.selected + 1} of ${n}: az ${fmt(p.az)}° ${cardinal(p.az)} · alt ${fmt(p.alt)}°`;
       return;
     }
@@ -1822,6 +1771,31 @@ function wireEditor(box, h, onChanged) {
       $('#ed-pos', box).textContent = `az ${fmt(next.az)}° · alt ${fmt(next.alt)}°`;
     }
   });
+  /** Insert or +: in Draw mode a point 5 deg after the selected one (or in
+   *  the middle of the view), at its altitude; in Overhang mode a flat
+   *  20-deg edge in the middle of the view. The arrows then place it. */
+  function addByKey() {
+    const mid = { az: wrapAz(ui.fx), alt: clampAlt(Math.round(ui.fy)) };
+    if (ui.mode === 'overhang') {
+      let next = h.overhangs;
+      for (const piece of flatOverhang(mid.az - 10, mid.az + 10, mid.alt)) next = replaceOverhangsInRange(next, piece);
+      h.overhangs = next;
+      commit();
+      selectOverhangAt(Math.round(wrapAz(mid.az - 10) * 100) / 100, mid.alt);
+      draw();
+      $('#ed-pos', box).textContent = `overhang added from ${fmt(wrapAz(mid.az - 10))}° to ${fmt(wrapAz(mid.az + 10))}° at ${fmt(mid.alt)}°`;
+      return;
+    }
+    if (h.points.length >= MAX_POINTS) { note(`A horizon has at most ${MAX_POINTS} points.`); return; }
+    const from = h.points[ui.selected];
+    const p = from ? { az: wrapAz(from.az + 5), alt: from.alt } : mid;
+    if (h.points.some((q) => Math.abs(q.az - p.az) < 0.01)) return;
+    h.points = normalizePoints([...h.points, p]);
+    selectAz(Math.round(p.az * 100) / 100);
+    commit();
+    $('#ed-pos', box).textContent = `point added: az ${fmt(p.az)}° ${cardinal(p.az)} · alt ${fmt(p.alt)}°`;
+  }
+
   /** Arrow/Delete keys on overhang edge points (Overhang mode). */
   function overhangKey(ev) {
     const flat = [];
@@ -1833,7 +1807,7 @@ function wireEditor(box, h, onChanged) {
       ui.ohSel = flat[at < 0 ? 0 : (at + (ev.key === 'ArrowRight' ? 1 : flat.length - 1)) % flat.length];
       const p = selectedPoint();
       if (X(frame(), p.az) < MARGIN.l || X(frame(), p.az) > size.w - MARGIN.r) Object.assign(ui, clampView(ui.zoom, p.az, ui.fy));
-      renderSelection(); draw();
+      draw();
       $('#ed-pos', box).textContent = `overhang ${ui.ohSel.i + 1}, point ${ui.ohSel.j + 1}: az ${fmt(p.az)}° ${cardinal(p.az)} · alt ${fmt(p.alt)}°`;
       return;
     }
@@ -1888,8 +1862,8 @@ function wireEditor(box, h, onChanged) {
     commit();
   });
   const setMode = (mode) => { settle(); ui.mode = mode; renderMode(); draw(); };
-  $('#hz-mode-draw', box).addEventListener('click', () => setMode('draw'));
-  $('#hz-mode-overhang', box).addEventListener('click', () => setMode('overhang'));
+  $('#hz-mode-draw', box)?.addEventListener('click', () => setMode('draw'));
+  $('#hz-mode-overhang', box)?.addEventListener('click', () => setMode('overhang'));
 
   $('#hz-name', box).addEventListener('change', (ev) => {
     const name = ev.target.value.trim().slice(0, 80);
@@ -1933,85 +1907,20 @@ function wireEditor(box, h, onChanged) {
     if (h.overhangs.length) note('Exported the skyline. Horizon files have no overhangs, so those stay only in NightSeam and its backups.');
   });
 
-  /* ---- points by numbers ---- */
-  const field = (id) => num($(id, box).value);
-  $('#hz-sel-az', box).addEventListener('change', () => editSelected());
-  $('#hz-sel-alt', box).addEventListener('change', () => editSelected());
-  function editSelected() {
-    const az = field('#hz-sel-az'), alt = field('#hz-sel-alt');
-    if (!selectedPoint() || !Number.isFinite(az) || !Number.isFinite(alt)) { renderSelection(); return; }
-    if (ui.mode === 'overhang') {
-      const { i, j } = ui.ohSel;
-      const a = Math.max(0, Math.min(360, az));
-      h.overhangs = normalizeOverhangs(h.overhangs.map((l, k) => (k === i ? l.map((q, m) => (m === j ? { az: a, alt } : q)) : l)));
-      selectOverhangAt(Math.round(a * 100) / 100, Math.round(Math.max(ALT_MIN, Math.min(ALT_MAX, alt)) * 100) / 100);
-    } else {
-      h.points = normalizePoints([...h.points.filter((_, k) => k !== ui.selected), { az, alt }]);
-      selectAz(Math.round(wrapAz(az) * 100) / 100);
-    }
-    commit();
-  }
-  $('#hz-sel-del', box).addEventListener('click', () => {
-    if (!selectedPoint()) return;
-    if (ui.mode === 'overhang') {
-      const { i, j } = ui.ohSel;
-      h.overhangs = normalizeOverhangs(h.overhangs.map((l, k) => (k === i ? l.filter((_, m) => m !== j) : l)));
-      ui.ohSel = null;
-    } else {
-      h.points = h.points.filter((_, k) => k !== ui.selected);
-      ui.selected = -1;
-    }
-    commit();
-  });
-  $('#hz-oh-add', box).addEventListener('click', () => {
-    const from = field('#hz-oh-from'), to = field('#hz-oh-to'), alt = field('#hz-oh-alt');
-    if (![from, to, alt].every(Number.isFinite)) {
-      note('Enter where the overhang starts and ends (going east; the same direction twice means all the way round) and the altitude of its edge, in degrees.');
-      return;
-    }
-    let next = h.overhangs;
-    for (const piece of flatOverhang(from, to, alt)) next = replaceOverhangsInRange(next, piece);
-    h.overhangs = next;
-    if (ui.mode !== 'overhang') { ui.mode = 'overhang'; renderMode(); }
-    ui.ohSel = null;
-    commit();
-    note(wrapAz(from) === wrapAz(to)
-      ? `Overhang added: the sky above ${fmt(alt)}° is blocked all the way round.`
-      : `Overhang added: the sky above ${fmt(alt)}° is blocked from ${fmt(wrapAz(from))}° to ${fmt(wrapAz(to))}°.`);
-  });
-  $('#hz-add', box).addEventListener('click', () => {
-    const az = field('#hz-add-az'), alt = field('#hz-add-alt');
-    if (!Number.isFinite(az) || !Number.isFinite(alt)) { note('Enter an azimuth and an altitude in degrees.'); return; }
-    if (h.points.length >= MAX_POINTS) { note(`A horizon has at most ${MAX_POINTS} points.`); return; }
-    h.points = normalizePoints([...h.points, { az, alt }]);
-    selectAz(Math.round(wrapAz(az) * 100) / 100);
-    commit();
-  });
-  for (const [id, key] of [['#hz-points-panel', 'points'], ['#hz-display-panel', 'display'], ['#hz-capture-panel', 'capture']]) {
-    const el = $(id, box);
-    el.open = !!ui.openPanels[key];
-    el.addEventListener('toggle', () => { ui.openPanels[key] = el.open; });
-  }
-
-  /* ---- display ---- */
-  $('#hz-grid', box).addEventListener('change', (ev) => { ui.grid = ev.target.checked; draw(); });
-
   /* ---- phone capture ---- */
-  const capStatus = (text) => { const el = $('#hz-cap-status', box); if (el) el.textContent = text; };
-  // Warm the compass while the Phone capture panel is open, so north is ready
+  // Warm the compass while the editor is open on a phone, so north is ready
   // when the capture starts. Leaving the editor (another tab replaces it
   // without telling it) is noticed within 2 s.
   function syncWarm() {
-    const want = cvs.isConnected && $('#hz-capture-panel', box)?.open && captureAvailable();
+    const want = cvs.isConnected && !!$('#hz-cap-start', box) && captureAvailable();
     if (want && !warm) warm = warmCompass();
     if (!want) stopWarm();
   }
-  $('#hz-capture-panel', box).addEventListener('toggle', syncWarm);
   warmTimer = setInterval(syncWarm, 2000);
   syncWarm();
-  $('#hz-cap-start', box).addEventListener('click', () => {
+  $('#hz-cap-start', box)?.addEventListener('click', () => {
     if (capture) return;
-    if (!captureAvailable()) { capStatus('This browser has no camera or motion sensor access. Use a phone or tablet.'); return; }
+    if (!captureAvailable()) { note('This browser has no camera or motion sensor access. Use a phone or tablet.'); return; }
     settle();
     capture = openCapture({
       horizon: () => h,
@@ -2046,7 +1955,7 @@ function wireEditor(box, h, onChanged) {
       onClose: (message) => {
         capture = null;
         if (!cvs.isConnected) return;
-        capStatus(message);
+        if (message) note(message);
         renderPairBanner(box, onChanged);
         draw();
       },
@@ -2057,6 +1966,6 @@ function wireEditor(box, h, onChanged) {
   Object.assign(ui, clampView(ui.zoom, ui.fx, ui.fy));
   resize();
   observer?.observe($('#hz-box', box));
-  renderStatus(); renderSummary(); renderSelection(); renderMode();
+  renderStatus(); renderSummary(); renderMode();
   draw();
 }

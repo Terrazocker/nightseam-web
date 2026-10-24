@@ -197,9 +197,12 @@ def web_pairing_cancel_refuse_expire(c):
         phone.wait_for_selector("#hz-pair-send", timeout=20000)
         c.expect(not phone.is_enabled("#hz-pair-send"), "with no horizon there is nothing to send yet")
         phone.click("#hz-pair-new")
-        phone.wait_for_selector("#hz-capture-panel[open] #hz-cap-start", timeout=5000)
+        phone.wait_for_selector(".cap", timeout=5000)
+        phone.click("#cap-done")
+        phone.wait_for_selector("#hz-cap-start", timeout=5000)
         c.expect(not phone.is_enabled("#hz-pair-send") and phone.is_visible("#hz-pair"),
-                 "New horizon opens the editor with Phone capture; an empty skyline is not sent")
+                 "New horizon opens the camera view; an empty skyline is not sent")
+        c.expect_eq(phone.locator("#hz-pair-start").count(), 0, "a phone does not offer Get from phone")
         phone.locator("#hz-import-file").set_input_files({"name": "roof.hrz", "mimeType": "text/plain",
                                                           "buffer": HORIZON_FILE})
         phone.wait_for_function("() => /roof/.test(document.querySelector('#hz-pair-text').textContent)")
@@ -226,7 +229,7 @@ def web_pairing_cancel_refuse_expire(c):
         replies = sum(1 for op, _ in relay.ops if op == "reply")
         phone.click("#hz-pair-end")
         c.expect_eq(phone.locator("#hz-pair").is_hidden(), True, "Close removes the banner")
-        c.expect_eq(phone.evaluate("() => document.activeElement?.id"), "hz-pair-start", "and focus stays in the list")
+        c.expect_eq(phone.evaluate("() => document.activeElement?.id"), "hz-new-capture", "and focus stays in the list")
         c.expect_eq(sum(1 for op, _ in relay.ops if op == "reply"), replies, "and sends nothing")
     finally:
         ctx.close()

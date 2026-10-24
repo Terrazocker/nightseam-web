@@ -258,6 +258,35 @@ def open_editor(c):
     c.page.wait_for_timeout(250)
 
 
+# JavaScript sees a touch-first device (a phone or tablet): the horizon editor
+# then has its Capture button and is view-only. The page's CSS keeps the
+# viewport's own layout.
+TOUCH_FIRST = """(() => { const mm = window.matchMedia.bind(window);
+  window.matchMedia = (q) => (/pointer:\\s*coarse/.test(q)
+    ? { matches: true, media: q, onchange: null, addListener() {}, removeListener() {},
+        addEventListener() {}, removeEventListener() {}, dispatchEvent() { return false; } }
+    : mm(q)); })();"""
+
+
+def open_capture_editor(c):
+    """A new empty horizon on a touch-first page: Capture with phone opens the
+    camera view at once, which is closed again, leaving the editor with its
+    Capture button, in a viewport tall enough for the whole grid."""
+    c.page.add_init_script(TOUCH_FIRST)
+    c.page.reload(wait_until="domcontentloaded")
+    c.page.wait_for_selector(READY, timeout=60000)
+    tab(c, "horizon")
+    c.page.wait_for_selector("#hz-new-capture", timeout=20000)
+    c.page.click("#hz-new-capture")
+    c.page.wait_for_selector(".cap", timeout=5000)
+    c.page.click("#cap-done")
+    c.page.wait_for_selector(".cap", state="detached", timeout=5000)
+    c.page.wait_for_selector("#hz-cap-start", state="visible", timeout=5000)
+    c.page.set_viewport_size({"width": 1366, "height": 1100})
+    c.page.evaluate("() => window.scrollTo(0, 0)")
+    c.page.wait_for_timeout(250)
+
+
 def canvas_point(c, fx: float, fy: float):
     box = c.page.locator("#hz-canvas").bounding_box()
     c.expect(box and box["width"] > 20, "the horizon canvas must have a size")
@@ -547,12 +576,10 @@ def web_horizon_share_link(c):
     c.page.locator("#hz-import-file").set_input_files({
         "name": "garden.hrz", "mimeType": "text/plain", "buffer": b"0 10\n90 20.5\n180 15\n270 12.25\n"})
     c.page.wait_for_function("() => /Imported 4 points/.test(document.querySelector('#hz-note').textContent)")
-    c.page.locator("#hz-points-panel summary").click()
-    c.page.fill("#hz-oh-from", "100")
-    c.page.fill("#hz-oh-to", "130")
-    c.page.fill("#hz-oh-alt", "45")
-    c.page.click("#hz-oh-add")
-    c.page.wait_for_function("() => /Overhang added/.test(document.querySelector('#hz-note').textContent)")
+    c.page.set_viewport_size({"width": 1366, "height": 1100})
+    c.page.click("#hz-mode-overhang")
+    sketch(c, 0.40, 0.55, 0.30, 0.25)
+    c.expect_eq(len(active_horizon(c)["overhangs"]), 1, "an overhang is drawn")
     original = active_horizon(c)
     count = len(horizon_state(c)["horizons"])
 
@@ -616,20 +643,25 @@ def web_horizon_overhang_blocks_sky(c):
     c.page.locator("#hz-canvas").focus()
     c.page.keyboard.press("ArrowRight")
     c.expect("overhang 1, point 1" in c.page.inner_text("#ed-pos"), "arrow keys walk overhang points")
-    c.page.locator("#hz-points-panel summary").click()
-    c.page.fill("#hz-oh-from", "0")
-    c.page.fill("#hz-oh-to", "0")
-    c.page.fill("#hz-oh-alt", "1")
-    c.page.click("#hz-oh-add")
-    c.page.wait_for_function("() => /Overhang added/.test(document.querySelector('#hz-note').textContent)")
-    tab(c, "tonight")
-    c.page.wait_for_timeout(600)
-    c.expect_eq(c.page.locator(READY).count(), 0, "an overhang edge at 1 deg all the way round leaves nothing usable")
-    tab(c, "horizon")
-    c.page.wait_for_selector("#hz-canvas", timeout=10000)
+    c.page.keyboard.press("Insert")
+    edges = active_horizon(c)["overhangs"]
+    c.expect(any(abs(e[-1]["az"] - e[0]["az"] - 20) < 0.01 for e in edges),
+             f"Insert adds a 20-degree overhang edge from the keyboard: {edges}")
+    c.expect("overhang added" in c.page.inner_text("#ed-pos"), "and says where")
     c.page.click("#ed-undo")
     c.page.wait_for_timeout(200)
     c.expect_eq(len(active_horizon(c)["overhangs"]), 1, "adding the overhang is one undo step")
+    link = c.page.evaluate("""async () => {
+      const core = await import(new URL('core.js', location.href).href);
+      return location.origin + location.pathname + '#horizon=' + core.encodeHorizonLink({ name: 'roof all round',
+        points: [], overhangs: [[{ az: 0, alt: 1 }, { az: 360, alt: 1 }]] }); }""")
+    c.page.evaluate("(u) => { location.href = u; }", link)
+    c.page.wait_for_selector(".ed-confirm [data-ok]", timeout=5000)
+    c.page.click(".ed-confirm [data-ok]")
+    c.page.wait_for_function("() => /Added/.test(document.querySelector('#hz-note').textContent)", timeout=5000)
+    tab(c, "tonight")
+    c.page.wait_for_timeout(600)
+    c.expect_eq(c.page.locator(READY).count(), 0, "an overhang edge at 1 deg all the way round leaves nothing usable")
     c.assert_clean()
 
 
@@ -669,7 +701,7 @@ def web_horizon_capture_compass_restarts(c):
     browser may still be deciding a permission) is started again while north
     is missing, so north is found without closing and reopening the view."""
     boot(c)
-    open_editor(c)
+    open_capture_editor(c)
     c.page.evaluate(CAMERA_STUB)
     cdp = c.page.context.new_cdp_session(c.page)
     cdp.send("Emulation.setSensorOverrideEnabled", {"enabled": True, "type": "relative-orientation"})
@@ -682,8 +714,6 @@ def web_horizon_capture_compass_restarts(c):
         c.page.wait_for_timeout(wait)
 
     rel()
-    if not c.page.locator("#hz-capture-panel").evaluate("el => el.open"):
-        c.page.locator("#hz-capture-panel summary").click()
     c.page.click("#hz-cap-start")
     c.page.wait_for_selector(".cap", timeout=5000)
     for _ in range(20):        # the gyroscope runs; the compass does not
@@ -710,7 +740,7 @@ def web_horizon_capture_shows_what_the_camera_saw(c):
     right after a quick swing lands where the screen still pointed, and the
     readout follows after the delay. The camera-motion worker gets frames."""
     boot(c)
-    open_editor(c)
+    open_capture_editor(c)
     c.page.evaluate(CAMERA_STUB, 300)
     cdp = c.page.context.new_cdp_session(c.page)
     for kind in ("relative-orientation", "absolute-orientation"):
@@ -724,8 +754,6 @@ def web_horizon_capture_shows_what_the_camera_saw(c):
         c.page.wait_for_timeout(wait)
 
     aim(0, 5)
-    if not c.page.locator("#hz-capture-panel").evaluate("el => el.open"):
-        c.page.locator("#hz-capture-panel summary").click()
     c.page.click("#hz-cap-start")
     c.page.wait_for_selector(".cap", timeout=5000)
     for _ in range(120):
@@ -770,34 +798,36 @@ def web_horizon_capture_shows_what_the_camera_saw(c):
 @check("web-horizon-capture-calibration-routine", "web")
 def web_horizon_capture_calibration_routine(c):
     """The overlay's scale is measured still, once per phone: the capture
-    offers a routine when the camera starts (mark a feature, turn it onto a
+    offers a routine once north is set (mark a feature, turn it onto a
     line left of the cross, tilt it onto a line above), keeps the measured
     scale and does not ask again; "Not now" is remembered too. The camera's
     scale read from motion grew with turning speed on a Pixel 7a."""
     import math
     boot(c)
-    open_editor(c)
+    open_capture_editor(c)
     c.page.evaluate(CAMERA_STUB)
     c.page.evaluate("() => localStorage.removeItem('nightseam_capture_cal_v2')")   # a phone never calibrated
     cdp = c.page.context.new_cdp_session(c.page)
     cdp.send("Emulation.setSensorOverrideEnabled", {"enabled": True, "type": "relative-orientation"})
-    cdp.send("Emulation.setSensorOverrideEnabled", {"enabled": False, "type": "absolute-orientation",
-             "metadata": {"available": False}})
+    cdp.send("Emulation.setSensorOverrideEnabled", {"enabled": True, "type": "absolute-orientation"})
 
     def hold(az: float, alt: float, n: int = 9):
-        for _ in range(n):           # still for over 250 ms
-            cdp.send("Emulation.setSensorOverrideReadings", {"type": "relative-orientation",
-                     "reading": {"quaternion": device_quaternion(az, alt)}})
+        for _ in range(n):           # still for over 250 ms; the compass agrees (north at 0)
+            for kind in ("relative-orientation", "absolute-orientation"):
+                cdp.send("Emulation.setSensorOverrideReadings", {"type": kind,
+                         "reading": {"quaternion": device_quaternion(az, alt)}})
             c.page.wait_for_timeout(40)
 
     def open_capture():
-        if not c.page.locator("#hz-capture-panel").evaluate("el => el.open"):
-            c.page.locator("#hz-capture-panel summary").click()
         hold(0, 0, 2)
         c.page.click("#hz-cap-start")
         c.page.wait_for_selector(".cap", timeout=5000)
         c.page.wait_for_function("() => document.querySelector('#cap-video').videoWidth > 0", timeout=5000)
         hold(0, 0, 4)
+        for _ in range(40):          # until the compass has settled and north is set
+            if not c.page.inner_text("#cap-north").startswith("North: finding") and "settling" not in c.page.inner_text("#cap-north"):
+                break
+            hold(0, 0, 5)
 
     def close_capture():
         c.page.keyboard.press("Escape")
@@ -807,8 +837,10 @@ def web_horizon_capture_calibration_routine(c):
     c.page.set_viewport_size({"width": 412, "height": 789})
     open_capture()
     c.page.wait_for_selector("#cap-calib:not([hidden])", timeout=5000)
-    c.expect("once per phone" in c.page.inner_text("#cap-calib-text") and "Step 1 of 3" in c.page.inner_text("#cap-calib-text"),
-             "the first capture offers the routine")
+    c.expect("North is set" in c.page.inner_text("#cap-calib-text") and "once per phone" in c.page.inner_text("#cap-calib-text")
+             and "Step 1 of 3" in c.page.inner_text("#cap-calib-text"),
+             "once north is set, the first capture goes straight on to the routine")
+    c.expect(c.page.locator("#cap-guide circle").count() == 2, "step 1 rings the cross in the sharp SVG guide")
     c.expect(not c.page.locator("#cap-trace").is_visible(), "its panel takes the place of the controls")
 
     k_true = 0.80
@@ -818,6 +850,7 @@ def web_horizon_capture_calibration_routine(c):
     c.page.click("#cap-calib-go")                       # Mark
     axis, px = c.page.evaluate("() => document.querySelector('.cap').dataset.guide").split(":")
     c.expect_eq(axis, "x", "then a line left of the cross")
+    c.expect("Turn right" in (c.page.text_content("#cap-guide") or ""), "the guide says which way to turn")
     side = math.degrees(math.atan(int(px) / (k_true * shown)))
     hold(-side, 0)                                      # turned left: the feature is right of the cross
     c.page.click("#cap-calib-go")
@@ -866,10 +899,8 @@ def web_horizon_capture_mobile_layout(c):
     at least 44 px, and Start tracing in the middle of the bottom row, held
     upright (412x813, the Pixel 7a) and sideways."""
     boot(c)
-    open_editor(c)
+    open_capture_editor(c)
     c.page.evaluate(CAMERA_STUB)
-    if not c.page.locator("#hz-capture-panel").evaluate("el => el.open"):
-        c.page.locator("#hz-capture-panel summary").click()
     measure = """() => {
       const r = (s) => document.querySelector(s).getBoundingClientRect();
       const cross = r('.cap-cross'), top = r('.cap-top'), bottom = r('.cap-bottom'), trace = r('#cap-trace');
@@ -925,10 +956,8 @@ def web_horizon_capture_sharper_motion(c):
     it asks for 1/60 s with the sensitivity raised by the same factor (the
     same light), and turning it off gives the exposure back to the camera."""
     boot(c)
-    open_editor(c)
+    open_capture_editor(c)
     c.page.evaluate(CAMERA_STUB)
-    if not c.page.locator("#hz-capture-panel").evaluate("el => el.open"):
-        c.page.locator("#hz-capture-panel summary").click()
     c.page.click("#hz-cap-start")
     c.page.wait_for_selector(".cap", timeout=5000)
     c.page.wait_for_function("() => document.querySelector('#cap-video').srcObject", timeout=5000)
@@ -972,7 +1001,7 @@ def web_horizon_capture_references_and_loop(c):
     removes the gyroscope's drift in proportion to the angle turned, and a
     miss larger than drift is kept as traced."""
     boot(c)
-    open_editor(c)
+    open_capture_editor(c)
     c.page.evaluate(CAMERA_STUB)
     cdp = c.page.context.new_cdp_session(c.page)
     cdp.send("Emulation.setSensorOverrideEnabled", {"enabled": True, "type": "relative-orientation"})
@@ -985,8 +1014,6 @@ def web_horizon_capture_references_and_loop(c):
         c.page.wait_for_timeout(wait)
 
     rel(0, 5)
-    if not c.page.locator("#hz-capture-panel").evaluate("el => el.open"):
-        c.page.locator("#hz-capture-panel summary").click()
     c.page.set_viewport_size({"width": 412, "height": 789})   # the Pixel 7a's screen in CSS pixels
     c.page.click("#hz-cap-start")
     c.page.wait_for_selector(".cap", timeout=5000)
@@ -1072,11 +1099,11 @@ def web_horizon_capture_references_and_loop(c):
 
 @check("web-horizon-capture-compass-prewarm", "web")
 def web_horizon_capture_compass_prewarm(c):
-    """A compass that has just started needs about 10 s to settle, so the
-    editor keeps it running at a low rate while the Phone capture panel is
-    open, and stops it when the panel closes or the Horizon tab is left."""
+    """A compass that has just started needs about 10 s to settle, so a
+    phone's editor keeps it running at a low rate while it is open, and stops
+    it when the Horizon tab is left."""
     boot(c)
-    open_editor(c)
+    open_capture_editor(c)
     c.page.evaluate("""() => {
       window.__warm = [];
       window.AbsoluteOrientationSensor = class {
@@ -1086,23 +1113,18 @@ def web_horizon_capture_compass_prewarm(c):
         stop() { __warm.push('stop'); }
       };
     }""")
-    panel = c.page.locator("#hz-capture-panel")
-    if panel.evaluate("el => el.open"):
-        c.page.locator("#hz-capture-panel summary").click()   # start from a closed panel
-        c.page.wait_for_timeout(100)
+    # the editor started the browser's own compass before the stub; it starts afresh
+    tab(c, "tonight")
+    c.page.wait_for_timeout(2500)
     c.page.evaluate("() => { window.__warm.length = 0; }")
-    c.page.locator("#hz-capture-panel summary").click()
+    tab(c, "horizon")
     c.page.wait_for_function("() => window.__warm.includes('start')", timeout=4000)
     c.expect_eq(c.page.evaluate("() => window.__warm.slice(0, 2)"), ["new 10", "start"],
-                "opening the panel starts the compass at 10 readings a second")
-    c.page.locator("#hz-capture-panel summary").click()
-    c.page.wait_for_function("() => window.__warm.includes('stop')", timeout=4000)
-    c.page.locator("#hz-capture-panel summary").click()
-    c.page.wait_for_function("() => window.__warm.filter((x) => x === 'start').length === 2", timeout=4000)
+                "the phone's editor starts the compass at 10 readings a second")
     tab(c, "tonight")
-    c.page.wait_for_function("() => window.__warm.filter((x) => x === 'stop').length === 2", timeout=5000)
+    c.page.wait_for_function("() => window.__warm.includes('stop')", timeout=5000)
     c.page.wait_for_timeout(2500)
-    c.expect_eq(c.page.evaluate("() => window.__warm.filter((x) => x === 'start').length"), 2,
+    c.expect_eq(c.page.evaluate("() => window.__warm.filter((x) => x === 'start').length"), 1,
                 "and nothing starts it again once the editor is gone")
     c.assert_clean()
 
@@ -1114,7 +1136,7 @@ def web_horizon_capture_north_waits_for_compass(c):
     off). North is set only once compass and gyroscope agree steadily, from
     the settled value."""
     boot(c)
-    open_editor(c)
+    open_capture_editor(c)
     c.page.evaluate(CAMERA_STUB)
     cdp = c.page.context.new_cdp_session(c.page)
     for kind in ("relative-orientation", "absolute-orientation"):
@@ -1128,8 +1150,6 @@ def web_horizon_capture_north_waits_for_compass(c):
         c.page.wait_for_timeout(wait)
 
     feed(74)
-    if not c.page.locator("#hz-capture-panel").evaluate("el => el.open"):
-        c.page.locator("#hz-capture-panel summary").click()
     c.page.click("#hz-cap-start")
     c.page.wait_for_selector(".cap", timeout=5000)
     start = time.time()
@@ -1161,7 +1181,7 @@ def web_horizon_phone_capture(c):
     undo step; the video is shown and its tracks end on close. Chrome's
     virtual sensors stand in for the phone and a canvas stream for the camera."""
     boot(c)
-    open_editor(c)
+    open_capture_editor(c)
     c.page.evaluate(CAMERA_STUB)
     cdp = c.page.context.new_cdp_session(c.page)
     for kind in ("relative-orientation", "absolute-orientation"):
@@ -1176,8 +1196,6 @@ def web_horizon_phone_capture(c):
         c.page.wait_for_timeout(wait)
 
     aim(0, 5)
-    if not c.page.locator("#hz-capture-panel").evaluate("el => el.open"):
-        c.page.locator("#hz-capture-panel summary").click()
     c.page.click("#hz-cap-start")
     c.page.wait_for_selector(".cap", timeout=5000)
     for _ in range(80):   # readings until the steady compass sets north (3 s window)
@@ -1274,8 +1292,8 @@ def web_horizon_phone_capture(c):
     c.expect(c.page.evaluate("() => window.__capStream.getTracks().every((t) => t.readyState === 'ended')"),
              "closing the view stops the camera")
     c.expect_eq(c.page.evaluate("() => getComputedStyle(document.documentElement).overscrollBehaviorY + '/' + getComputedStyle(document.body).overscrollBehaviorY"), "auto/auto", "and the page scrolls as before")
-    c.expect("Add point" not in c.page.inner_text("#hz-cap-status") and c.page.inner_text("#hz-cap-status").strip(),
-             "the editor shows the last capture message")
+    c.expect("Add point" not in c.page.inner_text("#hz-note") and "traced" in c.page.inner_text("#hz-note"),
+             f"the editor shows the last capture message: {c.page.inner_text('#hz-note')!r}")
     c.expect(c.page.evaluate("() => document.activeElement?.id") == "hz-cap-start", "focus returns to the capture button")
     c.assert_clean()
 
@@ -1710,16 +1728,16 @@ def web_accessibility_essentials(c):
     c.page.click("#hz-new-draw")
     c.page.wait_for_selector("#hz-canvas[aria-describedby='hz-summary hz-keys']")
     c.expect(c.page.inner_text("#hz-summary"), "the web horizon editor needs a text alternative")
-    # keyboard-only editing: add a point by numbers, then select and move it
-    c.page.locator("#hz-points-panel summary").click()
-    c.page.fill("#hz-add-az", "180")
-    c.page.fill("#hz-add-alt", "12")
-    c.page.click("#hz-add")
+    # keyboard-only editing: add a point with Insert, then select and move it
     c.page.locator("#hz-canvas").focus()
+    c.page.keyboard.press("Insert")
+    c.expect("point added" in c.page.inner_text("#ed-pos"), "Insert adds a point and says where")
+    c.page.keyboard.press("Escape")
     c.page.keyboard.press("ArrowRight")
     c.expect("point 1 of 1" in c.page.inner_text("#ed-pos"), "arrow keys select points and say which")
+    before = active_horizon(c)["points"][0]["alt"]
     c.page.keyboard.press("ArrowUp")
-    c.expect_eq(c.page.locator("#hz-sel-alt").input_value(), "12.5", "Up raises the selected point")
+    c.expect_eq(active_horizon(c)["points"][0]["alt"], before + 0.5, "Up raises the selected point")
     c.page.keyboard.press("Delete")
     c.expect("nothing is blocked" in c.page.inner_text("#hz-summary"), "Delete removes the selected point")
     c.assert_clean()

@@ -102,6 +102,14 @@ editor", "Capture horizons with the phone's sensors"); plans:
   more than 1440 distinct points are thinned to the limit and the import note
   says so (`thinned`). `formatHorizonFile` writes them. Overhangs have no
   place in those formats and stay in NightSeam and its backups.
+- **Editor controls (October 24, 2026).** No settings rail: *Points by
+  numbers*, *Phone capture* and *Display* are gone and the grid always
+  draws. On the keyboard, Insert or + adds a point 5 deg after the selected
+  one (else in the middle of the view; `addByKey`) or, in Overhang mode, a
+  flat 20-deg edge in the middle of the view; the arrows then place it. On
+  touch-first devices (`touchFirst`, `pointer: coarse`) the canvas only pans,
+  the mode buttons are not rendered, the head has *Capture* (`#hz-cap-start`)
+  and the start actions are *Capture with phone* and *Import file*.
 - **Phone capture** (`web/capture.js`). A full-screen view over the page:
   the rear camera (`getUserMedia`, only shown, never recorded or stored;
   closing stops its tracks), a crosshair, an overview strip of the whole
@@ -128,11 +136,11 @@ editor", "Capture horizons with the phone's sensors"); plans:
   controls: three steps and *Start the sensors* (inside the tap: the motion
   permission request and a full restart, then 3 s of waiting again) or
   *Not now* for the rest of the capture. Without a relative source for a second the compass gives the
-  shape too. While the editor's *Phone capture* panel is open,
+  shape too. While a phone's editor is open (it has the *Capture* button),
   `warmCompass` keeps an `AbsoluteOrientationSensor` running at 10 Hz (the
   browser shares one compass between its users), so a capture usually opens
-  on a settled compass; it stops when the panel closes or, within 2 s, when
-  another tab replaces the editor. The north panel's compass line under
+  on a settled compass; it stops within 2 s when another tab replaces the
+  editor. The north panel's compass line under
   *Details* (`compassDiag`) says how many compass readings arrive, whether it is
   settling and by how much, and how often it was restarted.
 - **North references.** *North…* opens a panel: put the crosshair on the
@@ -183,7 +191,12 @@ editor", "Capture horizons with the phone's sensors"); plans:
   still test put it at about 0.88.
 - **Calibration routine.** The scale is measured still, once per phone. The
   first capture with a camera image offers it in the bottom panel (*Start* /
-  *Not now*); *North… › Details › Line up the drawing* starts it again.
+  *Not now*) as soon as north is set and no other panel is open (`render`,
+  `calOffered`), so the compass step leads straight into it; *North… ›
+  Details › Line up the drawing* starts it again. The guide over the video
+  is an SVG layer (`renderGuide`, rebuilt only when the step, the size or
+  the wrong-way state changes), sharp where the overlay canvas is capped at
+  1.5x.
   *Start* keeps the orientation with the cross on a sharp feature; a guide
   line is then drawn 36% of the view's width left of the cross, the user
   turns until the feature sits on it and taps *It's on the line*; then a line

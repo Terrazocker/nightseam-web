@@ -65,7 +65,8 @@ planner, so the first check really is a first open.
     open the capture and answer the camera prompt. Target: the readout
     finds north without reopening the view; if the sensors stay silent for
     3 s, the sensor panel shows its three steps, and *Start the sensors*
-    plus a figure eight brings the readings.
+    with the phone held still brings the readings. Once north is set, the
+    drawing's calibration follows at once (*North is set. Next, …*).
 12. **Calibration guide.** Run *Line up the drawing*. Target: step 1 rings
     the cross; step 2 shows *Turn right* with an arrow, a dashed arrow
     towards the amber line and *Stop when your object is on this line*;
@@ -120,7 +121,10 @@ On the intended touch or pen device, sketch slowly and quickly, drag a point,
 interrupt a drag, zoom and pan, and draw an overhang edge. Each gesture should
 be one undo step.
 
+On a phone the grid is view-only: dragging pans, tapping adds nothing, and
+*Capture* in the editor head is the way to add to the skyline.
+
 With keyboard and the intended screen reader: create a horizon, add points
-through *Points by numbers*, select and move them with the arrow keys, delete
+with Insert, select and move them with the arrow keys, delete
 one, undo and redo. Check that focus, the save status and the skyline summary
 are announced and understandable.

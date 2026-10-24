@@ -398,6 +398,7 @@ export function openCapture({ horizon, onLine, onPoint, onUndo, canUndo, onClose
   el.innerHTML = `
     <video class="cap-video" id="cap-video" autoplay playsinline muted aria-hidden="true"></video>
     <canvas class="cap-ar" id="cap-ar" aria-hidden="true"></canvas>
+    <svg class="cap-guide" id="cap-guide" aria-hidden="true"></svg>
     <div class="cap-cross" aria-hidden="true"></div>
     <div class="cap-top">
       <h3 id="cap-title" class="visually-hidden">Capture the horizon with the camera</h3>
@@ -416,7 +417,7 @@ export function openCapture({ horizon, onLine, onPoint, onUndo, canUndo, onClose
         <ol class="cap-steps">
           <li>If the browser asks for camera or motion access, allow it.</li>
           <li>Hold the phone upright and tap <b>Start the sensors</b>.</li>
-          <li>Move it slowly in a figure eight for a few seconds: that wakes the compass.</li>
+          <li>Keep it still for a few seconds while the compass settles.</li>
         </ol>
         <p class="cap-small" id="cap-wake-more">Still nothing after that? Tap Done and open the capture again.</p>
         <div class="cap-row cap-pair">
@@ -506,6 +507,7 @@ export function openCapture({ horizon, onLine, onPoint, onUndo, canUndo, onClose
   let tooFast = false;       // tracing faster than SPEED_FAST, until below SPEED_OK
   let calib = null;          // the calibration routine: { step: 'mark' | 'side' | 'up', offered, q1, kSide }
   let calWrongWay = false;   // the calibration's object moved away from its line
+  let calOffered = false;    // the routine was offered in this capture
   const lastRead = { at: 0, dir: false };
   const started = now();
   // The sensor panel: shown when the sensors give nothing for a while; each
@@ -626,6 +628,14 @@ export function openCapture({ horizon, onLine, onPoint, onUndo, canUndo, onClose
     for (const b of el.querySelectorAll('.cap-modes .btn')) b.disabled = busy;
     drawStrip(p);
     drawAR();
+    renderGuide();
+    // First use: once north is set, the drawing is lined up with the camera
+    // next, before anything else is traced.
+    if (!calOffered && stream && !cal.scaleMeasured && !cal.asked && !calib && !trace && !pending
+        && !refOpen && !waking && st.offset != null) {
+      calOffered = true;
+      queueMicrotask(() => { if (!closed) startCalib(true); });
+    }
     // Keep the "no readings" messages coming without a reading to trigger them.
     if (!p && age < 2 * SENSOR_WAIT_MS + 500) setTimeout(schedule, 250);
   }
@@ -720,7 +730,7 @@ export function openCapture({ horizon, onLine, onPoint, onUndo, canUndo, onClose
     // Turned the other way by about a degree: the object moves away from the line.
     calWrongWay = off != null && off < -0.02;
     const text = {
-      mark: `${calib.offered ? 'Line up the drawing with this camera, once per phone (about 20 s). ' : ''}`
+      mark: `${calib.offered ? 'North is set. Next, line up the drawing with this camera, once per phone (about 20 s). ' : ''}`
         + 'Step 1 of 3: aim the cross at a pole or roof corner far away, hold still and tap Start.',
       side: calWrongWay
         ? 'Step 2 of 3: other way. Turn right, so the object you marked moves left towards the amber line.'
@@ -892,20 +902,6 @@ export function openCapture({ horizon, onLine, onPoint, onUndo, canUndo, onClose
     if (!ctx) return;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, W, Hh);
-    const g = guide();
-    if (g) {   // the calibration's guide line, outlined so it shows on any scene
-      const VG = vizTheme();
-      for (const [colour, width] of [[VG.canvas, 5], [VG.warn, 2]]) {
-        ctx.strokeStyle = colour;
-        ctx.lineWidth = width;
-        ctx.beginPath();
-        if (g.axis === 'x') { ctx.moveTo(W / 2 - g.px, 0); ctx.lineTo(W / 2 - g.px, Hh); } else { ctx.moveTo(0, Hh / 2 - g.px); ctx.lineTo(W, Hh / 2 - g.px); }
-        ctx.stroke();
-      }
-      drawCalibGuide(ctx, g, W, Hh, VG);
-    } else if (calib && calib.step === 'mark') {
-      drawCalibMark(ctx, W, Hh, vizTheme());
-    }
     const st = sensors.state, here = calmView(), q0 = sensors.qAt(shownAt(), true);
     if (!q0 || !here) return;
     // Focal length in CSS pixels: the video covers the view (object-fit: cover),
@@ -1028,77 +1024,61 @@ export function openCapture({ horizon, onLine, onPoint, onUndo, canUndo, onClose
     }
   }
 
+  /* ---- the calibration's guide, drawn as SVG so lines and words stay sharp
+     on high-density screens (the overlay canvas is capped at 1.5x) ---- */
+  let guideKey = '';
+
   /** Words over the video, outlined so they read on any scene. */
-  function label(ctx, text, x, y, align, colour, VG) {
-    ctx.font = '600 14px system-ui, sans-serif';
-    ctx.textAlign = align;
-    ctx.textBaseline = 'middle';
-    ctx.lineJoin = 'round';
-    ctx.strokeStyle = VG.canvas;
-    ctx.lineWidth = 4;
-    ctx.strokeText(text, x, y);
-    ctx.fillStyle = colour;
-    ctx.fillText(text, x, y);
-  }
+  const svgLabel = (text, x, y, anchor, colour, VG) => `<text x="${x}" y="${y}" text-anchor="${anchor}" `
+    + `dominant-baseline="middle" fill="${colour}" stroke="${VG.canvas}" stroke-width="4" stroke-linejoin="round" `
+    + `paint-order="stroke">${text}</text>`;
 
   /** An outlined arrow from (x1, y1) to (x2, y2); `dash` for a dashed shaft. */
-  function arrow(ctx, x1, y1, x2, y2, colour, VG, dash = false) {
+  function svgArrow(x1, y1, x2, y2, colour, VG, dash = false) {
     const a = Math.atan2(y2 - y1, x2 - x1), head = 12;
-    const path = () => {
-      ctx.beginPath();
-      ctx.moveTo(x1, y1);
-      ctx.lineTo(x2, y2);
-      ctx.moveTo(x2 - head * Math.cos(a - 0.5), y2 - head * Math.sin(a - 0.5));
-      ctx.lineTo(x2, y2);
-      ctx.lineTo(x2 - head * Math.cos(a + 0.5), y2 - head * Math.sin(a + 0.5));
-    };
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
-    for (const [c, w] of [[VG.canvas, 6], [colour, 3]]) {
-      ctx.setLineDash(dash && c === colour ? [7, 6] : []);
-      ctx.strokeStyle = c;
-      ctx.lineWidth = w;
-      path();
-      ctx.stroke();
-    }
-    ctx.setLineDash([]);
-    ctx.lineCap = 'butt';
+    const hx = (d) => (x2 - head * Math.cos(a + d)).toFixed(1), hy = (d) => (y2 - head * Math.sin(a + d)).toFixed(1);
+    const shaft = `M${x1} ${y1}L${x2} ${y2}`, tip = `M${hx(-0.5)} ${hy(-0.5)}L${x2} ${y2}L${hx(0.5)} ${hy(0.5)}`;
+    return `<path d="${shaft}${tip}" stroke="${VG.canvas}" stroke-width="6"/>`
+      + `<path d="${shaft}" stroke="${colour}" stroke-width="3"${dash ? ' stroke-dasharray="7 6"' : ''}/>`
+      + `<path d="${tip}" stroke="${colour}" stroke-width="3"/>`;
   }
 
-  /** Step 1: a ring round the cross for the object to aim at. */
-  function drawCalibMark(ctx, W, Hh, VG) {
-    for (const [c, w] of [[VG.canvas, 5], [VG.warn, 2]]) {
-      ctx.strokeStyle = c;
-      ctx.lineWidth = w;
-      ctx.beginPath();
-      ctx.arc(W / 2, Hh / 2, 26, 0, Math.PI * 2);
-      ctx.stroke();
-    }
-    label(ctx, 'Put a far pole or corner here', W / 2, Hh / 2 + 46, 'center', VG.text, VG);
-  }
-
-  /** Steps 2 and 3: which way to move the phone (a solid arrow), where the
-   *  marked object travels on the screen (a dashed arrow from the cross to
-   *  the line) and what to do at the line. */
-  function drawCalibGuide(ctx, g, W, Hh, VG) {
-    const cx = W / 2, cy = Hh / 2, turnColour = calWrongWay ? VG.warn : VG.text;
-    if (g.axis === 'x') {
-      const lx = cx - g.px;
-      arrow(ctx, cx - 18, cy, lx + 10, cy, VG.warn, VG, true);
-      const reach = Math.min(g.px, W / 2 - 24);
-      arrow(ctx, cx + 22, cy + 34, cx + reach, cy + 34, turnColour, VG);
-      label(ctx, calWrongWay ? 'Other way: turn right' : 'Turn right', cx + 22, cy + 58, 'left', turnColour, VG);
-      label(ctx, 'Stop when your', lx + 8, cy - 70, 'left', VG.warn, VG);
-      label(ctx, 'object is on this line', lx + 8, cy - 52, 'left', VG.warn, VG);
+  /** Step 1 rings the cross; steps 2 and 3 draw the amber line, which way to
+   *  move the phone (a solid arrow), where the marked object travels on the
+   *  screen (a dashed arrow from the cross to the line) and what to do at the
+   *  line. Rebuilt only when something in it changes. */
+  function renderGuide() {
+    const svg = $('#cap-guide');
+    const W = el.clientWidth, Hh = el.clientHeight, g = guide();
+    const key = calib ? `${calib.step}:${W}:${Hh}:${g ? g.px : ''}:${calWrongWay}` : '';
+    if (key === guideKey) return;
+    guideKey = key;
+    if (!calib || !W || !Hh) { svg.innerHTML = ''; return; }
+    const VG = vizTheme(), cx = W / 2, cy = Hh / 2, turn = calWrongWay ? VG.warn : VG.text;
+    let out = '';
+    if (!g) {
+      out = `<circle cx="${cx}" cy="${cy}" r="26" stroke="${VG.canvas}" stroke-width="5"/>`
+        + `<circle cx="${cx}" cy="${cy}" r="26" stroke="${VG.warn}" stroke-width="2"/>`
+        + svgLabel('Put a far pole or corner here', cx, cy + 48, 'middle', VG.text, VG);
+    } else if (g.axis === 'x') {
+      const lx = cx - g.px, reach = Math.min(g.px, W / 2 - 24);
+      out = `<path d="M${lx} 0V${Hh}" stroke="${VG.canvas}" stroke-width="5"/><path d="M${lx} 0V${Hh}" stroke="${VG.warn}" stroke-width="2"/>`
+        + svgArrow(cx - 18, cy, lx + 10, cy, VG.warn, VG, true)
+        + svgArrow(cx + 22, cy + 34, cx + reach, cy + 34, turn, VG)
+        + svgLabel(calWrongWay ? 'Other way: turn right' : 'Turn right', cx + 22, cy + 60, 'start', turn, VG)
+        + svgLabel('Stop when your', lx + 8, cy - 72, 'start', VG.warn, VG)
+        + svgLabel('object is on this line', lx + 8, cy - 52, 'start', VG.warn, VG);
     } else {
-      const ly = cy - g.px;
-      arrow(ctx, cx, cy - 18, cx, ly + 10, VG.warn, VG, true);
       // short: the bottom panel covers the lower part of the view
-      const reach = Math.min(g.px, 90);
-      arrow(ctx, cx + 34, cy + 22, cx + 34, cy + reach, turnColour, VG);
-      label(ctx, calWrongWay ? 'Other way: tilt down' : 'Tilt down', cx + 48, cy + 22 + reach / 2, 'left', turnColour, VG);
-      label(ctx, 'Stop when your object is on this line', cx, ly - 16, 'center', VG.warn, VG);
+      const ly = cy - g.px, reach = Math.min(g.px, 90);
+      out = `<path d="M0 ${ly}H${W}" stroke="${VG.canvas}" stroke-width="5"/><path d="M0 ${ly}H${W}" stroke="${VG.warn}" stroke-width="2"/>`
+        + svgArrow(cx, cy - 18, cx, ly + 10, VG.warn, VG, true)
+        + svgArrow(cx + 34, cy + 22, cx + 34, cy + reach, turn, VG)
+        + svgLabel(calWrongWay ? 'Other way: tilt down' : 'Tilt down', cx + 48, cy + 22 + reach / 2, 'start', turn, VG)
+        + svgLabel('Stop when your object is on this line', cx, ly - 18, 'middle', VG.warn, VG);
     }
+    svg.setAttribute('viewBox', `0 0 ${W} ${Hh}`);
+    svg.innerHTML = out;
   }
 
   /* ---- tracing ---- */
@@ -1221,7 +1201,7 @@ export function openCapture({ horizon, onLine, onPoint, onUndo, canUndo, onClose
       else if (answer === 'denied' && !sensors.state.rel) status('Motion access was refused, so the capture cannot follow the phone.');
     });
     sensors.restart();
-    status('Starting the sensors: hold the phone upright and move it slowly in a figure eight.');
+    status('Starting the sensors: hold the phone upright and still.');
     render();
     (traceBtn.disabled ? $('#cap-done') : traceBtn).focus();
   });
@@ -1348,8 +1328,7 @@ export function openCapture({ horizon, onLine, onPoint, onUndo, canUndo, onClose
       wakeSensors();   // sensors started under the camera prompt may be silent
       startMotion();
       offerExposure();
-      // Offer the calibration routine once per phone, where there is an image.
-      if (!cal.scaleMeasured && !cal.asked && !refOpen) startCalib(true);
+      // The calibration routine is offered once north is set (render()).
     } catch (error) {
       el.classList.add('cap-no-video');
       status(`No camera (${error && error.name ? error.name : 'unknown reason'}): aim with the back of the phone.`);

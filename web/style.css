@@ -893,6 +893,9 @@ input.night-scrub::-moz-range-thumb { width: 13px; height: 13px; border: 1px sol
 .cap-video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
 .cap-no-video .cap-video { display: none; }
 .cap-ar { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.cap-guide { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; }
+.cap-guide :is(path, circle) { fill: none; stroke-linecap: round; stroke-linejoin: round; }
+.cap-guide text { font: 600 15px system-ui, sans-serif; }
 .cap-cross { position: absolute; left: 50%; top: 50%; width: 72px; height: 72px; margin: -36px 0 0 -36px; pointer-events: none; }
 .cap-cross::before, .cap-cross::after { content: ""; position: absolute; background: var(--txt); box-shadow: 0 0 0 1px var(--bg); }
 .cap-cross::before { left: 35px; top: 0; width: 2px; height: 72px; }
