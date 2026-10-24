@@ -5,7 +5,7 @@ Current authority, October 11, 2026. The owner reset the public website series t
 Git tags and historical CURATED summaries remain evidence and do not restore old
 public entries. The catalog's source, tags and packages are independent.
 
-v0.8.0 is released and deployed (October 24, 2026), after v0.7.0 (October 19),
+v0.8.1 is released and deployed (October 24, 2026), after v0.8.0 (the same day), v0.7.0 (October 19),
 v0.1.1 (October 8) and the initial v0.1.0 (October 7). RELEASES.md records exact acceptance
 and cleanup. Inherited tags occupy 0.1.5 through 0.6.36, so release names
 continue above every existing tag (owner decision, October 11, 2026); pre_tag_check.py refuses a

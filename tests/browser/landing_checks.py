@@ -26,7 +26,7 @@ def landing_server(c):
 def assert_history(c):
     page = c.page
     records = json.loads((ROOT / "landing/changelog.json").read_text(encoding="utf-8"))
-    c.expect_eq([entry["version"] for entry in records], ["0.8.0", "0.7.0", "0.1.1", "0.1.0"],
+    c.expect_eq([entry["version"] for entry in records], ["0.8.1", "0.8.0", "0.7.0", "0.1.1", "0.1.0"],
                 "the independent ledger keeps the new release and fresh 0.1.0 start")
     c.expect_eq(page.locator("#clList article.release-entry").count(), len(records))
     c.expect_eq(page.locator(".release-archive").count(), 0,
