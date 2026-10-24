@@ -30,11 +30,44 @@ PUBLIC_RELEASES = [{"version": "0.8.0", "date": "2026-10-24"},
 
 CURATED = {
     # Released 2026-10-24.
-    "0.8.0": "NightSeam has a layout of its own on phones: a bottom tab bar with the time slider pinned above it, your site, rig and minimum altitude in a setup sheet behind the header's summary line, and target details that open as a bottom sheet. A red night-vision display keeps your eyes dark-adapted, and the planner can be added to the home screen and reopened offline after one visit. Horizons now move from phone to computer without a link: the computer shows a QR code, the phone captures the skyline and sends it back, encrypted in the browser so the server only ever holds data it cannot read, for ten minutes. A horizon made in the planner also gets a short code like K7Q-4MX for 24 hours, which another device can type in. The horizon editor is leaner: on phones it shows the skyline and captures it, on a computer Insert adds points from the keyboard, and the capture's calibration guide is sharper and offered right after north is set. With no target open, Sky View lists what is up at the selected time; Tonight is centred on wide screens. The weather names the night it rates, gives one score that its Good, Fair or Poor label agrees with, colours the rain warning by rain alone and says when a night lies outside the forecast. Catalog designations, altitude-chart time labels and twilight times in the night brief no longer run together.",
+    "0.8.0": [
+        'Phone layout: bottom tabs, a pinned time slider, a setup sheet and target details as a bottom sheet.',
+        'Red night-vision mode.',
+        'Installs to the home screen and reopens offline after one visit.',
+        'Send a horizon from phone to computer with a QR code, end-to-end encrypted.',
+        'Horizon codes: type a short code on another device to fetch a horizon for 24 hours.',
+        'Leaner horizon editor; Insert adds points from the keyboard.',
+        'Sharper calibration guide, offered right after north is set.',
+        'Sky View lists what is up when no target is open.',
+        'Tonight is centred on wide screens.',
+        'Weather: one score that matches its Good, Fair or Poor label, named nights, and a rain warning coloured by rain alone.',
+        'Fixed: catalog designations, chart time labels and twilight times no longer run together.',
+    ],
     # Released 2026-10-19.
-    "0.7.0": "A new horizon editor. Draw your skyline on a compass grid, or capture it with your phone: aim the camera along treetops and roofs while the phone's motion sensors record the line, with north from the compass, the Moon or a landmark. Mark balconies and roof edges that block the sky above, and send a horizon to another device with a share link. Horizons can be imported and exported as text files from Stellarium and N.I.N.A. Horizons saved by 0.1.x are not carried over, so redraw yours once; backups still restore sites, rigs, targets and settings. Sunset and sunrise now match the times weather apps show, and twilight is checked against published U.S. Naval Observatory tables, including the very short nights of high-latitude summers. An object's details describe the coming night. Unknown time zones are refused when you enter them, keyboard focus stays on the target you were reading when Tonight refreshes, cached object photos stay under 25 MB, and with reduced motion turned on, transitions are switched off.",
-    "0.1.1": "A clearer planning workspace: open the planner from any public page, edit Site and Rig directly from the top bar, and filter object types with simple checkboxes. The Catalog tab shows 50 objects per page with clearer visibility conditions. Sky View has a wider time slider, twilight colors and smoother one-minute scrubbing. Tonight is simpler, and Horizon tools stay readable while you scroll. Filter advice and precise horizon editing explain what each setting does.",
-    "0.1.0": "NightSeam starts anew as an independent browser planner. Bring your own panorama and calculate when deep-sky targets clear your skyline, with planning data saved in your browser. NightSeam is now a browser-only planner with its own version history.",
+    "0.7.0": [
+        'New horizon editor: draw your skyline on a compass grid.',
+        'Capture your skyline with your phone’s camera and motion sensors, with north from the compass, the Moon or a landmark.',
+        'Mark balconies and roof edges that block the sky above.',
+        'Send a horizon to another device with a share link.',
+        'Import and export Stellarium and N.I.N.A. horizon files.',
+        'Sunset and sunrise match weather apps; twilight is checked against U.S. Naval Observatory tables.',
+        'Target details describe the coming night.',
+        'Horizons from 0.1.x are not carried over: redraw yours once. Backups still restore everything else.',
+        'Fixed: unknown time zones are refused, keyboard focus stays put when Tonight refreshes, the photo cache stays under 25 MB, and reduced motion switches transitions off.',
+    ],
+    "0.1.1": [
+        'Open the planner from every public page.',
+        'Edit Site and Rig directly from the top bar.',
+        'Filter object types with checkboxes.',
+        'Catalog shows 50 objects per page with clearer visibility conditions.',
+        'Sky View: wider time slider, twilight colours and one-minute scrubbing.',
+        'Simpler Tonight; Horizon tools stay readable while you scroll.',
+    ],
+    "0.1.0": [
+        'NightSeam restarts as an independent browser planner.',
+        'Plan deep-sky targets around your own skyline.',
+        'Planning data stays in your browser.',
+    ],
     # Curate before tagging; a tag does not establish public deployment.
     "0.6.36": "Website packaging fix: catalog metadata keeps identical bytes on Windows checkouts, so release integrity checks remain reproducible. Planner behavior is unchanged from 0.6.35.",
     "0.6.35": "The website and Windows image catalog are now independent projects. The browser planner uses Workbench, with improved layout and weather controls. Experimental modeled sky brightness has been removed. Existing sites, equipment, panoramas and browser backups are preserved.",
@@ -205,7 +238,9 @@ def has_summary(curated: dict, version: str) -> bool:
     passed `pre_tag_check.py`, passed `check_release.py` and reported `--check`
     OK, while the generated `landing/changelog.json` silently omitted the shipped
     release. ONE predicate now decides both."""
-    return bool(str(curated.get(version) or "").strip())
+    value = curated.get(version)
+    items = value if isinstance(value, list) else [value]
+    return bool(items) and all(str(item or "").strip() for item in items)
 
 
 def split_uncurated(tags, curated):
@@ -268,11 +303,13 @@ def render_entry(entry):
     """Release content is escaped text, never executable markup."""
     ver = html.escape(str(entry["version"]), quote=True)
     date = html.escape(str(entry.get("date") or ""), quote=True)
-    notes = html.escape(str(entry.get("summary") or "").strip())
+    summary = entry.get("summary") or ""
+    items = summary if isinstance(summary, list) else [summary]
+    notes = "".join(f"\n    <li>{html.escape(str(item).strip())}</li>" for item in items)
     return (f'<article class="release-entry">\n'
-            f'  <h3 class="release-heading">v{ver} '
-            f'<time datetime="{date}" class="cl-date">{date}</time></h3>\n'
-            f'  <p class="cl-sum">{notes}</p>\n</article>')
+            f'  <h2 class="release-heading">v{ver} '
+            f'<time datetime="{date}" class="cl-date">{date}</time></h2>\n'
+            f'  <ul class="cl-notes">{notes}\n  </ul>\n</article>')
 
 
 def render_history(entries):

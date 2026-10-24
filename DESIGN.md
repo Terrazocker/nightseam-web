@@ -352,23 +352,26 @@ viewport. Never stick its card independently over the editing toolbar. Narrow
 layouts return to normal page flow, with the list above the editor.
 
 
-## Public website — approved October 6, 2026
+## Public website — October 24, 2026
 
-The public pages share Workbench roles from /astro/themes.css. The approved
-Home direction uses a decorative polar-map motif behind concise text. This
-user-approved exception is limited to the public title/hero region: fine map
-geometry and a horizon contour, subdued beneath readable text. It is not a
-calculated sky, a product screenshot or a planner theme change. Keep the base
-opaque and flat; no photographic starfield, glow, blur or gradients.
+The public pages share Workbench roles from /astro/themes.css (DECISIONS.md,
+2026-10-24, supersedes the October 6 design).
 
-Use a compact plain wordmark, open typography and quiet separators. Every public
-page has a compact brass Open planner action aligned with the wordmark and desktop
-navigation. On phones it stays visible beside the native menu, including when the
-menu is closed. On phones the headline starts near the top; the map motif sits
-higher and fainter so it does not push the call to action down. Home and Features retain their hero action. Your own skyline
-and calculated target visibility lead. Detailed
-features, first-night guidance, sources and privacy information remain accessible through native disclosures.
-Changes contains the independent public release ledger starting at 0.1.0. No-JavaScript phone
-navigation uses a labeled native disclosure. Do not reintroduce screenshot-heavy
-feature grids or visible setup guides; the user superseded those initial Phase 3
-ideas with the approved sparse design.
+- **Navigation:** Planner (features.html), Catalog (catalog.html), Changes
+  (download.html), About; *Open planner* is the brass header action on every
+  page and stays visible beside the phone menu. The footer adds Privacy and
+  Imprint.
+- **Home:** the decorative polar-map motif behind a short hero (headline, two
+  lines, *Open planner* plus a secondary Catalog button), then one card per
+  app with three bullets and its links. The motif appears on Home only.
+- **Other pages:** a compact head (title, one line, an action where there is
+  one), then content in plain sections: a feature grid of one-line items,
+  short bullet lists, a summary table on Privacy.
+- **Copy:** say each thing once, in a line or a bullet. No folded-away content:
+  if a fact needs hiding, cut it. The only disclosure is the no-script phone
+  menu.
+- **Changes:** each release is a version and date beside a bullet list.
+- **Catalog:** links the GitHub latest release and the source, never a pinned
+  version.
+- Readable line length (about 72 characters), 44 px touch targets, no inline
+  styles (the page CSP blocks them), no sideways scroll at 320 px.

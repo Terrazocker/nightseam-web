@@ -4,6 +4,44 @@ Actual validation outcomes, newest first. Published releases: v0.8.0 (October
 24, 2026), v0.7.0 (October 19, 2026), v0.1.1 (October 8, 2026) and v0.1.0
 (October 7, 2026). Upload success alone is never recorded as acceptance.
 
+## Shorter public pages on the test site — October 24, 2026 (dev.nightseam.de, 315667d)
+
+Owner-requested publication of `landing-trim` (PR 10) to the test site only;
+the live site was not touched. Both `.htaccess` files are unchanged.
+
+- Candidate: 80 files from an LF worktree, version baked as
+  v0.8.0-3-g315667d, `prepare_publication.py --verify` passed.
+- Publish to `/dev.nightseam.de` succeeded on the fifth attempt, 90 s apart
+  (a TLS `BAD_LENGTH`, then three connection resets, all before any page
+  switched).
+- HTTPS: all 77 HTTP-readable files and both entry routes match the
+  candidate's bytes.
+
+## Shorter public pages and a Catalog page — October 24, 2026 (branch landing-trim)
+
+Owner asked for less text, bullet-point release notes, no folded-away content
+and a tab for the desktop catalog app, and released the earlier public design
+standards (DECISIONS.md, 2026-10-24). Not deployed.
+
+- Pages: Home with one card per app; Planner (features.html) as a feature
+  grid; new Catalog page linking the GitHub latest release and source; About,
+  Privacy (summary table plus sections, every fact kept) and Imprint without
+  disclosures; Changes as bullet lists. Visible words in the page body:
+  Planner 356 to 188, Changes 539 to 340, About 353 to 134, Privacy 1,161 to
+  880, Imprint 59 to 53; Home 62 to 102 (it now introduces both apps);
+  Catalog 169.
+- Tests changed with the design: landing_checks.py (navigation, no folded
+  content, Home cards, Catalog links, bullet history, motif on Home only),
+  test_landing_release_history.py (list notes, blank-item refusal) and
+  test_public_site.py (catalog.html, no inline styles).
+- pytest 372 passed / 1 skipped, the 15 `tests/test_relay.py` cases failing
+  only because PHP is not installed here. Real-Chrome suite 92/93 at first:
+  web-immutable-publication refused the untracked landing/catalog.html, as
+  did check_release; after `git add` both pass (93/93 in total). check_js OK.
+- Screenshots at 1280 and 390 px (logs/landing-trim/): no sideways scroll;
+  on phones the actions go full width and the privacy table becomes labelled
+  rows.
+
 ## v0.8.0 — released and deployed, October 24, 2026
 
 Owner-authorized deployment of tag v0.8.0 (af732ea) to nightseam.de, with the

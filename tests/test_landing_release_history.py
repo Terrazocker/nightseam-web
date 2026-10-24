@@ -17,13 +17,17 @@ def generator():
 
 
 class Notes(HTMLParser):
+    """Each release's bullet list, as the visible text of its items."""
     def __init__(self):
         super().__init__()
+        self.items = None
         self.current = None
         self.notes = []
 
     def handle_starttag(self, tag, attrs):
-        if tag == "p" and dict(attrs).get("class") == "cl-sum":
+        if tag == "ul" and dict(attrs).get("class") == "cl-notes":
+            self.items = []
+        elif tag == "li" and self.items is not None:
             self.current = []
 
     def handle_data(self, data):
@@ -31,9 +35,12 @@ class Notes(HTMLParser):
             self.current.append(data)
 
     def handle_endtag(self, tag):
-        if tag == "p" and self.current is not None:
-            self.notes.append("".join(self.current))
+        if tag == "li" and self.current is not None:
+            self.items.append("".join(self.current))
             self.current = None
+        elif tag == "ul" and self.items is not None:
+            self.notes.append(self.items)
+            self.items = None
 
 
 def test_generated_history_contains_only_independent_website_releases():
@@ -45,10 +52,9 @@ def test_generated_history_contains_only_independent_website_releases():
     assert [entry["version"] for entry in entries] == ["0.8.0", "0.7.0", "0.1.1", "0.1.0"]
     rendered = Notes()
     rendered.feed(page)
-    for entry in entries:
-        assert entry["summary"] in rendered.notes
-    assert len(rendered.notes) == len(entries)
-    assert '<h3 class="release-heading">v0.1.0 ' in page
+    assert rendered.notes == [entry["summary"] for entry in entries]
+    assert all(isinstance(entry["summary"], list) for entry in entries),         "public release notes are bullet lists"
+    assert '<h2 class="release-heading">v0.1.0 ' in page
     assert 'release-archive' not in page
     assert 'v0.6.' not in page
     assert 'v0.4.' not in page
@@ -65,7 +71,12 @@ def test_release_text_is_escaped_not_interpreted_as_markup():
     assert 'datetime="2026-10-05&quot; onfocus=&quot;bad"' in markup
     notes = Notes()
     notes.feed(markup)
-    assert entry["summary"] in notes.notes
+    assert notes.notes == [[entry["summary"]]]
+    listed = module.render_entry(dict(entry, summary=["<b>one</b>", "two & three"]))
+    assert "<b>" not in listed
+    notes = Notes()
+    notes.feed(listed)
+    assert notes.notes == [["<b>one</b>", "two & three"]]
 
 
 def test_no_runtime_dependency_can_leave_loading_or_fake_empty_history():
@@ -74,7 +85,7 @@ def test_no_runtime_dependency_can_leave_loading_or_fake_empty_history():
     assert "fetch(" not in page
     assert '<p class="hero-note">loading' not in page.lower()
     assert "Latest tagged website version" not in page
-    assert 'class="cl-sum"' in page
+    assert 'class="cl-notes"' in page
     assert '<a href="download.html" aria-current="page">Changes</a>' in page
 
 
@@ -120,5 +131,8 @@ def test_public_ledger_rejects_missing_summary_and_duplicate_version():
     module = generator()
     with pytest.raises(ValueError, match="non-empty curated summary"):
         module.public_entries(curated={"0.1.0": " "})
+    for blank in ([], ["fine", " "]):
+        with pytest.raises(ValueError, match="non-empty curated summary"):
+            module.public_entries(curated={"0.1.0": blank}, releases=[{"version": "0.1.0", "date": "2026-10-07"}])
     with pytest.raises(ValueError, match="duplicate public release"):
         module.public_entries(releases=module.PUBLIC_RELEASES * 2)
