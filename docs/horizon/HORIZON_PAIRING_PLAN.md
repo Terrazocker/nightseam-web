@@ -199,8 +199,9 @@ review.
   guards cover it; source and hashes in NOTICE).
 - The relay section of `web/.htaccess` also denies every other PHP file.
 - *Get from phone* sits with *Draw by hand* and *Import file* in the horizon
-  list, since it adds a horizon. On the phone, the *Pairing* section offers
-  *New horizon* when there is none yet.
+  list, since it adds a horizon; phones and tablets do not show it (October
+  24). On the phone, the *Pairing* section offers *New horizon* when there is
+  none yet, which opens the camera view.
 
 ## Horizon codes (as built, October 24)
 

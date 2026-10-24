@@ -19,7 +19,8 @@ true bearing of two landmarks you can see from there, ideally 60° or more
 apart: a chimney, a mast, a church tower, a gap between trees. Reload the
 planner, so the first check really is a first open.
 
-1. **First open, compass north.** Open *Capture with the camera* and hold the
+1. **First open, compass north.** Open *Capture with phone* (or *Capture* in
+   an open horizon's editor) and hold the
    phone upright and still. It should say the compass is settling, then show
    a direction within about 15 s, without *Re-read*. Put the cross on landmark
    A and note the reading. Target: within 10° of its map bearing (phone
@@ -56,7 +57,7 @@ planner, so the first check really is a first open.
    phone; the desktop address bar ends in `#horizon`, without the code.
 9. **Keyboard and closing.** With a keyboard (or a desktop): Tab reaches every
    control, Enter starts and stops tracing, Escape closes the view, and focus
-   returns to *Capture with the camera*. The camera stops (its indicator goes
+   returns to *Capture*. The camera stops (its indicator goes
    out) as the view closes.
 10. **Wrong site.** With location access allowed, open the capture somewhere
     more than about 100 m from the selected site. Target: the view warns

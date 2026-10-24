@@ -97,8 +97,9 @@ the answer comes first, the most-used controls sit where the thumb reaches.
   bottom, with their head (name, save star, close) pinned while the body
   scrolls.
 - **Horizon.** On touch devices *Capture with phone* leads the empty state and
-  starts a new horizon straight in the camera view; editor hints name taps,
-  not clicks, wheels or keys.
+  starts a new horizon straight in the camera view. The grid is view-only
+  (a finger pans, − / + zoom); *Capture* in the editor head adds to the
+  open horizon, and the hint under the grid says so.
 - **Sizes.** Every control is at least 44px in both directions, form fields
   use 16px text (smaller makes iOS zoom the page on focus), no text is below
   12px, and a page never scrolls sideways. Touch screens of any width
@@ -297,7 +298,8 @@ The local exposure catalog has its own design document in Nightseam-catalog.
     server* and *Close*, which has focus.
   - On the phone, an opened pairing shows a *Pairing* section above the
     horizon list, separated by a quiet rule: which desktop site waits (name
-    and coordinates), the time left, *New horizon* when there is none yet,
+    and coordinates), the time left, *New horizon* when there is none yet
+    (it opens the camera view),
     the brass *Send to desktop* (disabled while the horizon is empty) and
     *End pairing*; buttons at least 44 px. After sending it says that the
     desktop asks before adding; an expired pairing says so and offers only

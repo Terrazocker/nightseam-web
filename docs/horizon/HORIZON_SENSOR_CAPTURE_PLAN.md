@@ -123,7 +123,9 @@ edge. Each finished stroke is one undo step and saves at once, as today. The
 button is shown only where the camera and orientation sensors exist; desktop
 keeps Draw, the points form and file import. Done: the button sits in a
 *Phone capture* panel that replaces the old compass panel and starts open on
-touch devices; elsewhere it says when there are no readings. Until phase 3,
+touch devices; elsewhere it says when there are no readings. (October 24:
+the panel and the points form are gone; phones have *Capture* in the editor
+head and a view-only grid, DECISIONS.md 2026-10-24.) Until phase 3,
 north is the compass averaged once (2 s, phone near level); the old landmark
 correction went with the compass panel.
 

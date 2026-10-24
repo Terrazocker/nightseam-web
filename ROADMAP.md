@@ -57,8 +57,13 @@ Where NightSeam Web stands and what comes next. Open defects are in
   release. Horizon codes (a horizon made in the planner is kept for 24 hours
   under a code like `K7Q-4MX` that the desktop types; DECISIONS.md
   2026-10-24) are built on the branch (October 24) and join those
-  acceptance checks. A live mirror is a
-  later, separate decision.
+  acceptance checks. Also on the branch since October 24: Tonight centred on
+  wide screens, a leaner horizon editor (no *Points by numbers*, *Phone
+  capture* or *Display*; Insert adds points from the keyboard), a view-only
+  grid with a *Capture* button on phones, a sharper calibration guide offered
+  right after north is set, and a sensor start panel. All of it is on
+  dev.nightseam.de (RELEASES.md), still to be tried on a real phone. A live
+  mirror is a later, separate decision.
 - **Horizon rebuild** ([plan](docs/horizon/HORIZON_REBUILD_PLAN.md)): phases
   1-6 are merged (October 12). Its photo parts are replaced by the
   sensor capture; the skyline model, overhangs and file import/export stay.

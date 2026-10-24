@@ -278,7 +278,8 @@ editor", "Capture horizons with the phone's sensors"); plans:
   (`takePairAddress`, before the first-run welcome) and hand it to
   `openPhonePairing`, which reads the offer and shows the *Pairing* banner
   above the horizon list: the desktop's site, a countdown, *New horizon* when
-  there is none, *Send to desktop* (the active horizon, disabled while it is
+  there is none (*Capture with phone*: straight into the camera view),
+  *Send to desktop* (the active horizon, disabled while it is
   empty) and *End pairing*. The offered site replaces the planner's site only
   for the capture's Moon reference and site check; it is never saved.
   - **Horizon codes.** `createHorizon(…, true)` (draw, capture, import)
