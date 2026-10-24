@@ -50,6 +50,9 @@ const LEGACY_LS_KEY = 'nightseam_panos_v1';
 const LEGACY_PHOTO_DBS = ['nightseam-panoimg', 'nightseam-horizon-photos'];
 export const MAX_HORIZONS = 50;
 const MAX_IMPORT_BYTES = 1024 * 1024;
+// A drawn icon: the trash-can emoji falls back to a thin outline glyph on
+// Windows that reads as an empty rectangle at button size.
+const TRASH_ICON = '<svg class="btn-ico" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4 7h16M10 7V4h4v3M6 7l1 13h10l1-13M10 11v6M14 11v6"/></svg>';
 
 /** The planner's active site ({ lat, lon, label, tz }), provided by app.js. */
 let siteContext = () => null;
@@ -1093,7 +1096,7 @@ export function renderHorizon(box, onChanged = () => {}, context = {}) {
       <input type="radio" name="hz-active" id="hz-r-${esc(item.id)}" ${h && item.id === h.id ? 'checked' : ''}>
       <label class="p-name" for="hz-r-${esc(item.id)}">${esc(item.name)}</label>
       <span class="p-tags">${item.points.length} pt</span>
-      <button class="btn small" type="button" data-del="${esc(item.id)}" aria-label="Delete horizon ${esc(item.name)}">🗑</button>
+      <button class="btn small" type="button" data-del="${esc(item.id)}" aria-label="Delete horizon ${esc(item.name)}">${TRASH_ICON}</button>
     </li>`;
   box.innerHTML = `
     <section class="hz-pair" id="hz-pair" aria-label="Pairing with a desktop" hidden>
@@ -1313,15 +1316,25 @@ function wireEditor(box, h, onChanged) {
     return ok;
   };
   // The editor DOM is replaced when another tab renders into #view; the
-  // observer then stops instead of drawing into a detached canvas.
+  // observer then stops instead of drawing into a detached canvas. Resizing
+  // the canvas changes the observed box's height, so it waits for the next
+  // frame: inside the callback the browser reports a ResizeObserver loop.
+  let resizeFrame = 0;
   const observer = typeof ResizeObserver === 'function' ? new ResizeObserver(() => {
     if (!cvs.isConnected) { observer.disconnect(); return; }
-    resize(); draw();
+    if (resizeFrame) return;
+    resizeFrame = requestAnimationFrame(() => {
+      resizeFrame = 0;
+      if (cvs.isConnected) { resize(); draw(); }
+    });
   }) : null;
   activeSession = {
     horizonId: h.id, record: h, hist, dirty, settle,
     save: persist,
-    disconnect: () => { observer?.disconnect(); gesture = null; capture?.close(); stopWarm(); },
+    disconnect: () => {
+      observer?.disconnect(); cancelAnimationFrame(resizeFrame); resizeFrame = 0;
+      gesture = null; capture?.close(); stopWarm();
+    },
   };
 
   /* ---- geometry ---- */

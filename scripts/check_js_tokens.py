@@ -98,8 +98,8 @@ _VERIFIED_BASELINE_JSON = r"""
    "token": "6"
   },
   "app.js": {
-   "sha256": "51d6227971c997d20c289bf2a0cbf12c0ee5e136bd4dcd0015e9df59f2141197",
-   "token": "282"
+   "sha256": "953442c5c4c22f3c6e9d1b2e7ae3f3beacdfe9ff69a279364fa030fa283db03c",
+   "token": "283"
   },
   "astro.js": {
    "sha256": "0c267139e2c1d4307a291b44e46e3a4c045af16edc48b879082f45e245b1807d",
@@ -122,8 +122,8 @@ _VERIFIED_BASELINE_JSON = r"""
    "token": "75"
   },
   "horizon.js": {
-   "sha256": "0a13df2722f6b3ad19e97fc778aab2ff5803bbb84c2fd199fd149ec892f59b05",
-   "token": "175"
+   "sha256": "8c6e617f4ef84ebd1fc9722c092af6404802a53d278d23570009e7fc6d52fc32",
+   "token": "176"
   },
   "imagecredits.js": {
    "sha256": "8c8b650a0ad6ef6462eea251b67642103cb0eb9010c1f9dde09fce2ba7fa8952",
@@ -146,8 +146,8 @@ _VERIFIED_BASELINE_JSON = r"""
    "token": "1"
   },
   "style.css": {
-   "sha256": "34be1220d4728c6aa7df75868c71e34aae01d5eec01031a0316e5c6a0c9a3dc3",
-   "token": "99"
+   "sha256": "ec72e039d90a4ae4e3be39ebc5a0a95235a82fa7907d4bcb1155c2bab2f1e962",
+   "token": "100"
   },
   "themes.css": {
    "sha256": "f8094c798dbe72b4e7f84faad3f41fc0cdbe896a03c0cb7413ee9d0d1bed2ff8",
@@ -158,8 +158,8 @@ _VERIFIED_BASELINE_JSON = r"""
    "token": "7"
   },
   "weather.js": {
-   "sha256": "5cab1a2b1500f18c041d17e9bf8d01b2f7ed08d9dab073c0d8f74d030d41cbe1",
-   "token": "13"
+   "sha256": "2c2f008c63d135ff13906b1637b7c2c884ce7ed2d08bf358482b214938335966",
+   "token": "14"
   },
   "webstore.js": {
    "sha256": "e1eaa312db496c643fe211c262d5247f51fa907233abbd0d1aae28449b1dfe2a",
