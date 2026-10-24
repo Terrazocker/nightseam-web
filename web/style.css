@@ -1418,8 +1418,9 @@ html[data-theme] .sky-zoom .btn {
     background: none; font-size: 12px; white-space: nowrap;
   }
   /* Tonight reads as a list: on wide screens it keeps a reading width, so a
-     target's numbers stay near its name instead of 800 px away. */
-  html[data-theme] :is(.night-brief, .tonight-ranked) { max-width: 1080px; }
+     target's numbers stay near its name instead of 800 px away, centred in
+     the page rather than leaving the free width all on the right. */
+  html[data-theme] :is(.night-brief, .tonight-ranked, .tonight-footnote) { max-width: 1080px; margin-inline: auto; }
   /* short views (an empty Horizon) keep the footer at the bottom of the window */
   html[data-theme] main { min-height: calc(100dvh - 260px); }
   #tonight-rank-table th:nth-child(1) { width: 56px; }
@@ -1453,10 +1454,11 @@ html[data-theme] .tonight-ranked .sub a { color: var(--accent); }
 @media (min-width: 1600px) {
   html[data-theme] body[data-primary-view="tonight"]:not(.detail-open) #view:has(> .night-brief) {
     display: grid; grid-template-columns: minmax(0, 1080px) minmax(280px, 360px);
-    column-gap: 48px; justify-content: start; align-items: start;
+    column-gap: 48px; justify-content: center; align-items: start;
   }
-  body[data-primary-view="tonight"]:not(.detail-open) #view > .tonight-ranked { grid-column: 1; grid-row: 1; }
-  body[data-primary-view="tonight"]:not(.detail-open) #view > .tonight-footnote { grid-column: 1; }
+  /* the grid centres the pair; each fills its column */
+  body[data-primary-view="tonight"]:not(.detail-open) #view > .tonight-ranked { grid-column: 1; grid-row: 1; margin-inline: 0; }
+  body[data-primary-view="tonight"]:not(.detail-open) #view > .tonight-footnote { grid-column: 1; margin-inline: 0; }
   html[data-theme] body[data-primary-view="tonight"]:not(.detail-open) #view > .night-brief {
     grid-column: 2; grid-row: 1 / span 2; grid-template-columns: minmax(0, 1fr); gap: 14px;
     margin: 0; padding: 0 0 0 24px; border-bottom: 0; border-left: 1px solid var(--line-soft);

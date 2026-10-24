@@ -123,7 +123,8 @@ The local exposure catalog has its own design document in Nightseam-catalog.
   list starts at the top of the page. The list heading says how
   many of the night's usable targets it shows ("Top 16 of N") and links to
   Catalog for the rest. On wide screens the brief and list keep a reading
-  width of 1080px, so a target's numbers stay near its name. Visibility
+  width of 1080px, so a target's numbers stay near its name, centred in the
+  page (from 1600px the list and the brief column are centred as a pair). Visibility
   explanations remain in target details.
 - **Catalog:** a narrow filter rail (on phones, and on touch screens up to
   900px, it folds behind a *Filters* button that counts the active filters),
