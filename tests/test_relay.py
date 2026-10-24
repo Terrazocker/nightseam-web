@@ -222,6 +222,73 @@ def test_no_plaintext_or_addresses_in_storage(relay):
     assert '127.0.0.1' not in stored
 
 
+TOKEN = 'T' * 21 + 'A'          # 16 bytes, base64url
+OTHER = 'U' * 21 + 'A'
+
+
+def share_file(relay, box=BOX):
+    return relay.data / f'{box}.share'
+
+
+def test_horizon_codes_last_a_day_and_only_their_maker_changes_them(relay):
+    mine = {'X-Share-Token': TOKEN}
+    status, headers, _ = relay.call('put', body=BODY, headers=mine)
+    assert status == 201 and headers['X-Relay-Remaining'] == '86400'
+    status, headers, body = relay.call('get')
+    assert status == 200 and body == BODY and headers['Content-Type'] == 'application/octet-stream'
+    assert int(headers['X-Relay-Remaining']) > 86390
+
+    edited = bytes([1]) + os.urandom(500)
+    status, headers, _ = relay.call('put', body=edited, headers=mine)
+    assert status == 204, 'the maker replaces it'
+    assert relay.call('get')[2] == edited
+    rec = json.loads(share_file(relay).read_text())
+    rec['created'] -= 3600
+    share_file(relay).write_text(json.dumps(rec))
+    age(share_file(relay), 3600)
+    relay.call('put', body=BODY, headers=mine)
+    assert int(relay.call('get')[1]['X-Relay-Remaining']) <= 86400 - 3600, 'an edit keeps the expiry'
+
+    assert relay.call('put', body=BODY, headers={'X-Share-Token': OTHER})[0] == 409, 'another token: the code is taken'
+    assert relay.call('drop', method='POST', headers={'X-Share-Token': OTHER})[0] == 403
+    assert relay.call('put', body=BODY)[0] == 400, 'a token is required'
+    assert relay.call('drop', method='POST', headers={'X-Share-Token': 'short'})[0] == 400
+    assert relay.call('drop', method='POST', headers=mine)[0] == 204
+    assert not share_file(relay).exists()
+    assert relay.call('get')[0] == 404
+    assert relay.call('drop', method='POST', headers=mine)[0] == 204, 'deleting twice is harmless'
+
+
+def test_horizon_codes_expire_after_24_hours(relay):
+    relay.call('put', body=BODY, headers={'X-Share-Token': TOKEN})
+    age(share_file(relay), 86401)
+    assert relay.call('get')[0] == 404
+    assert not share_file(relay).exists(), 'an expired code is removed'
+    relay.call('put', box='V' * 22, body=BODY, headers={'X-Share-Token': TOKEN})
+    age(share_file(relay, 'V' * 22), 86401)
+    relay.call('poll', box='Z' * 22)
+    assert not share_file(relay, 'V' * 22).exists(), 'expired codes go with any request'
+
+
+def test_horizon_code_limits(relay):
+    now = int(time.time())
+    for i in range(1000):
+        p = relay.data / f'{"F" * 18}{i:04d}.share'
+        p.write_text(json.dumps({'created': now, 'token': '', 'body': ''}))
+    assert relay.call('put', body=BODY, headers={'X-Share-Token': TOKEN})[0] == 503, 'at most 1000 live codes'
+    for f in relay.data.glob('F*.share'):
+        f.unlink()
+    for i in range(30):
+        assert relay.call('put', box=f'{"G" * 20}{i:02d}', body=BODY, headers={'X-Share-Token': TOKEN})[0] == 201
+    assert relay.call('put', box='H' * 22, body=BODY, headers={'X-Share-Token': TOKEN})[0] == 429
+    for i in range(60):
+        assert relay.call('get', box=f'{"J" * 20}{i:02d}')[0] == 404
+    assert relay.call('get', box=f'{"G" * 20}00')[0] == 429, 'lookups are limited per address, found or not'
+    stored = share_file(relay, f'{"G" * 20}00').read_text()
+    assert TOKEN not in stored, "only the token's hash is kept"
+    assert '127.0.0.1' not in stored
+
+
 def test_refuses_to_run_without_the_data_folder(tmp_path):
     r = Relay(tmp_path, data=False)
     try:

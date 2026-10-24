@@ -40,4 +40,17 @@ const other = await P.openPairing(relay, null);
 await P.closePairing(relay, other);
 await assert.rejects(P.readOffer(relay, other), (e) => e.status === 404 && /expired or was cancelled/.test(e.message));
 
+// A horizon code: stored for 24 hours, changed by its maker, read by anyone
+// who types the code, deleted early on request.
+const share = await P.createShare(relay, link);
+const byCode = await P.fetchShare(relay, P.parseShortCode(P.formatShortCode(share.code)));
+assert.deepEqual(H.decodeHorizonLink(byCode.link).points, horizon.points);
+assert.ok(byCode.remaining > 86390 && byCode.remaining <= P.SHARE_TTL_S, 'kept for 24 hours');
+const edited = H.encodeHorizonLink({ ...horizon, name: 'Balkon 2' });
+await P.updateShare(relay, share, edited);
+assert.equal((await P.fetchShare(relay, share.code)).link, edited);
+await assert.rejects(P.updateShare(relay, { ...share, token: P.newPairing().id }, link), (e) => e.status === 409);
+await P.deleteShare(relay, share);
+await assert.rejects(P.fetchShare(relay, share.code), (e) => e.status === 404 && /no horizon has this code/.test(e.message));
+
 console.log('pairing relay round trip held');

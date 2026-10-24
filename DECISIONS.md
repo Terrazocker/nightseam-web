@@ -28,7 +28,9 @@ Library, SQLite, desktop CSP) are history only.
   (2026-10-06); the CSP is delivered in the document (0.6.33) and, for the
   landing pages too, as response headers (2026-10-13); phone pairing holds
   only end-to-end-encrypted boxes for at most 10 minutes on nightseam.de
-  (2026-10-19, amends 2026-10-15 "Share links, not server shortcodes").
+  (2026-10-19, amends 2026-10-15 "Share links, not server shortcodes"); a
+  horizon made in the planner is kept there for 24 hours under a short code
+  (2026-10-24, reverses the rest of 2026-10-15).
 - **Delivery:** cache tokens checked against a verified baseline (0.6.24/25);
   immutable release graphs with older releases retained (2026-10-10); CI runs
   the browser suite on Linux and the rest on Windows (2026-10-11); test
@@ -37,6 +39,57 @@ Library, SQLite, desktop CSP) are history only.
   releases continue at 0.7.0 above inherited tags (2026-10-11).
 - **Documentation:** see "Documentation layout" (2026-10-11), which updates the
   older "Docs policy".
+
+## 2026-10-24 — Horizon codes for 24 hours; a sensor start button
+
+Reverses what remained of 2026-10-15 "Share links, not server shortcodes":
+nightseam.de now keeps horizons for a day.
+
+- **What.** The owner asked that a horizon get a short code after creation
+  that stays for 24 hours and is then deleted on the server, with a button
+  for another 24 hours. A horizon drawn, captured or imported in the planner
+  is stored on the relay as soon as it has a point, under a code like
+  `K7Q-4MX` (6 characters, alphabet without 0/O/1/I/L, about 30 bits) shown
+  beside its name. The desktop types the code into *Get from phone* and asks
+  before adding the horizon. Edits within the 24 hours replace the stored
+  copy; the code keeps its expiry. Afterwards the button reads *Get a code
+  (24 h)* and makes a new code. Deleting the horizon, or *Delete from the
+  server* in the code's dialog, deletes the stored copy at once. A horizon
+  that arrived from elsewhere (a link, pairing, a code) gets no code of its
+  own until asked. This replaces the live key-exchange codes built earlier
+  the same day, which needed both devices at once.
+- **What the server can read.** The box id is a hash of the code and the
+  horizon is sealed with a key stretched from the code (PBKDF2, 100,000
+  rounds), so the files are not readable at a glance. But a code is no
+  strong key: someone holding the files could try all 887 million codes.
+  Unlike QR pairing, this is not end-to-end protection, and the privacy page
+  says so. No site travels with a code.
+- **Guessing.** The relay counts every lookup per address (60 per 10
+  minutes, found or not); with at most 1,000 live codes a stranger needs
+  close to a million lookups per hit. Only the device that made a code holds
+  its token (16 random bytes; the relay keeps its SHA-256), which alone may
+  replace or delete the horizon. The token stays in that device's
+  `localStorage` and out of backups.
+- **Server.** `web/relay.php` gains `put`, `get` and `drop` on `.share`
+  files beside the boxes in `nightseam-relay/`, at most 64 KB each and 1,000
+  at once (64 MB), swept by modification time like the boxes. No header or
+  `.htaccess` change. The test site and the live site share the data
+  folder, so a code made on one also works on the other.
+- **Sensor start button.** On a phone's first capture the motion sensors
+  and the compass could stay silent: they start while the browser's camera
+  prompt is up. The capture now starts them again when the camera answers
+  and when the page becomes visible, and when nothing arrives for 3 s (no
+  compass for 6 s) a panel takes the place of the controls with three
+  numbered steps (allow access, hold upright and tap *Start the sensors*,
+  move in a figure eight) and *Not now*. The tap is a user gesture, so the
+  browser may ask for motion access there.
+- **Calibration guide.** The *Line up the drawing* steps draw what to do
+  over the video: a ring for the object in step 1; then a solid arrow for
+  the way to turn (*Turn right*, *Tilt down*), a dashed arrow from the cross
+  to the amber line for the way the object travels, and *Stop when your
+  object is on this line* at the line. From the gyroscope alone (no scale
+  needed) the routine sees when the phone turns the wrong way and says
+  *Other way* in the drawing and the instruction.
 
 ## 2026-10-20 — Offline reopening
 

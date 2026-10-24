@@ -54,7 +54,11 @@ Where NightSeam Web stands and what comes next. Open defects are in
   branch was published to the test site dev.nightseam.de (RELEASES.md). Not
   on the live site. Next: the *Pairing* acceptance checks with a real phone
   on dev.nightseam.de, then merging PR 5, the live handler switch and a
-  release. Short codes and a live mirror are later, separate decisions.
+  release. Horizon codes (a horizon made in the planner is kept for 24 hours
+  under a code like `K7Q-4MX` that the desktop types; DECISIONS.md
+  2026-10-24) are built on the branch (October 24) and join those
+  acceptance checks. A live mirror is a
+  later, separate decision.
 - **Horizon rebuild** ([plan](docs/horizon/HORIZON_REBUILD_PLAN.md)): phases
   1-6 are merged (October 12). Its photo parts are replaced by the
   sensor capture; the skyline model, overhangs and file import/export stay.

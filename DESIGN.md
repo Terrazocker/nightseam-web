@@ -233,7 +233,20 @@ The local exposure catalog has its own design document in Nightseam-catalog.
       guide line is drawn over the video in the warning colour with a dark
       outline, left of the cross and then above it. It is offered once, when
       a phone's first capture shows a camera image, and never blocks
-      tracing for more than one tap.
+      tracing for more than one tap. Over the video it shows what to do:
+      a ring round the cross in step 1; in steps 2 and 3 a solid arrow in
+      the main-text colour for the way to move the phone (*Turn right*,
+      *Tilt down*), a dashed amber arrow from the cross to the line for the
+      way the object travels, and *Stop when your object is on this line*
+      beside the line. Words on the video are 14 px semibold with a dark
+      outline. Turning the wrong way turns the solid arrow amber and says
+      *Other way* there and in the instruction.
+    - The sensor panel takes the place of the controls (before any other
+      panel) when the motion sensors give nothing for 3 s or the compass
+      for 6 s: a bold line saying which has not started, three numbered
+      steps (allow access; hold upright and tap *Start the sensors*; move in
+      a figure eight), a small line on what to do if that fails, and the
+      pair *Start the sensors* (brass, gets focus) / *Not now*.
     - Messages are short: one line where possible, the fact first, then
       what to do (*Compass settling (moved 2.1°): hold still.*). Detail that
       only helps a report goes behind *Details*, not into the status line.
@@ -260,6 +273,21 @@ The local exposure catalog has its own design document in Nightseam-catalog.
     at most 240 px, so phone cameras read it. Escape and Cancel close it and
     return focus to the button. An expired code removes the QR code and says
     so. A received horizon asks like a shared link (*From your phone: …*).
+    Below the QR code, under a quiet rule, a labelled field takes a
+    horizon's code (monospace, spaced, uppercase as typed, *K7Q-4MX* as
+    placeholder) with *Get*; it works while the QR code waits and after it
+    expired. A wrong or malformed code says so in the status line and keeps
+    the QR code; a found horizon closes the dialog and asks (*From its
+    code: …*).
+  - Horizon code: in the editor head beside *Share link*, one small button
+    whose words follow the state: *Code after the first point* and *Making a
+    code…* (disabled), *🔢 K7Q-4MX · 23 h* (the code in monospace; opens the
+    code dialog), *Get a code (24 h)* after expiry, *Code failed: try again*
+    when the relay could not be reached. The code dialog has the confirm
+    style: the title names the horizon, one line on where to type it and
+    until when (weekday and time), the code in 40 px monospace with wide
+    letter spacing (read out one character at a time), *Delete from the
+    server* and *Close*, which has focus.
   - On the phone, an opened pairing shows a *Pairing* section above the
     horizon list, separated by a quiet rule: which desktop site waits (name
     and coordinates), the time left, *New horizon* when there is none yet,

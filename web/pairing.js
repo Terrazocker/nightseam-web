@@ -7,6 +7,7 @@
  * captures, and the phone answers once with the horizon's share-link text
  * (encodeHorizonLink), encrypted with the same key. The relay only ever holds
  * ciphertext; the key stays in the fragment, which browsers never send.
+ * Horizon codes (below) keep a horizon on the relay for 24 hours instead.
  *
  * Sealed message: version byte 1, a 12-byte IV, then AES-GCM-256 ciphertext
  * and tag. The additional data names the box and the direction, so an offer
@@ -73,7 +74,7 @@ async function aesKey(key, use) {
 
 const additional = (id, purpose) => new TextEncoder().encode(`nightseam-pair-v${PAIR_VERSION}:${id}:${purpose}`);
 
-/** Encrypt `bytes` for box `id`; `purpose` is 'offer' or 'reply'. */
+/** Encrypt `bytes` for box `id`; `purpose` is 'offer', 'reply' or 'share'. */
 export async function seal(pairing, purpose, bytes) {
   const iv = random(IV_BYTES);
   const ct = new Uint8Array(await crypto.subtle.encrypt(
@@ -163,13 +164,14 @@ function messageFor(status) {
   return `the pairing service answered ${status}`;
 }
 
-async function call(relay, op, id, body) {
+async function call(relay, op, id, body, token) {
   let res;
+  const headers = token ? { 'X-Share-Token': token } : {};
   try {
     res = await fetch(`${relay}?box=${encodeURIComponent(id)}&op=${op}`, body === undefined
-      ? { method: op === 'close' ? 'POST' : 'GET', cache: 'no-store', credentials: 'omit' }
+      ? { method: op === 'close' || op === 'drop' ? 'POST' : 'GET', cache: 'no-store', credentials: 'omit', headers }
       : { method: 'POST', cache: 'no-store', credentials: 'omit', body,
-        headers: { 'Content-Type': 'application/octet-stream' } });
+        headers: { ...headers, 'Content-Type': 'application/octet-stream' } });
   } catch {
     throw new RelayError(0, 'no connection to the pairing service');
   }
@@ -215,3 +217,106 @@ export async function sendReply(relay, pairing, linkText) {
 /** The next poll delay: POLL_MS while the relay answers, doubling up to
  *  POLL_MAX_MS after failures. */
 export const nextPollDelay = (failures) => Math.min(POLL_MAX_MS, POLL_MS * 2 ** Math.max(0, failures));
+
+/* ------------------------------ horizon codes ------------------------------ */
+/*
+ * A horizon gets a short code like K7Q-4MX that the desktop types into *Get
+ * from phone*. The relay keeps the horizon for 24 hours under a box id that
+ * is a hash of the code, sealed with a key stretched from the code (PBKDF2).
+ * The device that made the code holds a random token, which alone may
+ * replace the horizon (edits within the 24 hours) or delete it early.
+ *
+ * A code is far too short to be a strong key: the stretching only keeps the
+ * relay's files from being readable at a glance, and someone holding them
+ * could still try every code. What protects a horizon from strangers is that
+ * the relay counts lookups per address (relay.php GET_LIMIT).
+ */
+
+export const SHARE_TTL_S = 86400;       // relay.php SHARE_TTL
+/** No 0/O or 1/I/L: a code is read off one screen and typed on another. */
+export const CODE_ALPHABET = '23456789ABCDEFGHJKMNPQRSTUVWXYZ';
+export const CODE_LENGTH = 6;
+const SHARE_ITERATIONS = 100000;
+const TOKEN_BYTES = 16;
+
+/** A fresh code, uniform over the alphabet (31^6, about 30 bits). */
+export function newShortCode() {
+  let code = '';
+  const limit = 256 - (256 % CODE_ALPHABET.length);
+  while (code.length < CODE_LENGTH) {
+    for (const b of random(CODE_LENGTH)) {
+      if (b < limit && code.length < CODE_LENGTH) code += CODE_ALPHABET[b % CODE_ALPHABET.length];
+    }
+  }
+  return code;
+}
+
+/** K7Q4MX as it is shown: K7Q-4MX. */
+export const formatShortCode = (code) => `${code.slice(0, 3)}-${code.slice(3)}`;
+
+/** A typed code, forgiving case, spaces and dashes; null when it cannot be one. */
+export function parseShortCode(text) {
+  const code = String(text || '').toUpperCase().replace(/[\s-]+/g, '');
+  if (code.length !== CODE_LENGTH) return null;
+  for (const c of code) if (!CODE_ALPHABET.includes(c)) return null;
+  return code;
+}
+
+const shareLabel = (code, part) => new TextEncoder().encode(`nightseam-share-v${PAIR_VERSION}:${part}:${code}`);
+const shareKeys = new Map();   // code -> Promise of { id, key }: stretching takes a moment
+
+/** The box id and AES key a code stands for. */
+export function sharePairing(code) {
+  if (!shareKeys.has(code)) {
+    shareKeys.set(code, (async () => {
+      const id = b64url(new Uint8Array(await crypto.subtle.digest('SHA-256', shareLabel(code, 'id'))).subarray(0, ID_BYTES));
+      const base = await crypto.subtle.importKey('raw', new TextEncoder().encode(code), 'PBKDF2', false, ['deriveBits']);
+      const bits = await crypto.subtle.deriveBits(
+        { name: 'PBKDF2', hash: 'SHA-256', salt: shareLabel(code, 'key'), iterations: SHARE_ITERATIONS }, base, KEY_BYTES * 8);
+      return { id, key: b64url(new Uint8Array(bits)) };
+    })());
+  }
+  return shareKeys.get(code);
+}
+
+const expiresAt = (info) => Date.now() + (info.remaining ?? SHARE_TTL_S) * 1000;
+
+/** Store a horizon's share-link text under a new code. Resolves
+ *  { code, token, expires } (expires: epoch ms); a taken code is replaced. */
+export async function createShare(relay, linkText) {
+  const token = b64url(random(TOKEN_BYTES));
+  for (let tries = 0; ; tries++) {
+    const code = newShortCode(), pairing = await sharePairing(code);
+    try {
+      const info = await call(relay, 'put', pairing.id, await seal(pairing, 'share', encodeReply(linkText)), token);
+      return { code, token, expires: expiresAt(info) };
+    } catch (error) {
+      if (!(error instanceof RelayError && error.status === 409) || tries >= 2) throw error;
+    }
+  }
+}
+
+/** Replace the stored horizon (an edit); the code keeps its expiry. */
+export async function updateShare(relay, share, linkText) {
+  const pairing = await sharePairing(share.code);
+  await call(relay, 'put', pairing.id, await seal(pairing, 'share', encodeReply(linkText)), share.token);
+}
+
+/** Delete the stored horizon before it expires; errors are ignored. */
+export async function deleteShare(relay, share) {
+  try { await call(relay, 'drop', (await sharePairing(share.code)).id, undefined, share.token); } catch { /* it expires anyway */ }
+}
+
+/** Desktop: the share-link text stored under a typed code, and the seconds
+ *  it has left. */
+export async function fetchShare(relay, code) {
+  const pairing = await sharePairing(code);
+  let info;
+  try { info = await call(relay, 'get', pairing.id); } catch (error) {
+    if (error instanceof RelayError && error.status === 404) {
+      throw new RelayError(404, 'no horizon has this code; check it, or it has expired');
+    }
+    throw error;
+  }
+  return { link: decodeReply(await unseal(pairing, 'share', info.body)), remaining: info.remaining };
+}

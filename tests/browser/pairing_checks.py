@@ -19,6 +19,7 @@ HORIZON_FILE = b"0 10\n90 20.5\n180 15\n270 12.25\n"
 class StubRelay:
     def __init__(self):
         self.boxes: dict[str, dict] = {}
+        self.shares: dict[str, dict] = {}
         self.ops: list[tuple[str, str]] = []
 
     def handle(self, route):
@@ -39,6 +40,8 @@ class StubRelay:
                 "Cache-Control": "no-store", "X-Relay-Remaining": "600",
                 "Content-Type": "application/octet-stream"})
 
+        if op in ("put", "get", "drop"):
+            return self.share(route, op, box)
         if op == "open":
             self.boxes[box] = {"offer": req.post_data_buffer, "reply": None, "state": "open"}
             return empty(201, "open")
@@ -60,6 +63,26 @@ class StubRelay:
                 return empty(204, rec["state"])
             return data(rec["reply"])
         return route.fulfill(status=400, json={"error": "unknown operation"})
+
+
+    def share(self, route, op, box):
+        """Horizon codes: kept until dropped (expiry is the client's to show)."""
+        req = route.request
+        token = req.headers.get("x-share-token")
+        rec = self.shares.get(box)
+        headers = {"Cache-Control": "no-store", "X-Relay-Remaining": "86400"}
+        if op == "get":
+            if rec is None:
+                return route.fulfill(status=404, json={"error": "no such code"})
+            return route.fulfill(status=200, body=rec["body"],
+                                 headers={**headers, "Content-Type": "application/octet-stream"})
+        if rec is not None and rec["token"] != token:
+            return route.fulfill(status=403 if op == "drop" else 409, json={"error": "not yours"})
+        if op == "drop":
+            self.shares.pop(box, None)
+            return route.fulfill(status=204, headers=headers, body=b"")
+        self.shares[box] = {"token": token, "body": req.post_data_buffer}
+        return route.fulfill(status=204 if rec else 201, headers=headers, body=b"")
 
 
 def open_phone(c, relay, link):
@@ -205,6 +228,99 @@ def web_pairing_cancel_refuse_expire(c):
         c.expect_eq(phone.locator("#hz-pair").is_hidden(), True, "Close removes the banner")
         c.expect_eq(phone.evaluate("() => document.activeElement?.id"), "hz-pair-start", "and focus stays in the list")
         c.expect_eq(sum(1 for op, _ in relay.ops if op == "reply"), replies, "and sends nothing")
+    finally:
+        ctx.close()
+    c.assert_clean()
+
+
+@check("web-pairing-short-code", "web")
+def web_pairing_short_code(c):
+    """A horizon made on the phone gets a 24-hour code by itself; typing it
+    into Get from phone asks before adding an exact copy, and a later edit
+    reaches the stored copy. A mistyped code says so. Once the code has
+    expired, Get a code makes a new one; deleting the horizon deletes it."""
+    relay = StubRelay()
+    c.page.route("**/relay.php?*", relay.handle)
+    boot(c)
+    tab(c, "horizon")
+    before = len((horizon_state(c) or {}).get("horizons", []))
+
+    ctx, phone, errors = open_phone(c, relay, c.base.rstrip("/") + "/#horizon")
+    try:
+        phone.wait_for_selector("#w-skip", state="visible", timeout=15000)
+        phone.click("#w-skip")
+        phone.wait_for_selector("#hz-import-file", state="attached", timeout=20000)
+        phone.locator("#hz-import-file").set_input_files({"name": "garden.hrz", "mimeType": "text/plain",
+                                                          "buffer": HORIZON_FILE})
+        phone.wait_for_selector("#hz-code.hz-code-btn", timeout=15000)
+        chip = phone.inner_text("#hz-code")
+        code = chip.split()[1]
+        c.expect(len(code) == 7 and code[3] == "-" and ("23 h" in chip or "24 h" in chip), f"a code like K7Q-4MX for 24 h: {chip!r}")
+        c.expect_eq(len(relay.shares), 1, "the horizon is stored once")
+        stored = next(iter(relay.shares.values()))["body"]
+        c.expect(b"garden" not in stored, "and sealed")
+        sent = phone.evaluate("""() => JSON.parse(localStorage.getItem('nightseam_horizons_v2')).horizons[0]""")
+
+        phone.click("#hz-code")
+        phone.wait_for_selector("#code-show", timeout=5000)
+        c.expect_eq(phone.inner_text("#code-show").strip(), code, "the dialog shows the same code, large")
+        c.expect_eq(phone.evaluate("() => document.activeElement?.dataset?.ok !== undefined"), True,
+                    "focus starts on Close")
+        phone.keyboard.press("Escape")
+
+        phone.fill("#hz-name", "garden east")
+        phone.locator("#hz-name").dispatch_event("change")
+        phone.wait_for_timeout(2500)
+        c.expect(next(iter(relay.shares.values()))["body"] != stored, "a rename reaches the stored horizon")
+        c.expect(not errors, f"no errors on the phone: {errors[:3]}")
+
+        link = start_desktop_pairing(c)
+        qr_box = link.split("#pair=")[1].split(".")[0]
+        c.allow_failed_responses("a mistyped code answers 404 by design")
+        c.allow_console_errors("the browser logs that 404")
+        wrong = ("3" if code[0] == "2" else "2") + code[1:]
+        c.page.fill("#pair-code-in", wrong.lower())
+        c.page.click("#pair-code-go")
+        c.page.wait_for_function("() => /no horizon has this code/.test(document.querySelector('#pair-status').textContent)",
+                                 timeout=10000)
+        c.expect(c.page.is_visible(".pair-qr"), "a wrong code keeps the QR code")
+        c.page.fill("#pair-code-in", "K7Q-4M")
+        c.page.click("#pair-code-go")
+        c.expect("6 letters and digits" in c.page.inner_text("#pair-status"), "a short entry is refused before any request")
+        c.page.fill("#pair-code-in", code.lower().replace("-", " "))
+        c.page.press("#pair-code-in", "Enter")
+        c.page.wait_for_selector(".ed-confirm [data-ok]", timeout=15000)
+        offer = c.page.inner_text(".ed-confirm:has([data-ok])")
+        c.expect("From its code" in offer and "4 skyline points" in offer and "garden east" in offer,
+                 f"the desktop asks first, with the edit: {offer!r}")
+        c.page.wait_for_timeout(300)
+        c.expect(qr_box not in relay.boxes, "the QR code's box is closed")
+        c.expect_eq(len((horizon_state(c) or {}).get("horizons", [])), before, "nothing is saved before the user agrees")
+        c.page.click(".ed-confirm [data-ok]")
+        c.page.wait_for_function("() => /from its code/.test(document.querySelector('#hz-note').textContent)",
+                                 timeout=5000)
+        c.expect_eq(active_horizon(c)["points"], sent["points"], "an exact copy of the phone's skyline")
+        c.page.wait_for_timeout(2500)
+        c.expect_eq(len(relay.shares), 1, "a horizon that arrived by code gets no code of its own")
+
+        # 24 hours later: the code is gone; Get a code makes a new one.
+        phone.evaluate("""() => { const k = 'nightseam_share_codes_v1', v = JSON.parse(localStorage.getItem(k));
+                                  for (const e of Object.values(v)) e.expires = Date.now() - 1000;
+                                  localStorage.setItem(k, JSON.stringify(v)); }""")
+        relay.shares.clear()   # the relay deleted it
+        phone.reload(wait_until="domcontentloaded")
+        phone.wait_for_selector("#hz-code:not(.hz-code-btn)", timeout=20000)
+        c.expect("Get a code (24 h)" in phone.inner_text("#hz-code"), "an expired code offers a new one")
+        phone.click("#hz-code")
+        phone.wait_for_selector("#code-show", timeout=10000)
+        renewed = phone.inner_text("#code-show").strip()
+        c.expect(renewed != code and len(relay.shares) == 1, f"a new code for another 24 h: {renewed}")
+        phone.click(".ed-confirm [data-ok]")
+
+        phone.click("#hz-list [data-del]")
+        phone.click(".ed-confirm [data-ok]")
+        phone.wait_for_timeout(500)
+        c.expect_eq(relay.shares, {}, "deleting the horizon deletes its stored copy")
     finally:
         ctx.close()
     c.assert_clean()

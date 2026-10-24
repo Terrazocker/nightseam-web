@@ -120,7 +120,14 @@ editor", "Capture horizons with the phone's sensors"); plans:
   (`AbsoluteOrientationSensor`, `deviceorientationabsolute`) restart every
   2.5 s, up to 40 times, while north is missing and no usable compass
   reading has paired for 1.5 s, and again when a motion permission is
-  granted. Without a relative source for a second the compass gives the
+  granted. Every source (`restart`) starts again when the camera prompt
+  is answered or the page becomes visible while nothing has arrived yet: on
+  a first open, sensors started under the camera prompt could stay silent
+  for good. With no motion reading for 3 s, or none from the compass for
+  6 s while north is missing, the *sensor panel* (`#cap-wake`) replaces the
+  controls: three steps and *Start the sensors* (inside the tap: the motion
+  permission request and a full restart, then 3 s of waiting again) or
+  *Not now* for the rest of the capture. Without a relative source for a second the compass gives the
   shape too. While the editor's *Phone capture* panel is open,
   `warmCompass` keeps an `AbsoluteOrientationSensor` running at 10 Hz (the
   browser shares one compass between its users), so a capture usually opens
@@ -184,8 +191,14 @@ editor", "Capture horizons with the phone's sensors"); plans:
   distance) for tilting down. `guideScale` projects the marked direction
   into the second orientation (`cameraProject`) and divides the guide's
   offset by it; the phone must turn slower than 5 deg/s at each tap, upright
-  in portrait. Both steps agreeing within 8% keep their mean, else the
-  sideways one; the up-down step is skipped where there is no room or on
+  in portrait. Over the video, step 1 rings the cross; steps 2 and 3 draw
+  a solid arrow for the way to move the phone (*Turn right*, *Tilt down*), a
+  dashed arrow from the cross to the line for the way the object travels,
+  and *Stop when your object is on this line* (`drawCalibGuide`).
+  `calibOffset` projects the marked direction into the current orientation;
+  more than 0.02 (about a degree) the wrong way turns the arrow amber with
+  *Other way* and rewords the step. Both steps agreeing within 8% keep their
+  mean, else the sideways one; the up-down step is skipped where there is no room or on
   *Skip*. Results and *Not now* (`asked`) are kept per device in
   localStorage `nightseam_capture_cal_v2` (`delayMs`, `k`, `measured`,
   `scaleMeasured`, `asked`; not in backups); the per-axis version 1, learned
@@ -255,6 +268,21 @@ editor", "Capture horizons with the phone's sensors"); plans:
   there is none, *Send to desktop* (the active horizon, disabled while it is
   empty) and *End pairing*. The offered site replaces the planner's site only
   for the capture's Moon reference and site check; it is never saved.
+  - **Horizon codes.** `createHorizon(…, true)` (draw, capture, import)
+    marks a horizon `{ pending: true }` in `nightseam_share_codes_v1`; once
+    it has a point, `syncShare` stores it with `createShare` (a new code,
+    a random token; a taken code is replaced up to twice) and keeps
+    `{ code, token, expires }`. Every later change (`announceHorizonChanged`,
+    renames) schedules a sync 1.5 s later that sends the new share-link text
+    with `updateShare` while the code lives. The editor head's slot
+    (`refreshCodeSlot`, refreshed each minute) shows *Code after the first
+    point*, *Making a code…*, the code with the hours left (opens
+    `codeDialog`: the code large, its expiry, *Delete from the server*), or
+    *Get a code (24 h)* once it expired or failed. `deleteHorizon` and
+    *Delete from the server* call `deleteShare`. In *Get from phone*,
+    `parseShortCode` and `fetchShare` get and unseal the stored text, the
+    dialog closes (deleting its QR box) and `offerHorizonLink(…, 'code')`
+    asks. `sharePairing` caches each code's id and stretched key.
   - **Sealing.** Version byte 1, a 12-byte IV, then AES-GCM-256 ciphertext
     and tag (WebCrypto). The additional data is
     `nightseam-pair-v1:<box id>:offer|reply`, so a message cannot be moved to
@@ -264,7 +292,9 @@ editor", "Capture horizons with the phone's sensors"); plans:
     connected), `POST op=reply` (201 once; 409 after), `GET op=poll` (204 with
     `X-Relay-State: open|connected` while waiting; 200 with the reply, again
     on every poll until the desktop closes the box, so a lost answer is not a
-    lost horizon), `POST op=close` (204). Unknown or expired boxes
+    lost horizon), `POST op=close` (204); horizon codes use `op=put`,
+    `get` and `drop` on `.share` files (24 hours, token hash, 1,000 at once,
+    60 lookups per address per 10 minutes). Unknown or expired boxes
     answer 404; every box answer carries `X-Relay-Remaining` in seconds.
     Boxes live 10 minutes, one JSON file each (bodies base64) whose
     modification time is its opening time, written by temporary file and

@@ -87,7 +87,19 @@
       it is deleted with the next pairing request after that, and the salt is
       replaced daily. The
       desktop asks before adding a horizon from the phone, and the phone never
-      saves the desktop’s site.</p></div></details><details class="disclosure"><summary>Website requests and hosting</summary><div class="disclosure-body"><h2>Website requests</h2><p>Opening the site or planner requests pages, scripts, catalog files and
+      saves the desktop’s site.</p>
+      <p>A horizon you draw, capture or import is also kept on this website for
+      24 hours under a short code shown beside its name, so another device can
+      fetch it by typing the code into “Get from phone”. What is kept is the
+      horizon’s name, skyline points and overhang edges, no site or location,
+      encrypted with a key made from the code. That keeps the stored file from
+      being readable at a glance, but the code is short: anyone who has the
+      file and tries every code could read it, so this is weaker protection
+      than the QR code. Edits you make within the 24 hours replace the stored
+      copy. After 24 hours it is deleted with the next pairing request; deleting
+      the horizon, or “Delete from the server”, deletes it at once. A new code
+      for another 24 hours is made only when you ask for one. Looking up codes
+      is limited per IP address in the same way as above.</p></div></details><details class="disclosure"><summary>Website requests and hosting</summary><div class="disclosure-body"><h2>Website requests</h2><p>Opening the site or planner requests pages, scripts, catalog files and
       site graphics from the website’s host. These requests expose technical
       connection information such as your IP address and browser request headers.
       The catalog and Standard selection are prepared in advance and served by

@@ -61,6 +61,16 @@ planner, so the first check really is a first open.
 10. **Wrong site.** With location access allowed, open the capture somewhere
     more than about 100 m from the selected site. Target: the view warns
     that a horizon only holds where it was measured.
+11. **First start.** Clear the site's data (or use a fresh browser profile),
+    open the capture and answer the camera prompt. Target: the readout
+    finds north without reopening the view; if the sensors stay silent for
+    3 s, the sensor panel shows its three steps, and *Start the sensors*
+    plus a figure eight brings the readings.
+12. **Calibration guide.** Run *Line up the drawing*. Target: step 1 rings
+    the cross; step 2 shows *Turn right* with an arrow, a dashed arrow
+    towards the amber line and *Stop when your object is on this line*;
+    turning left instead says *Other way*; step 3 does the same with *Tilt
+    down*.
 
 ## Pairing
 
@@ -88,7 +98,21 @@ Pixel 7a and the desktop. The desktop's site is the one you stand at.
    are unchanged afterwards.
 6. **Keyboard.** On the desktop, open *Get from phone* with the keyboard.
    Target: focus starts on *Cancel*, Tab stays in the dialog (*Show the
-   link*, Cancel), Escape closes it and focus returns to *Get from phone*.
+   link*, the code field, *Get*, Cancel), Escape closes it and focus returns
+   to *Get from phone*.
+7. **Horizon code.** On the phone, *New horizon* and capture a stretch of
+   skyline. Target: once it has a point, a code like `K7Q-4MX · 23 h`
+   appears beside its name. On the desktop: *Get from phone*, type the code
+   in lower case. Target: the desktop asks before adding the same points and
+   overhangs.
+8. **Edit, wrong code, delete.** Rename the horizon on the phone, wait a few
+   seconds and fetch the code again on the desktop. Target: the new name. A
+   code with one character changed says no horizon has it. *Delete from the
+   server* on the phone. Target: the desktop no longer finds the code; the
+   phone offers *Get a code (24 h)*.
+9. **After 24 hours.** The next day, open the horizon on the phone. Target:
+   *Get a code (24 h)* instead of the code, the old code is not found on the
+   desktop, and the button makes a new code that works.
 
 ## Devices and accessibility
 

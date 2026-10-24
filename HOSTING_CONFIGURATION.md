@@ -44,7 +44,7 @@ HTTP to HTTPS. PHP there is "FPM application served by Apache"; the live site
 still serves PHP through nginx. The FTP login starts in the webspace root, so
 publish with the remote root `/dev.nightseam.de` (live: `/nightseam.de`).
 Both sites share the relay's data folder; box ids are random, so their boxes
-never meet. The test site is public unless protected in Plesk.
+never meet, but a horizon code made on one site also works on the other. The test site is public unless protected in Plesk.
 
 ## Pairing relay (PHP) — on dev.nightseam.de since October 22, 2026, not live
 
@@ -63,6 +63,8 @@ docs/horizon/HORIZON_PAIRING_PLAN.md). Checked by the owner on October 19:
   document root (`nightseam.de/`), inside `open_basedir`, writable by the PHP
   user, unreachable by URL. The script derives it from `DOCUMENT_ROOT` and
   answers 503 if it is missing, not writable or inside the document root.
+  Besides the pairing boxes (10 minutes) it holds horizon codes as
+  `<id>.share` for 24 hours: at most 1,000 of at most 64 KB, so up to 64 MB.
   The vhost name stays out of the repository.
 - Imunify is active. The phase 0 probe passed on the test site under
   "served by Apache" on October 22 (RELEASES.md). To repeat it: upload

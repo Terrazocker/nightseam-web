@@ -4,6 +4,27 @@ Actual validation outcomes, newest first. Published releases: v0.7.0 (October
 19, 2026), v0.1.1 (October 8, 2026) and v0.1.0 (October 7, 2026). Upload
 success alone is never recorded as acceptance.
 
+## Horizon codes, sensor start button, calibration guide — October 24, 2026 (branch horizon-pairing-plan)
+
+Local checks only; nothing was published.
+
+- `check_js.py`: OK after the token bump.
+- pytest: 372 passed, 1 skipped. `test_relay.py` (2 failed, 13 errors) could
+  not run because PHP is not installed on this machine, so the relay's new
+  `put`/`get`/`drop` operations, their tests and `tests/js/pairing_relay.mjs`
+  are unverified against real PHP; CI runs them.
+- Browser suite (`check_browser.py --web`): 92/92. The first full run failed
+  three horizon checks with a 501 from the static test server: every horizon
+  made in a check now stores itself under a code, so the harness gained a
+  default stand-in for the relay's `put`/`drop` (the pairing checks keep
+  their own stub).
+- Built-in browser by hand, with an in-page stand-in for the relay: a drawn
+  horizon showed *Code after the first point*, then a code with *24 h*; the
+  code dialog showed the code, its expiry and *Delete from the server*. The
+  sensor panel and the calibration arrows were checked earlier the same day
+  with synthetic orientation events. Not checked: a real phone, the real
+  relay, dev.nightseam.de.
+
 ## PR 5 on the test site — October 22, 2026 (dev.nightseam.de, 09c486a)
 
 Owner-authorized publication of `horizon-pairing-plan` at 09c486a (v0.7.0-15-g09c486a)
