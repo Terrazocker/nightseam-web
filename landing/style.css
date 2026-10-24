@@ -118,9 +118,9 @@ html[data-theme="workbench"] .public-site main {
 @media (max-width: 760px) {
   html[data-theme="workbench"] body.public-site { font-size: 16px; }
   .public-site .container { width: calc(100% - 48px); }
-  .public-site .navrow { min-height: 68px; gap: 12px; }
+  .public-site .navrow { min-height: 68px; gap: 12px; flex-wrap: nowrap; padding-block: 0; }
   .public-site .brand { font-size: 22px; }
-  .public-site .header-actions { gap: 8px; }
+  .public-site .header-actions { gap: 8px; flex-wrap: nowrap; min-width: auto; }
   .public-site .header-cta { font-size: 14px; padding: 8px 12px; }
   .public-site .desktop-nav { display: none; }
   .public-site .mobile-menu { display: block; position: relative; z-index: 10; }
