@@ -4,6 +4,33 @@ Actual validation outcomes, newest first. Published releases: v0.7.0 (October
 19, 2026), v0.1.1 (October 8, 2026) and v0.1.0 (October 7, 2026). Upload
 success alone is never recorded as acceptance.
 
+## Horizon codes on the test site — October 24, 2026 (dev.nightseam.de, d6aff54)
+
+Owner-requested publication of `horizon-pairing-plan` to the test site only;
+the live site was not touched. Both `.htaccess` files are unchanged since PR 5.
+
+- First 57deaa5 (v0.7.0-17-g57deaa5), then d6aff54 (v0.7.0-18-gd6aff54) with
+  a fix found here. Each candidate: 78 files from an LF worktree, version
+  baked, `prepare_publication.py --verify` passed. Publish to
+  `/dev.nightseam.de` succeeded on the fourth attempt both times (TLS and
+  connection resets before; the publisher switched no page until verified).
+- HTTPS (both builds): all 75 HTTP-readable files and both entry routes match
+  the candidate; `.htaccess` and other PHP files answer 403.
+- Relay on the host's PHP (57deaa5; the first time the new code ran under
+  PHP): unknown code 404 with `no-store` and the API CSP; `put` 201 with
+  86400 s left; `get` 200 with the same bytes; another token 409; replace
+  204; `drop` 204, then 404; cross-site 403.
+- Built-in browser on 57deaa5: a drawn horizon got the code `PWK-WV3 · 24 h`
+  from the real relay; *Get from phone* with that code in lower case asked to
+  add it (3 skyline points); deleting the horizon deleted the stored copy
+  (the code then answered 404). Found: the QR poll replaced the *Not found*
+  answer within 2.5 s, fixed in d6aff54 (browser check extended).
+- Not checked: the fix and the relay on d6aff54 in a browser. After the
+  second upload the host refused TLS connections from this machine to both
+  nightseam.de sites (other sites loaded), still after five minutes: most
+  likely Imunify blocking the address after the reconnects. Also not
+  checked: a real phone and the *Pairing* acceptance checks.
+
 ## Horizon codes, sensor start button, calibration guide — October 24, 2026 (branch horizon-pairing-plan)
 
 Local checks only; nothing was published.
