@@ -42,7 +42,7 @@ def test_generated_history_contains_only_independent_website_releases():
     page = (ROOT / "landing" / "download.html").read_text(encoding="utf-8")
     assert module.generated_page(page, entries) == page
     assert entries == module.public_entries()
-    assert [entry["version"] for entry in entries] == ["0.7.0", "0.1.1", "0.1.0"]
+    assert [entry["version"] for entry in entries] == ["0.8.0", "0.7.0", "0.1.1", "0.1.0"]
     rendered = Notes()
     rendered.feed(page)
     for entry in entries:

@@ -40,25 +40,27 @@ A Plesk subdomain for trying a branch on the real host before the live site.
 Its folder `dev.nightseam.de/` sits in the webspace root beside the live
 document root `nightseam.de/` (the `httpdocs/` folder there holds only
 Plesk's default page). It has its own Let's Encrypt certificate and redirects
-HTTP to HTTPS. PHP there is "FPM application served by Apache"; the live site
-still serves PHP through nginx. The FTP login starts in the webspace root, so
+HTTP to HTTPS. PHP there is "FPM application served by Apache", as on the live
+site since October 24. The FTP login starts in the webspace root, so
 publish with the remote root `/dev.nightseam.de` (live: `/nightseam.de`).
 Both sites share the relay's data folder; box ids are random, so their boxes
 never meet, but a horizon code made on one site also works on the other. The test site is public unless protected in Plesk.
 
-## Pairing relay (PHP) — on dev.nightseam.de since October 22, 2026, not live
+## Pairing relay (PHP) — on dev.nightseam.de since October 22, live since October 24, 2026
 
 Phone pairing needs the one server script `web/relay.php`, published at
 `/astro/relay.php` (DECISIONS.md, 2026-10-19; plan in
 docs/horizon/HORIZON_PAIRING_PLAN.md). Checked by the owner on October 19:
 
 - PHP 8.3 as an FPM application on Plesk, running as the subscription's
-  system user, with up to 10 workers started on demand. The live site is
-  "served by nginx", which bypasses `.htaccess`. Switch to **FPM application
-  served by Apache** when the relay is deployed: nginx keeps serving static
-  files and passes `.php` to Apache, so the `relay.php` section of
-  `web/.htaccess` (`no-store`, an API CSP, every other PHP file denied)
-  applies. The test site already runs this way.
+  system user, with up to 10 workers started on demand. Both sites run it as
+  **FPM application served by Apache** (live since October 24; "served by
+  nginx" would bypass `.htaccess`): nginx keeps serving static files and
+  passes `.php` to Apache, so the `relay.php` section of `web/.htaccess`
+  (`no-store`, an API CSP, every other PHP file denied) applies.
+- `nightseam.de` answers 301 to `www.nightseam.de`, so the planner and its
+  relay run on `www`. Check the relay there: a POST to the bare domain is
+  redirected and arrives as a GET (405 *wrong method*).
 - The data folder `nightseam-relay/` sits in the webspace root next to the
   document root (`nightseam.de/`), inside `open_basedir`, writable by the PHP
   user, unreachable by URL. The script derives it from `DOCUMENT_ROOT` and
