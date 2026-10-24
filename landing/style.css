@@ -19,12 +19,12 @@ html[data-theme="workbench"] .public-site main {
 
 /* Header */
 .public-site .site-header { border-bottom: 1px solid var(--line-soft); }
-.public-site .navrow { display: flex; justify-content: space-between; align-items: center; gap: 20px; min-height: 76px; }
+.public-site .navrow { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px 20px; min-height: 76px; padding-block: 8px; }
 .public-site .brand { display: inline-block; color: var(--txt); text-decoration: none; font-size: 24px; font-weight: 600; letter-spacing: -.025em; }
-.public-site .header-actions { display: flex; align-items: center; gap: 32px; }
+.public-site .header-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 8px 32px; min-width: 0; }
 .public-site .header-cta { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; padding: 8px 18px; background: var(--accent); color: var(--accent-ink); font-weight: 600; text-decoration: none; border-radius: var(--radius); white-space: nowrap; }
 .public-site .header-cta:hover { color: var(--accent-ink); outline: 1px solid var(--accent); outline-offset: 3px; }
-.public-site .desktop-nav nav { display: flex; gap: 28px; align-items: center; }
+.public-site .desktop-nav nav { display: flex; flex-wrap: wrap; gap: 0 28px; align-items: center; }
 .public-site .desktop-nav a { display: inline-block; color: var(--muted); padding: 10px 0; text-decoration: none; border-bottom: 2px solid transparent; }
 .public-site .desktop-nav a:hover, .public-site .desktop-nav a[aria-current="page"] { color: var(--txt); }
 .public-site .desktop-nav a[aria-current="page"] { border-bottom-color: var(--accent); }
