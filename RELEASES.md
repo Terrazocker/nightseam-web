@@ -4,6 +4,21 @@ Actual validation outcomes, newest first. Published releases: v0.7.0 (October
 19, 2026), v0.1.1 (October 8, 2026) and v0.1.0 (October 7, 2026). Upload
 success alone is never recorded as acceptance.
 
+## v0.8.0 release preparation — October 24, 2026 (branch release-0.8.0)
+
+Owner asked to upload main to nightseam.de and chose to cut v0.8.0 first,
+before the *Pairing* acceptance on a real phone (ROADMAP.md). Branch from
+main 28b81ad (v0.7.0-29-g28b81ad), with web/version.json baked at that
+describe. The dated 0.8.0 PUBLIC_RELEASES record and its summary were added,
+landing/changelog.json and download.html regenerated, and the ledger pins in
+tests/test_landing_release_history.py and tests/browser/landing_checks.py
+extended to 0.8.0, 0.7.0, 0.1.1, 0.1.0 (as the 0.7.0 release did). No cache
+token changed. After these changes: pytest 372 passed / 1 skipped, with the
+15 `tests/test_relay.py` cases failing or erroring only because PHP is not
+installed on this machine (CI installs PHP 8.3); real-Chrome suite 93/93;
+check_js OK; check_release --allow-dirty --no-stage 0 errors;
+pre_tag_check 0.8.0 OK.
+
 ## Leaner editor, view-only phones, sharper guide on the test site — October 24, 2026 (dev.nightseam.de, 3e029c0)
 
 Owner-requested publication of 3e029c0 (v0.7.0-22-g3e029c0) to the test site
